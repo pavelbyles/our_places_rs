@@ -1,0 +1,30 @@
+refresh_rate: 30 seconds
+
+appenders:
+  console:
+    kind: console
+    target: stdout
+    tty_only: false
+    encoder:
+      kind: pattern
+
+    requests:
+      kind: file
+      path: "log/requests.log"
+      encoder:
+        pattern: "{d} - {m}{n}"
+
+root:
+  level: warn
+  appenders:
+    -console 
+
+loggers:
+  app::backend::db:
+  level: info
+
+app::requests:
+  level: info
+        appenders:
+          - requests
+        additive: false
