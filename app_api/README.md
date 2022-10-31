@@ -1,8 +1,8 @@
-# Our-Places-Rs
+# Our-Places-app-api-Rs
 gcloud config set run/region us-central1
 
 # from current source path
-gcloud run deploy --source .
+gcloud run deploy our-places-app-api-rs --source . --allow-unauthenticated --max-instances 1 --memory 256Mi
 
 # Check service
 gcloud run services describe our-places-rs
