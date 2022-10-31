@@ -1,12 +1,20 @@
+#[macro_use]
+extern crate lazy_static;
 use actix_web::{App, HttpServer};
 
 mod apis;
-pub mod util;
+mod settings;
+mod util;
+
+lazy_static! {
+    static ref CONFIG: settings::Settings =
+        settings::Settings::new().expect("config can be loaded");
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let port: u16 = util::sys::get_port(8080);
-    let address = format!("0.0.0.0:{}", port);
+    let port: u16 = util::sys::get_port(CONFIG.server.port);
+    let address = format!("{}:{}", CONFIG.server.host, port);
 
     HttpServer::new(|| {
         App::new()
