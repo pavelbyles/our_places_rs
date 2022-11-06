@@ -1,0 +1,74 @@
+swagger: '2.0'
+info:
+  description: defaultDescription
+  version: '0.1'
+  title: Our-Places-App-api
+
+host: ourplaces.io
+basePath: /api/v1
+schemes:
+  - https
+
+paths:
+  /ping:
+    get:
+      summary: To be used to determine if the service is alive
+      description: Gives a static response
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: Definition generated from Swagger Inspector
+          schema:
+            $ref: '#/definitions/PingResponse'
+  /cfg:
+    get:
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: Definition generated from Swagger Inspector
+          schema:
+            $ref: '#/definitions/Config'
+  /hello:
+    get:
+      produces:
+        - application/json
+      parameters: []
+      responses:
+        '200':
+          description: Definition generated from Swagger Inspector
+          schema:
+            $ref: '#/definitions/HelloResponse'
+  /hello/{name}:
+    get:
+      produces:
+        - application/json
+      parameters:
+        - in: path
+          name: name
+          required: true
+          type: string
+      responses:
+        '200':
+          description: Definition generated from Swagger Inspector
+          schema:
+            $ref: '#/definitions/HelloResponse'
+definitions:
+  PingResponse:
+    properties:
+      status:
+        type: string
+  Config:
+    properties:
+      target:
+        type: string
+      port:
+        type: integer
+        format: int32
+  HelloResponse:
+    properties:
+      response:
+        type: string
