@@ -1,6 +1,6 @@
 #[macro_use]
 extern crate lazy_static;
-use actix_web::{App, HttpServer};
+use actix_web::{web, App, HttpServer};
 
 mod apis;
 mod settings;
@@ -18,10 +18,12 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(|| {
         App::new()
-            .service(apis::app::greet_no_name)
-            .service(apis::app::greet_with_name)
-            .service(apis::health::health_check)
-            .service(apis::configuration::config)
+            .service(web::resource("/hello").route(web::get().to(apis::app::greet_no_name)))
+            .service(
+                web::resource("/hello/{name}").route(web::get().to(apis::app::greet_with_name)),
+            )
+            .service(web::resource("/ping").route(web::get().to(apis::health::health_check)))
+            .service(web::resource("/cfg").route(web::get().to(apis::configuration::config)))
     })
     .bind(address.clone())?
     .run()
