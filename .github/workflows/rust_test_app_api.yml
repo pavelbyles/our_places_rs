@@ -1,4 +1,4 @@
-name: Rust
+name: Rust - test app_api
 
 on:
   push:
