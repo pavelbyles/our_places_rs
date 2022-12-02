@@ -47,6 +47,6 @@ mod tests {
         let body_bytes = to_bytes(http_resp.into_body()).await.unwrap();
         let ping_resp: PingResponse =
             serde_json::from_str(str::from_utf8(&body_bytes).unwrap()).unwrap();
-        assert_eq!(ping_resp.status, "not alive".to_string())
+        assert_eq!(ping_resp.status, "alive".to_string())
     }
 }
