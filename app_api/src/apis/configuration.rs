@@ -8,13 +8,16 @@ struct Config {
     port: u16,
 }
 
+static ENV_TARGET_VAR: &str = "TARGET";
+static DEFAULT_PORT: u16 = 8080;
+
 pub async fn config(_req: HttpRequest) -> HttpResponse {
     let cfg = Config {
-        target: match env::var("TARGET") {
+        target: match env::var(ENV_TARGET_VAR) {
             Ok(env_target) => env_target,
             Err(_e) => "".to_string(),
         },
-        port: 8080,
+        port: DEFAULT_PORT,
     };
 
     HttpResponse::Ok().json(cfg)
@@ -27,17 +30,18 @@ mod tests {
 
     #[actix_web::test]
     async fn test_cfg_ok() {
-        env::set_var("TARGET", "test");
+        let test_env_var_val: &str = "test";
+
+        env::set_var(ENV_TARGET_VAR, test_env_var_val);
 
         let req = test::TestRequest::default().to_http_request();
         let http_resp = config(req).await;
-
         assert_eq!(http_resp.status(), StatusCode::OK);
 
         let body_bytes = to_bytes(http_resp.into_body()).await.unwrap();
         let config_resp: Config =
             serde_json::from_str(str::from_utf8(&body_bytes).unwrap()).unwrap();
-        assert_eq!(config_resp.target, "test".to_string());
+        assert_eq!(config_resp.target, test_env_var_val);
         assert_eq!(config_resp.port, 8080);
     }
 }
