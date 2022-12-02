@@ -1,5 +1,7 @@
 pub fn get_port(default_port: u16) -> u16 {
-    match std::env::var("PORT") {
+    static ENV_PORT_VAR: &str = "PORT";
+
+    match std::env::var(ENV_PORT_VAR) {
         Ok(p) => match p.parse::<u16>() {
             Ok(n) => n,
             Err(_e) => default_port,
