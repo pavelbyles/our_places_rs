@@ -1,4 +1,6 @@
 dev:
+	@echo "Run tests"
+	@cargo test
 	@echo "Building app_api dev build"
 	@cargo build
 	@echo "Copying config to target path..."
@@ -7,6 +9,8 @@ dev:
 	@echo "Completed app_api dev build"
 
 release:
+	@echo "Run tests"
+	@cargo test
 	@echo "Building app_api release build"
 	@cargo build --release
 	@echo "Copying config to target path..."

@@ -43,5 +43,10 @@ mod tests {
         let http_resp = actix_web::dev::Service::call(&app, req).await.unwrap();
 
         assert_eq!(http_resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(http_resp.into_body()).await.unwrap();
+        let ping_resp: PingResponse =
+            serde_json::from_str(str::from_utf8(&body_bytes).unwrap()).unwrap();
+        assert_eq!(ping_resp.status, "alive".to_string())
     }
 }
