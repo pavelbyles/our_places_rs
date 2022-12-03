@@ -14,7 +14,6 @@ on:
 
 jobs:
   test:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -26,21 +25,6 @@ jobs:
       working-directory: ./app_api
       run: cargo test --verbose
   
-  build:
-    runs-on: ubuntu-latest
-
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
-    
-    - name: Authorize Docker push
-      working-directory: ./app_api
-      run: gcloud auth configure-docker
-
-    - name: Build and Push Container
-      run: |-
-        docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} .
-        docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }}
-
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: [test]
