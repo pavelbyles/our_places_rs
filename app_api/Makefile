@@ -9,8 +9,6 @@ dev:
 	@echo "Completed app_api dev build"
 
 release:
-	@echo "Run tests"
-	@cargo test
 	@echo "Building app_api release build"
 	@cargo build --release
 	@echo "Copying config to target path..."
@@ -19,7 +17,7 @@ release:
 	@echo "Completed release build"
 
 deploy:
-	gcloud run deploy our-places-app-api-rs --source . --allow-unauthenticated --max-instances 1 --memory 256Mi
+	gcloud run deploy our-places-app-api-rs --region us-central1 --source . --allow-unauthenticated --max-instances 1 --memory 256Mi
 
 clean:
 	cargo clean
