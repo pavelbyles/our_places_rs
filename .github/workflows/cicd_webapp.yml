@@ -16,15 +16,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: subosito/flutter-action@v2
+    - name: Checkout and setup Flutter
+      uses: actions/checkout@v3
+      uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.3.9'
-    - run: flutter --version
-      - name: Build
-        working-directory: ./web_app
-        run: flutter pub get
-        run: flutter test
+        channel: 'stable'
+    
+    - name: Run Flutter tests
+      run: |
+        flutter --version
+        flutter pub get
+        flutter test
   
   build-and-deploy:
     runs-on: ubuntu-latest
