@@ -17,13 +17,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Build
-      working-directory: ./app_api
-      run: cargo build --verbose
-    - name: Run API tests
-      working-directory: ./app_api
-      run: cargo test --verbose
+      - uses: actions/checkout@v3
+      - name: Build
+        working-directory: ./app_api
+        run: cargo build --verbose
+      - name: Run API tests
+        working-directory: ./app_api
+        run: cargo test --verbose
   
   build-and-deploy:
     runs-on: ubuntu-latest
