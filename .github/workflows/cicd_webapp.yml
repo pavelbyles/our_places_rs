@@ -1,4 +1,4 @@
-name: CI/CD for webapp
+name: CI/CD for FE webapp
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
   #SERVICE: our-places-app-api-rs
@@ -16,9 +16,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout and setup Flutter
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.3.9'
           channel: 'stable'
@@ -35,8 +37,11 @@ jobs:
     if: github.ref == 'refs/heads/dev'
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.3.9'
           channel: 'stable'
