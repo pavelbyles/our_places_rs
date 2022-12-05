@@ -26,6 +26,7 @@ jobs:
           channel: 'stable'
       
       - name: Run Flutter tests
+        working-directory: ./web_app
         run: |
           flutter --version
           flutter pub get
