@@ -40,8 +40,10 @@ jobs:
       with:
         flutter-version: '3.3.9'
         channel: 'stable'
-    - run: flutter --version
-        - name: Build
-          working-directory: ./web_app
-          run: flutter pub get
-          run: flutter build web
+    
+    - name: Build
+      working-directory: ./web_app
+      run: |
+        flutter --version
+        flutter pub get
+        flutter build web
