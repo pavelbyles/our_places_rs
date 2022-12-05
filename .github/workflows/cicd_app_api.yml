@@ -17,8 +17,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Build
+      - name: Checkout code
         uses: actions/checkout@v3
+      
+      - name: Build
         working-directory: ./app_api
         run: cargo build --verbose
       
