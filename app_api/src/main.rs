@@ -16,6 +16,8 @@ async fn main() -> std::io::Result<()> {
     let port: u16 = util::sys::get_port(CONFIG.server.port);
     let address = format!("{}:{}", CONFIG.server.host, port);
 
+    println!("Starting server on port: {}", CONFIG.server.port);
+
     HttpServer::new(|| {
         App::new()
             .service(web::resource("/hello").route(web::get().to(apis::app::greet_no_name)))
