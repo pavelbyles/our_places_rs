@@ -18,35 +18,35 @@ pub struct Log {
 pub struct Settings {
     pub server: Server,
     pub log: Log,
-    pub env: ENV,
+    pub env: Env,
 }
 
 const CONFIG_FILE_PATH: &str = "./config/Default.toml";
 const CONFIG_FILE_PREFIX: &str = "./config/";
 
 #[derive(Clone, Debug, Deserialize)]
-pub enum ENV {
+pub enum Env {
     Development,
     Testing,
     Production,
 }
 
-impl fmt::Display for ENV {
+impl fmt::Display for Env {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ENV::Development => write!(f, "Development"),
-            ENV::Testing => write!(f, "Testing"),
-            ENV::Production => write!(f, "Production"),
+            Env::Development => write!(f, "Development"),
+            Env::Testing => write!(f, "Testing"),
+            Env::Production => write!(f, "Production"),
         }
     }
 }
 
-impl From<&str> for ENV {
+impl From<&str> for Env {
     fn from(env: &str) -> Self {
         match env {
-            "Testing" => ENV::Testing,
-            "Production" => ENV::Production,
-            _ => ENV::Development,
+            "Testing" => Env::Testing,
+            "Production" => Env::Production,
+            _ => Env::Development,
         }
     }
 }
