@@ -65,6 +65,12 @@ jobs:
           flutter --version
           flutter pub get
           flutter build web
+
+      - name: Build and Push Container
+        working-directory: ./web_app
+        run: |-
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }}
       
       - name: Deploy
         working-directory: ./web_app
