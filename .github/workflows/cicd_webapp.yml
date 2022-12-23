@@ -1,7 +1,7 @@
 name: CI/CD for FE webapp
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
-  #SERVICE: our-places-app-api-rs
+  SERVICE: our-places-web-app
   REGION: us-central1
   CARGO_TERM_COLOR: always
 
@@ -41,6 +41,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Authorize Docker push
+        run: gcloud auth configure-docker
+      
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -53,3 +65,15 @@ jobs:
           flutter --version
           flutter pub get
           flutter build web
+      
+      - name: Deploy
+        working-directory: ./web_app
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --region ${{ env.REGION }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} \
+            --platform "managed" \
+            --allow-unauthenticated \
+            --max-instances 1 \
+            --memory 256Mi \
+            --quiet
