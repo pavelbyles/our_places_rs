@@ -7,7 +7,7 @@ WORKDIR /usr/src/app
 COPY . .
 
 # Install production dependencies and build a release artifact.
-#RUN cargo install --path .
+# RUN cargo install --path .
 RUN make release
 
 FROM gcr.io/distroless/cc

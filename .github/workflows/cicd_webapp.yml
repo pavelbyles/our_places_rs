@@ -12,25 +12,13 @@ on:
       - web_app/**
       - .github/workflows/cicd_webapp.yml
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  ## TODO: test job with Cypress later
+  # test:
+    # runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.3.9'
-          channel: 'stable'
-      
-      - name: Run Flutter tests
-        working-directory: ./web_app
-        run: |
-          flutter --version
-          flutter pub get
-          flutter test
+    # steps:
+      # - name: Checkout code
+        # uses: actions/checkout@v3
   
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -40,6 +28,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v3
+        with:
+          node-version: 19
       
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
@@ -53,19 +46,6 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
       
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.3.9'
-          channel: 'stable'
-      
-      - name: Build
-        working-directory: ./web_app
-        run: |
-          flutter --version
-          flutter pub get
-          flutter build web
-
       - name: Build and Push Container
         working-directory: ./web_app
         run: |-

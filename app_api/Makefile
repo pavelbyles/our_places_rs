@@ -29,7 +29,7 @@ release:
 	@echo "Completed release build"
 
 deploy:
-	gcloud run deploy our-places-app-api-rs --region us-central1 --source . --allow-unauthenticated --max-instances 1 --memory 256Mi
+	@gcloud run deploy our-places-app-api-rs --region us-central1 --source . --allow-unauthenticated --max-instances 1 --memory 256Mi
 
 clean:
 	cargo clean
