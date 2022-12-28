@@ -13,27 +13,64 @@ on:
       - .github/workflows/cicd_app_api.yml
 
 jobs:
+  audit:
+    name: Audit
+    defaults:
+      run:
+        working-directory: ./app_api
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-audit
+          version: latest
+          use-tool-cache: true
+      - run: cargo audit
+
+  lint_check:
+    defaults:
+      run:
+        working-directory: ./app_api
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            components: clippy
+            override: true
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features --manifest-path app_api/Cargo.toml
+
+
   test:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./app_api
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
       
       - name: Build
-        working-directory: ./app_api
         run: cargo build --verbose
       
       - name: Run API tests
-        working-directory: ./app_api
         run: cargo test --verbose
+
   
   build-and-deploy:
     runs-on: ubuntu-latest
-    needs: [test]
-    if: github.ref == 'refs/heads/dev'
+    needs: [audit, lint_check, test]
 
-     # Add "id-token" with the intended permissions.
+    # Add "id-token" with the intended permissions.
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -54,20 +91,45 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
 
-      - name: Build and Push Container
+      - name: Build and Push Container (release)
         working-directory: ./app_api
+        if: github.ref == 'refs/heads/main'
         run: |-
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} .
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }}
-      
+          docker build --build-arg BUILD_TYPE=release --build-arg BUILD_OUTPUT=release -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+
+      - name: Build and Push Container (dev)
+        working-directory: ./app_api
+        if: github.ref != 'refs/heads/main'
+        run: |-
+          docker build --build-arg BUILD_TYPE=dev --build-arg BUILD_OUTPUT=debug -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+        
       - name: Deploy to Cloud Run
         working-directory: ./app_api
         run: |-
           gcloud run deploy ${{ env.SERVICE }} \
             --region ${{ env.REGION }} \
-            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} \
             --platform "managed" \
             --allow-unauthenticated \
             --max-instances 1 \
             --memory 256Mi \
             --quiet
+
+
+  automated-api-tests:
+    runs-on: ubuntu-latest
+    needs: [build-and-deploy]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Postman CLI
+        run: |
+          curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
+      - name: Login to Postman CLI
+        run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
+      - name: Run API tests
+
+        # Runs the sanity check collection using the postman-sanity-checks-api-key
+        run: |
+          postman collection run "701056-bf0597d5-23ee-4374-97f7-c3741a532c3f" -e "701056-4394872e-dc91-4235-8461-cf429a72769e"

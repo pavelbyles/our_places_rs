@@ -14,8 +14,14 @@ static DEFAULT_PORT: u16 = 8080;
 pub async fn config(_req: HttpRequest) -> HttpResponse {
     let cfg = Config {
         target: match env::var(ENV_TARGET_VAR) {
-            Ok(env_target) => env_target,
-            Err(_e) => "".to_string(),
+            Ok(env_target) => {
+                log::info!("App configs: Target {:?}", env_target);
+                env_target
+            }
+            Err(e) => {
+                log::error!("Error setting target: {}", e);
+                ENV_TARGET_VAR.to_string()
+            }
         },
         port: DEFAULT_PORT,
     };
@@ -28,6 +34,7 @@ mod tests {
     use super::*;
     use actix_web::{body::to_bytes, http::StatusCode, test};
 
+    // TODO: Change this to remove unwraps
     #[actix_web::test]
     async fn test_cfg_ok() {
         let test_env_var_val: &str = "test";

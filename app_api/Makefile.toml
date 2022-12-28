@@ -1,0 +1,69 @@
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean-build]
+command = "cargo"
+args = ["build"]
+dependencies = ["format", "clean"]
+
+[tasks.print-image-creating]
+script = ["echo \"Creating image locally\""]
+
+[tasks.print-image-finished]
+script = ["echo \"API image created: our-places-app-api-rs-image\""]
+
+[tasks.docker-build-image]
+command = "docker"
+args = [
+    "build",
+    "--build-arg=\"BUILD_TYPE=dev\"",
+    "--build-arg=\"BUILD_OUTPUT=debug\"",
+    "-t",
+    "our-places-app-api-rs-image",
+    ".",
+]
+
+[tasks.docker-local-build]
+dependencies = ["print-image-creating", "docker-build-image"]
+
+[tasks.build-unoptimized]
+command = "cargo"
+args = ["build", "--target-dir", "target/out/our-places-app-api-rs"]
+
+[tasks.build-release]
+command = "cargo"
+args = [
+    "build",
+    "--release",
+    "--target-dir",
+    "target/out/our-places-app-api-rs",
+]
+
+[tasks.release-build-flow]
+dependencies = ["build-release"]
+
+[tasks.dev-build-flow]
+dependencies = ["build-unoptimized"]
+
+[tasks.deploy-from-local]
+command = "gcloud"
+args = [
+    "run",
+    "deploy",
+    "our-places-app-api-rs",
+    "--region",
+    "us-central1",
+    "--source",
+    ".",
+    "--allow-unauthenticated",
+    "--max-instances",
+    "1",
+    "--memory",
+    "256Mi",
+]

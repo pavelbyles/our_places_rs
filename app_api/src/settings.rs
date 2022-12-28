@@ -53,10 +53,13 @@ impl From<&str> for Env {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        static ENV_RUN_VAR: &str = "RUN_ENV";
-        static ENV_RUN_VAL: &str = "Development";
+        static ENV_RUN_VAR: &str = "RUN_ENV"; // Environment var
+        static ENV_RUN_VAL: &str = "Development"; // Default environment variable value
 
+        // determine the run environment var
         let env = std::env::var(ENV_RUN_VAR).unwrap_or_else(|_| ENV_RUN_VAL.into());
+
+        //
         let s = Config::builder()
             .set_override("env", env.clone())?
             .add_source(File::with_name(CONFIG_FILE_PATH))
