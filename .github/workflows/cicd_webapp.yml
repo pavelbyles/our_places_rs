@@ -46,18 +46,21 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
       
-      - name: Build and Push Container
+      - name: Build and tag image
         working-directory: ./web_app
         run: |-
           docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} .
+      
+      - name: Push image to Google Container Registry
+        run: |
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }}
       
       - name: Deploy
         working-directory: ./web_app
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
-            --region ${{ env.REGION }} \
             --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} \
+            --region ${{ env.REGION }} \            
             --platform "managed" \
             --allow-unauthenticated \
             --max-instances 1 \
