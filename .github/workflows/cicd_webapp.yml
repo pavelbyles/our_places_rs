@@ -59,8 +59,8 @@ jobs:
         working-directory: ./web_app
         run: |
           gcloud run deploy ${{ env.SERVICE }} \
-            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} \
-            --region ${{ env.REGION }} \            
+            --region ${{ env.REGION }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} \
             --platform "managed" \
             --allow-unauthenticated \
             --max-instances 1 \
