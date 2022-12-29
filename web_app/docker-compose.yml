@@ -1,7 +1,7 @@
 version: '3'
 services:
   app:
-    image: our-places-webapp-nextjs-images
+    image: our-places-webapp
     build:
       context: ./
     volumes:
