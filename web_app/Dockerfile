@@ -45,8 +45,8 @@ RUN true
 
 USER nextjs
 
-EXPOSE 80
-ENV PORT 80
+EXPOSE 8008
+ENV PORT 8080
 
 # CMD ["node", "server.js"]
 CMD ["npm", "run", "start"]
