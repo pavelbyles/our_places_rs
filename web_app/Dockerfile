@@ -2,7 +2,7 @@ FROM node:19-alpine AS dependencies
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
-RUN npm ci --only=production
+RUN npm ci --only=production --omit=dev
 
 # Rebuild the source code only when needed
 FROM node:19-alpine AS builder
