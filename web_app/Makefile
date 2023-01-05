@@ -1,5 +1,6 @@
 local_build:
 	@echo "Creating image locally"
+	@docker build --progress plain -t gcr.io/our-places-rs/our-places-web-app .
 
 local_run:
 	#@docker rm our-places-webapp-nextjs-container
@@ -7,6 +8,9 @@ local_run:
 	
 	@npm run dev
 	#npx next dev -p 3000
+
+build_clean:
+	@docker image prune -f
 
 dev:
 	@docker build -t our-places-webapp-nextjs-image .
