@@ -22,7 +22,7 @@
     "settings": {
       "runOptions": {
         "delay": 0,
-        "iterations": 100,
+        "iterations": 1,
         "dataFilePath": ""
       }
     }
