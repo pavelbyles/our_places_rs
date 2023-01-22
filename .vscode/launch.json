@@ -59,6 +59,31 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Web_app Next.js: debug server-side",
+            "type": "node-terminal",
+            "cwd": "${workspaceFolder}/web_app",
+            "request": "launch",
+            "command": "npm run dev"
+        },
+        {
+            "name": "Web_app Next.js: debug client-side",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:3000"
+        },
+        {
+            "name": "Web_app Next.js: debug full stack",
+            "type": "node-terminal",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/web_app",
+            "command": "npm run dev",
+            "serverReadyAction": {
+                "pattern": "started server on .+, url: (https?://.+)",
+                "uriFormat": "%s",
+                "action": "debugWithChrome"
+            }
         }
     ]
 }

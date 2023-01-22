@@ -1,4 +1,5 @@
-import './globals.css'
+import Head from "next/head";
+import "./output.css";
 
 export default function RootLayout({
   children,
