@@ -2,7 +2,7 @@ local_build:
 	@npm run build	
 
 local_run:
-	@npm run dev
+	@npm run dev --show-all
 
 dev_build:
 	@docker build --progress plain -t gcr.io/our-places-rs/our-places-web-app .
