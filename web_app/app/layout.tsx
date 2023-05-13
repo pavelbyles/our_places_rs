@@ -1,11 +1,15 @@
-import Head from "next/head";
-import "./output.css";
+import Navigation from './components/navigation'; './components/navigation';
+
+export const metadata = {
+  title: 'OurPlaces - Home',
+};
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+
   return (
     <html lang="en">
       {/*
@@ -13,7 +17,11 @@ export default function RootLayout({
         head.tsx. Find out more at https://beta.nextjs.org/docs/api-reference/file-conventions/head
       */}
       <head />
-      <body>{children}</body>
+      <body>
+        <Navigation />
+
+        <div>{children}</div>
+      </body>
     </html>
   )
 }
