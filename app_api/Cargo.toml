@@ -14,6 +14,5 @@ lazy_static = "1.4"
 log = "0.4"
 log4rs = "1.2.0"
 
-
 [[bin]]
 name = "our-places-app-api-rs"
