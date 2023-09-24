@@ -1,6 +1,6 @@
 # Use the official Rust image.
 # https://hub.docker.com/_/rust
-FROM rust:1.72 as build-env
+FROM rust:1.65 as build-env
 
 # Copy local code to the container image.
 WORKDIR /usr/src/app
@@ -18,9 +18,9 @@ COPY config config
 # This default value facilitates local development.
 # ENV PORT 8080
 # ENV HOST 0.0.0.0
-ENV RUN_ENV Production
+# ENV RUN_ENV Development
 
-EXPOSE 8080
+# EXPOSE 8080
 
 # Run the web service on container startup.
 CMD ["./our-places-app-api-rs"]
