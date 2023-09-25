@@ -23,10 +23,20 @@ script = ["cp -R config/ target/release"]
 
 [tasks.docker-build-image]
 command = "docker"
-args = ["build", "-t", "our-places-app-api-rs-image", "."]
+args = [
+    "build",
+    "--build-arg=\"BUILD-TYPE=release\"",
+    "-t",
+    "our-places-app-api-rs-image",
+    ".",
+]
 
 [tasks.docker-local-build]
 dependencies = ["print-image-creating", "docker-build-image"]
+
+[tasks.build-unoptimized]
+command = "cargo"
+args = ["build"]
 
 [tasks.build-release]
 command = "cargo"
@@ -34,6 +44,9 @@ args = ["build", "--release"]
 
 [tasks.release-build-flow]
 dependencies = ["clean", "build-release", "copy-config-to-target-path"]
+
+[tasks.dev-build-flow]
+dependencies = ["clean", "build-unoptimized", "copy-config-to-target-path"]
 
 [tasks.deploy-from-local]
 command = "gcloud"
