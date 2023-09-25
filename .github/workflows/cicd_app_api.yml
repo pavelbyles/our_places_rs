@@ -16,28 +16,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ./app_api
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Audit
+        uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: rustup component add clippy
+
       - name: Lint checker - Fail on warnings
-        working-directory: ./app_api
-        run: cargo clippy -- -D warnings
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: -- -D warnings
       
       - name: Build
-        working-directory: ./app_api
         run: cargo build --verbose
       
       - name: Run API tests
-        working-directory: ./app_api
         run: cargo test --verbose
-
-      - name: Audit
-        working-directory: ./app_api
-        run: :-
-          cargo update
-          cargo audit
-        continue-on-error: true
 
   
   build-and-deploy:
