@@ -1,0 +1,53 @@
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--", "--write-mode=overwrite"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean-build]
+command = "cargo"
+args = ["build"]
+dependencies = ["format", "clean"]
+
+[tasks.print-image-creating]
+script = ["echo \"Creating image locally\""]
+
+[tasks.print-image-finished]
+script = ["echo \"API image created: our-places-app-api-rs-image\""]
+
+[tasks.copy-config-to-target-path]
+script = ["cp -R config/ target/release"]
+
+[tasks.docker-build-image]
+command = "docker"
+args = ["build", "-t", "our-places-app-api-rs-image", "."]
+
+[tasks.docker-local-build]
+dependencies = ["print-image-creating", "docker-build-image"]
+
+[tasks.build-release]
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.release-build-flow]
+dependencies = ["clean", "build-release", "copy-config-to-target-path"]
+
+[tasks.deploy-from-local]
+command = "gcloud"
+args = [
+    "run",
+    "deploy",
+    "our-places-app-api-rs",
+    "--region",
+    "us-central1",
+    "--source",
+    ".",
+    "--allow-unauthenticated",
+    "--max-instances",
+    "1",
+    "--memory",
+    "256Mi",
+]

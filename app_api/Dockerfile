@@ -8,11 +8,13 @@ COPY . .
 
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
-RUN make release
+RUN cargo install cargo-make
+RUN cargo make release-build-flow
 
 FROM gcr.io/distroless/cc
 COPY --from=build-env /usr/src/app/target/release/our-places-app-api-rs /
 COPY config config
+COPY log4rs.yml log4rs.yml
 
 # Service must listen to $PORT environment variable.
 # This default value facilitates local development.
