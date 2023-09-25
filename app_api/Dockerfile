@@ -1,5 +1,6 @@
 # Use the official Rust image.
 # https://hub.docker.com/_/rust
+ARG BUILD-TYPE=release
 FROM rust:1.68 as build-env
 
 # Copy local code to the container image.
@@ -9,7 +10,7 @@ COPY . .
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
 RUN cargo install cargo-make
-RUN cargo make release-build-flow
+RUN cargo make ${BUILD-TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
 COPY --from=build-env /usr/src/app/target/release/our-places-app-api-rs /
