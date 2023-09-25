@@ -73,14 +73,14 @@ jobs:
         working-directory: ./app_api
         if: github.ref == 'refs/heads/main'
         run: |-
-          docker build -build-arg BUILD-TYPE=release -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker build --build-arg="BUILD-TYPE=release" -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Build and Push Container (dev)
         working-directory: ./app_api
         if: github.ref != 'refs/heads/main'
         run: |-
-          docker build --build-arg BUILD-TYPE=dev -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker build --build-arg="BUILD-TYPE=dev" -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         
       - name: Deploy to Cloud Run
