@@ -69,12 +69,20 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
 
-      - name: Build and Push Container
+      - name: Build and Push Container (release)
         working-directory: ./app_api
+        if: github.ref == 'refs/heads/main'
         run: |-
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} --build-arg="BUILD-TYPE=release".
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-      
+
+      - name: Build and Push Container (dev)
+        working-directory: ./app_api
+        if: github.ref != 'refs/heads/main'
+        run: |-
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} --build-arg="BUILD-TYPE=dev".
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+        
       - name: Deploy to Cloud Run
         working-directory: ./app_api
         run: |-
