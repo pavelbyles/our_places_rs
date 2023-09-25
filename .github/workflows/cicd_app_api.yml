@@ -19,6 +19,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Lint checker - Fail on warnings
+        working-directory: ./app_api
+        run: cargo clippy -- -D warnings
       
       - name: Build
         working-directory: ./app_api
@@ -27,6 +31,14 @@ jobs:
       - name: Run API tests
         working-directory: ./app_api
         run: cargo test --verbose
+
+      - name: Audit
+        working-directory: ./app_api
+        run: :-
+          cargo update
+          cargo audit
+        continue-on-error: true
+
   
   build-and-deploy:
     runs-on: ubuntu-latest
