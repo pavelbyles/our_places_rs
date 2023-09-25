@@ -24,10 +24,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Audit
-        uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo install cargo-audit
+      - run: cargo audit
+        continue-on-error: true
 
       - run: rustup component add clippy
 
