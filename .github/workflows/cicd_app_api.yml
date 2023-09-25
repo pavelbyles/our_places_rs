@@ -34,7 +34,7 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: -- -D warnings
+          args: -- -D warnings --manifest-path ./app_api/Cargo.toml
       
       - name: Build
         run: cargo build --verbose
