@@ -16,7 +16,7 @@ RUN cargo install cargo-make
 RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
-COPY --from=build-env /usr/src/app/target/release/our-places-app-api-rs /
+COPY --from=build-env /usr/src/app/target/out/our-places-app-api-rs /
 COPY config config
 COPY log4rs.yml log4rs.yml
 
