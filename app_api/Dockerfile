@@ -2,8 +2,10 @@
 # https://hub.docker.com/_/rust
 # syntax=docker/dockerfile:1
 ARG BUILD_TYPE=release
+ARG BUILD_OUTPUT=release
 FROM rust:1.68 as build-env
 ARG BUILD_TYPE
+ARG BUILD_OUTPUT
 RUN echo "Build type is: ${BUILD_TYPE}"
 
 # Copy local code to the container image.
@@ -16,7 +18,8 @@ RUN cargo install cargo-make
 RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
-COPY --from=build-env /usr/src/app/target/out/our-places-app-api-rs /
+ARG BUILD_OUTPUT
+COPY --from=build-env /usr/src/app/target/out/our-places-app-api-rs/${BUILD_OUTPUT} /
 COPY config config
 COPY log4rs.yml log4rs.yml
 

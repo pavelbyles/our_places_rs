@@ -22,7 +22,8 @@ script = ["echo \"API image created: our-places-app-api-rs-image\""]
 command = "docker"
 args = [
     "build",
-    "--build-arg=\"BUILD-TYPE=release\"",
+    "--build-arg=\"BUILD_TYPE=dev\"",
+    "--build-arg=\"BUILD_OUTPUT=debug\"",
     "-t",
     "our-places-app-api-rs-image",
     ".",
