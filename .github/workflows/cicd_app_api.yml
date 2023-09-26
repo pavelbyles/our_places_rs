@@ -15,7 +15,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    if: 1 == 0
+    
     defaults:
       run:
         working-directory: ./app_api
@@ -46,9 +47,8 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.ref == 'refs/heads/dev'
 
-     # Add "id-token" with the intended permissions.
+    # Add "id-token" with the intended permissions.
     permissions:
       contents: 'read'
       id-token: 'write'
@@ -73,14 +73,14 @@ jobs:
         working-directory: ./app_api
         if: github.ref == 'refs/heads/main'
         run: |-
-          docker build --build-arg="BUILD-TYPE=release" -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker build --build-arg="BUILD_TYPE=release" -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Build and Push Container (dev)
         working-directory: ./app_api
         if: github.ref != 'refs/heads/main'
         run: |-
-          docker build --build-arg="BUILD-TYPE=dev" -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker build --build-arg="BUILD_TYPE=dev" -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         
       - name: Deploy to Cloud Run

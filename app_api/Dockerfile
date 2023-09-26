@@ -1,6 +1,7 @@
 # Use the official Rust image.
 # https://hub.docker.com/_/rust
-ARG BUILD-TYPE=release
+# syntax=docker/dockerfile:1
+ARG BUILD_TYPE=release
 FROM rust:1.68 as build-env
 
 # Copy local code to the container image.
