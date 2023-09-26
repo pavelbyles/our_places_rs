@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1
 ARG BUILD_TYPE=release
 FROM rust:1.68 as build-env
-
+ARG BUILD_TYPE
 RUN echo "Build type is: ${BUILD_TYPE}"
 
 # Copy local code to the container image.
