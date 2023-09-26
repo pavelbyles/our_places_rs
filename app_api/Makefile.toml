@@ -18,9 +18,6 @@ script = ["echo \"Creating image locally\""]
 [tasks.print-image-finished]
 script = ["echo \"API image created: our-places-app-api-rs-image\""]
 
-[tasks.copy-config-to-target-path]
-script = ["cp -R config/ target/release"]
-
 [tasks.docker-build-image]
 command = "docker"
 args = [
@@ -43,10 +40,10 @@ command = "cargo"
 args = ["build", "--release"]
 
 [tasks.release-build-flow]
-dependencies = ["clean", "build-release", "copy-config-to-target-path"]
+dependencies = ["build-release"]
 
 [tasks.dev-build-flow]
-dependencies = ["clean", "build-unoptimized", "copy-config-to-target-path"]
+dependencies = ["build-unoptimized"]
 
 [tasks.deploy-from-local]
 command = "gcloud"
