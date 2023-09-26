@@ -4,6 +4,8 @@
 ARG BUILD_TYPE=release
 FROM rust:1.68 as build-env
 
+RUN echo "Build type is: ${BUILD_TYPE}"
+
 # Copy local code to the container image.
 WORKDIR /usr/src/app
 COPY . .
@@ -11,7 +13,7 @@ COPY . .
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
 RUN cargo install cargo-make
-RUN cargo make ${BUILD-TYPE}-build-flow
+RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
 COPY --from=build-env /usr/src/app/target/release/our-places-app-api-rs /
