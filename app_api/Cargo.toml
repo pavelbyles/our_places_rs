@@ -13,7 +13,10 @@ config = "0.13.3"
 lazy_static = "1.4.0"
 log = "0.4.20"
 log4rs = "1.2.0"
-google_cloud_logging = "0.1.0"
+#google_cloud_logging = "0.1.0"
+
+[build]
+target-dir = "target/out/our-places-app-api-rs"
 
 [[bin]]
 name = "our-places-app-api-rs"

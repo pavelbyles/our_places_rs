@@ -1,7 +1,7 @@
 [tasks.format]
 install_crate = "rustfmt"
 command = "cargo"
-args = ["fmt", "--", "--write-mode=overwrite"]
+args = ["fmt", "--all", "--", "--check"]
 
 [tasks.clean]
 command = "cargo"
@@ -33,11 +33,16 @@ dependencies = ["print-image-creating", "docker-build-image"]
 
 [tasks.build-unoptimized]
 command = "cargo"
-args = ["build"]
+args = ["build", "--target-dir", "target/out/our-places-app-api-rs"]
 
 [tasks.build-release]
 command = "cargo"
-args = ["build", "--release"]
+args = [
+    "build",
+    "--release",
+    "--target-dir",
+    "target/out/our-places-app-api-rs",
+]
 
 [tasks.release-build-flow]
 dependencies = ["build-release"]
