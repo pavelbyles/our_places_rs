@@ -7,6 +7,7 @@ FROM rust:1.68 as build-env
 ARG BUILD_TYPE
 ARG BUILD_OUTPUT
 RUN echo "Build type is: ${BUILD_TYPE}"
+RUN echo "Build output is: ${BUILD_OUTPUT}"
 
 # Copy local code to the container image.
 WORKDIR /usr/src/app
