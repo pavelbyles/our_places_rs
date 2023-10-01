@@ -50,7 +50,6 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    if: 1 == 0
 
     defaults:
       run:
