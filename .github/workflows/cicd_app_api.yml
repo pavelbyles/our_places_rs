@@ -69,7 +69,7 @@ jobs:
   
   build-and-deploy:
     runs-on: ubuntu-latest
-    # needs: [test, lint_check, audit]
+    needs: [audit, lint_check, test]
 
     # Add "id-token" with the intended permissions.
     permissions:
