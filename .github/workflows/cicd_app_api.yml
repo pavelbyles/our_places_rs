@@ -116,3 +116,20 @@ jobs:
             --max-instances 1 \
             --memory 256Mi \
             --quiet
+
+
+  automated-api-tests:
+    runs-on: ubuntu-latest
+    needs: [build-and-deploy]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Postman CLI
+        run: |
+          curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
+      - name: Login to Postman CLI
+        run: postman login --with-api-key ${{ secrets.POSTMAN_API_KEY }}
+      - name: Run API tests
+
+        # Runs the sanity check collection using the postman-sanity-checks-api-key
+        run: |
+          postman collection run "701056-bf0597d5-23ee-4374-97f7-c3741a532c3f" -e "701056-4394872e-dc91-4235-8461-cf429a72769e"
