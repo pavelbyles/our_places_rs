@@ -4,7 +4,7 @@ appenders:
   stdout:
     kind: console
     encoder:
-      pattern: "{d(%+)(utc)} [{f}:{L}] {h({l})} {M}:{m}{n}"
+      kind: json
     filters:
       - kind: threshold
         level: info
