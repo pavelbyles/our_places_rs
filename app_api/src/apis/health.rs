@@ -12,7 +12,7 @@ pub async fn health_check(_req: HttpRequest) -> HttpResponse {
         status: "alive".to_string(),
     };
 
-    log::trace!("Received request for: health_check");
+    log::info!(target: "root", "Received request for: health_check");
 
     HttpResponse::Ok().json(resp)
 }
