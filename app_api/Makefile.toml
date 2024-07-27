@@ -90,6 +90,9 @@ command = "./scripts/init_db.sh"
 [tasks.release-build-flow]
 dependencies = ["build-release"]
 
+[tasks.dev-build-flow]
+dependencies = ["build-unoptimized"]
+
 [tasks.dev-run-flow]
 dependencies = ["docker-db-build", "run-db-migrations"]
 command = "cargo"
