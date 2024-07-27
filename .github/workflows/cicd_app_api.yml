@@ -4,6 +4,7 @@ env:
   SERVICE: our-places-app-api-rs
   REGION: us-central1
   CARGO_TERM_COLOR: always
+  DATABASE_URL: postgres://postgres:password@localhost:5432/ourplaces_db
 
 on:
   push:
@@ -42,6 +43,16 @@ jobs:
             toolchain: nightly
             components: clippy
             override: true
+
+      - name: Build Postgres container image (necessary for sqlx)
+        run: cargo make docker-db-build
+
+      - name: Run PostgreSQL image in a container (necessary for sqlx)
+        run: cargo make docker-db-run
+
+      - name: Run database migrations (necessary for sqlx)
+        run: SKIP_DOCKER=true cargo make run-db-migrations
+
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -58,8 +69,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Build Postgres container image (necessary for sqlx)
+        run: cargo make docker-db-build
+
+      - name: Run PostgreSQL image in a container (necessary for sqlx)
+        run: cargo make docker-db-run
+
+      - name: Run database migrations (necessary for sqlx)
+        run: SKIP_DOCKER=true cargo make run-db-migrations
       
-      - name: Build
+      - name: Build app
         run: cargo build --verbose
       
       - name: Run API tests
