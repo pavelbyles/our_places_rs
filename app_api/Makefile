@@ -14,7 +14,7 @@ dev:
 	@echo "Run tests"
 	@cargo test
 	@echo "Building app_api dev build"
-	@cargo build
+	@cargo make clean-build
 	@echo "Copying config to target path..."
 	@cp -R config/ target/debug/
 	@echo "... completed copying to target path"

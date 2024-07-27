@@ -3,22 +3,23 @@ use serde::{Deserialize, Serialize};
 use std::str;
 
 #[derive(Deserialize, Serialize, Debug)]
-struct HelloResponse {
-    response: String,
+pub struct HelloResponse {
+    pub response: String,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-struct BannerImgUrlResponse {
-    url: String,
-    title: String,
-    description: String,
+pub struct BannerImgUrlResponse {
+    pub url: String,
+    pub title: String,
+    pub description: String,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
-struct BannerImgUrlResponses {
+pub struct BannerImgUrlResponses {
     responses: Vec<BannerImgUrlResponse>,
 }
 
+#[allow(dead_code)]
 pub async fn greet_no_name(_req: HttpRequest) -> HttpResponse {
     let resp = HelloResponse {
         response: "Hello World!".to_string(),
@@ -29,6 +30,7 @@ pub async fn greet_no_name(_req: HttpRequest) -> HttpResponse {
     HttpResponse::Ok().json(resp)
 }
 
+#[allow(dead_code)]
 pub async fn greet_with_name(_req: HttpRequest, name: web::Path<String>) -> HttpResponse {
     let resp = HelloResponse {
         response: format!("Hello {}!", name),
@@ -40,6 +42,7 @@ pub async fn greet_with_name(_req: HttpRequest, name: web::Path<String>) -> Http
 }
 
 // TODO: Change this to pull URL and titles from a properties file
+#[allow(dead_code)]
 pub async fn get_banner_image_urls(_req: HttpRequest) -> HttpResponse {
     let resp = BannerImgUrlResponses {
         responses: vec![
@@ -72,7 +75,7 @@ mod tests {
     use actix_web::{body::to_bytes, http::StatusCode, test};
 
     #[actix_web::test]
-    async fn test_greet_no_name_ok() {
+    async fn internal_test_greet_no_name_ok() {
         let req = test::TestRequest::default().to_http_request();
         let http_resp = greet_no_name(req).await;
 
@@ -84,7 +87,7 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn test_greet_with_name_ok() {
+    async fn internal_test_greet_with_name_ok() {
         let test_names = vec!["pavel", "kristina", "laila", "ethan"];
 
         for test_name in test_names {

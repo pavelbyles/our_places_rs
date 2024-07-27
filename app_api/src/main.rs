@@ -1,18 +1,30 @@
-#[macro_use]
+//! API for OurPlaces
+//!
+//! ## Overview
+//!
+//! Provides a functionality to manage listings and reservations
+//!
+//! ## List of API's
+//!
+//! - [x] Create listings
+//! - [ ] Get listings
+//! - [ ] Update listings
+
+// #[macro_use]
 extern crate lazy_static;
-use actix_web::{web, App, HttpServer};
+use sqlx::PgPool;
+use std::net::TcpListener;
+
+use our_places_app_api_rs::startup::run;
 
 mod apis;
 mod settings;
 mod util;
 
-lazy_static! {
-    static ref CONFIG: settings::Settings =
-        settings::Settings::new().expect("config can be loaded");
-}
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+/// Test main func doc
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
+    // Read logging config
     let result = log4rs::init_file("log4rs.yml", Default::default());
     match result {
         Ok(_) => {
@@ -23,27 +35,23 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    let port: u16 = util::sys::get_port(CONFIG.server.port);
-    let address = format!("{}:{}", CONFIG.server.host, port);
+    // Get settings
+    let config = settings::get_settings().expect("Could not load settings");
 
-    log::info!("Starting server on port: {}", CONFIG.server.port);
+    // Create database connection pool
+    let db_connection_pool = PgPool::connect(&config.database.connection_string())
+        .await
+        .expect("Failed to connect to database.");
 
-    println!("Env is: {}", CONFIG.env);
+    // Setup web server
+    let http_port: u16 = util::sys::get_port(config.server.port);
+    let address = format!("{}:{}", config.server.host, http_port);
 
-    HttpServer::new(|| {
-        App::new()
-            .service(web::resource("/hello").route(web::get().to(apis::app::greet_no_name)))
-            .service(
-                web::resource("/hello/{name}").route(web::get().to(apis::app::greet_with_name)),
-            )
-            .service(
-                web::resource("/db/getbannerurls")
-                    .route(web::get().to(apis::app::get_banner_image_urls)),
-            )
-            .service(web::resource("/ping").route(web::get().to(apis::health::health_check)))
-            .service(web::resource("/cfg").route(web::get().to(apis::configuration::config)))
-    })
-    .bind(address.clone())?
-    .run()
-    .await
+    log::info!("Starting server on port: {}", http_port);
+
+    println!("Env is: {}", config.env);
+    println!("Port is: {}", http_port);
+
+    let listener = TcpListener::bind(&address).expect("Failed to bind to random port");
+    run(listener, db_connection_pool)?.await
 }

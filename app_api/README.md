@@ -23,3 +23,21 @@ systemctl start docker
 
 sudo systemctl disable docker.service
 sudo systemctl disable docker.socket
+
+# Create Service account for OAuth2
+gcloud iam service-accounts create our-places-oauth --display-name="Oauth2 Service Account"
+
+gcloud beta run services add-iam-policy-binding ${{ env.SERVICE }} \
+    --member ${{ env.SERVICE_ACCOUNT }} \
+    --role="roles/run.invoker" \
+    --region="us-central1"
+
+# Get service URL
+gcloud run services describe ${{ env.SERVICE }} --region us-central1 --format='value(status.url)'
+
+# Dev->Run Flow
+**Clean and Run Tests**
+> docker stop $(docker ps -a -q); docker rm $(docker ps -a -q --filter ancestor=ourplaces-db-image)
+> cargo make docker-db-run
+> SKIP_DOCKER=true cargo make run-db-migrations
+> cargo test

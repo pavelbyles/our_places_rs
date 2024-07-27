@@ -3,16 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::{env, str};
 
 #[derive(Deserialize, Serialize, Debug)]
-struct Config {
-    target: String,
-    port: u16,
+pub struct Config {
+    pub target: String,
+    pub port: u16,
 }
 
 static ENV_TARGET_VAR: &str = "TARGET";
 static DEFAULT_PORT: u16 = 8080;
 
+#[allow(dead_code)]
 pub async fn config(_req: HttpRequest) -> HttpResponse {
-    let cfg = Config {
+    let response = Config {
         target: match env::var(ENV_TARGET_VAR) {
             Ok(env_target) => {
                 log::info!("App configs: Target {:?}", env_target);
@@ -26,7 +27,7 @@ pub async fn config(_req: HttpRequest) -> HttpResponse {
         port: DEFAULT_PORT,
     };
 
-    HttpResponse::Ok().json(cfg)
+    HttpResponse::Ok().json(response)
 }
 
 #[cfg(test)]
@@ -36,7 +37,7 @@ mod tests {
 
     // TODO: Change this to remove unwraps
     #[actix_web::test]
-    async fn test_cfg_ok() {
+    async fn internatl_test_cfg_ok() {
         let test_env_var_val: &str = "test";
 
         env::set_var(ENV_TARGET_VAR, test_env_var_val);
