@@ -43,6 +43,7 @@ jobs:
             toolchain: nightly
             components: clippy
             override: true
+      - uses: davidB/rust-cargo-make@v1
 
       - name: Build Postgres container image (necessary for sqlx)
         run: cargo make docker-db-build
@@ -69,6 +70,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Install cargo make
+        uses: davidB/rust-cargo-make@v1
 
       - name: Build Postgres container image (necessary for sqlx)
         run: cargo make docker-db-build
