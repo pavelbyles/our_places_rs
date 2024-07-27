@@ -1,8 +1,8 @@
 //! This configures all API routes and starts the web server
 
 use actix_web::dev::Server;
-use actix_web::http::header::ACCEPT;
-use actix_web::{guard, web, App, Error, HttpRequest, HttpServer};
+use actix_web::http::header::CONTENT_TYPE;
+use actix_web::{guard, web, App, HttpServer};
 use sqlx::PgPool;
 use std::net::TcpListener;
 
@@ -40,18 +40,17 @@ pub fn run(listener: TcpListener, db_pool: PgPool) -> Result<Server, std::io::Er
 /// This prevents any unacceptable request formats being requested in ACCEPT header
 fn accept_guard(ctx: &guard::GuardContext<'_>) -> bool {
     let headers = ctx.head().headers();
-    let accept_header = headers.get(ACCEPT);
-    let supported_formats = vec![
+    let accept_header = headers.get(CONTENT_TYPE);
+    let supported_formats = [
         "application/json",
         "application/xml",
         "application/x-www-form-urlencoded",
-    ]; // Supported formats
+    ];
 
     match accept_header {
         Some(value) => {
             for mime in value.to_str().unwrap().split(',') {
                 if supported_formats.iter().any(|f| f.trim() == mime) {
-                    // return Ok(());
                     return true;
                 }
             }
