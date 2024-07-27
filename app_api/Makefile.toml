@@ -12,6 +12,10 @@ command = "cargo"
 args = ["build"]
 dependencies = ["format", "clean"]
 
+[tasks.build]
+command = "cargo"
+args = ["build"]
+
 [tasks.print-image-creating]
 script = ["echo \"Creating image locally\""]
 
@@ -45,11 +49,53 @@ args = [
     "target/out/our-places-app-api-rs",
 ]
 
+[tasks.docker-db-build]
+script = '''
+image_name="ourplaces-db-image"
+
+# Check if the image exists
+DOCKER_IMAGE_EXISTS=$(docker images -q $image_name)
+docker images -q "$image_name" > /dev/null 2>&1
+
+if [ -z "DOCKER_IMAGE_EXISTS" ]; then
+  echo "Image '$image_name' already exists. Skipping build."
+else
+  echo "Image '$image_name' not found. Building..."
+  docker build -t "$image_name" --build-arg=\"DB_USER=postgres\" --build-arg=\"DB_PASSWORD=password\" --build-arg=\"DB_NAME=ourplaces_db\" --build-arg=\"DB_HOST=localhost\" --build-arg=\"DB_PORT=5432\" -f Dockerfile-db .
+fi
+'''
+
+[tasks.docker-db-run]
+command = "docker"
+args = [
+  "run",
+  "-e",
+  "POSTGRES_USER=postgres",
+  "-e",
+  "POSTGRES_PASSWORD=password",
+  "-e",
+  "POSTGRES_DB=ourplaces_db",
+  "-p",
+  "5432:5432",
+  "-d",
+  "ourplaces-db-image",
+  "postgres",
+  "-N",
+  "1000"
+]
+
+[tasks.run-db-migrations]
+command = "./scripts/init_db.sh"
+
 [tasks.release-build-flow]
 dependencies = ["build-release"]
 
-[tasks.dev-build-flow]
-dependencies = ["build-unoptimized"]
+[tasks.dev-run-flow]
+dependencies = ["docker-db-build", "run-db-migrations"]
+command = "cargo"
+args = [
+  "run"
+]
 
 [tasks.deploy-from-local]
 command = "gcloud"

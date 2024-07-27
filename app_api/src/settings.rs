@@ -1,29 +1,46 @@
+//! Functions to read settings file
+
 use std::fmt;
 
 use config::{Config, ConfigError, File};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, Clone)]
+const CONFIG_FILE_PATH: &str = "./config/Default.toml";
+const CONFIG_FILE_PREFIX: &str = "./config/";
+
+// Overarching settings model
+#[derive(Debug, Deserialize)]
+pub struct Settings {
+    pub server: Server,
+    pub database: DatabaseSettings,
+    pub log: Log,
+    pub env: Env,
+}
+
+// Server model
+#[derive(Debug, Deserialize)]
 pub struct Server {
     pub host: String,
     pub port: u16,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+// Database settings model
+#[derive(Debug, Deserialize)]
+pub struct DatabaseSettings {
+    pub username: String,
+    pub password: String,
+    pub port: u16,
+    pub host: String,
+    pub database_name: String,
+}
+
+// Log level model
+#[derive(Debug, Deserialize)]
 pub struct Log {
     pub level: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct Settings {
-    pub server: Server,
-    pub log: Log,
-    pub env: Env,
-}
-
-const CONFIG_FILE_PATH: &str = "./config/Default.toml";
-const CONFIG_FILE_PREFIX: &str = "./config/";
-
+// Environment model
 #[derive(Clone, Debug, Deserialize)]
 pub enum Env {
     Development,
@@ -51,6 +68,23 @@ impl From<&str> for Env {
     }
 }
 
+impl DatabaseSettings {
+    pub fn connection_string(&self) -> String {
+        format!(
+            "postgres://{}:{}@{}:{}/{}",
+            self.username, self.password, self.host, self.port, self.database_name
+        )
+    }
+
+    pub fn connection_string_without_db(&self) -> String {
+        format!(
+            "postgres://{}:{}@{}:{}",
+            self.username, self.password, self.host, self.port
+        )
+    }
+}
+
+// Load settings
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
         static ENV_RUN_VAR: &str = "RUN_ENV"; // Environment var
@@ -59,7 +93,6 @@ impl Settings {
         // determine the run environment var
         let env = std::env::var(ENV_RUN_VAR).unwrap_or_else(|_| ENV_RUN_VAL.into());
 
-        //
         let s = Config::builder()
             .set_override("env", env.clone())?
             .add_source(File::with_name(CONFIG_FILE_PATH))
@@ -70,4 +103,8 @@ impl Settings {
 
         s.try_deserialize()
     }
+}
+
+pub fn get_settings() -> Result<Settings, config::ConfigError> {
+    Settings::new()
 }

@@ -1,12 +1,19 @@
-use actix_web::{HttpRequest, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::str;
 
 #[derive(Deserialize, Serialize, Debug)]
-struct PingResponse {
-    status: String,
+pub struct PingResponse {
+    pub status: String,
 }
 
+#[derive(Deserialize)]
+pub struct HealthCheckFormData {
+    name: String,
+    email: String,
+}
+
+#[allow(dead_code)]
 pub async fn health_check(_req: HttpRequest) -> HttpResponse {
     let resp = PingResponse {
         status: "alive".to_string(),
@@ -17,13 +24,18 @@ pub async fn health_check(_req: HttpRequest) -> HttpResponse {
     HttpResponse::Ok().json(resp)
 }
 
+#[allow(dead_code)]
+pub async fn health_post_check(_form: web::Form<HealthCheckFormData>) -> HttpResponse {
+    HttpResponse::Ok().finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use actix_web::{body::to_bytes, http::StatusCode, test, web, App};
 
     #[actix_web::test]
-    async fn test_ping_ok() {
+    async fn internal_test_ping_ok() {
         let req = test::TestRequest::default().to_http_request();
         let http_resp = health_check(req).await;
 
@@ -35,7 +47,7 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn test_ping_ok2() {
+    async fn internal_test_ping_ok2() {
         let app = test::init_service(
             App::new().service(web::resource("/ping").route(web::get().to(health_check))),
         )
