@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1
 ARG BUILD_TYPE=release
 ARG BUILD_OUTPUT=release
-FROM rust:1.68 as build-env
+FROM rust:1.80.0 as build-env
 ARG BUILD_TYPE
 ARG BUILD_OUTPUT
 RUN echo "Build type is: ${BUILD_TYPE}"
