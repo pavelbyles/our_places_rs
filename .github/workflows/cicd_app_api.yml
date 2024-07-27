@@ -45,6 +45,11 @@ jobs:
             override: true
       - uses: davidB/rust-cargo-make@v1
 
+      - name: Install sqlx (needed for successful compilations)
+        run: |-
+          sudo apt-get install libpq-dev -y
+          cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
+
       - name: Build Postgres container image (necessary for sqlx)
         run: cargo make docker-db-build
 
@@ -73,6 +78,11 @@ jobs:
 
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
+
+      - name: Install sqlx (needed for compilation and integration tests)
+        run: |-
+          sudo apt-get install libpq-dev -y
+          cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
 
       - name: Build Postgres container image (necessary for sqlx)
         run: cargo make docker-db-build
