@@ -16,9 +16,6 @@ COPY . .
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
 RUN cargo install cargo-make
-RUN cargo make docker-db-build
-Run cargo make docker-db-run
-RUN SKIP_DOCKER=true cargo run-db-migrations
 RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
