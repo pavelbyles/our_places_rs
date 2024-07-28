@@ -21,7 +21,7 @@ COPY . .
 # RUN cargo install --path .
 RUN cargo install cargo-make
 
-RUN sudo apt-get install libpq-dev -y
+RUN apt-get install libpq-dev -y
 RUN cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
 RUN cargo make docker-db-build
 RUN cargo make docker-db-run
