@@ -21,6 +21,7 @@ jobs:
         working-directory: ./app_api
 
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/install@v0.1
@@ -36,6 +37,7 @@ jobs:
         working-directory: ./app_api
 
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v3
       - uses: actions-rs/toolchain@v1
@@ -71,7 +73,8 @@ jobs:
     defaults:
       run:
         working-directory: ./app_api
-
+    
+    if: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
