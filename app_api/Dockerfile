@@ -21,6 +21,7 @@ COPY . .
 # RUN cargo install --path .
 RUN cargo install cargo-make
 RUN DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}
+echo "Database URL: $DATABASE_URL"
 RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
@@ -39,3 +40,5 @@ COPY log4rs.yml log4rs.yml
 
 # Run the web service on container startup.
 CMD ["./our-places-app-api-rs"]
+
+
