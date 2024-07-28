@@ -135,19 +135,19 @@ jobs:
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
 
-      - name: Install sqlx (needed for compilation)
-        run: |-
-          sudo apt-get install libpq-dev -y
-          cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
+      #- name: Install sqlx (needed for compilation)
+      #  run: |-
+      #    sudo apt-get install libpq-dev -y
+      #    cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
 
-      - name: Build and run Postgres container image (necessary for sqlx)
-        run: cargo make docker-db-build
+      #- name: Build and run Postgres container image (necessary for sqlx)
+      #    run: cargo make docker-db-build
       
-      - name: Run PostgreSQL image in a container (necessary for sqlx)
-        run: cargo make docker-db-run
+      #- name: Run PostgreSQL image in a container (necessary for sqlx)
+      #    run: cargo make docker-db-run
 
-      - name: Run database migrations (necessary for sqlx)
-        run: SKIP_DOCKER=true cargo make run-db-migrations
+      #- name: Run database migrations (necessary for sqlx)
+      #    run: SKIP_DOCKER=true cargo make run-db-migrations
 
       #- name: Run database migrations (release) (necessary for sqlx)
       #  working-directory: ./app_api
@@ -162,21 +162,18 @@ jobs:
       #    SKIP_DOCKER=true POSTGRES_USER=${{ secrets.POSTGRES_USER_DEV }} POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }} POSTGRES_DB=${{ secrets.POSTGRES_DB_DEV }} POSTGRES_HOST=${{ secrets.POSTGRES_HOST_DEV }} cargo make run-db-migrations
 
       - name: Build and Push Container (release)
-        working-directory: ./app_api
         if: github.ref == 'refs/heads/main'
         run: |-
           docker build --build-arg BUILD_TYPE=release --build-arg BUILD_OUTPUT=release -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Build and Push Container (dev)
-        working-directory: ./app_api
         if: github.ref != 'refs/heads/main'
         run: |-
           docker build --build-arg BUILD_TYPE=dev --build-arg BUILD_OUTPUT=debug --build-arg POSTGRES_USER=${{ secrets.POSTGRES_USER_DEV }} --build-arg POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }} --build-arg POSTGRES_HOST=${{ secrets.POSTGRES_HOST_DEV }} --build-arg POSTGRES_DB=${{ secrets.POSTGRES_DB_DEV }} -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         
       - name: Deploy to Cloud Run
-        working-directory: ./app_api
         run: |-
           gcloud run deploy ${{ env.SERVICE }} \
             --region ${{ env.REGION }} \

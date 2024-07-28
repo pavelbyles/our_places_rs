@@ -20,6 +20,13 @@ COPY . .
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
 RUN cargo install cargo-make
+
+RUN sudo apt-get install libpq-dev -y
+RUN cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
+RUN cargo make docker-db-build
+RUN cargo make docker-db-run
+RUN SKIP_DOCKER=true cargo make run-db-migrations
+
 RUN DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB} cargo make ${BUILD_TYPE}-build-flow
 # RUN echo "Database URL: $DATABASE_URL"
 # RUN cargo make ${BUILD_TYPE}-build-flow
