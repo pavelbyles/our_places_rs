@@ -132,8 +132,8 @@ jobs:
       - name: Authorize Docker push
         run: gcloud auth configure-docker
 
-      - name: Install cargo make
-        uses: davidB/rust-cargo-make@v1
+      #- name: Install cargo make
+      #    uses: davidB/rust-cargo-make@v1
 
       #- name: Install sqlx (needed for compilation)
       #  run: |-
