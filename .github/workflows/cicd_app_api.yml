@@ -106,6 +106,10 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     #needs: [audit, lint_check, test]
+    
+    defaults:
+      run:
+        working-directory: ./app_api
 
     # Add "id-token" with the intended permissions.
     permissions:
@@ -137,9 +141,7 @@ jobs:
           cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
 
       - name: Build and run Postgres container image (necessary for sqlx)
-        working-directory: ./app_api
-        run: |-
-          cargo make docker-db-build
+        run: cargo make docker-db-build
       
       - name: Run PostgreSQL image in a container (necessary for sqlx)
         run: cargo make docker-db-run
