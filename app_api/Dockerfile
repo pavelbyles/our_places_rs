@@ -6,6 +6,11 @@ ARG BUILD_OUTPUT=release
 FROM rust:1.80.0 as build-env
 ARG BUILD_TYPE
 ARG BUILD_OUTPUT
+ARG POSTGRES_USER
+ARG POSTGRES_PASSWORD
+ARG POSTGRES_HOST
+ARG POSTGRES_DB
+
 RUN echo "Build type is: ${BUILD_TYPE}"
 RUN echo "Build output is: ${BUILD_OUTPUT}"
 
@@ -16,6 +21,7 @@ COPY . .
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
 RUN cargo install cargo-make
+RUN DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}
 RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
