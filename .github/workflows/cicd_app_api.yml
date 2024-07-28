@@ -167,7 +167,7 @@ jobs:
         working-directory: ./app_api
         if: github.ref != 'refs/heads/main'
         run: |-
-          docker build --build-arg BUILD_TYPE=dev --build-arg BUILD_OUTPUT=debug -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          DATABASE_URL=postgres://${{ secrets.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@${{ secrets.POSTGRES_HOST_DEV }}:5432/${{ secrets.POSTGRES_DB_DEV }} docker build --build-arg BUILD_TYPE=dev --build-arg BUILD_OUTPUT=debug -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         
       - name: Deploy to Cloud Run
