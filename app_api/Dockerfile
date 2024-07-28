@@ -20,9 +20,9 @@ COPY . .
 # Install production dependencies and build a release artifact.
 # RUN cargo install --path .
 RUN cargo install cargo-make
-RUN DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}
-RUN echo "Database URL: $DATABASE_URL"
-RUN cargo make ${BUILD_TYPE}-build-flow
+RUN DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB} cargo make ${BUILD_TYPE}-build-flow
+# RUN echo "Database URL: $DATABASE_URL"
+# RUN cargo make ${BUILD_TYPE}-build-flow
 
 FROM gcr.io/distroless/cc
 ARG BUILD_OUTPUT
