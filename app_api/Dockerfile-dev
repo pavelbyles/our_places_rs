@@ -16,9 +16,9 @@ ARG BUILD_OUTPUT
 
 WORKDIR /usr/src/app
 
-COPY target/out/our-places-app-api-rs/${BUILD_OUTPUT} .
-COPY config config
-COPY log4rs.yml log4rs.yml
+COPY ./target/out/our-places-app-api-rs/${BUILD_OUTPUT} .
+COPY ./config config
+COPY ./log4rs.yml log4rs.yml
 
 # Service must listen to $PORT environment variable.
 # This default value facilitates local development.
