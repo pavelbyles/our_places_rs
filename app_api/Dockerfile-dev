@@ -1,7 +1,6 @@
 # Use the official Rust image.
 # https://hub.docker.com/_/rust
 # syntax=docker/dockerfile:1
-FROM gcr.io/distroless/cc
 ARG BUILD_TYPE=release
 ARG BUILD_OUTPUT=release
 ARG BUILD_TYPE
@@ -13,6 +12,8 @@ ARG POSTGRES_DB
 RUN echo "Build type is: ${BUILD_TYPE}"
 RUN echo "Build output is: ${BUILD_OUTPUT}"
 ARG BUILD_OUTPUT
+
+FROM gcr.io/distroless/cc
 
 WORKDIR /usr/src/app
 
