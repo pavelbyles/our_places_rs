@@ -12,11 +12,13 @@ ARG POSTGRES_HOST
 ARG POSTGRES_DB
 RUN echo "Build type is: ${BUILD_TYPE}"
 RUN echo "Build output is: ${BUILD_OUTPUT}"
-
 ARG BUILD_OUTPUT
-COPY /usr/src/app/target/out/our-places-app-api-rs/${BUILD_OUTPUT} /
-COPY /usr/src/app/config config
-COPY /usr/src/app/log4rs.yml log4rs.yml
+
+WORKDIR /usr/src/app
+
+COPY target/out/our-places-app-api-rs/${BUILD_OUTPUT} .
+COPY config config
+COPY log4rs.yml log4rs.yml
 
 # Service must listen to $PORT environment variable.
 # This default value facilitates local development.
