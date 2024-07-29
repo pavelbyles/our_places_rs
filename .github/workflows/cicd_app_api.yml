@@ -159,6 +159,9 @@ jobs:
         run: |-
           SKIP_DOCKER=true POSTGRES_USER=${{ secrets.POSTGRES_USER_DEV }} POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }} POSTGRES_DB=${{ secrets.POSTGRES_DB_DEV }} POSTGRES_HOST=${{ secrets.POSTGRES_HOST_DEV }} cargo make run-db-migrations
 
+      - name: Build app
+        run: cargo make dev-build-flow
+
       - name: Build and Push Container (release)
         if: github.ref == 'refs/heads/main'
         run: |-
