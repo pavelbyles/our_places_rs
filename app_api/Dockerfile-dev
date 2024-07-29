@@ -1,0 +1,30 @@
+# Use the official Rust image.
+# https://hub.docker.com/_/rust
+# syntax=docker/dockerfile:1
+FROM gcr.io/distroless/cc
+ARG BUILD_TYPE=release
+ARG BUILD_OUTPUT=release
+ARG BUILD_TYPE
+ARG BUILD_OUTPUT
+ARG POSTGRES_USER
+ARG POSTGRES_PASSWORD
+ARG POSTGRES_HOST
+ARG POSTGRES_DB
+RUN echo "Build type is: ${BUILD_TYPE}"
+RUN echo "Build output is: ${BUILD_OUTPUT}"
+
+ARG BUILD_OUTPUT
+COPY /usr/src/app/target/out/our-places-app-api-rs/${BUILD_OUTPUT} /
+COPY /usr/src/app/config config
+COPY /usr/src/app/log4rs.yml log4rs.yml
+
+# Service must listen to $PORT environment variable.
+# This default value facilitates local development.
+# ENV PORT 8080
+# ENV HOST 0.0.0.0
+# ENV RUN_ENV Development
+
+# EXPOSE 8080
+
+# Run the web service on container startup.
+CMD ["./our-places-app-api-rs"]
