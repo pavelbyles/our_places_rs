@@ -4,18 +4,12 @@
 FROM gcr.io/distroless/cc
 ARG BUILD_TYPE=release
 ARG BUILD_OUTPUT=release
-ARG BUILD_TYPE
 ARG BUILD_OUTPUT
-ARG POSTGRES_USER
-ARG POSTGRES_PASSWORD
-ARG POSTGRES_HOST
-ARG POSTGRES_DB
+
 RUN echo "Build type is: ${BUILD_TYPE}"
 RUN echo "Build output is: ${BUILD_OUTPUT}"
-ARG BUILD_OUTPUT
 
 WORKDIR /usr/src/app
-
 
 COPY ./target/out/our-places-app-api-rs/${BUILD_OUTPUT} .
 COPY ./config config
