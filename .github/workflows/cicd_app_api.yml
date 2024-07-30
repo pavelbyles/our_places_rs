@@ -171,7 +171,7 @@ jobs:
       - name: Build and Push Container (dev)
         if: github.ref != 'refs/heads/main'
         run: |-
-          docker build --build-arg BUILD_TYPE=dev --build-arg BUILD_OUTPUT=debug --build-arg POSTGRES_USER=${{ secrets.POSTGRES_USER_DEV }} --build-arg POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }} --build-arg POSTGRES_HOST=${{ secrets.POSTGRES_HOST_DEV }} --build-arg POSTGRES_DB=${{ secrets.POSTGRES_DB_DEV }} -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} -f Dockerfile-dev .
+          docker build --build-arg BUILD_TYPE=dev --build-arg BUILD_OUTPUT=debug -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} -f Dockerfile-dev .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
         
       - name: Deploy to Cloud Run
