@@ -61,7 +61,7 @@ if [ -z "DOCKER_IMAGE_EXISTS" ]; then
   echo "Image '$image_name' already exists. Skipping build."
 else
   echo "Image '$image_name' not found. Building..."
-  docker build -t "$image_name" --build-arg=\"DB_USER=postgres\" --build-arg=\"DB_PASSWORD=password\" --build-arg=\"DB_NAME=ourplaces_db\" --build-arg=\"DB_HOST=localhost\" --build-arg=\"DB_PORT=5432\" -f Dockerfile-db .
+  docker build -t "$image_name" --build-arg=\"DB_USER=$POSTGRES_USER\" --build-arg=\"DB_PASSWORD=$POSTGRES_PASSWORD\" --build-arg=\"DB_NAME=$POSTGRES_DB\" --build-arg=\"DB_HOST=$POSTGRES_HOST\" --build-arg=\"DB_PORT=5432\" -f Dockerfile-db .
 fi
 '''
 
