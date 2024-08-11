@@ -230,11 +230,16 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB_DEV }}
           POSTGRES_HOST: localhost
+          DB_CREDENTIALS_JSON: ${{ secrets.DB_CREDENTIALS_JSON_DEV }}
         run: |-
+          echo $DB_CREDENTIALS_JSON > creds.json
           curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.12.0/cloud-sql-proxy.linux.amd64
           chmod +x cloud-sql-proxy
-          ./cloud-sql-proxy our-places-dev:us-east1:our-places-db-dev
+          ./cloud-sql-proxy our-places-dev:us-east1:our-places-db-dev --credentials-file creds.json &
+          sleep 5
           SKIP_DOCKER=true cargo make run-db-migrations
+          pkill cloud_sql_proxy
+          rm creds.json
 
       - name: Deploy to Cloud Run
         run: |-
