@@ -4,7 +4,6 @@ env:
   SERVICE: our-places-app-api-rs
   REGION: us-central1
   CARGO_TERM_COLOR: always
-  DATABASE_URL: postgres://postgres:password@localhost:5432/ourplaces_db
 
 on:
   push:
@@ -144,9 +143,9 @@ jobs:
         run: |-
           sudo apt-get install -y postgresql-client
 
-      - name: Build and run Postgres container image (necessary for sqlx)
+      - name: Build Postgres container image (necessary for sqlx)
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_BUILD_USER }}
+          POSTGRES_USER: ${{ vars.POSTGRES_BUILD_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_BUILD_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_BUILD_DB }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST }}
@@ -155,27 +154,27 @@ jobs:
       - name: Run PostgreSQL image in a container (necessary for sqlx)
         run: cargo make docker-db-run
 
-      - name: Run database migrations (release) (necessary for sqlx)
-        if: github.ref == 'refs/heads/main'
+      - name: Run database migrations (necessary for sqlx)
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_BUILD_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_BUILD_PASSWORD }}
           POSTGRES_DB: ${{ vars.POSTGRES_BUILD_DB }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST }}
         run: |-
-          SKIP_DOCKER=true POSTGRES_USER=${{ secrets.POSTGRES_USER_PROD }} POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD_PROD }} POSTGRES_DB=${{ secrets.POSTGRES_DB_PROD }} POSTGRES_HOST=${{ secrets.POSTGRES_HOST_PROD }} cargo make run-db-migrations
-
-      - name: Run database migrations (dev) - Build Step (necessary for sqlx)
-        if: github.ref != 'refs/heads/main'
-        env:
-          POSTGRES_USER: ${{ vars.POSTGRES_BUILD_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_BUILD_PASSWORD }}
-          POSTGRES_DB: ${{ vars.POSTGRES_BUILD_DB }}
-          POSTGRES_HOST: ${{ vars.POSTGRES_BUILD_HOST }}
-        run: |-
           SKIP_DOCKER=true cargo make run-db-migrations
 
-      - name: Build app
+      - name: Build app (Release)
+        if: github.ref == 'refs/heads/main'
+        env:
+          RUN_ENV: Release
+        run: cargo make release-build-flow
+
+      - name: Build app (Dev)
+        if: github.ref != 'refs/heads/main'
+        env:
+          RUN_ENV: Development
+          EA__DATABASE__USERNAME: ${{ vars.POSTGRES_USER_DEV }}
+          EA__DATABASE__DATABASE_NAME: ${{ vars.POSTGRES_DB_DEV }}
         run: cargo make dev-build-flow
 
       - name: Stop Postgres container used for building

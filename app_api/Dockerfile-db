@@ -2,7 +2,7 @@ FROM postgres:latest
 
 ARG DB_USER=postgres
 ARG DB_PASSWORD=password
-ARG DB_NAME=ourplaces_db
+ARG DB_NAME=our-places
 ARG DB_HOST=localhost
 ARG DB_PORT=5432
 

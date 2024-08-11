@@ -38,7 +38,11 @@ dependencies = ["print-image-creating", "docker-build-image"]
 
 [tasks.build-unoptimized]
 command = "cargo"
-args = ["build", "--target-dir", "target/out/our-places-app-api-rs"]
+args = [
+    "build",
+    "--target-dir",
+    "target/out/our-places-app-api-rs"
+]
 
 [tasks.build-release]
 command = "cargo"

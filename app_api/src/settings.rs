@@ -98,7 +98,7 @@ impl Settings {
             .add_source(File::with_name(CONFIG_FILE_PATH))
             .add_source(File::with_name(&format!("{}{}", CONFIG_FILE_PREFIX, env)))
             // This makes it so "EA_SERVER__PORT overrides server.port
-            .add_source(config::Environment::with_prefix("ea").separator("__"))
+            .add_source(config::Environment::with_prefix("EA").separator("__"))
             .build()?;
 
         s.try_deserialize()
