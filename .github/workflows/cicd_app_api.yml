@@ -223,7 +223,7 @@ jobs:
         run: |-
           SKIP_DOCKER=true cargo make run-db-migrations
 
-      - name: Run database migrations (dev) - Deploy Step (necessary for sqlx)
+      - name: Setup cloud sql proxy using credentials file (Dev)
         if: github.ref != 'refs/heads/main'
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER_DEV }}
@@ -235,7 +235,11 @@ jobs:
           echo $DB_CREDENTIALS_JSON > creds.json
           curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.12.0/cloud-sql-proxy.linux.amd64
           chmod +x cloud-sql-proxy
-          ./cloud-sql-proxy our-places-dev:us-east1:our-places-db-dev --credentials-file creds.json
+          ./cloud-sql-proxy our-places-dev:us-east1:our-places-db-dev --credentials-file creds.json &
+          sleep 5
+
+      - name: Run database migrations - Deploy Step (necessary for sqlx)
+        run: |-
           sleep 5
           cat creds.json
           SKIP_DOCKER=true cargo make run-db-migrations
