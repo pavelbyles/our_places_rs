@@ -233,7 +233,7 @@ jobs:
           echo $DB_CREDENTIALS_JSON > creds.json
           curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.12.0/cloud-sql-proxy.linux.amd64
           chmod +x cloud-sql-proxy
-          ./cloud-sql-proxy our-places-dev:us-east1:our-places-db-dev --credentials-file creds.json &
+          ./cloud-sql-proxy our-places-dev:${{ env.REGION }}:our-places-db-dev --credentials-file creds.json &
           sleep 5
 
       - name: Run database migrations (release) - Deploy Step (necessary for sqlx)
