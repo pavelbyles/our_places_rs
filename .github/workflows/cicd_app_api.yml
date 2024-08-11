@@ -198,10 +198,10 @@ jobs:
       - name: Build and Push Container (dev)
         if: github.ref != 'refs/heads/main'
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER_DEV }}
+          POSTGRES_USER: ${{ vars.POSTGRES_USER_DEV }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB_DEV }}
-          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST_DEV }}
+          POSTGRES_DB: ${{ vars.POSTGRES_DB_DEV }}
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST_DEV }}
         run: |-
           docker build \
             --build-arg BUILD_TYPE=dev \
@@ -226,9 +226,9 @@ jobs:
       - name: Setup cloud sql proxy using credentials file (Dev)
         if: github.ref != 'refs/heads/main'
         env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER_DEV }}
+          POSTGRES_USER: ${{ vars.POSTGRES_USER_DEV }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB_DEV }}
+          POSTGRES_DB: ${{ vars.POSTGRES_DB_DEV }}
           POSTGRES_HOST: localhost
           DB_CREDENTIALS_JSON: ${{ secrets.DB_CREDENTIALS_JSON_DEV }}
         run: |-
@@ -240,7 +240,6 @@ jobs:
 
       - name: Run database migrations - Deploy Step (necessary for sqlx)
         run: |-
-          sleep 5
           cat creds.json
           SKIP_DOCKER=true cargo make run-db-migrations
           pkill cloud_sql_proxy
