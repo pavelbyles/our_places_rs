@@ -181,6 +181,11 @@ jobs:
       - name: Build app
         run: cargo make dev-build-flow
 
+      - name: Stop Postgres container used for building
+        run: |-
+          docker ps
+          docker rm $(docker ps -a -q --filter ancestor=ourplaces-db-image)
+
       - name: Build and Push Container (release)
         if: github.ref == 'refs/heads/main'
         env:
