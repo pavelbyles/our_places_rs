@@ -181,6 +181,7 @@ jobs:
       - name: Stop Postgres container used for building
         run: |-
           docker ps
+          docker stop $(docker ps -a -q)
           docker rm $(docker ps -a -q --filter ancestor=ourplaces-db-image)
 
       - name: Build and Push Container (release)
