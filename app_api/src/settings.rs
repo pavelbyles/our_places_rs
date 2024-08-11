@@ -70,10 +70,9 @@ impl From<&str> for Env {
 
 impl DatabaseSettings {
     pub fn connection_string(&self) -> String {
-        println!(format!(
-            "postgres://{}:{}@{}:{}/{}",
+        println!("postgres://{}:{}@{}:{}/{}",
             self.username, self.password, self.host, self.port, self.database_name
-        ));
+        );
         format!(
             "postgres://{}:{}@{}:{}/{}",
             self.username, self.password, self.host, self.port, self.database_name
