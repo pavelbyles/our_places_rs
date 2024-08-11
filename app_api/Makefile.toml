@@ -74,7 +74,7 @@ args = [
   "-e",
   "POSTGRES_PASSWORD=password",
   "-e",
-  "POSTGRES_DB=ourplaces_db",
+  "POSTGRES_DB=our-places",
   "-p",
   "5432:5432",
   "-d",
