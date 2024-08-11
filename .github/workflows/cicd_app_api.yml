@@ -140,6 +140,10 @@ jobs:
           sudo apt-get install libpq-dev -y
           cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
 
+      - name: Install psql client (needed to see if Postgres is running)
+        run: |-
+          sudo apt-get install -y postgresql-client
+
       - name: Build and run Postgres container image (necessary for sqlx)
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_BUILD_USER }}
@@ -239,9 +243,8 @@ jobs:
           POSTGRES_USER: ${{ vars.POSTGRES_USER_DEV }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
           POSTGRES_DB: ${{ vars.POSTGRES_DB_DEV }}
-          POSTGRES_HOST: localhost
+          POSTGRES_HOST: ${{ vars.POSTGRES_HOST_DEV }}
         run: |-
-          cat creds.json
           SKIP_DOCKER=true cargo make run-db-migrations
           pkill cloud_sql_proxy
           rm creds.json
