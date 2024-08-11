@@ -226,6 +226,7 @@ jobs:
       - name: Setup cloud sql proxy using credentials file (Dev)
         if: github.ref != 'refs/heads/main'
         run: |-
+          DB_CREDENTIALS_JSON: ${{ secrets.DB_CREDENTIALS_JSON_DEV }}
           echo $DB_CREDENTIALS_JSON > creds.json
           curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.12.0/cloud-sql-proxy.linux.amd64
           chmod +x cloud-sql-proxy
@@ -238,7 +239,6 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
           POSTGRES_DB: ${{ vars.POSTGRES_DB_DEV }}
           POSTGRES_HOST: localhost
-          DB_CREDENTIALS_JSON: ${{ secrets.DB_CREDENTIALS_JSON_DEV }}
         run: |-
           cat creds.json
           SKIP_DOCKER=true cargo make run-db-migrations
