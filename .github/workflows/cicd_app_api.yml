@@ -216,11 +216,13 @@ jobs:
             --build-arg POSTGRES_USER_ARG=$POSTGRES_USER \
             --build-arg POSTGRES_PASSWORD_ARG=$POSTGRES_PASSWORD \
             --build-arg POSTGRES_DB_ARG=$POSTGRES_DB \
-            --build-arg POSTGRES_HOST_ARG=$POSTGRES_HOST \
+            --build-arg POSTGRES_CLOUD_DB=YES \
+            --build-arg POSTGRES_CLOUD_INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
             -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} -f Dockerfile-dev .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
       - name: Build and push Cloud SQL Proxy image
+        if: false
         run: |-
           docker build -t gcr.io/${{ env.PROJECT_ID }}/cloud-sql-proxy -f Dockerfile-cloud-sql-proxy .
           docker push gcr.io/${{ env.PROJECT_ID }}/cloud-sql-proxy
@@ -260,14 +262,15 @@ jobs:
 
       - name: Deploy API service and Cloud SQL proxy to Cloud Run
         run: |-
-          gcloud run services deploy ${{ env.SERVICE }} \
+          gcloud run deploy ${{ env.SERVICE }} \
+            --region ${{ env.REGION }} \
             --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} \
+            --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
             --platform "managed" \
             --no-allow-unauthenticated \
             --max-instances 1 \
             --memory 256Mi \
             --quiet
-            --container proxy=gcr.io/${{ env.PROJECT_ID }}/cloud-sql-proxy
 
   automated-api-tests:
     runs-on: ubuntu-latest
