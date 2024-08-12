@@ -217,7 +217,7 @@ jobs:
             --build-arg POSTGRES_PASSWORD_ARG=$POSTGRES_PASSWORD \
             --build-arg POSTGRES_DB_ARG=$POSTGRES_DB \
             --build-arg POSTGRES_CLOUD_DB=YES \
-            --build-arg POSTGRES_CLOUD_INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+            --build-arg POSTGRES_CLOUD_INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev \
             -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} -f Dockerfile-dev .
           docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
 
