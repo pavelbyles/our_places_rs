@@ -263,13 +263,14 @@ jobs:
       - name: Deploy API service to Cloud Run
         run: |-
           gcloud run deploy ${{ env.SERVICE }} \
-            --region ${{ env.REGION }} \
-            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} \
-            --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-            --platform "managed" \
+            --region=${{ env.REGION }} \
+            --image=gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} \
+            --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev \
+            --platform="managed" \
             --no-allow-unauthenticated \
-            --max-instances 1 \
-            --memory 256Mi \
+            --min-instances=0 \
+            --max-instances=1 \
+            --memory=256Mi \
             --quiet
 
   automated-api-tests:
