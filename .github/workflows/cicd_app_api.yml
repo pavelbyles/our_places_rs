@@ -260,7 +260,7 @@ jobs:
           pkill cloud-sql-proxy
           rm creds.json
 
-      - name: Deploy API service and Cloud SQL proxy to Cloud Run
+      - name: Deploy API service to Cloud Run
         run: |-
           gcloud run deploy ${{ env.SERVICE }} \
             --region ${{ env.REGION }} \
