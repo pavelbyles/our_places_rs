@@ -75,7 +75,6 @@ impl DatabaseSettings {
     /// Return the appropriate connection string based on if running in the cloud or not.
     /// Cloud connectivity to CloudSql is using the Unix socket method.
     pub fn connection_string(&self) -> String {
-        // Cloud SQL uses Unix socket while local uses hostname
         if (self.cloud == "YES") {
             println!("postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
                      self.username, self.password, self.database_name, self.instance_name
