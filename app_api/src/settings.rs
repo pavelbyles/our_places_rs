@@ -32,6 +32,8 @@ pub struct DatabaseSettings {
     pub port: u16,
     pub host: String,
     pub database_name: String,
+    pub cloud: String,
+    pub instance_name: String,
 }
 
 // Log level model
@@ -69,10 +71,20 @@ impl From<&str> for Env {
 }
 
 impl DatabaseSettings {
+
+    /// Return the appropriate connection string based on if running in the cloud or not.
+    /// Cloud connectivity to CloudSql is using the Unix socket method.
     pub fn connection_string(&self) -> String {
-        println!("postgres://{}:{}@{}:{}/{}",
-            self.username, self.password, self.host, self.port, self.database_name
-        );
+        // Cloud SQL uses Unix socket while local uses hostname
+        if (self.cloud == "YES") {
+            println!("postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
+                     self.username, self.password, self.database_name, self.instance_name
+            );
+            return format!("postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
+                           self.username, self.password, self.database_name, self.instance_name
+            )
+        }
+
         format!(
             "postgres://{}:{}@{}:{}/{}",
             self.username, self.password, self.host, self.port, self.database_name
