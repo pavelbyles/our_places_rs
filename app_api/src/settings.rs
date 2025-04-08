@@ -71,17 +71,18 @@ impl From<&str> for Env {
 }
 
 impl DatabaseSettings {
-
     /// Return the appropriate connection string based on if running in the cloud or not.
     /// Cloud connectivity to CloudSql is using the Unix socket method.
     pub fn connection_string(&self) -> String {
-        if (self.cloud == "YES") {
-            println!("postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
-                     self.username, self.password, self.database_name, self.instance_name
+        if self.cloud == "YES" {
+            println!(
+                "postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
+                self.username, self.password, self.database_name, self.instance_name
             );
-            return format!("postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
-                           self.username, self.password, self.database_name, self.instance_name
-            )
+            return format!(
+                "postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
+                self.username, self.password, self.database_name, self.instance_name
+            );
         }
 
         format!(
@@ -90,6 +91,7 @@ impl DatabaseSettings {
         )
     }
 
+    #[allow(dead_code)]
     pub fn connection_string_without_db(&self) -> String {
         format!(
             "postgres://{}:{}@{}:{}",

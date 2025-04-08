@@ -6,7 +6,7 @@ appenders:
     encoder:
       kind: json
     filters:
-      - kind: threshold
+      - kind:
         level: info
   
   stdfile_appender:
