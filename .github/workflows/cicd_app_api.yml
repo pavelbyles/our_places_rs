@@ -101,7 +101,7 @@ jobs:
   
   build-and-deploy:
     runs-on: ubuntu-latest
-    #needs: [audit, lint_check, test]
+    needs: [audit, lint_check, test]
     
     defaults:
       run:
