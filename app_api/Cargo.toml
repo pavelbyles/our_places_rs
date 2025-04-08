@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 readme = "README.md"
+build = "build.rs"
 
 [lib]
 path = "src/lib.rs"
@@ -14,7 +15,7 @@ serde = { version = "1.0.188", features = ["derive"] }
 serde_derive = "1.0"
 serde_urlencoded = "0.7"
 serde_json = "1.0.107"
-config = "0.13"
+config = "0.14.1"
 lazy_static = "1.4.0"
 log = "0.4.20"
 log4rs = "1.2.0"
@@ -22,12 +23,12 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 rust_decimal = "1.35.0"
 uuid = { version = "1.9.1", features = ["v4", "serde"] }
 chrono = "0.4.38"
-strum = "0.23"
-strum_macros = "0.23"
+strum = "0.26.3"
+strum_macros = "0.26.4"
 #google_cloud_logging = "0.1.0"
 
 [dependencies.sqlx]
-version = "0.8"
+version = "0.8.2"
 default-features = false
 features = [
   "runtime-tokio-rustls",
