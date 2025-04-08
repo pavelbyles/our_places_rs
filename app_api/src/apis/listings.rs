@@ -20,6 +20,11 @@ pub struct Listing {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct CreateListingResponse {
+    pub id: Uuid,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct ListingFormData {
     pub id: String,
     pub name: String,
@@ -108,10 +113,19 @@ pub async fn create_listing(
 ) -> HttpResponse {
     let new_listing = Listing::from_listing_form_data(&form);
 
-    match sqlx::query!(
+    let mut conn = match db_pool.get_ref().acquire().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to get database connection: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    let row_result = sqlx::query_as!(
+        CreateListingResponse,
         r#"
         INSERT INTO listing (id, name, description, listing_structure_id, country, price_per_night, is_active, added_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
         "#,
         Uuid::new_v4(),
         new_listing.name,
@@ -122,13 +136,14 @@ pub async fn create_listing(
         new_listing.is_active,
         Utc::now()
     )
-    .execute(db_pool.get_ref())
-    .await
-    {
+    .fetch_one(&mut *conn)
+    .await;
+
+    match row_result {
         Ok(res) => {
-            println!("Created {0} new listing(s)", res.rows_affected());
-            HttpResponse::Ok().finish()
-        },
+            println!("Created new listing");
+            HttpResponse::Created().json(res)
+        }
         Err(e) => {
             println!("Failed to execute query: {}", e);
             HttpResponse::InternalServerError().finish()
