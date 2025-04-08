@@ -103,6 +103,10 @@ jobs:
         run: cargo build --verbose
       
       - name: Run API tests
+        if: github.ref == 'refs/heads/dev'
+        env:
+          RUN_ENV: Development
+          DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
         run: cargo test --verbose
 
   
