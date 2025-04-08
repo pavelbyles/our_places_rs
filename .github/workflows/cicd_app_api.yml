@@ -59,6 +59,9 @@ jobs:
         run: SKIP_DOCKER=true cargo make run-db-migrations
 
       - uses: actions-rs/clippy-check@v1
+        env:
+          RUN_ENV: Development
+          DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features --manifest-path app_api/Cargo.toml
