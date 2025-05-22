@@ -1,3 +1,4 @@
 {
-    "thunder-client.saveToWorkspace": true
+    "thunder-client.saveToWorkspace": true,
+    "postman.settings.dotenv-detection-notification-visibility": false
 }

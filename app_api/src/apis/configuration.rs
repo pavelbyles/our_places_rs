@@ -8,7 +8,7 @@ pub struct Config {
     pub port: u16,
 }
 
-static ENV_TARGET_VAR: &str = "TARGET";
+static ENV_TARGET_VAR: &str = "TARGET"; // set default value
 static DEFAULT_PORT: u16 = 8080;
 
 #[allow(dead_code)]
@@ -34,13 +34,22 @@ pub async fn config(_req: HttpRequest) -> HttpResponse {
 mod tests {
     use super::*;
     use actix_web::{body::to_bytes, http::StatusCode, test};
+    use std::sync::Mutex;
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        static ref ENV_MUTEX: Mutex<()> = Mutex::new(());
+    }
 
     // TODO: Change this to remove unwraps
     #[actix_web::test]
-    async fn internatl_test_cfg_ok() {
+    async fn internal_test_cfg_ok() {
+        let _guard = ENV_MUTEX.lock().unwrap(); // Lock before touching env vars
         let test_env_var_val: &str = "test";
 
-        env::set_var(ENV_TARGET_VAR, test_env_var_val);
+        unsafe {
+            env::set_var(ENV_TARGET_VAR, test_env_var_val);
+        }
 
         let req = test::TestRequest::default().to_http_request();
         let http_resp = config(req).await;
@@ -51,5 +60,9 @@ mod tests {
             serde_json::from_str(str::from_utf8(&body_bytes).unwrap()).unwrap();
         assert_eq!(config_resp.target, test_env_var_val);
         assert_eq!(config_resp.port, 8080);
+
+        unsafe {
+            env::remove_var(ENV_TARGET_VAR);
+        }
     }
 }
