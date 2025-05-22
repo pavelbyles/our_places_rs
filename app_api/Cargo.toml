@@ -37,11 +37,22 @@ features = [
   "uuid",
   "chrono",
   "migrate",
-  "rust_decimal"
+  "rust_decimal",
 ]
 
 [dev-dependencies]
 reqwest = "0.12.15"
+sqlx = { version = "0.8.3", features = [
+  "runtime-tokio-rustls",
+  "macros",
+  "postgres",
+  "uuid",
+  "chrono",
+  "rust_decimal",
+] }
+dotenv = "0.15"
+rust_decimal_macros = "1"
+
 
 [[bin]]
 path = "src/main.rs"
