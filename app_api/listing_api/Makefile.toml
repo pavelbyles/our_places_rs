@@ -1,0 +1,141 @@
+[env]
+DATABASE_URL = "postgres://postgres:password@localhost:5432/our_places"
+DB_CONTAINER_NAME = "our_places_db"
+MIGRATIONS_DIR = "../../db_core/migrations"
+DOCKER_COMPOSE_FILE = "../../docker-compose.db.yml"
+
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean-build]
+command = "cargo"
+args = ["build"]
+dependencies = ["format", "clean"]
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+
+[tasks.print-image-creating]
+script = ["echo \"Creating image locally\""]
+
+[tasks.print-image-finished]
+script = ["echo \"API image created: our-places-app-api-rs-image\""]
+
+[tasks.docker-build-image]
+command = "docker"
+args = [
+    "build",
+    "--build-arg=\"BUILD_TYPE=dev\"",
+    "--build-arg=\"BUILD_OUTPUT=debug\"",
+    "-t",
+    "our-places-app-api-rs-image",
+    ".",
+]
+
+[tasks.check-docker]
+script = '''
+echo "--- Checking for docker command ---"
+command -v docker
+if [ $? -ne 0 ]; then
+    echo "Error: 'command -v docker' failed. The 'docker' executable was not found in your PATH."
+    exit 1
+else
+    echo "✅ Success: 'docker' executable found."
+fi
+echo ""
+echo "--- Checking Docker daemon connection ---"
+docker info
+if [ $? -ne 0 ]; then
+    echo "❌ Error: 'docker info' command failed with an error."
+    echo "This usually means one of two things:"
+    echo "1. The Docker daemon is not running."
+    echo "2. You do not have permission to connect to the Docker socket."
+    echo ""
+    echo "On Linux, you may need to add your user to the 'docker' group:"
+    echo "sudo usermod -aG docker ${USER}"
+    echo "(This change requires you to log out and log back in to take effect)."
+    exit 1
+fi
+echo "✅ Success: Connected to Docker daemon."
+'''
+
+[tasks.db-start]
+script = '''
+# Check if the container is running
+echo "Checking if the database container is running..."
+if [ ! "$(docker ps -q -f name=^/${DB_CONTAINER_NAME}$)" ]; then
+    echo "Database container is not running."
+    echo "Checking if the container is stopped..."
+    if [ "$(docker ps -aq -f status=exited -f name=^/${DB_CONTAINER_NAME}$)" ]; then
+        echo "🤔 Database container is stopped. Starting it now..."
+        docker start ${DB_CONTAINER_NAME}
+    else
+        echo "🚀 Database container not found. Creating and starting it..."
+        docker compose -f ${DOCKER_COMPOSE_FILE} up -d
+    fi
+    echo "⏳ Waiting for the database to be ready..."
+    sleep 5
+else
+    echo "🟢 Database container is already running."
+fi
+'''
+dependencies = ["check-docker"]
+
+[tasks.check-sqlx]
+install_crate = { crate_name = "sqlx-cli", binary = "sqlx", test_arg = "--version" }
+
+[tasks.db-migrate]
+command = "sqlx"
+args = ["migrate", "run", "--source", "${MIGRATIONS_DIR}"]
+dependencies = ["check-sqlx", "db-start"]
+
+[tasks.build-unoptimized]
+command = "cargo"
+args = [
+    "build",
+    "--target-dir",
+    "target/out/our-places-app-api-rs"
+]
+dependencies = ["prepare"]
+
+[tasks.build-release]
+command = "cargo"
+args = [
+    "build",
+    "--release",
+    "--target-dir",
+    "target/out/our-places-app-api-rs",
+]
+
+[tasks.dev-run]
+command = "cargo"
+args = ["run"]
+dependencies = ["db-migrate"]
+
+[tasks.prepare]
+command = "cargo"
+args = ["sqlx", "prepare", "--workspace"]
+dependencies = ["db-migrate"]
+
+[tasks.docker-db-build]
+script = '''
+image_name="ourplaces-db-image"
+
+# Check if the image exists
+DOCKER_IMAGE_EXISTS=$(docker images -q $image_name)
+docker images -q "$image_name" > /dev/null 2>&1
+
+if [ -z "DOCKER_IMAGE_EXISTS" ]; then
+  echo "Image '$image_name' already exists. Skipping build."
+else
+  echo "Image '$image_name' not found. Building..."
+  docker build -t "$image_name" --build-arg=\"DB_USER=$POSTGRES_USER\" --build-arg=\"DB_PASSWORD=$POSTGRES_PASSWORD\" --build-arg=\"DB_NAME=$POSTGRES_DB\" --build-arg=\"DB_HOST=$POSTGRES_HOST\" --build-arg=\"DB_PORT=5432\" -f Dockerfile-db .
+fi
+'''

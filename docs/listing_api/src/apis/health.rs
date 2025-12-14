@@ -1,0 +1,72 @@
+use actix_web::{HttpRequest, HttpResponse, web};
+use serde::{Deserialize, Serialize};
+use std::str;
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct PingResponse {
+    pub status: String,
+}
+
+#[derive(Deserialize)]
+pub struct HealthCheckFormData {
+    name: String,
+    email: String,
+}
+
+#[allow(dead_code)]
+pub async fn health_check(_req: HttpRequest) -> HttpResponse {
+    let resp = PingResponse {
+        status: "alive".to_string(),
+    };
+
+    log::info!(target: "root", "Received request for: health_check");
+
+    HttpResponse::Ok().json(resp)
+}
+
+#[allow(dead_code)]
+pub async fn health_post_check(_form: web::Form<HealthCheckFormData>) -> HttpResponse {
+    let resp = PingResponse {
+        status: format!("alive - name: {}, email: {}", _form.name, _form.email),
+    };
+
+    log::info!(target: "connection events", "Received form data for: health_post_check");
+
+    HttpResponse::Ok().json(resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{App, body::to_bytes, http::StatusCode, test, web};
+
+    #[actix_web::test]
+    async fn internal_test_ping_ok() {
+        let req = test::TestRequest::default().to_http_request();
+        let http_resp = health_check(req).await;
+
+        assert_eq!(http_resp.status(), StatusCode::OK);
+        let body_bytes = to_bytes(http_resp.into_body()).await.unwrap();
+        let ping_resp: PingResponse =
+            serde_json::from_str(str::from_utf8(&body_bytes).unwrap()).unwrap();
+        assert_eq!(ping_resp.status, "alive".to_string())
+    }
+
+    #[actix_web::test]
+    async fn internal_test_ping_ok2() {
+        let app = test::init_service(
+            App::new().service(web::resource("/ping").route(web::get().to(health_check))),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/ping").to_request();
+        let http_resp = actix_web::dev::Service::call(&app, req).await.unwrap();
+
+        assert_eq!(http_resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(http_resp.into_body()).await.unwrap();
+        let ping_resp: PingResponse =
+            serde_json::from_str(str::from_utf8(&body_bytes).unwrap()).unwrap();
+        assert_eq!(ping_resp.status, "alive".to_string())
+    }
+}

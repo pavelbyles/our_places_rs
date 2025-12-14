@@ -1,0 +1,41 @@
+[package]
+name = "booking_api"
+version = "0.1.0"
+edition = "2024"
+publish = false
+readme = "README.md"
+
+[dependencies]
+sqlx = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde-xml-rs = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+config = { workspace = true }
+thiserror = { workspace = true }
+dotenvy = { workspace = true }
+validator = { workspace = true, features = ["derive"] }
+chrono = { workspace = true, features = ["serde"] }
+anyhow = { workspace = true }
+utoipa = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
+tracing-actix-web = "0.7.19"
+tracing-log = "0.2"
+rand = "0.8.5"
+
+db_core = { path = "../../db_core" }
+api_core = { path = "../api_core" }
+actix-web = "4.10.2"
+
+[dev-dependencies]
+sqlx-db-tester = "0.7.1"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = true

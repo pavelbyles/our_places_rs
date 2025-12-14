@@ -15,25 +15,3 @@
 # Added by cargo
 
 /target
-.env
-.sqlx
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
-*.tfvars
-
-# Logs
-*.log
-log/
-
-# Python
-__pycache__/
-
-# Web App
-web_app/dist/
-
-# Credentials
-docs/listing_api/oauth_config_util/*.json
-

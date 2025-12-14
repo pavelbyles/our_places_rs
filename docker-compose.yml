@@ -1,0 +1,19 @@
+version: '3'
+services:
+  api:
+    image: our-places-app-api-rs
+    build:
+      context: ./app_api
+    volumes:
+      - 
+    ports:
+      - "8080:8080"
+
+  web_app:
+    image: our-places-webapp
+    build:
+      context: ./web_app
+    volumes:
+      - .:/app
+    ports:
+      - "8080:8080"

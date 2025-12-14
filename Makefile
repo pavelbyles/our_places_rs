@@ -1,7 +1,10 @@
 MAKE := make
 
-dev_app_api:
-	$(MAKE) -C app_api dev
+dev_booking_api:
+	$(MAKE) -C app_api/booking_api dev
+
+dev_listing_api:
+	$(MAKE) -C app_api/listing_api dev
 
 dev_admin_api:
 	$(MAKE) -C admin_api dev

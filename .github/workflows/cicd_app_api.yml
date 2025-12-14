@@ -1,7 +1,7 @@
 name: CI/CD for app_api
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
-  SERVICE: our-places-app-api-rs
+  GAR_REPO: our-places-repo
   REGION: us-central1
   CARGO_TERM_COLOR: always
 
@@ -136,8 +136,19 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
       
-      - name: Authorize Docker push
-        run: gcloud auth configure-docker
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Set Build Arguments
+        id: build_args
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+          else
+            echo "RELEASE_FLAG=" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+          fi
 
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
@@ -171,98 +182,71 @@ jobs:
         run: |-
           SKIP_DOCKER=true cargo make run-db-migrations
 
-      - name: Build app (Release)
-        if: github.ref == 'refs/heads/main'
-        env:
-          RUN_ENV: Release
-        run: cargo make release-build-flow
-
-      - name: Build app (Dev)
-        if: github.ref != 'refs/heads/main'
-        env:
-          RUN_ENV: Development
-          DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
-          # EA__DATABASE__USERNAME: ${{ vars.POSTGRES_BUILD_USER }}
-          # EA__DATABASE__DATABASE_NAME: ${{ vars.POSTGRES_BUILD_DB }}
-        run: cargo make dev-build-flow
-
-      - name: Stop Postgres container used for building
-        run: |-
-          docker ps
-          docker stop $(docker ps -a -q)
-          docker rm $(docker ps -a -q --filter ancestor=ourplaces-db-image)
-
-      - name: Build and Push Container (release)
-        if: github.ref == 'refs/heads/main'
-        env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER_PROD }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_PROD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB_PROD }}
-          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST_PROD }}
-        run: |-
+      # ---------------------------------------------------------
+      # Booking API
+      # ---------------------------------------------------------
+      - name: Build and Push Booking API
+        run: |
           docker build \
-            --build-arg BUILD_TYPE=release \
-            --build-arg BUILD_OUTPUT=release \
-            --build-arg POSTGRES_USER_ARG=$POSTGRES_USER \
-            --build-arg POSTGRES_PASSWORD_ARG=$POSTGRES_PASSWORD \
-            --build-arg POSTGRES_DB_ARG=$POSTGRES_DB \
-            --build-arg POSTGRES_HOST_ARG=$POSTGRES_HOST \
-            -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
+            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }} \
+            -f Dockerfile.booking_api .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
 
-      - name: Build and Push Container (dev)
-        if: github.ref != 'refs/heads/main'
-        env:
-          POSTGRES_USER: ${{ vars.POSTGRES_USER_DEV }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
-          POSTGRES_DB: ${{ vars.POSTGRES_DB_DEV }}
-          POSTGRES_HOST: ${{ vars.POSTGRES_HOST_DEV }}
-        run: |-
+      - name: Deploy Booking API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: booking-api
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            RUST_LOG=info
+          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+
+      # ---------------------------------------------------------
+      # Listing API
+      # ---------------------------------------------------------
+      - name: Build and Push Listing API
+        run: |
           docker build \
-            --build-arg BUILD_TYPE=dev \
-            --build-arg BUILD_OUTPUT=debug \
-            --build-arg POSTGRES_USER_ARG=$POSTGRES_USER \
-            --build-arg POSTGRES_PASSWORD_ARG=$POSTGRES_PASSWORD \
-            --build-arg POSTGRES_DB_ARG=$POSTGRES_DB \
-            --build-arg POSTGRES_CLOUD_DB=YES \
-            --build-arg POSTGRES_CLOUD_INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev \
-            -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} -f Dockerfile-dev .
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
+            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }} \
+            -f Dockerfile.listing_api .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
 
-      - name: Run database migrations (release) - Deploy Step (necessary for sqlx)
-        if: github.ref == 'refs/heads/main'
-        env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER_PROD }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_PROD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB_PROD }}
-          POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST_PROD }}
-        run: |-
-          SKIP_DOCKER=true cargo make run-db-migrations
+      - name: Deploy Listing API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: listing-api
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            RUST_LOG=info
 
-      - name: Run database migrations (dev) - Deploy Step (necessary for sqlx)
-        if: github.ref != 'refs/heads/main'
-        env:
-          POSTGRES_USER: ${{ vars.POSTGRES_USER_DEV }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD_DEV }}
-          POSTGRES_DB: ${{ vars.POSTGRES_DB_DEV }}
-          POSTGRES_HOST: ${{ vars.POSTGRES_HOST_DEV }}
-        run: |-
-          SKIP_DOCKER=true cargo make run-db-migrations
-          pkill cloud-sql-proxy
-          rm creds.json
+      # ---------------------------------------------------------
+      # User API
+      # ---------------------------------------------------------
+      - name: Build and Push User API
+        run: |
+          docker build \
+            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
+            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }} \
+            -f Dockerfile.user_api .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
 
-      - name: Deploy API service to Cloud Run
-        run: |-
-          gcloud run deploy ${{ env.SERVICE }} \
-            --region=${{ env.REGION }} \
-            --image=gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} \
-            --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev \
-            --platform="managed" \
-            --no-allow-unauthenticated \
-            --min-instances=0 \
-            --max-instances=1 \
-            --memory=256Mi \
-            --quiet
+      - name: Deploy User API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: user-api
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            RUST_LOG=info
+          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
   automated-api-tests:
     runs-on: ubuntu-latest

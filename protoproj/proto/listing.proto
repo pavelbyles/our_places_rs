@@ -1,0 +1,15 @@
+syntax = "proto3";
+package listing;
+
+service Lister {
+  rpc GetListing (ListingRequest) returns (ListingResponse);
+}
+
+message ListingRequest {
+  string id = 1;
+}
+
+message ListingResponse {
+  string name = 1;
+  string description = 2;
+}

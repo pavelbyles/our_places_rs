@@ -1,0 +1,343 @@
+use crate::error::Result;
+use crate::models::{Listing, NewListing, UpdatedListing};
+use sqlx::{PgExecutor, PgPool};
+use uuid::Uuid;
+
+/// Creates a new listing in the database.
+pub async fn create_listing<'e, E>(executor: E, new_listing: &NewListing) -> Result<Listing>
+where
+    E: PgExecutor<'e>,
+{
+    let listing = sqlx::query_as!(
+        Listing,
+        r#"
+        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, added_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        "#,
+        Uuid::new_v4(),
+        new_listing.user_id,
+        new_listing.name,
+        new_listing.description,
+        new_listing.listing_structure_id,
+        new_listing.country,
+        new_listing.price_per_night,
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(listing)
+}
+
+/// Retrieves all listings from the database.
+/// Retrieves a paginated list of listings from the database.
+pub async fn get_listings<'e, E>(executor: E, page: u32, per_page: u32) -> Result<Vec<Listing>>
+where
+    E: PgExecutor<'e>,
+{
+    // Calculate the LIMIT and OFFSET values for the SQL query.
+    // LIMIT is the number of items per page.
+    // OFFSET is the number of items to skip.
+    let limit = per_page as i64;
+    // We ensure page is at least 1, so the offset calculation is never negative.
+    let offset = ((page.max(1) - 1) * per_page) as i64;
+
+    let listings = sqlx::query_as!(
+        Listing,
+        r#"
+        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        FROM listing
+        WHERE deleted_at IS NULL
+        ORDER BY added_at DESC
+        LIMIT $1 OFFSET $2
+        "#,
+        limit,
+        offset
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(listings)
+}
+
+/// Retrieves all listings for a specific user from the database.
+pub async fn get_listings_by_user_id<'e, E>(executor: E, user_id: Uuid) -> Result<Vec<Listing>>
+where
+    E: PgExecutor<'e>,
+{
+    let listings = sqlx::query_as!(
+        Listing,
+        r#"
+        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        FROM listing
+        WHERE user_id = $1 AND deleted_at IS NULL
+        ORDER BY added_at DESC
+        "#,
+        user_id
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(listings)
+}
+
+/// Retrieves a single listing from the database by its UUID.
+pub async fn get_listing_by_id<'e, E>(executor: E, id: Uuid) -> Result<Listing>
+where
+    E: PgExecutor<'e>,
+{
+    let listing = sqlx::query_as!(
+        Listing,
+        r#"
+        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        FROM listing
+        WHERE id = $1 AND deleted_at IS NULL
+        "#,
+        id
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(listing)
+}
+
+/// Updates a listing in the database.
+pub async fn update_listing(
+    pool: &PgPool,
+    id: Uuid,
+    updated_listing_data: &UpdatedListing,
+) -> Result<Listing> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as!(
+        Listing,
+        r#"SELECT * FROM listing WHERE id = $1 FOR UPDATE"#,
+        id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    // 2. Archive current state to history
+    sqlx::query!(
+        r#"
+        INSERT INTO listing_history
+        (listing_id, name, description, listing_structure_id, country, price_per_night, is_active, valid_from)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+        current.id,
+        current.name,
+        current.description,
+        current.listing_structure_id,
+        current.country,
+        current.price_per_night,
+        current.is_active,
+        current.added_at // Using added_at as the start time of this version
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // 3. Update the record
+    // We use COALESCE($2, name) to say: "If the new name is NULL, keep the old name".
+    let updated = sqlx::query_as!(
+        Listing,
+        r#"
+        UPDATE listing
+        SET
+            name = COALESCE($2, name),
+            description = COALESCE($3, description),
+            listing_structure_id = COALESCE($4, listing_structure_id),
+            country = COALESCE($5, country),
+            price_per_night = COALESCE($6, price_per_night),
+            is_active = COALESCE($7, is_active)
+        WHERE id = $1
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        "#,
+        id,
+        updated_listing_data.name,
+        updated_listing_data.description,
+        updated_listing_data.listing_structure_id,
+        updated_listing_data.country,
+        updated_listing_data.price_per_night,
+        updated_listing_data.is_active
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(updated)
+}
+
+/// Deletes a listing from the database.
+/// If `hard_delete` is true, the listing is permanently removed.
+/// If `hard_delete` is false, the listing is soft-deleted (deleted_at is set).
+pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Result<()> {
+    let result = if hard_delete {
+        sqlx::query!("DELETE FROM listing WHERE id = $1", id)
+            .execute(pool)
+            .await?
+    } else {
+        sqlx::query!("UPDATE listing SET deleted_at = now() WHERE id = $1", id)
+            .execute(pool)
+            .await?
+    };
+
+    if result.rows_affected() == 0 {
+        return Err(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::DbError;
+    use crate::models::NewListing;
+    use rust_decimal_macros::dec;
+    use sqlx::{Connection, PgConnection};
+    use std::collections::HashSet;
+    use std::env;
+    use uuid::Uuid;
+
+    /// Helper function to establish a fresh connection to the test database.
+    async fn setup_test_db() -> PgConnection {
+        dotenvy::dotenv().ok();
+        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for tests");
+
+        PgConnection::connect(&database_url)
+            .await
+            .expect("Failed to connect to Postgres")
+    }
+
+    #[tokio::test]
+    async fn test_create_listing() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let new_listing = NewListing {
+            name: "Cozy Test Cottage".to_string(),
+            user_id: Uuid::new_v4(), // Dummy user ID for test
+            description: Some("A beautiful cottage for testing.".to_string()),
+            listing_structure_id: 2, // House
+            country: "Testland".to_string(),
+            price_per_night: Some(dec!(150.75)),
+        };
+
+        let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
+
+        assert_eq!(created_listing.name, new_listing.name);
+        assert!(!created_listing.id.is_nil());
+        assert!(!created_listing.is_active);
+    }
+
+    #[tokio::test]
+    async fn test_get_listing_by_id() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let new_listing = NewListing {
+            name: "Fetch Me Listing".to_string(),
+            user_id: Uuid::new_v4(),
+            description: None,
+            listing_structure_id: 3,
+            country: "Republic of Testing".to_string(),
+            price_per_night: Some(dec!(99.99)),
+        };
+        let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
+
+        let fetched_listing = get_listing_by_id(&mut *tx, created_listing.id)
+            .await
+            .unwrap();
+
+        assert_eq!(created_listing.id, fetched_listing.id);
+
+        let non_existent_id = Uuid::new_v4();
+        let result = get_listing_by_id(&mut *tx, non_existent_id).await;
+        assert!(matches!(
+            result,
+            Err(DbError::Sqlx(sqlx::Error::RowNotFound))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_get_listings_pagination() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        // Create 3 listings. We will order them by name for deterministic testing.
+        for i in 1..=3 {
+            let listing = NewListing {
+                name: format!("Pagination Test Listing {}", i),
+                user_id: Uuid::new_v4(),
+                description: None,
+                listing_structure_id: 1,
+                country: "Testland".to_string(),
+                price_per_night: None,
+            };
+            create_listing(&mut *tx, &listing).await.unwrap();
+        }
+
+        // To make the test robust, we will fetch all results and assert on the contents,
+        // rather than relying on fragile timestamp ordering.
+        let all_results = get_listings(&mut *tx, 1, 5).await.unwrap(); // Ask for 5, get 3
+        assert_eq!(all_results.len(), 3);
+
+        // Check page 1
+        let page1 = get_listings(&mut *tx, 1, 2).await.unwrap();
+        assert_eq!(page1.len(), 2);
+
+        // Check page 2
+        let page2 = get_listings(&mut *tx, 2, 2).await.unwrap();
+        assert_eq!(page2.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_listings_uniqueness_across_pages() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        const TOTAL_RECORDS: i32 = 7;
+        const PER_PAGE: u32 = 3;
+
+        for i in 1..=TOTAL_RECORDS {
+            let listing = NewListing {
+                name: format!("Uniqueness Test Listing {}", i),
+                user_id: Uuid::new_v4(),
+                description: None,
+                listing_structure_id: 1,
+                country: "Testland".to_string(),
+                price_per_night: None,
+            };
+            create_listing(&mut *tx, &listing).await.unwrap();
+        }
+
+        let mut all_fetched_listings = Vec::new();
+        let mut current_page = 1;
+        loop {
+            let page_results = get_listings(&mut *tx, current_page, PER_PAGE)
+                .await
+                .unwrap();
+            if page_results.is_empty() {
+                break;
+            }
+            all_fetched_listings.extend(page_results);
+            current_page += 1;
+        }
+
+        assert_eq!(
+            all_fetched_listings.len() as i32,
+            TOTAL_RECORDS,
+            "Pagination did not return the correct total number of listings"
+        );
+
+        let ids: Vec<Uuid> = all_fetched_listings.iter().map(|l| l.id).collect();
+        let unique_ids: HashSet<Uuid> = ids.iter().cloned().collect();
+
+        assert_eq!(
+            ids.len(),
+            unique_ids.len(),
+            "Found duplicate listings across different pages"
+        );
+    }
+}
