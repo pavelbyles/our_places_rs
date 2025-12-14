@@ -210,17 +210,15 @@ async fn create_listing(
             }
             Err(e) => {
                 let db_core::error::DbError::Sqlx(ref sqlx_error) = e;
-                if let Some(db_error) = sqlx_error.as_database_error() {
-                    if db_error.code().as_deref() == Some("23505") {
-                        if let Some(constraint) = db_error.constraint() {
-                            if constraint == "listing_pkey" {
-                                if attempts >= max_attempts {
-                                    return Err(ApiError::Internal);
-                                }
-                                continue;
-                            }
-                        }
+                if let Some(db_error) = sqlx_error.as_database_error()
+                    && db_error.code().as_deref() == Some("23505")
+                    && let Some(constraint) = db_error.constraint()
+                    && constraint == "listing_pkey"
+                {
+                    if attempts >= max_attempts {
+                        return Err(ApiError::Internal);
                     }
+                    continue;
                 }
                 return Err(ApiError::Database(e));
             }
