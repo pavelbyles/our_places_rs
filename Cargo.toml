@@ -34,8 +34,8 @@ thiserror = "1.0.61"
 dotenvy = "0.15.7"
 validator = { version = "0.20.0", features = ["derive"] }
 anyhow = "1.0.61"
-utoipa = { version = "4.2.0", features = ["actix_extras"] }
-utoipa-swagger-ui = { version = "6.0.0", features = ["actix-web"] }
+utoipa = { version = "5.4.0", features = ["actix_extras", "decimal"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 tracing = "0.1.43"
 tracing-actix-web = "0.7.19"
 
