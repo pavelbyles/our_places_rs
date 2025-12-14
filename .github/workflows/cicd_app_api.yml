@@ -45,7 +45,7 @@ jobs:
           DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --manifest-path app_api/Cargo.toml
+          args: --all-features --manifest-path Cargo.toml
 
 
   test:
