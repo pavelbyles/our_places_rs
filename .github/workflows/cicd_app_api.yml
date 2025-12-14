@@ -30,10 +30,6 @@ jobs:
       - run: cargo audit
 
   lint_check:
-    defaults:
-      run:
-        working-directory: ./app_api
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
