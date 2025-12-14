@@ -16,7 +16,7 @@
 
 /target
 .env
-.sqlx
+
 
 # Terraform
 .terraform/

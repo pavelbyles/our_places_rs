@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at\n        FROM listing\n        WHERE deleted_at IS NULL\n        ORDER BY added_at DESC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_structure_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "price_per_night",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "added_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "188c79c747d065e996fb4618b1f4471471561a618657d448114607b0e636ac62"
+}
