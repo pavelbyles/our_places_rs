@@ -1,9 +1,11 @@
 use crate::error::Result;
-use crate::models::{Booking, NewBooking, UpdatedBooking, BookingStatus, CancellationPolicy, FeeItem};
+use crate::models::{
+    Booking, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
+};
+use chrono::Utc;
+use sqlx::types::Json;
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
-use sqlx::types::Json;
-use chrono::Utc;
 
 /// Creates a new booking in the database.
 pub async fn create_booking<'e, E>(executor: E, new_booking: &NewBooking) -> Result<Booking>
@@ -111,19 +113,15 @@ pub async fn update_booking(
     id: Uuid,
     updated_booking: &UpdatedBooking,
 ) -> Result<Booking> {
-    
     // Check existence first or let standard update fail if not found?
     // Listing API uses transaction and SELECT FOR UPDATE, then COALESCE.
     // I'll follow that pattern.
-    
+
     let mut tx = pool.begin().await?;
 
-    let _current = sqlx::query!(
-        r#"SELECT id FROM booking WHERE id = $1 FOR UPDATE"#,
-        id
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let _current = sqlx::query!(r#"SELECT id FROM booking WHERE id = $1 FOR UPDATE"#, id)
+        .fetch_one(&mut *tx)
+        .await?;
 
     let booking = sqlx::query_as!(
         Booking,
@@ -143,7 +141,7 @@ pub async fn update_booking(
     )
     .fetch_one(&mut *tx)
     .await?;
-    
+
     tx.commit().await?;
 
     Ok(booking)
@@ -151,14 +149,15 @@ pub async fn update_booking(
 
 /// Deletes a booking (Hard Delete).
 pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
-    let result = sqlx::query!("DELETE FROM booking WHERE id = $1", id)
-        .execute(pool)
-        .await?;
-    
+    let result: sqlx::postgres::PgQueryResult =
+        sqlx::query!("DELETE FROM booking WHERE id = $1", id)
+            .execute(pool)
+            .await?;
+
     if result.rows_affected() == 0 {
         return Err(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound));
     }
-    
+
     Ok(())
 }
 
