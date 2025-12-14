@@ -42,21 +42,6 @@ jobs:
             toolchain: nightly
             components: clippy
             override: true
-      - uses: davidB/rust-cargo-make@v1
-
-      - name: Install sqlx (needed for successful compilations)
-        run: |-
-          sudo apt-get install libpq-dev -y
-          cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
-
-      - name: Build Postgres container image (necessary for sqlx)
-        run: cargo make docker-db-build
-
-      - name: Run PostgreSQL image in a container (necessary for sqlx)
-        run: cargo make docker-db-run
-
-      - name: Run database migrations (necessary for sqlx)
-        run: SKIP_DOCKER=true cargo make run-db-migrations
 
       - uses: actions-rs/clippy-check@v1
         env:
