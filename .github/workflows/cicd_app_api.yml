@@ -15,10 +15,7 @@ on:
 jobs:
   audit:
     name: Audit
-    defaults:
-      run:
-        working-directory: ./app_api
-
+    
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -42,11 +39,11 @@ jobs:
       - uses: actions-rs/clippy-check@v1
         env:
           RUN_ENV: Development
+          SQLX_OFFLINE: true
           DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features --manifest-path Cargo.toml
-
 
   test:
     runs-on: ubuntu-latest
@@ -61,7 +58,7 @@ jobs:
       - name: Install sqlx (needed for compilation and integration tests)
         run: |-
           sudo apt-get install libpq-dev -y
-          cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
+          cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
 
       - name: Build Postgres container image (necessary for sqlx). Choose a random project to use
         run: cargo make --cwd app_api/listing_api prepare
@@ -70,6 +67,7 @@ jobs:
         if: github.ref == 'refs/heads/dev'
         env:
           RUN_ENV: Development
+          SQLX_OFFLINE: true
           DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
         run: cargo build --verbose
       
@@ -77,6 +75,7 @@ jobs:
         if: github.ref == 'refs/heads/dev'
         env:
           RUN_ENV: Development
+          SQLX_OFFLINE: true
           DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
         run: cargo test --verbose
 
@@ -127,7 +126,7 @@ jobs:
       - name: Install sqlx (needed for compilation)
         run: |-
           sudo apt-get install libpq-dev -y
-          cargo install --version=~0.7 sqlx-cli --no-default-features --features rustls,postgres --force
+          cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
 
       - name: Install psql client (needed to see if Postgres is running)
         run: |-
