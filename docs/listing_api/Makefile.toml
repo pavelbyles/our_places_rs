@@ -1,0 +1,129 @@
+[env]
+SKIP_DOCKER=true
+
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean-build]
+command = "cargo"
+args = ["build"]
+dependencies = ["format", "clean"]
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+dependencies = ["docker-db-build", "docker-db-run"]
+
+[tasks.build-new]
+command = "cargo"
+args = ["build"]
+dependencies = ["docker-db-stop-remove", "docker-db-build", "docker-db-run", "run-db-migrations"]
+
+[tasks.print-image-creating]
+script = ["echo \"Creating image locally\""]
+
+[tasks.print-image-finished]
+script = ["echo \"API image created: our-places-app-api-rs-image\""]
+
+[tasks.docker-build-image]
+command = "docker"
+args = [
+    "build",
+    "--build-arg=\"BUILD_TYPE=dev\"",
+    "--build-arg=\"BUILD_OUTPUT=debug\"",
+    "-t",
+    "our-places-app-api-rs-image",
+    ".",
+]
+
+[tasks.docker-local-build]
+dependencies = ["print-image-creating", "docker-build-image"]
+
+[tasks.build-unoptimized]
+command = "cargo"
+args = [
+    "build",
+    "--target-dir",
+    "target/out/our-places-app-api-rs"
+]
+
+[tasks.build-release]
+command = "cargo"
+args = [
+    "build",
+    "--release",
+    "--target-dir",
+    "target/out/our-places-app-api-rs",
+]
+
+[tasks.docker-db-stop-remove]
+script = '''
+image_name="ourplaces-db-image"
+docker stop $(docker ps -a -q); docker rm $(docker ps -a -q --filter ancestor=$image_name)
+'''
+
+[tasks.docker-db-build]
+script = '''
+image_name="ourplaces-db-image"
+
+# Check if the image exists
+if docker images -q "$image_name" > /dev/null 2>&1; then
+  echo "Image '$image_name' already exists. Skipping build."
+else
+  echo "Image '$image_name' not found. Building..."
+  docker build -t "$image_name" --build-arg=\"DB_USER=$POSTGRES_USER\" --build-arg=\"DB_PASSWORD=$POSTGRES_PASSWORD\" --build-arg=\"DB_NAME=$POSTGRES_DB\" --build-arg=\"DB_HOST=$POSTGRES_HOST\" --build-arg=\"DB_PORT=5432\" -f Dockerfile-db .
+fi
+'''
+
+[tasks.docker-db-run]
+script = '''
+container_name="ourplaces-db-container"
+container_id=$(docker ps -a -q -f name=$container_name)
+
+if [ -z "$container_id" ]; then
+  echo "Container '$container_name' not found. Running..."
+  docker run -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=password" -e "POSTGRES_DB=ourplaces_db" -p "5432:5432" -d --name $container_name ourplaces-db-image postgres -N 1000
+else
+  echo "Container '$container_name' already exists. Starting if stopped..."
+  docker start $container_id
+fi
+'''
+
+[tasks.run-db-migrations]
+command = "./scripts/init_db.sh"
+
+[tasks.release-build-flow]
+dependencies = ["build-release"]
+
+[tasks.dev-build-flow]
+dependencies = ["build-unoptimized"]
+
+[tasks.dev-run-flow]
+dependencies = ["docker-db-build", "run-db-migrations"]
+command = "cargo"
+args = [
+  "run"
+]
+
+[tasks.deploy-from-local]
+command = "gcloud"
+args = [
+    "run",
+    "deploy",
+    "our-places-app-api-rs",
+    "--region",
+    "us-central1",
+    "--source",
+    ".",
+    "--allow-unauthenticated",
+    "--max-instances",
+    "1",
+    "--memory",
+    "256Mi",
+]

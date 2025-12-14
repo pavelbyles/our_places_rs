@@ -1,0 +1,9 @@
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.build-app-api]
+install_crate = "cargo"
+command = "cargo"
+args = ["build", "-p", "our-places-app-api-listing-rs"]

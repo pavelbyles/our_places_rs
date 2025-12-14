@@ -1,0 +1,54 @@
+# Use the official Rust image.
+# https://hub.docker.com/_/rust
+# syntax=docker/dockerfile:1
+ARG BUILD_TYPE=release
+ARG BUILD_OUTPUT=release
+ARG RELEASE_FLAG=--release
+FROM rust:1.91.1-slim AS build-env
+ARG BUILD_TYPE
+ARG BUILD_OUTPUT
+ARG RELEASE_FLAG
+ARG POSTGRES_USER
+ARG POSTGRES_PASSWORD
+ARG POSTGRES_HOST
+ARG POSTGRES_DB
+RUN echo "Build type is: ${BUILD_TYPE}"
+RUN echo "Build output is: ${BUILD_OUTPUT}"
+RUN echo "Release flag is: ${RELEASE_FLAG}"
+
+FROM lukemathwalker/cargo-chef:latest-rust-1.91.1-slim-trixie AS chef
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+ARG RELEASE_FLAG
+RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json
+
+COPY . .
+ENV SQLX_OFFLINE=true
+
+ARG RELEASE_FLAG
+RUN cargo build ${RELEASE_FLAG} -p listing_api
+
+RUN apt-get update && apt-get install -y binutils && rm -rf /var/lib/apt/lists/*
+ARG BUILD_OUTPUT
+RUN strip /app/target/${BUILD_OUTPUT}/listing_api
+
+FROM gcr.io/distroless/cc-debian12 AS runtime
+WORKDIR /app
+
+COPY --from=builder /app/target/${BUILD_OUTPUT}/listing_api /app/listing_api
+
+COPY app_api/listing_api/config /app/config
+
+ENV PORT=8080
+ENV HOST=0.0.0.0
+
+EXPOSE 8080
+
+ENTRYPOINT ["./listing_api"]

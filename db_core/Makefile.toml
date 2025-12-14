@@ -1,0 +1,77 @@
+[env]
+# This references the main docker-compose file in the workspace root
+DOCKER_COMPOSE_FILE = "../docker-compose.db.yml"
+DB_CONTAINER_NAME = "our_places_db"
+# The migrations directory is now local to this crate
+MIGRATIONS_DIR = "migrations"
+
+[tasks.check-docker]
+script = '''
+echo "--- Checking for docker command ---"
+command -v docker
+if [ $? -ne 0 ]; then
+    echo "Error: 'command -v docker' failed. The 'docker' executable was not found in your PATH."
+    exit 1
+else
+    echo "✅ Success: 'docker' executable found."
+fi
+echo ""
+echo "--- Checking Docker daemon connection ---"
+docker info
+if [ $? -ne 0 ]; then
+    echo "❌ Error: 'docker info' command failed with an error."
+    echo "This usually means one of two things:"
+    echo "1. The Docker daemon is not running."
+    echo "2. You do not have permission to connect to the Docker socket."
+    echo ""
+    echo "On Linux, you may need to add your user to the 'docker' group:"
+    echo "sudo usermod -aG docker ${USER}"
+    echo "(This change requires you to log out and log back in to take effect)."
+    exit 1
+fi
+echo "✅ Success: Connected to Docker daemon."
+'''
+
+[tasks.check-sqlx]
+install_crate = { crate_name = "sqlx-cli", binary = "sqlx", test_arg = "--version" }
+
+[tasks.db-start]
+script = '''
+# Check if the container is running
+echo "Checking if the database container is running..."
+if [ ! "$(docker ps -q -f name=^/${DB_CONTAINER_NAME}$)" ]; then
+    echo "Database container is not running."
+    echo "Checking if the container is stopped..."
+    if [ "$(docker ps -aq -f status=exited -f name=^/${DB_CONTAINER_NAME}$)" ]; then
+        echo "🤔 Database container is stopped. Starting it now..."
+        docker start ${DB_CONTAINER_NAME}
+    else
+        echo "🚀 Database container not found. Creating and starting it..."
+        docker compose -f ${DOCKER_COMPOSE_FILE} up -d
+    fi
+    echo "⏳ Waiting for the database to be ready..."
+    sleep 5
+else
+    echo "🟢 Database container is already running."
+fi
+'''
+dependencies = ["check-docker"]
+
+[tasks.db-migrate]
+description = "Runs database migrations for the test database."
+command = "sqlx"
+args = ["migrate", "run", "--source", "${MIGRATIONS_DIR}"]
+dependencies = ["check-sqlx", "db-start"]
+
+[tasks.test]
+description = "Runs all tests for the db_core crate."
+command = "cargo"
+# We don't need -p here because we are already inside the db_core crate.
+args = ["test"]
+env_file = ".env"
+dependencies = ["db-migrate"]
+
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]

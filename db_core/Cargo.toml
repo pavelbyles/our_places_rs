@@ -1,0 +1,25 @@
+[package]
+name = "db_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { workspace = true, features = ["macros"] }
+uuid = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+rust_decimal = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+dotenvy = { workspace = true }
+validator = { workspace = true }
+
+strum = "0.27.1"
+strum_macros = "0.27.1"
+utoipa.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+dotenvy = "0.15.7"
+rust_decimal_macros = { workspace = true }
