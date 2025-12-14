@@ -13,6 +13,8 @@ on:
       - .sqlx/**
       - db_core/**
       - .github/workflows/cicd_app_api.yml
+      - Cargo.toml
+      - Dockerfile.*
 
 jobs:
   audit:
