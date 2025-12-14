@@ -10,6 +10,8 @@ on:
     branches: [ "main", "dev" ]
     paths:
       - app_api/**
+      - .sqlx/**
+      - db_core/**
       - .github/workflows/cicd_app_api.yml
 
 jobs:
