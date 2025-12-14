@@ -50,10 +50,6 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: ./app_api
     
     steps:
       - name: Checkout code
