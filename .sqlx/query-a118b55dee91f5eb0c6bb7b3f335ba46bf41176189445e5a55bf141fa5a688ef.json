@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO listing (id, name, description, listing_structure_id, country, price_per_night, added_at)\n        VALUES ($1, $2, $3, $4, $5, $6, now())\n        RETURNING id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at\n        ",
+  "query": "\n        UPDATE listing\n        SET\n            name = COALESCE($2, name),\n            description = COALESCE($3, description),\n            listing_structure_id = COALESCE($4, listing_structure_id),\n            country = COALESCE($5, country),\n            price_per_night = COALESCE($6, price_per_night),\n            is_active = COALESCE($7, is_active)\n        WHERE id = $1\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at\n        ",
   "describe": {
     "columns": [
       {
@@ -10,41 +10,46 @@
       },
       {
         "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
         "name": "name",
         "type_info": "Text"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "description",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "listing_structure_id",
         "type_info": "Int4"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "country",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "price_per_night",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "added_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "deleted_at",
         "type_info": "Timestamptz"
       }
@@ -56,10 +61,12 @@
         "Text",
         "Int4",
         "Text",
-        "Numeric"
+        "Numeric",
+        "Bool"
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       true,
@@ -71,5 +78,5 @@
       true
     ]
   },
-  "hash": "75530cc0c9dd0de9e290fd92d6cb38076ef02adfde101f3c2af02aec394ad929"
+  "hash": "a118b55dee91f5eb0c6bb7b3f335ba46bf41176189445e5a55bf141fa5a688ef"
 }
