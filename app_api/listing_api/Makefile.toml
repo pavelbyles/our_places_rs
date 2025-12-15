@@ -98,11 +98,7 @@ dependencies = ["check-sqlx", "db-start"]
 
 [tasks.build-unoptimized]
 command = "cargo"
-args = [
-    "build",
-    "--target-dir",
-    "target/out/our-places-app-api-rs"
-]
+args = ["build", "--target-dir", "target/out/our-places-app-api-rs"]
 dependencies = ["prepare"]
 
 [tasks.build-release]

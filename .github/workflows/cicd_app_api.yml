@@ -132,35 +132,6 @@ jobs:
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
 
-      - name: Install sqlx (needed for compilation)
-        run: |-
-          sudo apt-get install libpq-dev -y
-          cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
-
-      - name: Install psql client (needed to see if Postgres is running)
-        run: |-
-          sudo apt-get install -y postgresql-client
-
-      - name: Build Postgres container image (necessary for sqlx)
-        env:
-          POSTGRES_USER: ${{ vars.POSTGRES_BUILD_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_BUILD_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_BUILD_DB }}
-          POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST }}
-        run: cargo make --cwd listing_api docker-db-build
-      
-      - name: Run PostgreSQL image in a container (necessary for sqlx)
-        run: cargo make --cwd listing_api docker-db-run
-
-      - name: Run database migrations (necessary for sqlx)
-        env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_BUILD_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_BUILD_PASSWORD }}
-          POSTGRES_DB: ${{ vars.POSTGRES_BUILD_DB }}
-          POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST }}
-        run: |-
-          SKIP_DOCKER=true cargo make --cwd listing_api run-db-migrations
-
       # ---------------------------------------------------------
       # Booking API
       # ---------------------------------------------------------
@@ -170,7 +141,7 @@ jobs:
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }} \
-            -f Dockerfile.booking_api .
+            -f ../Dockerfile.booking_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
 
       - name: Deploy Booking API
@@ -192,7 +163,7 @@ jobs:
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }} \
-            -f Dockerfile.listing_api .
+            -f ../Dockerfile.listing_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
 
       - name: Deploy Listing API
@@ -214,7 +185,7 @@ jobs:
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }} \
-            -f Dockerfile.user_api .
+            -f ../Dockerfile.user_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
 
       - name: Deploy User API
