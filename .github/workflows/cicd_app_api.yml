@@ -77,7 +77,7 @@ jobs:
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
-          DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
+          DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
         run: cargo build --verbose
       
       - name: Run API tests
@@ -85,7 +85,7 @@ jobs:
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
-          DATABASE_URL: postgres://${{ vars.POSTGRES_BUILD_USER }}:${{ secrets.POSTGRES_BUILD_PASSWORD }}@${{ vars.POSTGRES_BUILD_HOST }}:5432/${{ vars.POSTGRES_BUILD_DB }}
+          DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
         run: cargo test --verbose
 
   

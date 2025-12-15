@@ -17,7 +17,7 @@ fi
 
 DB_USER="${POSTGRES_USER:=postgres}"
 DB_PASSWORD="${POSTGRES_PASSWORD:=password}"
-DB_NAME="${POSTGRES_DB:=ourplaces_db}"
+DB_NAME="${POSTGRES_DB:=our_places}"
 DB_HOST="${POSTGRES_HOST:=localhost}"
 DB_PORT="${POSTGRES_PORT:=5432}"
 

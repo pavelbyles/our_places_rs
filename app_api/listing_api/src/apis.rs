@@ -421,12 +421,36 @@ async fn content_negotiation_middleware(
 mod tests {
     use super::*;
     use actix_web::{App, test, web};
+    use api_core::settings::{Application, DatabaseSettings, Env, Log, Server, Settings};
     use chrono::Utc;
+    use db_core::models::NewUser;
     use db_core::models::{NewListing, StructureType};
+    use db_core::user::create_user;
     use rust_decimal_macros::dec;
+    use sqlx::PgExecutor;
     use sqlx_db_tester::TestPg;
     use std::env;
     use std::path::Path;
+
+    async fn create_test_user<'e, E>(executor: E) -> Uuid
+    where
+        E: PgExecutor<'e>,
+    {
+        let id = Uuid::new_v4();
+        let new_user = NewUser {
+            id,
+            email: format!("test_{}@example.com", id),
+            password_hash: "secret".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+        };
+        create_user(executor, &new_user)
+            .await
+            .expect("Failed to create test user");
+        id
+    }
 
     #[actix_web::test]
     async fn test_get_listing_by_id_success() {
@@ -437,9 +461,10 @@ mod tests {
         let pool = test_db.get_pool().await;
         let mut conn = pool.acquire().await.unwrap();
 
+        let user_id = create_test_user(&mut *conn).await;
         let new_listing = NewListing {
             name: "API Test Listing".to_string(),
-            user_id: Uuid::new_v4(),
+            user_id,
             description: None,
             listing_structure_id: 1,
             country: "Testland".to_string(),
@@ -501,17 +526,41 @@ mod tests {
         let test_db = TestPg::new(db_url, migrations_path);
         let pool = test_db.get_pool().await;
 
+        let mut conn = pool.acquire().await.unwrap();
+        let user_id = create_test_user(&mut *conn).await;
+
+        let settings = Settings {
+            server: Server {
+                host: "localhost".to_string(),
+                port: 8080,
+            },
+            database: DatabaseSettings {
+                username: "postgres".to_string(),
+                password: "password".to_string(),
+                port: 5432,
+                host: "localhost".to_string(),
+                database_name: "test".to_string(),
+                cloud: false,
+                instance_name: "".to_string(),
+            },
+            log: Log {
+                level: "info".to_string(),
+            },
+            env: Env::Testing,
+            application: Application { max_attempts: 1 }, // This is the only setting that's actually used
+        };
+
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(settings))
                 .configure(configure_routes),
         )
         .await;
-
         // Create a listing with an EMPTY name
         let invalid_listing = NewListingRequest {
             name: "".to_string(), // invalid name - should not be empty
-            user_id: Uuid::new_v4(),
+            user_id,              // Valid user ID
             description: None,
             listing_structure: StructureType::Apartment,
             country: "Testland".to_string(),
@@ -519,7 +568,7 @@ mod tests {
         };
 
         let req = test::TestRequest::post()
-            .uri("/api/v1/listing/listings")
+            .uri("/api/v1/listings/")
             .set_json(&invalid_listing)
             .to_request();
         let resp = test::call_service(&app, req).await;
@@ -536,9 +585,10 @@ mod tests {
         let pool = test_db.get_pool().await;
         let mut conn = pool.acquire().await.unwrap();
 
+        let user_id = create_test_user(&mut *conn).await;
         let new_listing = NewListing {
             name: "Delete Me Listing".to_string(),
-            user_id: Uuid::new_v4(),
+            user_id,
             description: None,
             listing_structure_id: 1,
             country: "Testland".to_string(),
@@ -573,7 +623,7 @@ mod tests {
         // Let's create another one for hard delete
         let new_listing_2 = NewListing {
             name: "Hard Delete Me".to_string(),
-            user_id: Uuid::new_v4(),
+            user_id,
             description: None,
             listing_structure_id: 1,
             country: "Testland".to_string(),
