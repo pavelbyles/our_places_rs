@@ -42,6 +42,7 @@ RUN strip /app/target/${BUILD_OUTPUT}/booking_api
 FROM gcr.io/distroless/cc-debian12 AS runtime
 WORKDIR /app
 
+ARG BUILD_OUTPUT
 COPY --from=builder /app/target/${BUILD_OUTPUT}/booking_api /app/booking_api
 
 COPY app_api/booking_api/config /app/config

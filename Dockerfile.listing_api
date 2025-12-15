@@ -42,6 +42,7 @@ RUN strip /app/target/${BUILD_OUTPUT}/listing_api
 FROM gcr.io/distroless/cc-debian12 AS runtime
 WORKDIR /app
 
+ARG BUILD_OUTPUT
 COPY --from=builder /app/target/${BUILD_OUTPUT}/listing_api /app/listing_api
 
 COPY app_api/listing_api/config /app/config
