@@ -25,6 +25,7 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 COPY --from=planner /app/recipe.json recipe.json
 ARG RELEASE_FLAG
 RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json
