@@ -1,5 +1,0 @@
-[advisories]
-ignore = [
-    "RUSTSEC-2024-0436", # paste is unmaintained (transitive dependency of leptos)
-    "RUSTSEC-2023-0071", # RSA PKCS#1 v1.5 padding oracle (dependency of sqlx <-> rsa < 0.9.9)
-]
