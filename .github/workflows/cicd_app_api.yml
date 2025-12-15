@@ -64,6 +64,14 @@ jobs:
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
 
+      - name: Install sqlx (needed for compilation and integration tests)
+        run: |-
+          sudo apt-get install libpq-dev -y
+          cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
+
+      - name: Run DB and Migrations
+        run: cargo make --cwd app_api/listing_api db-migrate
+
       - name: Build app
         if: github.ref == 'refs/heads/dev'
         env:
