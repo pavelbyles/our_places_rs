@@ -147,10 +147,10 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_BUILD_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_BUILD_DB }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST }}
-        run: cargo make docker-db-build
+        run: cargo make --cwd listing_api docker-db-build
       
       - name: Run PostgreSQL image in a container (necessary for sqlx)
-        run: cargo make docker-db-run
+        run: cargo make --cwd listing_api docker-db-run
 
       - name: Run database migrations (necessary for sqlx)
         env:
@@ -159,7 +159,7 @@ jobs:
           POSTGRES_DB: ${{ vars.POSTGRES_BUILD_DB }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_BUILD_HOST }}
         run: |-
-          SKIP_DOCKER=true cargo make run-db-migrations
+          SKIP_DOCKER=true cargo make --cwd listing_api run-db-migrations
 
       # ---------------------------------------------------------
       # Booking API
