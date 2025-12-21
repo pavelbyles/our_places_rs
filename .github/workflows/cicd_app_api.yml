@@ -155,7 +155,7 @@ jobs:
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
