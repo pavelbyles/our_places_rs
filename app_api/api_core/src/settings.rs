@@ -87,7 +87,7 @@ impl DatabaseSettings {
         if self.cloud {
             // Build the Cloud SQL Unix socket connection string
             format!(
-                "postgres://{}:{}@localhost:5432/{}?host=/cloudsql/{}",
+                "postgres://{}:{}@/{}?host=/cloudsql/{}",
                 self.username, self.password, self.database_name, self.instance_name
             )
         } else {
