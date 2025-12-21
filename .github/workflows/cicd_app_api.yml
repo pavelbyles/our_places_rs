@@ -158,7 +158,7 @@ jobs:
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
             EA__DATABASE__DATABASE_NAME=our_places
-          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
       # ---------------------------------------------------------
       # Listing API
@@ -186,7 +186,7 @@ jobs:
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
             EA__DATABASE__DATABASE_NAME=our_places
-          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
       # ---------------------------------------------------------
       # User API
@@ -214,7 +214,7 @@ jobs:
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
             EA__DATABASE__DATABASE_NAME=our_places
-          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
   automated-api-tests:
     runs-on: ubuntu-latest
