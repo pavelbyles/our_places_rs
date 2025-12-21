@@ -152,6 +152,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
@@ -180,6 +181,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
@@ -208,6 +210,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
