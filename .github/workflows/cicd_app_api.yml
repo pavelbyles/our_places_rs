@@ -154,7 +154,7 @@ jobs:
             RUST_LOG=info
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=our-places-db-dev
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
             EA__DATABASE__DATABASE_NAME=our_places
@@ -182,7 +182,7 @@ jobs:
             RUST_LOG=info
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=our-places-db-dev
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
             EA__DATABASE__DATABASE_NAME=our_places
@@ -210,7 +210,7 @@ jobs:
             RUST_LOG=info
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=our-places-db-dev
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
             EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
             EA__DATABASE__DATABASE_NAME=our_places
