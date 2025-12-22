@@ -185,9 +185,9 @@ jobs:
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-            EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
-            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
-            EA__DATABASE__DATABASE_NAME=our_places
+            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
+            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
+            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
           flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
       # ---------------------------------------------------------
@@ -214,9 +214,9 @@ jobs:
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-            EA__DATABASE__USERNAME=${{ vars.POSTGRES_BUILD_USER }}
-            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_BUILD_PASSWORD }}
-            EA__DATABASE__DATABASE_NAME=our_places
+            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
+            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
+            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
           flags: '--no-allow-unauthenticated --min-instances=0 --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
   automated-api-tests:
