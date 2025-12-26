@@ -62,7 +62,7 @@ pub struct UpdatedBookingRequest {
 #[tracing::instrument]
 #[utoipa::path(
     post,
-    path = "/api/v1/booking/bookings",
+    path = "/api/v1/booking",
     tag = "bookings",
     request_body = NewBookingRequest,
     responses(
@@ -262,10 +262,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_booking_by_id,
             update_booking,
             delete_booking,
-
+            api_core::health::health_check,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy)
+            schemas(NewBookingRequest, UpdatedBookingRequest, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse)
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -281,10 +281,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/bookings")
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            )
             .route(
                 "/",
                 web::get()
@@ -314,6 +310,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::delete()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(delete_booking),
+            )
+            .route(
+                "/health_check",
+                web::get().to(api_core::health::health_check),
             ),
     );
 }

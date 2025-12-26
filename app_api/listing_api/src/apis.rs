@@ -315,7 +315,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             create_listing,
             get_listing_by_id,
             update_listing,
-            delete_listing
+            delete_listing,
+            api_core::health::health_check,
         ),
         components(
             schemas(NewListingRequest, UpdatedListingRequest, ListingResponse, pagination::Pagination)
