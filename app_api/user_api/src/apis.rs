@@ -224,16 +224,6 @@ async fn update_user(
         (status = 500, description = "Internal server error")
     )
 )]
-#[tracing::instrument]
-#[utoipa::path(
-    get,
-    path = "/api/v1/users/health_check",
-    tag = "users",
-    responses(
-        (status = 200, description = "User found", body = api_core::health::PingResponse),
-        (status = 500, description = "Internal server error")
-    )
-)]
 async fn get_user(
     req: HttpRequest,
     pool: web::Data<PgPool>,
