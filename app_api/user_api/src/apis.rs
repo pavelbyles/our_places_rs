@@ -72,7 +72,7 @@ fn map_user_to_response(user: User) -> UserResponse {
 #[tracing::instrument]
 #[utoipa::path(
     post,
-    path = "/api/v1/users/",
+    path = "/api/v1/users",
     tag = "users",
     request_body = NewUserRequest,
     responses(
@@ -224,6 +224,16 @@ async fn update_user(
         (status = 500, description = "Internal server error")
     )
 )]
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/users/health_check",
+    tag = "users",
+    responses(
+        (status = 200, description = "User found", body = api_core::health::PingResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
 async fn get_user(
     req: HttpRequest,
     pool: web::Data<PgPool>,
@@ -325,9 +335,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_user,
             get_user_bookings,
             get_user_listings,
+            api_core::health::health_check,
         ),
         components(
-            schemas(NewUserRequest, UpdatedUserRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination)
+            schemas(NewUserRequest, UpdatedUserRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse)
         ),
         tags(
             (name = "users", description = "User management endpoints")
@@ -372,6 +383,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(get_user_listings), // TODO: implement
+            )
+            .route(
+                "/health_check",
+                web::get().to(api_core::health::health_check),
             ),
     );
 }
@@ -420,4 +435,27 @@ async fn content_negotiation_middleware(
 
     // If checks pass, call the next service in the chain
     next.call(req).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{App, test, web};
+    use api_core::health::health_check;
+
+    #[actix_web::test]
+    async fn test_health_check() {
+        // Create the app with just the health check route
+        let app = test::init_service(
+            App::new().route("/api/v1/users/health_check", web::get().to(health_check)),
+        )
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/users/health_check")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
 }
