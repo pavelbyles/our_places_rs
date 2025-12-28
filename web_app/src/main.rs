@@ -1,30 +1,25 @@
-use leptos::*;
 use leptos::prelude::*;
-use components::navbar::Navbar;
-use components::hero::Hero;
-use components::featured::Featured;
 
-pub mod components;
+mod api;
+mod components;
+mod models;
+
+use api::fetch_listings;
+use components::listings::Listings;
+
+#[component]
+pub fn App() -> impl IntoView {
+    let listings = LocalResource::new(fetch_listings);
+
+    view! {
+        <div style="font-family: sans-serif; padding: 20px;">
+            <h1>"Our Places - Listings"</h1>
+            <Listings listings=listings />
+        </div>
+    }
+}
 
 fn main() {
-    _ = console_log::init_with_level(log::Level::Debug);
     console_error_panic_hook::set_once();
-    
-    mount_to_body(|| view! {
-        <div class="min-h-screen bg-[var(--bg-secondary)] font-sans text-gray-900">
-            <Navbar />
-            <Hero />
-            <Featured />
-            
-            // Simple Footer
-            <footer class="bg-gray-50 border-t border-gray-200 mt-16 py-12 text-center text-gray-500 text-sm">
-                <p>"© 2025 Our Places. All rights reserved."</p>
-                <div class="mt-2 flex justify-center gap-4">
-                    <a href="#" class="hover:text-gray-900">"Privacy"</a>
-                    <a href="#" class="hover:text-gray-900">"Terms"</a>
-                    <a href="#" class="hover:text-gray-900">"Contact"</a>
-                </div>
-            </footer>
-        </div>
-    })
+    leptos::mount::mount_to_body(|| view! { <App/> });
 }
