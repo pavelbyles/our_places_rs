@@ -1,0 +1,759 @@
+openapi: 3.0.0
+info:
+  title: Our Places API
+  description: API Gateway for Our Places services (User, Listing, Booking).
+  version: 1.0.0
+
+# ------------------------------------------------------------------------------
+# 1. CENTRAL BACKEND DEFINITIONS (REQUIRED FOR v3)
+# ------------------------------------------------------------------------------
+x-google-api-management:
+  backends:
+    user-backend:
+      address: https://user-api-689343985534.us-central1.run.app
+      pathTranslation: APPEND_PATH_TO_ADDRESS
+      protocol: h2
+    listing-backend:
+      address: https://listing-api-689343985534.us-central1.run.app
+      pathTranslation: APPEND_PATH_TO_ADDRESS
+      protocol: h2
+    booking-backend:
+      address: https://booking-api-689343985534.us-central1.run.app
+      pathTranslation: APPEND_PATH_TO_ADDRESS
+      protocol: h2
+
+# Global Security
+security:
+  - api_key: []
+
+paths:
+  # ----------------------------------------------------------------------------
+  # USER API
+  # ----------------------------------------------------------------------------
+  /api/v1/users:
+    post:
+      summary: Create a new user
+      operationId: createUser
+      tags:
+        - users
+      x-google-backend: user-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewUserRequest'
+      responses:
+        '201':
+          description: User Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error
+        '500':
+          description: Internal server error
+
+  /api/v1/users/user/{email}:
+    get:
+      summary: Get user by email
+      operationId: getUserByEmail
+      tags:
+        - users
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: email
+          schema:
+            type: string
+          required: true
+          description: User email
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          description: User not found
+        '500':
+          description: Internal server error
+
+  /api/v1/users/id/{id}:
+    patch:
+      summary: Update user
+      operationId: updateUser
+      tags:
+        - users
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: User UUID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatedUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error
+        '500':
+          description: Internal server error
+
+  /api/v1/users/user/{email}/bookings:
+    get:
+      summary: Get user bookings
+      operationId: getUserBookings
+      tags:
+        - users
+        - bookings
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: email
+          schema:
+            type: string
+          required: true
+          description: User email
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of bookings for user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingResponse'
+        '500':
+          description: Internal server error
+
+  /api/v1/users/user/{email}/listings:
+    get:
+      summary: Get user listings
+      operationId: getUserListings
+      tags:
+        - users
+        - listings
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: email
+          schema:
+            type: string
+          required: true
+          description: User email
+      responses:
+        '200':
+          description: List of listings for user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ListingResponse'
+        '500':
+          description: Internal server error
+
+  /api/v1/users/health_check:
+    get:
+      summary: Health check
+      operationId: healthCheckUsers
+      tags:
+        - users
+      x-google-backend: user-backend
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+        '500':
+          description: Internal server error
+
+  # ----------------------------------------------------------------------------
+  # LISTING API
+  # ----------------------------------------------------------------------------
+  /api/v1/listings:
+    get:
+      summary: Get listings
+      operationId: getListings
+      tags:
+        - listings
+      x-google-backend: listing-backend
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ListingResponse'
+        '500':
+          description: Internal server error
+    post:
+      summary: Create a new listing
+      operationId: createListing
+      tags:
+        - listings
+      x-google-backend: listing-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewListingRequest'
+      responses:
+        '201':
+          description: Listing created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+        '400':
+          description: Validation error
+        '500':
+          description: Internal server error
+
+  /api/v1/listings/listing/{id}:
+    get:
+      summary: Get listing by ID
+      operationId: getListingById
+      tags:
+        - listings
+      x-google-backend: listing-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        '200':
+          description: Listing found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+        '404':
+          description: Listing not found
+        '500':
+          description: Internal server error
+    patch:
+      summary: Update listing
+      operationId: updateListing
+      tags:
+        - listings
+      x-google-backend: listing-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatedListingRequest'
+      responses:
+        '200':
+          description: Listing updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListingResponse'
+        '400':
+          description: Validation error
+        '500':
+          description: Internal server error
+    delete:
+      summary: Delete listing
+      operationId: deleteListing
+      tags:
+        - listings
+      x-google-backend: listing-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: hard_delete
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '204':
+          description: Listing deleted
+        '404':
+          description: Listing not found
+        '500':
+          description: Internal server error
+
+  /api/v1/listings/health_check:
+    get:
+      summary: Health check
+      operationId: healthCheckListings
+      tags:
+        - listings
+      x-google-backend: listing-backend
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+        '500':
+          description: Internal server error
+
+  # ----------------------------------------------------------------------------
+  # BOOKING API
+  # ----------------------------------------------------------------------------
+  /api/v1/bookings:
+    get:
+      summary: Get bookings
+      operationId: getBookings
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingResponse'
+        '500':
+          description: Internal server error
+    post:
+      summary: Create a new booking
+      operationId: createBooking
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewBookingRequest'
+      responses:
+        '201':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+        '400':
+          description: Validation error
+        '500':
+          description: Internal server error
+
+  /api/v1/bookings/bookings/{id}:
+    get:
+      summary: Get booking by ID
+      operationId: getBookingById
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        '200':
+          description: Booking found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+        '404':
+          description: Booking not found
+        '500':
+          description: Internal server error
+    patch:
+      summary: Update booking
+      operationId: updateBooking
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatedBookingRequest'
+      responses:
+        '200':
+          description: Booking updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingResponse'
+        '404':
+          description: Booking not found
+        '500':
+          description: Internal server error
+    delete:
+      summary: Delete booking
+      operationId: deleteBooking
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        '204':
+          description: Booking deleted
+        '404':
+          description: Booking not found
+        '500':
+          description: Internal server error
+
+  /api/v1/bookings/health_check:
+    get:
+      summary: Health check
+      operationId: healthCheckBookings
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    api_key:
+      type: apiKey
+      name: x-api-key
+      in: header
+
+  schemas:
+    # -------------------------------------------------------------
+    # User Models
+    # -------------------------------------------------------------
+    NewUserRequest:
+      type: object
+      required:
+        - email
+        - password_hash
+        - first_name
+        - last_name
+        - is_active
+      properties:
+        email:
+          type: string
+        password_hash:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone_number:
+          type: string
+        is_active:
+          type: boolean
+
+    UpdatedUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password_hash:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone_number:
+          type: string
+        is_active:
+          type: boolean
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone_number:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # -------------------------------------------------------------
+    # Listing Models
+    # -------------------------------------------------------------
+    NewListingRequest:
+      type: object
+      required:
+        - name
+        - user_id
+        - listing_structure
+        - country
+      properties:
+        name:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        listing_structure:
+          type: string
+          enum: [Apartment, House, Townhouse, Studio, Villa]
+        country:
+          type: string
+        price_per_night:
+          type: number
+
+    UpdatedListingRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        listing_structure:
+          type: string
+          enum: [Apartment, House, Townhouse, Studio, Villa]
+        country:
+          type: string
+        price_per_night:
+          type: number
+        is_active:
+          type: boolean
+
+    ListingResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        listing_structure:
+          type: string
+        country:
+          type: string
+        price_per_night:
+          type: number
+        is_active:
+          type: boolean
+        added_at:
+          type: string
+          format: date-time
+
+    # -------------------------------------------------------------
+    # Booking Models
+    # -------------------------------------------------------------
+    NewBookingRequest:
+      type: object
+      required:
+        - guest_id
+        - listing_id
+        - date_from
+        - date_to
+        - currency
+        - daily_rate
+        - number_of_persons
+        - total_days
+        - sub_total_price
+        - total_price
+        - cancellation_policy
+        - fee_breakdown
+      properties:
+        guest_id:
+          type: string
+          format: uuid
+        listing_id:
+          type: string
+          format: uuid
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        currency:
+          type: string
+        daily_rate:
+          type: number
+        number_of_persons:
+          type: integer
+        total_days:
+          type: integer
+        sub_total_price:
+          type: number
+        discount_value:
+          type: number
+        tax_value:
+          type: number
+        fee_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeeItem'
+        total_price:
+          type: number
+        cancellation_policy:
+          type: string
+          enum: [Flexible, Moderate, Strict]
+
+    UpdatedBookingRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+
+    BookingResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        confirmation_code:
+          type: string
+        guest_id:
+          type: string
+          format: uuid
+        listing_id:
+          type: string
+          format: uuid
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        currency:
+          type: string
+        daily_rate:
+          type: number
+        number_of_persons:
+          type: integer
+        total_days:
+          type: integer
+        sub_total_price:
+          type: number
+        discount_value:
+          type: number
+        tax_value:
+          type: number
+        total_price:
+          type: number
+        cancellation_policy:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    FeeItem:
+      type: object
+      properties:
+        name:
+          type: string
+        amount:
+          type: number
+
+    BookingStatus:
+      type: string
+      enum: [Pending, Confirmed, Cancelled, Completed]
+
+    PingResponse:
+      type: object
+      properties:
+        status:
+          type: string

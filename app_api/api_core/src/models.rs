@@ -15,13 +15,18 @@ pub struct BookingResponse {
     pub date_from: NaiveDate,
     pub date_to: NaiveDate,
     pub currency: String,
+    #[serde(with = "rust_decimal::serde::float")]
     pub daily_rate: Decimal,
     pub number_of_persons: i32,
     pub total_days: i32,
+    #[serde(with = "rust_decimal::serde::float")]
     pub sub_total_price: Decimal,
+    #[serde(with = "rust_decimal::serde::float_option")]
     pub discount_value: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float_option")]
     pub tax_value: Option<Decimal>,
     pub fee_breakdown: Vec<FeeItem>,
+    #[serde(with = "rust_decimal::serde::float")]
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
     pub created_at: DateTime<Utc>,
@@ -42,7 +47,8 @@ pub struct ListingResponse {
     pub listing_structure: StructureType,
     pub country: String,
 
-    #[schema(value_type = Option<String>, example = "150.00")]
+    #[schema(value_type = Option<Decimal>, example = 150.00)]
+    #[serde(with = "rust_decimal::serde::float_option")]
     pub price_per_night: Option<Decimal>,
     pub is_active: bool,
 

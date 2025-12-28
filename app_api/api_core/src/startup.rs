@@ -8,6 +8,8 @@ use tracing_actix_web::TracingLogger;
 
 use crate::settings::Settings;
 
+use actix_cors::Cors;
+
 /// Runs web server and initialise API routes
 pub fn run<F>(
     listener: TcpListener,
@@ -22,6 +24,7 @@ where
     let settings = web::Data::new(settings);
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(Cors::permissive())
             .wrap(TracingLogger::default())
             .configure(config_fn.clone())
             .app_data(db_pool.clone())

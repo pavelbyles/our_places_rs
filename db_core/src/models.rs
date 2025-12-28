@@ -122,6 +122,7 @@ pub enum CancellationPolicy {
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct FeeItem {
     pub name: String,
+    #[serde(with = "rust_decimal::serde::float")]
     pub amount: Decimal,
 }
 
