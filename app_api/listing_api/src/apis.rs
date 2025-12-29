@@ -58,7 +58,7 @@ pub struct NewListingRequest {
     pub price_per_night: Option<Decimal>,
 }
 
-#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdatedListingRequest {
     #[serde(default)]
     #[validate(length(min = 1, message = "Name cannot be empty"))]
@@ -675,5 +675,74 @@ mod tests {
         let wrapper = ListingsWrapper { listing: response };
         let xml = to_string(&wrapper);
         assert!(xml.is_ok(), "XML serialization failed: {:?}", xml.err());
+    }
+
+    #[actix_web::test]
+    async fn test_update_listing_multiple_times() {
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let migrations_path = Path::new("../../db_core/migrations");
+        let test_db = TestPg::new(db_url, migrations_path);
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        let user_id = create_test_user(&mut *conn).await;
+        let original_name = "Original Name".to_string();
+        let new_listing = NewListing {
+            name: original_name.clone(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Testland".to_string(),
+            price_per_night: Some(dec!(100.00)),
+        };
+        let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
+            .await
+            .unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        // 1. First Update
+        let updated_name_1 = "Updated Name 1".to_string();
+        let update_req_1 = UpdatedListingRequest {
+            name: Some(updated_name_1.clone()),
+            description: None,
+            listing_structure: None,
+            country: None,
+            price_per_night: None,
+            is_active: None,
+        };
+        let req = test::TestRequest::patch()
+            .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+            .set_json(&update_req_1)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: ListingResponse = test::read_body_json(resp).await;
+        assert_eq!(body.name, updated_name_1);
+
+        // 2. Second Update (This would fail if history table has unique constraint on name)
+        let updated_name_2 = "Updated Name 2".to_string();
+        let update_req_2 = UpdatedListingRequest {
+            name: Some(updated_name_2.clone()),
+            description: None,
+            listing_structure: None,
+            country: None,
+            price_per_night: None,
+            is_active: None,
+        };
+        let req = test::TestRequest::patch()
+            .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+            .set_json(&update_req_2)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: ListingResponse = test::read_body_json(resp).await;
+        assert_eq!(body.name, updated_name_2);
     }
 }
