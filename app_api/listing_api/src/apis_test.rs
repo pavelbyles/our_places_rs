@@ -15,7 +15,7 @@ async fn create_test_user<'e, E>(executor: E) -> Uuid
 where
     E: PgExecutor<'e>,
 {
-    let id = Uuid::new_v4();
+    let id = Uuid::now_v7();
     let new_user = NewUser {
         id,
         email: format!("test_{}@example.com", id),
@@ -83,7 +83,7 @@ async fn test_get_listing_by_id_not_found() {
     let test_db = TestPg::new(db_url, migrations_path);
     let pool = test_db.get_pool().await;
 
-    let non_existent_id = Uuid::new_v4();
+    let non_existent_id = Uuid::now_v7();
 
     let app = test::init_service(
         App::new()
@@ -249,8 +249,8 @@ async fn test_xml_serialization_of_vec() {
     use serde_xml_rs::to_string;
 
     let response = vec![ListingResponse {
-        id: Uuid::new_v4(),
-        user_id: Uuid::new_v4(),
+        id: Uuid::now_v7(),
+        user_id: Uuid::now_v7(),
         name: "Test".to_string(),
         description: None,
         listing_structure: format!("{:?}", StructureType::Apartment),

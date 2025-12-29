@@ -28,7 +28,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             created_at, updated_at
         "#,
-        Uuid::new_v4(),
+        Uuid::now_v7(),
         new_booking.confirmation_code,
         new_booking.guest_id,
         new_booking.listing_id,

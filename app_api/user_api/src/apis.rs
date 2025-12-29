@@ -97,7 +97,7 @@ async fn create_user(
     loop {
         attempts += 1;
         let user = NewUser {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             email: req_data.email.clone(),
             password_hash: req_data.password_hash.clone(),
             first_name: req_data.first_name.clone(),
