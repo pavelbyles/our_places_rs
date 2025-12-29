@@ -1,4 +1,3 @@
-use super::*;
 use actix_web::{App, test, web};
 use api_core::health::health_check;
 
