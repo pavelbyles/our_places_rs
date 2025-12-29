@@ -363,3 +363,7 @@ async fn content_negotiation_middleware(
     // If checks pass, call the next service in the chain
     next.call(req).await
 }
+
+#[cfg(test)]
+#[path = "apis_test.rs"]
+mod tests;
