@@ -33,31 +33,10 @@ pub struct BookingResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-// Wrapper for XML collections
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ListingResponse {
-    #[schema(value_type = String, format = "uuid")]
-    pub id: Uuid,
-    #[schema(value_type = String, format = "uuid")]
-    pub user_id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-
-    #[schema(value_type = String, example = "Apartment")]
-    pub listing_structure: StructureType,
-    pub country: String,
-
-    #[schema(value_type = Option<Decimal>, example = 150.00)]
-    #[serde(with = "rust_decimal::serde::float_option")]
-    pub price_per_night: Option<Decimal>,
-    pub is_active: bool,
-
-    #[schema(value_type = String, format = "date-time")]
-    pub added_at: DateTime<Utc>,
-}
-
 // Helper to map DB Listing to API Response
-pub fn map_listing_to_response(listing: db_core::models::Listing) -> ListingResponse {
+pub fn map_listing_to_response(
+    listing: db_core::models::Listing,
+) -> common::models::ListingResponse {
     let structure = match listing.listing_structure_id {
         1 => StructureType::Apartment,
         2 => StructureType::House,
@@ -67,12 +46,12 @@ pub fn map_listing_to_response(listing: db_core::models::Listing) -> ListingResp
         _ => StructureType::Apartment, // Fallback
     };
 
-    ListingResponse {
+    common::models::ListingResponse {
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,
         description: listing.description,
-        listing_structure: structure,
+        listing_structure: format!("{:?}", structure), // Convert enum to String for common DTO
         country: listing.country,
         price_per_night: listing.price_per_night,
         is_active: listing.is_active,

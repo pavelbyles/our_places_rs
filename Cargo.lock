@@ -280,6 +280,7 @@ dependencies = [
  "actix-cors",
  "actix-web",
  "chrono",
+ "common",
  "config",
  "db_core",
  "rust_decimal",
@@ -691,6 +692,17 @@ name = "collection_literals"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2550f75b8cfac212855f6b1885455df8eaee8fe8e246b647d69146142e016084"
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rust_decimal",
+ "serde",
+ "utoipa",
+ "uuid",
+]
 
 [[package]]
 name = "concurrent-queue"
@@ -2209,6 +2221,7 @@ dependencies = [
  "anyhow",
  "api_core",
  "chrono",
+ "common",
  "config",
  "db_core",
  "dotenvy",
@@ -5084,6 +5097,7 @@ dependencies = [
 name = "web_app"
 version = "0.1.0"
 dependencies = [
+ "common",
  "console_error_panic_hook",
  "console_log",
  "dotenvy",

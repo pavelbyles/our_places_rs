@@ -1,24 +1,23 @@
-use leptos::*;
 use leptos::prelude::*;
 
 #[component]
 pub fn VillaCard(
-    name: &'static str,
-    location: &'static str,
+    #[prop(into)] name: String,
+    #[prop(into)] location: String,
     beds: u8,
     min_stay: u8,
-    image_url: &'static str,
+    #[prop(into)] image_url: String,
 ) -> impl IntoView {
     view! {
         <div class="villa-card rounded-2xl bg-white shadow-sm hover:shadow-xl transition-all duration-300 group">
             // Image Section (Full Width, No Top Border)
             <div class="relative h-64 w-full overflow-hidden">
-                <img 
-                    src=image_url 
-                    alt=name 
+                <img
+                    src=image_url
+                    alt=name.clone()
                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                 />
-                
+
                 // Image Navigation Arrows (Visible on Hover - Logic placeholder)
                 <button class="absolute left-2 top-1/2 -translate-y-1/2 bg-white/80 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition shadow-sm hover:bg-white text-gray-700">
                     "❮"

@@ -22,6 +22,7 @@ chrono = { workspace = true }
 rust_decimal = { workspace = true }
 
 db_core = { path = "../../db_core" }
+common = { path = "../../common" }
 
 [dependencies.sqlx]
 version = "0.8.6"

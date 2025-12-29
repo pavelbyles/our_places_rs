@@ -8,7 +8,7 @@ members = [
     "app_api/user_api",
     "protoproj",
     "web_app",
-    "db_core",
+    "db_core", "common",
 ]
 
 [workspace.dependencies]

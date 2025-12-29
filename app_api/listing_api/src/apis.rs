@@ -3,7 +3,8 @@ use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::http::header::{ACCEPT, CONTENT_TYPE};
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
-use api_core::models::{ListingResponse, ListingsWrapper, map_listing_to_response};
+use api_core::models::{ListingsWrapper, map_listing_to_response};
+use common::models::ListingResponse;
 
 // Helper to map StructureType to ID
 fn structure_type_to_id(st: &StructureType) -> i32 {

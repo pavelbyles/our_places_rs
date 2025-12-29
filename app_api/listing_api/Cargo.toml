@@ -27,6 +27,7 @@ tracing-log = "0.2"
 
 db_core = { path = "../../db_core" }
 api_core = { path = "../api_core" }
+common = { path = "../../common" }
 actix-web = "4.10.2"
 
 [dev-dependencies]
