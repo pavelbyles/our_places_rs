@@ -4,7 +4,7 @@ CREATE TYPE cancellation_policy AS ENUM ('flexible', 'moderate', 'strict');
 
 -- Create the booking table
 CREATE TABLE booking (
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuidv7(),
 
     -- Confirmation code for user-facing lookups (e.g. HMEJYC3P9B)
     confirmation_code VARCHAR(12) NOT NULL UNIQUE,

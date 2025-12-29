@@ -6,7 +6,7 @@ CREATE TABLE listing_structure (
 
 -- Create listing table
 CREATE TABLE listing (
-  id UUID NOT NULL,
+  id UUID NOT NULL DEFAULT uuidv7(),
   PRIMARY KEY (id),
   name TEXT NOT NULL UNIQUE,
   description TEXT,

@@ -15,7 +15,7 @@ where
         VALUES ($1, $2, $3, $4, $5, $6, $7, now())
         RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
         "#,
-        Uuid::new_v4(),
+        Uuid::now_v7(),
         new_listing.user_id,
         new_listing.name,
         new_listing.description,
@@ -217,7 +217,7 @@ mod tests {
     where
         E: PgExecutor<'e>,
     {
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         let new_user = NewUser {
             id,
             email: format!("test_{}@example.com", id),
@@ -277,7 +277,7 @@ mod tests {
 
         assert_eq!(created_listing.id, fetched_listing.id);
 
-        let non_existent_id = Uuid::new_v4();
+        let non_existent_id = Uuid::now_v7();
         let result = get_listing_by_id(&mut *tx, non_existent_id).await;
         assert!(matches!(
             result,
