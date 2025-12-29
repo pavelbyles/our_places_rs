@@ -18,7 +18,6 @@ fn structure_type_to_id(st: &StructureType) -> i32 {
 }
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
-// use chrono::{DateTime, Utc}; // Removed unused
 use db_core::listing as db_listing;
 use db_core::models::{NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;

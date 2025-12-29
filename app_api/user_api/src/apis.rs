@@ -6,14 +6,15 @@ use actix_web::{Error, HttpRequest, Responder, web};
 use api_core::{
     error::ApiError,
     models::{
-        BookingResponse, BookingsWrapper, ListingResponse, ListingsWrapper,
-        map_booking_to_response, map_listing_to_response,
+        BookingResponse, BookingsWrapper, ListingsWrapper, map_booking_to_response,
+        map_listing_to_response,
     },
     pagination,
     response::{Payload, respond},
     settings::Settings,
 };
 use chrono::{DateTime, Utc};
+use common::models::ListingResponse;
 use db_core::booking as db_booking;
 use db_core::listing as db_listing;
 use db_core::models::{NewUser, UpdatedUser, User};

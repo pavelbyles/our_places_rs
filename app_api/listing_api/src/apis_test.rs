@@ -68,7 +68,10 @@ async fn test_get_listing_by_id_success() {
     assert!(resp.status().is_success());
     let body: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(body.id, created_listing.id);
-    assert_eq!(body.listing_structure, StructureType::Apartment);
+    assert_eq!(
+        body.listing_structure,
+        format!("{:?}", StructureType::Apartment)
+    );
 }
 
 #[actix_web::test]
@@ -250,7 +253,7 @@ async fn test_xml_serialization_of_vec() {
         user_id: Uuid::new_v4(),
         name: "Test".to_string(),
         description: None,
-        listing_structure: StructureType::Apartment,
+        listing_structure: format!("{:?}", StructureType::Apartment),
         country: "Test".to_string(),
         price_per_night: Some(dec!(100)),
         is_active: true,

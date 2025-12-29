@@ -7,7 +7,7 @@ edition = "2024"
 console_log = "1.0"
 console_error_panic_hook = "0.1.7"
 leptos = { version = "0.8.15", features = ["csr"] }
-leptos_reactive = "0.6.15"
+
 reqwest = { version = "0.11", features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
