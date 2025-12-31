@@ -12,6 +12,13 @@ pub struct Settings {
     pub log: Log,
     pub env: Env,
     pub application: Application,
+    pub feature_flags: FeatureFlags,
+}
+
+// Feature flags model
+#[derive(Debug, Deserialize, Clone)]
+pub struct FeatureFlags {
+    pub enable_hard_deletes: bool,
 }
 
 // Application settings model
