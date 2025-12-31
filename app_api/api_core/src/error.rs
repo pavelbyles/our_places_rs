@@ -14,6 +14,9 @@ pub enum ApiError {
 
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationErrors),
+
+    #[error("Feature '{0}' is currently disabled")]
+    FeatureDisabled(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -34,6 +37,8 @@ impl ResponseError for ApiError {
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            // Feature disabled error is 403 Forbidden
+            ApiError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
         }
     }
 

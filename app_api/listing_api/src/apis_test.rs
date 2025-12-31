@@ -1,6 +1,6 @@
 use super::*;
 use actix_web::{App, test, web};
-use api_core::settings::{Application, DatabaseSettings, Env, Log, Server, Settings};
+use api_core::settings::{Application, DatabaseSettings, Env, FeatureFlags, Log, Server, Settings};
 use chrono::Utc;
 use db_core::models::NewUser;
 use db_core::models::{NewListing, StructureType};
@@ -31,6 +31,34 @@ where
     id
 }
 
+/// Helper to get default test settings.
+/// Returns settings with hard deletes ENABLED by default.
+fn get_test_settings() -> Settings {
+    Settings {
+        server: Server {
+            host: "localhost".to_string(),
+            port: 8080,
+        },
+        database: DatabaseSettings {
+            username: "postgres".to_string(),
+            password: "password".to_string(),
+            port: 5432,
+            host: "localhost".to_string(),
+            database_name: "test".to_string(),
+            cloud: false,
+            instance_name: "".to_string(),
+        },
+        log: Log {
+            level: "info".to_string(),
+        },
+        env: Env::Testing,
+        application: Application { max_attempts: 1 },
+        feature_flags: FeatureFlags {
+            enable_hard_deletes: true,
+        },
+    }
+}
+
 #[actix_web::test]
 async fn test_get_listing_by_id_success() {
     dotenvy::dotenv().ok();
@@ -56,6 +84,7 @@ async fn test_get_listing_by_id_success() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
     )
     .await;
@@ -88,6 +117,7 @@ async fn test_get_listing_by_id_not_found() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
     )
     .await;
@@ -111,31 +141,10 @@ async fn test_create_listing_validation_error() {
     let mut conn = pool.acquire().await.unwrap();
     let user_id = create_test_user(&mut *conn).await;
 
-    let settings = Settings {
-        server: Server {
-            host: "localhost".to_string(),
-            port: 8080,
-        },
-        database: DatabaseSettings {
-            username: "postgres".to_string(),
-            password: "password".to_string(),
-            port: 5432,
-            host: "localhost".to_string(),
-            database_name: "test".to_string(),
-            cloud: false,
-            instance_name: "".to_string(),
-        },
-        log: Log {
-            level: "info".to_string(),
-        },
-        env: Env::Testing,
-        application: Application { max_attempts: 1 }, // This is the only setting that's actually used
-    };
-
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(pool.clone()))
-            .app_data(web::Data::new(settings))
+            .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
     )
     .await;
@@ -183,6 +192,7 @@ async fn test_delete_listing() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
     )
     .await;
@@ -195,21 +205,13 @@ async fn test_delete_listing() {
     assert_eq!(resp.status(), 204);
 
     // Verify it's gone from GET
-    // Correction: URL in original code had a typo "listingslisting". Fixing it here?
-    // The original code: /api/v1/listingslisting/
-    // Wait, let's keep it exactly as is to avoid breaking if the typo was intentional (unlikely)
-    // But clearly it should be /api/v1/listings/listing/
-    // Looking at line 618: .uri(&format!("/api/v1/listingslisting/{}", created_listing.id))
-    // This looks like a bug in the test code! It probably still passes because 404 is expected.
-    // I will fix the typo to be safe: /api/v1/listings/listing/
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 
-    // 2. Hard Delete (on already soft-deleted item? Or create new one?)
-    // Let's create another one for hard delete
+    // 2. Hard Delete
     let new_listing_2 = NewListing {
         name: "Hard Delete Me".to_string(),
         user_id,
@@ -240,6 +242,51 @@ async fn test_delete_listing() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+async fn test_delete_listing_hard_forbidden() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let user_id = create_test_user(&mut *conn).await;
+    let new_listing = NewListing {
+        name: "Forbidden Hard Delete".to_string(),
+        user_id,
+        description: None,
+        listing_structure_id: 1,
+        country: "Testland".to_string(),
+        price_per_night: Some(dec!(100.00)),
+    };
+    let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
+        .await
+        .unwrap();
+
+    // Settings with hard delete DISABLED
+    let mut settings = get_test_settings();
+    settings.feature_flags.enable_hard_deletes = false; // Override default!
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!(
+            "/api/v1/listings/listing/{}?hard_delete=true",
+            created_listing.id
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), 403);
 }
 
 #[actix_web::test]
@@ -291,6 +338,7 @@ async fn test_update_listing_multiple_times() {
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
     )
     .await;
@@ -314,7 +362,7 @@ async fn test_update_listing_multiple_times() {
     let body: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(body.name, updated_name_1);
 
-    // 2. Second Update (This would fail if history table has unique constraint on name)
+    // 2. Second Update
     let updated_name_2 = "Updated Name 2".to_string();
     let update_req_2 = UpdatedListingRequest {
         name: Some(updated_name_2.clone()),

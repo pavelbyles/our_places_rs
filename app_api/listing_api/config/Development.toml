@@ -6,3 +6,6 @@ port = "8080"
 level = "debug"
 
 env = "Development"
+
+[feature_flags]
+enable_hard_deletes = true

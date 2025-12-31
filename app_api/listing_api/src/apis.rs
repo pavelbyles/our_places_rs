@@ -298,9 +298,15 @@ async fn delete_listing(
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     query: web::Query<DeleteListingParams>,
+    settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
     let hard_delete = query.hard_delete.unwrap_or(false);
+
+    // Guard: Prevent hard delete if the feature flag is off
+    if hard_delete && !settings.feature_flags.enable_hard_deletes {
+        return Err(ApiError::FeatureDisabled("hard_delete".to_string()));
+    }
 
     db_listing::delete_listing(pool.get_ref(), listing_id, hard_delete).await?;
 
