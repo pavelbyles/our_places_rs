@@ -234,4 +234,4 @@ jobs:
 
         # Runs the sanity check collection using the postman-sanity-checks-api-key
         run: |
-          postman collection run "701056-bf0597d5-23ee-4374-97f7-c3741a532c3f" -e "{{ vars.POSTMAN_GCP_DEV_API_GATEWAY_ENVIRONMENT_ID }}"
+          postman collection run "701056-bf0597d5-23ee-4374-97f7-c3741a532c3f" -e "${{ vars.POSTMAN_GCP_DEV_API_GATEWAY_ENVIRONMENT_ID }}"
