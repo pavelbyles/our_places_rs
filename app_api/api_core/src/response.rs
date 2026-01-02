@@ -22,7 +22,8 @@ where
     F: FnOnce(Vec<T>) -> W,
 {
     let accept_header = req.headers().get(ACCEPT);
-    let use_xml = accept_header.is_some_and(|h| h.to_str().unwrap_or("").contains("application/xml"));
+    let use_xml =
+        accept_header.is_some_and(|h| h.to_str().unwrap_or("").contains("application/xml"));
 
     if use_xml {
         let xml_body = match data {

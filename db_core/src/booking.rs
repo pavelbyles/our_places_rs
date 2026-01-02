@@ -8,6 +8,7 @@ use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 /// Creates a new booking in the database.
+#[tracing::instrument(skip(executor))]
 pub async fn create_booking<'e, E>(executor: E, new_booking: &NewBooking) -> Result<Booking>
 where
     E: PgExecutor<'e>,
@@ -55,6 +56,7 @@ where
 }
 
 /// Retrieves all bookings with pagination.
+#[tracing::instrument(skip(executor))]
 pub async fn get_bookings<'e, E>(executor: E, page: u32, per_page: u32) -> Result<Vec<Booking>>
 where
     E: PgExecutor<'e>,
@@ -84,6 +86,7 @@ where
 }
 
 /// Retrieves a single booking by ID.
+#[tracing::instrument(skip(executor))]
 pub async fn get_booking_by_id<'e, E>(executor: E, id: Uuid) -> Result<Booking>
 where
     E: PgExecutor<'e>,
@@ -108,6 +111,7 @@ where
 }
 
 /// Updates a booking's status.
+#[tracing::instrument(skip(pool))]
 pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
@@ -148,6 +152,7 @@ pub async fn update_booking(
 }
 
 /// Deletes a booking (Hard Delete).
+#[tracing::instrument(skip(pool))]
 pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
     let result: sqlx::postgres::PgQueryResult =
         sqlx::query!("DELETE FROM booking WHERE id = $1", id)
@@ -162,6 +167,7 @@ pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
 }
 
 /// Retrieves bookings for a specific user, sorted by date_from ASC.
+#[tracing::instrument(skip(executor))]
 pub async fn get_bookings_by_user_id<'e, E>(
     executor: E,
     guest_id: Uuid,

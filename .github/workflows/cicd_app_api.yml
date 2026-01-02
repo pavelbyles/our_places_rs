@@ -151,6 +151,7 @@ jobs:
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
+            LOG_FORMAT=json
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -180,6 +181,7 @@ jobs:
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
+            LOG_FORMAT=json
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -209,6 +211,7 @@ jobs:
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
+            LOG_FORMAT=json
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
