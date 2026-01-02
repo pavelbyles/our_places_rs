@@ -50,6 +50,7 @@ COPY app_api/booking_api/config /app/config
 
 ENV PORT=8080
 ENV HOST=0.0.0.0
+ENV LOG_FORMAT=json
 
 EXPOSE 8080
 
