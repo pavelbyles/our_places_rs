@@ -13,31 +13,15 @@
 //! - [x] Delete listings
 
 use anyhow::Context;
-use api_core::{
-    startup::run,
-    settings,
-    sys
-};
-use db_core::{
-    connection::create_connection_pool,
-    run_migrations,
-};
+use api_core::{settings, startup::run, sys};
+use db_core::{connection::create_connection_pool, run_migrations};
 use listing_api::apis;
 use std::net::TcpListener;
-use tracing_subscriber::{
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-};
-use tracing_subscriber::fmt::format::FmtSpan;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE))
-        .init();
+    // Initialize tracing
+    api_core::tracing_utils::init_subscriber();
 
     tracing::info!("Starting application");
 
@@ -63,9 +47,14 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(&address)
         .context(format!("Failed to bind to random port {}", address))?;
-    let _ = run(listener, db_connection_pool, apis::configure_routes, config.clone())?
-        .await
-        .context("Server error");
+    let _ = run(
+        listener,
+        db_connection_pool,
+        apis::configure_routes,
+        config.clone(),
+    )?
+    .await
+    .context("Server error");
 
     Ok(())
 }

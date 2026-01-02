@@ -23,6 +23,7 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug)]
 pub struct NewUser {
     pub id: Uuid,
     pub email: String,
@@ -33,6 +34,7 @@ pub struct NewUser {
     pub is_active: bool,
 }
 
+#[derive(Debug)]
 pub struct UpdatedUser {
     pub email: Option<String>,
     pub password_hash: Option<String>,

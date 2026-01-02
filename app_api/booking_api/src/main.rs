@@ -13,18 +13,12 @@ use api_core::{settings, startup::run, sys};
 use booking_api::apis;
 use db_core::{connection::create_connection_pool, run_migrations};
 use std::net::TcpListener;
-use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Test main func doc
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE))
-        .init();
+    // Initialize tracing
+    api_core::tracing_utils::init_subscriber();
 
     tracing::info!("Starting application");
 

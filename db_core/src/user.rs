@@ -5,6 +5,7 @@ use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 /// Creates a new user in the database.
+#[tracing::instrument(skip(executor))]
 pub async fn create_user<'e, E>(executor: E, new_user_request: &NewUser) -> Result<User>
 where
     E: PgExecutor<'e>,
@@ -33,6 +34,7 @@ where
 }
 
 /// Retrieves user specified by id
+#[tracing::instrument(skip(executor))]
 pub async fn get_user_by_id<'e, E>(executor: E, id: Uuid) -> Result<User>
 where
     E: PgExecutor<'e>,
@@ -51,6 +53,7 @@ where
 }
 
 /// Retrieves user specified by email
+#[tracing::instrument(skip(executor))]
 pub async fn get_user_by_email<'e, E>(executor: E, email: &str) -> Result<User>
 where
     E: PgExecutor<'e>,
@@ -68,6 +71,7 @@ where
     Ok(user)
 }
 
+#[tracing::instrument(skip(pool))]
 pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) -> Result<User> {
     let mut tx = pool.begin().await?;
 

@@ -4,6 +4,7 @@ use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 /// Creates a new listing in the database.
+#[tracing::instrument(skip(executor))]
 pub async fn create_listing<'e, E>(executor: E, new_listing: &NewListing) -> Result<Listing>
 where
     E: PgExecutor<'e>,
@@ -31,6 +32,7 @@ where
 
 /// Retrieves all listings from the database.
 /// Retrieves a paginated list of listings from the database.
+#[tracing::instrument(skip(executor))]
 pub async fn get_listings<'e, E>(executor: E, page: u32, per_page: u32) -> Result<Vec<Listing>>
 where
     E: PgExecutor<'e>,
@@ -61,6 +63,7 @@ where
 }
 
 /// Retrieves all listings for a specific user from the database.
+#[tracing::instrument(skip(executor))]
 pub async fn get_listings_by_user_id<'e, E>(executor: E, user_id: Uuid) -> Result<Vec<Listing>>
 where
     E: PgExecutor<'e>,
@@ -82,6 +85,7 @@ where
 }
 
 /// Retrieves a single listing from the database by its UUID.
+#[tracing::instrument(skip(executor))]
 pub async fn get_listing_by_id<'e, E>(executor: E, id: Uuid) -> Result<Listing>
 where
     E: PgExecutor<'e>,
@@ -102,6 +106,7 @@ where
 }
 
 /// Updates a listing in the database.
+#[tracing::instrument(skip(pool))]
 pub async fn update_listing(
     pool: &PgPool,
     id: Uuid,
@@ -171,6 +176,7 @@ pub async fn update_listing(
 /// Deletes a listing from the database.
 /// If `hard_delete` is true, the listing is permanently removed.
 /// If `hard_delete` is false, the listing is soft-deleted (deleted_at is set).
+#[tracing::instrument(skip(pool))]
 pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Result<()> {
     let result = if hard_delete {
         sqlx::query!("DELETE FROM listing WHERE id = $1", id)

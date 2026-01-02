@@ -25,7 +25,7 @@ where
     let server = HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
-            .wrap(TracingLogger::default())
+            .wrap(TracingLogger::<crate::tracing_utils::CustomRootSpanBuilder>::new())
             .configure(config_fn.clone())
             .app_data(db_pool.clone())
             .app_data(settings.clone())

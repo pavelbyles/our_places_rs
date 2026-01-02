@@ -13,6 +13,11 @@ serde_json = { workspace = true }
 serde-xml-rs = { workspace = true }
 tracing = { workspace = true }
 tracing-actix-web = { workspace = true }
+tracing-subscriber = { version = "0.3", features = [
+  "registry",
+  "env-filter",
+  "json",
+] }
 config = { workspace = true }
 utoipa = { workspace = true }
 thiserror = { workspace = true }
