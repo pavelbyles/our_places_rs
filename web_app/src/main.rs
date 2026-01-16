@@ -5,9 +5,9 @@ async fn main() -> std::io::Result<()> {
     use actix_web::*;
     use leptos::prelude::*;
     use leptos::config::get_configuration;
-    use leptos_meta::MetaTags;
     use leptos_actix::{generate_route_list, LeptosRoutes};
     use web_app::app::*;
+    use web_app::components::shell::AppShell;
 
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
@@ -31,19 +31,7 @@ async fn main() -> std::io::Result<()> {
                 let leptos_options = leptos_options.clone();
                 move || {
                     view! {
-                        <!DOCTYPE html>
-                        <html lang="en">
-                            <head>
-                                <meta charset="utf-8"/>
-                                <meta name="viewport" content="width=device-width, initial-scale=1"/>
-                                <AutoReload options=leptos_options.clone() />
-                                <HydrationScripts options=leptos_options.clone()/>
-                                <MetaTags/>
-                            </head>
-                            <body>
-                                <App/>
-                            </body>
-                        </html>
+                        <AppShell options=leptos_options.clone()/>
                     }
                 }
             })

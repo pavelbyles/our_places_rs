@@ -1,4 +1,5 @@
 pub mod app;
+pub mod components;
 pub mod models;
 
 use leptos::prelude::*;
@@ -8,7 +9,7 @@ use leptos_router::{
     StaticSegment, WildcardSegment,
 };
 
-use crate::app::{App, HomePage, NotFound};
+use crate::app::App;
 
 #[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
