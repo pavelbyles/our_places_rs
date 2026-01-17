@@ -54,9 +54,7 @@ jobs:
 
       - name: Build and Push Web App
         run: |
-          docker build \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE }}:${{ github.sha }} \
-            -f web_app/Dockerfile.web_app .
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE }}:${{ github.sha }}
       
       - name: Deploy Web App
