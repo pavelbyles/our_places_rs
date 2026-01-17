@@ -381,3 +381,66 @@ async fn test_update_listing_multiple_times() {
     let body: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(body.name, updated_name_2);
 }
+#[actix_web::test]
+async fn test_get_listings_with_filter() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let user_id = create_test_user(&mut *conn).await;
+
+    let listing1 = NewListing {
+        name: "Apartment in Paris".to_string(),
+        user_id,
+        description: None,
+        listing_structure_id: 1, // Apartment
+        country: "France".to_string(),
+        price_per_night: Some(dec!(100.00)),
+    };
+    db_listing::create_listing(&mut *conn, &listing1)
+        .await
+        .unwrap();
+
+    let listing2 = NewListing {
+        name: "House in London".to_string(),
+        user_id,
+        description: None,
+        listing_structure_id: 2, // House
+        country: "UK".to_string(),
+        price_per_night: Some(dec!(200.00)),
+    };
+    db_listing::create_listing(&mut *conn, &listing2)
+        .await
+        .unwrap();
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    // Filter by Country (France)
+    let req = test::TestRequest::get()
+        .uri("/api/v1/listings/?country=France")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success());
+    let body: Vec<ListingResponse> = test::read_body_json(resp).await;
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].name, "Apartment in Paris");
+
+    // Filter by Price (< 150)
+    let req = test::TestRequest::get()
+        .uri("/api/v1/listings/?max_price=150")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success());
+    let body: Vec<ListingResponse> = test::read_body_json(resp).await;
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].name, "Apartment in Paris");
+}
