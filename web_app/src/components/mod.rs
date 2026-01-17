@@ -1,5 +1,6 @@
-pub mod card;
-pub mod featured;
+pub mod about;
 pub mod hero;
-pub mod navbar;
-pub mod search_bar;
+pub mod home;
+pub mod layout;
+pub mod not_found;
+pub mod shell;

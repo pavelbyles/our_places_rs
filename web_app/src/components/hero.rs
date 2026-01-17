@@ -1,34 +1,23 @@
-use leptos::*;
 use leptos::prelude::*;
-use crate::components::search_bar::SearchBar;
 
 #[component]
 pub fn Hero() -> impl IntoView {
     view! {
-        <section class="hero relative w-full h-[600px] flex flex-col justify-center items-center text-center">
-            // Background Image (Placeholder URL)
-            <div class="absolute inset-0 z-0">
-                <img 
-                    src="https://images.unsplash.com/photo-1613490493576-7fde63acd811?q=80&w=2071&auto=format&fit=crop" 
-                    alt="Luxury Villa" 
-                    class="w-full h-full object-cover"
-                />
-                // Overlay for better text readability
-                <div class="absolute inset-0 bg-black/20"></div>
-            </div>
-
-            // Content
-            <div class="relative z-10 w-full px-4">
-                <h1 class="text-5xl md:text-7xl font-bold text-white mb-4 drop-shadow-md">
-                    "Find Your Perfect Getaway"
-                </h1>
-                <p class="text-xl md:text-2xl text-white mb-12 drop-shadow-md">
-                    "Discover the world's most luxurious villas."
+        <div
+            class="hero min-h-screen"
+            style="background-image: url(https://img.daisyui.com/images/stock/photo-1507358522600-9f71e620c44e.webp);"
+            >
+            <div class="hero-overlay"></div>
+            <div class="hero-content text-neutral-content text-center">
+                <div class="max-w-md">
+                <h1 class="mb-5 text-5xl font-bold">"Your home away from home"</h1>
+                <p class="mb-5">
+                    "Provident cupiditate voluptatem et in. Quaerat fugiat ut assumenda excepturi exercitationem
+                    quasi. In deleniti eaque aut repudiandae et a id nisi."
                 </p>
-
-                // Search Bar Component
-                <SearchBar />
+                <button class="btn btn-primary">"Book Now"</button>
+                </div>
             </div>
-        </section>
+        </div>
     }
 }
