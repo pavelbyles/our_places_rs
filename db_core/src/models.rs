@@ -198,3 +198,15 @@ pub enum StructureType {
     #[strum(serialize = "Villa")]
     Villa,
 }
+
+impl StructureType {
+    pub fn id(&self) -> i32 {
+        match self {
+            StructureType::Apartment => 1,
+            StructureType::House => 2,
+            StructureType::Townhouse => 3,
+            StructureType::Studio => 4,
+            StructureType::Villa => 5,
+        }
+    }
+}
