@@ -82,5 +82,18 @@ services:
       db:
         condition: service_healthy
 
+  web_app:
+    build:
+      context: .
+      dockerfile: web_app/Dockerfile.web_app
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info,web_app=debug
+      - LISTING_API_URL=http://listing_api:8080
+      - LEPTOS_SITE_ADDR=0.0.0.0:8080
+    depends_on:
+      - listing_api
+
 volumes:
   postgres_data_dev:
