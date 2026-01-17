@@ -1,13 +1,16 @@
 FROM rustlang/rust:nightly-bookworm AS builder
 
-# cargo extensions like cargo-leptos
-RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
-RUN tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz
-RUN cp cargo-binstall /usr/local/cargo/bin
+# Install Node.js and npm (for Tailwind/DaisyUI)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install required tools
-RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends clang
+# Install cargo-binstall for fast tool installation
+RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz \
+    && tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz \
+    && cp cargo-binstall /usr/local/cargo/bin \
+    && rm cargo-binstall-x86_64-unknown-linux-musl.tgz
 
 # Install cargo-leptos
 RUN cargo binstall cargo-leptos -y
@@ -17,20 +20,24 @@ RUN rustup target add wasm32-unknown-unknown
 
 # Make an /app dir, which everything will eventually live in
 RUN mkdir -p /app
-# Copy the project files
-COPY common /app/common
-COPY web_app /app/web_app
+WORKDIR /app
 
-# Switch to the project directory to build
+# Copy the entire workspace to preserve common crate and workspace structure
+COPY . .
+
+# Set SQLX_OFFLINE to true so we don't need a running DB connection to build
+ENV SQLX_OFFLINE=true
+
+# Build styles (Tailwind)
+# We need to be in the web_app directory for npm commands
 WORKDIR /app/web_app
+RUN npm install
+RUN npm run build:css
 
-# Debug: Check if Cargo.toml exists
-RUN ls -la
-
-
-
-# Build the app
-RUN cargo leptos build --release -vv
+# Build the application
+# We go back to root or stay here,# Using --project web_app from root, or running inside web_app
+WORKDIR /app/web_app
+RUN cargo leptos build --release
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
@@ -41,19 +48,18 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy the server binary to the /app directory
+# Note: cargo-leptos typically outputs to target/release/web_app (main binary)
 COPY --from=builder /app/web_app/target/release/web_app /app/
 
 # /target/site contains our JS/WASM/CSS, etc.
 COPY --from=builder /app/web_app/target/site /app/site
 
-# Copy Cargo.toml if it’s needed at runtime
-COPY --from=builder /app/web_app/Cargo.toml /app/
-
-# Set any required env variables and
-ENV RUST_LOG="info"
+# Set any required env variables
+# 0.0.0.0 is crucial for Docker/Cloud Run
 ENV LEPTOS_SITE_ADDR="0.0.0.0:8080"
 ENV LEPTOS_SITE_ROOT="site"
+# Default to port 8080
 EXPOSE 8080
 
 # Run the server
-CMD ["/app/web_app"]
+CMD ["./web_app"]

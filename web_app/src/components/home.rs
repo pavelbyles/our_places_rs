@@ -59,7 +59,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
     use reqwest;
     use uuid::Uuid;
 
-    let listing_api_url = option_env!("LISTING_API_URL").unwrap_or("http://localhost:8082");
+    let listing_api_url = std::env::var("LISTING_API_URL").unwrap_or("http://localhost:8082".to_string());
     
     // Server-side logging
     println!("LISTING_API_URL: {}", listing_api_url);
