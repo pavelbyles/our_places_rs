@@ -31,33 +31,67 @@ where
 }
 
 /// Retrieves all listings from the database.
-/// Retrieves a paginated list of listings from the database.
+/// Retrieves a paginated list of listings from the database with optional filtering.
 #[tracing::instrument(skip(executor))]
-pub async fn get_listings<'e, E>(executor: E, page: u32, per_page: u32) -> Result<Vec<Listing>>
+pub async fn get_listings<'e, E>(
+    executor: E,
+    page: u32,
+    per_page: u32,
+    filter: Option<common::models::ListingFilter>,
+) -> Result<Vec<Listing>>
 where
     E: PgExecutor<'e>,
 {
     // Calculate the LIMIT and OFFSET values for the SQL query.
-    // LIMIT is the number of items per page.
-    // OFFSET is the number of items to skip.
     let limit = per_page as i64;
-    // We ensure page is at least 1, so the offset calculation is never negative.
     let offset = ((page.max(1) - 1) * per_page) as i64;
 
-    let listings = sqlx::query_as!(
-        Listing,
+    let mut query_builder = sqlx::QueryBuilder::new(
         r#"
         SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
         FROM listing
         WHERE deleted_at IS NULL
-        ORDER BY added_at DESC, id DESC
-        LIMIT $1 OFFSET $2
         "#,
-        limit,
-        offset
-    )
-    .fetch_all(executor)
-    .await?;
+    );
+
+    if let Some(f) = filter {
+        if let Some(name) = f.name {
+            query_builder.push(" AND name ILIKE ");
+            query_builder.push_bind(format!("%{}%", name));
+        }
+
+        if let Some(country) = f.country {
+            query_builder.push(" AND country ILIKE ");
+            query_builder.push_bind(format!("%{}%", country));
+        }
+
+        if let Some(min_price) = f.min_price {
+            query_builder.push(" AND price_per_night >= ");
+            query_builder.push_bind(min_price);
+        }
+
+        if let Some(max_price) = f.max_price {
+            query_builder.push(" AND price_per_night <= ");
+            query_builder.push_bind(max_price);
+        }
+
+        if let Some(structure_type) = f.structure_type {
+            // Need to map string to ID since DB uses ID.
+            // We can try to parse it to StructureType enum first.
+            if let Ok(st) = structure_type.parse::<crate::models::StructureType>() {
+                query_builder.push(" AND listing_structure_id = ");
+                query_builder.push_bind(st.id());
+            }
+        }
+    }
+
+    query_builder.push(" ORDER BY added_at DESC, id DESC LIMIT ");
+    query_builder.push_bind(limit);
+    query_builder.push(" OFFSET ");
+    query_builder.push_bind(offset);
+
+    let query = query_builder.build_query_as::<Listing>();
+    let listings = query.fetch_all(executor).await?;
 
     Ok(listings)
 }
@@ -317,11 +351,11 @@ mod tests {
         // AND that our items are present in the top results (since they are newest).
 
         // Page 1 (Limit 2)
-        let page1 = get_listings(&mut *tx, 1, 2).await.unwrap();
+        let page1 = get_listings(&mut *tx, 1, 2, None).await.unwrap();
         assert_eq!(page1.len(), 2);
 
         // Page 2 (Limit 2)
-        let page2 = get_listings(&mut *tx, 2, 2).await.unwrap();
+        let page2 = get_listings(&mut *tx, 2, 2, None).await.unwrap();
         // Page 2 might have >1 items if DB had pre-existing data.
         // But we expect at least 1 of ours.
 
@@ -371,7 +405,7 @@ mod tests {
         let mut all_fetched_listings = Vec::new();
         let mut current_page = 1;
         loop {
-            let page_results = get_listings(&mut *tx, current_page, PER_PAGE)
+            let page_results = get_listings(&mut *tx, current_page, PER_PAGE, None)
                 .await
                 .unwrap();
             if page_results.is_empty() {
@@ -394,5 +428,98 @@ mod tests {
             unique_ids.len(),
             "Found duplicate listings across different pages"
         );
+    }
+
+    #[tokio::test]
+    async fn test_get_listings_filtering() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let user_id = create_test_user(&mut *tx).await;
+
+        // 1. Apartment in Jamaica, cheap
+        let listing1 = NewListing {
+            name: "Cheap Apartment Jamaica".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1, // Apartment
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(50.00)),
+        };
+        create_listing(&mut *tx, &listing1).await.unwrap();
+
+        // 2. Villa in Jamaica, expensive
+        let listing2 = NewListing {
+            name: "Luxury Villa Jamaica".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 5, // Villa
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(500.00)),
+        };
+        create_listing(&mut *tx, &listing2).await.unwrap();
+
+        // 3. Apartment in USA, cheap
+        let listing3 = NewListing {
+            name: "Cheap Apartment USA".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1, // Apartment
+            country: "USA".to_string(),
+            price_per_night: Some(dec!(60.00)),
+        };
+        create_listing(&mut *tx, &listing3).await.unwrap();
+
+        // Test Filter by Country (Jamaica)
+        let filter_jamaica = common::models::ListingFilter {
+            name: None,
+            country: Some("Jamaica".to_string()),
+            min_price: None,
+            max_price: None,
+            structure_type: None,
+        };
+        let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
+            .await
+            .unwrap();
+        // Should find listing1 and listing2 (we might have other data, but these surely)
+        // We filter results locally to verify *our* created ones are there only if they match
+        let found_names: Vec<String> = results.iter().map(|l| l.name.clone()).collect();
+        assert!(found_names.contains(&"Cheap Apartment Jamaica".to_string()));
+        assert!(found_names.contains(&"Luxury Villa Jamaica".to_string()));
+        assert!(!found_names.contains(&"Cheap Apartment USA".to_string()));
+
+        // Test Filter by Price (< $100)
+        let filter_cheap = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: Some(dec!(100.00)),
+            structure_type: None,
+        };
+        let results = get_listings(&mut *tx, 1, 10, Some(filter_cheap))
+            .await
+            .unwrap();
+        let found_names: Vec<String> = results.iter().map(|l| l.name.clone()).collect();
+        assert!(found_names.contains(&"Cheap Apartment Jamaica".to_string()));
+        assert!(found_names.contains(&"Cheap Apartment USA".to_string()));
+        assert!(!found_names.contains(&"Luxury Villa Jamaica".to_string()));
+
+        // Test Filter by Structure (Villa)
+        let filter_villa = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            // We use string representation for the filter structure_type as per definition
+            structure_type: Some("Villa".to_string()),
+        };
+        let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
+            .await
+            .unwrap();
+        let found_names: Vec<String> = results.iter().map(|l| l.name.clone()).collect();
+        assert!(found_names.contains(&"Luxury Villa Jamaica".to_string()));
+        // Note: Logic allows checking absence if we assume test DB isolation, but transactions help.
+        // Listing 1 is Apartment, should not be here.
+        assert!(!found_names.contains(&"Cheap Apartment Jamaica".to_string()));
     }
 }
