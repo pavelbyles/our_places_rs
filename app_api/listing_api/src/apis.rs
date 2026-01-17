@@ -4,18 +4,8 @@ use actix_web::http::header::{ACCEPT, CONTENT_TYPE};
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
 use api_core::models::{ListingsWrapper, map_listing_to_response};
-use common::models::ListingResponse;
+use common::models::{ListingQueryParams, ListingResponse};
 
-// Helper to map StructureType to ID
-fn structure_type_to_id(st: &StructureType) -> i32 {
-    match st {
-        StructureType::Apartment => 1,
-        StructureType::House => 2,
-        StructureType::Townhouse => 3,
-        StructureType::Studio => 4,
-        StructureType::Villa => 5,
-    }
-}
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
 use db_core::listing as db_listing;
@@ -87,8 +77,6 @@ pub struct UpdatedListingRequest {
     pub is_active: Option<bool>,
 }
 
-// Wrapper for XML collections is now in api_core
-
 /// Gives first 10 listings if no page or per_page is provided
 #[tracing::instrument]
 #[utoipa::path(
@@ -96,7 +84,7 @@ pub struct UpdatedListingRequest {
     path = "/api/v1/listings",
     tag = "listings",
     params(
-        pagination::Pagination
+        ListingQueryParams
     ),
     responses(
         (status = 200, description = "List of listings", body = [ListingResponse]),
@@ -106,7 +94,7 @@ pub struct UpdatedListingRequest {
 async fn get_listings(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    query: web::Query<pagination::Pagination>,
+    query: web::Query<ListingQueryParams>,
 ) -> Result<impl Responder, ApiError> {
     // Set default values for pagination if they are not provided.
     let page = query.page.unwrap_or(1);
@@ -115,7 +103,16 @@ async fn get_listings(
     // Minimum of per_page or 100
     let per_page_clamped = per_page.min(100);
 
-    let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped).await?;
+    let filter = common::models::ListingFilter {
+        name: query.name.clone(),
+        country: query.country.clone(),
+        min_price: query.min_price,
+        max_price: query.max_price,
+        structure_type: query.structure_type.clone(),
+    };
+
+    let listings =
+        db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter)).await?;
     let response: Vec<ListingResponse> =
         listings.into_iter().map(map_listing_to_response).collect();
 
@@ -177,13 +174,7 @@ async fn create_listing(
     let req_data = new_listing.into_inner();
     req_data.validate()?;
 
-    let structure_id = match req_data.listing_structure {
-        StructureType::Apartment => 1,
-        StructureType::House => 2,
-        StructureType::Townhouse => 3,
-        StructureType::Studio => 4,
-        StructureType::Villa => 5,
-    };
+    let structure_id = req_data.listing_structure.id();
 
     let mut attempts = 0;
     let max_attempts = settings.application.max_attempts;
@@ -251,7 +242,7 @@ async fn update_listing(
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
 
-    let structure_id = req_data.listing_structure.map(|s| structure_type_to_id(&s));
+    let structure_id = req_data.listing_structure.map(|s| s.id());
 
     let updated_data = UpdatedListing {
         name: req_data.name,
@@ -325,7 +316,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             api_core::health::health_check,
         ),
         components(
-            schemas(NewListingRequest, UpdatedListingRequest, ListingResponse, pagination::Pagination)
+            schemas(NewListingRequest, UpdatedListingRequest, ListingResponse, pagination::Pagination, common::models::ListingFilter)
         ),
         tags(
             (name = "listings", description = "Listing management endpoints")

@@ -806,6 +806,7 @@ name = "db_core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "common",
  "dotenvy",
  "rust_decimal",
  "rust_decimal_macros",
