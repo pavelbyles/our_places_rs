@@ -75,7 +75,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
 
     reqwest::Client::new()
         .get(&url)
-        .header("trace-id", request_id.to_string())
+        .header("x-api-key", request_id.to_string())
         .send()
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
