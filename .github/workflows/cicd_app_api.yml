@@ -7,7 +7,7 @@ env:
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "bug/16-fix-frontend-cicd" ]
     paths:
       - app_api/**
       - .sqlx/**
