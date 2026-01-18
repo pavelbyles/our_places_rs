@@ -3,6 +3,7 @@ use crate::models::ListingResponse;
 use leptos::either::Either;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_meta::Title;
 
 #[component]
 #[allow(non_snake_case)]
@@ -24,7 +25,7 @@ pub fn HomePage() -> impl IntoView {
             <Title text="Home" />
             <Hero />
             <h1>"Welcome to Leptos!"</h1>
-            <button class="btn btn-primary" on:click=on_click>"Click Me: " {count}</button>
+            <button class="btn btn-primary" on:click=on_click>"Click Me: " {move || count.get()}</button>
 
             <Suspense fallback=move || view! { <p>"Loading listings..."</p> }>
                 {move || {
