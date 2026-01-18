@@ -7,6 +7,7 @@ env:
   REGION: us-central1
   CARGO_TERM_COLOR: always
   LISTING_API_URL: ${{ vars.LISTING_API_URL }}
+  GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
 
 on:
   push:
@@ -68,4 +69,5 @@ jobs:
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
             LISTING_API_URL=${{ env.LISTING_API_URL }}
+            GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
           flags: '--allow-unauthenticated --max-instances=1 --memory=256Mi --quiet'
