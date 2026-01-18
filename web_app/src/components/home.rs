@@ -21,6 +21,7 @@ pub fn HomePage() -> impl IntoView {
 
     view! {
         <>
+            <Title text="Home" />
             <Hero />
             <h1>"Welcome to Leptos!"</h1>
             <button class="btn btn-primary" on:click=on_click>"Click Me: " {count}</button>
