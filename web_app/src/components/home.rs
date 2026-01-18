@@ -58,6 +58,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
 
     let listing_api_url =
         std::env::var("LISTING_API_URL").unwrap_or("http://localhost:8082".to_string());
+    let api_key = std::env::var("GATEWAY_API_KEY").unwrap_or_default();
 
     // Server-side logging
     tracing::info!("LISTING_API_URL: {}", listing_api_url);
@@ -71,8 +72,6 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
         request_id
     );
 
-    let api_key = std::env::var("API_KEY").unwrap_or_default();
-
     // Log Request Details
     tracing::info!("Request URL: {}", url);
     tracing::info!("Request Headers: x-api-key={}", api_key);
@@ -80,7 +79,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
     let client = reqwest::Client::new();
     let res = client
         .get(&url)
-        .header("x-api-key", api_key.to_string())
+        .header("x-api-key", api_key)
         .header("trace-id", request_id.to_string())
         .send()
         .await
@@ -88,15 +87,14 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
 
     // Log Response Details
     let status = res.status();
-    tracing::info!("Response Status: {}", status);
 
     let text = res
         .text()
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to read body: {}", e)))?;
-    tracing::info!("Response Body: {}", text);
 
     if !status.is_success() {
+        tracing::error!("API Error {}: {}", status, text);
         return Err(ServerFnError::new(format!(
             "API Error {}: {}",
             status, text
