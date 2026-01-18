@@ -74,7 +74,6 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
 
     // Log Request Details
     tracing::info!("Request URL: {}", url);
-    tracing::info!("Request Headers: x-api-key={}", api_key);
 
     let client = reqwest::Client::new();
     let res = client
