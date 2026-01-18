@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actix-web = "=4.10.2"
+actix-web = "4.12.1"
 actix-cors = "0.7.0"
 tokio = { workspace = true, features = ["macros"] }
 serde = { workspace = true }

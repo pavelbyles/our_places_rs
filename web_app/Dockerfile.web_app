@@ -48,11 +48,11 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy the server binary to the /app directory
-# Note: cargo-leptos typically outputs to target/release/web_app (main binary)
-COPY --from=builder /app/web_app/target/release/web_app /app/
+# Note: cargo-leptos outputs to the workspace target directory
+COPY --from=builder /app/target/release/web_app /app/
 
 # /target/site contains our JS/WASM/CSS, etc.
-COPY --from=builder /app/web_app/target/site /app/site
+COPY --from=builder /app/target/site /app/site
 
 # Set any required env variables
 # 0.0.0.0 is crucial for Docker/Cloud Run
