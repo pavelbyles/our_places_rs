@@ -4,7 +4,6 @@ use leptos::either::Either;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-/// Renders the home page of your application.
 #[component]
 #[allow(non_snake_case)]
 pub fn HomePage() -> impl IntoView {
@@ -22,7 +21,6 @@ pub fn HomePage() -> impl IntoView {
 
     view! {
         <>
-            // Page content
             <Hero />
             <h1>"Welcome to Leptos!"</h1>
             <button class="btn btn-primary" on:click=on_click>"Click Me: " {count}</button>
@@ -73,13 +71,38 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
         request_id
     );
 
-    reqwest::Client::new()
+    let api_key = std::env::var("API_KEY").unwrap_or_default();
+
+    // Log Request Details
+    tracing::info!("Request URL: {}", url);
+    tracing::info!("Request Headers: x-api-key={***}, trace-id={}", request_id);
+
+    let client = reqwest::Client::new();
+    let res = client
         .get(&url)
-        .header("x-api-key", request_id.to_string())
+        .header("trace-id", request_id.to_string())
+        .header("x-api-key", api_key)
         .send()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .json::<Vec<ListingResponse>>()
+        .map_err(|e| ServerFnError::new(format!("Request failed: {}", e)))?;
+
+    // Log Response Details
+    let status = res.status();
+    tracing::info!("Response Status: {}", status);
+
+    let text = res
+        .text()
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))
+        .map_err(|e| ServerFnError::new(format!("Failed to read body: {}", e)))?;
+    tracing::info!("Response Body: {}", text);
+
+    if !status.is_success() {
+        return Err(ServerFnError::new(format!(
+            "API Error {}: {}",
+            status, text
+        )));
+    }
+
+    serde_json::from_str::<Vec<ListingResponse>>(&text)
+        .map_err(|e| ServerFnError::new(format!("Failed to parse JSON: {} | Body: {}", e, text)))
 }
