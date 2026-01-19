@@ -86,7 +86,7 @@ jobs:
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
         run: cargo build --verbose
       
-      - name: Run API tests
+      - name: Run tests
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
