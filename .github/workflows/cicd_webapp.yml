@@ -3,24 +3,25 @@ name: CI/CD for web_app
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
   GAR_REPO: our-places-repo
-  SERVICE: our-places-web-app
+  SERVICE_PREFIX: our-places-web-app
   REGION: us-central1
   CARGO_TERM_COLOR: always
-  LISTING_API_URL: ${{ vars.LISTING_API_URL }}
   GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: ['**']
     paths:
       - web_app/**
       - common/**
       - .github/workflows/cicd_webapp.yml
       - Cargo.toml
+  delete:
 
 jobs:
   audit:
     name: Audit
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -32,6 +33,8 @@ jobs:
       - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0436
 
   lint_check:
+    name: Lint Check
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -47,6 +50,8 @@ jobs:
           args: --all-features --manifest-path web_app/Cargo.toml
 
   test:
+    name: Test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -62,11 +67,14 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     needs: [audit, lint_check, test]
+    if: github.event_name == 'push'
     
     # Add "id-token" with the intended permissions.
     permissions:
       contents: 'read'
       id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
 
     steps:
       - name: Checkout code
@@ -84,6 +92,16 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
       
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SERVICE_NAME="${{ env.SERVICE_PREFIX }}-$SAFE_BRANCH_slug"
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "Determined Service Name: $SERVICE_NAME"
+
       - name: Set Release Flag
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
@@ -96,19 +114,67 @@ jobs:
 
       - name: Build and Push Web App
         run: |
-          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
       
+      - name: Resolve API URL
+        id: resolve_api
+        run: |
+          LISTING_SERVICE="listing-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}"
+          echo "Looking for Listing API service: $LISTING_SERVICE"
+          
+          # Attempt to find the URL. Retry purely for synchronization if this pipeline runs faster than API.
+          # We retry for up to 5 minutes.
+          FOUND_URL=""
+          for i in {1..30}; do
+            URL=$(gcloud run services describe $LISTING_SERVICE --region ${{ env.REGION }} --format 'value(status.url)' 2>/dev/null || true)
+            if [ -n "$URL" ]; then
+              FOUND_URL=$URL
+              break
+            fi
+            echo "Waiting for $LISTING_SERVICE to be available... ($i/30)"
+            sleep 10
+          done
+          
+          if [ -z "$FOUND_URL" ]; then
+            echo "WARNING: Could not find $LISTING_SERVICE URL. Defaulting to empty or falling back to dev?"
+            # Failing here might be tough if API dep fails perfectly. 
+            # But technically, if the API deployment failed, the webapp shouldn't point to nothing.
+            # Let's error out to be safe, or default to a known pattern if we trust it?
+            # Existing pattern for non-custom-domain is unpredictable hash.
+            echo "::error::Could not resolve Listing API URL for preview environment."
+            exit 1
+          fi
+          
+          echo "LISTING_API_URL=$FOUND_URL" >> $GITHUB_OUTPUT
+          echo "Resolved Listing API: $FOUND_URL"
+
       - name: Deploy Web App
+        id: deploy_webapp
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.SERVICE }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ env.LISTING_API_URL }}
+            LISTING_API_URL=${{ steps.resolve_api.outputs.LISTING_API_URL }}
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
           flags: '--allow-unauthenticated --max-instances=1 --memory=256Mi --quiet'
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const webappUrl = '${{ steps.deploy_webapp.outputs.url }}';
+            const listingUrl = '${{ steps.resolve_api.outputs.LISTING_API_URL }}';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🌍 **Web App Preview Deployed!**\n\n- **Web App:** [${webappUrl}](${webappUrl})\n- **Connected API:** [${listingUrl}](${listingUrl})\n\nTest your changes live!`
+            })
