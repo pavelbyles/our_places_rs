@@ -348,7 +348,7 @@ jobs:
             LEPTOS_SITE_ADDR=0.0.0.0:8080
             LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
-          flags: '--allow-unauthenticated --ingress=all--max-instances=1 --memory=256Mi --quiet'
+          flags: '--allow-unauthenticated --ingress=all --max-instances=1 --memory=256Mi --quiet'
 
       - name: Show Deployed URL
         run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
