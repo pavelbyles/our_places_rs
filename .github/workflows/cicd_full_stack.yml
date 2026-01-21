@@ -1,24 +1,22 @@
-name: CI/CD for app_api
+name: Full Stack CI/CD
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
   GAR_REPO: our-places-repo
   REGION: us-central1
+  SERVICE_PREFIX: our-places-web-app
   CARGO_TERM_COLOR: always
+  GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
 
 on:
   push:
     branches: ['**']
-    paths:
-      - app_api/**
-      - .sqlx/**
-      - db_core/**
-      - .github/workflows/cicd_app_api.yml
-      - Cargo.toml
-      - Dockerfile.*
   delete:
 
 jobs:
+  # =========================================================
+  # GENERAL QUALITY CHECKS
+  # =========================================================
   audit:
     name: Audit
     if: github.event_name == 'push' && false
@@ -32,7 +30,7 @@ jobs:
           use-tool-cache: true
       - run: cargo audit --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2023-0071
 
-  lint_check:
+  lint-check:
     name: Lint Check
     if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
@@ -45,70 +43,81 @@ jobs:
             toolchain: nightly
             components: clippy
             override: true
-
       - uses: actions-rs/clippy-check@v1
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
-          # Linting doesn't need a real DB connection thanks to SQLX_OFFLINE
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features --manifest-path Cargo.toml
-
-  test:
-    name: Test
+  # =========================================================
+  # Test API's and Web App
+  # =========================================================
+  test-api:
+    name: Test API
     if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Install protobuf-compiler
         run: sudo apt-get install protobuf-compiler -y
-
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
-
-      - name: Install sqlx (needed for compilation and integration tests)
+      - name: Install sqlx
         run: |-
           sudo apt-get install libpq-dev -y
           cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
-
-      - name: Run DB and Migrations (Local Test)
-        run: cargo make --cwd app_api/listing_api db-migrate
-
       - name: Build app
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --verbose
-      
+        run: cargo build --verbose --workspace --exclude web_app
+      - name: Run DB and Migrations (Local Test)
+        run: cargo make --cwd app_api/listing_api db-migrate
       - name: Run tests
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo test --verbose
+        run: cargo test --verbose --workspace --exclude web_app
 
-  build-and-deploy:
+  test-web:
+    name: Test Web
+    if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
-    needs: [audit, lint_check, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Run web_app tests
+        run: cargo test --manifest-path web_app/Cargo.toml --verbose
+
+  # =========================================================
+  # DEPLOY API
+  # =========================================================
+  deploy-api:
+    name: Build & Deploy APIs
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-api]
     if: github.event_name == 'push'
-    
     defaults:
       run:
         working-directory: ./app_api
-
-    # Add "id-token" with the intended permissions.
     permissions:
       contents: 'read'
       id-token: 'write'
       issues: 'write'
       pull-requests: 'write'
-
+    outputs:
+      service_suffix: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+      schema_name: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
+      listing_url: ${{ steps.deploy_listing.outputs.url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -125,31 +134,17 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-      # ---------------------------------------------------------
-      # Sanitization & Environment Setup
-      # ---------------------------------------------------------
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
         run: |
-          # Convert branch name to kebab-case for Cloud Run services: feature/foo_bar -> foo-bar
-          # We use github.ref_name which is the branch name
           SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
-          
-          # Convert branch name to snake_case for PostgreSQL schema: feature/foo-bar -> feature_foo_bar
-          # Valid schemas start with a letter or underscore, contain letters, numbers, underscores.
           SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          
-          # Handle potential leading numbers in schema (invalid)
           if [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
           fi
-
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
-          
-          echo "Determined Service Suffix: $SAFE_BRANCH_slug"
-          echo "Determined Schema Name: $SAFE_SCHEMA_name"
 
       - name: Set Build Arguments
         run: |
@@ -167,39 +162,26 @@ jobs:
       - name: Install SQLX CLI
         run: cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
 
-      # ---------------------------------------------------------
-      # Database Schema Management (Preview Environments)
-      # ---------------------------------------------------------
       - name: Setup Preview Schema
         env:
-          # Using the DEV instance for all dynamic schemas as per requirements
           DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
           DB_USER: ${{ vars.POSTGRES_USER_DEV }}
           DB_PASS: ${{ secrets.POSTGRES_PASSWORD_DEV }}
           DB_NAME: ${{ vars.POSTGRES_DB_DEV }}
           SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
         run: |
-          # Install pg_isready and psql
           sudo apt-get update && sudo apt-get install -y postgresql-client
-
-          # Start Cloud SQL Proxy to connect to the DB
           wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 -O cloud_sql_proxy
           chmod +x cloud_sql_proxy
           ./cloud_sql_proxy -instances=$DB_INSTANCE=tcp:5432 &
           PID=$!
           sleep 5
-
           echo "Creating schema $SCHEMA_NAME if not exists..."
           export PGPASSWORD=$DB_PASS
           psql -h "127.0.0.1" -U "$DB_USER" -d "$DB_NAME" -c "CREATE SCHEMA IF NOT EXISTS \"$SCHEMA_NAME\";"
-          
-          
-          # Kill proxy
           kill $PID
 
-      # ---------------------------------------------------------
       # Booking API
-      # ---------------------------------------------------------
       - name: Build and Push Booking API
         run: |
           docker build \
@@ -228,9 +210,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
           flags: '--allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
-      # ---------------------------------------------------------
       # Listing API
-      # ---------------------------------------------------------
       - name: Build and Push Listing API
         run: |
           docker build \
@@ -260,9 +240,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
           flags: '--allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
-      # ---------------------------------------------------------
       # User API
-      # ---------------------------------------------------------
       - name: Build and Push User API
         run: |
           docker build \
@@ -291,21 +269,86 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
           flags: '--allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
-      # ---------------------------------------------------------
-      # Feedback Loop
-      # ---------------------------------------------------------
+  # =========================================================
+  # DEPLOY WEBAPP
+  # =========================================================
+  deploy-web:
+    name: Build & Deploy WebApp
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-web, deploy-api]
+    if: github.event_name == 'push'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SERVICE_NAME="${{ env.SERVICE_PREFIX }}-$SAFE_BRANCH_slug"
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Set Release Flag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+          else
+            echo "RELEASE_FLAG=" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+          fi
+
+      - name: Build and Push Web App
+        run: |
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+      
+      - name: Deploy Web App
+        id: deploy_webapp
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            LEPTOS_SITE_ADDR=0.0.0.0:8080
+            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
+            GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
+          flags: '--allow-unauthenticated --max-instances=1 --memory=256Mi --quiet'
+
       - name: Comment on PR
         uses: actions/github-script@v6
         if: github.event_name == 'pull_request'
         with:
           script: |
             const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
-            const listingUrl = '${{ steps.deploy_listing.outputs.url }}';
+            const webappUrl = '${{ steps.deploy_webapp.outputs.url }}';
+            const listingUrl = '${{ needs.deploy-api.outputs.listing_url }}';
+            const schemaName = '${{ needs.deploy-api.outputs.schema_name }}';
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 **Preview Environment Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Schema:** \`${{ steps.branch_name.outputs.SCHEMA_NAME }}\`\n\nThe full stack is actively deploying. Check the CI/CD logs for status!`
-            })
-
+              body: `🚀 **Full Stack Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Web App:** [${webappUrl}](${webappUrl})\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Database Schema:** \`${schemaName}\`\n\nAll services are up and connected!`
