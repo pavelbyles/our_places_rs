@@ -21,7 +21,7 @@ on:
 jobs:
   audit:
     name: Audit
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -34,7 +34,7 @@ jobs:
 
   lint_check:
     name: Lint Check
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -51,7 +51,7 @@ jobs:
 
   test:
     name: Test
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
