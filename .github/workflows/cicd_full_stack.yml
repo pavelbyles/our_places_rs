@@ -191,7 +191,7 @@ jobs:
           # We also need to set the search_path to the new schema so migrations apply there!
           export DATABASE_URL="postgres://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME?options=-c%20search_path%3D$SCHEMA_NAME"
           # Run migrations using the sqlx cli we installed
-          sqlx migrate run --source db_core/migrations
+          sqlx migrate run --source ../db_core/migrations
           
           kill $PID
 
