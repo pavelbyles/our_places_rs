@@ -2,6 +2,7 @@ pub mod app;
 pub mod components;
 pub mod models;
 
+#[cfg(feature = "hydrate")]
 use crate::app::App;
 
 #[cfg(feature = "hydrate")]
