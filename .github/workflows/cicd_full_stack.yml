@@ -13,6 +13,10 @@ on:
     branches: ['**']
   delete:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # =========================================================
   # GENERAL QUALITY CHECKS
@@ -23,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/install@v0.1
         with:
           crate: cargo-audit
@@ -36,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
       - name: Install protobuf-compiler
         run: sudo apt-get install protobuf-compiler -y
       - uses: actions-rs/toolchain@v1
@@ -61,6 +67,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
       - name: Install protobuf-compiler
         run: sudo apt-get install protobuf-compiler -y
       - name: Install cargo make
@@ -91,6 +98,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
@@ -156,9 +164,6 @@ jobs:
             echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
           fi
 
-      - name: Install cargo make
-        uses: davidB/rust-cargo-make@v1
-
       - name: Install SQLX CLI
         run: cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
 
@@ -179,6 +184,15 @@ jobs:
           echo "Creating schema $SCHEMA_NAME if not exists..."
           export PGPASSWORD=$DB_PASS
           psql -h "127.0.0.1" -U "$DB_USER" -d "$DB_NAME" -c "CREATE SCHEMA IF NOT EXISTS \"$SCHEMA_NAME\";"
+          
+          # Run Migrations against the new schema
+          echo "Running migrations..."
+          # We need to set DATABASE_URL for sqlx. We point to the proxy on localhost.
+          # We also need to set the search_path to the new schema so migrations apply there!
+          export DATABASE_URL="postgres://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME?options=-c%20search_path%3D$SCHEMA_NAME"
+          # Run migrations using the sqlx cli we installed
+          sqlx migrate run --source db_core/migrations
+          
           kill $PID
 
       # Booking API
