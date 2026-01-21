@@ -221,7 +221,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: '--allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
       # Listing API
       - name: Build and Push Listing API
@@ -251,7 +251,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: '--allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
       # User API
       - name: Build and Push User API
@@ -280,7 +280,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: '--allow-unauthenticated --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
 
   # =========================================================
   # DEPLOY WEBAPP
@@ -348,7 +348,7 @@ jobs:
             LEPTOS_SITE_ADDR=0.0.0.0:8080
             LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
-          flags: '--allow-unauthenticated --max-instances=1 --memory=256Mi --quiet'
+          flags: '--allow-unauthenticated --ingress=all--max-instances=1 --memory=256Mi --quiet'
 
       - name: Show Deployed URL
         run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
