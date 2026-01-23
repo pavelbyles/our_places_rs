@@ -141,6 +141,12 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
@@ -197,12 +203,13 @@ jobs:
       # Booking API
       - name: Build and Push Booking API
         run: |
-          docker build \
+          docker buildx build \
+            --platform linux/arm64 \
+            --push \
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }} \
             -f ../Dockerfile.booking_api ..
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
 
       - name: Deploy Booking API
         uses: google-github-actions/deploy-cloudrun@v2
@@ -226,12 +233,13 @@ jobs:
       # Listing API
       - name: Build and Push Listing API
         run: |
-          docker build \
+          docker buildx build \
+            --platform linux/arm64 \
+            --push \
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }} \
             -f ../Dockerfile.listing_api ..
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
 
       - name: Deploy Listing API
         id: deploy_listing
@@ -256,12 +264,13 @@ jobs:
       # User API
       - name: Build and Push User API
         run: |
-          docker build \
+          docker buildx build \
+            --platform linux/arm64 \
+            --push \
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }} \
             -f ../Dockerfile.user_api ..
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
 
       - name: Deploy User API
         uses: google-github-actions/deploy-cloudrun@v2
@@ -310,6 +319,12 @@ jobs:
       
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
       
       - name: Sanitize Branch Name
         id: branch_name
@@ -332,8 +347,7 @@ jobs:
 
       - name: Build and Push Web App
         run: |
-          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+          docker buildx build --platform linux/arm64 --push -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
       
       - name: Deploy Web App
         id: deploy_webapp
