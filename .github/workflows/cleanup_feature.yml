@@ -1,0 +1,88 @@
+name: Cleanup Feature Environment
+
+on:
+  delete:
+  pull_request:
+    types: [closed]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+  REGION: us-central1
+  GAR_REPO: our-places-repo
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Determine Target
+        id: target
+        run: |
+          if [[ "${{ github.event_name }}" == "delete" ]]; then
+            REF_NAME="${{ github.event.ref }}"
+          else
+            REF_NAME="${{ github.head_ref }}"
+          fi
+          
+          # Same sanitization logic as CI/CD
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+           if [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+            SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
+          fi
+          
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+          echo "Target Suffix: $SAFE_BRANCH_slug"
+          echo "Target Schema: $SAFE_SCHEMA_name"
+
+      - name: Delete Cloud Run Services
+        run: |
+          SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
+          SERVICES=("booking-api-$SUFFIX" "listing-api-$SUFFIX" "user-api-$SUFFIX" "our-places-web-app-$SUFFIX")
+          
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "Attempting to delete service: $SERVICE"
+            # Use || true to prevent failure if service doesn't exist
+            gcloud run services delete $SERVICE --region ${{ env.REGION }} --quiet || echo "Service $SERVICE not found or already deleted."
+          done
+
+      - name: Delete Database Schema
+        env:
+            DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+            DB_USER: ${{ vars.POSTGRES_USER_DEV }}
+            DB_PASS: ${{ secrets.POSTGRES_PASSWORD_DEV }}
+            DB_NAME: ${{ vars.POSTGRES_DB_DEV }}
+            SCHEMA_NAME: ${{ steps.target.outputs.SCHEMA_NAME }}
+        run: |
+          # Install pg_isready and psql
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+
+          # Start Cloud SQL Proxy to connect to the DB
+          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 -O cloud_sql_proxy
+          chmod +x cloud_sql_proxy
+          ./cloud_sql_proxy -instances=$DB_INSTANCE=tcp:5432 &
+          PID=$!
+          sleep 5
+
+          echo "Dropping schema $SCHEMA_NAME..."
+          export PGPASSWORD=$DB_PASS
+          # DROP SCHEMA ... CASCADE to remove all tables
+          psql -h "127.0.0.1" -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA IF EXISTS \"$SCHEMA_NAME\" CASCADE;"
+          
+          kill $PID

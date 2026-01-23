@@ -47,6 +47,9 @@ fn get_test_settings() -> Settings {
             database_name: "test".to_string(),
             cloud: false,
             instance_name: "".to_string(),
+            database_url: Some(
+                "postgres://postgres:password@localhost:5432/our_places".to_string(),
+            ),
         },
         log: Log {
             level: "info".to_string(),

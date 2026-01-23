@@ -44,6 +44,7 @@ pub struct DatabaseSettings {
     pub database_name: String,
     pub cloud: bool,
     pub instance_name: String,
+    pub database_url: Option<String>,
 }
 
 // Log level model
@@ -91,6 +92,9 @@ impl DatabaseSettings {
     /// It will build a standard TCP connection string for local dev,
     /// and a Unix socket connection string when `cloud` is "YES".
     pub fn connection_string(&self) -> String {
+        if let Some(url) = &self.database_url {
+            return url.clone();
+        }
         if self.cloud {
             // Build the Cloud SQL Unix socket connection string
             format!(

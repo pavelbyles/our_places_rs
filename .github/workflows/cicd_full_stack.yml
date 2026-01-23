@@ -1,0 +1,370 @@
+name: Full Stack CI/CD
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+  GAR_REPO: our-places-repo
+  REGION: us-central1
+  SERVICE_PREFIX: our-places-web-app
+  CARGO_TERM_COLOR: always
+  GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+
+on:
+  push:
+    branches: ['**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =========================================================
+  # GENERAL QUALITY CHECKS
+  # =========================================================
+  audit:
+    name: Audit
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-audit
+          version: latest
+          use-tool-cache: true
+      - run: cargo audit --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2023-0071
+
+  lint-check:
+    name: Lint Check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protobuf-compiler
+        run: sudo apt-get install protobuf-compiler -y
+      - uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            components: clippy
+            override: true
+      - uses: actions-rs/clippy-check@v1
+        env:
+          RUN_ENV: Development
+          SQLX_OFFLINE: true
+          DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features --manifest-path Cargo.toml
+  # =========================================================
+  # Test API's and Web App
+  # =========================================================
+  test-api:
+    name: Test API
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Install protobuf-compiler
+        run: sudo apt-get install protobuf-compiler -y
+      - name: Install cargo make
+        uses: davidB/rust-cargo-make@v1
+      - name: Install sqlx
+        run: |-
+          sudo apt-get install libpq-dev -y
+          cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
+      - name: Build app
+        env:
+          RUN_ENV: Development
+          SQLX_OFFLINE: true
+          DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
+        run: cargo build --verbose --workspace --exclude web_app
+      - name: Run DB and Migrations (Local Test)
+        run: cargo make --cwd app_api/listing_api db-migrate
+      - name: Run tests
+        env:
+          RUN_ENV: Development
+          SQLX_OFFLINE: true
+          DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
+        run: cargo test --verbose --workspace --exclude web_app
+
+  test-web:
+    name: Test Web
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Run web_app tests
+        run: cargo test --manifest-path web_app/Cargo.toml --verbose
+
+  # =========================================================
+  # DEPLOY API
+  # =========================================================
+  deploy-api:
+    name: Build & Deploy APIs
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-api]
+    if: github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: ./app_api
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    outputs:
+      service_suffix: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+      schema_name: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
+      listing_url: ${{ steps.deploy_listing.outputs.url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+    
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+            SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
+          fi
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+
+      - name: Set Build Arguments
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+          else
+            echo "RELEASE_FLAG=" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+          fi
+
+      - name: Install SQLX CLI
+        run: cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
+
+      - name: Setup Preview Schema
+        env:
+          DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+          DB_USER: ${{ vars.POSTGRES_USER_DEV }}
+          DB_PASS: ${{ secrets.POSTGRES_PASSWORD_DEV }}
+          DB_NAME: ${{ vars.POSTGRES_DB_DEV }}
+          SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 -O cloud_sql_proxy
+          chmod +x cloud_sql_proxy
+          ./cloud_sql_proxy -instances=$DB_INSTANCE=tcp:5432 &
+          PID=$!
+          sleep 5
+          echo "Creating schema $SCHEMA_NAME if not exists..."
+          export PGPASSWORD=$DB_PASS
+          psql -h "127.0.0.1" -U "$DB_USER" -d "$DB_NAME" -c "CREATE SCHEMA IF NOT EXISTS \"$SCHEMA_NAME\";"
+          
+          # Run Migrations against the new schema
+          echo "Running migrations..."
+          # We need to set DATABASE_URL for sqlx. We point to the proxy on localhost.
+          # We also need to set the search_path to the new schema so migrations apply there!
+          export DATABASE_URL="postgres://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME?options=-c%20search_path%3D$SCHEMA_NAME"
+          # Run migrations using the sqlx cli we installed
+          sqlx migrate run --source ../db_core/migrations
+          
+          kill $PID
+
+      # Booking API
+      - name: Build and Push Booking API
+        run: |
+          docker build \
+            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
+            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }} \
+            -f ../Dockerfile.booking_api ..
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
+
+      - name: Deploy Booking API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: booking-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
+            EA__SERVER__PORT=8080
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
+            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
+            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+
+      # Listing API
+      - name: Build and Push Listing API
+        run: |
+          docker build \
+            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
+            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }} \
+            -f ../Dockerfile.listing_api ..
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
+
+      - name: Deploy Listing API
+        id: deploy_listing
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: listing-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
+            EA__SERVER__PORT=8080
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
+            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
+            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+
+      # User API
+      - name: Build and Push User API
+        run: |
+          docker build \
+            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
+            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }} \
+            -f ../Dockerfile.user_api ..
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
+
+      - name: Deploy User API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: user-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
+            EA__SERVER__PORT=8080
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
+            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
+            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
+            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+
+  # =========================================================
+  # DEPLOY WEBAPP
+  # =========================================================
+  deploy-web:
+    name: Build & Deploy WebApp
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-web, deploy-api]
+    if: github.event_name == 'push'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+      
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+      
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SERVICE_NAME="${{ env.SERVICE_PREFIX }}-$SAFE_BRANCH_slug"
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Set Release Flag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+          else
+            echo "RELEASE_FLAG=" >> $GITHUB_ENV
+            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+          fi
+
+      - name: Build and Push Web App
+        run: |
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+      
+      - name: Deploy Web App
+        id: deploy_webapp
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            LEPTOS_SITE_ADDR=0.0.0.0:8080
+            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
+            GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
+          flags: '--allow-unauthenticated --ingress=all --max-instances=1 --memory=256Mi --quiet'
+
+      - name: Show Deployed URL
+        run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
+            const webappUrl = '${{ steps.deploy_webapp.outputs.url }}';
+            const listingUrl = '${{ needs.deploy-api.outputs.listing_url }}';
+            const schemaName = '${{ needs.deploy-api.outputs.schema_name }}';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 **Full Stack Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Web App:** [${webappUrl}](${webappUrl})\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Database Schema:** \`${schemaName}\`\n\nAll services are up and connected!`
