@@ -205,6 +205,7 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/arm64 \
+            --provenance=false \
             --push \
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
@@ -235,6 +236,7 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/arm64 \
+            --provenance=false \
             --push \
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
@@ -266,6 +268,7 @@ jobs:
         run: |
           docker buildx build \
             --platform linux/arm64 \
+            --provenance=false \
             --push \
             --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
             --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
@@ -347,7 +350,9 @@ jobs:
 
       - name: Build and Push Web App
         run: |
-          docker buildx build --platform linux/arm64 --push -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
+      - name: Build and Push Web App
+        run: |
+          docker buildx build --platform linux/arm64 --provenance=false --push -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
       
       - name: Deploy Web App
         id: deploy_webapp

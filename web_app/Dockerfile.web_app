@@ -7,10 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install cargo-binstall for fast tool installation
-RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz \
-    && tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz \
-    && cp cargo-binstall /usr/local/cargo/bin \
-    && rm cargo-binstall-x86_64-unknown-linux-musl.tgz
+# Install cargo-binstall for fast tool installation
+RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
 
 # Install cargo-leptos
 RUN cargo binstall cargo-leptos -y
