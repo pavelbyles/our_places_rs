@@ -16,7 +16,17 @@ RUN echo "Build type is: ${BUILD_TYPE}"
 RUN echo "Build output is: ${BUILD_OUTPUT}"
 RUN echo "Release flag is: ${RELEASE_FLAG}"
 
-FROM lukemathwalker/cargo-chef:latest-rust-1.91.1-slim-trixie AS chef
+# We use the official rust image and install cargo-chef manually to ensure architecture compatibility
+FROM rust:1.91.1-slim AS chef
+# Install system dependencies required for cargo-chef and subsequent builds
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    lld \
+    clang \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+    
+RUN cargo install cargo-chef
 WORKDIR /app
 
 FROM chef AS planner
