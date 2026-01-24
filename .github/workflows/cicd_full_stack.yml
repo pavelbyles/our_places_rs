@@ -178,7 +178,7 @@ jobs:
           SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 -O cloud_sql_proxy
+          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.arm64 -O cloud_sql_proxy
           chmod +x cloud_sql_proxy
           ./cloud_sql_proxy -instances=$DB_INSTANCE=tcp:5432 &
           PID=$!
