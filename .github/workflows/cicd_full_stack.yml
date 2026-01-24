@@ -7,10 +7,14 @@ env:
   SERVICE_PREFIX: our-places-web-app
   CARGO_TERM_COLOR: always
   GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
+  SA_WEB_APP: "sa-web-app"
+  SA_LISTING_API: "sa-listing-api"
+  SA_USER_API: "sa-user-api"
+  SA_BOOKING_API: "sa-booking-api"
 
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,9 +49,9 @@ jobs:
         run: sudo apt-get install protobuf-compiler -y
       - uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly
-            components: clippy
-            override: true
+          toolchain: nightly
+          components: clippy
+          override: true
       - uses: actions-rs/clippy-check@v1
         env:
           RUN_ENV: Development
@@ -117,10 +121,10 @@ jobs:
       run:
         working-directory: ./app_api
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      issues: 'write'
-      pull-requests: 'write'
+      contents: "read"
+      id-token: "write"
+      issues: "write"
+      pull-requests: "write"
     outputs:
       service_suffix: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
       schema_name: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
@@ -128,16 +132,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-    
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v1'
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v1"
         with:
-          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
-      
+
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
@@ -183,7 +187,7 @@ jobs:
           echo "Creating schema $SCHEMA_NAME if not exists..."
           export PGPASSWORD=$DB_PASS
           psql -h "127.0.0.1" -U "$DB_USER" -d "$DB_NAME" -c "CREATE SCHEMA IF NOT EXISTS \"$SCHEMA_NAME\";"
-          
+
           # Run Migrations against the new schema
           echo "Running migrations..."
           # We need to set DATABASE_URL for sqlx. We point to the proxy on localhost.
@@ -191,7 +195,7 @@ jobs:
           export DATABASE_URL="postgres://$DB_USER:$DB_PASS@127.0.0.1:5432/$DB_NAME?options=-c%20search_path%3D$SCHEMA_NAME"
           # Run migrations using the sqlx cli we installed
           sqlx migrate run --source ../db_core/migrations
-          
+
           kill $PID
 
       # Booking API
@@ -221,7 +225,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
 
       # Listing API
       - name: Build and Push Listing API
@@ -251,7 +255,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
 
       # User API
       - name: Build and Push User API
@@ -280,7 +284,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
             EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
             EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: '--allow-unauthenticated --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet'
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
 
   # =========================================================
   # DEPLOY WEBAPP
@@ -291,26 +295,26 @@ jobs:
     needs: [audit, lint-check, test-web, deploy-api]
     if: github.event_name == 'push'
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      issues: 'write'
-      pull-requests: 'write'
+      contents: "read"
+      id-token: "write"
+      issues: "write"
+      pull-requests: "write"
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v1'
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v1"
         with:
-          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
-      
+
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-      
+
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
@@ -334,7 +338,7 @@ jobs:
         run: |
           docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
-      
+
       - name: Deploy Web App
         id: deploy_webapp
         uses: google-github-actions/deploy-cloudrun@v2
@@ -348,7 +352,7 @@ jobs:
             LEPTOS_SITE_ADDR=0.0.0.0:8080
             LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
-          flags: '--allow-unauthenticated --ingress=all --max-instances=1 --memory=256Mi --quiet'
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
 
       - name: Show Deployed URL
         run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
@@ -362,7 +366,7 @@ jobs:
             const webappUrl = '${{ steps.deploy_webapp.outputs.url }}';
             const listingUrl = '${{ needs.deploy-api.outputs.listing_url }}';
             const schemaName = '${{ needs.deploy-api.outputs.schema_name }}';
-            
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

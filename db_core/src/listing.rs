@@ -212,7 +212,7 @@ pub async fn update_listing(
 /// If `hard_delete` is false, the listing is soft-deleted (deleted_at is set).
 #[tracing::instrument(skip(pool))]
 pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Result<()> {
-    let result = if hard_delete {
+    let result: sqlx::postgres::PgQueryResult = if hard_delete {
         sqlx::query!("DELETE FROM listing WHERE id = $1", id)
             .execute(pool)
             .await?

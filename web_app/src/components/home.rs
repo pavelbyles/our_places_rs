@@ -55,12 +55,11 @@ pub async fn update_count(count: i32) -> Result<i32, ServerFnError> {
 #[server]
 #[tracing::instrument]
 pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
-    use reqwest;
+    use crate::api_client::get_client;
     use uuid::Uuid;
 
     let listing_api_url =
         std::env::var("LISTING_API_URL").unwrap_or("http://localhost:8082".to_string());
-    let api_key = std::env::var("GATEWAY_API_KEY").unwrap_or_default();
 
     // Server-side logging
     tracing::info!("LISTING_API_URL: {}", listing_api_url);
@@ -77,10 +76,13 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
     // Log Request Details
     tracing::info!("Request URL: {}", url);
 
-    let client = reqwest::Client::new();
+    let audience = listing_api_url.clone();
+    let client = get_client();
+
     let res = client
-        .get(&url)
-        .header("x-api-key", api_key)
+        .get_request(&url, &audience)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Auth error: {}", e)))?
         .header("trace-id", request_id.to_string())
         .send()
         .await

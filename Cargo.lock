@@ -560,6 +560,7 @@ dependencies = [
  "anyhow",
  "api_core",
  "chrono",
+ "common",
  "config",
  "db_core",
  "dotenvy",
@@ -766,9 +767,15 @@ dependencies = [
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "chrono",
+ "reqwest",
  "rust_decimal",
  "serde",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
  "utoipa",
  "uuid",
 ]
@@ -5249,6 +5256,7 @@ version = "0.1.0"
 dependencies = [
  "actix-files",
  "actix-web",
+ "anyhow",
  "common",
  "console_error_panic_hook",
  "http 1.4.0",
@@ -5257,6 +5265,7 @@ dependencies = [
  "leptos_meta",
  "leptos_router",
  "reqwest",
+ "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",
