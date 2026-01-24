@@ -23,7 +23,7 @@ jobs:
   audit:
     name: Audit
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
@@ -37,7 +37,7 @@ jobs:
   lint-check:
     name: Lint Check
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
@@ -62,7 +62,7 @@ jobs:
   test-api:
     name: Test API
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -93,7 +93,7 @@ jobs:
   test-web:
     name: Test Web
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -110,7 +110,7 @@ jobs:
   # =========================================================
   deploy-api:
     name: Build & Deploy APIs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: [audit, lint-check, test-api]
     if: github.event_name == 'push'
     defaults:
@@ -140,9 +140,6 @@ jobs:
       
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -299,7 +296,7 @@ jobs:
   # =========================================================
   deploy-web:
     name: Build & Deploy WebApp
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: [audit, lint-check, test-web, deploy-api]
     if: github.event_name == 'push'
     permissions:
@@ -323,9 +320,6 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       
@@ -348,8 +342,6 @@ jobs:
             echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
           fi
 
-      - name: Build and Push Web App
-        run: |
       - name: Build and Push Web App
         run: |
           docker buildx build --platform linux/arm64 --provenance=false --push -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
