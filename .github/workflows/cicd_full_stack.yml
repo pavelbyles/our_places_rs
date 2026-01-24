@@ -178,9 +178,9 @@ jobs:
           SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.arm64 -O cloud_sql_proxy
+          wget https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.21.0/cloud-sql-proxy.linux.arm64 -O cloud_sql_proxy
           chmod +x cloud_sql_proxy
-          ./cloud_sql_proxy -instances=$DB_INSTANCE=tcp:5432 &
+          ./cloud_sql_proxy $DB_INSTANCE --port 5432 &
           PID=$!
           sleep 5
           echo "Creating schema $SCHEMA_NAME if not exists..."
