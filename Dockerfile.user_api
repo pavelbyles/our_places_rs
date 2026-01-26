@@ -4,7 +4,7 @@
 ARG BUILD_TYPE=release
 ARG BUILD_OUTPUT=release
 ARG RELEASE_FLAG=--release
-FROM rust:1.91.1-slim AS build-env
+FROM rust:1.91.1-slim-bookworm AS build-env
 ARG BUILD_TYPE
 ARG BUILD_OUTPUT
 ARG RELEASE_FLAG
@@ -16,7 +16,7 @@ RUN echo "Build type is: ${BUILD_TYPE}"
 RUN echo "Build output is: ${BUILD_OUTPUT}"
 RUN echo "Release flag is: ${RELEASE_FLAG}"
 
-FROM lukemathwalker/cargo-chef:latest-rust-1.91.1-slim-trixie AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.91.1-slim-bookworm AS chef
 WORKDIR /app
 
 FROM chef AS planner

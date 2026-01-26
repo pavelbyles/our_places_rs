@@ -31,6 +31,7 @@ rand = "0.8.5"
 db_core = { path = "../../db_core" }
 api_core = { path = "../api_core" }
 actix-web = "4.10.2"
+common = { version = "0.1.0", path = "../../common" }
 
 [dev-dependencies]
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [
