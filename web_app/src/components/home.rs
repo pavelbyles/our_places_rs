@@ -60,6 +60,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
 
     let listing_api_url =
         std::env::var("LISTING_API_URL").unwrap_or("http://localhost:8082".to_string());
+    let listing_api_url = listing_api_url.trim_end_matches('/').to_string();
 
     // Server-side logging
     tracing::info!("LISTING_API_URL: {}", listing_api_url);

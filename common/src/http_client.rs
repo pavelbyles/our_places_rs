@@ -42,7 +42,9 @@ impl TokenProvider for GoogleMetadataTokenProvider {
         let token = response
             .text()
             .await
-            .context("Failed to read token from Metadata Server")?;
+            .context("Failed to read token from Metadata Server")?
+            .trim()
+            .to_string();
         Ok(token)
     }
 }

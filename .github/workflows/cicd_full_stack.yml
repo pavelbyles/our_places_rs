@@ -128,7 +128,9 @@ jobs:
     outputs:
       service_suffix: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
       schema_name: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
-      listing_url: ${{ steps.deploy_listing.outputs.url }}
+      listing_url: ${{ steps.construct_urls.outputs.listing_url }}
+      booking_url: ${{ steps.construct_urls.outputs.booking_url }}
+      user_url: ${{ steps.construct_urls.outputs.user_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -156,6 +158,17 @@ jobs:
           fi
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+
+      - name: Get Project Number & Construct URLs
+        id: construct_urls
+        run: |
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
+          SERVICE_SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          REGION=${{ env.REGION }}
+          
+          echo "listing_url=https://listing-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
+          echo "booking_url=https://booking-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
+          echo "user_url=https://user-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
 
       - name: Set Build Arguments
         run: |
@@ -351,6 +364,8 @@ jobs:
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
             LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
 
@@ -365,10 +380,12 @@ jobs:
             const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
             const webappUrl = '${{ steps.deploy_webapp.outputs.url }}';
             const listingUrl = '${{ needs.deploy-api.outputs.listing_url }}';
+            const bookingUrl = '${{ needs.deploy-api.outputs.booking_url }}';
+            const userUrl = '${{ needs.deploy-api.outputs.user_url }}';
             const schemaName = '${{ needs.deploy-api.outputs.schema_name }}';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 **Full Stack Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Web App:** [${webappUrl}](${webappUrl})\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Database Schema:** \`${schemaName}\`\n\nAll services are up and connected!`
+              body: `🚀 **Full Stack Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Web App:** [${webappUrl}](${webappUrl})\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Booking API:** [${bookingUrl}](${bookingUrl})\n- **User API:** [${userUrl}](${userUrl})\n- **Database Schema:** \`${schemaName}\`\n\nAll services are up and connected!`
