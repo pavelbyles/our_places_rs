@@ -2,17 +2,43 @@
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_files::Files;
+    use actix_session::config::PersistentSession;
+    use actix_session::SessionMiddleware;
+    use actix_web::cookie::{time::Duration, Key};
     use actix_web::*;
+    use db_core::sessions::SessionsDb;
+    use dotenvy::dotenv;
     use leptos::config::get_configuration;
     use leptos::prelude::*;
     use leptos_actix::{generate_route_list, LeptosRoutes};
+    use sqlx::postgres::PgPoolOptions;
+    use std::env;
     use web_app_admin::app::*;
     use web_app_admin::components::shell::AppShell;
+    use web_app_admin::session_store::AdminSessionStore;
+
+    dotenv().ok();
+    tracing_subscriber::fmt::init();
 
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
 
-    tracing_subscriber::fmt::init();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let pool: sqlx::PgPool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to database");
+
+    let sessions_db = SessionsDb::new(pool.clone());
+    let session_store = AdminSessionStore::new(sessions_db);
+    let secret_key = Key::from(
+        env::var("SESSION_SECRET")
+            .unwrap_or_else(|_| {
+                "0123456789012345678901234567890123456789012345678901234567890123".to_string()
+            })
+            .as_bytes(),
+    );
 
     HttpServer::new(move || {
         // Generate the list of routes in your Leptos App
@@ -23,6 +49,12 @@ async fn main() -> std::io::Result<()> {
         println!("listening on http://{}", &addr);
 
         App::new()
+            .wrap(
+                SessionMiddleware::builder(session_store.clone(), secret_key.clone())
+                    .cookie_secure(false) // For local dev
+                    .session_lifecycle(PersistentSession::default().session_ttl(Duration::days(7)))
+                    .build(),
+            )
             // serve JS/WASM/CSS from `pkg`
             .service(Files::new("/pkg", format!("{site_root}/pkg")))
             // serve other assets from the `assets` directory
@@ -37,8 +69,11 @@ async fn main() -> std::io::Result<()> {
                     }
                 }
             })
+            .route(
+                "/api/{tail:.*}",
+                leptos_actix::handle_server_fns_with_context(move || {}),
+            )
             .app_data(web::Data::new(leptos_options.to_owned()))
-        //.wrap(middleware::Compress::default())
     })
     .bind(&addr)?
     .run()

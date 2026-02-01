@@ -1,5 +1,10 @@
+#[cfg(feature = "ssr")]
+pub mod api_client;
 pub mod app;
+pub mod auth;
 pub mod components;
+#[cfg(feature = "ssr")]
+pub mod session_store;
 
 #[cfg(feature = "hydrate")]
 use crate::app::App;

@@ -8,6 +8,7 @@ members = [
     "db_core",
     "protoproj",
     "web_app",
+    "web_app_admin",
 ]
 resolver = "2"
 
@@ -47,6 +48,7 @@ features = [
     "chrono",
     "migrate",
     "rust_decimal",
+    "json",
 ]
 default-features = false
 

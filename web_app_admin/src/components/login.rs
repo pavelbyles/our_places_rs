@@ -1,16 +1,12 @@
+use crate::auth::Login;
+use leptos::form::ActionForm;
 use leptos::prelude::*;
 
 #[component]
 #[allow(non_snake_case)]
 pub fn LoginPage() -> impl IntoView {
-    // let login_action = ServerAction::<Login>::new();
-    // let value = login_action.value();
-
-    let on_submit = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        // let data = Login::from_event(&ev).expect("failed to parse form data");
-        // login_action.dispatch(data);
-    };
+    let login_action = ServerAction::<Login>::new();
+    let value = login_action.value();
 
     view! {
         <div class="hero min-h-screen bg-base-200">
@@ -22,7 +18,7 @@ pub fn LoginPage() -> impl IntoView {
                     </p>
                 </div>
                 <div class="card shrink-0 w-full max-w-sm shadow-2xl bg-base-100">
-                    <form on:submit=on_submit class="card-body">
+                    <ActionForm action=login_action attr:class="card-body">
                         <div class="form-control">
                             <label class="input validator">
                                 <svg class="h-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -51,20 +47,19 @@ pub fn LoginPage() -> impl IntoView {
                             </label>
                         </div>
                         <div class="form-control mt-6">
-                            /* <button type="submit" class="btn btn-primary" disabled=move || login_action.pending().get()>"Login"</button>*/
-                            <button type="submit" class="btn btn-primary">"Login"</button>
+                            <button type="submit" class="btn btn-primary" disabled=move || login_action.pending().get()>"Login"</button>
                         </div>
 
-                        /*{move || value.get().map(|v: Result<(), ServerFnError>| match v {
+                        {move || value.get().map(|v: Result<(), ServerFnError>| match v {
                             Err(e) => view! { <div class="alert alert-error mt-4"><span>{e.to_string()}</span></div> }.into_any(),
                             Ok(_) => view! {}.into_any()
-                        })}*/
+                        })}
 
                         <div class="divider">"OR"</div>
                          <div class="text-center">
                             <a href="/home" class="link link-hover">"Back to Home"</a>
                         </div>
-                    </form>
+                    </ActionForm>
                 </div>
             </div>
         </div>

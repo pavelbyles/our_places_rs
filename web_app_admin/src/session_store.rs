@@ -1,7 +1,7 @@
 use actix_session::storage::{LoadError, SaveError, SessionKey, SessionStore, UpdateError};
 use actix_web::cookie::time::Duration;
 use anyhow::Error;
-use async_trait::async_trait;
+
 use db_core::sessions::SessionsDb;
 use std::collections::HashMap;
 
@@ -16,7 +16,6 @@ impl AdminSessionStore {
     }
 }
 
-#[async_trait(?Send)]
 impl SessionStore for AdminSessionStore {
     async fn load(
         &self,
@@ -76,8 +75,7 @@ impl SessionStore for AdminSessionStore {
         Ok(session_key)
     }
 
-    async fn update_ttl(&self, session_key: &SessionKey, ttl: &Duration) -> Result<(), Error> {
-        // No-op for now, as save/update handles it
+    async fn update_ttl(&self, _session_key: &SessionKey, _ttl: &Duration) -> Result<(), Error> {
         Ok(())
     }
 

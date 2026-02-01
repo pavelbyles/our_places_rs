@@ -13,8 +13,8 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
         "#,
         new_user_request.id,
@@ -26,6 +26,7 @@ where
         new_user_request.is_active,
         Utc::now(),
         Utc::now(),
+        new_user_request.attributes.clone()
     )
     .fetch_one(executor)
     .await?;
@@ -82,8 +83,8 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     sqlx::query!(
         r#"
         INSERT INTO user_history
-        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, valid_from)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, valid_from, attributes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
         current.id,
         current.email,
@@ -92,7 +93,8 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
         current.last_name,
         current.phone_number,
         current.is_active,
-        current.updated_at
+        current.updated_at,
+        current.attributes
     )
     .execute(&mut *tx)
     .await?;
@@ -108,6 +110,7 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
             last_name = COALESCE($5, last_name),
             phone_number = COALESCE($6, phone_number),
             is_active = COALESCE($7, is_active),
+            attributes = COALESCE($8, attributes),
             updated_at = now()
         WHERE id = $1
         RETURNING *
@@ -118,7 +121,8 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
         updated_user.first_name,
         updated_user.last_name,
         updated_user.phone_number,
-        updated_user.is_active
+        updated_user.is_active,
+        updated_user.attributes
     )
     .fetch_one(&mut *tx)
     .await?;

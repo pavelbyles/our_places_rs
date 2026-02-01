@@ -1,11 +1,12 @@
+pub mod booking;
 pub mod connection;
 pub mod error;
 pub mod listing;
 pub mod models;
-pub mod booking;
+pub mod sessions;
 pub mod user;
 
-use sqlx::PgPool;
+pub use sqlx::PgPool;
 use tracing::info;
 
 pub async fn run_migrations(pool: &PgPool) {
