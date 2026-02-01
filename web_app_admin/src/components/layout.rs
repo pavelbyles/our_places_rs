@@ -1,8 +1,10 @@
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_location;
 
 #[component]
 pub fn Layout(children: Children) -> impl IntoView {
+    let location = use_location();
     view! {
         <div class="drawer">
             <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
@@ -32,6 +34,39 @@ pub fn Layout(children: Children) -> impl IntoView {
                         // Navbar menu content here
                         <li><A href="/home">"Home"</A></li>
                         <li><A href="/about">"About"</A></li>
+                        <Transition
+                            fallback=move || view! { <li><A href="/login">"Sign In"</A></li> }
+                        >
+                            {move || {
+                                let auth_status = Resource::new(
+                                    move || location.pathname.get(),
+                                    |_| async move { crate::auth::get_current_user().await }
+                                );
+                                view! {
+                                    <Suspense
+                                        fallback=move || view! { <li><A href="/login">"Sign In"</A></li> }
+                                    >
+                                        {move || {
+                                            auth_status.get().map(|status| {
+                                                match status {
+                                                    Ok(Some(name)) => {
+                                                        let logout_action = ServerAction::<crate::auth::Logout>::new();
+                                                        view! {
+                                                            <li>
+                                                                <ActionForm action=logout_action>
+                                                                    <button type="submit">{format!("Sign Out ({})", name)}</button>
+                                                                </ActionForm>
+                                                            </li>
+                                                        }.into_any()
+                                                    },
+                                                    _ => view! { <li><A href="/login">"Sign In"</A></li> }.into_any(),
+                                                }
+                                            })
+                                        }}
+                                    </Suspense>
+                                }
+                            }}
+                        </Transition>
                         </ul>
                     </div>
                 </div>

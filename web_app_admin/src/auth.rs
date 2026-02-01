@@ -33,9 +33,32 @@ pub async fn login(email: String, password: String) -> Result<(), ServerFnError>
     session
         .insert("user_id", user.id.to_string())
         .map_err(|_| ServerFnError::new("Failed to set session"))?;
+    session
+        .insert("user_name", user.first_name.clone())
+        .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
     // Redirect to home
     leptos_actix::redirect("/home");
 
+    Ok(())
+}
+
+#[server]
+pub async fn get_current_user() -> Result<Option<String>, ServerFnError> {
+    let session = leptos_actix::extract::<Session>()
+        .await
+        .map_err(|_| ServerFnError::new("Session not found"))?;
+
+    Ok(session.get::<String>("user_name").unwrap_or(None))
+}
+
+#[server]
+pub async fn logout() -> Result<(), ServerFnError> {
+    let session = leptos_actix::extract::<Session>()
+        .await
+        .map_err(|_| ServerFnError::new("Session not found"))?;
+
+    session.purge();
+    leptos_actix::redirect("/login");
     Ok(())
 }
