@@ -2,6 +2,11 @@ use leptos::prelude::*;
 
 #[component]
 pub fn Hero() -> impl IntoView {
+    let auth_status = Resource::new(
+        || (),
+        |_| async move { crate::auth::get_current_user().await },
+    );
+
     view! {
         <div
             class="hero min-h-screen"
@@ -15,7 +20,25 @@ pub fn Hero() -> impl IntoView {
                     "Provident cupiditate voluptatem et in. Quaerat fugiat ut assumenda excepturi exercitationem
                     quasi. In deleniti eaque aut repudiandae et a id nisi."
                 </p>
-                <a href="/login" class="btn btn-primary">"Login"</a>
+                <Transition
+                    fallback=move || view! { <a href="/login" class="btn btn-primary">"Login"</a> }
+                >
+                    {move || {
+                        auth_status.get().map(|status| {
+                            match status {
+                                Ok(Some(name)) => {
+                                    let logout_action = ServerAction::<crate::auth::Logout>::new();
+                                    view! {
+                                        <ActionForm action=logout_action>
+                                            <button type="submit" class="btn btn-primary">{format!("Sign Out ({})", name)}</button>
+                                        </ActionForm>
+                                    }.into_any()
+                                },
+                                _ => view! { <a href="/login" class="btn btn-primary">"Login"</a> }.into_any(),
+                            }
+                        })
+                    }}
+                </Transition>
                 </div>
             </div>
         </div>
