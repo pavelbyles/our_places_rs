@@ -165,7 +165,7 @@ jobs:
           PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
           SERVICE_SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           REGION=${{ env.REGION }}
-          
+
           echo "listing_url=https://listing-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
           echo "booking_url=https://booking-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
           echo "user_url=https://user-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
@@ -192,9 +192,9 @@ jobs:
           SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 -O cloud_sql_proxy
-          chmod +x cloud_sql_proxy
-          ./cloud_sql_proxy -instances=$DB_INSTANCE=tcp:5432 &
+          wget https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.0/cloud-sql-proxy.linux.amd64 -O cloud-sql-proxy
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port 5432 $DB_INSTANCE &
           PID=$!
           sleep 5
           echo "Creating schema $SCHEMA_NAME if not exists..."
