@@ -22,7 +22,7 @@ impl SessionStore for AdminSessionStore {
         session_key: &SessionKey,
     ) -> Result<Option<HashMap<String, String>>, LoadError> {
         let id = session_key.as_ref();
-        let state_bytes = self.inner.load(id).await.map_err(|e| LoadError::Other(e))?;
+        let state_bytes = self.inner.load(id).await.map_err(LoadError::Other)?;
 
         if let Some(bytes) = state_bytes {
             let state: HashMap<String, String> =
@@ -47,7 +47,7 @@ impl SessionStore for AdminSessionStore {
         self.inner
             .save(&id, &bytes, ttl_seconds)
             .await
-            .map_err(|e| SaveError::Other(e))?;
+            .map_err(SaveError::Other)?;
 
         Ok(id.try_into().unwrap())
     }
@@ -66,7 +66,7 @@ impl SessionStore for AdminSessionStore {
         self.inner
             .save(id, &bytes, ttl_seconds)
             .await
-            .map_err(|e| UpdateError::Other(e))?;
+            .map_err(UpdateError::Other)?;
 
         Ok(session_key)
     }
@@ -76,6 +76,6 @@ impl SessionStore for AdminSessionStore {
     }
 
     async fn delete(&self, session_key: &SessionKey) -> Result<(), Error> {
-        self.inner.delete(session_key.as_ref()).await.map_err(|e| e)
+        self.inner.delete(session_key.as_ref()).await
     }
 }
