@@ -52,7 +52,7 @@ pub fn LoginPage() -> impl IntoView {
 
                         {move || value.get().map(|v: Result<(), ServerFnError>| match v {
                             Err(e) => view! { <div class="alert alert-error mt-4"><span>{e.to_string()}</span></div> }.into_any(),
-                            Ok(_) => view! {}.into_any()
+                            Ok(_) => ().into_any()
                         })}
 
                         <div class="divider">"OR"</div>
