@@ -266,6 +266,7 @@ mod tests {
             last_name: "User".to_string(),
             phone_number: None,
             is_active: true,
+            attributes: serde_json::json!({}),
         };
         create_user(executor, &new_user)
             .await

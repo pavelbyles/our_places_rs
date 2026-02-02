@@ -21,6 +21,7 @@ pub struct User {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub attributes: serde_json::Value,
 }
 
 #[derive(Debug)]
@@ -32,6 +33,7 @@ pub struct NewUser {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub attributes: serde_json::Value,
 }
 
 #[derive(Debug)]
@@ -42,6 +44,7 @@ pub struct UpdatedUser {
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
     pub is_active: Option<bool>,
+    pub attributes: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]

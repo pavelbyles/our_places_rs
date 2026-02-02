@@ -28,11 +28,18 @@ use validator::Validate;
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct NewUserRequest {
     pub email: String,
-    pub password_hash: String,
+    pub password: String,
     pub first_name: String,
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub attributes: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -55,6 +62,7 @@ pub struct UserResponse {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub attributes: serde_json::Value,
 }
 
 fn map_user_to_response(user: User) -> UserResponse {
@@ -67,6 +75,7 @@ fn map_user_to_response(user: User) -> UserResponse {
         is_active: user.is_active,
         created_at: user.created_at,
         updated_at: user.updated_at,
+        attributes: user.attributes,
     }
 }
 
@@ -95,15 +104,22 @@ async fn create_user(
     let max_attempts = settings.application.max_attempts;
 
     loop {
+        let password_hash = bcrypt::hash(&req_data.password, bcrypt::DEFAULT_COST)
+            .map_err(|_| ApiError::Internal)?;
+
         attempts += 1;
         let user = NewUser {
             id: Uuid::now_v7(),
             email: req_data.email.clone(),
-            password_hash: req_data.password_hash.clone(),
+            password_hash,
             first_name: req_data.first_name.clone(),
             last_name: req_data.last_name.clone(),
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
+            attributes: req_data
+                .attributes
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({})),
         };
 
         match db_core::user::create_user(pool.get_ref(), &user).await {
@@ -147,6 +163,48 @@ async fn create_user(
 
 #[tracing::instrument]
 #[utoipa::path(
+    post,
+    path = "/api/v1/users/login",
+    tag = "auth",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = UserResponse),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn login(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    login_req: web::Json<LoginRequest>,
+) -> Result<impl Responder, ApiError> {
+    let credentials = login_req.into_inner();
+    credentials.validate()?;
+
+    // Fetch user
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &credentials.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    // Verify password
+    let valid = bcrypt::verify(&credentials.password, &user.password_hash)
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    // Return user info
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(user)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
     patch,
     path = "/api/v1/users/user/{id}",
     tag = "users",
@@ -180,6 +238,7 @@ async fn update_user(
             last_name: req_data.last_name.clone(),
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
+            attributes: None,
         };
 
         match db_core::user::update_user(pool.get_ref(), id, &updated).await {
@@ -378,6 +437,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/health_check",
                 web::get().to(api_core::health::health_check),
+            )
+            .route(
+                "/login",
+                web::post()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(login),
             ),
     );
 }
