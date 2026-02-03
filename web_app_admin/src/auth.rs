@@ -37,8 +37,8 @@ pub async fn login(email: String, password: String) -> Result<(), ServerFnError>
         .insert("user_name", user.first_name.clone())
         .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
-    // Redirect to home
-    leptos_actix::redirect("/home");
+    // Redirect to admin
+    leptos_actix::redirect("/admin");
 
     Ok(())
 }
