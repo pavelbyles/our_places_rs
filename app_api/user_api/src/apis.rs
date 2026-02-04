@@ -213,24 +213,40 @@ async fn create_user(
                 ));
             }
             Err(e) => {
-                let db_core::error::DbError::Sqlx(ref sqlx_error) = e;
-                if let Some(db_error) = sqlx_error.as_database_error()
-                    && db_error.code().as_deref() == Some("23505")
-                {
-                    // 23505 is unique_violation
-                    let constraint = db_error.constraint().unwrap_or("");
-                    if constraint == "user_pkey" {
-                        if attempts >= max_attempts {
-                            return Err(ApiError::Internal);
+                match e {
+                    db_core::error::DbError::Sqlx(ref sqlx_error) => {
+                        if let Some(db_error) = sqlx_error.as_database_error()
+                            && db_error.code().as_deref() == Some("23505")
+                        {
+                            let constraint = db_error.constraint().unwrap_or("");
+                            if constraint == "user_pkey" {
+                                if attempts >= max_attempts {
+                                    return Err(ApiError::Internal);
+                                }
+                                continue; // Retry
+                            } else if constraint == "user_email_key"
+                                || constraint == "idx_user_email"
+                            {
+                                let mut map = std::collections::HashMap::new();
+                                map.insert(
+                                    std::borrow::Cow::from("email"),
+                                    validator::ValidationErrorsKind::Field(vec![
+                                        validator::ValidationError::new("unique")
+                                            .with_message("Email already taken".into()),
+                                    ]),
+                                );
+                                return Err(ApiError::ValidationError(
+                                    validator::ValidationErrors(map),
+                                ));
+                            }
                         }
-                        continue; // Retry
-                    } else if constraint == "user_email_key" || constraint == "idx_user_email" {
+                    }
+                    db_core::error::DbError::ValidationError(msg) => {
                         let mut map = std::collections::HashMap::new();
                         map.insert(
-                            std::borrow::Cow::from("email"),
+                            std::borrow::Cow::from("validation"),
                             validator::ValidationErrorsKind::Field(vec![
-                                validator::ValidationError::new("unique")
-                                    .with_message("Email already taken".into()),
+                                validator::ValidationError::new("custom").with_message(msg.into()),
                             ]),
                         );
                         return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
@@ -359,17 +375,28 @@ async fn update_user(
                 ));
             }
             Err(e) => {
-                {
-                    let db_core::error::DbError::Sqlx(ref sqlx_error) = e;
-                    if let Some(db_error) = sqlx_error.as_database_error()
-                        && db_error.code().as_deref() == Some("23505")
-                        && let Some(constraint) = db_error.constraint()
-                        && constraint == "user_pkey"
-                    {
-                        if attempts >= MAX_ATTEMPTS {
-                            return Err(ApiError::Internal);
+                match e {
+                    db_core::error::DbError::Sqlx(ref sqlx_error) => {
+                        if let Some(db_error) = sqlx_error.as_database_error()
+                            && db_error.code().as_deref() == Some("23505")
+                            && let Some(constraint) = db_error.constraint()
+                            && constraint == "user_pkey"
+                        {
+                            if attempts >= MAX_ATTEMPTS {
+                                return Err(ApiError::Internal);
+                            }
+                            continue;
                         }
-                        continue;
+                    }
+                    db_core::error::DbError::ValidationError(msg) => {
+                        let mut map = std::collections::HashMap::new();
+                        map.insert(
+                            std::borrow::Cow::from("validation"),
+                            validator::ValidationErrorsKind::Field(vec![
+                                validator::ValidationError::new("custom").with_message(msg.into()),
+                            ]),
+                        );
+                        return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
                     }
                 }
                 return Err(ApiError::Database(e));

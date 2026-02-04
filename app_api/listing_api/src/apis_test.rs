@@ -25,6 +25,7 @@ where
         phone_number: None,
         is_active: true,
         attributes: serde_json::json!({}),
+        roles: None,
     };
     create_user(executor, &new_user)
         .await

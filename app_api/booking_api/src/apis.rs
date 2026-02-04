@@ -115,16 +115,17 @@ async fn create_booking(
                 ));
             }
             Err(e) => {
-                let db_core::error::DbError::Sqlx(ref sqlx_error) = e;
-                if let Some(db_error) = sqlx_error.as_database_error()
-                    && db_error.code().as_deref() == Some("23505")
-                    && let Some(constraint) = db_error.constraint()
-                    && constraint == "booking_pkey"
-                {
-                    if attempts >= max_attempts {
-                        return Err(ApiError::Internal);
+                if let db_core::error::DbError::Sqlx(sqlx_error) = &e {
+                    if let Some(db_error) = sqlx_error.as_database_error()
+                        && db_error.code().as_deref() == Some("23505")
+                        && let Some(constraint) = db_error.constraint()
+                        && constraint == "booking_pkey"
+                    {
+                        if attempts >= max_attempts {
+                            return Err(ApiError::Internal);
+                        }
+                        continue;
                     }
-                    continue;
                 }
                 return Err(ApiError::Database(e));
             }

@@ -4,10 +4,9 @@ use actix_web::http::header::{ACCEPT, CONTENT_TYPE};
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
 use api_core::models::{ListingsWrapper, map_listing_to_response};
-use common::models::{ListingQueryParams, ListingResponse};
-
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
+use common::models::{ListingQueryParams, ListingResponse};
 use db_core::listing as db_listing;
 use db_core::models::{NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
@@ -200,16 +199,29 @@ async fn create_listing(
                 ));
             }
             Err(e) => {
-                let db_core::error::DbError::Sqlx(ref sqlx_error) = e;
-                if let Some(db_error) = sqlx_error.as_database_error()
-                    && db_error.code().as_deref() == Some("23505")
-                    && let Some(constraint) = db_error.constraint()
-                    && constraint == "listing_pkey"
-                {
-                    if attempts >= max_attempts {
-                        return Err(ApiError::Internal);
+                match e {
+                    db_core::error::DbError::ValidationError(msg) => {
+                        let mut map = std::collections::HashMap::new();
+                        map.insert(
+                            std::borrow::Cow::from("validation"),
+                            validator::ValidationErrorsKind::Field(vec![
+                                validator::ValidationError::new("custom").with_message(msg.into()),
+                            ]),
+                        );
+                        return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
                     }
-                    continue;
+                    db_core::error::DbError::Sqlx(ref sqlx_error) => {
+                        if let Some(db_error) = sqlx_error.as_database_error()
+                            && db_error.code().as_deref() == Some("23505")
+                            && let Some(constraint) = db_error.constraint()
+                            && constraint == "listing_pkey"
+                        {
+                            if attempts >= max_attempts {
+                                return Err(ApiError::Internal);
+                            }
+                            continue;
+                        }
+                    }
                 }
                 return Err(ApiError::Database(e));
             }
