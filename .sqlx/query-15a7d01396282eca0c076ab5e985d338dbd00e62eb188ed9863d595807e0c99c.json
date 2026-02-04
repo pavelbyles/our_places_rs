@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE \"user\"\n        SET\n            email = COALESCE($2, email),\n            password_hash = COALESCE($3, password_hash),\n            first_name = COALESCE($4, first_name),\n            last_name = COALESCE($5, last_name),\n            phone_number = COALESCE($6, phone_number),\n            is_active = COALESCE($7, is_active),\n            attributes = COALESCE($8, attributes),\n            updated_at = now()\n        WHERE id = $1\n        RETURNING *\n        ",
+  "query": "SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\" FROM \"user\" WHERE id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -52,18 +52,34 @@
         "ordinal": 9,
         "name": "attributes",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Bool",
-        "Jsonb"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -76,8 +92,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "23dd221fff053bd89f30ac8d0c2049b6579094fe7c9633a3ff6dc36271435d22"
+  "hash": "15a7d01396282eca0c076ab5e985d338dbd00e62eb188ed9863d595807e0c99c"
 }

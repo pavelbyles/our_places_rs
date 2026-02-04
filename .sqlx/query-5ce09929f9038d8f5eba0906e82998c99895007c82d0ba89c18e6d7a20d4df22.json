@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO \"user\" (id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            RETURNING *\n        ",
+  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\"\n            FROM \"user\" WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -52,20 +52,34 @@
         "ordinal": 9,
         "name": "attributes",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Bool",
-        "Timestamptz",
-        "Timestamptz",
-        "Jsonb"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -78,8 +92,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "26d74ea5900c84e945a3b64c887b2b52105bd3c688bcb34ea59549d161bc6750"
+  "hash": "5ce09929f9038d8f5eba0906e82998c99895007c82d0ba89c18e6d7a20d4df22"
 }

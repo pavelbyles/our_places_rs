@@ -17,9 +17,10 @@ use chrono::{DateTime, Utc};
 use common::models::ListingResponse;
 use db_core::booking as db_booking;
 use db_core::listing as db_listing;
-use db_core::models::{NewUser, UpdatedUser, User};
+use db_core::models::{NewUser, UpdatedUser, User, UserRole};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::str::FromStr;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -34,6 +35,9 @@ pub struct NewUserRequest {
     pub phone_number: Option<String>,
     pub is_active: bool,
     pub attributes: Option<serde_json::Value>,
+    pub roles: Option<Vec<String>>,
+    pub booker_profile: Option<db_core::models::NewBookerProfile>,
+    pub host_profile: Option<db_core::models::NewHostProfile>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -50,6 +54,10 @@ pub struct UpdatedUserRequest {
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
     pub is_active: Option<bool>,
+    pub attributes: Option<serde_json::Value>,
+    pub roles: Option<Vec<String>>,
+    pub booker_profile: Option<db_core::models::NewBookerProfile>,
+    pub host_profile: Option<db_core::models::NewHostProfile>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -63,6 +71,7 @@ pub struct UserResponse {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
+    pub roles: Vec<UserRole>,
 }
 
 fn map_user_to_response(user: User) -> UserResponse {
@@ -76,6 +85,7 @@ fn map_user_to_response(user: User) -> UserResponse {
         created_at: user.created_at,
         updated_at: user.updated_at,
         attributes: user.attributes,
+        roles: user.roles,
     }
 }
 
@@ -104,6 +114,11 @@ async fn create_user(
     let max_attempts = settings.application.max_attempts;
 
     loop {
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
         let password_hash = bcrypt::hash(&req_data.password, bcrypt::DEFAULT_COST)
             .map_err(|_| ApiError::Internal)?;
 
@@ -120,10 +135,76 @@ async fn create_user(
                 .attributes
                 .clone()
                 .unwrap_or_else(|| serde_json::json!({})),
+            roles: req_data.roles.clone().map(|roles| {
+                roles
+                    .into_iter()
+                    .filter_map(|r| UserRole::from_str(&r).ok())
+                    .collect()
+            }),
         };
 
-        match db_core::user::create_user(pool.get_ref(), &user).await {
+        match db_core::user::create_user(&mut *tx, &user).await {
             Ok(created_user) => {
+                let roles_strings = req_data.roles.clone().unwrap_or_default();
+                let is_booker = roles_strings.iter().any(|r| r.to_lowercase() == "booker");
+                let is_host = roles_strings.iter().any(|r| r.to_lowercase() == "host");
+
+                if is_booker {
+                    match &req_data.booker_profile {
+                        Some(profile) => {
+                            db_core::user::create_booker_profile(
+                                &mut *tx,
+                                created_user.id,
+                                profile,
+                            )
+                            .await
+                            .map_err(ApiError::Database)?;
+                        }
+                        None => {
+                            let mut map = std::collections::HashMap::new();
+                            map.insert(
+                                std::borrow::Cow::from("booker_profile"),
+                                validator::ValidationErrorsKind::Field(vec![
+                                    validator::ValidationError::new("required").with_message(
+                                        "Booker profile is required for booker role".into(),
+                                    ),
+                                ]),
+                            );
+                            return Err(ApiError::ValidationError(validator::ValidationErrors(
+                                map,
+                            )));
+                        }
+                    }
+                }
+
+                if is_host {
+                    match &req_data.host_profile {
+                        Some(profile) => {
+                            db_core::user::create_host_profile(&mut *tx, created_user.id, profile)
+                                .await
+                                .map_err(ApiError::Database)?;
+                        }
+                        None => {
+                            let mut map = std::collections::HashMap::new();
+                            map.insert(
+                                std::borrow::Cow::from("host_profile"),
+                                validator::ValidationErrorsKind::Field(vec![
+                                    validator::ValidationError::new("required").with_message(
+                                        "Host profile is required for host role".into(),
+                                    ),
+                                ]),
+                            );
+                            return Err(ApiError::ValidationError(validator::ValidationErrors(
+                                map,
+                            )));
+                        }
+                    }
+                }
+
+                tx.commit()
+                    .await
+                    .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
                 return Ok(respond(
                     &req,
                     Payload::Item(map_user_to_response(created_user)),
@@ -238,11 +319,38 @@ async fn update_user(
             last_name: req_data.last_name.clone(),
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
-            attributes: None,
+            attributes: req_data.attributes.clone(),
+            roles: req_data.roles.clone().map(|roles| {
+                roles
+                    .into_iter()
+                    .filter_map(|r| UserRole::from_str(&r).ok())
+                    .collect()
+            }),
         };
 
         match db_core::user::update_user(pool.get_ref(), id, &updated).await {
             Ok(updated_user) => {
+                // Check for profile creation if roles/profiles are provided
+                if let Some(roles_vec) = &req_data.roles {
+                    let is_booker = roles_vec.iter().any(|r| r.to_lowercase() == "booker");
+                    let is_host = roles_vec.iter().any(|r| r.to_lowercase() == "host");
+
+                    if is_booker {
+                        if let Some(profile) = &req_data.booker_profile {
+                            let _ =
+                                db_core::user::create_booker_profile(pool.get_ref(), id, profile)
+                                    .await;
+                        }
+                    }
+
+                    if is_host {
+                        if let Some(profile) = &req_data.host_profile {
+                            let _ = db_core::user::create_host_profile(pool.get_ref(), id, profile)
+                                .await;
+                        }
+                    }
+                }
+
                 return Ok(respond(
                     &req,
                     Payload::Item(map_user_to_response(updated_user)),

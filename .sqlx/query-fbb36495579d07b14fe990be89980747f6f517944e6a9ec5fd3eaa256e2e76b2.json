@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM \"user\" WHERE id = $1 FOR UPDATE",
+  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\"\n            FROM \"user\" WHERE email = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -52,11 +52,34 @@
         "ordinal": 9,
         "name": "attributes",
         "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Text"
       ]
     },
     "nullable": [
@@ -69,8 +92,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "c1a1840f74a64ec9d5269383dbe45b5a17edc1d7a13d58f87fc9708c244b9b0b"
+  "hash": "fbb36495579d07b14fe990be89980747f6f517944e6a9ec5fd3eaa256e2e76b2"
 }
