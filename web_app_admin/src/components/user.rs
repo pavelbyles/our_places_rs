@@ -28,6 +28,6 @@ pub fn UsersPage() -> impl IntoView {
 }
 
 #[server]
-pub async fn add_user(data: NewUserData) -> Result<(), ServerFnError> {
+pub async fn add_user(_data: NewUserData) -> Result<(), ServerFnError> {
     Ok(())
 }

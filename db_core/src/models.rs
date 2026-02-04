@@ -58,19 +58,7 @@ pub struct NewUser {
     pub roles: Option<Vec<UserRole>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct NewBookerProfile {
-    pub emergency_contacts: Option<serde_json::Value>,
-    pub booking_preferences: Option<serde_json::Value>,
-    pub loyalty: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct NewHostProfile {
-    pub verified_status: Option<String>,
-    pub payout_details: Option<serde_json::Value>,
-    pub description: Option<String>,
-}
+pub use common::models::{NewBookerProfile, NewHostProfile};
 
 #[derive(Debug)]
 pub struct UpdatedUser {

@@ -864,11 +864,13 @@ dependencies = [
  "reqwest",
  "rust_decimal",
  "serde",
+ "serde_json",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
  "utoipa",
  "uuid",
+ "validator",
 ]
 
 [[package]]

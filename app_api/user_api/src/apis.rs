@@ -26,19 +26,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct NewUserRequest {
-    pub email: String,
-    pub password: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub phone_number: Option<String>,
-    pub is_active: bool,
-    pub attributes: Option<serde_json::Value>,
-    pub roles: Option<Vec<String>>,
-    pub booker_profile: Option<db_core::models::NewBookerProfile>,
-    pub host_profile: Option<db_core::models::NewHostProfile>,
-}
+pub use common::models::NewUserRequest;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct LoginRequest {
