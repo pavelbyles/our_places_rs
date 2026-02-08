@@ -327,6 +327,7 @@ jobs:
           SERVICE_NAME_ADMIN="${{ env.SERVICE_PREFIX_ADMIN }}-$SAFE_BRANCH_slug"
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "SERVICE_NAME_ADMIN=$SERVICE_NAME_ADMIN" >> $GITHUB_OUTPUT
 
       - name: Set Release Flag
         run: |
