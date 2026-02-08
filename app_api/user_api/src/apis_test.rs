@@ -349,3 +349,88 @@ async fn test_create_user_host_missing_profile() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400); // Expect Bad Request
 }
+
+#[actix_web::test]
+async fn test_get_all_users_with_filters() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    // Create a few users for testing
+    let users_data = vec![
+        ("alice@example.com", "Alice", "Wonderland"),
+        ("bob@example.com", "Bob", "Builder"),
+        ("charlie@example.com", "Charlie", "Chocolate"),
+    ];
+
+    for (email, first, last) in &users_data {
+        let req_body = json!({
+            "email": email,
+            "password": "password123",
+            "first_name": first,
+            "last_name": last,
+            "phone_number": "+1234567890",
+            "is_active": true,
+            "roles": ["booker"], // Minimum required
+            "booker_profile": {
+                "loyalty": {"points": 0}
+            }
+        });
+        let req = test::TestRequest::post()
+            .uri("/api/v1/users/")
+            .set_json(&req_body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    // 1. Test get all (pagination default)
+    let req = test::TestRequest::get()
+        .uri("/api/v1/users/") // Use trailing slash or not? Route is "/" in scope "/api/v1/users"
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Vec<UserResponse> = test::read_body_json(resp).await;
+    assert!(body.len() >= 3);
+
+    // 2. Test search filter (email)
+    let req = test::TestRequest::get()
+        .uri("/api/v1/users/?search=alice")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Vec<UserResponse> = test::read_body_json(resp).await;
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].email, "alice@example.com");
+
+    // 3. Test search filter (first name) - partial match
+    let req = test::TestRequest::get()
+        .uri("/api/v1/users/?search=Bo")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Vec<UserResponse> = test::read_body_json(resp).await;
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].first_name, "Bob");
+
+    // 4. Test search filter (last name) - partial match
+    let req = test::TestRequest::get()
+        .uri("/api/v1/users/?search=Chocol")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Vec<UserResponse> = test::read_body_json(resp).await;
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].last_name, "Chocolate");
+}

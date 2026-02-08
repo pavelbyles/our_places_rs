@@ -36,6 +36,21 @@ pub struct NewUserRequest {
     pub booker_profile: Option<NewBookerProfile>,
     pub host_profile: Option<NewHostProfile>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct UpdateUserRequest {
+    pub email: Option<String>,
+    pub password: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub phone_number: Option<String>,
+    pub is_active: Option<bool>,
+    pub attributes: Option<serde_json::Value>,
+    pub roles: Option<Vec<String>>,
+    pub booker_profile: Option<NewBookerProfile>,
+    pub host_profile: Option<NewHostProfile>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct ListingResponse {
     pub id: Uuid,
@@ -67,4 +82,23 @@ pub struct ListingQueryParams {
     pub min_price: Option<Decimal>,
     pub max_price: Option<Decimal>,
     pub structure_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
+pub struct UserResponse {
+    pub id: Uuid,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub attributes: serde_json::Value,
+    pub roles: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct UsersWrapper {
+    pub user: Vec<UserResponse>,
 }

@@ -21,12 +21,13 @@ use db_core::models::{NewUser, UpdatedUser, User, UserRole};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::str::FromStr;
-use utoipa::{OpenApi, ToSchema};
+use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
 pub use common::models::NewUserRequest;
+pub use common::models::UpdateUserRequest;
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct LoginRequest {
@@ -34,18 +35,9 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct UpdatedUserRequest {
-    pub email: Option<String>,
-    pub password_hash: Option<String>,
-    pub first_name: Option<String>,
-    pub last_name: Option<String>,
-    pub phone_number: Option<String>,
-    pub is_active: Option<bool>,
-    pub attributes: Option<serde_json::Value>,
-    pub roles: Option<Vec<String>>,
-    pub booker_profile: Option<db_core::models::NewBookerProfile>,
-    pub host_profile: Option<db_core::models::NewHostProfile>,
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct UserFilter {
+    pub search: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -60,6 +52,12 @@ pub struct UserResponse {
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
     pub roles: Vec<UserRole>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UsersWrapper {
+    #[schema(xml(name = "user", wrapped))]
+    pub user: Vec<UserResponse>,
 }
 
 fn map_user_to_response(user: User) -> UserResponse {
@@ -293,7 +291,7 @@ async fn login(
     patch,
     path = "/api/v1/users/user/{id}",
     tag = "users",
-    request_body = UpdatedUserRequest,
+    request_body = UpdateUserRequest,
     responses(
         (status = 201, description = "User updated", body = UserResponse),
         (status = 400, description = "Validation error"),
@@ -303,7 +301,7 @@ async fn login(
 async fn update_user(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    updated_user: web::Json<UpdatedUserRequest>,
+    updated_user: web::Json<UpdateUserRequest>,
     path: web::Path<Uuid>,
 ) -> Result<impl Responder, ApiError> {
     let req_data = updated_user.into_inner();
@@ -314,11 +312,21 @@ async fn update_user(
 
     let id = path.into_inner();
 
+    let password_hash = if let Some(ref password) = req_data.password {
+        if !password.is_empty() {
+            Some(bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|_| ApiError::Internal)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     loop {
         attempts += 1;
         let updated = UpdatedUser {
             email: req_data.email.clone(),
-            password_hash: req_data.password_hash.clone(),
+            password_hash: password_hash.clone(),
             first_name: req_data.first_name.clone(),
             last_name: req_data.last_name.clone(),
             phone_number: req_data.phone_number.clone(),
@@ -499,10 +507,48 @@ async fn get_user_bookings(
     ))
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/users",
+    tag = "users",
+    params(
+        pagination::Pagination,
+        UserFilter
+    ),
+    responses(
+        (status = 200, description = "List of users", body = [UserResponse]),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_all_users(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    query: web::Query<pagination::Pagination>,
+    filter: web::Query<UserFilter>,
+) -> Result<impl Responder, ApiError> {
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(10).min(100);
+
+    let users = db_core::user::get_all_users(pool.get_ref(), page, per_page, filter.search.clone())
+        .await
+        .map_err(ApiError::Database)?;
+
+    let response: Vec<UserResponse> = users.into_iter().map(map_user_to_response).collect();
+
+    Ok(respond(
+        &req,
+        Payload::Collection(response),
+        |items| UsersWrapper { user: items },
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
         paths(
+            get_all_users,
             create_user,
             update_user,
             get_user,
@@ -511,7 +557,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             api_core::health::health_check,
         ),
         components(
-            schemas(NewUserRequest, UpdatedUserRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse)
+            schemas(NewUserRequest, UpdateUserRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse, UserFilter, UsersWrapper)
         ),
         tags(
             (name = "users", description = "User management endpoints")
@@ -527,6 +573,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/users")
+            .route(
+                "/",
+                web::get()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(get_all_users),
+            )
             .route(
                 "/",
                 web::post()

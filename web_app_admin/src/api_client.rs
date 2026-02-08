@@ -1,9 +1,7 @@
-use chrono::{DateTime, Utc};
 use common::http_client::AuthenticatedClient;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::sync::OnceLock;
-use uuid::Uuid;
 
 static CLIENT: OnceLock<AuthenticatedClient> = OnceLock::new();
 
@@ -15,7 +13,7 @@ pub fn get_client() -> &'static AuthenticatedClient {
     })
 }
 
-fn user_api_url() -> String {
+pub fn user_api_url() -> String {
     env::var("USER_API_URL").unwrap_or_else(|_| "http://localhost:8083".to_string())
 }
 
@@ -25,20 +23,7 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UserResponse {
-    pub id: Uuid,
-    pub email: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub phone_number: Option<String>,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub attributes: serde_json::Value,
-}
-
-pub async fn login(email: &str, password: &str) -> anyhow::Result<UserResponse> {
+pub async fn login(email: &str, password: &str) -> anyhow::Result<common::models::UserResponse> {
     let url = format!("{}/api/v1/users/login", user_api_url());
 
     let request = LoginRequest {
@@ -53,6 +38,6 @@ pub async fn login(email: &str, password: &str) -> anyhow::Result<UserResponse> 
         return Err(anyhow::anyhow!("Login failed: {}", response.status()));
     }
 
-    let user: UserResponse = response.json().await?;
+    let user: common::models::UserResponse = response.json().await?;
     Ok(user)
 }

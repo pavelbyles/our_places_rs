@@ -190,3 +190,49 @@ where
 
     Ok(profile)
 }
+
+/// Retrieves all users with optional filtering and pagination
+#[tracing::instrument(skip(executor))]
+pub async fn get_all_users<'e, E>(
+    executor: E,
+    page: u32,
+    per_page: u32,
+    filter: Option<String>,
+) -> Result<Vec<User>>
+where
+    E: PgExecutor<'e>,
+{
+    let offset = (page - 1) * per_page;
+
+    let mut query_builder = sqlx::QueryBuilder::new(
+        r#"
+        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles
+        FROM "user"
+        WHERE 1 = 1
+        "#,
+    );
+
+    if let Some(search) = filter {
+        let pattern = format!("%{}%", search);
+        query_builder.push(" AND (email ILIKE ");
+        query_builder.push_bind(pattern.clone());
+        query_builder.push(" OR first_name ILIKE ");
+        query_builder.push_bind(pattern.clone());
+        query_builder.push(" OR last_name ILIKE ");
+        query_builder.push_bind(pattern);
+        query_builder.push(" ) ");
+    }
+
+    query_builder.push(" ORDER BY created_at DESC ");
+    query_builder.push(" LIMIT ");
+    query_builder.push_bind(per_page as i64);
+    query_builder.push(" OFFSET ");
+    query_builder.push_bind(offset as i64);
+
+    let users = query_builder
+        .build_query_as::<User>()
+        .fetch_all(executor)
+        .await?;
+
+    Ok(users)
+}
