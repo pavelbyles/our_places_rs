@@ -5,6 +5,7 @@ env:
   GAR_REPO: our-places-repo
   REGION: us-central1
   SERVICE_PREFIX: our-places-web-app
+  SERVICE_PREFIX_ADMIN: our-places-web-app-admin
   CARGO_TERM_COLOR: always
   GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
   SA_WEB_APP: "sa-web-app"
@@ -323,6 +324,7 @@ jobs:
         run: |
           SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
           SERVICE_NAME="${{ env.SERVICE_PREFIX }}-$SAFE_BRANCH_slug"
+          SERVICE_NAME_ADMIN="${{ env.SERVICE_PREFIX_ADMIN }}-$SAFE_BRANCH_slug"
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
 
@@ -367,8 +369,8 @@ jobs:
         id: deploy_webapp_admin
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+          service: ${{ steps.branch_name.outputs.SERVICE_NAME_ADMIN }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }}
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
