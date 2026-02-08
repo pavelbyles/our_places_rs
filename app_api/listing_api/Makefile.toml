@@ -2,7 +2,7 @@
 DATABASE_URL = "postgres://postgres:password@localhost:5432/our_places"
 DB_CONTAINER_NAME = "our_places_db"
 MIGRATIONS_DIR = "../../db_core/migrations"
-DOCKER_COMPOSE_FILE = "../../docker-compose.db.yml"
+DOCKER_COMPOSE_FILE = "../../docker-compose.yml"
 
 [tasks.format]
 install_crate = "rustfmt"
