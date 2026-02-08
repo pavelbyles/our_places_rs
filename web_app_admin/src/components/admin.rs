@@ -3,42 +3,63 @@ use common::models::{NewUserRequest, UpdateUserRequest};
 use leptos::form::ActionForm;
 use leptos::html::Input;
 use leptos::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CreateUserParams {
+    pub email: String,
+    pub password: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub is_active: bool,
+    pub can_manage_bookings: bool,
+    pub can_manage_listings: bool,
+    pub is_admin: bool,
+    pub is_booker: bool,
+    pub is_host: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UpdateUserParams {
+    pub id: String,
+    pub email: String,
+    pub password: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub is_active: bool,
+    pub can_manage_bookings: bool,
+    pub can_manage_listings: bool,
+    pub is_admin: bool,
+    pub is_booker: bool,
+    pub is_host: bool,
+}
 
 #[server]
-pub async fn create_user_server(
-    email: String,
-    password: String,
-    first_name: String,
-    last_name: String,
-    phone_number: Option<String>,
-    #[server(default)] is_active: bool,
-    #[server(default)] can_manage_bookings: bool,
-    #[server(default)] can_manage_listings: bool,
-    #[server(default)] is_admin: bool,
-    #[server(default)] is_booker: bool,
-    #[server(default)] is_host: bool,
-) -> Result<(), ServerFnError> {
+
+pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFnError> {
     let mut roles = Vec::new();
-    if is_booker {
+    if params.is_booker {
         roles.push("booker".to_string());
     }
-    if is_host {
+    if params.is_host {
         roles.push("host".to_string());
     }
 
     let attributes = serde_json::json!({
-        "can_manage_bookings": can_manage_bookings,
-        "can_manage_listings": can_manage_listings,
-        "is_admin": is_admin
+        "can_manage_bookings": params.can_manage_bookings,
+        "can_manage_listings": params.can_manage_listings,
+        "is_admin": params.is_admin
     });
 
     let request = NewUserRequest {
-        email,
-        password,
-        first_name,
-        last_name,
-        phone_number,
-        is_active,
+        email: params.email,
+        password: params.password,
+        first_name: params.first_name,
+        last_name: params.last_name,
+        phone_number: params.phone_number,
+        is_active: params.is_active,
         attributes: Some(attributes),
         roles: Some(roles),
         booker_profile: None,
@@ -66,41 +87,29 @@ pub async fn create_user_server(
 }
 
 #[server]
-pub async fn update_user_server(
-    id: String,
-    email: String,
-    password: String,
-    first_name: String,
-    last_name: String,
-    phone_number: Option<String>,
-    #[server(default)] is_active: bool,
-    #[server(default)] can_manage_bookings: bool,
-    #[server(default)] can_manage_listings: bool,
-    #[server(default)] is_admin: bool,
-    #[server(default)] is_booker: bool,
-    #[server(default)] is_host: bool,
-) -> Result<(), ServerFnError> {
+
+pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFnError> {
     let mut roles = Vec::new();
-    if is_booker {
+    if params.is_booker {
         roles.push("booker".to_string());
     }
-    if is_host {
+    if params.is_host {
         roles.push("host".to_string());
     }
 
     let attributes = serde_json::json!({
-        "can_manage_bookings": can_manage_bookings,
-        "can_manage_listings": can_manage_listings,
-        "is_admin": is_admin
+        "can_manage_bookings": params.can_manage_bookings,
+        "can_manage_listings": params.can_manage_listings,
+        "is_admin": params.is_admin
     });
 
     let request = UpdateUserRequest {
-        email: Some(email),
-        password: Some(password),
-        first_name: Some(first_name),
-        last_name: Some(last_name),
-        phone_number: phone_number,
-        is_active: Some(is_active),
+        email: Some(params.email),
+        password: Some(params.password),
+        first_name: Some(params.first_name),
+        last_name: Some(params.last_name),
+        phone_number: params.phone_number,
+        is_active: Some(params.is_active),
         attributes: Some(attributes),
         roles: Some(roles),
         booker_profile: None,
@@ -109,7 +118,10 @@ pub async fn update_user_server(
 
     let client = reqwest::Client::new();
     let res = client
-        .patch(format!("http://localhost:8083/api/v1/users/user/{}", id))
+        .patch(format!(
+            "http://localhost:8083/api/v1/users/user/{}",
+            params.id
+        ))
         .json(&request)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
@@ -200,7 +212,7 @@ pub fn AdminPage() -> impl IntoView {
         let email_format_valid = e.contains('@')
             && e.split('@')
                 .nth(1)
-                .map_or(false, |domain| domain.contains('.'));
+                .is_some_and(|domain| domain.contains('.'));
         !e.is_empty()
             && email_format_valid
             && !first_name.get().is_empty()
@@ -213,46 +225,46 @@ pub fn AdminPage() -> impl IntoView {
             <input type="radio" name="my_tabs_3" class="tab" aria-label="Add User" checked="checked" />
             <div class="tab-content bg-base-100 border-base-300 p-6">
                 <ActionForm action=create_user attr:class="form-control w-full max-w-xs space-y-4">
-                    <hidden-input name="id" value="" />
+                    <hidden-input name="params[id]" value="" />
                     <div>
                         <label class="label">
                             <span class="label-text">"Email"</span>
                         </label>
-                        <input type="email" name="email" placeholder="Email" class="input input-bordered w-full max-w-xs" required />
+                        <input type="email" name="params[email]" placeholder="Email" class="input input-bordered w-full max-w-xs" required />
                     </div>
 
                     <div>
                         <label class="label">
                             <span class="label-text">"Password"</span>
                         </label>
-                        <input type="password" name="password" placeholder="Password" class="input input-bordered w-full max-w-xs" required />
+                        <input type="password" name="params[password]" placeholder="Password" class="input input-bordered w-full max-w-xs" required />
                     </div>
 
                     <div>
                         <label class="label">
                             <span class="label-text">"First Name"</span>
                         </label>
-                        <input type="text" name="first_name" placeholder="First Name" class="input input-bordered w-full max-w-xs" required />
+                        <input type="text" name="params[first_name]" placeholder="First Name" class="input input-bordered w-full max-w-xs" required />
                     </div>
 
                     <div>
                         <label class="label">
                             <span class="label-text">"Last Name"</span>
                         </label>
-                        <input type="text" name="last_name" placeholder="Last Name" class="input input-bordered w-full max-w-xs" required />
+                        <input type="text" name="params[last_name]" placeholder="Last Name" class="input input-bordered w-full max-w-xs" required />
                     </div>
 
                     <div>
                         <label class="label">
                             <span class="label-text">"Phone Number"</span>
                         </label>
-                        <input type="tel" name="phone_number" placeholder="Phone Number" class="input input-bordered w-full max-w-xs" />
+                        <input type="tel" name="params[phone_number]" placeholder="Phone Number" class="input input-bordered w-full max-w-xs" />
                     </div>
 
                     <div class="form-control">
                         <label class="label cursor-pointer">
                             <span class="label-text">"Is Active"</span>
-                            <input type="checkbox" name="is_active" class="checkbox" checked="checked" value="true" />
+                            <input type="checkbox" name="params[is_active]" class="checkbox" checked="checked" value="true" />
                         </label>
                     </div>
 
@@ -268,15 +280,15 @@ pub fn AdminPage() -> impl IntoView {
                             <tbody>
                                 <tr>
                                     <td class="text-left font-normal">"Can Manage Bookings"</td>
-                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="can_manage_bookings" class="checkbox checkbox-sm" value="true" /></div></td>
+                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[can_manage_bookings]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
                                 <tr>
                                     <td class="text-left font-normal">"Can Manage Listings"</td>
-                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="can_manage_listings" class="checkbox checkbox-sm" value="true" /></div></td>
+                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[can_manage_listings]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
                                 <tr>
                                     <td class="text-left font-normal">"Is Admin"</td>
-                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="is_admin" class="checkbox checkbox-sm" value="true" /></div></td>
+                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_admin]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -294,11 +306,11 @@ pub fn AdminPage() -> impl IntoView {
                             <tbody>
                                 <tr>
                                     <td class="text-left font-normal">"Is Booker"</td>
-                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="is_booker" class="checkbox checkbox-sm" value="true" /></div></td>
+                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_booker]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
                                 <tr>
                                     <td class="text-left font-normal">"Is Host"</td>
-                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="is_host" class="checkbox checkbox-sm" value="true" /></div></td>
+                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_host]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -321,12 +333,12 @@ pub fn AdminPage() -> impl IntoView {
                     <div class="card bg-base-300 rounded-box grid grow place-items-start">
 
                         <ActionForm action=update_user attr:class="form-control w-full max-w-xs space-y-4">
-                            <input type="hidden" name="id" node_ref=id_ref />
+                            <input type="hidden" name="params[id]" node_ref=id_ref />
                             <div>
                                 <label class="label">
                                     <span class="label-text">"Email"</span>
                                 </label>
-                                <input type="email" name="email" placeholder="Email" class="input input-bordered w-full max-w-xs" required
+                                <input type="email" name="params[email]" placeholder="Email" class="input input-bordered w-full max-w-xs" required
                                     node_ref=email_ref
                                     on:input=move |_| set_email.set(email_ref.get().expect("input").value())
                                 />
@@ -334,7 +346,7 @@ pub fn AdminPage() -> impl IntoView {
 
                             <div>
                                 <label class="input">
-                                    <input type="password" name="password" placeholder="Password" class="input input-bordered w-full max-w-xs" />
+                                    <input type="password" name="params[password]" placeholder="Password" class="input input-bordered w-full max-w-xs" />
                                     <span class="badge badge-neutral badge-xs">Optional</span>
                                 </label>
                             </div>
@@ -343,7 +355,7 @@ pub fn AdminPage() -> impl IntoView {
                                 <label class="label">
                                     <span class="label-text">"First Name"</span>
                                 </label>
-                                <input type="text" name="first_name" placeholder="First Name" class="input input-bordered w-full max-w-xs" required
+                                <input type="text" name="params[first_name]" placeholder="First Name" class="input input-bordered w-full max-w-xs" required
                                     node_ref=first_name_ref
                                     on:input=move |_| set_first_name.set(first_name_ref.get().expect("input").value())
                                 />
@@ -353,7 +365,7 @@ pub fn AdminPage() -> impl IntoView {
                                 <label class="label">
                                     <span class="label-text">"Last Name"</span>
                                 </label>
-                                <input type="text" name="last_name" placeholder="Last Name" class="input input-bordered w-full max-w-xs" required
+                                <input type="text" name="params[last_name]" placeholder="Last Name" class="input input-bordered w-full max-w-xs" required
                                     node_ref=last_name_ref
                                     on:input=move |_| set_last_name.set(last_name_ref.get().expect("input").value())
                                 />
@@ -363,13 +375,13 @@ pub fn AdminPage() -> impl IntoView {
                                 <label class="label">
                                     <span class="label-text">"Phone Number"</span>
                                 </label>
-                                <input type="tel" name="phone_number" placeholder="Phone Number" class="input input-bordered w-full max-w-xs" node_ref=phone_number_ref />
+                                <input type="tel" name="params[phone_number]" placeholder="Phone Number" class="input input-bordered w-full max-w-xs" node_ref=phone_number_ref />
                             </div>
 
                             <div class="form-control">
                                 <label class="label cursor-pointer">
                                     <span class="label-text">"Is Active"</span>
-                                    <input type="checkbox" name="is_active" class="checkbox" checked="checked" value="true" node_ref=is_active_ref />
+                                    <input type="checkbox" name="params[is_active]" class="checkbox" checked="checked" value="true" node_ref=is_active_ref />
                                 </label>
                             </div>
 
@@ -385,15 +397,15 @@ pub fn AdminPage() -> impl IntoView {
                                     <tbody>
                                         <tr>
                                             <td class="text-left font-normal">"Can Manage Bookings"</td>
-                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="can_manage_bookings" class="checkbox checkbox-sm" value="true" node_ref=can_manage_bookings_ref /></div></td>
+                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[can_manage_bookings]" class="checkbox checkbox-sm" value="true" node_ref=can_manage_bookings_ref /></div></td>
                                         </tr>
                                         <tr>
                                             <td class="text-left font-normal">"Can Manage Listings"</td>
-                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="can_manage_listings" class="checkbox checkbox-sm" value="true" node_ref=can_manage_listings_ref /></div></td>
+                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[can_manage_listings]" class="checkbox checkbox-sm" value="true" node_ref=can_manage_listings_ref /></div></td>
                                         </tr>
                                         <tr>
                                             <td class="text-left font-normal">"Is Admin"</td>
-                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="is_admin" class="checkbox checkbox-sm" value="true" node_ref=is_admin_ref /></div></td>
+                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_admin]" class="checkbox checkbox-sm" value="true" node_ref=is_admin_ref /></div></td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -411,11 +423,11 @@ pub fn AdminPage() -> impl IntoView {
                                     <tbody>
                                         <tr>
                                             <td class="text-left font-normal">"Is Booker"</td>
-                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="is_booker" class="checkbox checkbox-sm" value="true" node_ref=is_booker_ref /></div></td>
+                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_booker]" class="checkbox checkbox-sm" value="true" node_ref=is_booker_ref /></div></td>
                                         </tr>
                                         <tr>
                                             <td class="text-left font-normal">"Is Host"</td>
-                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="is_host" class="checkbox checkbox-sm" value="true" node_ref=is_host_ref /></div></td>
+                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_host]" class="checkbox checkbox-sm" value="true" node_ref=is_host_ref /></div></td>
                                         </tr>
                                     </tbody>
                                 </table>

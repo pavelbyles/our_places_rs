@@ -347,19 +347,14 @@ async fn update_user(
                     let is_booker = roles_vec.iter().any(|r| r.to_lowercase() == "booker");
                     let is_host = roles_vec.iter().any(|r| r.to_lowercase() == "host");
 
-                    if is_booker {
-                        if let Some(profile) = &req_data.booker_profile {
-                            let _ =
-                                db_core::user::create_booker_profile(pool.get_ref(), id, profile)
-                                    .await;
-                        }
+                    if is_booker && let Some(profile) = &req_data.booker_profile {
+                        let _ =
+                            db_core::user::create_booker_profile(pool.get_ref(), id, profile).await;
                     }
 
-                    if is_host {
-                        if let Some(profile) = &req_data.host_profile {
-                            let _ = db_core::user::create_host_profile(pool.get_ref(), id, profile)
-                                .await;
-                        }
+                    if is_host && let Some(profile) = &req_data.host_profile {
+                        let _ =
+                            db_core::user::create_host_profile(pool.get_ref(), id, profile).await;
                     }
                 }
 
