@@ -78,7 +78,7 @@ if [ ! "$(docker ps -q -f name=^/${DB_CONTAINER_NAME}$)" ]; then
         docker start ${DB_CONTAINER_NAME}
     else
         echo "🚀 Database container not found. Creating and starting it..."
-        docker compose -f ${DOCKER_COMPOSE_FILE} up -d
+        docker compose -f ${DOCKER_COMPOSE_FILE} up -d db
     fi
     echo "⏳ Waiting for the database to be ready..."
     sleep 5
