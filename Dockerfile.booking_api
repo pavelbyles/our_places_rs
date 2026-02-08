@@ -40,8 +40,10 @@ RUN apt-get update && apt-get install -y binutils && rm -rf /var/lib/apt/lists/*
 ARG BUILD_OUTPUT
 RUN strip /app/target/${BUILD_OUTPUT}/booking_api
 
-FROM gcr.io/distroless/cc-debian12 AS runtime
+FROM debian:bookworm-slim AS runtime
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 ARG BUILD_OUTPUT
 COPY --from=builder /app/target/${BUILD_OUTPUT}/booking_api /app/booking_api

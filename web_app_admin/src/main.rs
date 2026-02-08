@@ -26,6 +26,7 @@ async fn main() -> std::io::Result<()> {
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pool: sqlx::PgPool = PgPoolOptions::new()
         .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(60))
         .connect(&database_url)
         .await
         .expect("Failed to connect to database");

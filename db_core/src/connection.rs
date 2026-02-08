@@ -5,6 +5,7 @@ pub async fn create_connection_pool(db_url: &str) -> PgPool {
     info!("Creating database connection pool");
     PgPoolOptions::new()
         .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(60))
         .connect(db_url)
         .await
         .unwrap_or_else(|e| {

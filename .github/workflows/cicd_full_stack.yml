@@ -358,8 +358,33 @@ jobs:
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
 
-      - name: Show Deployed URL
+      - name: Build and Push Web App Admin
+        run: |
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app_admin/Dockerfile.web_app_admin .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+
+      - name: Deploy Web App Admin
+        id: deploy_webapp_admin
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            LEPTOS_SITE_ADDR=0.0.0.0:8080
+            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
+            GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
+
+      - name: Show Deployed URL for the Web App
         run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
+
+      - name: Show Deployed URL for the Web App Admin
+        run: echo "Deployed Web App Admin URL ${{ steps.deploy_webapp_admin.outputs.url }}"
 
       - name: Comment on PR
         uses: actions/github-script@v6
