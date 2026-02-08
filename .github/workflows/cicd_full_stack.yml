@@ -381,7 +381,8 @@ jobs:
             BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
+            DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
 
       - name: Show Deployed URL for the Web App
         run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
