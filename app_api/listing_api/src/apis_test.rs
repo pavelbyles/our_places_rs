@@ -6,15 +6,11 @@ use db_core::models::NewUser;
 use db_core::models::{NewListing, StructureType};
 use db_core::user::create_user;
 use rust_decimal_macros::dec;
-use sqlx::PgExecutor;
 use sqlx_db_tester::TestPg;
 use std::env;
 use std::path::Path;
 
-async fn create_test_user<'e, E>(executor: E) -> Uuid
-where
-    E: PgExecutor<'e>,
-{
+async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
     let id = Uuid::now_v7();
     let new_user = NewUser {
         id,
@@ -27,9 +23,20 @@ where
         attributes: serde_json::json!({}),
         roles: None,
     };
-    create_user(executor, &new_user)
+    create_user(&mut *conn, &new_user)
         .await
         .expect("Failed to create test user");
+
+    let host_profile = db_core::models::NewHostProfile {
+        verified_status: Some("unverified".to_string()),
+        payout_details: None,
+        description: Some("Test Host".to_string()),
+    };
+
+    db_core::user::create_host_profile(&mut *conn, id, &host_profile)
+        .await
+        .expect("Failed to create host profile for test user");
+
     id
 }
 
