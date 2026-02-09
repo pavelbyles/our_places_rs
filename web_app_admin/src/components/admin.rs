@@ -66,16 +66,9 @@ pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFn
         host_profile: None,
     };
 
-    let client = reqwest::Client::new();
-    let res = client
-        .post(format!(
-            "{}/api/v1/users/",
-            crate::api_client::user_api_url()
-        ))
-        .json(&request)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .send()
+    let api_url = crate::api_client::user_api_url();
+    let res = crate::api_client::get_client()
+        .post(&format!("{}/api/v1/users/", api_url), &api_url, &request)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -119,17 +112,13 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
         host_profile: None,
     };
 
-    let client = reqwest::Client::new();
-    let res = client
-        .patch(format!(
-            "{}/api/v1/users/user/{}",
-            crate::api_client::user_api_url(),
-            params.id
-        ))
-        .json(&request)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .send()
+    let api_url = crate::api_client::user_api_url();
+    let res = crate::api_client::get_client()
+        .patch(
+            &format!("{}/api/v1/users/user/{}", api_url, params.id),
+            &api_url,
+            &request,
+        )
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -147,21 +136,15 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
 pub async fn get_users_server(
     search: Option<String>,
 ) -> Result<Vec<common::models::UserResponse>, ServerFnError> {
-    let client = reqwest::Client::new();
     let api_url = crate::api_client::user_api_url();
     let mut url = format!("{}/api/v1/users/?page=1&per_page=20", api_url);
 
     if let Some(s) = search {
-        if !s.is_empty() {
-            url.push_str(&format!("&search={}", s));
-        }
+        url.push_str(&format!("&search={}", s));
     }
 
-    let res = client
-        .get(&url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .send()
+    let res = crate::api_client::get_client()
+        .get(&url, &api_url)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 

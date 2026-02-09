@@ -103,7 +103,8 @@ impl AuthenticatedClient {
     /// Creates a GET request builder with OIDC Authorization.
     pub async fn get_request(&self, url: &str, audience: &str) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        Ok(self.client
+        Ok(self
+            .client
             .get(url)
             .header(AUTHORIZATION, format!("Bearer {}", token)))
     }
@@ -125,7 +126,8 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        Ok(self.client
+        Ok(self
+            .client
             .post(url)
             .header(AUTHORIZATION, format!("Bearer {}", token))
             .json(json))
@@ -143,5 +145,34 @@ impl AuthenticatedClient {
             .send()
             .await
             .context("Failed to send POST request")
+    }
+
+    /// Creates a PATCH request builder with OIDC Authorization.
+    pub async fn patch_request<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        audience: &str,
+        json: &T,
+    ) -> Result<reqwest::RequestBuilder> {
+        let token = self.token_provider.get_token(audience).await?;
+        Ok(self
+            .client
+            .patch(url)
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .json(json))
+    }
+
+    /// Sends a PATCH request with OIDC Authorization.
+    pub async fn patch<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        audience: &str,
+        json: &T,
+    ) -> Result<reqwest::Response> {
+        self.patch_request(url, audience, json)
+            .await?
+            .send()
+            .await
+            .context("Failed to send PATCH request")
     }
 }
