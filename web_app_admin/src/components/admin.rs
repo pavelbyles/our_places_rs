@@ -68,7 +68,10 @@ pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFn
 
     let client = reqwest::Client::new();
     let res = client
-        .post("http://localhost:8083/api/v1/users/")
+        .post(format!(
+            "{}/api/v1/users/",
+            crate::api_client::user_api_url()
+        ))
         .json(&request)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
@@ -119,7 +122,8 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
     let client = reqwest::Client::new();
     let res = client
         .patch(format!(
-            "http://localhost:8083/api/v1/users/user/{}",
+            "{}/api/v1/users/user/{}",
+            crate::api_client::user_api_url(),
             params.id
         ))
         .json(&request)
@@ -144,8 +148,7 @@ pub async fn get_users_server(
     search: Option<String>,
 ) -> Result<Vec<common::models::UserResponse>, ServerFnError> {
     let client = reqwest::Client::new();
-    let api_url =
-        std::env::var("USER_API_URL").unwrap_or_else(|_| "http://localhost:8083".to_string());
+    let api_url = crate::api_client::user_api_url();
     let mut url = format!("{}/api/v1/users/?page=1&per_page=20", api_url);
 
     if let Some(s) = search {

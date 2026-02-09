@@ -14,7 +14,10 @@ pub fn get_client() -> &'static AuthenticatedClient {
 }
 
 pub fn user_api_url() -> String {
-    env::var("USER_API_URL").unwrap_or_else(|_| "http://localhost:8083".to_string())
+    env::var("USER_API_URL")
+        .unwrap_or_else(|_| "http://localhost:8083".to_string())
+        .trim_end_matches('/')
+        .to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
