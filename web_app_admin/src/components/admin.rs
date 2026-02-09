@@ -12,11 +12,17 @@ pub struct CreateUserParams {
     pub first_name: String,
     pub last_name: String,
     pub phone_number: Option<String>,
+    #[serde(default)]
     pub is_active: bool,
+    #[serde(default)]
     pub can_manage_bookings: bool,
+    #[serde(default)]
     pub can_manage_listings: bool,
+    #[serde(default)]
     pub is_admin: bool,
+    #[serde(default)]
     pub is_booker: bool,
+    #[serde(default)]
     pub is_host: bool,
 }
 
@@ -28,11 +34,17 @@ pub struct UpdateUserParams {
     pub first_name: String,
     pub last_name: String,
     pub phone_number: Option<String>,
+    #[serde(default)]
     pub is_active: bool,
+    #[serde(default)]
     pub can_manage_bookings: bool,
+    #[serde(default)]
     pub can_manage_listings: bool,
+    #[serde(default)]
     pub is_admin: bool,
+    #[serde(default)]
     pub is_booker: bool,
+    #[serde(default)]
     pub is_host: bool,
 }
 

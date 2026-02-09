@@ -4,6 +4,8 @@ use reqwest::Client;
 
 use std::process::Command;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// A trait for fetching OIDC Identity Tokens.
 #[async_trait::async_trait]
@@ -11,12 +13,35 @@ pub trait TokenProvider: Send + Sync {
     async fn get_token(&self, audience: &str) -> Result<String>;
 }
 
+struct CachedToken {
+    token: String,
+    expires_at: Instant,
+}
+
 /// Fetches tokens from the Google Cloud Metadata Server (for Cloud Run).
-pub struct GoogleMetadataTokenProvider;
+pub struct GoogleMetadataTokenProvider {
+    cache: Mutex<Option<CachedToken>>,
+}
+
+impl GoogleMetadataTokenProvider {
+    pub fn new() -> Self {
+        Self {
+            cache: Mutex::new(None),
+        }
+    }
+}
 
 #[async_trait::async_trait]
 impl TokenProvider for GoogleMetadataTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
+        let mut cache = self.cache.lock().await;
+
+        if let Some(cached) = &*cache {
+            if cached.expires_at > Instant::now() {
+                return Ok(cached.token.clone());
+            }
+        }
+
         let client = Client::new();
         // Google Metadata Server URL for ID tokens
         let url = format!(
@@ -45,23 +70,67 @@ impl TokenProvider for GoogleMetadataTokenProvider {
             .context("Failed to read token from Metadata Server")?
             .trim()
             .to_string();
+
+        // Cache for 50 minutes (tokens usually last 1 hour)
+        *cache = Some(CachedToken {
+            token: token.clone(),
+            expires_at: Instant::now() + Duration::from_secs(50 * 60),
+        });
+
         Ok(token)
     }
 }
 
 /// Fetches tokens using the `gcloud` CLI (for local development).
-pub struct LocalGcloudTokenProvider;
+pub struct LocalGcloudTokenProvider {
+    cache: Mutex<Option<CachedToken>>,
+}
+
+impl LocalGcloudTokenProvider {
+    pub fn new() -> Self {
+        Self {
+            cache: Mutex::new(None),
+        }
+    }
+}
 
 #[async_trait::async_trait]
 impl TokenProvider for LocalGcloudTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
-        // Runs: gcloud auth print-identity-token --audiences=...
-        let output = Command::new("gcloud")
-            .arg("auth")
-            .arg("print-identity-token")
-            .arg(format!("--audiences={}", audience))
-            .output()
-            .context("Failed to execute gcloud command")?;
+        let mut cache = self.cache.lock().await;
+
+        if let Some(cached) = &*cache {
+            if cached.expires_at > Instant::now() {
+                return Ok(cached.token.clone());
+            }
+        }
+
+        let audience = audience.to_string();
+        let output = tokio::task::spawn_blocking(move || {
+            // Runs: gcloud auth print-identity-token --audiences=...
+            let mut output = Command::new("gcloud")
+                .arg("auth")
+                .arg("print-identity-token")
+                .arg(format!("--audiences={}", audience))
+                .output()
+                .context("Failed to execute gcloud command")?;
+
+            // If that failed (likely due to being a User account not supporting --audiences), try without audience
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if stderr.contains("Invalid account Type")
+                    || stderr.contains("Requires valid service account")
+                {
+                    output = Command::new("gcloud")
+                        .arg("auth")
+                        .arg("print-identity-token")
+                        .output()
+                        .context("Failed to execute gcloud command (fallback)")?;
+                }
+            }
+            Ok::<_, anyhow::Error>(output)
+        })
+        .await??;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -72,6 +141,13 @@ impl TokenProvider for LocalGcloudTokenProvider {
             .context("Invalid UTF-8 in gcloud output")?
             .trim()
             .to_string();
+
+        // Cache for 50 minutes
+        *cache = Some(CachedToken {
+            token: token.clone(),
+            expires_at: Instant::now() + Duration::from_secs(50 * 60),
+        });
+
         Ok(token)
     }
 }
@@ -89,9 +165,9 @@ impl AuthenticatedClient {
     /// Otherwise defaults to LocalGcloudTokenProvider.
     pub fn new(is_cloud: bool) -> Self {
         let token_provider: Arc<dyn TokenProvider> = if is_cloud {
-            Arc::new(GoogleMetadataTokenProvider)
+            Arc::new(GoogleMetadataTokenProvider::new())
         } else {
-            Arc::new(LocalGcloudTokenProvider)
+            Arc::new(LocalGcloudTokenProvider::new())
         };
 
         Self {
