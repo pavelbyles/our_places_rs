@@ -45,14 +45,19 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
-ARG BUILD_OUTPUT
-COPY --from=builder /app/target/${BUILD_OUTPUT}/booking_api /app/booking_api
+# Create non-root user
+RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
 
-COPY app_api/booking_api/config /app/config
+ARG BUILD_OUTPUT
+COPY --from=builder --chown=nonroot:nonroot /app/target/${BUILD_OUTPUT}/booking_api /app/booking_api
+
+COPY --chown=nonroot:nonroot app_api/booking_api/config /app/config
 
 ENV PORT=8080
 ENV HOST=0.0.0.0
 ENV LOG_FORMAT=json
+
+USER nonroot
 
 EXPOSE 8080
 

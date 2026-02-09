@@ -31,6 +31,12 @@ impl GoogleMetadataTokenProvider {
     }
 }
 
+impl Default for GoogleMetadataTokenProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait::async_trait]
 impl TokenProvider for GoogleMetadataTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
@@ -91,6 +97,12 @@ impl LocalGcloudTokenProvider {
         Self {
             cache: Mutex::new(None),
         }
+    }
+}
+
+impl Default for LocalGcloudTokenProvider {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
