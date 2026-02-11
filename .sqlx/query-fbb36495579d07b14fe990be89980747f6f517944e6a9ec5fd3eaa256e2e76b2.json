@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE \"user\"\n        SET\n            email = COALESCE($2, email),\n            password_hash = COALESCE($3, password_hash),\n            first_name = COALESCE($4, first_name),\n            last_name = COALESCE($5, last_name),\n            phone_number = COALESCE($6, phone_number),\n            is_active = COALESCE($7, is_active),\n            updated_at = now()\n        WHERE id = $1\n        RETURNING *\n        ",
+  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\"\n            FROM \"user\" WHERE email = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -47,17 +47,39 @@
         "ordinal": 8,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "attributes",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Bool"
+        "Text"
       ]
     },
     "nullable": [
@@ -69,8 +91,10 @@
       true,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "fba064aa51a03b41ddb2555c6c017e0954a71f6ad6c6603e1ffe33ad51f7f751"
+  "hash": "fbb36495579d07b14fe990be89980747f6f517944e6a9ec5fd3eaa256e2e76b2"
 }

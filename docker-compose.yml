@@ -37,6 +37,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://0.0.0.0:8080/api/v1/bookings/health_check",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   listing_api:
     build:
@@ -59,6 +70,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://0.0.0.0:8080/api/v1/listings/health_check",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   user_api:
     build:
@@ -81,6 +103,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD", "curl", "-f", "http://0.0.0.0:8080/api/v1/users/health_check"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   web_app:
     build:
@@ -91,9 +119,41 @@ services:
     environment:
       - RUST_LOG=info,web_app=debug
       - LISTING_API_URL=http://listing_api:8080
+      - USER_API_URL=http://user_api:8080
+      - BOOKING_API_URL=http://booking_api:8080
       - LEPTOS_SITE_ADDR=0.0.0.0:8080
     depends_on:
-      - listing_api
+      db:
+        condition: service_healthy
+      listing_api:
+        condition: service_healthy
+      user_api:
+        condition: service_healthy
+      booking_api:
+        condition: service_healthy
+
+  web_app_admin:
+    build:
+      context: .
+      dockerfile: web_app_admin/Dockerfile.web_app_admin
+    ports:
+      - "8084:8080"
+    environment:
+      - RUST_LOG=info,web_app_admin=debug
+      - LISTING_API_URL=http://listing_api:8080
+      - USER_API_URL=http://user_api:8080
+      - BOOKING_API_URL=http://booking_api:8080
+      - LEPTOS_SITE_ADDR=0.0.0.0:8080
+      - DATABASE_URL=postgres://postgres:password@db:5432/our_places
+    depends_on:
+      db:
+        condition: service_healthy
+      listing_api:
+        condition: service_healthy
+      user_api:
+        condition: service_healthy
+      booking_api:
+        condition: service_healthy
 
 volumes:
   postgres_data_dev:

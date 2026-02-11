@@ -13,7 +13,7 @@ host = "localhost"
 database_name = "our_places"
 cloud = false
 instance_name = ""
-database_url = "postgres://postgres:password@localhost:5432/our_places"
+
 
 env = "Development"
 

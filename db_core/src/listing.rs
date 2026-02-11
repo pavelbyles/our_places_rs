@@ -13,7 +13,8 @@ where
         Listing,
         r#"
         INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, added_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+        SELECT $1, $2, $3, $4, $5, $6, $7, now()
+        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
         RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
         "#,
         Uuid::now_v7(),
@@ -25,7 +26,13 @@ where
         new_listing.price_per_night,
     )
     .fetch_one(executor)
-    .await?;
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::RowNotFound => crate::error::DbError::ValidationError(
+            "User must have a host profile to create a listing".to_string(),
+        ),
+        other => crate::error::DbError::Sqlx(other),
+    })?;
 
     Ok(listing)
 }
@@ -233,10 +240,10 @@ pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Resul
 mod tests {
     use super::*;
     use crate::error::DbError;
-    use crate::models::{NewListing, NewUser};
-    use crate::user::create_user;
+    use crate::models::{NewHostProfile, NewListing, NewUser};
+    use crate::user::{create_host_profile, create_user};
     use rust_decimal_macros::dec;
-    use sqlx::{Connection, PgConnection, PgExecutor};
+    use sqlx::{Connection, PgConnection};
     use std::collections::HashSet;
     use std::env;
     use uuid::Uuid;
@@ -253,10 +260,7 @@ mod tests {
             .expect("Failed to connect to Postgres")
     }
 
-    async fn create_test_user<'e, E>(executor: E) -> Uuid
-    where
-        E: PgExecutor<'e>,
-    {
+    async fn create_test_user_no_profile(conn: &mut PgConnection) -> Uuid {
         let id = Uuid::now_v7();
         let new_user = NewUser {
             id,
@@ -266,11 +270,26 @@ mod tests {
             last_name: "User".to_string(),
             phone_number: None,
             is_active: true,
+            attributes: serde_json::json!({}),
+            roles: None,
         };
-        create_user(executor, &new_user)
+        create_user(&mut *conn, &new_user)
             .await
             .expect("Failed to create test user");
         id
+    }
+
+    async fn create_test_user_with_host_profile(conn: &mut PgConnection) -> Uuid {
+        let user_id = create_test_user_no_profile(&mut *conn).await;
+        let profile = NewHostProfile {
+            description: Some("Test Host".to_string()),
+            verified_status: Some("pending".to_string()),
+            payout_details: None,
+        };
+        create_host_profile(&mut *conn, user_id, &profile)
+            .await
+            .expect("Failed to create host profile");
+        user_id
     }
 
     #[tokio::test]
@@ -278,7 +297,7 @@ mod tests {
         let mut conn = setup_test_db().await;
         let mut tx = conn.begin().await.expect("Failed to begin transaction");
 
-        let user_id = create_test_user(&mut *tx).await;
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
         let new_listing = NewListing {
             name: "Cozy Test Cottage".to_string(),
             user_id,
@@ -296,11 +315,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_listing_fails_without_host_profile() {
+        let mut conn = setup_test_db().await;
+        // let mut tx = conn.begin().await.expect("Failed to begin transaction");
+        // Use transaction? yes.
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let user_id = create_test_user_no_profile(&mut *tx).await;
+        let new_listing = NewListing {
+            name: "Fail listing".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Testland".to_string(),
+            price_per_night: None,
+        };
+
+        let result = create_listing(&mut *tx, &new_listing).await;
+        assert!(matches!(
+            result,
+            Err(DbError::ValidationError(msg)) if msg == "User must have a host profile to create a listing"
+        ));
+    }
+
+    #[tokio::test]
     async fn test_get_listing_by_id() {
         let mut conn = setup_test_db().await;
         let mut tx = conn.begin().await.expect("Failed to begin transaction");
 
-        let user_id = create_test_user(&mut *tx).await;
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
         let new_listing = NewListing {
             name: "Fetch Me Listing".to_string(),
             user_id,
@@ -331,7 +374,7 @@ mod tests {
         let mut tx = conn.begin().await.expect("Failed to begin transaction");
 
         // Create 3 listings. We will order them by name for deterministic testing.
-        let user_id = create_test_user(&mut *tx).await;
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
         let mut created_ids = Vec::new();
         for i in 1..=3 {
             let listing = NewListing {
@@ -389,7 +432,7 @@ mod tests {
         const TOTAL_RECORDS: i32 = 7;
         const PER_PAGE: u32 = 3;
 
-        let user_id = create_test_user(&mut *tx).await;
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
         for i in 1..=TOTAL_RECORDS {
             let listing = NewListing {
                 name: format!("Uniqueness Test Listing {}", i),
@@ -435,7 +478,7 @@ mod tests {
         let mut conn = setup_test_db().await;
         let mut tx = conn.begin().await.expect("Failed to begin transaction");
 
-        let user_id = create_test_user(&mut *tx).await;
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
 
         // 1. Apartment in Jamaica, cheap
         let listing1 = NewListing {

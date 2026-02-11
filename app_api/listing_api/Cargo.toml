@@ -34,8 +34,3 @@ actix-web = "4.10.2"
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [
     "postgres",
 ] }
-
-[profile.release]
-opt-level = 3
-debug = false
-strip = true

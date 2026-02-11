@@ -17,6 +17,9 @@ pub enum ApiError {
 
     #[error("Feature '{0}' is currently disabled")]
     FeatureDisabled(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -39,6 +42,7 @@ impl ResponseError for ApiError {
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
             // Feature disabled error is 403 Forbidden
             ApiError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
+            ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
         }
     }
 

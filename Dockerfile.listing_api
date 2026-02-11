@@ -40,17 +40,24 @@ RUN apt-get update && apt-get install -y binutils && rm -rf /var/lib/apt/lists/*
 ARG BUILD_OUTPUT
 RUN strip /app/target/${BUILD_OUTPUT}/listing_api
 
-FROM gcr.io/distroless/cc-debian12 AS runtime
+FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
-ARG BUILD_OUTPUT
-COPY --from=builder /app/target/${BUILD_OUTPUT}/listing_api /app/listing_api
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY app_api/listing_api/config /app/config
+# Create non-root user
+RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
+
+ARG BUILD_OUTPUT
+COPY --from=builder --chown=nonroot:nonroot /app/target/${BUILD_OUTPUT}/listing_api /app/listing_api
+
+COPY --chown=nonroot:nonroot app_api/listing_api/config /app/config
 
 ENV PORT=8080
 ENV HOST=0.0.0.0
 ENV LOG_FORMAT=json
+
+USER nonroot
 
 EXPOSE 8080
 

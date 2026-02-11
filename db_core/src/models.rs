@@ -21,6 +21,28 @@ pub struct User {
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub attributes: serde_json::Value,
+    pub roles: Vec<UserRole>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct BookerProfile {
+    pub user_id: Uuid,
+    pub emergency_contacts: Option<serde_json::Value>,
+    pub booking_preferences: Option<serde_json::Value>,
+    pub loyalty: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct HostProfile {
+    pub user_id: Uuid,
+    pub verified_status: Option<String>,
+    pub payout_details: Option<serde_json::Value>,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug)]
@@ -32,7 +54,11 @@ pub struct NewUser {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub attributes: serde_json::Value,
+    pub roles: Option<Vec<UserRole>>,
 }
+
+pub use common::models::{NewBookerProfile, NewHostProfile};
 
 #[derive(Debug)]
 pub struct UpdatedUser {
@@ -42,6 +68,19 @@ pub struct UpdatedUser {
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
     pub is_active: Option<bool>,
+    pub attributes: Option<serde_json::Value>,
+    pub roles: Option<Vec<UserRole>>,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
+)]
+#[sqlx(type_name = "user_role", rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum UserRole {
+    Booker,
+    Host,
+    Admin,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]

@@ -2,7 +2,7 @@
 DATABASE_URL = "postgres://postgres:password@localhost:5432/our_places"
 DB_CONTAINER_NAME = "our_places_db"
 MIGRATIONS_DIR = "../../db_core/migrations"
-DOCKER_COMPOSE_FILE = "../../docker-compose.db.yml"
+DOCKER_COMPOSE_FILE = "../../docker-compose.yml"
 
 [tasks.format]
 install_crate = "rustfmt"
@@ -78,7 +78,7 @@ if [ ! "$(docker ps -q -f name=^/${DB_CONTAINER_NAME}$)" ]; then
         docker start ${DB_CONTAINER_NAME}
     else
         echo "🚀 Database container not found. Creating and starting it..."
-        docker compose -f ${DOCKER_COMPOSE_FILE} up -d
+        docker compose -f ${DOCKER_COMPOSE_FILE} up -d db
     fi
     echo "⏳ Waiting for the database to be ready..."
     sleep 5

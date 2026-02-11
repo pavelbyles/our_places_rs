@@ -1,0 +1,65 @@
+FROM rustlang/rust:nightly-bookworm AS builder
+
+# Install Node.js and npm (for Tailwind/DaisyUI)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-binstall for fast tool installation
+RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz \
+    && tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz \
+    && cp cargo-binstall /usr/local/cargo/bin \
+    && rm cargo-binstall-x86_64-unknown-linux-musl.tgz
+
+# Install cargo-leptos
+RUN cargo binstall cargo-leptos -y
+
+# Add the WASM target
+RUN rustup target add wasm32-unknown-unknown
+
+# Make an /app dir, which everything will eventually live in
+RUN mkdir -p /app
+WORKDIR /app
+
+# Copy the entire workspace to preserve common crate and workspace structure
+COPY . .
+
+# Set SQLX_OFFLINE to true so we don't need a running DB connection to build
+ENV SQLX_OFFLINE=true
+
+# Build styles (Tailwind)
+# We need to be in the web_app_admin directory for npm commands
+WORKDIR /app/web_app_admin
+RUN npm install
+RUN npm run build:css
+
+# Build the application
+# We go back to root or stay here,# Using --project web_app from root, or running inside web_app
+WORKDIR /app/web_app_admin
+RUN cargo leptos build --release
+
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get autoremove -y \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy the server binary to the /app directory
+# Note: cargo-leptos outputs to the workspace target directory
+COPY --from=builder /app/target/release/web_app_admin /app/
+
+# /target/site contains our JS/WASM/CSS, etc.
+COPY --from=builder /app/target/site /app/site
+
+# Set any required env variables
+# 0.0.0.0 is crucial for Docker/Cloud Run
+ENV LEPTOS_SITE_ADDR="0.0.0.0:8080"
+ENV LEPTOS_SITE_ROOT="site"
+# Default to port 8080
+EXPOSE 8080
+
+# Run the server
+CMD ["./web_app_admin"]
