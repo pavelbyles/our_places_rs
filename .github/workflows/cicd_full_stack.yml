@@ -1,17 +1,13 @@
 name: Full Stack CI/CD
 
 env:
+  ENV_SUFFIX: ${{ github.ref == 'refs/heads/main' && 'PROD' || 'DEV' }}
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
-  GAR_REPO: our-places-repo
+  GAR_REPO: ${{ vars.GAR_REPO}}
   REGION: us-central1
   SERVICE_PREFIX: our-places-web-app
   SERVICE_PREFIX_ADMIN: our-places-web-app-admin
   CARGO_TERM_COLOR: always
-  GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY }}
-  SA_WEB_APP: "sa-web-app"
-  SA_LISTING_API: "sa-listing-api"
-  SA_USER_API: "sa-user-api"
-  SA_BOOKING_API: "sa-booking-api"
 
 on:
   push:
@@ -110,6 +106,14 @@ jobs:
     defaults:
       run:
         working-directory: ./app_api
+    env:
+      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', env.ENV_SUFFIX)] }}
+      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', env.ENV_SUFFIX)] }}
+      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', env.ENV_SUFFIX)] }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', env.ENV_SUFFIX)] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', env.ENV_SUFFIX)] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', env.ENV_SUFFIX)] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', env.ENV_SUFFIX)] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -143,7 +147,9 @@ jobs:
         run: |
           SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
           SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            SAFE_SCHEMA_name="public"
+          elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
           fi
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
@@ -175,10 +181,7 @@ jobs:
 
       - name: Setup Preview Schema
         env:
-          DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-          DB_USER: ${{ vars.POSTGRES_USER_DEV }}
-          DB_PASS: ${{ secrets.POSTGRES_PASSWORD_DEV }}
-          DB_NAME: ${{ vars.POSTGRES_DB_DEV }}
+          DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ vars[format('DB_INSTANCE_NAME_{0}', env.ENV_SUFFIX)] }}
           SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -223,12 +226,12 @@ jobs:
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
-            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
-            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
-            EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
+            EA__DATABASE__USERNAME=${{ env.DB_USER }}
+            EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
+            EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # Listing API
       - name: Build and Push Listing API
@@ -253,12 +256,12 @@ jobs:
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
-            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
-            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
-            EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
+            EA__DATABASE__USERNAME=${{ env.DB_USER }}
+            EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
+            EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # User API
       - name: Build and Push User API
@@ -282,12 +285,13 @@ jobs:
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-            EA__DATABASE__USERNAME=${{ vars.POSTGRES_USER_DEV }}
-            EA__DATABASE__PASSWORD=${{ secrets.POSTGRES_PASSWORD_DEV }}
-            EA__DATABASE__DATABASE_NAME=${{ vars.POSTGRES_DB_DEV}}
-            EA__DATABASE__DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
+            EA__DATABASE__USERNAME=${{ env.DB_USER }}
+            EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
+            EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
   # =========================================================
   # DEPLOY WEBAPP
@@ -297,6 +301,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: [audit, lint-check, test-web, deploy-api]
     if: github.event_name == 'push'
+    env:
+      SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', env.ENV_SUFFIX)] }}
+      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', env.ENV_SUFFIX)] }}
+      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', env.ENV_SUFFIX)] }}
+      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', env.ENV_SUFFIX)] }}
+      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', env.ENV_SUFFIX)] }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', env.ENV_SUFFIX)] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', env.ENV_SUFFIX)] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', env.ENV_SUFFIX)] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', env.ENV_SUFFIX)] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -339,10 +353,55 @@ jobs:
             echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
           fi
 
+      - name: Fetch Gateway URL
+        id: fetch_gateway
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            GATEWAY_ID="our-places-app-api-gw-prod"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            GATEWAY_ID="our-places-app-api-gw"
+          fi
+
+          echo "Fetching URL for Gateway: $GATEWAY_ID"
+            
+          gcloud api-gateway gateways describe $GATEWAY_ID \
+            --location=us-central1 \
+            --project=our-places-dev \
+            --format="value(defaultHostname)" > gateway_url.txt
+              
+          echo "GATEWAY_URL=https://$(cat gateway_url.txt)" >> $GITHUB_OUTPUT
+
       - name: Build and Push Web App
         run: |
           docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+
+      - name: Grant Service Permissions
+        run: |
+          # Grant Web App SA permission to invoke the Backend APIs
+          WEB_APP_SA_EMAIL="${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+          SUFFIX="${{ needs.deploy-api.outputs.service_suffix }}"
+
+          echo "Granting run.invoker to $WEB_APP_SA_EMAIL for $SUFFIX services
+
+          gcloud run services add-iam-policy-binding listing-api-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
+          gcloud run services add-iam-policy-binding booking-api-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
+          gcloud run services add-iam-policy-binding user-api-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
 
       - name: Deploy Web App
         id: deploy_webapp
@@ -355,10 +414,10 @@ jobs:
             LOG_FORMAT=json
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
-            GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
+            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/listings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/bookings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/users', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.user_url }}
+            GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
 
       - name: Build and Push Web App Admin
@@ -377,12 +436,12 @@ jobs:
             LOG_FORMAT=json
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ needs.deploy-api.outputs.user_url }}
-            GATEWAY_API_KEY=${{ env.GATEWAY_API_KEY }}
-            DATABASE_URL=postgres://${{ vars.POSTGRES_USER_DEV }}:${{ secrets.POSTGRES_PASSWORD_DEV }}@localhost/${{ vars.POSTGRES_DB_DEV}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev --quiet"
+            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/listings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/bookings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/users', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.user_url }}
+            GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
+            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Show Deployed URL for the Web App
         run: echo "Deployed Web App URL ${{ steps.deploy_webapp.outputs.url }}"
