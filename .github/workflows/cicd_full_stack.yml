@@ -383,7 +383,7 @@ jobs:
           WEB_APP_SA_EMAIL="${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
           SUFFIX="${{ needs.deploy-api.outputs.service_suffix }}"
 
-          echo "Granting run.invoker to $WEB_APP_SA_EMAIL for $SUFFIX services
+          echo "Granting run.invoker to $WEB_APP_SA_EMAIL for $SUFFIX services"
 
           gcloud run services add-iam-policy-binding listing-api-$SUFFIX \
             --region=${{ env.REGION }} \
