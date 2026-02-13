@@ -107,13 +107,13 @@ jobs:
       run:
         working-directory: ./app_api
     env:
-      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', env.ENV_SUFFIX)] }}
-      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', env.ENV_SUFFIX)] }}
-      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', env.ENV_SUFFIX)] }}
-      DB_USER: ${{ vars[format('DB_USER_{0}', env.ENV_SUFFIX)] }}
-      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', env.ENV_SUFFIX)] }}
-      DB_NAME: ${{ vars[format('DB_NAME_{0}', env.ENV_SUFFIX)] }}
-      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', env.ENV_SUFFIX)] }}
+      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -181,7 +181,7 @@ jobs:
 
       - name: Setup Preview Schema
         env:
-          DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ vars[format('DB_INSTANCE_NAME_{0}', env.ENV_SUFFIX)] }}
+          DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
           SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -302,15 +302,15 @@ jobs:
     needs: [audit, lint-check, test-web, deploy-api]
     if: github.event_name == 'push'
     env:
-      SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', env.ENV_SUFFIX)] }}
-      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', env.ENV_SUFFIX)] }}
-      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', env.ENV_SUFFIX)] }}
-      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', env.ENV_SUFFIX)] }}
-      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', env.ENV_SUFFIX)] }}
-      DB_USER: ${{ vars[format('DB_USER_{0}', env.ENV_SUFFIX)] }}
-      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', env.ENV_SUFFIX)] }}
-      DB_NAME: ${{ vars[format('DB_NAME_{0}', env.ENV_SUFFIX)] }}
-      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', env.ENV_SUFFIX)] }}
+      SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
