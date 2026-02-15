@@ -12,9 +12,9 @@ ARG POSTGRES_USER
 ARG POSTGRES_PASSWORD
 ARG POSTGRES_HOST
 ARG POSTGRES_DB
-RUN echo "Build type is: ${BUILD_TYPE}"
-RUN echo "Build output is: ${BUILD_OUTPUT}"
-RUN echo "Release flag is: ${RELEASE_FLAG}"
+RUN echo "Build type is: ${BUILD_TYPE}" \
+&& echo "Build output is: ${BUILD_OUTPUT}" \
+&& echo "Release flag is: ${RELEASE_FLAG}"
 
 FROM lukemathwalker/cargo-chef:latest-rust-1.91.1-slim-bookworm AS chef
 WORKDIR /app
@@ -25,7 +25,8 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates pkg-config libssl-dev
+RUN apt-get update \
+&& apt-get install -y --no-install-recommends curl ca-certificates pkg-config libssl-dev
 COPY --from=planner /app/recipe.json recipe.json
 ARG RELEASE_FLAG
 RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json
@@ -34,24 +35,27 @@ COPY . .
 ENV SQLX_OFFLINE=true
 
 ARG RELEASE_FLAG
-RUN cargo build ${RELEASE_FLAG} -p booking_api
-
-RUN apt-get update && apt-get install -y binutils && rm -rf /var/lib/apt/lists/*
+RUN cargo build ${RELEASE_FLAG} -p booking_api \
+&& apt-get update \
+&& apt-get install -y binutils \
+&& rm -rf /var/lib/apt/lists/*
 ARG BUILD_OUTPUT
 RUN strip /app/target/${BUILD_OUTPUT}/booking_api
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN groupadd -r nonroot && useradd -r -g nonroot nonroot
+# Install dependencies and create non-root user
+RUN apt-get update \
+&& apt-get install -y --no-install-recommends curl ca-certificates \
+&& rm -rf /var/lib/apt/lists/* \
+&& groupadd -r nonroot \
+&& useradd -r -g nonroot nonroot
 
 ARG BUILD_OUTPUT
-COPY --from=builder --chown=nonroot:nonroot /app/target/${BUILD_OUTPUT}/booking_api /app/booking_api
+COPY --from=builder --chown=nonroot:nonroot --chmod=755 /app/target/${BUILD_OUTPUT}/booking_api /app/booking_api
 
-COPY --chown=nonroot:nonroot app_api/booking_api/config /app/config
+COPY --chown=nonroot:nonroot --chmod=755 app_api/booking_api/config /app/config
 
 ENV PORT=8080
 ENV HOST=0.0.0.0
