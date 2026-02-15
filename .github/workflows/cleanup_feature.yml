@@ -32,11 +32,14 @@ jobs:
 
       - name: Determine Target
         id: target
+        env:
+          DELETE_REF: ${{ github.event.ref }}
+          BRANCH_NAME: ${{ github.head_ref }}
         run: |
           if [[ "${{ github.event_name }}" == "delete" ]]; then
-            REF_NAME="${{ github.event.ref }}"
+            REF_NAME="${{ env.DELETE_REF }}"
           else
-            REF_NAME="${{ github.head_ref }}"
+            REF_NAME="${{ env.BRANCH_NAME }}"
           fi
 
           # Same sanitization logic as CI/CD
