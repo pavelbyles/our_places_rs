@@ -164,11 +164,12 @@ impl TokenProvider for LocalGcloudTokenProvider {
     }
 }
 
-/// An HTTP client that automatically attaches Authorization headers.
+/// An HTTP client that automatically attaches Authorization headers and API Key.
 #[derive(Clone)]
 pub struct AuthenticatedClient {
     client: Client,
     token_provider: Arc<dyn TokenProvider>,
+    api_key: Option<String>,
 }
 
 impl AuthenticatedClient {
@@ -182,19 +183,33 @@ impl AuthenticatedClient {
             Arc::new(LocalGcloudTokenProvider::new())
         };
 
+        // Read API Key from environment (if available)
+        let api_key = std::env::var("GATEWAY_API_KEY").ok();
+
         Self {
             client: Client::new(),
             token_provider,
+            api_key,
         }
     }
 
-    /// Creates a GET request builder with OIDC Authorization.
+    /// Helper to add API Key header if present
+    fn add_api_key(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(ref key) = self.api_key {
+            builder.header("x-api-key", key)
+        } else {
+            builder
+        }
+    }
+
+    /// Creates a GET request builder with OIDC Authorization and API Key.
     pub async fn get_request(&self, url: &str, audience: &str) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        Ok(self
+        let builder = self
             .client
             .get(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token)))
+            .header(AUTHORIZATION, format!("Bearer {}", token));
+        Ok(self.add_api_key(builder))
     }
 
     /// Sends a GET request with OIDC Authorization.
@@ -206,7 +221,7 @@ impl AuthenticatedClient {
             .context("Failed to send GET request")
     }
 
-    /// Creates a POST request builder with OIDC Authorization.
+    /// Creates a POST request builder with OIDC Authorization and API Key.
     pub async fn post_request<T: serde::Serialize + ?Sized>(
         &self,
         url: &str,
@@ -214,11 +229,12 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        Ok(self
+        let builder = self
             .client
             .post(url)
             .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json))
+            .json(json);
+        Ok(self.add_api_key(builder))
     }
 
     /// Sends a POST request with OIDC Authorization.
@@ -235,7 +251,7 @@ impl AuthenticatedClient {
             .context("Failed to send POST request")
     }
 
-    /// Creates a PATCH request builder with OIDC Authorization.
+    /// Creates a PATCH request builder with OIDC Authorization and API Key.
     pub async fn patch_request<T: serde::Serialize + ?Sized>(
         &self,
         url: &str,
@@ -243,11 +259,12 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        Ok(self
+        let builder = self
             .client
             .patch(url)
             .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json))
+            .json(json);
+        Ok(self.add_api_key(builder))
     }
 
     /// Sends a PATCH request with OIDC Authorization.

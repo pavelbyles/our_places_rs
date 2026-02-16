@@ -414,9 +414,9 @@ jobs:
             LOG_FORMAT=json
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/listings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/bookings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/users', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.user_url }}
+            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
 
@@ -436,9 +436,9 @@ jobs:
             LOG_FORMAT=json
             RUST_LOG=info
             LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/listings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/bookings', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && format('{0}/api/v1/users', steps.fetch_gateway.outputs.GATEWAY_URL) || needs.deploy-api.outputs.user_url }}
+            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
+            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
             DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
