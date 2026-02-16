@@ -3,6 +3,7 @@ use common::models::{NewUserRequest, UpdateUserRequest};
 use leptos::form::ActionForm;
 use leptos::html::Input;
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -172,6 +173,30 @@ pub async fn get_users_server(
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(users)
+}
+
+#[server]
+pub async fn get_user_server(email: String) -> Result<common::models::UserResponse, ServerFnError> {
+    let api_url = crate::api_client::user_api_url();
+    let url = format!("{}/api/v1/users/user/{}", api_url, email);
+
+    let res = crate::api_client::get_client()
+        .get(&url, &api_url)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if !res.status().is_success() {
+        return Err(ServerFnError::new(format!(
+            "Failed to fetch user: {}",
+            res.status()
+        )));
+    }
+
+    let user: common::models::UserResponse = res
+        .json()
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(user)
 }
 
 #[component]
@@ -487,49 +512,57 @@ pub fn AdminPage() -> impl IntoView {
                                                         view! {
                                                             <li class="list-row hover:bg-base-200 cursor-pointer"
                                                                 on:click=move |_| {
-                                                                    set_email.set(user_clone.email.clone());
-                                                                    set_first_name.set(user_clone.first_name.clone());
-                                                                    set_last_name.set(user_clone.last_name.clone());
+                                                                    let email_to_fetch = user_clone.email.clone();
+                                                                    spawn_local(async move {
+                                                                        match get_user_server(email_to_fetch).await {
+                                                                            Ok(fresh_user) => {
+                                                                                 set_email.set(fresh_user.email.clone());
+                                                                                 set_first_name.set(fresh_user.first_name.clone());
+                                                                                 set_last_name.set(fresh_user.last_name.clone());
 
-                                                                    if let Some(ref input) = id_ref.get() {
-                                                                        input.set_value(&user_clone.id.to_string());
-                                                                    }
-                                                                    if let Some(ref input) = email_ref.get() {
-                                                                        input.set_value(&user_clone.email);
-                                                                    }
-                                                                    if let Some(ref input) = first_name_ref.get() {
-                                                                        input.set_value(&user_clone.first_name);
-                                                                    }
-                                                                    if let Some(ref input) = last_name_ref.get() {
-                                                                        input.set_value(&user_clone.last_name);
-                                                                    }
-                                                                    if let Some(ref input) = phone_number_ref.get() {
-                                                                        input.set_value(&user_clone.phone_number.clone().unwrap_or_default());
-                                                                    }
-                                                                    if let Some(ref input) = is_active_ref.get() {
-                                                                        input.set_checked(user_clone.is_active);
-                                                                    }
+                                                                                 if let Some(ref input) = id_ref.get() {
+                                                                                     input.set_value(&fresh_user.id.to_string());
+                                                                                 }
+                                                                                 if let Some(ref input) = email_ref.get() {
+                                                                                     input.set_value(&fresh_user.email);
+                                                                                 }
+                                                                                 if let Some(ref input) = first_name_ref.get() {
+                                                                                     input.set_value(&fresh_user.first_name);
+                                                                                 }
+                                                                                 if let Some(ref input) = last_name_ref.get() {
+                                                                                     input.set_value(&fresh_user.last_name);
+                                                                                 }
+                                                                                 if let Some(ref input) = phone_number_ref.get() {
+                                                                                     input.set_value(&fresh_user.phone_number.clone().unwrap_or_default());
+                                                                                 }
+                                                                                 if let Some(ref input) = is_active_ref.get() {
+                                                                                     input.set_checked(fresh_user.is_active);
+                                                                                 }
 
-                                                                    // Populate Attributes
-                                                                    let attrs = &user_clone.attributes;
-                                                                    if let Some(ref input) = can_manage_bookings_ref.get() {
-                                                                        input.set_checked(attrs.get("can_manage_bookings").and_then(|v| v.as_bool()).unwrap_or(false));
-                                                                    }
-                                                                    if let Some(ref input) = can_manage_listings_ref.get() {
-                                                                        input.set_checked(attrs.get("can_manage_listings").and_then(|v| v.as_bool()).unwrap_or(false));
-                                                                    }
-                                                                    if let Some(ref input) = is_admin_ref.get() {
-                                                                        input.set_checked(attrs.get("is_admin").and_then(|v| v.as_bool()).unwrap_or(false));
-                                                                    }
+                                                                                 // Populate Attributes
+                                                                                 let attrs = &fresh_user.attributes;
+                                                                                 if let Some(ref input) = can_manage_bookings_ref.get() {
+                                                                                     input.set_checked(attrs.get("can_manage_bookings").and_then(|v| v.as_bool()).unwrap_or(false));
+                                                                                 }
+                                                                                 if let Some(ref input) = can_manage_listings_ref.get() {
+                                                                                     input.set_checked(attrs.get("can_manage_listings").and_then(|v| v.as_bool()).unwrap_or(false));
+                                                                                 }
+                                                                                 if let Some(ref input) = is_admin_ref.get() {
+                                                                                     input.set_checked(attrs.get("is_admin").and_then(|v| v.as_bool()).unwrap_or(false));
+                                                                                 }
 
-                                                                    // Populate Roles
-                                                                    let roles = &user_clone.roles;
-                                                                    if let Some(ref input) = is_booker_ref.get() {
-                                                                        input.set_checked(roles.contains(&"booker".to_string()));
-                                                                    }
-                                                                    if let Some(ref input) = is_host_ref.get() {
-                                                                        input.set_checked(roles.contains(&"host".to_string()));
-                                                                    }
+                                                                                 // Populate Roles
+                                                                                 let roles = &fresh_user.roles;
+                                                                                 if let Some(ref input) = is_booker_ref.get() {
+                                                                                     input.set_checked(roles.contains(&"booker".to_string()));
+                                                                                 }
+                                                                                 if let Some(ref input) = is_host_ref.get() {
+                                                                                     input.set_checked(roles.contains(&"host".to_string()));
+                                                                                 }
+                                                                            },
+                                                                            Err(e) => tracing::error!("Failed to fetch user details: {}", e),
+                                                                        }
+                                                                    });
                                                                 }
                                                             >
                                                                 <div><img class="size-10 rounded-box" src="https://img.daisyui.com/images/profile/demo/1@94.webp"/></div>
