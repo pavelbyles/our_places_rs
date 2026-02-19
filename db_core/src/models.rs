@@ -181,6 +181,21 @@ pub struct Listing {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct ListingWithOwner {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub listing_structure_id: i32,
+    pub country: String,
+    pub price_per_night: Option<Decimal>,
+    pub is_active: bool,
+    pub added_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub owner_name: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewListing {
     pub user_id: Uuid,

@@ -12,7 +12,14 @@ pub async fn login(email: String, password: String) -> Result<(), ServerFnError>
     // Attempt to login via API
     let user = api_client::login(&email, &password)
         .await
-        .map_err(|e| ServerFnError::new(format!("Login failed: {}", e)))?;
+        .map_err(|e| match e {
+            api_client::ClientError::RequestFailed(status)
+                if status == reqwest::StatusCode::UNAUTHORIZED =>
+            {
+                ServerFnError::new("Invalid credentials")
+            }
+            _ => ServerFnError::new(format!("Login failed: {}", e)),
+        })?;
 
     // Check for admin attribute
     let is_admin = user

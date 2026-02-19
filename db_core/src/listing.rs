@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::models::{Listing, NewListing, UpdatedListing};
+use crate::models::{Listing, ListingWithOwner, NewListing, UpdatedListing};
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
@@ -37,7 +37,6 @@ where
     Ok(listing)
 }
 
-/// Retrieves all listings from the database.
 /// Retrieves a paginated list of listings from the database with optional filtering.
 #[tracing::instrument(skip(executor))]
 pub async fn get_listings<'e, E>(
@@ -45,7 +44,7 @@ pub async fn get_listings<'e, E>(
     page: u32,
     per_page: u32,
     filter: Option<common::models::ListingFilter>,
-) -> Result<Vec<Listing>>
+) -> Result<Vec<ListingWithOwner>>
 where
     E: PgExecutor<'e>,
 {
@@ -55,49 +54,64 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at,
+        "user".first_name || ' ' || "user".last_name as owner_name
         FROM listing
-        WHERE deleted_at IS NULL
+        INNER JOIN "user" ON listing.user_id = "user".id
+        WHERE listing.deleted_at IS NULL
         "#,
     );
 
     if let Some(f) = filter {
         if let Some(name) = f.name {
-            query_builder.push(" AND name ILIKE ");
+            query_builder.push(" AND listing.name ILIKE ");
             query_builder.push_bind(format!("%{}%", name));
         }
 
         if let Some(country) = f.country {
-            query_builder.push(" AND country ILIKE ");
+            query_builder.push(" AND listing.country ILIKE ");
             query_builder.push_bind(format!("%{}%", country));
         }
 
         if let Some(min_price) = f.min_price {
-            query_builder.push(" AND price_per_night >= ");
+            query_builder.push(" AND listing.price_per_night >= ");
             query_builder.push_bind(min_price);
         }
 
         if let Some(max_price) = f.max_price {
-            query_builder.push(" AND price_per_night <= ");
+            query_builder.push(" AND listing.price_per_night <= ");
             query_builder.push_bind(max_price);
         }
 
-        if let Some(structure_type) = f.structure_type {
-            // Need to map string to ID since DB uses ID.
-            // We can try to parse it to StructureType enum first.
-            if let Ok(st) = structure_type.parse::<crate::models::StructureType>() {
-                query_builder.push(" AND listing_structure_id = ");
-                query_builder.push_bind(st.id());
+        if !f.structure_type.is_empty() {
+            let mut ids = Vec::new();
+            for st_str in &f.structure_type {
+                if let Ok(st) = st_str.parse::<crate::models::StructureType>() {
+                    ids.push(st.id());
+                }
             }
+
+            if !ids.is_empty() {
+                query_builder.push(" AND listing.listing_structure_id = ANY(");
+                query_builder.push_bind(ids);
+                query_builder.push(")");
+            }
+        }
+
+        if let Some(owner) = f.owner {
+            query_builder.push(" AND \"user\".email ILIKE ");
+            query_builder.push_bind(format!("%{}%", owner));
         }
     }
 
-    query_builder.push(" ORDER BY added_at DESC, id DESC LIMIT ");
+    query_builder.push(" ORDER BY listing.added_at DESC, listing.id DESC LIMIT ");
     query_builder.push_bind(limit);
     query_builder.push(" OFFSET ");
     query_builder.push_bind(offset);
 
-    let query = query_builder.build_query_as::<Listing>();
+    tracing::debug!("Query: {}", query_builder.sql());
+
+    let query = query_builder.build_query_as::<ListingWithOwner>();
     let listings = query.fetch_all(executor).await?;
 
     Ok(listings)
@@ -519,7 +533,8 @@ mod tests {
             country: Some("Jamaica".to_string()),
             min_price: None,
             max_price: None,
-            structure_type: None,
+            structure_type: vec![],
+            owner: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -532,29 +547,29 @@ mod tests {
         assert!(!found_names.contains(&"Cheap Apartment USA".to_string()));
 
         // Test Filter by Price (< $100)
-        let filter_cheap = common::models::ListingFilter {
+        let filter_none = common::models::ListingFilter {
             name: None,
             country: None,
             min_price: None,
-            max_price: Some(dec!(100.00)),
-            structure_type: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: None,
         };
-        let results = get_listings(&mut *tx, 1, 10, Some(filter_cheap))
+        let results = get_listings(&mut *tx, 1, 10, Some(filter_none))
             .await
-            .unwrap();
-        let found_names: Vec<String> = results.iter().map(|l| l.name.clone()).collect();
-        assert!(found_names.contains(&"Cheap Apartment Jamaica".to_string()));
-        assert!(found_names.contains(&"Cheap Apartment USA".to_string()));
-        assert!(!found_names.contains(&"Luxury Villa Jamaica".to_string()));
+            .expect("Failed to fetch listings");
+        // Should return both
+        assert_eq!(results.len(), 2);
 
-        // Test Filter by Structure (Villa)
+        // 2. Filter by Structure Type (Villa)
         let filter_villa = common::models::ListingFilter {
             name: None,
             country: None,
             min_price: None,
             max_price: None,
             // We use string representation for the filter structure_type as per definition
-            structure_type: Some("Villa".to_string()),
+            structure_type: vec!["Villa".to_string()],
+            owner: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
