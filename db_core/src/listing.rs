@@ -547,15 +547,15 @@ mod tests {
         assert!(!found_names.contains(&"Cheap Apartment USA".to_string()));
 
         // Test Filter by Price (< $100)
-        let filter_none = common::models::ListingFilter {
+        let filter_price = common::models::ListingFilter {
             name: None,
             country: None,
             min_price: None,
-            max_price: None,
+            max_price: Some(dec!(100.00)),
             structure_type: vec![],
             owner: None,
         };
-        let results = get_listings(&mut *tx, 1, 10, Some(filter_none))
+        let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
             .expect("Failed to fetch listings");
         // Should return both

@@ -97,14 +97,12 @@ pub async fn get_listings(
     query: web::Query<common::models::ListingQueryParams>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    // Manually parse structure_type to support "A,B" and multiple "&structure_type="
     let mut structure_types = Vec::new();
     let qs = req.query_string();
-    // Parse query string into a list of key-value pairs to handle duplicates
+
     if let Ok(params) = serde_urlencoded::from_str::<Vec<(String, String)>>(qs) {
         for (key, value) in params {
             if key == "structure_type" {
-                // Handle comma-separated values if present
                 for part in value.split(',') {
                     let trimmed = part.trim();
                     if !trimmed.is_empty() {
