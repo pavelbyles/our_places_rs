@@ -113,7 +113,7 @@ jobs:
   deploy-api:
     name: Build & Deploy APIs
     runs-on: ubuntu-latest
-    needs: [audit, lint-check, test-api, test-web]
+    needs: [audit, lint-check, test-api]
     if: github.event_name == 'push'
     defaults:
       run:
