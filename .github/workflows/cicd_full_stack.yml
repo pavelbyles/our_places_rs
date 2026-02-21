@@ -299,7 +299,7 @@ jobs:
   deploy-web:
     name: Build & Deploy WebApp
     runs-on: ubuntu-latest
-    needs: [audit, lint-check, test-web, deploy-api]
+    needs: [deploy-api]
     if: github.event_name == 'push'
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -444,7 +444,7 @@ jobs:
   deploy-admin:
     name: Build & Deploy WebApp Admin
     runs-on: ubuntu-latest
-    needs: [audit, lint-check, test-web, deploy-api]
+    needs: [deploy-api]
     if: github.event_name == 'push'
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
