@@ -51,7 +51,7 @@ pub struct UpdateUserRequest {
     pub host_profile: Option<NewHostProfile>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingResponse {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -62,6 +62,7 @@ pub struct ListingResponse {
     pub price_per_night: Option<Decimal>,
     pub is_active: bool,
     pub added_at: DateTime<Utc>,
+    pub owner_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -70,7 +71,9 @@ pub struct ListingFilter {
     pub country: Option<String>,
     pub min_price: Option<Decimal>,
     pub max_price: Option<Decimal>,
-    pub structure_type: Option<String>,
+    #[serde(default)]
+    pub structure_type: Vec<String>,
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -81,7 +84,9 @@ pub struct ListingQueryParams {
     pub country: Option<String>,
     pub min_price: Option<Decimal>,
     pub max_price: Option<Decimal>,
-    pub structure_type: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub structure_type: Vec<String>,
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]

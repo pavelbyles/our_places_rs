@@ -61,7 +61,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                                             view! {
                                                 <li>
                                                     <button on:click={ let navigate = navigate.clone(); move |_| { navigate("/admin", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Admin">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" /></svg>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" /></svg>
                                                         <span class="is-drawer-close:hidden">Admin</span>
                                                     </button>
                                                 </li>
@@ -69,6 +69,12 @@ pub fn Layout(children: Children) -> impl IntoView {
                                                     <button on:click={ let navigate = navigate.clone(); move |_| { navigate("/admin/users", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Users">
                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>
                                                         <span class="is-drawer-close:hidden">Users</span>
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button on:click={ let navigate = navigate.clone(); move |_| { navigate("/admin/listings", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Listings">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V3.545M12.75 21h7.5V10.75M2.25 21h1.5m18 0h-18M2.25 9l4.5-1.636M18.75 3l-1.5.545m0 6.205 3 1m1.5.5-1.5-.5M6.75 7.364V3h-3v18m3-13.636 10.5-3.819" /></svg>
+                                                        <span class="is-drawer-close:hidden">Listings</span>
                                                     </button>
                                                 </li>
                                                 <li>

@@ -56,6 +56,33 @@ pub fn map_listing_to_response(
         price_per_night: listing.price_per_night,
         is_active: listing.is_active,
         added_at: listing.added_at,
+        owner_name: None,
+    }
+}
+
+pub fn map_listing_with_owner_to_response(
+    listing: db_core::models::ListingWithOwner,
+) -> common::models::ListingResponse {
+    let structure = match listing.listing_structure_id {
+        1 => StructureType::Apartment,
+        2 => StructureType::House,
+        3 => StructureType::Townhouse,
+        4 => StructureType::Studio,
+        5 => StructureType::Villa,
+        _ => StructureType::Apartment, // Fallback
+    };
+
+    common::models::ListingResponse {
+        id: listing.id,
+        user_id: listing.user_id,
+        name: listing.name,
+        description: listing.description,
+        listing_structure: format!("{:?}", structure), // Convert enum to String for common DTO
+        country: listing.country,
+        price_per_night: listing.price_per_night,
+        is_active: listing.is_active,
+        added_at: listing.added_at,
+        owner_name: listing.owner_name,
     }
 }
 

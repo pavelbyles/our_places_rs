@@ -10,15 +10,15 @@ info:
 x-google-api-management:
   backends:
     user-backend:
-      address: https://user-api-prod-689343985534.us-central1.run.app
+      address: https://user-api-main-689343985534.us-central1.run.app
       pathTranslation: APPEND_PATH_TO_ADDRESS
       protocol: h2
     listing-backend:
-      address: https://listing-api-prod-689343985534.us-central1.run.app
+      address: https://listing-api-main-689343985534.us-central1.run.app
       pathTranslation: APPEND_PATH_TO_ADDRESS
       protocol: h2
     booking-backend:
-      address: https://booking-api-prod-689343985534.us-central1.run.app
+      address: https://booking-api-main-689343985534.us-central1.run.app
       pathTranslation: APPEND_PATH_TO_ADDRESS
       protocol: h2
 

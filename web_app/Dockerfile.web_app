@@ -31,8 +31,8 @@ ENV SQLX_OFFLINE=true
 # Build styles (Tailwind)
 # We need to be in the web_app directory for npm commands
 WORKDIR /app/web_app
-RUN npm install
-RUN npm run build:css
+RUN npm install \
+  && npm run build:css
 
 # Build the application
 # We go back to root or stay here,# Using --project web_app from root, or running inside web_app

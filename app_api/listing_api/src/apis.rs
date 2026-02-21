@@ -3,7 +3,9 @@ use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::http::header::{ACCEPT, CONTENT_TYPE};
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
-use api_core::models::{ListingsWrapper, map_listing_to_response};
+use api_core::models::{
+    ListingsWrapper, map_listing_to_response, map_listing_with_owner_to_response,
+};
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
 use common::models::{ListingQueryParams, ListingResponse};
@@ -90,11 +92,27 @@ pub struct UpdatedListingRequest {
         (status = 500, description = "Internal server error")
     )
 )]
-async fn get_listings(
-    req: HttpRequest,
-    pool: web::Data<PgPool>,
-    query: web::Query<ListingQueryParams>,
-) -> Result<impl Responder, ApiError> {
+pub async fn get_listings(
+    pool: web::Data<sqlx::PgPool>,
+    query: web::Query<common::models::ListingQueryParams>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse, actix_web::Error> {
+    let mut structure_types = Vec::new();
+    let qs = req.query_string();
+
+    if let Ok(params) = serde_urlencoded::from_str::<Vec<(String, String)>>(qs) {
+        for (key, value) in params {
+            if key == "structure_type" {
+                for part in value.split(',') {
+                    let trimmed = part.trim();
+                    if !trimmed.is_empty() {
+                        structure_types.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     // Set default values for pagination if they are not provided.
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10);
@@ -107,13 +125,17 @@ async fn get_listings(
         country: query.country.clone(),
         min_price: query.min_price,
         max_price: query.max_price,
-        structure_type: query.structure_type.clone(),
+        structure_type: structure_types,
+        owner: query.owner.clone(),
     };
 
-    let listings =
-        db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter)).await?;
-    let response: Vec<ListingResponse> =
-        listings.into_iter().map(map_listing_to_response).collect();
+    let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
+        .await
+        .map_err(ApiError::Database)?;
+    let response: Vec<ListingResponse> = listings
+        .into_iter()
+        .map(map_listing_with_owner_to_response)
+        .collect();
 
     Ok(respond(
         &req,

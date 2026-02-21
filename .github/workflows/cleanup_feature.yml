@@ -68,9 +68,9 @@ jobs:
       - name: Delete Database Schema
         env:
           DB_INSTANCE: ${{ env.PROJECT_ID }}:${{ env.REGION }}:our-places-db-dev
-          DB_USER: ${{ vars.POSTGRES_USER_DEV }}
-          DB_PASS: ${{ secrets.POSTGRES_PASSWORD_DEV }}
-          DB_NAME: ${{ vars.POSTGRES_DB_DEV }}
+          DB_USER: ${{ vars.DB_USER_DEV }}
+          DB_PASS: ${{ secrets.DB_PASSWORD_DEV }}
+          DB_NAME: ${{ vars.DB_NAME_DEV }}
           SCHEMA_NAME: ${{ steps.target.outputs.SCHEMA_NAME }}
         run: |
           # Install pg_isready and psql
