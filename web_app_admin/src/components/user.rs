@@ -245,13 +245,13 @@ pub fn UserPage() -> impl IntoView {
 
     view! {
         <RequireAuth>
-             <h1>"User Admin Page"</h1>
-             <div class="tabs tabs-lift">
-            <input type="radio" name="my_tabs_3" class="tab" aria-label="Add User" checked="checked" />
-            <div class="tab-content bg-base-100 border-base-300 p-6">
-                <ActionForm action=create_user attr:class="form-control w-full max-w-xs space-y-4">
-                    <hidden-input name="params[id]" value="" />
-                    <div>
+            <h1>"User Admin Page"</h1>
+            <div class="tabs tabs-lift">
+                <input type="radio" name="my_tabs_3" class="tab" aria-label="Add User" checked="checked" />
+                <div class="tab-content bg-base-100 border-base-300 p-6">
+                    <ActionForm action=create_user attr:class="form-control w-full max-w-xs space-y-4">
+                        <hidden-input name="params[id]" value="" />
+                        <div>
                         <label class="label">
                             <span class="label-text">"Email"</span>
                         </label>
@@ -356,7 +356,6 @@ pub fn UserPage() -> impl IntoView {
             <div class="tab-content bg-base-100 border-base-300 p-6">
                 <div class="flex w-full flex-col lg:flex-row">
                     <div class="card bg-base-300 rounded-box grid grow place-items-start">
-
                         <ActionForm action=update_user attr:class="form-control w-full max-w-xs space-y-4">
                             <input type="hidden" name="params[id]" node_ref=id_ref />
                             <div>
