@@ -208,8 +208,8 @@ jobs:
       - name: Build and Push Booking API
         run: |
           docker build \
-            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
-            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg BUILD_OUTPUT=$BUILD_OUTPUT \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }} \
             -f ../Dockerfile.booking_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
@@ -237,8 +237,8 @@ jobs:
       - name: Build and Push Listing API
         run: |
           docker build \
-            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
-            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg BUILD_OUTPUT=$BUILD_OUTPUT \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }} \
             -f ../Dockerfile.listing_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
@@ -267,8 +267,8 @@ jobs:
       - name: Build and Push User API
         run: |
           docker build \
-            --build-arg RELEASE_FLAG=${{ env.RELEASE_FLAG }} \
-            --build-arg BUILD_OUTPUT=${{ env.BUILD_OUTPUT }} \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg BUILD_OUTPUT=$BUILD_OUTPUT \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }} \
             -f ../Dockerfile.user_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
