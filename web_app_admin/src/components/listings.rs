@@ -17,7 +17,7 @@ pub struct CreateListingParams {
 }
 
 #[server]
-pub async fn create_listing_server(params: CreateListingParams) -> Result<(), ServerFnError> {
+pub async fn create_listing_server(params: CreateListingParams) -> Result<String, ServerFnError> {
     use uuid::Uuid;
     let user_id = Uuid::parse_str(&params.user_id)
         .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
@@ -38,10 +38,54 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<(), Se
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if res.status().is_success() {
-        Ok(())
+        let listing: common::models::ListingResponse = res
+            .json()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(listing.id.to_string())
     } else {
         Err(ServerFnError::new(format!(
             "Failed to create listing: {}",
+            res.status()
+        )))
+    }
+}
+
+#[server]
+pub async fn presign_images_server(
+    listing_id: String,
+    count: u8,
+) -> Result<Vec<String>, ServerFnError> {
+    let api_url = crate::api_client::listing_api_url();
+    let request = serde_json::json!({
+        "count": count
+    });
+
+    let res = crate::api_client::get_client()
+        .post(
+            &format!(
+                "{}/api/v1/listings/listing/{}/images/presign",
+                api_url, listing_id
+            ),
+            &api_url,
+            &request,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        #[derive(serde::Deserialize)]
+        struct PresignResponse {
+            urls: Vec<String>,
+        }
+        let presign_res: PresignResponse = res
+            .json()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(presign_res.urls)
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to presign images: {}",
             res.status()
         )))
     }
@@ -114,7 +158,66 @@ pub fn ListingsPage() -> impl IntoView {
     let (owner_id_validated, set_owner_id_validated) = signal(None::<String>);
     let (owner_id_error, set_owner_id_error) = signal(false);
 
+    let (uploading_images, set_uploading_images) = signal(false);
+
     let timeout_handle = StoredValue::new(None::<TimeoutHandle>);
+
+    Effect::new(move |_| {
+        if let Some(Ok(listing_id)) = create_listing.value().get() {
+            let window = match web_sys::window() {
+                Some(w) => w,
+                None => return,
+            };
+            if let Some(document) = window.document() {
+                if let Some(element) = document.get_element_by_id("file-upload") {
+                    use wasm_bindgen::JsCast;
+                    if let Ok(input) = element.dyn_into::<web_sys::HtmlInputElement>() {
+                        if let Some(files) = input.files() {
+                            let count = files.length();
+                            if count > 0 {
+                                set_uploading_images.set(true);
+                                spawn_local(async move {
+                                    match presign_images_server(listing_id.clone(), count as u8)
+                                        .await
+                                    {
+                                        Ok(urls) => {
+                                            for i in 0..count {
+                                                if let Some(file) = files.item(i) {
+                                                    let url = &urls[i as usize];
+                                                    let opts = web_sys::RequestInit::new();
+                                                    opts.set_method("PUT");
+                                                    let js_val: wasm_bindgen::JsValue = file.into();
+                                                    opts.set_body(&js_val);
+                                                    if let Ok(request) =
+                                                        web_sys::Request::new_with_str_and_init(
+                                                            url, &opts,
+                                                        )
+                                                    {
+                                                        let _ =
+                                                            wasm_bindgen_futures::JsFuture::from(
+                                                                window.fetch_with_request(&request),
+                                                            )
+                                                            .await;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            leptos::logging::error!(
+                                                "Failed to get presigned URLs: {:?}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                    set_uploading_images.set(false);
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     let on_email_input = move |ev| {
         let val = event_target_value(&ev);
@@ -471,9 +574,23 @@ pub fn ListingsPage() -> impl IntoView {
                             </label>
                             <input type="number" step="0.01" min="0" name="params[price_per_night]" placeholder="0.00" class="input input-bordered w-full max-w-xs" />
                         </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Upload images (max 10)</span>
+                            </label>
+                            <input type="file" id="file-upload" name="file-upload" multiple />
+                        </div>
 
-                        <button type="submit" class="btn btn-primary" disabled=move || create_listing.pending().get() || owner_id_validated.get().is_none()>
-                            {move || if create_listing.pending().get() { "Creating..." } else { "Create Listing" }}
+                        <button type="submit" class="btn btn-primary" disabled=move || create_listing.pending().get() || owner_id_validated.get().is_none() || uploading_images.get()>
+                            {move || {
+                                if create_listing.pending().get() {
+                                    "Creating..."
+                                } else if uploading_images.get() {
+                                    "Uploading Images..."
+                                } else {
+                                    "Create Listing"
+                                }
+                            }}
                         </button>
 
                         {move || create_listing.value().get().map(|v| match v {

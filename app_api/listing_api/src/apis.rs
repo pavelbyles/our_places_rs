@@ -1,8 +1,6 @@
-use actix_web::body::MessageBody;
-use actix_web::dev::{ServiceRequest, ServiceResponse};
-use actix_web::http::header::{ACCEPT, CONTENT_TYPE};
-use actix_web::middleware::{Next, from_fn};
-use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
+use actix_web::middleware::from_fn;
+use actix_web::{HttpRequest, HttpResponse, Responder, web};
+use api_core::api_common::content_negotiation_middleware;
 use api_core::models::{
     ListingsWrapper, map_listing_to_response, map_listing_with_owner_to_response,
 };
@@ -338,6 +336,59 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PresignBatchRequest {
+    #[validate(range(min = 1, max = 50, message = "Count must be between 1 and 50"))]
+    pub count: u8,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PresignBatchResponse {
+    pub urls: Vec<String>,
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/listings/listing/{id}/images/presign",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    request_body = PresignBatchRequest,
+    responses(
+        (status = 200, description = "Presigned URLs generated", body = PresignBatchResponse),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn presign_batch(
+    req: HttpRequest,
+    path: web::Path<Uuid>,
+    req_body: web::Json<PresignBatchRequest>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let body = req_body.into_inner();
+    body.validate()?;
+
+    // TODO: Implement actual S3/GCS presigned URL generation here.
+    // Returning dummy URLs for now to satisfy compilation.
+    let mut urls = Vec::new();
+    for i in 0..body.count {
+        urls.push(format!(
+            "https://storage.googleapis.com/dummy-bucket/listing_{}/image_{}.jpg?upload_id=dummy",
+            listing_id, i
+        ));
+    }
+
+    Ok(respond(
+        &req,
+        Payload::Item(PresignBatchResponse { urls }),
+        |_: Vec<PresignBatchResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -347,10 +398,19 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_listing_by_id,
             update_listing,
             delete_listing,
+            presign_batch,
             api_core::health::health_check,
         ),
         components(
-            schemas(NewListingRequest, UpdatedListingRequest, ListingResponse, pagination::Pagination, common::models::ListingFilter)
+            schemas(
+                NewListingRequest, 
+                UpdatedListingRequest, 
+                ListingResponse, 
+                pagination::Pagination, 
+                common::models::ListingFilter,
+                PresignBatchRequest,
+                PresignBatchResponse
+            )
         ),
         tags(
             (name = "listings", description = "Listing management endpoints")
@@ -399,54 +459,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::delete()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(delete_listing),
+            )
+            .route(
+                "/listing/{id}/images/presign",
+                web::post()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(presign_batch),
             ),
     );
-}
-
-/// Content-Type - Requests
-/// Accept - Responses
-/// Middleware to check Content-Type and Accept headers
-/// Returns 415 Unsupported Media Type or 406 Not Acceptable if invalid
-async fn content_negotiation_middleware(
-    req: ServiceRequest,
-    next: Next<impl MessageBody>,
-) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    let headers = req.headers();
-
-    // Check Content-Type (if present) -> 415 Unsupported Media Type
-    if let Some(ct_str) = headers.get(CONTENT_TYPE).and_then(|ct| ct.to_str().ok()) {
-        let mime = ct_str.split(';').next().unwrap_or("").trim().to_lowercase();
-        let supported_formats = [
-            "application/json",
-            "application/xml",
-            "application/x-www-form-urlencoded",
-        ];
-
-        if !supported_formats.contains(&mime.as_str()) {
-            return Err(actix_web::error::ErrorUnsupportedMediaType(
-                "Unsupported Content-Type",
-            ));
-        }
-    }
-
-    // Check Accept header (if present) -> 406 Not Acceptable
-    if let Some(accept_str) = headers.get(ACCEPT).and_then(|a| a.to_str().ok()) {
-        let supported_responses = ["application/json", "application/xml"];
-
-        let accepts_supported = accept_str.split(',').any(|s| {
-            let mime = s.split(';').next().unwrap_or("").trim().to_lowercase();
-            mime == "*/*" || supported_responses.contains(&mime.as_str())
-        });
-
-        if !accepts_supported {
-            return Err(actix_web::error::ErrorNotAcceptable(
-                "The requested response format is not supported",
-            ));
-        }
-    }
-
-    // If checks pass, call the next service in the chain
-    next.call(req).await
 }
 
 #[cfg(test)]

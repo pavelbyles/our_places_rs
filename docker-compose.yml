@@ -110,6 +110,28 @@ services:
       timeout: 5s
       retries: 5
 
+  image-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.image_worker
+      args:
+        BUILD_TYPE: debug
+        BUILD_OUTPUT: debug
+        RELEASE_FLAG: ""
+    ports:
+      - "8084:8080"
+    environment:
+      - RUST_LOG=info,booking_api=debug,db_core=debug
+      - EA__DATABASE__HOST=db
+      - EA__DATABASE__PORT=5432
+      - EA__DATABASE__USERNAME=postgres
+      - EA__DATABASE__PASSWORD=password
+      - EA__DATABASE__DATABASE_NAME=our_places
+      - EA__DATABASE__CLOUD=false
+    depends_on:
+      db:
+        condition: service_healthy
+
   web_app:
     build:
       context: .
@@ -137,7 +159,7 @@ services:
       context: .
       dockerfile: web_app_admin/Dockerfile.web_app_admin
     ports:
-      - "8084:8080"
+      - "8085:8080"
     environment:
       - RUST_LOG=info,web_app_admin=debug
       - LISTING_API_URL=http://listing_api:8080

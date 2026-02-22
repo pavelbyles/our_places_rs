@@ -4,6 +4,7 @@ members = [
     "app_api/booking_api",
     "app_api/listing_api",
     "app_api/user_api",
+    "app_api/image_worker",
     "common",
     "db_core",
     "protoproj",
