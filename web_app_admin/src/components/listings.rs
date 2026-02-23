@@ -172,6 +172,7 @@ pub fn ListingsPage() -> impl IntoView {
                 if let Some(element) = document.get_element_by_id("file-upload") {
                     use wasm_bindgen::JsCast;
                     if let Ok(input) = element.dyn_into::<web_sys::HtmlInputElement>() {
+                        // Get loaded file(s) info
                         if let Some(files) = input.files() {
                             let count = files.length();
                             if count > 0 {
@@ -180,6 +181,7 @@ pub fn ListingsPage() -> impl IntoView {
                                 // Store a mapping of client_file_id -> actual file index
                                 let mut local_file_map = std::collections::HashMap::new();
 
+                                // Get and store metadata
                                 for i in 0..count {
                                     if let Some(file) = files.item(i) {
                                         let client_file_id = uuid::Uuid::new_v4().to_string();
@@ -193,6 +195,8 @@ pub fn ListingsPage() -> impl IntoView {
                                         });
                                     }
                                 }
+
+                                // Get presigned URL's from backend
                                 spawn_local(async move {
                                     match presign_images_server(listing_id.clone(), metadata).await
                                     {
@@ -202,13 +206,14 @@ pub fn ListingsPage() -> impl IntoView {
                                                     local_file_map.get(&res.client_file_id)
                                                 {
                                                     if let Some(file) = files.item(file_idx) {
-                                                        let url = &res.upload_url;
+                                                        let _url = &res.upload_url;
                                                         let opts = web_sys::RequestInit::new();
                                                         opts.set_method("PUT");
                                                         let js_val: wasm_bindgen::JsValue =
                                                             file.into();
                                                         opts.set_body(&js_val);
-                                                        if let Ok(request) =
+                                                        // Upload file to GCS
+                                                        /*if let Ok(request) =
                                                             web_sys::Request::new_with_str_and_init(
                                                                 url, &opts,
                                                             )
@@ -218,7 +223,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                                     window.fetch_with_request(&request),
                                                                 )
                                                                 .await;
-                                                        }
+                                                        }*/
                                                     }
                                                 }
                                             }
@@ -599,7 +604,7 @@ pub fn ListingsPage() -> impl IntoView {
                             <label class="label">
                                 <span class="label-text">Upload images (max 10)</span>
                             </label>
-                            <input type="file" id="file-upload" name="file-upload" multiple />
+                            <input type="file" id="file-upload" multiple />
                         </div>
 
                         <button type="submit" class="btn btn-primary" disabled=move || create_listing.pending().get() || owner_id_validated.get().is_none() || uploading_images.get()>
