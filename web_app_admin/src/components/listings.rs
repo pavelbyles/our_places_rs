@@ -54,12 +54,10 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
 #[server]
 pub async fn presign_images_server(
     listing_id: String,
-    count: u8,
-) -> Result<Vec<String>, ServerFnError> {
+    images: Vec<common::models::PendingImageMetadata>,
+) -> Result<Vec<common::models::ImagePresignResponse>, ServerFnError> {
     let api_url = crate::api_client::listing_api_url();
-    let request = serde_json::json!({
-        "count": count
-    });
+    let request = common::models::ImagePresignRequest { images };
 
     let res = crate::api_client::get_client()
         .post(
@@ -74,15 +72,11 @@ pub async fn presign_images_server(
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     if res.status().is_success() {
-        #[derive(serde::Deserialize)]
-        struct PresignResponse {
-            urls: Vec<String>,
-        }
-        let presign_res: PresignResponse = res
+        let presign_res: Vec<common::models::ImagePresignResponse> = res
             .json()
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(presign_res.urls)
+        Ok(presign_res)
     } else {
         Err(ServerFnError::new(format!(
             "Failed to presign images: {}",
@@ -162,6 +156,12 @@ pub fn ListingsPage() -> impl IntoView {
 
     let timeout_handle = StoredValue::new(None::<TimeoutHandle>);
 
+    // 1. Create listing
+    // 2. Get number of files being uploaded
+    // 3. For each file - add metadata to vec
+    // 4. Call presign fn
+    // 5. Get back urls
+    // 6. For each response we get back create and make a request to url
     Effect::new(move |_| {
         if let Some(Ok(listing_id)) = create_listing.value().get() {
             let window = match web_sys::window() {
@@ -176,28 +176,49 @@ pub fn ListingsPage() -> impl IntoView {
                             let count = files.length();
                             if count > 0 {
                                 set_uploading_images.set(true);
+                                let mut metadata = Vec::new();
+                                // Store a mapping of client_file_id -> actual file index
+                                let mut local_file_map = std::collections::HashMap::new();
+
+                                for i in 0..count {
+                                    if let Some(file) = files.item(i) {
+                                        let client_file_id = uuid::Uuid::new_v4().to_string();
+                                        local_file_map.insert(client_file_id.clone(), i);
+
+                                        metadata.push(common::models::PendingImageMetadata {
+                                            client_file_id,
+                                            content_type: file.type_(),
+                                            size_bytes: file.size() as u64,
+                                            display_order: i as i32,
+                                        });
+                                    }
+                                }
                                 spawn_local(async move {
-                                    match presign_images_server(listing_id.clone(), count as u8)
-                                        .await
+                                    match presign_images_server(listing_id.clone(), metadata).await
                                     {
-                                        Ok(urls) => {
-                                            for i in 0..count {
-                                                if let Some(file) = files.item(i) {
-                                                    let url = &urls[i as usize];
-                                                    let opts = web_sys::RequestInit::new();
-                                                    opts.set_method("PUT");
-                                                    let js_val: wasm_bindgen::JsValue = file.into();
-                                                    opts.set_body(&js_val);
-                                                    if let Ok(request) =
-                                                        web_sys::Request::new_with_str_and_init(
-                                                            url, &opts,
-                                                        )
-                                                    {
-                                                        let _ =
-                                                            wasm_bindgen_futures::JsFuture::from(
-                                                                window.fetch_with_request(&request),
+                                        Ok(responses) => {
+                                            for res in responses {
+                                                if let Some(&file_idx) =
+                                                    local_file_map.get(&res.client_file_id)
+                                                {
+                                                    if let Some(file) = files.item(file_idx) {
+                                                        let url = &res.upload_url;
+                                                        let opts = web_sys::RequestInit::new();
+                                                        opts.set_method("PUT");
+                                                        let js_val: wasm_bindgen::JsValue =
+                                                            file.into();
+                                                        opts.set_body(&js_val);
+                                                        if let Ok(request) =
+                                                            web_sys::Request::new_with_str_and_init(
+                                                                url, &opts,
                                                             )
-                                                            .await;
+                                                        {
+                                                            let _ =
+                                                                wasm_bindgen_futures::JsFuture::from(
+                                                                    window.fetch_with_request(&request),
+                                                                )
+                                                                .await;
+                                                        }
                                                     }
                                                 }
                                             }

@@ -336,17 +336,6 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct PresignBatchRequest {
-    #[validate(range(min = 1, max = 50, message = "Count must be between 1 and 50"))]
-    pub count: u8,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct PresignBatchResponse {
-    pub urls: Vec<String>,
-}
-
 #[tracing::instrument]
 #[utoipa::path(
     post,
@@ -355,36 +344,76 @@ pub struct PresignBatchResponse {
     params(
         ("id" = String, Path, description = "Listing UUID")
     ),
-    request_body = PresignBatchRequest,
+    request_body = common::models::ImagePresignRequest,
     responses(
-        (status = 200, description = "Presigned URLs generated", body = PresignBatchResponse),
+        (status = 200, description = "Presigned URLs generated", body = [common::models::ImagePresignResponse]),
         (status = 400, description = "Validation error"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn presign_batch(
     req: HttpRequest,
+    pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
-    req_body: web::Json<PresignBatchRequest>,
+    img_metadata_list_json: web::Json<common::models::ImagePresignRequest>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
-    let body = req_body.into_inner();
-    body.validate()?;
+    let img_metadata_req = img_metadata_list_json.into_inner();
 
+    // Verify the listing exists first
+    if db_listing::get_listing_by_id(pool.get_ref(), listing_id).await.is_err() {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "listing_id",
+            validator::ValidationError::new("invalid listing"),
+        );
+        return Err(ApiError::ValidationError(errors));
+    }
+
+    // Generate the IDs and upload URLs first so they can be saved to the database.
     // TODO: Implement actual S3/GCS presigned URL generation here.
-    // Returning dummy URLs for now to satisfy compilation.
-    let mut urls = Vec::new();
-    for i in 0..body.count {
-        urls.push(format!(
+    // Generating dummy URLs for now to satisfy compilation.
+    let mut db_payload = Vec::new();
+    for image in &img_metadata_req.images {
+        let file_id = Uuid::new_v4();
+        let upload_url = format!(
             "https://storage.googleapis.com/dummy-bucket/listing_{}/image_{}.jpg?upload_id=dummy",
-            listing_id, i
-        ));
+            listing_id, file_id
+        );
+        db_payload.push((file_id, image.clone(), upload_url));
+    }
+
+    // Add records to track images
+    let inserted_images = match db_listing::create_listing_image_presigns(
+        pool.get_ref(),
+        listing_id,
+        &db_payload,
+    )
+    .await
+    {
+        Ok(images) => images,
+        Err(e) => {
+            tracing::error!("Failed to insert image presign records: {:?}", e);
+            return Err(ApiError::Database(e));
+        }
+    };
+
+    tracing::info!("Number of image files to be uploaded: {}", inserted_images.len());
+
+    let mut responses = Vec::new();
+    for img in inserted_images {
+        responses.push(common::models::ImagePresignResponse {
+            client_file_id: img.client_file_id,
+            file_id: img.id,
+            // Safe to unwrap here because we literally just inserted these URLs in the DB ourselves
+            upload_url: img.upload_url.unwrap_or_default(),
+        });
     }
 
     Ok(respond(
         &req,
-        Payload::Item(PresignBatchResponse { urls }),
-        |_: Vec<PresignBatchResponse>| (),
+        Payload::Collection(responses),
+        |_: Vec<common::models::ImagePresignResponse>| (),
         actix_web::http::StatusCode::OK,
     ))
 }
@@ -408,8 +437,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 ListingResponse, 
                 pagination::Pagination, 
                 common::models::ListingFilter,
-                PresignBatchRequest,
-                PresignBatchResponse
+                common::models::ImagePresignRequest,
+                common::models::ImagePresignResponse,
+                common::models::PendingImageMetadata
             )
         ),
         tags(

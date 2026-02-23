@@ -264,3 +264,29 @@ impl StructureType {
         }
     }
 }
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
+)]
+#[sqlx(type_name = "image_status", rename_all = "PascalCase")]
+pub enum ImageStatus {
+    PendingUpload,
+    Uploaded,
+    Processing,
+    Processed,
+    Failed,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct ListingImage {
+    pub id: Uuid,
+    pub listing_id: Uuid,
+    pub client_file_id: String,
+    pub status: ImageStatus,
+    pub upload_url: Option<String>,
+    pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub display_order: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

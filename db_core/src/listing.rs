@@ -250,6 +250,43 @@ pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Resul
     Ok(())
 }
 
+/// Batch inserts pending listing images in preparation for presigned URL uploads.
+#[tracing::instrument(skip(executor))]
+pub async fn create_listing_image_presigns<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    images: &[(Uuid, common::models::PendingImageMetadata, String)],
+) -> Result<Vec<crate::models::ListingImage>>
+where
+    E: PgExecutor<'e>,
+{
+    if images.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut query_builder = sqlx::QueryBuilder::new(
+        "INSERT INTO listing_image (id, listing_id, client_file_id, status, content_type, size_bytes, display_order, upload_url) ",
+    );
+
+    query_builder.push_values(images.iter(), |mut b, (id, img, url)| {
+        b.push_bind(*id)
+            .push_bind(listing_id)
+            .push_bind(img.client_file_id.clone())
+            .push_bind(crate::models::ImageStatus::PendingUpload)
+            .push_bind(img.content_type.clone())
+            .push_bind(img.size_bytes as i64)
+            .push_bind(img.display_order)
+            .push_bind(url.clone());
+    });
+
+    query_builder.push(" RETURNING *");
+
+    let query = query_builder.build_query_as::<crate::models::ListingImage>();
+    let inserted = query.fetch_all(executor).await?;
+
+    Ok(inserted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -107,3 +107,23 @@ pub struct UserResponse {
 pub struct UsersWrapper {
     pub user: Vec<UserResponse>,
 }
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct ImagePresignRequest {
+    pub images: Vec<PendingImageMetadata>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct PendingImageMetadata {
+    pub client_file_id: String, // Added to map the file UI-side
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub display_order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct ImagePresignResponse {
+    pub client_file_id: String, // Mirrored back to the client
+    pub file_id: uuid::Uuid,
+    pub upload_url: String, // The GCS v4 Signed URL
+}
