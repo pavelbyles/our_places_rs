@@ -17,3 +17,6 @@ validator = { workspace = true }
 serde_json = { workspace = true }
 async-trait = "0.1.89"
 tokio = { workspace = true, features = ["sync"] }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+google-cloud-storage = "1.8.0"
+google-cloud-auth = "1.6.0"

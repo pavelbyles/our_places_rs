@@ -116,6 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [audit, lint-check, test-api]
     if: github.event_name == 'push'
+    env:
+      SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -199,7 +201,8 @@ jobs:
       run:
         working-directory: ./image_worker
     env:
-      SA_IMAGE_WORKER: ${{ github.ref == 'refs/heads/main' && vars.INFRA_SA_IMAGE_WORKER_PROD || vars.INFRA_SA_IMAGE_WORKER_DEV }}
+      SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -237,12 +240,15 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          RAW_BUCKET="${{ env.GCS_BUCKET_RAW_PREFIX }}-$SUFFIX"
           gcloud run services replace service.yaml \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             --platform=managed \
-            --service-account=${{ env.SA_IMAGE_WORKER }}
+            --service-account=${{ env.SA_IMAGE_WORKER }} \
+            --update-env-vars=GCS_RAW_BUCKET=$RAW_BUCKET
 
       - name: Configure the Subscription (Push to Image Worker)
         run: |

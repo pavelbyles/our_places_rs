@@ -201,32 +201,33 @@ pub fn ListingsPage() -> impl IntoView {
                                     match presign_images_server(listing_id.clone(), metadata).await
                                     {
                                         Ok(responses) => {
+                                            let mut upload_futures = Vec::new();
                                             for res in responses {
                                                 if let Some(&file_idx) =
                                                     local_file_map.get(&res.client_file_id)
                                                 {
                                                     if let Some(file) = files.item(file_idx) {
-                                                        let _url = &res.upload_url;
+                                                        let url = &res.upload_url;
                                                         let opts = web_sys::RequestInit::new();
                                                         opts.set_method("PUT");
                                                         let js_val: wasm_bindgen::JsValue =
                                                             file.into();
                                                         opts.set_body(&js_val);
                                                         // Upload file to GCS
-                                                        /*if let Ok(request) =
+                                                        if let Ok(request) =
                                                             web_sys::Request::new_with_str_and_init(
                                                                 url, &opts,
                                                             )
                                                         {
-                                                            let _ =
-                                                                wasm_bindgen_futures::JsFuture::from(
-                                                                    window.fetch_with_request(&request),
-                                                                )
-                                                                .await;
-                                                        }*/
+                                                            let fut = wasm_bindgen_futures::JsFuture::from(
+                                                                window.fetch_with_request(&request), 
+                                                            );
+                                                            upload_futures.push(fut);
+                                                        }
                                                     }
                                                 }
                                             }
+                                            futures::future::join_all(upload_futures).await;
                                         }
                                         Err(e) => {
                                             leptos::logging::error!(

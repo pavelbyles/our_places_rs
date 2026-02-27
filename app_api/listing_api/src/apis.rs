@@ -367,19 +367,22 @@ async fn presign_batch(
             "listing_id",
             validator::ValidationError::new("invalid listing"),
         );
+        tracing::error!("Invalid listing_id: {}", listing_id);
         return Err(ApiError::ValidationError(errors));
     }
 
     // Generate the IDs and upload URLs first so they can be saved to the database.
-    // TODO: Implement actual S3/GCS presigned URL generation here.
-    // Generating dummy URLs for now to satisfy compilation.
     let mut db_payload = Vec::new();
     for image in &img_metadata_req.images {
         let file_id = Uuid::new_v4();
-        let upload_url = format!(
-            "https://storage.googleapis.com/dummy-bucket/listing_{}/image_{}.jpg?upload_id=dummy",
-            listing_id, file_id
-        );
+        let object_path = format!("listing_{}/image_{}", listing_id, file_id);
+        let upload_url = common::gcs::generate_v4_signed_url(&object_path, &image.content_type)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to generate presigned URL for listing_id: {}: {:?}", listing_id, e);
+                ApiError::Internal
+            })?;
+            
         db_payload.push((file_id, image.clone(), upload_url));
     }
 
