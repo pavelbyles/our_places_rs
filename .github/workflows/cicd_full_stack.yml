@@ -39,8 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-      - name: Install protobuf-compiler
-        run: sudo apt-get install protobuf-compiler -y
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy
