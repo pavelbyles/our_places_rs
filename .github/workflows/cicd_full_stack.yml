@@ -47,7 +47,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo clippy --all-features --manifest-path Cargo.toml -- -D warnings
+        run: cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -D warnings
   # =========================================================
   # Test API's and Web App
   # =========================================================
