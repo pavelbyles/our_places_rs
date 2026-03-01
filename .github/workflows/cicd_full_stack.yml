@@ -232,16 +232,15 @@ jobs:
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Deploy to Cloud Run
-        run: |
-          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          RAW_BUCKET="${{ env.GCS_BUCKET_RAW_PREFIX }}-$SUFFIX"
-          gcloud run services replace service.yaml \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
-            --platform=managed \
-            --service-account=${{ env.SA_IMAGE_WORKER }} \
-            --update-env-vars=GCS_RAW_BUCKET=$RAW_BUCKET
+        id: deploy_image_worker
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --quiet"
 
       - name: Configure the Subscription (Push to Image Worker)
         run: |
