@@ -64,13 +64,13 @@ jobs:
       - name: Install sqlx
         run: |-
           sudo apt-get install libpq-dev -y
-          cargo install --version=~0.8 sqlx-cli --exclude protoproj --no-default-features --features rustls,postgres --force
+          cargo install --version=~0.8 sqlx-cli --no-default-features --features rustls,postgres --force
       - name: Build app
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --verbose --workspace --exclude web_app
+        run: cargo build --verbose --workspace --exclude web_app --exclude protoproj
       - name: Run DB and Migrations (Local Test)
         run: cargo make --cwd app_api/listing_api db-migrate
       - name: Run testsTest API
