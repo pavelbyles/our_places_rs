@@ -176,8 +176,7 @@ jobs:
           gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
             --member="serviceAccount:$SA_EMAIL" \
             --role="roles/pubsub.subscriber" \
-            --project=${{ env.PROJECT_ID }} \
-            --condition="None"
+            --project=${{ env.PROJECT_ID }}
 
       - name: Create Notification Config
         run: |
