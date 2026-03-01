@@ -177,6 +177,7 @@ jobs:
             --member="serviceAccount:$SA_EMAIL" \
             --role="roles/pubsub.subscriber" \
             --project=${{ env.PROJECT_ID }}
+            --condition="None"
 
       - name: Create Notification Config
         run: |
