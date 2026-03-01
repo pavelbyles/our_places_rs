@@ -170,7 +170,7 @@ jobs:
           PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
-          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}"
+          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
 
           echo "Granting pubsub.subscriber role to $SA_EMAIL on topic $TOPIC_NAME..."
           gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
