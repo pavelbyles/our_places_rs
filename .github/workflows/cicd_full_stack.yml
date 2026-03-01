@@ -193,9 +193,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [setup-gcs-image-gcs-items]
     if: github.event_name == 'push'
-    defaults:
-      run:
-        working-directory: ./image_worker
     env:
       SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
