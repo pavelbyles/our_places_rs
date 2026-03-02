@@ -265,12 +265,12 @@ jobs:
           if gcloud pubsub subscriptions describe our-places-image-worker-sub-$SUFFIX >/dev/null 2>&1; then
             gcloud pubsub subscriptions update our-places-image-worker-sub-$SUFFIX \
               --push-endpoint=$WORKER_URL/api/v1/internal/process_image \
-              --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}
+              --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
           else
             gcloud pubsub subscriptions create our-places-image-worker-sub-$SUFFIX \
               --topic=our-places-image-uploads-raw-$SUFFIX \
               --push-endpoint=$WORKER_URL/api/v1/internal/process_image \
-              --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}
+              --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
           fi
 
   # =========================================================
