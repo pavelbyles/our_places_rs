@@ -29,13 +29,13 @@ RUN apt-get update \
 && apt-get install -y --no-install-recommends curl ca-certificates pkg-config libssl-dev
 COPY --from=planner /app/recipe.json recipe.json
 ARG RELEASE_FLAG
-RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json
+RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json --bin image_worker
 
 COPY . .
 ENV SQLX_OFFLINE=true
 
 ARG RELEASE_FLAG
-RUN cargo build ${RELEASE_FLAG} -p image_worker \
+RUN cargo build ${RELEASE_FLAG} --bin image_worker \
 && apt-get update \
 && apt-get install -y binutils \
 && rm -rf /var/lib/apt/lists/*
