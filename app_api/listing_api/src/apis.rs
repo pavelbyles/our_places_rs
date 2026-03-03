@@ -146,7 +146,7 @@ pub async fn get_listings(
 #[tracing::instrument]
 #[utoipa::path(
     get,
-    path = "/api/v1/listings/listing/{id}",
+    path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID")
@@ -175,7 +175,7 @@ async fn get_listing_by_id(
 #[tracing::instrument]
 #[utoipa::path(
     post,
-    path = "/api/v1/listings/listing",
+    path = "/api/v1/listings",
     tag = "listings",
     request_body = NewListingRequest,
     responses(
@@ -252,7 +252,7 @@ async fn create_listing(
 #[tracing::instrument]
 #[utoipa::path(
     patch,
-    path = "/api/v1/listings/listing/{id}",
+    path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID")
@@ -304,7 +304,7 @@ pub struct DeleteListingParams {
 #[tracing::instrument]
 #[utoipa::path(
     delete,
-    path = "/api/v1/listings/isting/{id}",
+    path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID"),
@@ -339,7 +339,7 @@ async fn delete_listing(
 #[tracing::instrument]
 #[utoipa::path(
     post,
-    path = "/api/v1/listings/listing/{id}/images/presign",
+    path = "/api/v1/listings/{id}/images/presign",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID")
@@ -464,37 +464,37 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get().to(api_core::health::health_check),
             )
             .route(
-                "/",
+                "",
                 web::get()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(get_listings),
             )
             .route(
-                "/",
+                "",
                 web::post()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(create_listing),
             )
             .route(
-                "/listing/{id}",
+                "/{id}",
                 web::get()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(get_listing_by_id),
             )
             .route(
-                "/listing/{id}",
+                "/{id}",
                 web::patch()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(update_listing),
             )
             .route(
-                "/listing/{id}",
+                "/{id}",
                 web::delete()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(delete_listing),
             )
             .route(
-                "/listing/{id}/images/presign",
+                "/{id}/images/presign",
                 web::post()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(presign_batch),

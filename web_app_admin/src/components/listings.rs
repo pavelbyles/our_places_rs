@@ -33,7 +33,7 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
 
     let api_url = crate::api_client::listing_api_url();
     let res = crate::api_client::get_client()
-        .post(&format!("{}/api/v1/listings/", api_url), &api_url, &request)
+        .post(&format!("{}/api/v1/listings", api_url), &api_url, &request)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -62,7 +62,7 @@ pub async fn presign_images_server(
     let res = crate::api_client::get_client()
         .post(
             &format!(
-                "{}/api/v1/listings/listing/{}/images/presign",
+                "{}/api/v1/listings/{}/images/presign",
                 api_url, listing_id
             ),
             &api_url,
@@ -93,7 +93,7 @@ pub async fn listing_search_server(
     max_price: Option<f64>,
 ) -> Result<Vec<common::models::ListingResponse>, ServerFnError> {
     let api_url = crate::api_client::listing_api_url();
-    let mut url = format!("{}/api/v1/listings/?page=1&per_page=20", api_url);
+    let mut url = format!("{}/api/v1/listings?page=1&per_page=20", api_url);
 
     if let Some(s) = name {
         if !s.is_empty() {
