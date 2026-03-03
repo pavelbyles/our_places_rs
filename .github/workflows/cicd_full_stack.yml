@@ -256,6 +256,18 @@ jobs:
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
+      - name: Grant Pub/Sub Service Account Invoker Permission
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting run.invoker to $SA_EMAIL for image-worker service..."
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
       - name: Configure the Subscription (Push to Image Worker)
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
@@ -264,12 +276,12 @@ jobs:
           echo "Configuring subscription for $WORKER_URL..."
           if gcloud pubsub subscriptions describe our-places-image-worker-sub-$SUFFIX >/dev/null 2>&1; then
             gcloud pubsub subscriptions update our-places-image-worker-sub-$SUFFIX \
-              --push-endpoint=$WORKER_URL/api/v1/internal/process_image \
+              --push-endpoint=$WORKER_URL/api/v1/internal/image/process_image \
               --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
           else
             gcloud pubsub subscriptions create our-places-image-worker-sub-$SUFFIX \
               --topic=our-places-image-uploads-raw-$SUFFIX \
-              --push-endpoint=$WORKER_URL/api/v1/internal/process_image \
+              --push-endpoint=$WORKER_URL/api/v1/internal/image/process_image \
               --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
           fi
 
