@@ -1,8 +1,8 @@
+
 [
     {
         "origin": [
-            "https://*.*.run.app",
-            "http://localhost:3000"
+            "*"
         ],
         "method": [
             "PUT",

@@ -209,12 +209,14 @@ async fn test_delete_listing() {
     )
     .await;
 
+    // 1. Soft Delete
     let req = test::TestRequest::delete()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 204);
 
+    // Verify it's gone from GET
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();

@@ -95,7 +95,7 @@ pub async fn process_image(
         object_metadata.content_type
     );
 
-    // TODO: Actually process the image by downloading it from GCS, resizing, convert to webpand uploading to public bucket / CDN
+    // TODO: Actually process the image by downloading it from GCS, resizing, convert to webp and uploading to public bucket / CDN
 
     Ok(HttpResponse::Ok().finish())
 }
