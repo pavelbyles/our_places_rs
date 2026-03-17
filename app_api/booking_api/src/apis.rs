@@ -11,7 +11,7 @@ use api_core::{
 use chrono::NaiveDate;
 use db_core::booking as db_booking;
 use db_core::models::{BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking};
-use rand::Rng;
+use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -24,11 +24,11 @@ pub fn generate_confirmation_code() -> String {
     const CHARSET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
     const LENGTH: usize = 8;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     (0..LENGTH)
         .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
+            let idx = rng.random_range(0..CHARSET.len());
             CHARSET[idx] as char
         })
         .collect()
