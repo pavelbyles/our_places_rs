@@ -9,6 +9,8 @@ env:
   SERVICE_PREFIX_ADMIN: our-places-web-app-admin
   SERVICE_PREFIX_IMAGE_WORKER: our-places-image-worker
   CARGO_TERM_COLOR: always
+  GCS_PUBLIC_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_PUBLIC_PREFIX }}
+  GCS_RAW_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
 
 on:
   push:
@@ -147,14 +149,14 @@ jobs:
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
           echo "Creating raw image bucket..."
-          gcloud storage buckets create gs://our-places-gcs-img-raw-$SUFFIX \
+          gcloud storage buckets create gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
             --location=us-central1 \
             --default-storage-class=STANDARD \
             --uniform-bucket-level-access \
             --soft-delete-duration=0 || echo "Bucket already exists."
             
           echo "Creating public image bucket..."
-          gcloud storage buckets create gs://our-places-gcs-img-public-$SUFFIX \
+          gcloud storage buckets create gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
             --location=us-central1 \
             --default-storage-class=STANDARD \
             --uniform-bucket-level-access \
