@@ -77,6 +77,7 @@ impl PubSubMessage {
 pub async fn process_image(
     req: HttpRequest,
     payload: web::Json<PubSubPayload>,
+    pool: web::Data<sqlx::PgPool>,
 ) -> Result<impl Responder, Error> {
     let payload_data = payload.into_inner();
 
@@ -95,7 +96,190 @@ pub async fn process_image(
         object_metadata.content_type
     );
 
-    // TODO: Actually process the image by downloading it from GCS, resizing, convert to webp and uploading to public bucket / CDN
+    let parts: Vec<&str> = object_metadata.name.split('/').collect();
+    if parts.len() < 2 {
+        tracing::error!("Invalid object name format: {}", object_metadata.name);
+        return Err(actix_web::error::ErrorBadRequest("Invalid object name"));
+    }
+
+    // example: "listing_1234/image_5678" -> "1234", "5678"
+    let listing_id_str = parts[0].strip_prefix("listing_").unwrap_or(parts[0]);
+    let image_id_str = parts[1].strip_prefix("image_").unwrap_or(parts[1]);
+
+    let listing_id = match uuid::Uuid::parse_str(listing_id_str) {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!("Invalid listing ID in object name: {}", e);
+            return Err(actix_web::error::ErrorBadRequest("Invalid listing ID"));
+        }
+    };
+
+    let image_id = match uuid::Uuid::parse_str(image_id_str) {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!("Invalid image ID in object name: {}", e);
+            return Err(actix_web::error::ErrorBadRequest("Invalid image ID"));
+        }
+    };
+
+    let size_bytes: i64 = object_metadata
+        ._size
+        .as_deref()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
+    let content_type = object_metadata
+        .content_type
+        .clone()
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+
+    let raw_image_record = match db_core::listing::update_listing_image_to_processing(
+        pool.get_ref(),
+        image_id,
+        size_bytes,
+        content_type,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to update image to processing: {}", e);
+            return Err(actix_web::error::ErrorInternalServerError("Database error"));
+        }
+    };
+
+    // Download image
+    use google_cloud_storage::client::Storage;
+
+    let client = match Storage::builder().build().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to configure GCS client auth: {}", e);
+            return Err(actix_web::error::ErrorInternalServerError(
+                "GCS config error",
+            ));
+        }
+    };
+
+    let mut stream_resp = match client
+        .read_object(&object_metadata.bucket, &object_metadata.name)
+        .send()
+        .await
+    {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to start download from GCS: {}", e);
+            return Err(actix_web::error::ErrorInternalServerError(
+                "Failed to download image",
+            ));
+        }
+    };
+
+    let mut data = Vec::new();
+    while let Some(chunk_res) = stream_resp.next().await {
+        match chunk_res {
+            Ok(chunk) => data.extend_from_slice(&chunk),
+            Err(e) => {
+                tracing::error!("Error reading chunk from GCS: {}", e);
+                return Err(actix_web::error::ErrorInternalServerError("Download error"));
+            }
+        }
+    }
+
+    let img = match image::load_from_memory(&data) {
+        Ok(i) => i,
+        Err(e) => {
+            tracing::error!("Failed to decode image data: {}", e);
+            return Err(actix_web::error::ErrorInternalServerError(
+                "Invalid image format",
+            ));
+        }
+    };
+
+    let public_bucket =
+        std::env::var("GCS_PUBLIC_BUCKET").unwrap_or_else(|_| "our-places-public-img".to_string());
+
+    let variants_to_create = vec![
+        (
+            400,
+            "thumbnail",
+            db_core::models::ImageResolution::Thumbnail400w,
+        ),
+        (720, "mobile", db_core::models::ImageResolution::Mobile720w),
+        (
+            1280,
+            "tablet",
+            db_core::models::ImageResolution::Tablet1280w,
+        ),
+        (
+            1920,
+            "desktop",
+            db_core::models::ImageResolution::Desktop1920w,
+        ),
+        (
+            2560,
+            "highres",
+            db_core::models::ImageResolution::HighRes2560w,
+        ),
+    ];
+
+    let mut db_variants = Vec::new();
+
+    for (width, folder, resolution_enum) in variants_to_create {
+        let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
+        let webp_encoder =
+            webp::Encoder::from_image(&resized).expect("Failed to create webp encoder");
+        let encoded = webp_encoder.encode(80.0);
+        let bytes = encoded.iter().copied().collect::<Vec<u8>>();
+
+        let target_name = format!("optimized/{}/{}_{}.webp", folder, listing_id, image_id);
+
+        if let Err(e) = client
+            .write_object(
+                &public_bucket,
+                &target_name,
+                actix_web::web::Bytes::from(bytes.clone()),
+            )
+            .send_buffered()
+            .await
+        {
+            tracing::error!("Failed to upload variant {}: {}", folder, e);
+            continue;
+        }
+
+        let public_url = format!(
+            "https://storage.googleapis.com/{}/{}",
+            public_bucket, target_name
+        );
+
+        db_variants.push((
+            listing_id,
+            image_id, // parent_id
+            raw_image_record.client_file_id.clone(),
+            resolution_enum,
+            bytes.len() as i64,
+            "image/webp".to_string(),
+            public_url,
+        ));
+    }
+
+    if let Err(e) =
+        db_core::listing::insert_listing_image_variants(pool.get_ref(), &db_variants).await
+    {
+        tracing::error!("Failed to insert variants into DB: {}", e);
+    }
+
+    let raw_url = raw_image_record.upload_url.unwrap_or_else(|| {
+        format!(
+            "https://storage.googleapis.com/{}/{}",
+            object_metadata.bucket, object_metadata.name
+        )
+    });
+    if let Err(e) =
+        db_core::listing::mark_listing_image_processed(pool.get_ref(), image_id, raw_url).await
+    {
+        tracing::error!("Failed to mark image as processed in DB: {}", e);
+    }
 
     Ok(HttpResponse::Ok().finish())
 }

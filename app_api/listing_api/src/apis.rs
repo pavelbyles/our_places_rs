@@ -361,7 +361,10 @@ async fn presign_batch(
     let img_metadata_req = img_metadata_list_json.into_inner();
 
     // Verify the listing exists first
-    if db_listing::get_listing_by_id(pool.get_ref(), listing_id).await.is_err() {
+    if db_listing::get_listing_by_id(pool.get_ref(), listing_id)
+        .await
+        .is_err()
+    {
         let mut errors = validator::ValidationErrors::new();
         errors.add(
             "listing_id",
@@ -379,29 +382,33 @@ async fn presign_batch(
         let upload_url = common::gcs::generate_v4_signed_url(&object_path, &image.content_type)
             .await
             .map_err(|e| {
-                tracing::error!("Failed to generate presigned URL for listing_id: {}: {:?}", listing_id, e);
+                tracing::error!(
+                    "Failed to generate presigned URL for listing_id: {}: {:?}",
+                    listing_id,
+                    e
+                );
                 ApiError::Internal
             })?;
-            
+
         db_payload.push((file_id, image.clone(), upload_url));
     }
 
     // Add records to track images
-    let inserted_images = match db_listing::create_listing_image_presigns(
-        pool.get_ref(),
-        listing_id,
-        &db_payload,
-    )
-    .await
-    {
-        Ok(images) => images,
-        Err(e) => {
-            tracing::error!("Failed to insert image presign records: {:?}", e);
-            return Err(ApiError::Database(e));
-        }
-    };
+    let inserted_images =
+        match db_listing::create_listing_image_presigns(pool.get_ref(), listing_id, &db_payload)
+            .await
+        {
+            Ok(images) => images,
+            Err(e) => {
+                tracing::error!("Failed to insert image presign records: {:?}", e);
+                return Err(ApiError::Database(e));
+            }
+        };
 
-    tracing::info!("Number of image files to be uploaded: {}", inserted_images.len());
+    tracing::info!(
+        "Number of image files to be uploaded: {}",
+        inserted_images.len()
+    );
 
     let mut responses = Vec::new();
     for img in inserted_images {

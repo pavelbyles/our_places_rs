@@ -61,10 +61,7 @@ pub async fn presign_images_server(
 
     let res = crate::api_client::get_client()
         .post(
-            &format!(
-                "{}/api/v1/listings/{}/images/presign",
-                api_url, listing_id
-            ),
+            &format!("{}/api/v1/listings/{}/images/presign", api_url, listing_id),
             &api_url,
             &request,
         )

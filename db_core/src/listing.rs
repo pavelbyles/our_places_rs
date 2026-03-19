@@ -287,6 +287,104 @@ where
     Ok(inserted)
 }
 
+/// Updates a listing image to Processing status and records the size/content_type
+#[tracing::instrument(skip(executor))]
+pub async fn update_listing_image_to_processing<'e, E>(
+    executor: E,
+    image_id: Uuid,
+    size_bytes: i64,
+    content_type: String,
+) -> Result<crate::models::ListingImage>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    let image = sqlx::query_as!(
+        crate::models::ListingImage,
+        r#"
+        UPDATE listing_image
+        SET status = 'Processing', size_bytes = $2, content_type = $3, updated_at = now()
+        WHERE id = $1
+        RETURNING id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, created_at, updated_at
+        "#,
+        image_id,
+        size_bytes,
+        content_type
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(image)
+}
+
+/// Marks a listing image as Processed, recording its upload URL
+#[tracing::instrument(skip(executor))]
+pub async fn mark_listing_image_processed<'e, E>(
+    executor: E,
+    image_id: Uuid,
+    public_url: String,
+) -> Result<()>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    sqlx::query!(
+        r#"
+        UPDATE listing_image
+        SET status = 'Processed', upload_url = $2, updated_at = now()
+        WHERE id = $1
+        "#,
+        image_id,
+        public_url
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+/// Inserts multiple resized variants for a parent image
+#[tracing::instrument(skip(executor))]
+pub async fn insert_listing_image_variants<'e, E>(
+    executor: E,
+    variants: &[(
+        Uuid,
+        Uuid,
+        String,
+        crate::models::ImageResolution,
+        i64,
+        String,
+        String,
+    )], // (listing_id, parent_id, client_file_id, resolution, size_bytes, content_type, upload_url)
+) -> Result<()>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    if variants.is_empty() {
+        return Ok(());
+    }
+
+    let mut query_builder = sqlx::QueryBuilder::new(
+        "INSERT INTO listing_image (listing_id, parent_id, client_file_id, resolution, status, size_bytes, content_type, upload_url) ",
+    );
+
+    query_builder.push_values(
+        variants.iter(),
+        |mut b, (listing_id, parent_id, client_file_id, resolution, size, ctype, url)| {
+            b.push_bind(*listing_id)
+                .push_bind(*parent_id)
+                .push_bind(client_file_id.clone())
+                .push_bind(*resolution)
+                .push_bind(crate::models::ImageStatus::Processed)
+                .push_bind(*size)
+                .push_bind(ctype.clone())
+                .push_bind(url.clone());
+        },
+    );
+
+    query_builder.build().execute(executor).await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

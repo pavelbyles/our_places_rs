@@ -277,12 +277,27 @@ pub enum ImageStatus {
     Failed,
 }
 
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
+)]
+#[sqlx(type_name = "image_resolution", rename_all = "PascalCase")]
+pub enum ImageResolution {
+    Raw,
+    Thumbnail400w,
+    Mobile720w,
+    Tablet1280w,
+    Desktop1920w,
+    HighRes2560w,
+}
+
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct ListingImage {
     pub id: Uuid,
     pub listing_id: Uuid,
     pub client_file_id: String,
     pub status: ImageStatus,
+    pub resolution: ImageResolution,
+    pub parent_id: Option<Uuid>,
     pub upload_url: Option<String>,
     pub content_type: Option<String>,
     pub size_bytes: Option<i64>,
