@@ -155,7 +155,6 @@ pub async fn process_image(
         .clone()
         .unwrap_or_else(|| "application/octet-stream".to_string());
 
-    // 2. Updates the image record in the database to a 'processing' state.
     let raw_image_record = match db_core::listing::update_listing_image_to_processing(
         pool.get_ref(),
         image_id,
@@ -165,8 +164,17 @@ pub async fn process_image(
     .await
     {
         Ok(r) => r,
+        Err(db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound)) => {
+            tracing::warn!("Image ID {} not found in database. This may be a stale Pub/Sub message for a deleted listing/image. Acknowledging message to stop retries.", image_id);
+            return Ok(HttpResponse::Ok().finish());
+        }
         Err(e) => {
             tracing::error!("Failed to update image to processing: {:?}", e);
+            if let Ok(rows) = sqlx::query!("SELECT id FROM listing_image").fetch_all(pool.get_ref()).await {
+                tracing::error!("DEBUG: Available IDs in DB: {:?}", rows.iter().map(|r| r.id.to_string()).collect::<Vec<_>>());
+            } else {
+                tracing::error!("DEBUG: Could not even select from listing_image!");
+            }
             return Err(actix_web::error::ErrorInternalServerError("Database error"));
         }
     };
