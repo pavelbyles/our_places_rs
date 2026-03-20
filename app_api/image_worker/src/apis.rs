@@ -170,11 +170,6 @@ pub async fn process_image(
         }
         Err(e) => {
             tracing::error!("Failed to update image to processing: {:?}", e);
-            if let Ok(rows) = sqlx::query!("SELECT id FROM listing_image").fetch_all(pool.get_ref()).await {
-                tracing::error!("DEBUG: Available IDs in DB: {:?}", rows.iter().map(|r| r.id.to_string()).collect::<Vec<_>>());
-            } else {
-                tracing::error!("DEBUG: Could not even select from listing_image!");
-            }
             return Err(actix_web::error::ErrorInternalServerError("Database error"));
         }
     };
