@@ -161,6 +161,21 @@ jobs:
             --default-storage-class=STANDARD \
             --uniform-bucket-level-access \
             --soft-delete-duration=0 || echo "Bucket already exists."
+
+      - name: Grant GCS Bucket Permissions to SA
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting storage.objectAdmin role to $SA_EMAIL on raw bucket..."
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/storage.objectAdmin"
+
+          echo "Granting storage.objectAdmin role to $SA_EMAIL on public bucket..."
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/storage.objectAdmin"
       - name: Create PubSub Topic
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}

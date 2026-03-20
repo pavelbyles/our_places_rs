@@ -161,8 +161,9 @@ pub async fn process_image(
         }
     };
 
+    let gcs_read_bucket = format!("projects/_/buckets/{}", object_metadata.bucket);
     let mut stream_resp = match client
-        .read_object(&object_metadata.bucket, &object_metadata.name)
+        .read_object(&gcs_read_bucket, &object_metadata.name)
         .send()
         .await
     {
@@ -234,9 +235,11 @@ pub async fn process_image(
 
         let target_name = format!("optimized/{}/{}_{}.webp", folder, listing_id, image_id);
 
+        let gcs_write_bucket = format!("projects/_/buckets/{}", public_bucket);
+
         if let Err(e) = client
             .write_object(
-                &public_bucket,
+                &gcs_write_bucket,
                 &target_name,
                 actix_web::web::Bytes::from(bytes.clone()),
             )
