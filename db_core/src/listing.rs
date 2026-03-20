@@ -715,4 +715,46 @@ mod tests {
         // Listing 1 is Apartment, should not be here.
         assert!(!found_names.contains(&"Cheap Apartment Jamaica".to_string()));
     }
+
+    #[tokio::test]
+    async fn test_update_listing_image_to_processing() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
+        let listing = NewListing {
+            name: "Test Image Processing Listing".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Testland".to_string(),
+            price_per_night: None,
+        };
+        let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
+
+        let image_md = common::models::PendingImageMetadata {
+            client_file_id: "test-file-123".to_string(),
+            content_type: "image/jpeg".to_string(),
+            size_bytes: 1024,
+            display_order: 0,
+        };
+        let images = vec![(Uuid::now_v7(), image_md, "https://upload.url".to_string())];
+        let presigns = create_listing_image_presigns(&mut *tx, created_listing.id, &images)
+            .await
+            .unwrap();
+
+        let image_id = presigns[0].id;
+
+        let result = update_listing_image_to_processing(
+            &mut *tx,
+            image_id,
+            2048,
+            "image/webp".to_string(),
+        ).await;
+
+        match result {
+            Ok(_) => println!("Successfully updated image"),
+            Err(e) => panic!("Database error occurred: {:?}", e),
+        }
+    }
 }

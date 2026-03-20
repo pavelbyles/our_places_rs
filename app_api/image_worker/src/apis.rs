@@ -62,6 +62,27 @@ impl PubSubMessage {
     }
 }
 
+/// Processes an uploaded image triggered by a Google Cloud Pub/Sub notification.
+///
+/// This endpoint is called internally when a new image is uploaded to the raw GCS bucket.
+/// It performs the following operations:
+/// 1. Extracts the `listing_id` and `image_id` from the GCS object name (expected format: `listing_{id}/image_{id}`).
+/// 2. Updates the image record in the database to a 'processing' state.
+/// 3. Downloads the original image from the raw GCS bucket.
+/// 4. Generates multiple optimized WebP variants of the image (thumbnail, mobile, tablet, desktop, highres).
+/// 5. Uploads the transformed WebP variants to the public GCS bucket.
+/// 6. Records the variants and their public URLs in the database.
+/// 7. Marks the parent image record as fully processed.
+///
+/// # Arguments
+///
+/// * `req` - The Actix HTTP request.
+/// * `payload` - A JSON body containing the Google Cloud Pub/Sub message.
+/// * `pool` - The database connection pool.
+///
+/// # Returns
+///
+/// Returns a `200 OK` response on success, or an appropriate error on failure (e.g., 400 for invalid payload, 500 for database or GCS errors).
 #[tracing::instrument]
 #[utoipa::path(
     post,
@@ -96,6 +117,7 @@ pub async fn process_image(
         object_metadata.content_type
     );
 
+    // 1. Extracts the `listing_id` and `image_id` from the GCS object name (expected format: `listing_{id}/image_{id}`).
     let parts: Vec<&str> = object_metadata.name.split('/').collect();
     if parts.len() < 2 {
         tracing::error!("Invalid object name format: {}", object_metadata.name);
@@ -133,6 +155,7 @@ pub async fn process_image(
         .clone()
         .unwrap_or_else(|| "application/octet-stream".to_string());
 
+    // 2. Updates the image record in the database to a 'processing' state.
     let raw_image_record = match db_core::listing::update_listing_image_to_processing(
         pool.get_ref(),
         image_id,
@@ -143,12 +166,12 @@ pub async fn process_image(
     {
         Ok(r) => r,
         Err(e) => {
-            tracing::error!("Failed to update image to processing: {}", e);
+            tracing::error!("Failed to update image to processing: {:?}", e);
             return Err(actix_web::error::ErrorInternalServerError("Database error"));
         }
     };
 
-    // Download image
+    // 3. Downloads the original image from the raw GCS bucket.
     use google_cloud_storage::client::Storage;
 
     let client = match Storage::builder().build().await {
@@ -226,6 +249,7 @@ pub async fn process_image(
 
     let mut db_variants = Vec::new();
 
+    // 4. Generates multiple optimized WebP variants of the image (thumbnail, mobile, tablet, desktop, highres).
     for (width, folder, resolution_enum) in variants_to_create {
         let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
         let webp_encoder =
@@ -237,12 +261,14 @@ pub async fn process_image(
 
         let gcs_write_bucket = format!("projects/_/buckets/{}", public_bucket);
 
+        // 5. Uploads the transformed WebP variants to the public GCS bucket.
         if let Err(e) = client
             .write_object(
                 &gcs_write_bucket,
                 &target_name,
                 actix_web::web::Bytes::from(bytes.clone()),
             )
+            .set_content_type("image/webp")
             .send_buffered()
             .await
         {
@@ -266,6 +292,7 @@ pub async fn process_image(
         ));
     }
 
+    // 6. Records the variants and their public URLs in the database.
     if let Err(e) =
         db_core::listing::insert_listing_image_variants(pool.get_ref(), &db_variants).await
     {
@@ -278,6 +305,8 @@ pub async fn process_image(
             object_metadata.bucket, object_metadata.name
         )
     });
+
+    // 7. Marks the parent image record as fully processed.
     if let Err(e) =
         db_core::listing::mark_listing_image_processed(pool.get_ref(), image_id, raw_url).await
     {
