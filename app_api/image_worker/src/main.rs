@@ -10,6 +10,8 @@ async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     api_core::tracing_utils::init_subscriber();
 
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tracing::info!("Starting application");
 
     // Get settings
