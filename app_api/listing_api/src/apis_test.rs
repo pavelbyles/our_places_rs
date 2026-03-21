@@ -315,6 +315,7 @@ async fn test_xml_serialization_of_vec() {
         is_active: true,
         added_at: Utc::now(),
         owner_name: None,
+        primary_image_url: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
