@@ -125,6 +125,7 @@ pub async fn get_listings(
         max_price: query.max_price,
         structure_type: structure_types,
         owner: query.owner.clone(),
+        resolution: query.resolution.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))

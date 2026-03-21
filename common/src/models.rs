@@ -63,6 +63,13 @@ pub struct ListingResponse {
     pub is_active: bool,
     pub added_at: DateTime<Utc>,
     pub owner_name: Option<String>,
+    pub primary_image_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
+pub struct ListingImageResponse {
+    pub id: Uuid,
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -74,6 +81,7 @@ pub struct ListingFilter {
     #[serde(default)]
     pub structure_type: Vec<String>,
     pub owner: Option<String>,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -87,6 +95,7 @@ pub struct ListingQueryParams {
     #[serde(default, skip_deserializing)]
     pub structure_type: Vec<String>,
     pub owner: Option<String>,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]

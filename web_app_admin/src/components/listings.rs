@@ -477,7 +477,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                 <figure class="w-48 h-48 flex-none">
                                                     <img
                                                         class="h-full w-full object-cover"
-                                                        src="https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp"
+                                                        src={listing.primary_image_url.clone().unwrap_or_else(|| "https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp".to_string())}
                                                         alt="Listing Image" />
                                                 </figure>
                                                 <div class="card-body">

@@ -179,6 +179,7 @@ pub struct Listing {
     pub is_active: bool,
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
+    pub primary_image_url: Option<String>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -194,6 +195,7 @@ pub struct ListingWithOwner {
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub owner_name: Option<String>,
+    pub primary_image_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]

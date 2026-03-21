@@ -15,7 +15,7 @@ where
         INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, added_at)
         SELECT $1, $2, $3, $4, $5, $6, $7, now()
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url
         "#,
         Uuid::now_v7(),
         new_listing.user_id,
@@ -52,14 +52,31 @@ where
     let limit = per_page as i64;
     let offset = ((page.max(1) - 1) * per_page) as i64;
 
+    let resolution_str = filter.as_ref().and_then(|f| f.resolution.clone()).unwrap_or_else(|| "Thumbnail400w".to_string());
+    let parsed_res = resolution_str.parse::<crate::models::ImageResolution>().unwrap_or(crate::models::ImageResolution::Thumbnail400w);
+
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
         SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at,
-        "user".first_name || ' ' || "user".last_name as owner_name
+        "user".first_name || ' ' || "user".last_name as owner_name,
+        primary_img.upload_url as primary_image_url
         FROM listing
         INNER JOIN "user" ON listing.user_id = "user".id
+        LEFT JOIN LATERAL (
+            SELECT thumb_img.upload_url
+            FROM listing_image parent_img
+            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+            WHERE parent_img.listing_id = listing.id
+              AND parent_img.is_primary = TRUE
+              AND thumb_img.resolution = "#,
+    );
+    query_builder.push_bind(parsed_res);
+    query_builder.push(
+        r#"
+            LIMIT 1
+        ) AS primary_img ON true
         WHERE listing.deleted_at IS NULL
-        "#,
+        "#
     );
 
     if let Some(f) = filter {
@@ -126,10 +143,19 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url
         FROM listing
-        WHERE user_id = $1 AND deleted_at IS NULL
-        ORDER BY added_at DESC, id DESC
+        LEFT JOIN LATERAL (
+            SELECT thumb_img.upload_url
+            FROM listing_image parent_img
+            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+            WHERE parent_img.listing_id = listing.id
+              AND parent_img.is_primary = TRUE
+              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            LIMIT 1
+        ) AS primary_img ON true
+        WHERE listing.user_id = $1 AND listing.deleted_at IS NULL
+        ORDER BY listing.added_at DESC, listing.id DESC
         "#,
         user_id
     )
@@ -148,9 +174,18 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url
         FROM listing
-        WHERE id = $1 AND deleted_at IS NULL
+        LEFT JOIN LATERAL (
+            SELECT thumb_img.upload_url
+            FROM listing_image parent_img
+            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+            WHERE parent_img.listing_id = listing.id
+              AND parent_img.is_primary = TRUE
+              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            LIMIT 1
+        ) AS primary_img ON true
+        WHERE listing.id = $1 AND listing.deleted_at IS NULL
         "#,
         id
     )
@@ -171,7 +206,7 @@ pub async fn update_listing(
 
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT * FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -210,7 +245,7 @@ pub async fn update_listing(
             price_per_night = COALESCE($6, price_per_night),
             is_active = COALESCE($7, is_active)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url
         "#,
         id,
         updated_listing_data.name,
@@ -252,17 +287,26 @@ pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Resul
 
 /// Batch inserts pending listing images in preparation for presigned URL uploads.
 #[tracing::instrument(skip(executor))]
-pub async fn create_listing_image_presigns<'e, E>(
-    executor: E,
+pub async fn create_listing_image_presigns<'a, A>(
+    executor: A,
     listing_id: Uuid,
     images: &[(Uuid, common::models::PendingImageMetadata, String)],
 ) -> Result<Vec<crate::models::ListingImage>>
 where
-    E: PgExecutor<'e>,
+    A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
 {
     if images.is_empty() {
         return Ok(Vec::new());
     }
+
+    let mut conn = executor.acquire().await?;
+
+    let max_order: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(display_order), -1)::integer FROM listing_image WHERE listing_id = $1"
+    )
+    .bind(listing_id)
+    .fetch_one(&mut *conn)
+    .await?;
 
     let mut query_builder = sqlx::QueryBuilder::new(
         "INSERT INTO listing_image (id, listing_id, client_file_id, status, content_type, size_bytes, display_order, upload_url) ",
@@ -275,14 +319,14 @@ where
             .push_bind(crate::models::ImageStatus::PendingUpload)
             .push_bind(img.content_type.clone())
             .push_bind(img.size_bytes as i64)
-            .push_bind(img.display_order)
+            .push_bind(max_order + 1 + img.display_order)
             .push_bind(url.clone());
     });
 
     query_builder.push(" RETURNING *");
 
     let query = query_builder.build_query_as::<crate::models::ListingImage>();
-    let inserted = query.fetch_all(executor).await?;
+    let inserted = query.fetch_all(&mut *conn).await?;
 
     Ok(inserted)
 }
@@ -670,6 +714,7 @@ mod tests {
             max_price: None,
             structure_type: vec![],
             owner: None,
+            resolution: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -689,6 +734,7 @@ mod tests {
             max_price: Some(dec!(100.00)),
             structure_type: vec![],
             owner: None,
+            resolution: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -705,6 +751,7 @@ mod tests {
             // We use string representation for the filter structure_type as per definition
             structure_type: vec!["Villa".to_string()],
             owner: None,
+            resolution: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
