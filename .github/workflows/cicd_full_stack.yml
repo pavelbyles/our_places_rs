@@ -162,6 +162,14 @@ jobs:
             --uniform-bucket-level-access \
             --soft-delete-duration=0 || echo "Bucket already exists."
 
+          echo "Making public image bucket accessible to allUsers..."
+          gcloud storage buckets update gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --no-public-access-prevention || true
+          
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --member="allUsers" \
+            --role="roles/storage.objectViewer" || true
+
       - name: Grant GCS Bucket Permissions to SA
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}

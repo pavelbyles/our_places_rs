@@ -304,6 +304,7 @@ pub struct ListingImage {
     pub content_type: Option<String>,
     pub size_bytes: Option<i64>,
     pub display_order: i32,
+    pub is_primary: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

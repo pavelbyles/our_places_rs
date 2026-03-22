@@ -308,11 +308,20 @@ where
     .fetch_one(&mut *conn)
     .await?;
 
+    let min_batch_order = images.iter().map(|(_, img, _)| img.display_order).min().unwrap_or(0);
+    let mut primary_assigned = max_order > -1;
+
     let mut query_builder = sqlx::QueryBuilder::new(
-        "INSERT INTO listing_image (id, listing_id, client_file_id, status, content_type, size_bytes, display_order, upload_url) ",
+        "INSERT INTO listing_image (id, listing_id, client_file_id, status, content_type, size_bytes, display_order, upload_url, is_primary) ",
     );
 
     query_builder.push_values(images.iter(), |mut b, (id, img, url)| {
+        let mut is_primary = false;
+        if !primary_assigned && img.display_order == min_batch_order {
+            is_primary = true;
+            primary_assigned = true;
+        }
+
         b.push_bind(*id)
             .push_bind(listing_id)
             .push_bind(img.client_file_id.clone())
@@ -320,7 +329,8 @@ where
             .push_bind(img.content_type.clone())
             .push_bind(img.size_bytes as i64)
             .push_bind(max_order + 1 + img.display_order)
-            .push_bind(url.clone());
+            .push_bind(url.clone())
+            .push_bind(is_primary);
     });
 
     query_builder.push(" RETURNING *");
@@ -348,7 +358,7 @@ where
         UPDATE listing_image
         SET status = 'Processing', size_bytes = $2, content_type = $3, updated_at = now()
         WHERE id = $1
-        RETURNING id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, created_at, updated_at
+        RETURNING id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
         "#,
         image_id,
         size_bytes,
