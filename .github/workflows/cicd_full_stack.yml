@@ -430,8 +430,10 @@ jobs:
             --build-arg RELEASE_FLAG=$RELEASE_FLAG \
             --build-arg BUILD_OUTPUT=$BUILD_OUTPUT \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f ../Dockerfile.booking_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Deploy Booking API
         uses: google-github-actions/deploy-cloudrun@v2
@@ -459,8 +461,10 @@ jobs:
             --build-arg RELEASE_FLAG=$RELEASE_FLAG \
             --build-arg BUILD_OUTPUT=$BUILD_OUTPUT \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f ../Dockerfile.listing_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Deploy Listing API
         id: deploy_listing
@@ -490,8 +494,10 @@ jobs:
             --build-arg RELEASE_FLAG=$RELEASE_FLAG \
             --build-arg BUILD_OUTPUT=$BUILD_OUTPUT \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f ../Dockerfile.user_api ..
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Deploy User API
         uses: google-github-actions/deploy-cloudrun@v2
@@ -594,8 +600,12 @@ jobs:
 
       - name: Build and Push Web App
         run: |
-          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} -f web_app/Dockerfile.web_app .
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            -f web_app/Dockerfile.web_app .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Grant Service Permissions
         run: |
@@ -734,8 +744,12 @@ jobs:
 
       - name: Build and Push Web App Admin
         run: |
-          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }} -f web_app_admin/Dockerfile.web_app_admin .
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            -f web_app_admin/Dockerfile.web_app_admin .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: URL Encode Database Password
         id: url_encode
