@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE listing_image\n        SET status = 'Processing', size_bytes = $2, content_type = $3, updated_at = now()\n        WHERE id = $1\n        RETURNING id, listing_id, client_file_id, status as \"status: crate::models::ImageStatus\", resolution as \"resolution: crate::models::ImageResolution\", parent_id, upload_url, content_type, size_bytes, display_order, created_at, updated_at\n        ",
+  "query": "\n        UPDATE listing_image\n        SET status = 'Processing', size_bytes = $2, content_type = $3, updated_at = now()\n        WHERE id = $1\n        RETURNING id, listing_id, client_file_id, status as \"status: crate::models::ImageStatus\", resolution as \"resolution: crate::models::ImageResolution\", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -82,11 +82,16 @@
       },
       {
         "ordinal": 10,
+        "name": "is_primary",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -110,8 +115,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "af5f7d52c09ab7009a2581c66bac720978e0c0641ddaa7675e76f3dfb8737ff6"
+  "hash": "3da98634a2b14ef48dcdf751694e0efa1ba177172c85c63f83693b86c28b4320"
 }
