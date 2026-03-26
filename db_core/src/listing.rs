@@ -15,7 +15,7 @@ where
         INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, added_at)
         SELECT $1, $2, $3, $4, $5, $6, $7, now()
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url
         "#,
         Uuid::now_v7(),
         new_listing.user_id,
@@ -52,14 +52,31 @@ where
     let limit = per_page as i64;
     let offset = ((page.max(1) - 1) * per_page) as i64;
 
+    let resolution_str = filter.as_ref().and_then(|f| f.resolution.clone()).unwrap_or_else(|| "Thumbnail400w".to_string());
+    let parsed_res = resolution_str.parse::<crate::models::ImageResolution>().unwrap_or(crate::models::ImageResolution::Thumbnail400w);
+
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
         SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at,
-        "user".first_name || ' ' || "user".last_name as owner_name
+        "user".first_name || ' ' || "user".last_name as owner_name,
+        primary_img.upload_url as primary_image_url
         FROM listing
         INNER JOIN "user" ON listing.user_id = "user".id
+        LEFT JOIN LATERAL (
+            SELECT thumb_img.upload_url
+            FROM listing_image parent_img
+            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+            WHERE parent_img.listing_id = listing.id
+              AND parent_img.is_primary = TRUE
+              AND thumb_img.resolution = "#,
+    );
+    query_builder.push_bind(parsed_res);
+    query_builder.push(
+        r#"
+            LIMIT 1
+        ) AS primary_img ON true
         WHERE listing.deleted_at IS NULL
-        "#,
+        "#
     );
 
     if let Some(f) = filter {
@@ -126,10 +143,19 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url
         FROM listing
-        WHERE user_id = $1 AND deleted_at IS NULL
-        ORDER BY added_at DESC, id DESC
+        LEFT JOIN LATERAL (
+            SELECT thumb_img.upload_url
+            FROM listing_image parent_img
+            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+            WHERE parent_img.listing_id = listing.id
+              AND parent_img.is_primary = TRUE
+              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            LIMIT 1
+        ) AS primary_img ON true
+        WHERE listing.user_id = $1 AND listing.deleted_at IS NULL
+        ORDER BY listing.added_at DESC, listing.id DESC
         "#,
         user_id
     )
@@ -148,9 +174,18 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url
         FROM listing
-        WHERE id = $1 AND deleted_at IS NULL
+        LEFT JOIN LATERAL (
+            SELECT thumb_img.upload_url
+            FROM listing_image parent_img
+            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+            WHERE parent_img.listing_id = listing.id
+              AND parent_img.is_primary = TRUE
+              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            LIMIT 1
+        ) AS primary_img ON true
+        WHERE listing.id = $1 AND listing.deleted_at IS NULL
         "#,
         id
     )
@@ -171,7 +206,7 @@ pub async fn update_listing(
 
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT * FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -210,7 +245,7 @@ pub async fn update_listing(
             price_per_night = COALESCE($6, price_per_night),
             is_active = COALESCE($7, is_active)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url
         "#,
         id,
         updated_listing_data.name,
@@ -246,6 +281,160 @@ pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Resul
     if result.rows_affected() == 0 {
         return Err(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound));
     }
+
+    Ok(())
+}
+
+/// Batch inserts pending listing images in preparation for presigned URL uploads.
+#[tracing::instrument(skip(executor))]
+pub async fn create_listing_image_presigns<'a, A>(
+    executor: A,
+    listing_id: Uuid,
+    images: &[(Uuid, common::models::PendingImageMetadata, String)],
+) -> Result<Vec<crate::models::ListingImage>>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+{
+    if images.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut conn = executor.acquire().await?;
+
+    let max_order: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(display_order), -1)::integer FROM listing_image WHERE listing_id = $1"
+    )
+    .bind(listing_id)
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let min_batch_order = images.iter().map(|(_, img, _)| img.display_order).min().unwrap_or(0);
+    let mut primary_assigned = max_order > -1;
+
+    let mut query_builder = sqlx::QueryBuilder::new(
+        "INSERT INTO listing_image (id, listing_id, client_file_id, status, content_type, size_bytes, display_order, upload_url, is_primary) ",
+    );
+
+    query_builder.push_values(images.iter(), |mut b, (id, img, url)| {
+        let mut is_primary = false;
+        if !primary_assigned && img.display_order == min_batch_order {
+            is_primary = true;
+            primary_assigned = true;
+        }
+
+        b.push_bind(*id)
+            .push_bind(listing_id)
+            .push_bind(img.client_file_id.clone())
+            .push_bind(crate::models::ImageStatus::PendingUpload)
+            .push_bind(img.content_type.clone())
+            .push_bind(img.size_bytes as i64)
+            .push_bind(max_order + 1 + img.display_order)
+            .push_bind(url.clone())
+            .push_bind(is_primary);
+    });
+
+    query_builder.push(" RETURNING *");
+
+    let query = query_builder.build_query_as::<crate::models::ListingImage>();
+    let inserted = query.fetch_all(&mut *conn).await?;
+
+    Ok(inserted)
+}
+
+/// Updates a listing image to Processing status and records the size/content_type
+#[tracing::instrument(skip(executor))]
+pub async fn update_listing_image_to_processing<'e, E>(
+    executor: E,
+    image_id: Uuid,
+    size_bytes: i64,
+    content_type: String,
+) -> Result<crate::models::ListingImage>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    let image = sqlx::query_as!(
+        crate::models::ListingImage,
+        r#"
+        UPDATE listing_image
+        SET status = 'Processing', size_bytes = $2, content_type = $3, updated_at = now()
+        WHERE id = $1
+        RETURNING id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
+        "#,
+        image_id,
+        size_bytes,
+        content_type
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(image)
+}
+
+/// Marks a listing image as Processed, recording its upload URL
+#[tracing::instrument(skip(executor))]
+pub async fn mark_listing_image_processed<'e, E>(
+    executor: E,
+    image_id: Uuid,
+    public_url: String,
+) -> Result<()>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    sqlx::query!(
+        r#"
+        UPDATE listing_image
+        SET status = 'Processed', upload_url = $2, updated_at = now()
+        WHERE id = $1
+        "#,
+        image_id,
+        public_url
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(())
+}
+
+/// Inserts multiple resized variants for a parent image
+#[tracing::instrument(skip(executor))]
+pub async fn insert_listing_image_variants<'e, E>(
+    executor: E,
+    variants: &[(
+        Uuid,
+        Uuid,
+        String,
+        crate::models::ImageResolution,
+        i64,
+        String,
+        String,
+    )], // (listing_id, parent_id, client_file_id, resolution, size_bytes, content_type, upload_url)
+) -> Result<()>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    if variants.is_empty() {
+        return Ok(());
+    }
+
+    let mut query_builder = sqlx::QueryBuilder::new(
+        "INSERT INTO listing_image (listing_id, parent_id, client_file_id, resolution, status, size_bytes, content_type, upload_url) ",
+    );
+
+    query_builder.push_values(
+        variants.iter(),
+        |mut b, (listing_id, parent_id, client_file_id, resolution, size, ctype, url)| {
+            b.push_bind(*listing_id)
+                .push_bind(*parent_id)
+                .push_bind(client_file_id.clone())
+                .push_bind(*resolution)
+                .push_bind(crate::models::ImageStatus::Processed)
+                .push_bind(*size)
+                .push_bind(ctype.clone())
+                .push_bind(url.clone());
+        },
+    );
+
+    query_builder.build().execute(executor).await?;
 
     Ok(())
 }
@@ -535,6 +724,7 @@ mod tests {
             max_price: None,
             structure_type: vec![],
             owner: None,
+            resolution: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -554,6 +744,7 @@ mod tests {
             max_price: Some(dec!(100.00)),
             structure_type: vec![],
             owner: None,
+            resolution: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -570,6 +761,7 @@ mod tests {
             // We use string representation for the filter structure_type as per definition
             structure_type: vec!["Villa".to_string()],
             owner: None,
+            resolution: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
@@ -579,5 +771,47 @@ mod tests {
         // Note: Logic allows checking absence if we assume test DB isolation, but transactions help.
         // Listing 1 is Apartment, should not be here.
         assert!(!found_names.contains(&"Cheap Apartment Jamaica".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_update_listing_image_to_processing() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
+        let listing = NewListing {
+            name: "Test Image Processing Listing".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Testland".to_string(),
+            price_per_night: None,
+        };
+        let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
+
+        let image_md = common::models::PendingImageMetadata {
+            client_file_id: "test-file-123".to_string(),
+            content_type: "image/jpeg".to_string(),
+            size_bytes: 1024,
+            display_order: 0,
+        };
+        let images = vec![(Uuid::now_v7(), image_md, "https://upload.url".to_string())];
+        let presigns = create_listing_image_presigns(&mut *tx, created_listing.id, &images)
+            .await
+            .unwrap();
+
+        let image_id = presigns[0].id;
+
+        let result = update_listing_image_to_processing(
+            &mut *tx,
+            image_id,
+            2048,
+            "image/webp".to_string(),
+        ).await;
+
+        match result {
+            Ok(_) => println!("Successfully updated image"),
+            Err(e) => panic!("Database error occurred: {:?}", e),
+        }
     }
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at\n        FROM listing\n        WHERE id = $1 AND deleted_at IS NULL\n        ",
+  "query": "\n        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url\n        FROM listing\n        LEFT JOIN LATERAL (\n            SELECT thumb_img.upload_url\n            FROM listing_image parent_img\n            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n            WHERE parent_img.listing_id = listing.id\n              AND parent_img.is_primary = TRUE\n              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n            LIMIT 1\n        ) AS primary_img ON true\n        WHERE listing.id = $1 AND listing.deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,11 @@
         "ordinal": 9,
         "name": "deleted_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_image_url",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -69,8 +74,9 @@
       true,
       false,
       false,
+      true,
       true
     ]
   },
-  "hash": "3a87e1eb681b49887072e144f74c0b544354d53945f8cd38ef775ba5c0c7a633"
+  "hash": "767a2ae023205d6d1b35b71882598d1f5c05e566d3297985126d0dd91a38f8e9"
 }

@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\"\n            FROM \"user\" WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "password_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "phone_number",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "attributes",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 10,
+        "name": "roles: Vec<UserRole>",
+        "type_info": {
+          "Custom": {
+            "name": "user_role[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "user_role",
+                  "kind": {
+                    "Enum": [
+                      "booker",
+                      "host",
+                      "admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5ce09929f9038d8f5eba0906e82998c99895007c82d0ba89c18e6d7a20d4df22"
+}

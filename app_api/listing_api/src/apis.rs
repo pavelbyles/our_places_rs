@@ -1,8 +1,6 @@
-use actix_web::body::MessageBody;
-use actix_web::dev::{ServiceRequest, ServiceResponse};
-use actix_web::http::header::{ACCEPT, CONTENT_TYPE};
-use actix_web::middleware::{Next, from_fn};
-use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
+use actix_web::middleware::from_fn;
+use actix_web::{HttpRequest, HttpResponse, Responder, web};
+use api_core::api_common::content_negotiation_middleware;
 use api_core::models::{
     ListingsWrapper, map_listing_to_response, map_listing_with_owner_to_response,
 };
@@ -127,6 +125,7 @@ pub async fn get_listings(
         max_price: query.max_price,
         structure_type: structure_types,
         owner: query.owner.clone(),
+        resolution: query.resolution.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -148,7 +147,7 @@ pub async fn get_listings(
 #[tracing::instrument]
 #[utoipa::path(
     get,
-    path = "/api/v1/listings/listing/{id}",
+    path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID")
@@ -177,7 +176,7 @@ async fn get_listing_by_id(
 #[tracing::instrument]
 #[utoipa::path(
     post,
-    path = "/api/v1/listings/listing",
+    path = "/api/v1/listings",
     tag = "listings",
     request_body = NewListingRequest,
     responses(
@@ -254,7 +253,7 @@ async fn create_listing(
 #[tracing::instrument]
 #[utoipa::path(
     patch,
-    path = "/api/v1/listings/listing/{id}",
+    path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID")
@@ -306,7 +305,7 @@ pub struct DeleteListingParams {
 #[tracing::instrument]
 #[utoipa::path(
     delete,
-    path = "/api/v1/listings/isting/{id}",
+    path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
         ("id" = String, Path, description = "Listing UUID"),
@@ -338,6 +337,98 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/listings/{id}/images/presign",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    request_body = common::models::ImagePresignRequest,
+    responses(
+        (status = 200, description = "Presigned URLs generated", body = [common::models::ImagePresignResponse]),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn presign_batch(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    img_metadata_list_json: web::Json<common::models::ImagePresignRequest>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let img_metadata_req = img_metadata_list_json.into_inner();
+
+    // Verify the listing exists first
+    if db_listing::get_listing_by_id(pool.get_ref(), listing_id)
+        .await
+        .is_err()
+    {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "listing_id",
+            validator::ValidationError::new("invalid listing"),
+        );
+        tracing::error!("Invalid listing_id: {}", listing_id);
+        return Err(ApiError::ValidationError(errors));
+    }
+
+    // Generate the IDs and upload URLs first so they can be saved to the database.
+    let mut db_payload = Vec::new();
+    for image in &img_metadata_req.images {
+        let file_id = Uuid::new_v4();
+        let object_path = format!("listing_{}/image_{}", listing_id, file_id);
+        let upload_url = common::gcs::generate_v4_signed_url(&object_path, &image.content_type)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to generate presigned URL for listing_id: {}: {:?}",
+                    listing_id,
+                    e
+                );
+                ApiError::Internal
+            })?;
+
+        db_payload.push((file_id, image.clone(), upload_url));
+    }
+
+    // Add records to track images
+    let inserted_images =
+        match db_listing::create_listing_image_presigns(pool.get_ref(), listing_id, &db_payload)
+            .await
+        {
+            Ok(images) => images,
+            Err(e) => {
+                tracing::error!("Failed to insert image presign records: {:?}", e);
+                return Err(ApiError::Database(e));
+            }
+        };
+
+    tracing::info!(
+        "Number of image files to be uploaded: {}",
+        inserted_images.len()
+    );
+
+    let mut responses = Vec::new();
+    for img in inserted_images {
+        responses.push(common::models::ImagePresignResponse {
+            client_file_id: img.client_file_id,
+            file_id: img.id,
+            // Safe to unwrap here because we literally just inserted these URLs in the DB ourselves
+            upload_url: img.upload_url.unwrap_or_default(),
+        });
+    }
+
+    Ok(respond(
+        &req,
+        Payload::Collection(responses),
+        |_: Vec<common::models::ImagePresignResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -347,10 +438,20 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_listing_by_id,
             update_listing,
             delete_listing,
+            presign_batch,
             api_core::health::health_check,
         ),
         components(
-            schemas(NewListingRequest, UpdatedListingRequest, ListingResponse, pagination::Pagination, common::models::ListingFilter)
+            schemas(
+                NewListingRequest, 
+                UpdatedListingRequest, 
+                ListingResponse, 
+                pagination::Pagination, 
+                common::models::ListingFilter,
+                common::models::ImagePresignRequest,
+                common::models::ImagePresignResponse,
+                common::models::PendingImageMetadata
+            )
         ),
         tags(
             (name = "listings", description = "Listing management endpoints")
@@ -371,82 +472,42 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get().to(api_core::health::health_check),
             )
             .route(
-                "/",
+                "",
                 web::get()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(get_listings),
             )
             .route(
-                "/",
+                "",
                 web::post()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(create_listing),
             )
             .route(
-                "/listing/{id}",
+                "/{id}",
                 web::get()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(get_listing_by_id),
             )
             .route(
-                "/listing/{id}",
+                "/{id}",
                 web::patch()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(update_listing),
             )
             .route(
-                "/listing/{id}",
+                "/{id}",
                 web::delete()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(delete_listing),
+            )
+            .route(
+                "/{id}/images/presign",
+                web::post()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(presign_batch),
             ),
     );
-}
-
-/// Content-Type - Requests
-/// Accept - Responses
-/// Middleware to check Content-Type and Accept headers
-/// Returns 415 Unsupported Media Type or 406 Not Acceptable if invalid
-async fn content_negotiation_middleware(
-    req: ServiceRequest,
-    next: Next<impl MessageBody>,
-) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    let headers = req.headers();
-
-    // Check Content-Type (if present) -> 415 Unsupported Media Type
-    if let Some(ct_str) = headers.get(CONTENT_TYPE).and_then(|ct| ct.to_str().ok()) {
-        let mime = ct_str.split(';').next().unwrap_or("").trim().to_lowercase();
-        let supported_formats = [
-            "application/json",
-            "application/xml",
-            "application/x-www-form-urlencoded",
-        ];
-
-        if !supported_formats.contains(&mime.as_str()) {
-            return Err(actix_web::error::ErrorUnsupportedMediaType(
-                "Unsupported Content-Type",
-            ));
-        }
-    }
-
-    // Check Accept header (if present) -> 406 Not Acceptable
-    if let Some(accept_str) = headers.get(ACCEPT).and_then(|a| a.to_str().ok()) {
-        let supported_responses = ["application/json", "application/xml"];
-
-        let accepts_supported = accept_str.split(',').any(|s| {
-            let mime = s.split(';').next().unwrap_or("").trim().to_lowercase();
-            mime == "*/*" || supported_responses.contains(&mime.as_str())
-        });
-
-        if !accepts_supported {
-            return Err(actix_web::error::ErrorNotAcceptable(
-                "The requested response format is not supported",
-            ));
-        }
-    }
-
-    // If checks pass, call the next service in the chain
-    next.call(req).await
 }
 
 #[cfg(test)]

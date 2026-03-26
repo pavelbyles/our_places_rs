@@ -63,6 +63,13 @@ pub struct ListingResponse {
     pub is_active: bool,
     pub added_at: DateTime<Utc>,
     pub owner_name: Option<String>,
+    pub primary_image_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
+pub struct ListingImageResponse {
+    pub id: Uuid,
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -74,6 +81,7 @@ pub struct ListingFilter {
     #[serde(default)]
     pub structure_type: Vec<String>,
     pub owner: Option<String>,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -87,6 +95,7 @@ pub struct ListingQueryParams {
     #[serde(default, skip_deserializing)]
     pub structure_type: Vec<String>,
     pub owner: Option<String>,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -106,4 +115,24 @@ pub struct UserResponse {
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct UsersWrapper {
     pub user: Vec<UserResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct ImagePresignRequest {
+    pub images: Vec<PendingImageMetadata>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct PendingImageMetadata {
+    pub client_file_id: String, // Added to map the file UI-side
+    pub content_type: String,
+    pub size_bytes: u64,
+    pub display_order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct ImagePresignResponse {
+    pub client_file_id: String, // Mirrored back to the client
+    pub file_id: uuid::Uuid,
+    pub upload_url: String, // The GCS v4 Signed URL
 }

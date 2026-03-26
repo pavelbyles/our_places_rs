@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actix-web = "4.12.1"
-actix-cors = "0.7.0"
+actix-web = "4.13.0"
+actix-cors = "0.7.1"
 tokio = { workspace = true, features = ["macros"] }
 serde = { workspace = true }
-serde_urlencoded = "0.7"
+serde_urlencoded = "0.7.1"
 serde_json = { workspace = true }
 serde-xml-rs = { workspace = true }
 tracing = { workspace = true }
 tracing-actix-web = { workspace = true }
-tracing-subscriber = { version = "0.3", features = [
+tracing-subscriber = { version = "0.3.22", features = [
   "registry",
   "env-filter",
   "json",

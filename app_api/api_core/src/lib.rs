@@ -1,3 +1,4 @@
+pub mod api_common;
 pub mod error;
 pub mod health;
 pub mod models;

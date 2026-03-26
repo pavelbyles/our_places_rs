@@ -4,6 +4,7 @@ members = [
     "app_api/booking_api",
     "app_api/listing_api",
     "app_api/user_api",
+    "app_api/image_worker",
     "common",
     "db_core",
     "protoproj",
@@ -13,17 +14,17 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-anyhow = "1.0.61"
+anyhow = "1.0.102"
 dotenvy = "0.15.7"
-rust_decimal_macros = "1.35.0"
+rust_decimal_macros = "1.40.0"
 serde-xml-rs = "0.8.2"
-serde_json = "1.0.145"
-thiserror = "2.0.17"
-tracing = "0.1.43"
-tracing-actix-web = "0.7.19"
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tracing = "0.1.44"
+tracing-actix-web = "0.7.21"
 
 [workspace.dependencies.chrono]
-version = "0.4.42"
+version = "0.4.44"
 features = ["serde"]
 
 [workspace.dependencies.config]
@@ -31,11 +32,11 @@ version = "0.15.19"
 features = ["toml"]
 
 [workspace.dependencies.rust_decimal]
-version = "1.35.0"
+version = "1.40.0"
 features = ["serde", "serde-with-float"]
 
 [workspace.dependencies.serde]
-version = "1.0.219"
+version = "1.0.228"
 features = ["derive"]
 
 [workspace.dependencies.sqlx]
@@ -53,7 +54,7 @@ features = [
 default-features = false
 
 [workspace.dependencies.tokio]
-version = "1.37.0"
+version = "1.50.0"
 
 [workspace.dependencies.utoipa]
 version = "5.4.0"
@@ -64,7 +65,7 @@ version = "9.0.2"
 features = ["actix-web"]
 
 [workspace.dependencies.uuid]
-version = "1.8"
+version = "1.21.0"
 features = ["v7", "serde"]
 
 [workspace.dependencies.validator]

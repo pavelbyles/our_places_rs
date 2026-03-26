@@ -33,6 +33,17 @@ anyhow.workspace = true
 serde.workspace = true
 dotenvy.workspace = true
 thiserror.workspace = true
+web-sys = { version = "0.3.88", features = [
+  "File",
+  "FileList",
+  "HtmlInputElement",
+  "Request",
+  "RequestInit",
+  "Window",
+] }
+wasm-bindgen-futures = "0.4.61"
+js-sys = "0.3.88"
+futures = "0.3.32"
 
 [features]
 csr = ["leptos/csr"]

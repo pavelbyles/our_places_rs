@@ -57,13 +57,32 @@ jobs:
       - name: Delete Cloud Run Services
         run: |
           SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
-          SERVICES=("booking-api-$SUFFIX" "listing-api-$SUFFIX" "user-api-$SUFFIX" "our-places-web-app-$SUFFIX")
+          SERVICES=("booking-api-$SUFFIX" "listing-api-$SUFFIX" "user-api-$SUFFIX" "our-places-web-app-$SUFFIX" "our-places-image-worker-$SUFFIX")
 
           for SERVICE in "${SERVICES[@]}"; do
             echo "Attempting to delete service: $SERVICE"
             # Use || true to prevent failure if service doesn't exist
             gcloud run services delete $SERVICE --region ${{ env.REGION }} --quiet || echo "Service $SERVICE not found or already deleted."
           done
+
+      - name: Delete GCS Buckets
+        run: |
+          SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
+
+          echo "Attempting to delete raw image bucket..."
+          gcloud storage rm --recursive gs://our-places-gcs-img-raw-$SUFFIX || echo "Bucket not found."
+
+          echo "Attempting to delete public image bucket..."
+          gcloud storage rm --recursive gs://our-places-gcs-img-public-$SUFFIX || echo "Bucket not found."
+
+      - name: Delete PubSub Topic and Subscription
+        run: |
+          SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
+          echo "Attempting to delete PubSub subscription..."
+          gcloud pubsub subscriptions delete our-places-image-worker-sub-$SUFFIX || echo "Subscription not found."
+
+          echo "Attempting to delete PubSub topic..."
+          gcloud pubsub topics delete our-places-image-uploads-raw-$SUFFIX || echo "Topic not found."
 
       - name: Delete Database Schema
         env:

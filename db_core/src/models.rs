@@ -179,6 +179,7 @@ pub struct Listing {
     pub is_active: bool,
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
+    pub primary_image_url: Option<String>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -194,6 +195,7 @@ pub struct ListingWithOwner {
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub owner_name: Option<String>,
+    pub primary_image_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -263,4 +265,46 @@ impl StructureType {
             StructureType::Villa => 5,
         }
     }
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
+)]
+#[sqlx(type_name = "image_status", rename_all = "PascalCase")]
+pub enum ImageStatus {
+    PendingUpload,
+    Uploaded,
+    Processing,
+    Processed,
+    Failed,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
+)]
+#[sqlx(type_name = "image_resolution", rename_all = "PascalCase")]
+pub enum ImageResolution {
+    Raw,
+    Thumbnail400w,
+    Mobile720w,
+    Tablet1280w,
+    Desktop1920w,
+    HighRes2560w,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct ListingImage {
+    pub id: Uuid,
+    pub listing_id: Uuid,
+    pub client_file_id: String,
+    pub status: ImageStatus,
+    pub resolution: ImageResolution,
+    pub parent_id: Option<Uuid>,
+    pub upload_url: Option<String>,
+    pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub display_order: i32,
+    pub is_primary: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

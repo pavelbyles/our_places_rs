@@ -102,7 +102,7 @@ async fn test_get_listing_by_id_success() {
     .await;
 
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+        .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
 
@@ -135,7 +135,7 @@ async fn test_get_listing_by_id_not_found() {
     .await;
 
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/listings/listing/{}", non_existent_id))
+        .uri(&format!("/api/v1/listings/{}", non_existent_id))
         .to_request();
     let resp = test::call_service(&app, req).await;
 
@@ -171,7 +171,7 @@ async fn test_create_listing_validation_error() {
     };
 
     let req = test::TestRequest::post()
-        .uri("/api/v1/listings/")
+        .uri("/api/v1/listings")
         .set_json(&invalid_listing)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -211,14 +211,14 @@ async fn test_delete_listing() {
 
     // 1. Soft Delete
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+        .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 204);
 
     // Verify it's gone from GET
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+        .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -238,7 +238,7 @@ async fn test_delete_listing() {
 
     let req = test::TestRequest::delete()
         .uri(&format!(
-            "/api/v1/listings/listing/{}?hard_delete=true",
+            "/api/v1/listings/{}?hard_delete=true",
             created_listing_2.id
         ))
         .to_request();
@@ -247,10 +247,7 @@ async fn test_delete_listing() {
 
     // Verify it's gone
     let req = test::TestRequest::get()
-        .uri(&format!(
-            "/api/v1/listings/listing/{}",
-            created_listing_2.id
-        ))
+        .uri(&format!("/api/v1/listings/{}", created_listing_2.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
@@ -292,7 +289,7 @@ async fn test_delete_listing_hard_forbidden() {
 
     let req = test::TestRequest::delete()
         .uri(&format!(
-            "/api/v1/listings/listing/{}?hard_delete=true",
+            "/api/v1/listings/{}?hard_delete=true",
             created_listing.id
         ))
         .to_request();
@@ -318,6 +315,7 @@ async fn test_xml_serialization_of_vec() {
         is_active: true,
         added_at: Utc::now(),
         owner_name: None,
+        primary_image_url: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -367,7 +365,7 @@ async fn test_update_listing_multiple_times() {
         is_active: None,
     };
     let req = test::TestRequest::patch()
-        .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+        .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .set_json(&update_req_1)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -386,7 +384,7 @@ async fn test_update_listing_multiple_times() {
         is_active: None,
     };
     let req = test::TestRequest::patch()
-        .uri(&format!("/api/v1/listings/listing/{}", created_listing.id))
+        .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .set_json(&update_req_2)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -439,7 +437,7 @@ async fn test_get_listings_with_filter() {
 
     // Filter by Country (France)
     let req = test::TestRequest::get()
-        .uri("/api/v1/listings/?country=France")
+        .uri("/api/v1/listings?country=France")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_success());
@@ -449,7 +447,7 @@ async fn test_get_listings_with_filter() {
 
     // Filter by Price (< 150)
     let req = test::TestRequest::get()
-        .uri("/api/v1/listings/?max_price=150")
+        .uri("/api/v1/listings?max_price=150")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_success());

@@ -57,6 +57,7 @@ pub fn map_listing_to_response(
         is_active: listing.is_active,
         added_at: listing.added_at,
         owner_name: None,
+        primary_image_url: listing.primary_image_url,
     }
 }
 
@@ -83,6 +84,7 @@ pub fn map_listing_with_owner_to_response(
         is_active: listing.is_active,
         added_at: listing.added_at,
         owner_name: listing.owner_name,
+        primary_image_url: listing.primary_image_url,
     }
 }
 

@@ -7,7 +7,10 @@ env:
   REGION: us-central1
   SERVICE_PREFIX: our-places-web-app
   SERVICE_PREFIX_ADMIN: our-places-web-app-admin
+  SERVICE_PREFIX_IMAGE_WORKER: our-places-image-worker
   CARGO_TERM_COLOR: always
+  GCS_PUBLIC_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_PUBLIC_PREFIX }}
+  GCS_RAW_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
 
 on:
   push:
@@ -38,8 +41,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-      - name: Install protobuf-compiler
-        run: sudo apt-get install protobuf-compiler -y
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy
@@ -48,7 +49,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo clippy --all-features --manifest-path Cargo.toml -- -D warnings
+        run: cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
   # =========================================================
   # Test API's and Web App
   # =========================================================
@@ -60,8 +61,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-      - name: Install protobuf-compiler
-        run: sudo apt-get install protobuf-compiler -y
       - name: Install cargo make
         uses: davidB/rust-cargo-make@v1
       - name: Install sqlx
@@ -73,15 +72,15 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --verbose --workspace --exclude web_app
+        run: cargo build --verbose --workspace --exclude web_app --exclude protoproj
       - name: Run DB and Migrations (Local Test)
         run: cargo make --cwd app_api/listing_api db-migrate
-      - name: Run tests
+      - name: Run testsTest API
         env:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo test --verbose --workspace --exclude web_app
+        run: cargo test --verbose --workspace --exclude web_app --exclude protoproj
 
   test-web:
     name: Test Web
@@ -108,6 +107,213 @@ jobs:
         run: cargo test --manifest-path web_app_admin/Cargo.toml --verbose
 
   # =========================================================
+  # SETUP GCS BUCKETS
+  # =========================================================
+  setup-gcs-image-gcs-items:
+    name: Setup GCS Buckets
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-api]
+    if: github.event_name == 'push'
+    env:
+      SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v1"
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            SAFE_SCHEMA_name="public"
+          elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+            SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
+          fi
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
+
+      - name: Create GCS Buckets
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+
+          echo "Creating raw image bucket..."
+          gcloud storage buckets create gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
+            --location=us-central1 \
+            --default-storage-class=STANDARD \
+            --uniform-bucket-level-access \
+            --soft-delete-duration=0 || echo "Bucket already exists."
+            
+          echo "Creating public image bucket..."
+          gcloud storage buckets create gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --location=us-central1 \
+            --default-storage-class=STANDARD \
+            --uniform-bucket-level-access \
+            --soft-delete-duration=0 || echo "Bucket already exists."
+
+          echo "Making public image bucket accessible to allUsers..."
+          gcloud storage buckets update gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --no-public-access-prevention || true
+          
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --member="allUsers" \
+            --role="roles/storage.objectViewer" || true
+
+      - name: Grant GCS Bucket Permissions to SA
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting storage.objectAdmin role to $SA_EMAIL on raw bucket..."
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/storage.objectAdmin"
+
+          echo "Granting storage.objectAdmin role to $SA_EMAIL on public bucket..."
+          gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/storage.objectAdmin"
+      - name: Create PubSub Topic
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          echo "Creating PubSub topic..."
+          gcloud pubsub topics create our-places-image-uploads-raw-$SUFFIX || echo "Topic already exists."
+
+      - name: Grant Pub/Sub Subscription Permission to SA
+        run: |
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
+          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting pubsub.subscriber role to $SA_EMAIL on topic $TOPIC_NAME..."
+          gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/pubsub.subscriber" \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Create Notification Config
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          gcloud storage buckets notifications create gs://our-places-gcs-img-raw-$SUFFIX \
+            --topic=our-places-image-uploads-raw-$SUFFIX \
+            --event-types=OBJECT_FINALIZE
+
+  # =========================================================
+  # DEPLOY IMAGE WORKER
+  # =========================================================
+  deploy-image-worker:
+    name: Build & Deploy Image Worker
+    runs-on: ubuntu-latest
+    needs: [setup-gcs-image-gcs-items]
+    if: github.event_name == 'push'
+    env:
+      SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v1"
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            SAFE_SCHEMA_name="public"
+          elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+            SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
+          fi
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        run: |
+          docker build -f Dockerfile.image_worker -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+
+      - name: Deploy to Cloud Run
+        id: deploy_image_worker
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
+            EA__SERVER__PORT=8080
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
+            EA__DATABASE__USERNAME=${{ env.DB_USER }}
+            EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
+            EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+            GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCS_PUBLIC_BUCKET=${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --memory=1Gi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+
+      - name: Grant Pub/Sub Service Account Invoker Permission
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting run.invoker to $SA_EMAIL for image-worker service..."
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
+      - name: Configure the Subscription (Push to Image Worker)
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          WORKER_URL=$(gcloud run services describe ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-$SUFFIX --region ${{ env.REGION }} --format 'value(status.url)')
+
+          echo "Configuring subscription for $WORKER_URL..."
+          if gcloud pubsub subscriptions describe our-places-image-worker-sub-$SUFFIX >/dev/null 2>&1; then
+            gcloud pubsub subscriptions update our-places-image-worker-sub-$SUFFIX \
+              --push-endpoint=$WORKER_URL/api/v1/internal/image/process_image \
+              --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --ack-deadline=120
+          else
+            gcloud pubsub subscriptions create our-places-image-worker-sub-$SUFFIX \
+              --topic=our-places-image-uploads-raw-$SUFFIX \
+              --push-endpoint=$WORKER_URL/api/v1/internal/image/process_image \
+              --push-auth-service-account=${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --ack-deadline=120
+          fi
+
+  # =========================================================
   # DEPLOY API
   # =========================================================
   deploy-api:
@@ -126,6 +332,7 @@ jobs:
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -273,6 +480,7 @@ jobs:
             EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
             EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+            GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # User API
@@ -529,6 +737,12 @@ jobs:
           docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }} -f web_app_admin/Dockerfile.web_app_admin .
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }}
 
+      - name: URL Encode Database Password
+        id: url_encode
+        run: |
+          ENCODED_PASS=$(jq -nr --arg v "${{ env.DB_PASS }}" '$v|@uri')
+          echo "ENCODED_DB_PASS=$ENCODED_PASS" >> $GITHUB_OUTPUT
+
       - name: Deploy Web App Admin
         id: deploy_webapp_admin
         uses: google-github-actions/deploy-cloudrun@v2
@@ -544,7 +758,7 @@ jobs:
             BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
             USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
+            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ steps.url_encode.outputs.ENCODED_DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Show Deployed URL for the Web App Admin
