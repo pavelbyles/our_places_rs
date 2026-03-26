@@ -11,7 +11,7 @@ async fn main() -> std::io::Result<()> {
     use leptos::config::get_configuration;
     use leptos::prelude::*;
     use leptos_actix::{generate_route_list, LeptosRoutes};
-    use sqlx::postgres::PgPoolOptions;
+
     use std::env;
     use web_app_admin::app::*;
     use web_app_admin::components::shell::AppShell;
@@ -24,12 +24,7 @@ async fn main() -> std::io::Result<()> {
     let addr = conf.leptos_options.site_addr;
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let pool: sqlx::PgPool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(60))
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to database");
+    let pool = db_core::connection::create_connection_pool(&database_url).await;
 
     let sessions_db = SessionsDb::new(pool.clone());
     let session_store = AdminSessionStore::new(sessions_db);

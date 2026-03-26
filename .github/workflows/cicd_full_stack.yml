@@ -165,7 +165,7 @@ jobs:
           echo "Making public image bucket accessible to allUsers..."
           gcloud storage buckets update gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
             --no-public-access-prevention || true
-          
+
           gcloud storage buckets add-iam-policy-binding gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
             --member="allUsers" \
             --role="roles/storage.objectViewer" || true
@@ -751,17 +751,6 @@ jobs:
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }}
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
-      - name: URL Encode Database Password
-        id: url_encode
-        run: |
-          ENCODED_PASS=$(jq -nr --arg v "${{ env.DB_PASS }}" '$v|@uri')
-          echo "ENCODED_DB_PASS=$ENCODED_PASS" >> $GITHUB_OUTPUT
-
-      - name: URL Encode Database Password
-        id: url_encode
-        run: |
-          ENCODED_PASS=$(jq -nr --arg v "${{ env.DB_PASS }}" '$v|@uri')
-          echo "ENCODED_DB_PASS=$ENCODED_PASS" >> $GITHUB_OUTPUT
 
       - name: Deploy Web App Admin
         id: deploy_webapp_admin
@@ -778,7 +767,7 @@ jobs:
             BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
             USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ steps.url_encode.outputs.ENCODED_DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
+            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Show Deployed URL for the Web App Admin
