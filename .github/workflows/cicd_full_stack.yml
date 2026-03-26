@@ -757,6 +757,12 @@ jobs:
           ENCODED_PASS=$(jq -nr --arg v "${{ env.DB_PASS }}" '$v|@uri')
           echo "ENCODED_DB_PASS=$ENCODED_PASS" >> $GITHUB_OUTPUT
 
+      - name: URL Encode Database Password
+        id: url_encode
+        run: |
+          ENCODED_PASS=$(jq -nr --arg v "${{ env.DB_PASS }}" '$v|@uri')
+          echo "ENCODED_DB_PASS=$ENCODED_PASS" >> $GITHUB_OUTPUT
+
       - name: Deploy Web App Admin
         id: deploy_webapp_admin
         uses: google-github-actions/deploy-cloudrun@v2
