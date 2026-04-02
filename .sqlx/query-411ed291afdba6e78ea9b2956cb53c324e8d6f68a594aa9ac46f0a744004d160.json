@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE booking\n        SET status = COALESCE($1, status), updated_at = $2\n        WHERE id = $3\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            created_at, updated_at\n        ",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            created_at, updated_at\n        FROM booking\n        ORDER BY created_at DESC\n        LIMIT $1 OFFSET $2\n        ",
   "describe": {
     "columns": [
       {
@@ -113,32 +113,24 @@
       },
       {
         "ordinal": 17,
+        "name": "metadata: Json<crate::models::BookingMetadata>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        {
-          "Custom": {
-            "name": "booking_status",
-            "kind": {
-              "Enum": [
-                "pending",
-                "confirmed",
-                "cancelled",
-                "completed"
-              ]
-            }
-          }
-        },
-        "Timestamptz",
-        "Uuid"
+        "Int8",
+        "Int8"
       ]
     },
     "nullable": [
@@ -160,8 +152,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "10b628500d8e08114936f08dffc95bf1b918c8da10512d54ef203c2457f37410"
+  "hash": "411ed291afdba6e78ea9b2956cb53c324e8d6f68a594aa9ac46f0a744004d160"
 }

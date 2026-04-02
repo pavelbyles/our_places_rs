@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id FROM booking \n        WHERE listing_id = $1 \n          AND status IN ('pending', 'confirmed') \n          AND date_from < $3 \n          AND date_to > $2\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e93e2b4fd3ee26c83579a2636be2502eca2eba727055c1835824b0499e8f472c"
+}

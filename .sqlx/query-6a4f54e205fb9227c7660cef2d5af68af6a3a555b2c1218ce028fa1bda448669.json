@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url\n        FROM listing\n        LEFT JOIN LATERAL (\n            SELECT thumb_img.upload_url\n            FROM listing_image parent_img\n            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n            WHERE parent_img.listing_id = listing.id\n              AND parent_img.is_primary = TRUE\n              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n            LIMIT 1\n        ) AS primary_img ON true\n        WHERE listing.id = $1 AND listing.deleted_at IS NULL\n        ",
+  "query": "\n        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, weekly_discount_percentage, monthly_discount_percentage, added_at)\n        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now()\n        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage\n        ",
   "describe": {
     "columns": [
       {
@@ -56,12 +56,30 @@
       {
         "ordinal": 10,
         "name": "primary_image_url",
-        "type_info": "Varchar"
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "weekly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "monthly_discount_percentage",
+        "type_info": "Numeric"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Numeric",
+        "Numeric",
+        "Numeric"
       ]
     },
     "nullable": [
@@ -75,8 +93,10 @@
       false,
       false,
       true,
+      null,
+      true,
       true
     ]
   },
-  "hash": "767a2ae023205d6d1b35b71882598d1f5c05e566d3297985126d0dd91a38f8e9"
+  "hash": "6a4f54e205fb9227c7660cef2d5af68af6a3a555b2c1218ce028fa1bda448669"
 }

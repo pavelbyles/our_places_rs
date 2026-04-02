@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -136,3 +136,63 @@ pub struct ImagePresignResponse {
     pub file_id: uuid::Uuid,
     pub upload_url: String, // The GCS v4 Signed URL
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
+pub struct NewBookingRequest {
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+
+    pub check_in: NaiveDate,
+    pub check_out: NaiveDate,
+
+    pub num_adults: u32,
+    pub num_children: u32,
+    pub num_infants: u32,
+    pub num_pets: u32,
+
+    // Host communication and logistics
+    pub message_to_host: Option<String>,
+    pub estimated_arrival_time: Option<String>,
+    pub is_business_trip: bool,
+
+    pub currency: String,
+
+    pub agreed_cancellation_policy: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
+pub struct NewListingRequest {
+    #[schema(value_type = String, example = "Zen Loft")]
+    #[validate(length(min = 1, message = "Name cannot be empty"))]
+    pub name: String,
+
+    #[schema(value_type = String, format = "uuid")]
+    pub user_id: Uuid,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "A zen place to be")]
+    #[validate(length(
+        max = 2000,
+        message = "Description cannot be longer than 2000 characters"
+    ))]
+    pub description: Option<String>,
+
+    #[schema(value_type = String, example = "Apartment")]
+    pub listing_structure: String,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Jamaica")]
+    #[validate(length(min = 1, message = "Country cannot be empty"))]
+    pub country: String,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "150.00")]
+    pub price_per_night: Option<Decimal>,
+
+    #[serde(default)]
+    pub weekly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    pub monthly_discount_percentage: Option<Decimal>,
+}
+

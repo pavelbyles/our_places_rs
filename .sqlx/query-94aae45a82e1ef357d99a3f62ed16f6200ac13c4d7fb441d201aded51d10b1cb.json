@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE listing\n        SET\n            name = COALESCE($2, name),\n            description = COALESCE($3, description),\n            listing_structure_id = COALESCE($4, listing_structure_id),\n            country = COALESCE($5, country),\n            price_per_night = COALESCE($6, price_per_night),\n            is_active = COALESCE($7, is_active)\n        WHERE id = $1\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url\n        ",
+  "query": "\n        UPDATE listing\n        SET\n            name = COALESCE($2, name),\n            description = COALESCE($3, description),\n            listing_structure_id = COALESCE($4, listing_structure_id),\n            country = COALESCE($5, country),\n            price_per_night = COALESCE($6, price_per_night),\n            is_active = COALESCE($7, is_active),\n            weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),\n            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage)\n        WHERE id = $1\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage\n        ",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,16 @@
         "ordinal": 10,
         "name": "primary_image_url",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "weekly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "monthly_discount_percentage",
+        "type_info": "Numeric"
       }
     ],
     "parameters": {
@@ -67,7 +77,9 @@
         "Int4",
         "Text",
         "Numeric",
-        "Bool"
+        "Bool",
+        "Numeric",
+        "Numeric"
       ]
     },
     "nullable": [
@@ -81,8 +93,10 @@
       false,
       false,
       true,
-      null
+      null,
+      true,
+      true
     ]
   },
-  "hash": "72eba57bdbc3061d8188b8415d240de807b74d14fa302c2c1b6baba4b90e0646"
+  "hash": "94aae45a82e1ef357d99a3f62ed16f6200ac13c4d7fb441d201aded51d10b1cb"
 }

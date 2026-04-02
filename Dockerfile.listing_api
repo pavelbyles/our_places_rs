@@ -29,7 +29,7 @@ RUN apt-get update \
 && apt-get install -y --no-install-recommends curl ca-certificates pkg-config libssl-dev
 COPY --from=planner /app/recipe.json recipe.json
 ARG RELEASE_FLAG
-RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json
+RUN cargo chef cook ${RELEASE_FLAG} -p listing_api --recipe-path recipe.json
 
 COPY . .
 ENV SQLX_OFFLINE=true

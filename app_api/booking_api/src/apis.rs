@@ -9,13 +9,17 @@ use api_core::{
     settings::Settings,
 };
 use chrono::NaiveDate;
+use common::models::NewBookingRequest;
 use db_core::booking as db_booking;
-use db_core::models::{BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking};
+use db_core::listing as db_listing;
+use db_core::models::{
+    BookingMetadata, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
+};
 use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use utoipa::{OpenApi, ToSchema};
+use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
@@ -34,33 +38,60 @@ pub fn generate_confirmation_code() -> String {
         .collect()
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct NewBookingRequest {
-    pub guest_id: Uuid,
-    pub listing_id: Uuid,
-    pub date_from: NaiveDate,
-    pub date_to: NaiveDate,
-    pub currency: String,
-    pub daily_rate: Decimal,
-    pub number_of_persons: i32,
-    pub total_days: i32,
-    pub sub_total_price: Decimal,
-    pub discount_value: Option<Decimal>,
-    pub tax_value: Option<Decimal>,
-    pub fee_breakdown: Vec<FeeItem>,
-    pub total_price: Decimal,
-    pub cancellation_policy: CancellationPolicy,
-}
-
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdatedBookingRequest {
     pub status: Option<BookingStatus>,
 }
 
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct AvailabilityParams {
+    pub listing_id: Uuid,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AvailabilityResponse {
+    pub available: bool,
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/availability",
+    tag = "bookings",
+    params(AvailabilityParams),
+    responses(
+        (status = 200, description = "Checked availability", body = AvailabilityResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn check_availability(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    query: web::Query<AvailabilityParams>,
+) -> Result<impl Responder, ApiError> {
+    let available = db_booking::check_availability(
+        pool.get_ref(),
+        query.listing_id,
+        query.date_from,
+        query.date_to,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(AvailabilityResponse { available }),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 #[tracing::instrument]
 #[utoipa::path(
     post,
-    path = "/api/v1/booking",
+    path = "/api/v1/bookings",
     tag = "bookings",
     request_body = NewBookingRequest,
     responses(
@@ -78,7 +109,66 @@ async fn create_booking(
     body.validate().map_err(ApiError::ValidationError)?;
     let req_data = body.into_inner();
 
+    let listing = db_listing::get_listing_by_id(pool.get_ref(), req_data.listing_id)
+        .await
+        .map_err(|e| {
+            if let db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound) = e {
+                ApiError::Database(db_core::error::DbError::ValidationError(
+                    "Listing not found".to_string(),
+                ))
+            } else {
+                ApiError::Database(e)
+            }
+        })?;
+
+    let total_days = (req_data.check_out - req_data.check_in).num_days() as i32;
+    if total_days <= 0 {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Check-out date must be after check-in date".to_string(),
+            ),
+        ));
+    }
+
+    let daily_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
+    let mut discount_value = None;
+    let actual_daily_rate = daily_rate; // Typically discount is distinct from daily rate deduction in presentation
+
+    if total_days >= 28 && listing.monthly_discount_percentage.is_some() {
+        let pct = listing.monthly_discount_percentage.unwrap();
+        let subtotal = actual_daily_rate * Decimal::from(total_days);
+        discount_value = Some(subtotal * (pct / Decimal::new(100, 0)));
+    } else if total_days >= 7 && listing.weekly_discount_percentage.is_some() {
+        let pct = listing.weekly_discount_percentage.unwrap();
+        let subtotal = actual_daily_rate * Decimal::from(total_days);
+        discount_value = Some(subtotal * (pct / Decimal::new(100, 0)));
+    }
+
+    let sub_total_price = actual_daily_rate * Decimal::from(total_days);
+    let discount = discount_value.unwrap_or(Decimal::ZERO);
+
+    // Example tax: 10% on discounted amount
+    let discounted_subtotal = sub_total_price - discount;
+    let tax_value = Some(discounted_subtotal * Decimal::new(10, 2));
+
+    let mut fee_breakdown = Vec::new();
+    // Assuming platform fee
+    let platform_fee = discounted_subtotal * Decimal::new(5, 2);
+    fee_breakdown.push(FeeItem {
+        name: "Platform Fee".to_string(),
+        amount: platform_fee,
+    });
+
+    let total_fees: Decimal = fee_breakdown.iter().map(|f| f.amount).sum();
+    let total_price = discounted_subtotal + tax_value.unwrap_or(Decimal::ZERO) + total_fees;
+
     let confirmation_code = generate_confirmation_code();
+
+    let policy = match req_data.agreed_cancellation_policy.to_lowercase().as_str() {
+        "strict" => CancellationPolicy::Strict,
+        "moderate" => CancellationPolicy::Moderate,
+        _ => CancellationPolicy::Flexible, // Default fallback
+    };
 
     let mut attempts = 0;
     let max_attempts = settings.application.max_attempts;
@@ -89,22 +179,33 @@ async fn create_booking(
             confirmation_code: confirmation_code.clone(),
             guest_id: req_data.guest_id,
             listing_id: req_data.listing_id,
-            date_from: req_data.date_from,
-            date_to: req_data.date_to,
+            date_from: req_data.check_in,
+            date_to: req_data.check_out,
             currency: req_data.currency.clone(),
-            daily_rate: req_data.daily_rate,
-            number_of_persons: req_data.number_of_persons,
-            total_days: req_data.total_days,
-            sub_total_price: req_data.sub_total_price,
-            discount_value: req_data.discount_value,
-            tax_value: req_data.tax_value,
-            fee_breakdown: req_data.fee_breakdown.clone(),
-            total_price: req_data.total_price,
-            cancellation_policy: req_data.cancellation_policy,
+            daily_rate,
+            number_of_persons: (req_data.num_adults + req_data.num_children + req_data.num_infants)
+                as i32,
+            total_days,
+            sub_total_price,
+            discount_value,
+            tax_value,
+            fee_breakdown: fee_breakdown.clone(),
+            total_price,
+            cancellation_policy: policy,
+            metadata: BookingMetadata {
+                num_adults: req_data.num_adults,
+                num_children: req_data.num_children,
+                num_infants: req_data.num_infants,
+                num_pets: req_data.num_pets,
+                message_to_host: req_data.message_to_host.clone(),
+                estimated_arrival_time: req_data.estimated_arrival_time.clone(),
+                is_business_trip: req_data.is_business_trip,
+            },
         };
 
         match db_booking::create_booking(pool.get_ref(), &new_booking).await {
             Ok(booking) => {
+                tracing::info!(booking_id = %booking.id, "Successfully created booking");
                 return Ok(respond(
                     &req,
                     Payload::Item(map_booking_to_response(booking)),
@@ -120,10 +221,13 @@ async fn create_booking(
                     && constraint == "booking_pkey"
                 {
                     if attempts >= max_attempts {
+                        tracing::error!("Failed to generate unique confirmation code after {} attempts", max_attempts);
                         return Err(ApiError::Internal);
                     }
+                    tracing::warn!("Confirmation code collision, retrying (attempt {})", attempts);
                     continue;
                 }
+                tracing::error!(error = %e, "Failed to create booking in database");
                 return Err(ApiError::Database(e));
             }
         }
@@ -255,6 +359,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
         paths(
+            check_availability,
             create_booking,
             get_bookings,
             get_booking_by_id,
@@ -263,7 +368,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             api_core::health::health_check,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse)
+            schemas(NewBookingRequest, UpdatedBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse)
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -279,6 +384,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/bookings")
+            .route(
+                "/availability",
+                web::get()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(check_availability),
+            )
             .route(
                 "/",
                 web::get()

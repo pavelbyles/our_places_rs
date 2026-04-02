@@ -88,6 +88,8 @@ async fn test_get_listing_by_id_success() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -161,13 +163,15 @@ async fn test_create_listing_validation_error() {
     )
     .await;
     // Create a listing with an EMPTY name
-    let invalid_listing = NewListingRequest {
+    let invalid_listing = common::models::NewListingRequest {
         name: "".to_string(), // invalid name - should not be empty
         user_id,              // Valid user ID
         description: None,
-        listing_structure: StructureType::Apartment,
+        listing_structure: "Apartment".to_string(),
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
 
     let req = test::TestRequest::post()
@@ -196,6 +200,8 @@ async fn test_delete_listing() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -231,6 +237,8 @@ async fn test_delete_listing() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -270,6 +278,8 @@ async fn test_delete_listing_hard_forbidden() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -341,6 +351,8 @@ async fn test_update_listing_multiple_times() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -410,6 +422,8 @@ async fn test_get_listings_with_filter() {
         listing_structure_id: 1, // Apartment
         country: "France".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -422,6 +436,8 @@ async fn test_get_listings_with_filter() {
         listing_structure_id: 2, // House
         country: "UK".to_string(),
         price_per_night: Some(dec!(200.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await

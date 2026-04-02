@@ -9,11 +9,40 @@ use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 /// Creates a new booking in the database.
-#[tracing::instrument(skip(executor))]
-pub async fn create_booking<'e, E>(executor: E, new_booking: &NewBooking) -> Result<Booking>
-where
-    E: PgExecutor<'e>,
-{
+#[tracing::instrument(skip(pool))]
+pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<Booking> {
+    let mut tx = pool.begin().await?;
+
+    let _listing = sqlx::query!(
+        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+        new_booking.listing_id
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
+
+    let overlapping = sqlx::query!(
+        r#"
+        SELECT id FROM booking 
+        WHERE listing_id = $1 
+          AND status IN ('pending', 'confirmed') 
+          AND date_from < $3 
+          AND date_to > $2
+        LIMIT 1
+        "#,
+        new_booking.listing_id,
+        new_booking.date_from,
+        new_booking.date_to
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if overlapping.is_some() {
+        return Err(crate::error::DbError::ValidationError(
+            "Listing is not available for the selected dates".to_string(),
+        ));
+    }
+
     let booking = sqlx::query_as!(
         Booking,
         r#"
@@ -21,13 +50,14 @@ where
             id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, created_at, updated_at
+            total_price, cancellation_policy, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -47,11 +77,14 @@ where
         Json(&new_booking.fee_breakdown) as _,
         new_booking.total_price,
         new_booking.cancellation_policy as CancellationPolicy,
+        Json(&new_booking.metadata) as _,
         Utc::now(),
         Utc::now()
     )
-    .fetch_one(executor)
+    .fetch_one(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(booking)
 }
@@ -72,6 +105,7 @@ where
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -99,6 +133,7 @@ where
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -138,6 +173,7 @@ pub async fn update_booking(
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
@@ -188,6 +224,7 @@ where
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         FROM booking
         WHERE guest_id = $1
@@ -202,4 +239,37 @@ where
     .await?;
 
     Ok(bookings)
+}
+
+/// Checks if a listing is available for a specified date range.
+#[tracing::instrument(skip(executor))]
+pub async fn check_availability<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    date_from: chrono::NaiveDate,
+    date_to: chrono::NaiveDate,
+) -> Result<bool>
+where
+    E: PgExecutor<'e>,
+{
+    if date_from >= date_to {
+        return Ok(false);
+    }
+    
+    let overlapping = sqlx::query!(
+        r#"
+        SELECT count(*) as count FROM booking 
+        WHERE listing_id = $1 
+          AND status IN ('pending', 'confirmed') 
+          AND date_from < $3 
+          AND date_to > $2
+        "#,
+        listing_id,
+        date_from,
+        date_to
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(overlapping.count == Some(0))
 }

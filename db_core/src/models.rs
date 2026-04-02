@@ -8,6 +8,17 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BookingMetadata {
+    pub num_adults: u32,
+    pub num_children: u32,
+    pub num_infants: u32,
+    pub num_pets: u32,
+    pub message_to_host: Option<String>,
+    pub estimated_arrival_time: Option<String>,
+    pub is_business_trip: bool,
+}
+
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
@@ -114,6 +125,7 @@ pub struct Booking {
 
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
+    pub metadata: Json<BookingMetadata>,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -145,6 +157,7 @@ pub struct NewBooking {
     pub fee_breakdown: Vec<FeeItem>,
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
+    pub metadata: BookingMetadata,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -180,6 +193,8 @@ pub struct Listing {
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub primary_image_url: Option<String>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -196,6 +211,8 @@ pub struct ListingWithOwner {
     pub deleted_at: Option<DateTime<Utc>>,
     pub owner_name: Option<String>,
     pub primary_image_url: Option<String>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -216,6 +233,8 @@ pub struct NewListing {
     #[validate(length(min = 1, message = "Country cannot be empty"))]
     pub country: String,
     pub price_per_night: Option<Decimal>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -238,6 +257,9 @@ pub struct UpdatedListing {
     pub price_per_night: Option<Decimal>,
 
     pub is_active: Option<bool>,
+
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

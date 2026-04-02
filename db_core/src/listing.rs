@@ -12,10 +12,10 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, added_at)
-        SELECT $1, $2, $3, $4, $5, $6, $7, now()
+        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, weekly_discount_percentage, monthly_discount_percentage, added_at)
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now()
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage
         "#,
         Uuid::now_v7(),
         new_listing.user_id,
@@ -24,6 +24,8 @@ where
         new_listing.listing_structure_id,
         new_listing.country,
         new_listing.price_per_night,
+        new_listing.weekly_discount_percentage,
+        new_listing.monthly_discount_percentage,
     )
     .fetch_one(executor)
     .await
@@ -57,7 +59,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage,
         "user".first_name || ' ' || "user".last_name as owner_name,
         primary_img.upload_url as primary_image_url
         FROM listing
@@ -143,7 +145,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -174,7 +176,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, primary_img.upload_url as primary_image_url
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -206,7 +208,7 @@ pub async fn update_listing(
 
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url, weekly_discount_percentage, monthly_discount_percentage FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -216,8 +218,8 @@ pub async fn update_listing(
     sqlx::query!(
         r#"
         INSERT INTO listing_history
-        (listing_id, name, description, listing_structure_id, country, price_per_night, is_active, valid_from)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (listing_id, name, description, listing_structure_id, country, price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, valid_from)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
         current.id,
         current.name,
@@ -226,6 +228,8 @@ pub async fn update_listing(
         current.country,
         current.price_per_night,
         current.is_active,
+        current.weekly_discount_percentage,
+        current.monthly_discount_percentage,
         current.added_at // Using added_at as the start time of this version
     )
     .execute(&mut *tx)
@@ -243,9 +247,11 @@ pub async fn update_listing(
             listing_structure_id = COALESCE($4, listing_structure_id),
             country = COALESCE($5, country),
             price_per_night = COALESCE($6, price_per_night),
-            is_active = COALESCE($7, is_active)
+            is_active = COALESCE($7, is_active),
+            weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),
+            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage
         "#,
         id,
         updated_listing_data.name,
@@ -253,7 +259,9 @@ pub async fn update_listing(
         updated_listing_data.listing_structure_id,
         updated_listing_data.country,
         updated_listing_data.price_per_night,
-        updated_listing_data.is_active
+        updated_listing_data.is_active,
+        updated_listing_data.weekly_discount_percentage,
+        updated_listing_data.monthly_discount_percentage
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -508,6 +516,8 @@ mod tests {
             listing_structure_id: 2, // House
             country: "Testland".to_string(),
             price_per_night: Some(dec!(150.75)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
 
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -532,6 +542,8 @@ mod tests {
             listing_structure_id: 1,
             country: "Testland".to_string(),
             price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
 
         let result = create_listing(&mut *tx, &new_listing).await;
@@ -554,6 +566,8 @@ mod tests {
             listing_structure_id: 3,
             country: "Republic of Testing".to_string(),
             price_per_night: Some(dec!(99.99)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -587,6 +601,8 @@ mod tests {
                 listing_structure_id: 1,
                 country: "Testland".to_string(),
                 price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
             };
             let created = create_listing(&mut *tx, &listing).await.unwrap();
             created_ids.push(created.id);
@@ -644,6 +660,8 @@ mod tests {
                 listing_structure_id: 1,
                 country: "Testland".to_string(),
                 price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
             };
             create_listing(&mut *tx, &listing).await.unwrap();
         }
@@ -691,6 +709,8 @@ mod tests {
             listing_structure_id: 1, // Apartment
             country: "Jamaica".to_string(),
             price_per_night: Some(dec!(50.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
         create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -702,6 +722,8 @@ mod tests {
             listing_structure_id: 5, // Villa
             country: "Jamaica".to_string(),
             price_per_night: Some(dec!(500.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
         create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -713,6 +735,8 @@ mod tests {
             listing_structure_id: 1, // Apartment
             country: "USA".to_string(),
             price_per_night: Some(dec!(60.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
         create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -786,6 +810,8 @@ mod tests {
             listing_structure_id: 1,
             country: "Testland".to_string(),
             price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
         let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 

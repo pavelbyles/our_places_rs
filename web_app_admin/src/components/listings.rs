@@ -14,6 +14,8 @@ pub struct CreateListingParams {
     pub listing_structure: String,
     pub country: String,
     pub price_per_night: Option<f64>,
+    pub weekly_discount_percentage: Option<f64>,
+    pub monthly_discount_percentage: Option<f64>,
 }
 
 #[server]
@@ -22,14 +24,17 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
     let user_id = Uuid::parse_str(&params.user_id)
         .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
 
-    let request = serde_json::json!({
-        "name": params.name,
-        "user_id": user_id,
-        "description": params.description,
-        "listing_structure": params.listing_structure,
-        "country": params.country,
-        "price_per_night": params.price_per_night,
-    });
+    use rust_decimal::prelude::FromPrimitive;
+    let request = common::models::NewListingRequest {
+        name: params.name,
+        user_id,
+        description: params.description,
+        listing_structure: params.listing_structure,
+        country: params.country,
+        price_per_night: params.price_per_night.and_then(rust_decimal::Decimal::from_f64),
+        weekly_discount_percentage: params.weekly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
+        monthly_discount_percentage: params.monthly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
+    };
 
     let api_url = crate::api_client::listing_api_url();
     let res = crate::api_client::get_client()
@@ -597,6 +602,18 @@ pub fn ListingsPage() -> impl IntoView {
                                 <span class="label-text">Price Per Night ($)</span>
                             </label>
                             <input type="number" step="0.01" min="0" name="params[price_per_night]" placeholder="0.00" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Weekly Discount (%)</span>
+                            </label>
+                            <input type="number" step="0.1" min="0" max="100" name="params[weekly_discount_percentage]" placeholder="0.0" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Monthly Discount (%)</span>
+                            </label>
+                            <input type="number" step="0.1" min="0" max="100" name="params[monthly_discount_percentage]" placeholder="0.0" class="input input-bordered w-full max-w-xs" />
                         </div>
                         <div>
                             <label class="label">

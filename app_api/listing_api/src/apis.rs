@@ -12,40 +12,13 @@ use db_core::models::{NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::str::FromStr;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct NewListingRequest {
-    #[schema(value_type = String, example = "Zen Loft")]
-    #[validate(length(min = 1, message = "Name cannot be empty"))]
-    pub name: String,
 
-    #[schema(value_type = String, format = "uuid")]
-    pub user_id: Uuid,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "A zen place to be")]
-    #[validate(length(
-        max = 2000,
-        message = "Description cannot be longer than 2000 characters"
-    ))]
-    pub description: Option<String>,
-
-    #[schema(value_type = String, example = "Apartment")]
-    pub listing_structure: StructureType,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "Jamaica")]
-    #[validate(length(min = 1, message = "Country cannot be empty"))]
-    pub country: String,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "150.00")]
-    pub price_per_night: Option<Decimal>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdatedListingRequest {
@@ -178,7 +151,7 @@ async fn get_listing_by_id(
     post,
     path = "/api/v1/listings",
     tag = "listings",
-    request_body = NewListingRequest,
+    request_body = common::models::NewListingRequest,
     responses(
         (status = 201, description = "Listing created", body = ListingResponse),
         (status = 400, description = "Validation error"),
@@ -188,13 +161,22 @@ async fn get_listing_by_id(
 async fn create_listing(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    new_listing: web::Json<NewListingRequest>,
+    new_listing: web::Json<common::models::NewListingRequest>,
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
     let req_data = new_listing.into_inner();
     req_data.validate()?;
 
-    let structure_id = req_data.listing_structure.id();
+    let structure_type = StructureType::from_str(&req_data.listing_structure).map_err(|_| {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "listing_structure",
+            validator::ValidationError::new("invalid_structure_type").with_message("Invalid structure type provided.".into()),
+        );
+        ApiError::ValidationError(errors)
+    })?;
+
+    let structure_id = structure_type.id();
 
     let mut attempts = 0;
     let max_attempts = settings.application.max_attempts;
@@ -208,6 +190,8 @@ async fn create_listing(
             listing_structure_id: structure_id,
             country: req_data.country.clone(),
             price_per_night: req_data.price_per_night,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -284,6 +268,8 @@ async fn update_listing(
         country: req_data.country,
         price_per_night: req_data.price_per_night,
         is_active: req_data.is_active,
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
     };
 
     let updated_listing =
@@ -443,7 +429,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
         components(
             schemas(
-                NewListingRequest, 
+                common::models::NewListingRequest,  
                 UpdatedListingRequest, 
                 ListingResponse, 
                 pagination::Pagination, 
