@@ -65,7 +65,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
     // Server-side logging
     tracing::info!("LISTING_API_URL: {}", listing_api_url);
 
-    let url = format!("{}/api/v1/listings/?page=1&per_page=10", listing_api_url);
+    let url = format!("{}/api/v1/listings?page=1&per_page=10", listing_api_url);
     let request_id = Uuid::new_v4();
 
     tracing::info!(

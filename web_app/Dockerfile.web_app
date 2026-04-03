@@ -1,3 +1,5 @@
+ARG RELEASE_FLAG=--release
+
 FROM rustlang/rust:nightly-bookworm AS builder
 
 # Install Node.js and npm (for Tailwind/DaisyUI)
@@ -37,7 +39,8 @@ RUN npm install \
 # Build the application
 # We go back to root or stay here,# Using --project web_app from root, or running inside web_app
 WORKDIR /app/web_app
-RUN cargo leptos build --release
+ARG RELEASE_FLAG
+RUN cargo leptos build ${RELEASE_FLAG}
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
