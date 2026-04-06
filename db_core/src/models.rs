@@ -196,6 +196,17 @@ pub struct Listing {
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,
     pub slug: String,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub beds: i32,
+    pub full_bathrooms: i32,
+    pub half_bathrooms: i32,
+    pub square_meters: Option<i32>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub overall_rating: Option<f64>,
+    pub review_count: i32,
+    pub listing_details: Json<serde_json::Value>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -236,6 +247,15 @@ pub struct NewListing {
     pub price_per_night: Option<Decimal>,
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub beds: i32,
+    pub full_bathrooms: i32,
+    pub half_bathrooms: i32,
+    pub square_meters: Option<i32>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub listing_details: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -261,6 +281,15 @@ pub struct UpdatedListing {
 
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,
+    pub max_guests: Option<i32>,
+    pub bedrooms: Option<i32>,
+    pub beds: Option<i32>,
+    pub full_bathrooms: Option<i32>,
+    pub half_bathrooms: Option<i32>,
+    pub square_meters: Option<i32>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub listing_details: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

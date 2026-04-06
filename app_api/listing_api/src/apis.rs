@@ -47,6 +47,45 @@ pub struct UpdatedListingRequest {
 
     #[serde(default)]
     pub is_active: Option<bool>,
+
+    #[serde(default)]
+    pub weekly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    pub monthly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
+    pub max_guests: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
+    pub bedrooms: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Beds cannot be negative"))]
+    pub beds: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
+    pub full_bathrooms: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
+    pub half_bathrooms: Option<i32>,
+
+    #[serde(default)]
+    pub square_meters: Option<i32>,
+
+    #[serde(default)]
+    pub latitude: Option<f64>,
+
+    #[serde(default)]
+    pub longitude: Option<f64>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub listing_details: Option<serde_json::Value>,
 }
 
 /// Gives first 10 listings if no page or per_page is provided
@@ -190,8 +229,17 @@ async fn create_listing(
             listing_structure_id: structure_id,
             country: req_data.country.clone(),
             price_per_night: req_data.price_per_night,
-            weekly_discount_percentage: None,
-            monthly_discount_percentage: None,
+            weekly_discount_percentage: req_data.weekly_discount_percentage,
+            monthly_discount_percentage: req_data.monthly_discount_percentage,
+            max_guests: req_data.max_guests,
+            bedrooms: req_data.bedrooms,
+            beds: req_data.beds,
+            full_bathrooms: req_data.full_bathrooms,
+            half_bathrooms: req_data.half_bathrooms,
+            square_meters: req_data.square_meters,
+            latitude: req_data.latitude,
+            longitude: req_data.longitude,
+            listing_details: req_data.listing_details.clone(),
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -268,8 +316,17 @@ async fn update_listing(
         country: req_data.country,
         price_per_night: req_data.price_per_night,
         is_active: req_data.is_active,
-        weekly_discount_percentage: None,
-        monthly_discount_percentage: None,
+        weekly_discount_percentage: req_data.weekly_discount_percentage,
+        monthly_discount_percentage: req_data.monthly_discount_percentage,
+        max_guests: req_data.max_guests,
+        bedrooms: req_data.bedrooms,
+        beds: req_data.beds,
+        full_bathrooms: req_data.full_bathrooms,
+        half_bathrooms: req_data.half_bathrooms,
+        square_meters: req_data.square_meters,
+        latitude: req_data.latitude,
+        longitude: req_data.longitude,
+        listing_details: req_data.listing_details,
     };
 
     let updated_listing =

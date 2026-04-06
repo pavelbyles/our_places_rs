@@ -194,5 +194,44 @@ pub struct NewListingRequest {
 
     #[serde(default)]
     pub monthly_discount_percentage: Option<Decimal>,
-}
 
+    // --- NEW: Capacity & Room Breakdown ---
+    #[schema(example = 2)]
+    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
+    pub max_guests: i32,
+
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
+    pub bedrooms: i32,
+
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Beds cannot be negative"))]
+    pub beds: i32,
+
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
+    pub full_bathrooms: i32,
+
+    #[serde(default)]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
+    pub half_bathrooms: i32,
+
+    // --- NEW: Dimensions & Location ---
+    #[serde(default)]
+    #[schema(example = 65)]
+    pub square_meters: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 18.2206)]
+    pub latitude: Option<f64>,
+
+    #[serde(default)]
+    #[schema(example = -77.7990)]
+    pub longitude: Option<f64>,
+
+    // --- NEW: Dynamic Property Definitions (JSONB) ---
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub listing_details: Option<serde_json::Value>,
+}

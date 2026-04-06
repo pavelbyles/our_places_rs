@@ -40,21 +40,43 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, weekly_discount_percentage, monthly_discount_percentage, added_at, slug)
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10
+        INSERT INTO listing (
+            id, user_id, name, description, listing_structure_id, country, price_per_night, 
+            weekly_discount_percentage, monthly_discount_percentage, added_at, slug, 
+            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
+            latitude, longitude, listing_details, overall_rating, review_count
+        )
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug
+        RETURNING 
+            id, user_id, name, description, listing_structure_id, country, price_per_night, 
+            is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, 
+            weekly_discount_percentage, monthly_discount_percentage, slug, 
+            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
+            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details
         "#,
-        Uuid::now_v7(),
-        new_listing.user_id,
-        new_listing.name,
-        new_listing.description,
-        new_listing.listing_structure_id,
-        new_listing.country,
-        new_listing.price_per_night,
-        new_listing.weekly_discount_percentage,
-        new_listing.monthly_discount_percentage,
-        generate_listing_slug_native(&new_listing.name),
+        Uuid::now_v7(),                                  // $1
+        new_listing.user_id,                             // $2
+        new_listing.name,                                // $3
+        new_listing.description,                         // $4
+        new_listing.listing_structure_id,                // $5
+        new_listing.country,                             // $6
+        new_listing.price_per_night,                     // $7
+        new_listing.weekly_discount_percentage,          // $8
+        new_listing.monthly_discount_percentage,         // $9
+        chrono::Utc::now(),                              // $10 (Explicitly mapped added_at!)
+        generate_listing_slug_native(&new_listing.name), // $11
+        new_listing.max_guests,                          // $12
+        new_listing.bedrooms,                            // $13
+        new_listing.beds,                                // $14
+        new_listing.full_bathrooms,                      // $15
+        new_listing.half_bathrooms,                      // $16
+        new_listing.square_meters,                       // $17
+        new_listing.latitude,                            // $18
+        new_listing.longitude,                           // $19
+        new_listing.listing_details,                     // $20
+        rust_decimal::Decimal::ZERO,                     // $21
+        0i32,
     )
     .fetch_one(executor)
     .await
@@ -179,7 +201,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -210,7 +232,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -240,31 +262,32 @@ pub async fn update_listing(
 ) -> Result<Listing> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(
+    let _current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
     .await?;
 
-    // 2. Archive current state to history
+    // 2. Archive current state to history via direct table copy to ensure 100% data fidelity
     sqlx::query!(
         r#"
-        INSERT INTO listing_history
-        (listing_id, name, description, listing_structure_id, country, price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, valid_from)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO listing_history (
+            listing_id, user_id, name, description, listing_structure_id, country, 
+            price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
+            slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
+            latitude, longitude, overall_rating, review_count, listing_details, valid_from
+        )
+        SELECT 
+            id, user_id, name, description, listing_structure_id, country, 
+            price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
+            slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
+            latitude, longitude, overall_rating, review_count, listing_details, added_at
+        FROM listing 
+        WHERE id = $1
         "#,
-        current.id,
-        current.name,
-        current.description,
-        current.listing_structure_id,
-        current.country,
-        current.price_per_night,
-        current.is_active,
-        current.weekly_discount_percentage,
-        current.monthly_discount_percentage,
-        current.added_at // Using added_at as the start time of this version
+        id
     )
     .execute(&mut *tx)
     .await?;
@@ -283,9 +306,18 @@ pub async fn update_listing(
             price_per_night = COALESCE($6, price_per_night),
             is_active = COALESCE($7, is_active),
             weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),
-            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage)
+            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage),
+            max_guests = COALESCE($10, max_guests),
+            bedrooms = COALESCE($11, bedrooms),
+            beds = COALESCE($12, beds),
+            full_bathrooms = COALESCE($13, full_bathrooms),
+            half_bathrooms = COALESCE($14, half_bathrooms),
+            square_meters = COALESCE($15, square_meters),
+            latitude = COALESCE($16, latitude),
+            longitude = COALESCE($17, longitude),
+            listing_details = COALESCE($18, listing_details)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details
         "#,
         id,
         updated_listing_data.name,
@@ -295,7 +327,16 @@ pub async fn update_listing(
         updated_listing_data.price_per_night,
         updated_listing_data.is_active,
         updated_listing_data.weekly_discount_percentage,
-        updated_listing_data.monthly_discount_percentage
+        updated_listing_data.monthly_discount_percentage,
+        updated_listing_data.max_guests,
+        updated_listing_data.bedrooms,
+        updated_listing_data.beds,
+        updated_listing_data.full_bathrooms,
+        updated_listing_data.half_bathrooms,
+        updated_listing_data.square_meters,
+        updated_listing_data.latitude,
+        updated_listing_data.longitude,
+        updated_listing_data.listing_details
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -556,6 +597,15 @@ mod tests {
             price_per_night: Some(dec!(150.75)),
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: Some(100),
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
 
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -568,8 +618,6 @@ mod tests {
     #[tokio::test]
     async fn test_create_listing_fails_without_host_profile() {
         let mut conn = setup_test_db().await;
-        // let mut tx = conn.begin().await.expect("Failed to begin transaction");
-        // Use transaction? yes.
         let mut tx = conn.begin().await.expect("Failed to begin transaction");
 
         let user_id = create_test_user_no_profile(&mut *tx).await;
@@ -582,6 +630,15 @@ mod tests {
             price_per_night: None,
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
 
         let result = create_listing(&mut *tx, &new_listing).await;
@@ -606,6 +663,15 @@ mod tests {
             price_per_night: Some(dec!(99.99)),
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -641,6 +707,15 @@ mod tests {
                 price_per_night: None,
                 weekly_discount_percentage: None,
                 monthly_discount_percentage: None,
+                max_guests: 2,
+                bedrooms: 1,
+                beds: 1,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
             };
             let created = create_listing(&mut *tx, &listing).await.unwrap();
             created_ids.push(created.id);
@@ -700,6 +775,15 @@ mod tests {
                 price_per_night: None,
                 weekly_discount_percentage: None,
                 monthly_discount_percentage: None,
+                max_guests: 2,
+                bedrooms: 1,
+                beds: 1,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
             };
             create_listing(&mut *tx, &listing).await.unwrap();
         }
@@ -749,6 +833,15 @@ mod tests {
             price_per_night: Some(dec!(50.00)),
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
         create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -762,6 +855,15 @@ mod tests {
             price_per_night: Some(dec!(500.00)),
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 6,
+            bedrooms: 3,
+            beds: 3,
+            full_bathrooms: 3,
+            half_bathrooms: 1,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
         create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -775,6 +877,15 @@ mod tests {
             price_per_night: Some(dec!(60.00)),
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
         create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -850,6 +961,15 @@ mod tests {
             price_per_night: None,
             weekly_discount_percentage: None,
             monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
         };
         let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 
