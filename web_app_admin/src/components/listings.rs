@@ -5,6 +5,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use web_app_common::listings::{ListingSearchServer};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateListingParams {
@@ -87,6 +88,7 @@ pub async fn presign_images_server(
     }
 }
 
+/*
 #[server]
 pub async fn listing_search_server(
     name: Option<String>,
@@ -139,7 +141,7 @@ pub async fn listing_search_server(
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(listings)
-}
+} */
 
 #[component]
 pub fn ListingsPage() -> impl IntoView {

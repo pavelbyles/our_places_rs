@@ -1,11 +1,14 @@
 use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use leptos_router::{
-    components::{Route, Router, Routes},
-    StaticSegment, WildcardSegment,
+    components::{Outlet, ParentRoute, Route, Router, Routes},
+    path,
 };
 
-use crate::components::{about::AboutPage, home::HomePage, layout::Layout, not_found::NotFound};
+use crate::components::{
+    about::AboutPage, home::HomePage, layout::Layout, layout_no_search::LayoutNoSearch,
+    listings::ListingsPage, not_found::NotFound,
+};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -23,16 +26,17 @@ pub fn App() -> impl IntoView {
 
         // content for this welcome page
         <Router>
-            <Layout>
-                <main>
-                    <Routes fallback=move || "Not found.">
-                        <Route path=StaticSegment("") view=HomePage/>
-                        <Route path=StaticSegment("/home") view=HomePage/>
-                        <Route path=StaticSegment("/about") view=AboutPage/>
-                        <Route path=WildcardSegment("any") view=NotFound/>
-                    </Routes>
-                </main>
-            </Layout>
+            <Routes fallback=move || "Not found.">
+                <ParentRoute path=path!("") view=move || view! { <Layout><Outlet/></Layout> }>
+                    <Route path=path!("") view=HomePage/>
+                    <Route path=path!("home") view=HomePage/>
+                    <Route path=path!("about") view=AboutPage/>
+                </ParentRoute>
+                <ParentRoute path=path!("listings") view=move || view! { <LayoutNoSearch><Outlet/></LayoutNoSearch> }>
+                    <Route path=path!("") view=ListingsPage/>
+                </ParentRoute>
+                <Route path=path!("*any") view=NotFound/>
+            </Routes>
         </Router>
     }
 }

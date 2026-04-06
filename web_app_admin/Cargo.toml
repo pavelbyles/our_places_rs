@@ -45,6 +45,7 @@ web-sys = { version = "0.3.88", features = [
 wasm-bindgen-futures = "0.4.61"
 js-sys = "0.3.88"
 futures = "0.3.32"
+web_app_common = { path = "../web_app_common" }
 
 [features]
 csr = ["leptos/csr"]

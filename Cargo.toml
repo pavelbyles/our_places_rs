@@ -10,6 +10,7 @@ members = [
     "protoproj",
     "web_app",
     "web_app_admin",
+    "web_app_common",
 ]
 resolver = "2"
 
@@ -54,7 +55,7 @@ features = [
 default-features = false
 
 [workspace.dependencies.tokio]
-version = "1.50.0"
+version = "1.51.0"
 
 [workspace.dependencies.utoipa]
 version = "5.4.0"

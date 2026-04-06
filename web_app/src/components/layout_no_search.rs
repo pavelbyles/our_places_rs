@@ -2,9 +2,8 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 
 #[component]
-pub fn Layout(children: Children) -> impl IntoView {
+pub fn LayoutNoSearch(children: Children) -> impl IntoView {
     view! {
-        <main>
         <div class="drawer">
             <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
             <div class="drawer-content flex flex-col min-h-screen">
@@ -29,9 +28,6 @@ pub fn Layout(children: Children) -> impl IntoView {
                     </div>
                     <div class="mx-2 flex-1 px-2">
                         <a class="btn btn-ghost text-xl">Our Places</a>
-                    </div>
-                    <div>
-                        <input type="text" placeholder="Search" class="input input-bordered w-24 md:w-auto" />
                     </div>
                     <div class="hidden flex-none lg:block">
                         <ul class="menu menu-horizontal">
@@ -138,6 +134,5 @@ pub fn Layout(children: Children) -> impl IntoView {
                 </ul>
             </div>
         </div>
-        </main>
     }
 }

@@ -55,8 +55,8 @@ pub async fn update_count(count: i32) -> Result<i32, ServerFnError> {
 #[server]
 #[tracing::instrument]
 pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
-    use crate::api_client::get_client;
     use uuid::Uuid;
+    use web_app_common::api_client::get_client;
 
     let listing_api_url =
         std::env::var("LISTING_API_URL").unwrap_or("http://localhost:8082".to_string());

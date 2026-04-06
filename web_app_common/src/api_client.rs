@@ -15,21 +15,21 @@ pub fn get_client() -> &'static AuthenticatedClient {
 }
 
 // Env vars for API URLs
-fn listing_api_url() -> String {
+pub fn listing_api_url() -> String {
     env::var("LISTING_API_URL")
-        .unwrap_or_else(|_| "http://localhost:8081".to_string())
-        .trim_end_matches('/')
-        .to_string()
-}
-
-fn booking_api_url() -> String {
-    env::var("BOOKING_API_URL")
         .unwrap_or_else(|_| "http://localhost:8082".to_string())
         .trim_end_matches('/')
         .to_string()
 }
 
-fn user_api_url() -> String {
+pub fn booking_api_url() -> String {
+    env::var("BOOKING_API_URL")
+        .unwrap_or_else(|_| "http://localhost:8081".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+pub fn user_api_url() -> String {
     env::var("USER_API_URL")
         .unwrap_or_else(|_| "http://localhost:8083".to_string())
         .trim_end_matches('/')

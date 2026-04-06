@@ -24,6 +24,9 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 serde_json = "1.0.149"
 anyhow.workspace = true
 serde.workspace = true
+web_app_common = { path = "../web_app_common" }
+num-format = "0.4.4"
+rust_decimal.workspace = true
 
 [features]
 csr = ["leptos/csr"]
