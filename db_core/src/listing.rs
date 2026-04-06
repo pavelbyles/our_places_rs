@@ -3,6 +3,34 @@ use crate::models::{Listing, ListingWithOwner, NewListing, UpdatedListing};
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
+pub fn generate_listing_slug_native(title: &str) -> String {
+    const MAX_SLUG_LEN: usize = 60;
+    let mut slug = String::with_capacity(MAX_SLUG_LEN);
+    let mut last_was_hyphen = false;
+
+    for c in title.to_lowercase().chars() {
+        if slug.len() >= MAX_SLUG_LEN {
+            break;
+        }
+
+        if c.is_ascii_alphanumeric() {
+            slug.push(c);
+            last_was_hyphen = false;
+        } else if !last_was_hyphen && !slug.is_empty() {
+            slug.push('-');
+            last_was_hyphen = true;
+        }
+    }
+
+    let trimmed = slug.trim_end_matches('-');
+
+    if Uuid::parse_str(trimmed).is_ok() {
+        format!("v-{}", trimmed)
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Creates a new listing in the database.
 #[tracing::instrument(skip(executor))]
 pub async fn create_listing<'e, E>(executor: E, new_listing: &NewListing) -> Result<Listing>
@@ -12,10 +40,10 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, weekly_discount_percentage, monthly_discount_percentage, added_at)
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now()
+        INSERT INTO listing (id, user_id, name, description, listing_structure_id, country, price_per_night, weekly_discount_percentage, monthly_discount_percentage, added_at, slug)
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug
         "#,
         Uuid::now_v7(),
         new_listing.user_id,
@@ -26,6 +54,7 @@ where
         new_listing.price_per_night,
         new_listing.weekly_discount_percentage,
         new_listing.monthly_discount_percentage,
+        generate_listing_slug_native(&new_listing.name),
     )
     .fetch_one(executor)
     .await
@@ -54,8 +83,13 @@ where
     let limit = per_page as i64;
     let offset = ((page.max(1) - 1) * per_page) as i64;
 
-    let resolution_str = filter.as_ref().and_then(|f| f.resolution.clone()).unwrap_or_else(|| "Thumbnail400w".to_string());
-    let parsed_res = resolution_str.parse::<crate::models::ImageResolution>().unwrap_or(crate::models::ImageResolution::Thumbnail400w);
+    let resolution_str = filter
+        .as_ref()
+        .and_then(|f| f.resolution.clone())
+        .unwrap_or_else(|| "Thumbnail400w".to_string());
+    let parsed_res = resolution_str
+        .parse::<crate::models::ImageResolution>()
+        .unwrap_or(crate::models::ImageResolution::Thumbnail400w);
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
@@ -78,7 +112,7 @@ where
             LIMIT 1
         ) AS primary_img ON true
         WHERE listing.deleted_at IS NULL
-        "#
+        "#,
     );
 
     if let Some(f) = filter {
@@ -145,7 +179,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -176,7 +210,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -208,7 +242,7 @@ pub async fn update_listing(
 
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url, weekly_discount_percentage, monthly_discount_percentage FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, NULL::text as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -251,7 +285,7 @@ pub async fn update_listing(
             weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),
             monthly_discount_percentage = COALESCE($9, monthly_discount_percentage)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug
         "#,
         id,
         updated_listing_data.name,
@@ -310,13 +344,17 @@ where
     let mut conn = executor.acquire().await?;
 
     let max_order: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(display_order), -1)::integer FROM listing_image WHERE listing_id = $1"
+        "SELECT COALESCE(MAX(display_order), -1)::integer FROM listing_image WHERE listing_id = $1",
     )
     .bind(listing_id)
     .fetch_one(&mut *conn)
     .await?;
 
-    let min_batch_order = images.iter().map(|(_, img, _)| img.display_order).min().unwrap_or(0);
+    let min_batch_order = images
+        .iter()
+        .map(|(_, img, _)| img.display_order)
+        .min()
+        .unwrap_or(0);
     let mut primary_assigned = max_order > -1;
 
     let mut query_builder = sqlx::QueryBuilder::new(
@@ -601,8 +639,8 @@ mod tests {
                 listing_structure_id: 1,
                 country: "Testland".to_string(),
                 price_per_night: None,
-            weekly_discount_percentage: None,
-            monthly_discount_percentage: None,
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
             };
             let created = create_listing(&mut *tx, &listing).await.unwrap();
             created_ids.push(created.id);
@@ -660,8 +698,8 @@ mod tests {
                 listing_structure_id: 1,
                 country: "Testland".to_string(),
                 price_per_night: None,
-            weekly_discount_percentage: None,
-            monthly_discount_percentage: None,
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
             };
             create_listing(&mut *tx, &listing).await.unwrap();
         }
@@ -828,12 +866,9 @@ mod tests {
 
         let image_id = presigns[0].id;
 
-        let result = update_listing_image_to_processing(
-            &mut *tx,
-            image_id,
-            2048,
-            "image/webp".to_string(),
-        ).await;
+        let result =
+            update_listing_image_to_processing(&mut *tx, image_id, 2048, "image/webp".to_string())
+                .await;
 
         match result {
             Ok(_) => println!("Successfully updated image"),

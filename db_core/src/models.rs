@@ -195,6 +195,7 @@ pub struct Listing {
     pub primary_image_url: Option<String>,
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,
+    pub slug: String,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]

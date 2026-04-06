@@ -7,7 +7,7 @@ use leptos_router::{
 
 use crate::components::{
     about::AboutPage, home::HomePage, layout::Layout, layout_no_search::LayoutNoSearch,
-    listings::ListingsPage, not_found::NotFound,
+    listing_detail::ListingDetailPage, listings::ListingsPage, not_found::NotFound,
 };
 
 #[component]
@@ -34,6 +34,7 @@ pub fn App() -> impl IntoView {
                 </ParentRoute>
                 <ParentRoute path=path!("listings") view=move || view! { <LayoutNoSearch><Outlet/></LayoutNoSearch> }>
                     <Route path=path!("") view=ListingsPage/>
+                    <Route path=path!(":id") view=ListingDetailPage/>
                 </ParentRoute>
                 <Route path=path!("*any") view=NotFound/>
             </Routes>

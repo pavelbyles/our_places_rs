@@ -6,6 +6,7 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use web_app_common::listings::{ListingSearchServer};
+use uuid::Uuid;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateListingParams {
@@ -87,61 +88,6 @@ pub async fn presign_images_server(
         )))
     }
 }
-
-/*
-#[server]
-pub async fn listing_search_server(
-    name: Option<String>,
-    owner_email: Option<String>,
-    listing_structure: Option<Vec<String>>,
-    max_price: Option<f64>,
-) -> Result<Vec<common::models::ListingResponse>, ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let mut url = format!("{}/api/v1/listings?page=1&per_page=20", api_url);
-
-    if let Some(s) = name {
-        if !s.is_empty() {
-            url.push_str(&format!("&name={}", s));
-        }
-    }
-
-    if let Some(s) = owner_email {
-        if !s.is_empty() {
-            url.push_str(&format!("&owner={}", s));
-        }
-    }
-
-    if let Some(structures) = listing_structure {
-        if !structures.is_empty() {
-            let joined = structures.join(",");
-            url.push_str(&format!("&structure_type={}", joined));
-        }
-    }
-
-    if let Some(s) = max_price {
-        if s > 0.0 {
-            url.push_str(&format!("&max_price={}", s));
-        }
-    }
-
-    let res = crate::api_client::get_client()
-        .get(&url, &api_url)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "Failed to fetch listings: {}",
-            res.status()
-        )));
-    }
-
-    let listings: Vec<common::models::ListingResponse> = res
-        .json()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(listings)
-} */
 
 #[component]
 pub fn ListingsPage() -> impl IntoView {
