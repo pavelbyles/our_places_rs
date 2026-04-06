@@ -1,0 +1,24 @@
+# ./.tmuxinator.yml
+
+name: ourplaces
+root: ~/code/our_places_rs
+
+windows:
+  - development:
+      layout: "b369,180x45,0,0{148x45,0,0[148x13,0,0,1,148x8,0,14,2,148x11,0,23,3,148x10,0,35,4],31x45,149,0,5}"
+      panes:
+        - commands:
+          - l
+        - commands:
+          - docker compose up -d db 
+          - cd app_api/listing_api
+          - EA__SERVER__PORT=8082 EA__DATABASE__HOST=localhost GCS_RAW_BUCKET=our-places-gcs-img-raw GOOGLE_APPLICATION_CREDENTIALS=/home/pav/Downloads/our-places-dev-sa-listing-api.json cargo run                                                       # Pane 1 - Listing API
+        - commands:
+          - cd app_api/booking_api
+          - EA__SERVER__PORT=8081 EA__DATABASE__HOST=localhost cargo run    # Pane 2
+        - commands:
+          - cd app_api/user_api
+          - EA__SERVER__PORT=8083 EA__DATABASE__HOST=localhost cargo run    # Pane 3
+        - commands:
+          - cd web_app && npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch   # right pane
+
