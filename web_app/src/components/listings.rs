@@ -1,27 +1,8 @@
 use leptos::prelude::*;
 use num_format::{Locale, ToFormattedString};
-use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use web_app_common::components::villa_card::VillaCard;
 use web_app_common::listings::listing_search_server;
-
-fn format_decimal(value: Decimal) -> String {
-    // Split into integer and fractional parts
-    let int_part = value.trunc(); // e.g. 1234567
-    let frac_part = value.fract(); // e.g. 0.89
-
-    // Format the integer part with thousands separators
-    let int_i64 = int_part.mantissa() / 10_i128.pow(int_part.scale());
-    let formatted_int = (int_i64 as i64).to_formatted_string(&Locale::en);
-
-    // Format the fractional part (strip leading "0.")
-    if frac_part.is_zero() {
-        formatted_int
-    } else {
-        let frac_str = format!("{:.2}", frac_part); // "0.89"
-        let frac_digits = &frac_str[1..]; // ".89"
-        format!("{}{}", formatted_int, frac_digits) // "1,234,567.89"
-    }
-}
 
 #[component]
 #[allow(non_snake_case)]
@@ -61,7 +42,7 @@ pub fn ListingsPage() -> impl IntoView {
                     {move || listings.get().map(|res| match res {
                         Ok(data) => {
                             if data.is_empty() {
-                                view! { <div class="col-span-full text-center opacity-50 text-xl py-10">"No listings found in the database."</div> }.into_any()
+                                view! { <div class="col-span-full text-center opacity-50 text-xl py-10">"No listings found"</div> }.into_any()
                             } else {
                                 view! {
                                     <For
@@ -74,7 +55,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                     description=listing.description.clone().unwrap_or_else(|| "(No description)".to_string())
                                                     image_url=listing.primary_image_url.clone().unwrap_or_else(|| "https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80".to_string())
                                                     price=listing.price_per_night
-                                                        .map(|p| format_decimal(p))
+                                                        .map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en))
                                                         .unwrap_or_else(|| "0.00".to_string())
                                                 />
                                             }
