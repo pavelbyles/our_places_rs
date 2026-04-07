@@ -37,6 +37,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                         <ul class="menu menu-horizontal">
                             // Navbar menu content here
                             <li><A href="/home">"Home"</A></li>
+                            <li><A href="/listings">"Listings"</A></li>
                             <li><A href="/about">"About"</A></li>
                         </ul>
                     </div>
@@ -134,6 +135,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                 <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
                 <ul class="menu bg-base-200 min-h-full w-80 p-4">
                     <li><A href="/home">"Home"</A></li>
+                    <li><A href="/listings">"Listings"</A></li>
                     <li><A href="/about">"About"</A></li>
                 </ul>
             </div>

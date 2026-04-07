@@ -58,6 +58,13 @@ pub fn map_listing_to_response(
         added_at: listing.added_at,
         owner_name: None,
         primary_image_url: listing.primary_image_url,
+        max_guests: listing.max_guests,
+        bedrooms: listing.bedrooms,
+        full_bathrooms: listing.full_bathrooms,
+        latitude: listing.latitude,
+        longitude: listing.longitude,
+        overall_rating: listing.overall_rating,
+        city: listing.city,
     }
 }
 
@@ -85,6 +92,13 @@ pub fn map_listing_with_owner_to_response(
         added_at: listing.added_at,
         owner_name: listing.owner_name,
         primary_image_url: listing.primary_image_url,
+        max_guests: listing.max_guests,
+        bedrooms: listing.bedrooms,
+        full_bathrooms: listing.full_bathrooms,
+        latitude: listing.latitude,
+        longitude: listing.longitude,
+        overall_rating: listing.overall_rating,
+        city: listing.city,
     }
 }
 

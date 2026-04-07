@@ -33,6 +33,7 @@ pub fn LayoutNoSearch(children: Children) -> impl IntoView {
                         <ul class="menu menu-horizontal">
                             // Navbar menu content here
                             <li><A href="/home">"Home"</A></li>
+                            <li><A href="/listings">"Listings"</A></li>
                             <li><A href="/about">"About"</A></li>
                         </ul>
                     </div>

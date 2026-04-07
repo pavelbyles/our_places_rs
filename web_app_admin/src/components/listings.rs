@@ -36,6 +36,9 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         price_per_night: params.price_per_night.and_then(rust_decimal::Decimal::from_f64),
         weekly_discount_percentage: params.weekly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
         monthly_discount_percentage: params.monthly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
+        latitude: params.latitude,
+        longitude: params.longitude,
+        city: common::geocode::reverse_geocode(params.latitude, params.longitude).await.unwrap_or(None),
     };
 
     let api_url = crate::api_client::listing_api_url();
@@ -562,6 +565,18 @@ pub fn ListingsPage() -> impl IntoView {
                                 <span class="label-text">Monthly Discount (%)</span>
                             </label>
                             <input type="number" step="0.1" min="0" max="100" name="params[monthly_discount_percentage]" placeholder="0.0" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Latitude</span>
+                            </label>
+                            <input type="number" step="0.000001" min="-90" max="90" name="params[latitude]" placeholder="0.000000" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Longitude</span>
+                            </label>
+                            <input type="number" step="0.000001" min="-180" max="180" name="params[longitude]" placeholder="0.000000" class="input input-bordered w-full max-w-xs" />
                         </div>
                         <div>
                             <label class="label">

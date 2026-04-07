@@ -99,6 +99,7 @@ async fn test_get_listing_by_id_success() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -191,6 +192,7 @@ async fn test_create_listing_validation_error() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
 
     let req = test::TestRequest::post()
@@ -230,6 +232,7 @@ async fn test_delete_listing() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -276,6 +279,7 @@ async fn test_delete_listing() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -326,6 +330,7 @@ async fn test_delete_listing_hard_forbidden() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -372,6 +377,13 @@ async fn test_xml_serialization_of_vec() {
         added_at: Utc::now(),
         owner_name: None,
         primary_image_url: None,
+        max_guests: 2,
+        bedrooms: 1,
+        full_bathrooms: 1,
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        city: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -408,6 +420,7 @@ async fn test_update_listing_multiple_times() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -441,6 +454,7 @@ async fn test_update_listing_multiple_times() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -471,6 +485,7 @@ async fn test_update_listing_multiple_times() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -511,6 +526,7 @@ async fn test_get_listings_with_filter() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -534,6 +550,7 @@ async fn test_get_listings_with_filter() {
         latitude: None,
         longitude: None,
         listing_details: None,
+        city: None,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await

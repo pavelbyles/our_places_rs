@@ -207,6 +207,7 @@ pub struct Listing {
     pub overall_rating: Option<f64>,
     pub review_count: i32,
     pub listing_details: Json<serde_json::Value>,
+    pub city: Option<String>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -225,6 +226,13 @@ pub struct ListingWithOwner {
     pub primary_image_url: Option<String>,
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub full_bathrooms: i32,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub overall_rating: Option<f64>,
+    pub city: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -256,6 +264,7 @@ pub struct NewListing {
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub listing_details: Option<serde_json::Value>,
+    pub city: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -290,6 +299,7 @@ pub struct UpdatedListing {
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub listing_details: Option<serde_json::Value>,
+    pub city: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

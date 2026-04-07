@@ -64,6 +64,13 @@ pub struct ListingResponse {
     pub added_at: DateTime<Utc>,
     pub owner_name: Option<String>,
     pub primary_image_url: Option<String>,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub full_bathrooms: i32,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub overall_rating: Option<f64>,
+    pub city: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -234,4 +241,8 @@ pub struct NewListingRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub listing_details: Option<serde_json::Value>,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Kingston")]
+    pub city: Option<String>,
 }

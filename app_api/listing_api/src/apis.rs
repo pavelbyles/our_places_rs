@@ -86,6 +86,10 @@ pub struct UpdatedListingRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub listing_details: Option<serde_json::Value>,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Kingston")]
+    pub city: Option<String>,
 }
 
 /// Gives first 10 listings if no page or per_page is provided
@@ -240,6 +244,7 @@ async fn create_listing(
             latitude: req_data.latitude,
             longitude: req_data.longitude,
             listing_details: req_data.listing_details.clone(),
+            city: req_data.city.clone(),
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -327,6 +332,7 @@ async fn update_listing(
         latitude: req_data.latitude,
         longitude: req_data.longitude,
         listing_details: req_data.listing_details,
+        city: req_data.city,
     };
 
     let updated_listing =

@@ -52,11 +52,15 @@ pub fn ListingsPage() -> impl IntoView {
                                             view! {
                                                 <VillaCard
                                                     title=listing.name.clone()
-                                                    description=listing.description.clone().unwrap_or_else(|| "(No description)".to_string())
                                                     image_url=listing.primary_image_url.clone().unwrap_or_else(|| "https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80".to_string())
                                                     price=listing.price_per_night
                                                         .map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en))
                                                         .unwrap_or_else(|| "0.00".to_string())
+                                                    max_guests=listing.max_guests
+                                                    bedrooms=listing.bedrooms
+                                                    full_bathrooms=listing.full_bathrooms
+                                                    country=listing.country.clone()
+                                                    city=listing.city.clone()
                                                 />
                                             }
                                         }

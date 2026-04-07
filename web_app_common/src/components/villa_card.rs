@@ -3,9 +3,13 @@ use leptos::prelude::*;
 #[component]
 pub fn VillaCard(
     #[prop(into)] title: String,
-    #[prop(into)] description: String,
     #[prop(into)] image_url: String,
     #[prop(into)] price: String,
+    #[prop(into)] max_guests: i32,
+    #[prop(into)] bedrooms: i32,
+    #[prop(into)] full_bathrooms: i32,
+    #[prop(into)] country: String,
+    #[prop(into)] city: Option<String>,
 ) -> impl IntoView {
     view! {
         <div class="card md:card-side bg-base-100 shadow-sm border border-base-200">
@@ -18,7 +22,14 @@ pub fn VillaCard(
             </figure>
             <div class="card-body md:w-3/5">
                 <h2 class="card-title text-2xl">{title}</h2>
-                <p class="text-base-content/70">{description}</p>
+                <p class="text-base-content/70"> {
+                    if let Some(c) = city {
+                        format!("{country}, {c}")
+                    } else {
+                        country
+                    }
+                } </p>
+                <p class="text-base-content/70"> {max_guests} " guest(s)" | {bedrooms} " bedroom(s)" | {full_bathrooms} " bathroom(s)" </p>
                 <div class="card-actions justify-between items-center mt-4">
                     <div class="text-xl font-bold">
                         "$" {price} <span class="text-sm font-normal opacity-70">"/night"</span>
