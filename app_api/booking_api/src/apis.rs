@@ -149,7 +149,8 @@ async fn create_booking(
 
     // Example tax: 10% on discounted amount
     let discounted_subtotal = sub_total_price - discount;
-    let tax_value = Some(discounted_subtotal * Decimal::new(10, 2));
+    let tax_value_decimal = discounted_subtotal * Decimal::new(10, 2);
+    let tax_value = Some(tax_value_decimal);
 
     let mut fee_breakdown = Vec::new();
     // Assuming platform fee
@@ -160,7 +161,7 @@ async fn create_booking(
     });
 
     let total_fees: Decimal = fee_breakdown.iter().map(|f| f.amount).sum();
-    let total_price = discounted_subtotal + tax_value.unwrap_or(Decimal::ZERO) + total_fees;
+    let total_price = discounted_subtotal + tax_value_decimal + total_fees;
 
     let confirmation_code = generate_confirmation_code();
 

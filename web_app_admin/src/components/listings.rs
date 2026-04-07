@@ -6,8 +6,6 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use web_app_common::listings::{ListingSearchServer};
-use uuid::Uuid;
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateListingParams {
     pub name: String,
@@ -18,6 +16,8 @@ pub struct CreateListingParams {
     pub price_per_night: Option<f64>,
     pub weekly_discount_percentage: Option<f64>,
     pub monthly_discount_percentage: Option<f64>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
 }
 
 #[server]
@@ -27,6 +27,12 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
 
     use rust_decimal::prelude::FromPrimitive;
+    let city = if let (Some(lat), Some(lon)) = (params.latitude, params.longitude) {
+        common::geocode::reverse_geocode(lat, lon).await.unwrap_or(None)
+    } else {
+        None
+    };
+
     let request = common::models::NewListingRequest {
         name: params.name,
         user_id,
@@ -38,7 +44,14 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         monthly_discount_percentage: params.monthly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
         latitude: params.latitude,
         longitude: params.longitude,
-        city: common::geocode::reverse_geocode(params.latitude, params.longitude).await.unwrap_or(None),
+        city,
+        max_guests: 1,
+        bedrooms: 0,
+        beds: 0,
+        full_bathrooms: 0,
+        half_bathrooms: 0,
+        square_meters: None,
+        listing_details: None,
     };
 
     let api_url = crate::api_client::listing_api_url();

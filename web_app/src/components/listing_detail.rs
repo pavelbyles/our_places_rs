@@ -9,7 +9,7 @@ pub fn ListingDetailPage() -> impl IntoView {
     let id = move || params.with(|p| p.get("id").unwrap_or_default());
 
     match Uuid::parse_str(&id()) {
-        Ok(uuid) => {
+        Ok(_uuid) => {
             // Valid UUID
         }
         Err(_) => {

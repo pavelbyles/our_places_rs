@@ -10,29 +10,21 @@ pub async fn listing_search_server(
     let api_url = crate::api_client::listing_api_url();
     let mut url = format!("{}/api/v1/listings?page=1&per_page=20", api_url);
 
-    if let Some(s) = name {
-        if !s.is_empty() {
-            url.push_str(&format!("&name={}", s));
-        }
+    if let Some(s) = name.filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&name={}", s));
     }
 
-    if let Some(s) = owner_email {
-        if !s.is_empty() {
-            url.push_str(&format!("&owner={}", s));
-        }
+    if let Some(s) = owner_email.filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&owner={}", s));
     }
 
-    if let Some(structures) = listing_structure {
-        if !structures.is_empty() {
-            let joined = structures.join(",");
-            url.push_str(&format!("&structure_type={}", joined));
-        }
+    if let Some(structures) = listing_structure.filter(|s| !s.is_empty()) {
+        let joined = structures.join(",");
+        url.push_str(&format!("&structure_type={}", joined));
     }
 
-    if let Some(s) = max_price {
-        if s > 0.0 {
-            url.push_str(&format!("&max_price={}", s));
-        }
+    if let Some(s) = max_price.filter(|&s| s > 0.0) {
+        url.push_str(&format!("&max_price={}", s));
     }
 
     let res = crate::api_client::get_client()
