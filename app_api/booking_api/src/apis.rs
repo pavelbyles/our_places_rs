@@ -134,12 +134,10 @@ async fn create_booking(
     let mut discount_value = None;
     let actual_daily_rate = daily_rate; // Typically discount is distinct from daily rate deduction in presentation
 
-    if total_days >= 28 && listing.monthly_discount_percentage.is_some() {
-        let pct = listing.monthly_discount_percentage.unwrap();
+    if let (Some(pct), true) = (listing.monthly_discount_percentage, total_days >= 28) {
         let subtotal = actual_daily_rate * Decimal::from(total_days);
         discount_value = Some(subtotal * (pct / Decimal::new(100, 0)));
-    } else if total_days >= 7 && listing.weekly_discount_percentage.is_some() {
-        let pct = listing.weekly_discount_percentage.unwrap();
+    } else if let (Some(pct), true) = (listing.weekly_discount_percentage, total_days >= 7) {
         let subtotal = actual_daily_rate * Decimal::from(total_days);
         discount_value = Some(subtotal * (pct / Decimal::new(100, 0)));
     }
