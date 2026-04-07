@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city FROM listing WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_structure_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_per_night",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "added_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "weekly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "monthly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "max_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "bedrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "beds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "full_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 18,
+        "name": "half_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 19,
+        "name": "square_meters",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 21,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 22,
+        "name": "overall_rating",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 23,
+        "name": "review_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 24,
+        "name": "listing_details",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 25,
+        "name": "city",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "190b0bea4d2a2840b213bc89efcf0e9d2ab43d498168a4d440d0a78c1ed68ada"
+}

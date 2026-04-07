@@ -1,0 +1,194 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO listing (\n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            weekly_discount_percentage, monthly_discount_percentage, added_at, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, listing_details, overall_rating, review_count, city\n        )\n        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23\n        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)\n        RETURNING \n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, \n            weekly_discount_percentage, monthly_discount_percentage, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_structure_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_per_night",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "added_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "weekly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "monthly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "max_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "bedrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "beds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "full_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 18,
+        "name": "half_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 19,
+        "name": "square_meters",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 21,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 22,
+        "name": "overall_rating",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 23,
+        "name": "review_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 24,
+        "name": "listing_details",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 25,
+        "name": "city",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Timestamptz",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Float8",
+        "Float8",
+        "Jsonb",
+        "Numeric",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e301d01e84ab7ab6e8263b12145d17950a308fe63b1085207c1acd5d5378dba1"
+}

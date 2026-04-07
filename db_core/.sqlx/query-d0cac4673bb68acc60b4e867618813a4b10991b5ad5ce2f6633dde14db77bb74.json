@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO booking (\n            id, confirmation_code, guest_id, listing_id, status,\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown,\n            total_price, cancellation_policy, created_at, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            created_at, updated_at\n        ",
+  "query": "\n        UPDATE booking\n        SET status = COALESCE($1, status), updated_at = $2\n        WHERE id = $3\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -113,21 +113,22 @@
       },
       {
         "ordinal": 17,
+        "name": "metadata: Json<crate::models::BookingMetadata>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Varchar",
-        "Uuid",
-        "Uuid",
         {
           "Custom": {
             "name": "booking_status",
@@ -141,31 +142,8 @@
             }
           }
         },
-        "Date",
-        "Date",
-        "Bpchar",
-        "Numeric",
-        "Int4",
-        "Int4",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Jsonb",
-        "Numeric",
-        {
-          "Custom": {
-            "name": "cancellation_policy",
-            "kind": {
-              "Enum": [
-                "flexible",
-                "moderate",
-                "strict"
-              ]
-            }
-          }
-        },
         "Timestamptz",
-        "Timestamptz"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -187,8 +165,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "779b436e93dd1153e654b35550489efd215f506416395b6ea7166c30fdea61b8"
+  "hash": "d0cac4673bb68acc60b4e867618813a4b10991b5ad5ce2f6633dde14db77bb74"
 }
