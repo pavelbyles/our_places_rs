@@ -13,11 +13,19 @@ pub struct CreateListingParams {
     pub description: Option<String>,
     pub listing_structure: String,
     pub country: String,
+    pub base_currency: String,
     pub price_per_night: Option<f64>,
     pub weekly_discount_percentage: Option<f64>,
     pub monthly_discount_percentage: Option<f64>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    pub max_guests: Option<i32>,
+    pub bedrooms: Option<i32>,
+    pub beds: Option<i32>,
+    pub full_bathrooms: Option<i32>,
+    pub half_bathrooms: Option<i32>,
+    pub square_meters: Option<i32>,
+    pub listing_details: Option<String>,
 }
 
 #[server]
@@ -39,19 +47,20 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         description: params.description,
         listing_structure: params.listing_structure,
         country: params.country,
+        base_currency: params.base_currency,
         price_per_night: params.price_per_night.and_then(rust_decimal::Decimal::from_f64),
         weekly_discount_percentage: params.weekly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
         monthly_discount_percentage: params.monthly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
         latitude: params.latitude,
         longitude: params.longitude,
         city,
-        max_guests: 1,
-        bedrooms: 0,
-        beds: 0,
-        full_bathrooms: 0,
-        half_bathrooms: 0,
-        square_meters: None,
-        listing_details: None,
+        max_guests: params.max_guests.unwrap_or(1),
+        bedrooms: params.bedrooms.unwrap_or(0),
+        beds: params.beds.unwrap_or(0),
+        full_bathrooms: params.full_bathrooms.unwrap_or(0),
+        half_bathrooms: params.half_bathrooms.unwrap_or(0),
+        square_meters: params.square_meters,
+        listing_details: params.listing_details.and_then(|s| serde_json::from_str(&s).ok()),
     };
 
     let api_url = crate::api_client::listing_api_url();
@@ -119,6 +128,43 @@ pub fn ListingsPage() -> impl IntoView {
     let (owner_id_error, set_owner_id_error) = signal(false);
 
     let (uploading_images, set_uploading_images) = signal(false);
+
+    let (next_detail_id, set_next_detail_id) = signal(1usize);
+    
+    let (listing_details, set_listing_details) = signal(vec![(0usize, String::new(), String::new())]);
+
+    let add_detail = move |_| {
+        let id = next_detail_id.get();
+        set_next_detail_id.set(id + 1);
+        set_listing_details.update(|d| d.push((id, String::new(), String::new())));
+    };
+
+    let remove_detail = move |id_to_remove: usize| {
+        set_listing_details.update(|d| {
+            d.retain(|(id, _, _)| *id != id_to_remove);
+            if d.is_empty() {
+                let id = next_detail_id.get();
+                set_next_detail_id.set(id + 1);
+                d.push((id, String::new(), String::new()));
+            }
+        });
+    };
+
+    let update_detail_key = move |id_to_update: usize, key: String| {
+        set_listing_details.update(|d| {
+            if let Some(pair) = d.iter_mut().find(|(id, _, _)| *id == id_to_update) {
+                pair.1 = key;
+            }
+        });
+    };
+
+    let update_detail_value = move |id_to_update: usize, value: String| {
+        set_listing_details.update(|d| {
+            if let Some(pair) = d.iter_mut().find(|(id, _, _)| *id == id_to_update) {
+                pair.2 = value;
+            }
+        });
+    };
 
     let timeout_handle = StoredValue::new(None::<TimeoutHandle>);
 
@@ -559,13 +605,29 @@ pub fn ListingsPage() -> impl IntoView {
                             <label class="label">
                                 <span class="label-text">Country</span>
                             </label>
-                            <input type="text" name="params[country]" placeholder="Country" class="input input-bordered w-full max-w-xs" required />
+                            <select name="params[country]" class="select select-bordered w-full max-w-xs" required>
+                                <option disabled selected value="">"Select country"</option>
+                                {common::reference::SupportedCountry::LIST.iter().map(|c| {
+                                    view! { <option value=c.iso2char>{c.name}</option> }
+                                }).collect::<Vec<_>>()}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Base Currency</span>
+                            </label>
+                            <select name="params[base_currency]" class="select select-bordered w-full max-w-xs" required>
+                                <option disabled selected value="">"Select base currency"</option>
+                                <option value="USD">"USD - US Dollar"</option>
+                                <option value="JMD">"JMD - Jamaican Dollar"</option>
+                                <option value="GBP">"GBP - British Pound"</option>
+                            </select>
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Price Per Night ($)</span>
                             </label>
-                            <input type="number" step="0.01" min="0" name="params[price_per_night]" placeholder="0.00" class="input input-bordered w-full max-w-xs" />
+                            <input type="number" step="0.50" min="0" name="params[price_per_night]" placeholder="0.00" class="input input-bordered w-full max-w-xs" />
                         </div>
                         <div>
                             <label class="label">
@@ -590,6 +652,121 @@ pub fn ListingsPage() -> impl IntoView {
                                 <span class="label-text">Longitude</span>
                             </label>
                             <input type="number" step="0.000001" min="-180" max="180" name="params[longitude]" placeholder="0.000000" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Max Guests</span>
+                            </label>
+                            <input type="number" min="1" name="params[max_guests]" placeholder="1" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Bedrooms</span>
+                            </label>
+                            <input type="number" min="0" name="params[bedrooms]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Beds</span>
+                            </label>
+                            <input type="number" min="0" name="params[beds]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Full Bathrooms</span>
+                            </label>
+                            <input type="number" min="0" name="params[full_bathrooms]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Half Bathrooms</span>
+                            </label>
+                            <input type="number" min="0" name="params[half_bathrooms]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Square Meters</span>
+                            </label>
+                            <input type="number" min="0" name="params[square_meters]" placeholder="e.g. 100" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div class="w-full max-w-xs flex flex-col">
+                            <label class="label">
+                                <span class="label-text">Listing Details</span>
+                            </label>
+                            
+                            <For
+                                each=move || listing_details.get()
+                                key=|(id, _, _)| *id
+                                children=move |(item_id, item_key, item_value)| {
+                                    view! {
+                                        <div class="flex items-center space-x-2 w-full mt-2">
+                                            <input
+                                                type="text"
+                                                class="input input-bordered w-full"
+                                                placeholder="Detail"
+                                                list="details-options"
+                                                value=item_key
+                                                on:input=move |ev| update_detail_key(item_id, event_target_value(&ev))
+                                            />
+                                            <input
+                                                type="text"
+                                                class="input input-bordered w-full"
+                                                placeholder="Value"
+                                                value=item_value
+                                                on:input=move |ev| update_detail_value(item_id, event_target_value(&ev))
+                                            />
+                                            <button
+                                                type="button"
+                                                class="btn btn-square btn-outline btn-error btn-sm w-12"
+                                                on:click=move |_| remove_detail(item_id)
+                                            >
+                                                "✗"
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                            />
+
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline mt-4 w-full"
+                                on:click=add_detail
+                            >
+                                "+ Add Detail"
+                            </button>
+
+                            <datalist id="details-options">
+                                <option value="WiFi"></option>
+                                <option value="Parking"></option>
+                                <option value="Pool"></option>
+                                <option value="Gym"></option>
+                                <option value="Air Conditioning"></option>
+                                <option value="Heating"></option>
+                                <option value="Pet Friendly"></option>
+                                <option value="Kitchen"></option>
+                                <option value="Workspace"></option>
+                                <option value="TV"></option>
+                                <option value="Washer"></option>
+                                <option value="Dryer"></option>
+                                <option value="Hot Tub"></option>
+                                <option value="Balcony"></option>
+                            </datalist>
+
+                            <input
+                                type="hidden"
+                                name="params[listing_details]"
+                                value=move || {
+                                    let map: std::collections::HashMap<_, _> = listing_details.get().into_iter()
+                                        .filter(|(_, k, _)| !k.is_empty())
+                                        .map(|(_, k, v)| (k, v))
+                                        .collect();
+                                    if map.is_empty() {
+                                        String::new()
+                                    } else {
+                                        serde_json::to_string(&map).unwrap_or_default()
+                                    }
+                                }
+                            />
                         </div>
                         <div>
                             <label class="label">

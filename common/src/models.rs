@@ -71,6 +71,7 @@ pub struct ListingResponse {
     pub longitude: Option<f64>,
     pub overall_rating: Option<f64>,
     pub city: Option<String>,
+    pub base_currency: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -245,4 +246,13 @@ pub struct NewListingRequest {
     #[serde(default)]
     #[schema(value_type = String, example = "Kingston")]
     pub city: Option<String>,
+
+    #[serde(default = "default_base_currency")]
+    #[schema(value_type = String, example = "USD")]
+    pub base_currency: String,
 }
+
+pub fn default_base_currency() -> String {
+    "USD".to_string()
+}
+

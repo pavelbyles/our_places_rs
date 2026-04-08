@@ -245,6 +245,7 @@ async fn create_listing(
             longitude: req_data.longitude,
             listing_details: req_data.listing_details.clone(),
             city: req_data.city.clone(),
+            base_currency: req_data.base_currency.clone(),
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -333,6 +334,7 @@ async fn update_listing(
         longitude: req_data.longitude,
         listing_details: req_data.listing_details,
         city: req_data.city,
+        base_currency: None, // Frontend isn't sending option to update base currency yet, except maybe in full update.
     };
 
     let updated_listing =

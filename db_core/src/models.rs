@@ -208,6 +208,7 @@ pub struct Listing {
     pub review_count: i32,
     pub listing_details: Json<serde_json::Value>,
     pub city: Option<String>,
+    pub base_currency: String,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -233,6 +234,7 @@ pub struct ListingWithOwner {
     pub longitude: Option<f64>,
     pub overall_rating: Option<f64>,
     pub city: Option<String>,
+    pub base_currency: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -265,6 +267,7 @@ pub struct NewListing {
     pub longitude: Option<f64>,
     pub listing_details: Option<serde_json::Value>,
     pub city: Option<String>,
+    pub base_currency: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -300,6 +303,7 @@ pub struct UpdatedListing {
     pub longitude: Option<f64>,
     pub listing_details: Option<serde_json::Value>,
     pub city: Option<String>,
+    pub base_currency: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

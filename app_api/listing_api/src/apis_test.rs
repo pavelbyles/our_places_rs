@@ -100,6 +100,7 @@ async fn test_get_listing_by_id_success() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -193,6 +194,7 @@ async fn test_create_listing_validation_error() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
 
     let req = test::TestRequest::post()
@@ -233,6 +235,7 @@ async fn test_delete_listing() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -280,6 +283,7 @@ async fn test_delete_listing() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -331,6 +335,7 @@ async fn test_delete_listing_hard_forbidden() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -384,6 +389,7 @@ async fn test_xml_serialization_of_vec() {
         longitude: None,
         overall_rating: None,
         city: None,
+        base_currency: "USD".to_string(),
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -421,6 +427,7 @@ async fn test_update_listing_multiple_times() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -527,6 +534,7 @@ async fn test_get_listings_with_filter() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -551,6 +559,7 @@ async fn test_get_listings_with_filter() {
         longitude: None,
         listing_details: None,
         city: None,
+        base_currency: "USD".to_string(),
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await

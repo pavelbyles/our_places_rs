@@ -65,6 +65,7 @@ pub fn map_listing_to_response(
         longitude: listing.longitude,
         overall_rating: listing.overall_rating,
         city: listing.city,
+        base_currency: listing.base_currency,
     }
 }
 
@@ -99,6 +100,7 @@ pub fn map_listing_with_owner_to_response(
         longitude: listing.longitude,
         overall_rating: listing.overall_rating,
         city: listing.city,
+        base_currency: listing.base_currency,
     }
 }
 

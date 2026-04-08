@@ -5,3 +5,4 @@ pub mod geocode;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http_client;
 pub mod models;
+pub mod reference;
