@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO listing (\n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            weekly_discount_percentage, monthly_discount_percentage, added_at, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, listing_details, overall_rating, review_count, city\n        )\n        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23\n        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)\n        RETURNING \n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, \n            weekly_discount_percentage, monthly_discount_percentage, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city\n        ",
+  "query": "\n        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency\n        FROM listing\n        LEFT JOIN LATERAL (\n            SELECT thumb_img.upload_url\n            FROM listing_image parent_img\n            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n            WHERE parent_img.listing_id = listing.id\n              AND parent_img.is_primary = TRUE\n              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n            LIMIT 1\n        ) AS primary_img ON true\n        WHERE listing.id = $1 AND listing.deleted_at IS NULL\n        ",
   "describe": {
     "columns": [
       {
@@ -55,18 +55,18 @@
       },
       {
         "ordinal": 10,
-        "name": "primary_image_url",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 11,
         "name": "weekly_discount_percentage",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "monthly_discount_percentage",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "primary_image_url",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 13,
@@ -132,33 +132,16 @@
         "ordinal": 25,
         "name": "city",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
+        "name": "base_currency",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Int4",
-        "Text",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Timestamptz",
-        "Text",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Float8",
-        "Float8",
-        "Jsonb",
-        "Numeric",
-        "Int4",
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -172,23 +155,24 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
       null,
-      true,
-      true,
-      false,
-      false,
-      false,
-      false,
       false,
       false,
       true,
-      true,
-      true,
-      null,
-      false,
-      false,
-      true
+      false
     ]
   },
-  "hash": "e301d01e84ab7ab6e8263b12145d17950a308fe63b1085207c1acd5d5378dba1"
+  "hash": "ab29b7dfd93e54e4c83fd0c2cdaeed36168f879eb13a9d9386aa7968c8d6a69f"
 }
