@@ -109,7 +109,7 @@ async fn create_booking(
     body.validate().map_err(ApiError::ValidationError)?;
     let req_data = body.into_inner();
 
-    let listing = db_listing::get_listing_by_id(pool.get_ref(), req_data.listing_id)
+    let listing_details = db_listing::get_listing_by_id(pool.get_ref(), req_data.listing_id)
         .await
         .map_err(|e| {
             if let db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound) = e {
@@ -130,14 +130,23 @@ async fn create_booking(
         ));
     }
 
-    let daily_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
+    let daily_rate = listing_details
+        .listing
+        .price_per_night
+        .unwrap_or(Decimal::ZERO);
     let mut discount_value = None;
     let actual_daily_rate = daily_rate; // Typically discount is distinct from daily rate deduction in presentation
 
-    if let (Some(pct), true) = (listing.monthly_discount_percentage, total_days >= 28) {
+    if let (Some(pct), true) = (
+        listing_details.listing.monthly_discount_percentage,
+        total_days >= 28,
+    ) {
         let subtotal = actual_daily_rate * Decimal::from(total_days);
         discount_value = Some(subtotal * (pct / Decimal::new(100, 0)));
-    } else if let (Some(pct), true) = (listing.weekly_discount_percentage, total_days >= 7) {
+    } else if let (Some(pct), true) = (
+        listing_details.listing.weekly_discount_percentage,
+        total_days >= 7,
+    ) {
         let subtotal = actual_daily_rate * Decimal::from(total_days);
         discount_value = Some(subtotal * (pct / Decimal::new(100, 0)));
     }
@@ -220,10 +229,16 @@ async fn create_booking(
                     && constraint == "booking_pkey"
                 {
                     if attempts >= max_attempts {
-                        tracing::error!("Failed to generate unique confirmation code after {} attempts", max_attempts);
+                        tracing::error!(
+                            "Failed to generate unique confirmation code after {} attempts",
+                            max_attempts
+                        );
                         return Err(ApiError::Internal);
                     }
-                    tracing::warn!("Confirmation code collision, retrying (attempt {})", attempts);
+                    tracing::warn!(
+                        "Confirmation code collision, retrying (attempt {})",
+                        attempts
+                    );
                     continue;
                 }
                 tracing::error!(error = %e, "Failed to create booking in database");

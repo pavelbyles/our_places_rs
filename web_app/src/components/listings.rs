@@ -61,6 +61,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                     full_bathrooms=listing.full_bathrooms
                                                     country=listing.country.clone()
                                                     city=listing.city.clone()
+                                                    id=listing.slug.clone()
                                                 />
                                             }
                                         }

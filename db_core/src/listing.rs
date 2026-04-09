@@ -117,7 +117,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.full_bathrooms, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.base_currency,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.full_bathrooms, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency,
         "user".first_name || ' ' || "user".last_name as owner_name,
         primary_img.upload_url as primary_image_url
         FROM listing
@@ -227,10 +227,12 @@ where
 
 /// Retrieves a single listing from the database by its UUID.
 #[tracing::instrument(skip(executor))]
-pub async fn get_listing_by_id<'e, E>(executor: E, id: Uuid) -> Result<Listing>
+pub async fn get_listing_by_id<'a, A>(executor: A, id: Uuid) -> Result<crate::models::ListingDetails>
 where
-    E: PgExecutor<'e>,
+    A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
 {
+    let mut conn = executor.acquire().await?;
+
     let listing = sqlx::query_as!(
         Listing,
         r#"
@@ -249,10 +251,97 @@ where
         "#,
         id
     )
-    .fetch_one(executor)
+    .fetch_one(&mut *conn)
     .await?;
 
-    Ok(listing)
+    let images = sqlx::query_as!(
+        crate::models::ListingImage,
+        r#"
+        SELECT id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
+        FROM listing_image
+        WHERE listing_id = $1 AND status = 'Processed'
+        ORDER BY display_order ASC
+        "#,
+        id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(crate::models::ListingDetails { listing, images })
+}
+
+/// Retrieves a single listing from the database by its UUID or Slug.
+#[tracing::instrument(skip(executor))]
+pub async fn get_listing_by_id_or_slug<'a, A>(
+    executor: A,
+    id_or_slug: &str,
+) -> Result<crate::models::ListingDetails>
+where
+    A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
+{
+    let mut conn = executor.acquire().await?;
+
+    let is_uuid = uuid::Uuid::parse_str(id_or_slug).is_ok();
+
+    let listing = if is_uuid {
+        let id_uuid = uuid::Uuid::parse_str(id_or_slug).unwrap();
+        sqlx::query_as!(
+            Listing,
+            r#"
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency
+            FROM listing
+            LEFT JOIN LATERAL (
+                SELECT thumb_img.upload_url
+                FROM listing_image parent_img
+                JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+                WHERE parent_img.listing_id = listing.id
+                  AND parent_img.is_primary = TRUE
+                  AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+                LIMIT 1
+            ) AS primary_img ON true
+            WHERE listing.id = $1 AND listing.deleted_at IS NULL
+            "#,
+            id_uuid
+        )
+        .fetch_one(&mut *conn)
+        .await?
+    } else {
+        sqlx::query_as!(
+            Listing,
+            r#"
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency
+            FROM listing
+            LEFT JOIN LATERAL (
+                SELECT thumb_img.upload_url
+                FROM listing_image parent_img
+                JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
+                WHERE parent_img.listing_id = listing.id
+                  AND parent_img.is_primary = TRUE
+                  AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+                LIMIT 1
+            ) AS primary_img ON true
+            WHERE listing.slug = $1 AND listing.deleted_at IS NULL
+            "#,
+            id_or_slug
+        )
+        .fetch_one(&mut *conn)
+        .await?
+    };
+
+    let images = sqlx::query_as!(
+        crate::models::ListingImage,
+        r#"
+        SELECT id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
+        FROM listing_image
+        WHERE listing_id = $1 AND status = 'Processed'
+        ORDER BY display_order ASC
+        "#,
+        listing.id
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    Ok(crate::models::ListingDetails { listing, images })
 }
 
 /// Updates a listing in the database.
@@ -691,7 +780,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(created_listing.id, fetched_listing.id);
+        assert_eq!(created_listing.id, fetched_listing.listing.id);
 
         let non_existent_id = Uuid::now_v7();
         let result = get_listing_by_id(&mut *tx, non_existent_id).await;

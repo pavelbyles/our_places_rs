@@ -45,3 +45,29 @@ pub async fn listing_search_server(
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(listings)
 }
+
+#[server]
+pub async fn get_listing_by_id_server(
+    id: String,
+) -> Result<common::models::ListingDetails, ServerFnError> {
+    let api_url = crate::api_client::listing_api_url();
+    let url = format!("{}/api/v1/listings/{}", api_url, id);
+
+    let res = crate::api_client::get_client()
+        .get(&url, &api_url)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if !res.status().is_success() {
+        return Err(ServerFnError::new(format!(
+            "Failed to fetch listing details: {}",
+            res.status()
+        )));
+    }
+
+    let details: common::models::ListingDetails = res
+        .json()
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(details)
+}

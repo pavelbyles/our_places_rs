@@ -31,10 +31,10 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("") view=HomePage/>
                     <Route path=path!("home") view=HomePage/>
                     <Route path=path!("about") view=AboutPage/>
+                    <Route path=path!("listing/:id") view=ListingDetailPage/>
                 </ParentRoute>
                 <ParentRoute path=path!("listings") view=move || view! { <LayoutNoSearch><Outlet/></LayoutNoSearch> }>
                     <Route path=path!("") view=ListingsPage/>
-                    <Route path=path!(":id") view=ListingDetailPage/>
                 </ParentRoute>
                 <Route path=path!("*any") view=NotFound/>
             </Routes>

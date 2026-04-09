@@ -72,12 +72,19 @@ pub struct ListingResponse {
     pub overall_rating: Option<f64>,
     pub city: Option<String>,
     pub base_currency: String,
+    pub slug: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingImageResponse {
     pub id: Uuid,
     pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
+pub struct ListingDetails {
+    pub listing: ListingResponse,
+    pub images: Vec<ListingImageResponse>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -255,4 +262,3 @@ pub struct NewListingRequest {
 pub fn default_base_currency() -> String {
     "USD".to_string()
 }
-

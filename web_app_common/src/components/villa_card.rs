@@ -10,7 +10,13 @@ pub fn VillaCard(
     #[prop(into)] full_bathrooms: i32,
     #[prop(into)] country: String,
     #[prop(into)] city: Option<String>,
+    #[prop(into)] id: String,
 ) -> impl IntoView {
+    let navigate = leptos_router::hooks::use_navigate();
+
+    let navigate_to_listing = move |_| {
+        navigate(&format!("/listing/{}", id), Default::default());
+    };
     view! {
         <div class="card md:card-side bg-base-100 shadow-sm border border-base-200">
             <figure class="md:w-2/5">
@@ -42,7 +48,7 @@ pub fn VillaCard(
                     </div>
 
                     // TODO: `on_click` closure as a prop here to handle routing dynamically
-                    <button class="btn btn-primary">"View Details"</button>
+                    <button class="btn btn-primary" on:click=navigate_to_listing>"View Details"</button>
                 </div>
             </div>
         </div>

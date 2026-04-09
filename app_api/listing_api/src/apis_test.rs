@@ -390,6 +390,7 @@ async fn test_xml_serialization_of_vec() {
         overall_rating: None,
         city: None,
         base_currency: "USD".to_string(),
+        slug: "test".to_string(),
     }];
 
     let wrapper = ListingsWrapper { listing: response };

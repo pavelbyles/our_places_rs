@@ -235,6 +235,7 @@ pub struct ListingWithOwner {
     pub overall_rating: Option<f64>,
     pub city: Option<String>,
     pub base_currency: String,
+    pub slug: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -373,4 +374,10 @@ pub struct ListingImage {
     pub is_primary: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListingDetails {
+    pub listing: Listing,
+    pub images: Vec<ListingImage>,
 }

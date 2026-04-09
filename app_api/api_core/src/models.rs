@@ -66,6 +66,23 @@ pub fn map_listing_to_response(
         overall_rating: listing.overall_rating,
         city: listing.city,
         base_currency: listing.base_currency,
+        slug: listing.slug.clone(),
+    }
+}
+
+pub fn map_listing_details_to_response(
+    details: db_core::models::ListingDetails,
+) -> common::models::ListingDetails {
+    common::models::ListingDetails {
+        listing: map_listing_to_response(details.listing),
+        images: details
+            .images
+            .into_iter()
+            .map(|img| common::models::ListingImageResponse {
+                id: img.id,
+                url: img.upload_url.unwrap_or_default(),
+            })
+            .collect(),
     }
 }
 
@@ -101,6 +118,7 @@ pub fn map_listing_with_owner_to_response(
         overall_rating: listing.overall_rating,
         city: listing.city,
         base_currency: listing.base_currency,
+        slug: listing.slug.clone(),
     }
 }
 

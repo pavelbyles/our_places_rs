@@ -166,25 +166,25 @@ pub async fn get_listings(
     path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
-        ("id" = String, Path, description = "Listing UUID")
+        ("id" = String, Path, description = "Listing UUID or slug")
     ),
     responses(
-        (status = 200, description = "Listing found", body = ListingResponse),
+        (status = 200, description = "Listing found", body = common::models::ListingDetails),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn get_listing_by_id(
     req: HttpRequest,
-    path: web::Path<Uuid>,
+    path: web::Path<String>,
     pool: web::Data<PgPool>,
 ) -> Result<impl Responder, ApiError> {
-    let listing_id = path.into_inner();
-    let listing = db_listing::get_listing_by_id(pool.get_ref(), listing_id).await?;
+    let listing_id_or_slug = path.into_inner();
+    let listing_details = db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
     Ok(respond(
         &req,
-        Payload::Item(map_listing_to_response(listing)),
-        |_: Vec<ListingResponse>| (),
+        Payload::Item(api_core::models::map_listing_details_to_response(listing_details)),
+        |_: Vec<common::models::ListingDetails>| (),
         actix_web::http::StatusCode::OK,
     ))
 }
@@ -497,6 +497,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::NewListingRequest,  
                 UpdatedListingRequest, 
                 ListingResponse, 
+                common::models::ListingDetails,
                 pagination::Pagination, 
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,
