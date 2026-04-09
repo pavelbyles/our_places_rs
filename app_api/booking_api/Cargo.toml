@@ -23,15 +23,15 @@ anyhow = { workspace = true }
 utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
-tracing-actix-web = "0.7.21"
-tracing-log = "0.2.0"
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-actix-web.workspace = true
+tracing-log.workspace = true
 rand = "0.10.0"
 
-db_core = { path = "../../db_core" }
-api_core = { path = "../api_core" }
-actix-web = "4.13.0"
-common = { version = "0.1.0", path = "../../common" }
+db_core.workspace = true
+api_core.workspace = true
+actix-web.workspace = true
+common.workspace = true
 
 [dev-dependencies]
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [

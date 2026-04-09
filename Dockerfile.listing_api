@@ -4,7 +4,7 @@
 ARG BUILD_TYPE=release
 ARG BUILD_OUTPUT=release
 ARG RELEASE_FLAG=--release
-FROM rust:1.91.1-slim-bookworm AS build-env
+FROM rust:1.94.1-slim-bookworm AS build-env
 ARG BUILD_TYPE
 ARG BUILD_OUTPUT
 ARG RELEASE_FLAG

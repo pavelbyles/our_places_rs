@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly-bookworm AS builder
+FROM rust:1.94.1-slim-bookworm AS builder
 
 # Install Node.js and npm (for Tailwind/DaisyUI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
