@@ -11,6 +11,7 @@ use crate::components::{
 };
 
 #[component]
+#[allow(non_snake_case)]
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();

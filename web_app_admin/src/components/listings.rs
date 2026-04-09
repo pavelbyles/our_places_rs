@@ -115,6 +115,7 @@ pub async fn presign_images_server(
 }
 
 #[component]
+#[allow(non_snake_case)]
 pub fn ListingsPage() -> impl IntoView {
     let listing_search = ServerAction::<ListingSearchServer>::new();
     let create_listing = ServerAction::<CreateListingServer>::new();
