@@ -120,10 +120,10 @@ async fn test_get_listing_by_id_success() {
     let resp = test::call_service(&app, req).await;
 
     assert!(resp.status().is_success());
-    let body: ListingResponse = test::read_body_json(resp).await;
-    assert_eq!(body.id, created_listing.id);
+    let body: common::models::ListingDetails = test::read_body_json(resp).await;
+    assert_eq!(body.listing.id, created_listing.id);
     assert_eq!(
-        body.listing_structure,
+        body.listing.listing_structure,
         format!("{:?}", StructureType::Apartment)
     );
 }
