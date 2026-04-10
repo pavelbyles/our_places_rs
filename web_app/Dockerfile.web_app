@@ -22,9 +22,6 @@ RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/c
 # Install cargo-leptos (pinned to 0.3.2 to match local environment)
 RUN cargo binstall cargo-leptos@0.3.2 -y
 
-# Add the WASM target
-RUN rustup target add wasm32-unknown-unknown
-
 # Make an /app dir, which everything will eventually live in
 RUN mkdir -p /app
 WORKDIR /app
@@ -44,6 +41,7 @@ RUN npm install \
 # Build the application
 # We go back to root or stay here,# Using --project web_app from root, or running inside web_app
 WORKDIR /app/web_app
+RUN rustup target add wasm32-unknown-unknown
 ARG RELEASE_FLAG
 RUN cargo leptos build ${RELEASE_FLAG}
 
