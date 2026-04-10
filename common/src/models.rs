@@ -73,6 +73,7 @@ pub struct ListingResponse {
     pub city: Option<String>,
     pub base_currency: String,
     pub slug: String,
+    pub listing_details: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]

@@ -236,6 +236,7 @@ pub struct ListingWithOwner {
     pub city: Option<String>,
     pub base_currency: String,
     pub slug: String,
+    pub listing_details: Json<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]

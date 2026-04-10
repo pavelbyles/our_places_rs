@@ -1,4 +1,5 @@
 pub mod about;
+pub mod booking_card;
 pub mod hero;
 pub mod home;
 pub mod layout;
