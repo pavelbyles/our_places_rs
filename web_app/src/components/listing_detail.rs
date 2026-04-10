@@ -1,8 +1,6 @@
+use super::booking_card::BookingCard;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
-use num_format::{Locale, ToFormattedString};
-use rust_decimal::prelude::ToPrimitive;
-use super::booking_card::BookingCard;
 use web_app_common::listings::get_listing_by_id_server;
 
 #[component]
@@ -11,15 +9,12 @@ pub fn ListingDetailPage() -> impl IntoView {
     let params = use_params_map();
     let id = move || params.with(|p| p.get("id").unwrap_or_default());
 
-    let listing_resource = Resource::new(
-        move || id(),
-        |id_str| async move {
-            if id_str.is_empty() {
-                return Err(ServerFnError::new("No ID provided"));
-            }
-            get_listing_by_id_server(id_str).await
-        },
-    );
+    let listing_resource = Resource::new(id, |id_str| async move {
+        if id_str.is_empty() {
+            return Err(ServerFnError::new("No ID provided"));
+        }
+        get_listing_by_id_server(id_str).await
+    });
 
     view! {
         <Suspense fallback=move || view! { <div class="p-10 text-center">"Loading listing..."</div> }>
@@ -142,28 +137,33 @@ pub fn ListingDetailPage() -> impl IntoView {
                                                     <div class="flex flex-col gap-4">
                                                         <h3 class="text-2xl font-semibold text-base-content">"Amenities"</h3>
                                                         <div class="grid grid-cols-2 gap-4">
-                                                            <For
-                                                                each=move || {
-                                                                    listing.listing_details.as_ref()
-                                                                        .and_then(|v| v.as_object())
-                                                                        .map(|obj| {
-                                                                            obj.iter().map(|(k, _)| k.to_string()).enumerate().collect::<Vec<_>>()
-                                                                        })
-                                                                        .unwrap_or_default()
+                                                            {
+                                                                let details_for_amenities = listing.listing_details.clone();
+                                                                view! {
+                                                                    <For
+                                                                        each=move || {
+                                                                            details_for_amenities.as_ref()
+                                                                                .and_then(|v| v.as_object())
+                                                                                .map(|obj| {
+                                                                                    obj.iter().map(|(k, _)| k.to_string()).enumerate().collect::<Vec<_>>()
+                                                                                })
+                                                                                .unwrap_or_default()
+                                                                        }
+                                                                        key=|detail| detail.0
+                                                                        children=|detail| {
+                                                                            let key = detail.1;
+                                                                            view! {
+                                                                                <div class="flex items-center gap-2 text-lg text-base-content/80">
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 text-success">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                                                                    </svg>
+                                                                                    <span>{key}</span>
+                                                                                </div>
+                                                                            }.into_any()
+                                                                        }
+                                                                    />
                                                                 }
-                                                                key=|detail| detail.0
-                                                                children=|detail| {
-                                                                    let key = detail.1;
-                                                                    view! {
-                                                                        <div class="flex items-center gap-2 text-lg text-base-content/80">
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 text-success">
-                                                                                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                                                            </svg>
-                                                                            <span>{key}</span>
-                                                                        </div>
-                                                                    }.into_any()
-                                                                }
-                                                            />
+                                                            }
                                                         </div>
                                                     </div>
                                                 }.into_any()
