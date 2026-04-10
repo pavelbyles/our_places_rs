@@ -2,11 +2,15 @@ ARG RELEASE_FLAG=--release
 
 FROM rust:1.94.1-slim-bookworm AS builder
 
-# Install Node.js and npm (for Tailwind/DaisyUI)
+# Install build dependencies and tools (including wasm-opt via binaryen)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     wget \
+    pkg-config \
+    libssl-dev \
+    git \
+    binaryen \
     && rm -rf /var/lib/apt/lists/*
 
 # Install cargo-binstall for fast tool installation
@@ -15,8 +19,8 @@ RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/c
     && cp cargo-binstall /usr/local/cargo/bin \
     && rm cargo-binstall-x86_64-unknown-linux-musl.tgz
 
-# Install cargo-leptos
-RUN cargo binstall cargo-leptos -y
+# Install cargo-leptos (pinned to 0.3.2 to match local environment)
+RUN cargo binstall cargo-leptos@0.3.2 -y
 
 # Add the WASM target
 RUN rustup target add wasm32-unknown-unknown
