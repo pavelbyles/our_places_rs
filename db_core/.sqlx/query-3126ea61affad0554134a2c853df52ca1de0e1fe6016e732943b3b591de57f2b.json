@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency FROM listing WHERE id = $1 FOR UPDATE",
+  "query": "\n            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings\n            FROM listing\n            LEFT JOIN LATERAL (\n                SELECT thumb_img.upload_url\n                FROM listing_image parent_img\n                JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n                WHERE parent_img.listing_id = listing.id\n                  AND parent_img.is_primary = TRUE\n                  AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n                LIMIT 1\n            ) AS primary_img ON true\n            WHERE listing.id = $1 AND listing.deleted_at IS NULL\n            ",
   "describe": {
     "columns": [
       {
@@ -55,18 +55,18 @@
       },
       {
         "ordinal": 10,
-        "name": "primary_image_url",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 11,
         "name": "weekly_discount_percentage",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "monthly_discount_percentage",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "primary_image_url",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 13,
@@ -137,6 +137,16 @@
         "ordinal": 26,
         "name": "base_currency",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 27,
+        "name": "minimum_stay",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 28,
+        "name": "days_between_bookings",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -155,24 +165,26 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
       null,
-      true,
-      true,
-      false,
-      false,
-      false,
-      false,
       false,
       false,
       true,
-      true,
-      true,
-      null,
       false,
       false,
-      true,
       false
     ]
   },
-  "hash": "53a96c04cb1ab685a469de285215960d4eef157608be67aafea37b82574503ca"
+  "hash": "3126ea61affad0554134a2c853df52ca1de0e1fe6016e732943b3b591de57f2b"
 }

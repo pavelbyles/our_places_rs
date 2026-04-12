@@ -58,3 +58,18 @@ pub async fn create_booking<T: serde::Serialize>(booking_data: &T) -> anyhow::Re
 
     get_client().post(&url, &audience, booking_data).await
 }
+
+#[cfg(feature = "ssr")]
+static POOL: OnceLock<db_core::PgPool> = OnceLock::new();
+
+#[cfg(feature = "ssr")]
+pub async fn get_pool() -> db_core::PgPool {
+    if let Some(pool) = POOL.get() {
+        return pool.clone();
+    }
+    
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for SSR operations");
+    let pool = db_core::connection::create_connection_pool(&db_url).await;
+    let _ = POOL.set(pool.clone());
+    pool
+}

@@ -9,7 +9,7 @@ use crate::auth::{get_current_user, UserProfile};
 use crate::components::{
     about::AboutPage, home::HomePage, layout::Layout, layout_no_search::LayoutNoSearch,
     listing_detail::ListingDetailPage, listings::ListingsPage, login::LoginPage,
-    not_found::NotFound, register::RegisterPage, verify::VerifyPage,
+    not_found::NotFound, register::RegisterPage, verify::VerifyPage, checkout::CheckoutPage,
 };
 
 #[derive(Clone, Debug)]
@@ -65,6 +65,7 @@ fn AppContent() -> impl IntoView {
                 <Route path=path!("login") view=LoginPage/>
                 <Route path=path!("register") view=RegisterPage/>
                 <Route path=path!("verify") view=VerifyPage/>
+                <Route path=path!("checkout/:id") view=CheckoutPage/>
             </ParentRoute>
             <ParentRoute path=path!("listings") view=move || view! { <LayoutNoSearch><Outlet/></LayoutNoSearch> }>
                 <Route path=path!("") view=ListingsPage/>

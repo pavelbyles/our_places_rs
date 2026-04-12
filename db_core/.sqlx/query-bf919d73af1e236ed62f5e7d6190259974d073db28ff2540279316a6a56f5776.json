@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO listing (\n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            weekly_discount_percentage, monthly_discount_percentage, added_at, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency\n        )\n        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24\n        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)\n        RETURNING \n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, \n            weekly_discount_percentage, monthly_discount_percentage, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency\n        ",
+  "query": "\n        INSERT INTO listing (\n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            weekly_discount_percentage, monthly_discount_percentage, added_at, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings\n        )\n        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26\n        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)\n        RETURNING \n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, \n            weekly_discount_percentage, monthly_discount_percentage, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings\n        ",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,16 @@
         "ordinal": 26,
         "name": "base_currency",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 27,
+        "name": "minimum_stay",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 28,
+        "name": "days_between_bookings",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -164,7 +174,9 @@
         "Numeric",
         "Int4",
         "Text",
-        "Varchar"
+        "Varchar",
+        "Int4",
+        "Int4"
       ]
     },
     "nullable": [
@@ -194,8 +206,10 @@
       false,
       false,
       true,
+      false,
+      false,
       false
     ]
   },
-  "hash": "c5ef934ff3b342c44c8dc8d52c6777bf3fc0c2989ec9c536ec3369fd97ceb3a3"
+  "hash": "bf919d73af1e236ed62f5e7d6190259974d073db28ff2540279316a6a56f5776"
 }

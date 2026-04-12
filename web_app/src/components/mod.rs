@@ -11,3 +11,4 @@ pub mod not_found;
 pub mod register;
 pub mod verify;
 pub mod shell;
+pub mod checkout;

@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct BookingMetadata {
     pub num_adults: u32,
     pub num_children: u32,
@@ -182,6 +182,35 @@ pub struct NewBooking {
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct UpdatedBooking {
     pub status: Option<BookingStatus>,
+    pub metadata: Option<BookingMetadata>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
+pub struct BookingHistory {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+
+    pub confirmation_code: String,
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+    pub status: BookingStatus,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    pub currency: String,
+    pub daily_rate: Decimal,
+    pub number_of_persons: i32,
+    pub total_days: i32,
+    pub sub_total_price: Decimal,
+    pub discount_value: Option<Decimal>,
+    pub tax_value: Option<Decimal>,
+    pub fee_breakdown: Json<Vec<FeeItem>>,
+    pub total_price: Decimal,
+    pub cancellation_policy: CancellationPolicy,
+    pub metadata: Json<BookingMetadata>,
+
+    pub changed_by_id: Option<Uuid>,
+    pub change_reason: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]

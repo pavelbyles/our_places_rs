@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM booking\n        WHERE status = 'pending'\n          AND created_at < $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f52b8631b94c9b111f7a7cf87dd91d940d4296909f63ee2646f89a338dd90a44"
+}

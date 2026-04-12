@@ -16,6 +16,8 @@ lettre = { version = "0.11", optional = true, default-features = false, features
 serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
+db_core = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
 
 anyhow.workspace = true
 common.workspace = true
@@ -34,4 +36,6 @@ ssr = [
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",
+    "dep:db_core",
+    "dep:sqlx",
 ]

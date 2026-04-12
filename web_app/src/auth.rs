@@ -8,6 +8,7 @@ pub struct UserProfile {
     pub id: String,
     pub name: String,
     pub email: String,
+    pub phone_number: Option<String>,
 }
 
 #[server]
@@ -59,6 +60,11 @@ pub async fn login_traditional(email: String, password: String) -> Result<(), Se
         session
             .insert("user_email", user_resp.email.to_string())
             .map_err(|_| ServerFnError::new("Failed to set session"))?;
+        if let Some(phone) = user_resp.phone_number {
+            session
+                .insert("user_phone", phone)
+                .map_err(|_| ServerFnError::new("Failed to set session"))?;
+        }
 
         leptos_actix::redirect("/");
     }
@@ -206,9 +212,15 @@ pub async fn get_current_user() -> Result<Option<UserProfile>, ServerFnError> {
         let user_id = session.get::<String>("user_id").ok().flatten();
         let name = session.get::<String>("user_name").ok().flatten();
         let email = session.get::<String>("user_email").ok().flatten();
+        let phone_number = session.get::<String>("user_phone").ok().flatten();
 
         if let (Some(id), Some(name), Some(email)) = (user_id, name, email) {
-            Ok(Some(UserProfile { id, name, email }))
+            Ok(Some(UserProfile {
+                id,
+                name,
+                email,
+                phone_number,
+            }))
         } else {
             Ok(None)
         }

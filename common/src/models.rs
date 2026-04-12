@@ -84,6 +84,40 @@ pub struct ListingResponse {
     pub days_between_bookings: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct BookingMetadataResponse {
+    pub num_adults: u32,
+    pub num_children: u32,
+    pub num_infants: u32,
+    pub num_pets: u32,
+    pub message_to_host: Option<String>,
+    pub estimated_arrival_time: Option<String>,
+    pub is_business_trip: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct BookingResponse {
+    pub id: Uuid,
+    pub confirmation_code: String,
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+    pub status: String,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    pub currency: String,
+    pub daily_rate: Decimal,
+    pub number_of_persons: i32,
+    pub total_days: i32,
+    pub sub_total_price: Decimal,
+    pub discount_value: Option<Decimal>,
+    pub tax_value: Option<Decimal>,
+    pub total_price: Decimal,
+    pub cancellation_policy: String,
+    pub metadata: BookingMetadataResponse,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingImageResponse {
     pub id: Uuid,

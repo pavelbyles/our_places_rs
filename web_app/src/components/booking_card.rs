@@ -4,6 +4,8 @@ use rust_decimal::prelude::ToPrimitive;
 use web_app_common::listings::get_listing_by_id_server;
 use common::models::{ListingResponse};
 use chrono::{NaiveDate};
+use uuid::Uuid;
+use crate::components::checkout::initiate_booking;
 
 #[component]
 #[allow(non_snake_case)]
@@ -30,6 +32,26 @@ pub fn BookingCard(
     
     let (check_in, set_check_in) = signal(None::<String>);
     let (check_out, set_check_out) = signal(None::<String>);
+    let (total_guests, set_total_guests) = signal(1u32);
+
+    let initiate_booking_action = Action::new(|(listing_id, check_in, check_out, guests): &(Uuid, NaiveDate, NaiveDate, u32)| {
+        let listing_id = *listing_id;
+        let check_in = *check_in;
+        let check_out = *check_out;
+        let guests = *guests;
+        async move {
+            initiate_booking(listing_id, check_in, check_out, guests, 0, 0, 0).await
+        }
+    });
+
+    Effect::new(move || {
+        if let Some(Ok(booking_id)) = initiate_booking_action.value().get() {
+            leptos_router::hooks::use_navigate()(
+                &format!("/checkout/{}", booking_id),
+                Default::default(),
+            );
+        }
+    });
     
     let validation = Memo::new(move |_| {
         let l = listing_resource.get()?;
@@ -57,7 +79,7 @@ pub fn BookingCard(
         <div class="card bg-base-100 w-full shadow-xl border border-base-200">
             <Suspense fallback=move || view! { <div class="p-4 text-center">"Loading price..."</div> }>
                 {move || {
-                    listing_resource.get().map(|res| match res {
+                    listing_resource.get().map(|res: Result<ListingResponse, ServerFnError>| match res {
                         Ok(listing) => {
                             view! {
                                 <div class="card-body gap-6">
@@ -101,7 +123,11 @@ pub fn BookingCard(
                                         })}
                                         <div class="p-3 hover:bg-base-200/50 transition-colors cursor-pointer">
                                             <label class="block text-[10px] font-bold uppercase text-base-content/60">"# of Guests"</label>
-                                            <select class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1 appearance-none">
+                                            <select 
+                                                class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1 appearance-none"
+                                                on:change=move |ev| set_total_guests.set(event_target_value(&ev).parse().unwrap_or(1))
+                                                prop:value=move || total_guests.get()
+                                            >
                                                 {
                                                     (1..=listing.max_guests).map(|n| {
                                                         view! { <option value=n>{n} {if n == 1 { " guest" } else { " guests" }}</option> }
@@ -114,9 +140,20 @@ pub fn BookingCard(
                                     <div class="flex flex-col gap-2">
                                         <button 
                                             class="btn btn-primary btn-lg w-full"
-                                            disabled=move || validation.get().map(|r| r.is_err()).unwrap_or(true)
+                                            disabled=move || validation.get().map(|r| r.is_err()).unwrap_or(true) || initiate_booking_action.pending().get()
+                                            on:click=move |_| {
+                                                if let (Some(Ok(_)), Some(Ok(listing))) = (validation.get(), listing_resource.get()) {
+                                                    let start = NaiveDate::parse_from_str(&check_in.get().unwrap(), "%Y-%m-%d").unwrap();
+                                                    let end = NaiveDate::parse_from_str(&check_out.get().unwrap(), "%Y-%m-%d").unwrap();
+                                                    initiate_booking_action.dispatch((listing.id, start, end, total_guests.get()));
+                                                }
+                                            }
                                         >
-                                            "Book Now"
+                                            {move || if initiate_booking_action.pending().get() {
+                                                view! { <span class="loading loading-spinner"></span> }.into_any()
+                                            } else {
+                                                "Book Now".into_any()
+                                            }}
                                         </button>
                                         <p class="text-center text-sm text-base-content/60">"You won't be charged yet"</p>
                                     </div>

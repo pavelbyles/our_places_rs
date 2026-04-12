@@ -41,6 +41,7 @@ pub fn generate_confirmation_code() -> String {
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdatedBookingRequest {
     pub status: Option<BookingStatus>,
+    pub metadata: Option<BookingMetadata>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -334,6 +335,7 @@ async fn update_booking(
 
     let updated_data = UpdatedBooking {
         status: body.status,
+        metadata: body.metadata.clone(),
     };
 
     let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data)
