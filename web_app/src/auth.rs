@@ -33,7 +33,7 @@ pub async fn login_traditional(email: String, password: String) -> Result<(), Se
             let status = response.status();
             let err_text = response.text().await.unwrap_or_default();
             if status == reqwest::StatusCode::UNAUTHORIZED {
-                return Err(ServerFnError::new(format!("{}", err_text)));
+                return Err(ServerFnError::new(err_text));
             }
             return Err(ServerFnError::new(format!("Login failed: {}", err_text)));
         }

@@ -348,23 +348,22 @@ async fn verify_user(
     let verification_code: Option<String> = record.verification_code;
     let verification_code_expires_at: Option<DateTime<Utc>> = record.verification_code_expires_at;
 
-    if let Some(code) = verification_code {
-        if code == credentials.code {
-            if let Some(expiry) = verification_code_expires_at {
-                if expiry > Utc::now() {
-                    // Success!
-                    let updated = db_core::user::complete_user_verification(pool.get_ref(), user.id)
-                        .await.map_err(ApiError::Database)?;
+    if let Some(code) = verification_code
+        && code == credentials.code
+        && let Some(expiry) = verification_code_expires_at
+        && expiry > Utc::now()
+    {
+        // Success!
+        let updated = db_core::user::complete_user_verification(pool.get_ref(), user.id)
+            .await
+            .map_err(ApiError::Database)?;
 
-                    return Ok(respond(
-                        &req,
-                        Payload::Item(map_user_to_response(updated)),
-                        |_: Vec<UserResponse>| (),
-                        actix_web::http::StatusCode::OK,
-                    ));
-                }
-            }
-        }
+        return Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(updated)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        ));
     }
 
     Err(ApiError::ValidationError(validator::ValidationErrors::new())) // Generic error for bad code
