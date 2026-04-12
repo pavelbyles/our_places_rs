@@ -12,12 +12,15 @@ leptos_router.workspace = true
 leptos_meta.workspace = true
 
 reqwest.workspace = true
+lettre = { version = "0.11", optional = true, default-features = false, features = ["builder", "smtp-transport", "sendmail-transport", "tokio1-rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
 
 anyhow.workspace = true
 common.workspace = true
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [features]
 csr = ["leptos/csr"]
@@ -26,6 +29,8 @@ ssr = [
     "dep:actix-files",
     "dep:actix-web",
     "dep:leptos_actix",
+    "dep:lettre",
+    "dep:tokio",
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",

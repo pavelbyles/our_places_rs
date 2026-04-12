@@ -91,6 +91,8 @@ jobs:
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@nightly
+      - name: Install msmtp
+        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
       - name: Run web_app tests
         run: cargo test --manifest-path web_app/Cargo.toml --verbose
 
@@ -103,6 +105,8 @@ jobs:
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@nightly
+      - name: Install msmtp
+        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
       - name: Run web_app tests
         run: cargo test --manifest-path web_app_admin/Cargo.toml --verbose
 

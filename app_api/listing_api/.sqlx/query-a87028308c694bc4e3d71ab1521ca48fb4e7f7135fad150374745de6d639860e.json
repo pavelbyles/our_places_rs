@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\"\n            FROM \"user\" WHERE email = $1\n        ",
+  "query": "SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\" FROM \"user\" WHERE id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -40,21 +40,36 @@
       },
       {
         "ordinal": 7,
+        "name": "is_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "verification_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "verification_code_expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 11,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 12,
         "name": "attributes",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "roles: Vec<UserRole>",
         "type_info": {
           "Custom": {
@@ -79,7 +94,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -91,10 +106,13 @@
       true,
       false,
       false,
+      true,
+      true,
+      false,
       false,
       false,
       false
     ]
   },
-  "hash": "fbb36495579d07b14fe990be89980747f6f517944e6a9ec5fd3eaa256e2e76b2"
+  "hash": "a87028308c694bc4e3d71ab1521ca48fb4e7f7135fad150374745de6d639860e"
 }

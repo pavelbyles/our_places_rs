@@ -30,6 +30,9 @@ pub struct User {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub is_verified: bool,
+    pub verification_code: Option<String>,
+    pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
@@ -65,13 +68,16 @@ pub struct NewUser {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub is_verified: bool,
+    pub verification_code: Option<String>,
+    pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: serde_json::Value,
     pub roles: Option<Vec<UserRole>>,
 }
 
 pub use common::models::{NewBookerProfile, NewHostProfile};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct UpdatedUser {
     pub email: Option<String>,
     pub password_hash: Option<String>,
@@ -79,6 +85,9 @@ pub struct UpdatedUser {
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
     pub is_active: Option<bool>,
+    pub is_verified: Option<bool>,
+    pub verification_code: Option<String>,
+    pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<UserRole>>,
 }
@@ -92,6 +101,16 @@ pub enum UserRole {
     Booker,
     Host,
     Admin,
+}
+
+impl std::fmt::Display for UserRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserRole::Booker => write!(f, "Booker"),
+            UserRole::Host => write!(f, "Host"),
+            UserRole::Admin => write!(f, "Admin"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]

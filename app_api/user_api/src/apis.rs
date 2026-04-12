@@ -16,6 +16,7 @@ use common::models::ListingResponse;
 use db_core::booking as db_booking;
 use db_core::listing as db_listing;
 use db_core::models::{NewUser, UpdatedUser, User, UserRole};
+use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::str::FromStr;
@@ -33,6 +34,12 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct VerifyRequest {
+    pub email: String,
+    pub code: String,
+}
+
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserFilter {
     pub search: Option<String>,
@@ -46,10 +53,12 @@ pub struct UserResponse {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub is_verified: bool,
+    pub verification_code: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
-    pub roles: Vec<UserRole>,
+    pub roles: Vec<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -66,10 +75,12 @@ fn map_user_to_response(user: User) -> UserResponse {
         last_name: user.last_name,
         phone_number: user.phone_number,
         is_active: user.is_active,
+        is_verified: user.is_verified,
+        verification_code: user.verification_code,
         created_at: user.created_at,
         updated_at: user.updated_at,
         attributes: user.attributes,
-        roles: user.roles,
+        roles: user.roles.into_iter().map(|r| r.to_string()).collect(),
     }
 }
 
@@ -106,6 +117,13 @@ async fn create_user(
         let password_hash = bcrypt::hash(&req_data.password, bcrypt::DEFAULT_COST)
             .map_err(|_| ApiError::Internal)?;
 
+        let otp: String = Alphanumeric
+            .sample_string(&mut rand::rng(), 6)
+            .to_uppercase();
+
+        // Let's make it easy to see in logs
+        tracing::info!("VERIFICATION CODE FOR {}: {}", req_data.email, otp);
+
         attempts += 1;
         let user = NewUser {
             id: Uuid::now_v7(),
@@ -115,6 +133,9 @@ async fn create_user(
             last_name: req_data.last_name.clone(),
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
+            is_verified: false,
+            verification_code: Some(otp),
+            verification_code_expires_at: Some(Utc::now() + chrono::Duration::minutes(30)),
             attributes: req_data
                 .attributes
                 .clone()
@@ -275,6 +296,10 @@ async fn login(
         return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
     }
 
+    if !user.is_verified {
+        return Err(ApiError::Unauthorized("Account not verified".to_string()));
+    }
+
     // Return user info
     Ok(respond(
         &req,
@@ -282,6 +307,63 @@ async fn login(
         |_: Vec<UserResponse>| (),
         actix_web::http::StatusCode::OK,
     ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/verify",
+    tag = "auth",
+    request_body = VerifyRequest,
+    responses(
+        (status = 200, description = "Verification successful", body = UserResponse),
+        (status = 400, description = "Invalid code or expired"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn verify_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    verify_req: web::Json<VerifyRequest>,
+) -> Result<impl Responder, ApiError> {
+    let credentials = verify_req.into_inner();
+
+    // Fetch user
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &credentials.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid user or code".to_string()))?;
+
+    // Let's do a direct query for verification
+    let record = sqlx::query!(
+        r#"SELECT verification_code as "verification_code?", verification_code_expires_at as "verification_code_expires_at?" FROM "user" WHERE id = $1"#,
+        user.id
+    )
+    .fetch_one(pool.get_ref())
+    .await
+    .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
+    let verification_code: Option<String> = record.verification_code;
+    let verification_code_expires_at: Option<DateTime<Utc>> = record.verification_code_expires_at;
+
+    if let Some(code) = verification_code
+        && code == credentials.code
+        && let Some(expiry) = verification_code_expires_at
+        && expiry > Utc::now()
+    {
+        // Success!
+        let updated = db_core::user::complete_user_verification(pool.get_ref(), user.id)
+            .await
+            .map_err(ApiError::Database)?;
+
+        return Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(updated)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        ));
+    }
+
+    Err(ApiError::ValidationError(validator::ValidationErrors::new())) // Generic error for bad code
 }
 
 #[tracing::instrument]
@@ -329,6 +411,9 @@ async fn update_user(
             last_name: req_data.last_name.clone(),
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
+            is_verified: req_data.is_verified,
+            verification_code: None,
+            verification_code_expires_at: None,
             attributes: req_data.attributes.clone(),
             roles: req_data.roles.clone().map(|roles| {
                 roles
@@ -611,6 +696,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::post()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(login),
+            )
+            .route(
+                "/verify",
+                web::post()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(verify_user),
             ),
     );
 }
