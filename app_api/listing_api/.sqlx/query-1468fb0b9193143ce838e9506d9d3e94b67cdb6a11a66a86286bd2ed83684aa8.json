@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) as count FROM booking \n        WHERE listing_id = $1 \n          AND status IN ('pending', 'confirmed') \n          AND date_from < $3 \n          AND date_to > $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1468fb0b9193143ce838e9506d9d3e94b67cdb6a11a66a86286bd2ed83684aa8"
+}

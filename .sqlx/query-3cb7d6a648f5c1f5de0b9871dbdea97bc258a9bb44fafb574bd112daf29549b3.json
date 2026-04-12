@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT verification_code as \"verification_code?\", verification_code_expires_at as \"verification_code_expires_at?\" FROM \"user\" WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "verification_code?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "verification_code_expires_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "3cb7d6a648f5c1f5de0b9871dbdea97bc258a9bb44fafb574bd112daf29549b3"
+}
