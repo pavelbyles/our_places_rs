@@ -16,6 +16,7 @@ use common::models::ListingResponse;
 use db_core::booking as db_booking;
 use db_core::listing as db_listing;
 use db_core::models::{NewUser, UpdatedUser, User, UserRole};
+use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::str::FromStr;
@@ -23,7 +24,6 @@ use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
-use rand::distr::{Alphanumeric, SampleString};
 
 pub use common::models::NewUserRequest;
 pub use common::models::UpdateUserRequest;
@@ -33,7 +33,7 @@ pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
- 
+
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct VerifyRequest {
     pub email: String,
@@ -117,8 +117,10 @@ async fn create_user(
         let password_hash = bcrypt::hash(&req_data.password, bcrypt::DEFAULT_COST)
             .map_err(|_| ApiError::Internal)?;
 
-        let otp: String = Alphanumeric.sample_string(&mut rand::rng(), 6).to_uppercase();
-        
+        let otp: String = Alphanumeric
+            .sample_string(&mut rand::rng(), 6)
+            .to_uppercase();
+
         // Let's make it easy to see in logs
         tracing::info!("VERIFICATION CODE FOR {}: {}", req_data.email, otp);
 
@@ -325,17 +327,12 @@ async fn verify_user(
     verify_req: web::Json<VerifyRequest>,
 ) -> Result<impl Responder, ApiError> {
     let credentials = verify_req.into_inner();
-    
+
     // Fetch user
     let user = db_core::user::get_user_by_email(pool.get_ref(), &credentials.email)
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid user or code".to_string()))?;
 
-    // Check code in attributes or a dedicated field? 
-    // We added verification_code to the User model, but we don't have a direct way to fetch it 
-    // without sqlx since we didn't add it to the returned User struct for security usually.
-    // However, I added it to NewUser and it is in the DB.
-    
     // Let's do a direct query for verification
     let record = sqlx::query!(
         r#"SELECT verification_code as "verification_code?", verification_code_expires_at as "verification_code_expires_at?" FROM "user" WHERE id = $1"#,
