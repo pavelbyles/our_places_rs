@@ -76,6 +76,7 @@ pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFn
         is_active: params.is_active,
         attributes: Some(attributes),
         roles: Some(roles),
+        is_verified: true,
         booker_profile: None,
         host_profile: None,
     };
@@ -122,6 +123,7 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
         is_active: Some(params.is_active),
         attributes: Some(attributes),
         roles: Some(roles),
+        is_verified: Some(true),
         booker_profile: None,
         host_profile: None,
     };

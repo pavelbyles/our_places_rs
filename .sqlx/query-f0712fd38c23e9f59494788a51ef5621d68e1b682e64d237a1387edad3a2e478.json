@@ -1,0 +1,178 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency\n            FROM listing\n            LEFT JOIN LATERAL (\n                SELECT thumb_img.upload_url\n                FROM listing_image parent_img\n                JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n                WHERE parent_img.listing_id = listing.id\n                  AND parent_img.is_primary = TRUE\n                  AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n                LIMIT 1\n            ) AS primary_img ON true\n            WHERE listing.id = $1 AND listing.deleted_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_structure_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_per_night",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "added_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "weekly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "monthly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "primary_image_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "max_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "bedrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "beds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "full_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 18,
+        "name": "half_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 19,
+        "name": "square_meters",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 21,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 22,
+        "name": "overall_rating",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 23,
+        "name": "review_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 24,
+        "name": "listing_details",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 25,
+        "name": "city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
+        "name": "base_currency",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f0712fd38c23e9f59494788a51ef5621d68e1b682e64d237a1387edad3a2e478"
+}

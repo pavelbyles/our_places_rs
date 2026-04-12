@@ -15,9 +15,9 @@ where
 {
     let user = sqlx::query_as::<_, User>(
         r#"
-            INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles
+            INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
         "#,
     )
     .bind(new_user_request.id)
@@ -27,6 +27,9 @@ where
     .bind(&new_user_request.last_name)
     .bind(&new_user_request.phone_number)
     .bind(new_user_request.is_active)
+    .bind(new_user_request.is_verified)
+    .bind(&new_user_request.verification_code)
+    .bind(new_user_request.verification_code_expires_at)
     .bind(Utc::now())
     .bind(Utc::now())
     .bind(&new_user_request.attributes)
@@ -46,7 +49,7 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>"
+            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>"
             FROM "user" WHERE id = $1
         "#,
         id,
@@ -66,7 +69,7 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>"
+            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>"
             FROM "user" WHERE email = $1
         "#,
         email,
@@ -81,15 +84,15 @@ where
 pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>" FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>" FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
     sqlx::query(
         r#"
         INSERT INTO user_history
-        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, valid_from, attributes, roles)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
     .bind(current.id)
@@ -99,6 +102,7 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     .bind(&current.last_name)
     .bind(&current.phone_number)
     .bind(current.is_active)
+    .bind(current.is_verified)
     .bind(current.updated_at)
     .bind(&current.attributes)
     .bind(&current.roles)
@@ -115,11 +119,14 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
             last_name = COALESCE($5, last_name),
             phone_number = COALESCE($6, phone_number),
             is_active = COALESCE($7, is_active),
-            attributes = COALESCE($8, attributes),
-            roles = COALESCE($9, roles),
+            is_verified = COALESCE($8, is_verified),
+            verification_code = COALESCE($9, verification_code),
+            verification_code_expires_at = COALESCE($10, verification_code_expires_at),
+            attributes = COALESCE($11, attributes),
+            roles = COALESCE($12, roles),
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
         "#,
     )
     .bind(id)
@@ -129,6 +136,9 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     .bind(&updated_user.last_name)
     .bind(&updated_user.phone_number)
     .bind(updated_user.is_active)
+    .bind(updated_user.is_verified)
+    .bind(&updated_user.verification_code)
+    .bind(updated_user.verification_code_expires_at)
     .bind(&updated_user.attributes)
     .bind(updated_user.roles.as_deref())
     .fetch_one(&mut *tx)
@@ -191,6 +201,56 @@ where
     Ok(profile)
 }
 
+#[tracing::instrument(skip(pool))]
+pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>" FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_history
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "#,
+    )
+    .bind(current.id)
+    .bind(&current.email)
+    .bind(&current.password_hash)
+    .bind(&current.first_name)
+    .bind(&current.last_name)
+    .bind(&current.phone_number)
+    .bind(current.is_active)
+    .bind(current.is_verified)
+    .bind(current.updated_at)
+    .bind(&current.attributes)
+    .bind(&current.roles)
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, User>(
+        r#"
+        UPDATE "user"
+        SET
+            is_verified = TRUE,
+            verification_code = NULL,
+            verification_code_expires_at = NULL,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(updated)
+}
+
 /// Retrieves all users with optional filtering and pagination
 #[tracing::instrument(skip(executor))]
 pub async fn get_all_users<'e, E>(
@@ -206,7 +266,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, created_at, updated_at, attributes, roles
+        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
         FROM "user"
         WHERE 1 = 1
         "#,
