@@ -10,16 +10,15 @@ pub async fn send_verification_email(
     first_name: &str,
     otp: &str,
 ) -> anyhow::Result<()> {
+    let to_email = to_email.to_string();
     // For local development, we use msmtp if SMTP_HOST is not configured
     let smtp_host = env::var("SMTP_HOST").unwrap_or_default();
+    let from_email = env::var("SMTP_FROM").unwrap_or_else(|_| "noreply@ourplaces.io".to_string());
+    tracing::info!("Sending verification email from {} to {} (OTP: {})", from_email, to_email, otp);
 
     let html_content = VERIFICATION_TEMPLATE
         .replace("{{first_name}}", first_name)
         .replace("{{otp}}", otp);
-
-    tracing::info!("Sending verification email to {} (OTP: {})", to_email, otp);
-
-    let from_email = env::var("SMTP_FROM").unwrap_or_else(|_| "noreply@ourplaces.io".to_string());
 
     let email = Message::builder()
         .from(from_email.parse()?)
@@ -38,18 +37,38 @@ pub async fn send_verification_email(
             .build();
 
         let email_copy = email.clone();
-        tokio::task::spawn_blocking(move || -> Result<lettre::transport::smtp::response::Response, lettre::transport::smtp::Error> {
-            mailer.send(&email_copy)
+        tokio::task::spawn_blocking(move || {
+            match mailer.send(&email_copy) {
+                Ok(resp) => {
+                    tracing::info!("SMTP success: {:?}", resp);
+                    Ok(resp)
+                }
+                Err(e) => {
+                    tracing::error!("SMTP failed for {}: {}", to_email, e);
+                    Err(e)
+                }
+            }
         }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))??;
     } else {
         // msmtp Configuration (Local/Non-production)
-        tracing::info!("Using msmtp for email delivery");
+        tracing::info!("Using msmtp for email delivery to {}", to_email);
         use lettre::transport::sendmail::SendmailTransport;
 
         let mailer = SendmailTransport::new();
 
         let email_copy = email.clone();
-        tokio::task::spawn_blocking(move || mailer.send(&email_copy))
+        tokio::task::spawn_blocking(move || {
+            match mailer.send(&email_copy) {
+                Ok(_) => {
+                    tracing::info!("msmtp success for {}", to_email);
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::error!("msmtp failed for {}: {}", to_email, e);
+                    Err(e)
+                }
+            }
+        })
             .await
             .map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))??;
     }
@@ -66,6 +85,7 @@ pub async fn send_booking_confirmation(
     check_out: &str,
     guests: i32,
 ) -> anyhow::Result<()> {
+    let to_email = to_email.to_string();
     let smtp_host = env::var("SMTP_HOST").unwrap_or_default();
     let site_url = env::var("SITE_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
@@ -78,9 +98,8 @@ pub async fn send_booking_confirmation(
         .replace("{{guests}}", &guests.to_string())
         .replace("{{site_url}}", &site_url);
 
-    tracing::info!("Sending booking confirmation email to {}", to_email);
-
     let from_email = env::var("SMTP_FROM").unwrap_or_else(|_| "noreply@ourplaces.io".to_string());
+    tracing::info!("Sending booking confirmation from {} to {}", from_email, to_email);
 
     let email = Message::builder()
         .from(from_email.parse()?)
@@ -98,15 +117,37 @@ pub async fn send_booking_confirmation(
             .build();
 
         let email_copy = email.clone();
-        tokio::task::spawn_blocking(move || mailer.send(&email_copy))
+        tokio::task::spawn_blocking(move || {
+            match mailer.send(&email_copy) {
+                Ok(resp) => {
+                    tracing::info!("Booking SMTP success: {:?}", resp);
+                    Ok(resp)
+                }
+                Err(e) => {
+                    tracing::error!("Booking SMTP failed for {}: {}", to_email, e);
+                    Err(e)
+                }
+            }
+        })
             .await
             .map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))??;
     } else {
-        tracing::info!("Using msmtp for booking confirmation");
+        tracing::info!("Using msmtp for booking confirmation to {}", to_email);
         use lettre::transport::sendmail::SendmailTransport;
         let mailer = SendmailTransport::new();
         let email_copy = email.clone();
-        tokio::task::spawn_blocking(move || mailer.send(&email_copy))
+        tokio::task::spawn_blocking(move || {
+            match mailer.send(&email_copy) {
+                Ok(_) => {
+                    tracing::info!("Booking msmtp success for {}", to_email);
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::error!("Booking msmtp failed for {}: {}", to_email, e);
+                    Err(e)
+                }
+            }
+        })
             .await
             .map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))??;
     }

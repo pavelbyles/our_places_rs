@@ -221,6 +221,7 @@ pub async fn complete_booking(
         use web_app_common::email::send_booking_confirmation;
 
         let pool = get_pool().await;
+        tracing::info!("Completing booking for ID: {}", booking_id);
 
         let update = UpdatedBooking {
             status: Some(BookingStatus::Confirmed),
@@ -260,7 +261,7 @@ pub async fn complete_booking(
         )
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to send confirmation email: {}", e)))?;
-
+        tracing::info!("Booking {} successfully confirmed and email sent.", booking_id);
         leptos_actix::redirect("/");
         Ok(())
     }
@@ -484,6 +485,16 @@ pub fn CheckoutPage() -> impl IntoView {
                     }.into_any()
                 })}
             </Suspense>
+
+            {move || complete_booking_action.value().get().map(|res| match res {
+                Err(e) => view! {
+                    <div class="alert alert-error mt-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span>"Failed to complete booking: " {e.to_string()}</span>
+                    </div>
+                }.into_any(),
+                _ => view! { <div></div> }.into_any()
+            })}
         </div>
     }
 }
