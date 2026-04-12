@@ -1,14 +1,26 @@
 use leptos::prelude::*;
-use leptos_router::components::A;
+use crate::app::AuthContext;
+use crate::auth::logout;
 
 #[component]
 pub fn LayoutNoSearch(children: Children) -> impl IntoView {
+    let auth = use_context::<AuthContext>().expect("AuthContext should be provided");
+    let user = auth.user;
+
+    let logout_action = Action::new(|_| async move { logout().await });
+
+    Effect::new(move || {
+        if let Some(Ok(_)) = logout_action.value().get() {
+            auth.refresh();
+        }
+    });
+
     view! {
         <div class="drawer">
             <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
             <div class="drawer-content flex flex-col min-h-screen">
                 // Navbar
-                <div class="navbar bg-base-300 w-full">
+                <div class="navbar bg-base-300 w-full px-4">
                     <div class="flex-none lg:hidden">
                         <label for="my-drawer-2" aria-label="open sidebar" class="btn btn-square btn-ghost">
                         <svg
@@ -26,37 +38,62 @@ pub fn LayoutNoSearch(children: Children) -> impl IntoView {
                         </svg>
                         </label>
                     </div>
-                    <div class="mx-2 flex-1 px-2">
-                        <a class="btn btn-ghost text-xl">Our Places</a>
+                    <div class="flex-1">
+                                                <a href="/" class="btn btn-ghost text-xl font-bold tracking-tighter">"Our Places"</a>
                     </div>
+                    
                     <div class="hidden flex-none lg:block">
-                        <ul class="menu menu-horizontal">
-                            // Navbar menu content here
-                            <li><A href="/home">"Home"</A></li>
-                            <li><A href="/listings">"Listings"</A></li>
-                            <li><A href="/about">"About"</A></li>
+                        <ul class="menu menu-horizontal px-1 gap-1">
+                            <li><a href="/home">"Home"</a></li>
+                            <li><a href="/listings">"Listings"</a></li>
+                            <li><a href="/about">"About"</a></li>
                         </ul>
                     </div>
-                    <div class="dropdown dropdown-end">
-                        <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
-                            <div class="w-10 rounded-full">
-                            <img
-                                alt="Tailwind CSS Navbar component"
-                                src="https://img.daisyui.com/images/stock/photo-1534528741775-53994a69daeb.webp" />
-                            </div>
-                        </div>
-                        <ul
-                            tabindex="-1"
-                            class="menu menu-sm dropdown-content bg-base-100 rounded-box z-1 mt-3 w-52 p-2 shadow">
-                            <li>
-                            <a class="justify-between">
-                                Profile
-                                <span class="badge">New</span>
-                            </a>
-                            </li>
-                            <li><a>Settings</a></li>
-                            <li><a>Logout</a></li>
-                        </ul>
+
+                    <div class="flex-none gap-2 ml-4">
+                        <Suspense fallback=move || view! { <div class="loading loading-spinner loading-sm"></div> }>
+                            {move || {
+                                user.get().map(|res| {
+                                    match res {
+                                        Ok(Some(u)) => view! {
+                                            <div class="dropdown dropdown-end">
+                                                <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar border-2 border-primary/20">
+                                                    <div class="w-10 rounded-full">
+                                                        <img
+                                                            alt="User avatar"
+                                                            src=format!("https://ui-avatars.com/api/?name={}&background=random", u.name) />
+                                                    </div>
+                                                </div>
+                                                <ul
+                                                    tabindex="-1"
+                                                    class="menu menu-sm dropdown-content bg-base-100 rounded-box z-1 mt-3 w-52 p-2 shadow-2xl border border-base-200">
+                                                    <li class="px-4 py-2 border-b border-base-200 mb-2">
+                                                        <span class="font-bold text-sm">{u.name.clone()}</span>
+                                                        <span class="text-xs opacity-60 truncate">{u.email.clone()}</span>
+                                                    </li>
+                                                    <li><a href="/profile">"Profile"</a></li>
+                                                    <li><a href="/settings">"Settings"</a></li>
+                                                    <li>
+                                                        <button 
+                                                            class="text-error"
+                                                            on:click=move |_| { logout_action.dispatch(()); }
+                                                        >
+                                                            "Logout"
+                                                        </button>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        }.into_any(),
+                                        _ => view! {
+                                            <div class="flex items-center gap-2">
+                                                <a href="/login" class="btn btn-ghost btn-sm hidden sm:flex">"Log In"</a>
+                                                <a href="/register" class="btn btn-primary btn-sm">"Sign Up"</a>
+                                            </div>
+                                        }.into_any()
+                                    }
+                                })
+                            }}
+                        </Suspense>
                     </div>
                 </div>
 
@@ -130,8 +167,8 @@ pub fn LayoutNoSearch(children: Children) -> impl IntoView {
             <div class="drawer-side">
                 <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
                 <ul class="menu bg-base-200 min-h-full w-80 p-4">
-                    <li><A href="/home">"Home"</A></li>
-                    <li><A href="/about">"About"</A></li>
+                    <li><a href="/home">"Home"</a></li>
+                    <li><a href="/about">"About"</a></li>
                 </ul>
             </div>
         </div>
