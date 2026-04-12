@@ -26,6 +26,8 @@ pub struct CreateListingParams {
     pub half_bathrooms: Option<i32>,
     pub square_meters: Option<i32>,
     pub listing_details: Option<String>,
+    pub minimum_stay: Option<i32>,
+    pub days_between_bookings: Option<i32>,
 }
 
 #[server]
@@ -61,6 +63,8 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         half_bathrooms: params.half_bathrooms.unwrap_or(0),
         square_meters: params.square_meters,
         listing_details: params.listing_details.and_then(|s| serde_json::from_str(&s).ok()),
+        minimum_stay: params.minimum_stay.unwrap_or(1),
+        days_between_bookings: params.days_between_bookings.unwrap_or(0),
     };
 
     let api_url = crate::api_client::listing_api_url();
@@ -689,6 +693,18 @@ pub fn ListingsPage() -> impl IntoView {
                                 <span class="label-text">Square Meters</span>
                             </label>
                             <input type="number" min="0" name="params[square_meters]" placeholder="e.g. 100" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Minimum Stay (Nights)</span>
+                            </label>
+                            <input type="number" min="1" name="params[minimum_stay]" placeholder="1" class="input input-bordered w-full max-w-xs" />
+                        </div>
+                        <div>
+                            <label class="label">
+                                <span class="label-text">Days Between Bookings</span>
+                            </label>
+                            <input type="number" min="0" name="params[days_between_bookings]" placeholder="0" class="input input-bordered w-full max-w-xs" />
                         </div>
                         <div class="w-full max-w-xs flex flex-col">
                             <label class="label">

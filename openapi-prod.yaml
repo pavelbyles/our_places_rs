@@ -679,6 +679,12 @@ components:
           type: string
         price_per_night:
           type: number
+        minimum_stay:
+          type: integer
+          default: 1
+        days_between_bookings:
+          type: integer
+          default: 0
 
     UpdatedListingRequest:
       type: object
@@ -696,6 +702,10 @@ components:
           type: number
         is_active:
           type: boolean
+        minimum_stay:
+          type: integer
+        days_between_bookings:
+          type: integer
 
     ListingResponse:
       type: object
@@ -721,6 +731,10 @@ components:
         added_at:
           type: string
           format: date-time
+        minimum_stay:
+          type: integer
+        days_between_bookings:
+          type: integer
 
     # -------------------------------------------------------------
     # Booking Models

@@ -23,6 +23,7 @@ uuid = { workspace = true, features = ["v4"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde_json.workspace = true
+chrono = { workspace = true, features = ["serde"] }
 anyhow.workspace = true
 serde.workspace = true
 web_app_common.workspace = true

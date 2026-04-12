@@ -3,6 +3,7 @@ use num_format::{Locale, ToFormattedString};
 use rust_decimal::prelude::ToPrimitive;
 use web_app_common::listings::get_listing_by_id_server;
 use common::models::{ListingResponse};
+use chrono::{NaiveDate};
 
 #[component]
 #[allow(non_snake_case)]
@@ -26,6 +27,31 @@ pub fn BookingCard(
             }
         },
     );
+    
+    let (check_in, set_check_in) = signal(None::<String>);
+    let (check_out, set_check_out) = signal(None::<String>);
+    
+    let validation = Memo::new(move |_| {
+        let l = listing_resource.get()?;
+        let listing = l.ok()?;
+        
+        let start_str = check_in.get()?;
+        let end_str = check_out.get()?;
+        
+        let start = NaiveDate::parse_from_str(&start_str, "%Y-%m-%d").ok()?;
+        let end = NaiveDate::parse_from_str(&end_str, "%Y-%m-%d").ok()?;
+        
+        if end <= start {
+            return Some(Err("Check-out must be after check-in".to_string()));
+        }
+        
+        let nights = (end - start).num_days() as i32;
+        if nights < listing.minimum_stay {
+            return Some(Err(format!("Minimum stay is {} nights", listing.minimum_stay)));
+        }
+        
+        Some(Ok(nights))
+    });
 
     view! {
         <div class="card bg-base-100 w-full shadow-xl border border-base-200">
@@ -53,13 +79,26 @@ pub fn BookingCard(
                                         <div class="grid grid-cols-2 border-b border-base-300">
                                             <div class="p-3 border-r border-base-300 hover:bg-base-200/50 transition-colors cursor-pointer">
                                                 <label class="block text-[10px] font-bold uppercase text-base-content/60">"Check-in"</label>
-                                                <input type="date" class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1" />
+                                                <input 
+                                                    type="date" 
+                                                    class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1" 
+                                                    on:change=move |ev| set_check_in.set(Some(event_target_value(&ev)))
+                                                    prop:value=move || check_in.get().unwrap_or_default()
+                                                />
                                             </div>
                                             <div class="p-3 hover:bg-base-200/50 transition-colors cursor-pointer">
                                                 <label class="block text-[10px] font-bold uppercase text-base-content/60">"Check-out"</label>
-                                                <input type="date" class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1" />
+                                                <input 
+                                                    type="date" 
+                                                    class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1" 
+                                                    on:change=move |ev| set_check_out.set(Some(event_target_value(&ev)))
+                                                    prop:value=move || check_out.get().unwrap_or_default()
+                                                />
                                             </div>
                                         </div>
+                                        {move || validation.get().and_then(|res| res.err()).map(|err| {
+                                            view! { <div class="px-3 py-1 text-[10px] font-bold text-error uppercase bg-error/10"> {err} </div> }
+                                        })}
                                         <div class="p-3 hover:bg-base-200/50 transition-colors cursor-pointer">
                                             <label class="block text-[10px] font-bold uppercase text-base-content/60">"# of Guests"</label>
                                             <select class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1 appearance-none">
@@ -73,7 +112,12 @@ pub fn BookingCard(
                                     </div>
 
                                     <div class="flex flex-col gap-2">
-                                        <button class="btn btn-primary btn-lg w-full">"Book Now"</button>
+                                        <button 
+                                            class="btn btn-primary btn-lg w-full"
+                                            disabled=move || validation.get().map(|r| r.is_err()).unwrap_or(true)
+                                        >
+                                            "Book Now"
+                                        </button>
                                         <p class="text-center text-sm text-base-content/60">"You won't be charged yet"</p>
                                     </div>
 
@@ -84,10 +128,29 @@ pub fn BookingCard(
                                             <span class="underline">"Price per night"</span>
                                             <span>"$" {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
                                         </div>
-                                        <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
-                                            <span>"Total"</span>
-                                            <span>"$" {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
-                                        </div>
+                                        {move || validation.get().and_then(|res| res.ok()).map(|nights| {
+                                            let total = listing.price_per_night.map(|p| p * rust_decimal::Decimal::from(nights)).unwrap_or_default();
+                                            view! {
+                                                <div class="flex justify-between text-lg">
+                                                    <span class="underline">"Nights"</span>
+                                                    <span>{nights}</span>
+                                                </div>
+                                                <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
+                                                    <span>"Total"</span>
+                                                    <span>"$" {total.to_i64().unwrap().to_formatted_string(&Locale::en)}</span>
+                                                </div>
+                                            }
+                                        })}
+                                        {move || if validation.get().is_none() {
+                                            view! {
+                                                <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
+                                                    <span>"Total"</span>
+                                                    <span>"$" {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
+                                                </div>
+                                            }.into_any()
+                                        } else {
+                                            ().into_any()
+                                        }}
                                     </div>
                                 </div>
                             }.into_any()

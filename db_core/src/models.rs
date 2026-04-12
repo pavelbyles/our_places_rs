@@ -228,6 +228,8 @@ pub struct Listing {
     pub listing_details: Json<serde_json::Value>,
     pub city: Option<String>,
     pub base_currency: String,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -256,6 +258,8 @@ pub struct ListingWithOwner {
     pub base_currency: String,
     pub slug: String,
     pub listing_details: Json<serde_json::Value>,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -289,6 +293,8 @@ pub struct NewListing {
     pub listing_details: Option<serde_json::Value>,
     pub city: Option<String>,
     pub base_currency: String,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -325,6 +331,8 @@ pub struct UpdatedListing {
     pub listing_details: Option<serde_json::Value>,
     pub city: Option<String>,
     pub base_currency: Option<String>,
+    pub minimum_stay: Option<i32>,
+    pub days_between_bookings: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

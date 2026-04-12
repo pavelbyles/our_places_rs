@@ -90,6 +90,16 @@ pub struct UpdatedListingRequest {
     #[serde(default)]
     #[schema(value_type = String, example = "Kingston")]
     pub city: Option<String>,
+
+    #[serde(default)]
+    #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
+    pub minimum_stay: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    pub days_between_bookings: Option<i32>,
 }
 
 /// Gives first 10 listings if no page or per_page is provided
@@ -246,6 +256,8 @@ async fn create_listing(
             listing_details: req_data.listing_details.clone(),
             city: req_data.city.clone(),
             base_currency: req_data.base_currency.clone(),
+            minimum_stay: req_data.minimum_stay,
+            days_between_bookings: req_data.days_between_bookings,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -335,6 +347,8 @@ async fn update_listing(
         listing_details: req_data.listing_details,
         city: req_data.city,
         base_currency: None, // Frontend isn't sending option to update base currency yet, except maybe in full update.
+        minimum_stay: req_data.minimum_stay,
+        days_between_bookings: req_data.days_between_bookings,
     };
 
     let updated_listing =

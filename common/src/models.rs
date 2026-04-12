@@ -80,6 +80,8 @@ pub struct ListingResponse {
     pub base_currency: String,
     pub slug: String,
     pub listing_details: Option<serde_json::Value>,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -266,6 +268,24 @@ pub struct NewListingRequest {
     #[serde(default = "default_base_currency")]
     #[schema(value_type = String, example = "USD")]
     pub base_currency: String,
+
+    #[serde(default = "default_minimum_stay")]
+    #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
+    pub minimum_stay: i32,
+
+    #[serde(default = "default_days_between_bookings")]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    pub days_between_bookings: i32,
+}
+
+pub fn default_minimum_stay() -> i32 {
+    1
+}
+
+pub fn default_days_between_bookings() -> i32 {
+    0
 }
 
 pub fn default_base_currency() -> String {

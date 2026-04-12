@@ -104,6 +104,8 @@ async fn test_get_listing_by_id_success() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -198,6 +200,8 @@ async fn test_create_listing_validation_error() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
 
     let req = test::TestRequest::post()
@@ -239,6 +243,8 @@ async fn test_delete_listing() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -287,6 +293,8 @@ async fn test_delete_listing() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -339,6 +347,8 @@ async fn test_delete_listing_hard_forbidden() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -395,6 +405,8 @@ async fn test_xml_serialization_of_vec() {
         base_currency: "USD".to_string(),
         slug: "test".to_string(),
         listing_details: None,
+        minimum_stay: 1,
+        days_between_bookings: 0,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -433,6 +445,8 @@ async fn test_update_listing_multiple_times() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -467,6 +481,8 @@ async fn test_update_listing_multiple_times() {
         longitude: None,
         listing_details: None,
         city: None,
+        minimum_stay: None,
+        days_between_bookings: None,
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -498,6 +514,8 @@ async fn test_update_listing_multiple_times() {
         longitude: None,
         listing_details: None,
         city: None,
+        minimum_stay: None,
+        days_between_bookings: None,
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -540,6 +558,8 @@ async fn test_get_listings_with_filter() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -565,6 +585,8 @@ async fn test_get_listings_with_filter() {
         listing_details: None,
         city: None,
         base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await
