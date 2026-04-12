@@ -79,7 +79,7 @@ async fn test_create_user_booker_with_profile() {
     assert_eq!(resp.status(), 201);
 
     let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Booker));
+    assert!(body.roles.contains(&UserRole::Booker.to_string()));
 }
 
 #[actix_web::test]
@@ -123,7 +123,7 @@ async fn test_create_user_host_with_profile() {
     assert_eq!(resp.status(), 201);
 
     let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Host));
+    assert!(body.roles.contains(&UserRole::Host.to_string()));
 }
 
 #[actix_web::test]
@@ -163,7 +163,7 @@ async fn test_create_user_admin() {
     assert_eq!(resp.status(), 201);
 
     let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Admin));
+    assert!(body.roles.contains(&UserRole::Admin.to_string()));
     assert_eq!(body.attributes["access_level"], "super");
 }
 
@@ -209,8 +209,8 @@ async fn test_create_user_mixed_roles() {
     assert_eq!(resp.status(), 201);
 
     let body: UserResponse = test::read_body_json(resp).await;
-    assert!(body.roles.contains(&UserRole::Booker));
-    assert!(body.roles.contains(&UserRole::Host));
+    assert!(body.roles.contains(&UserRole::Booker.to_string()));
+    assert!(body.roles.contains(&UserRole::Host.to_string()));
 }
 
 #[actix_web::test]
@@ -270,8 +270,8 @@ async fn test_update_user_add_role_and_profile() {
     assert_eq!(resp.status(), 200);
 
     let updated_user: UserResponse = test::read_body_json(resp).await;
-    assert!(updated_user.roles.contains(&UserRole::Booker));
-    assert!(updated_user.roles.contains(&UserRole::Host));
+    assert!(updated_user.roles.contains(&UserRole::Booker.to_string()));
+    assert!(updated_user.roles.contains(&UserRole::Host.to_string()));
 
     // The successful 200 OK and roles verification is a strong signal.
 }

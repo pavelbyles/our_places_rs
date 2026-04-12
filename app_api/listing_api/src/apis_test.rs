@@ -20,6 +20,9 @@ async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
         last_name: "User".to_string(),
         phone_number: None,
         is_active: true,
+        is_verified: true,
+        verification_code: None,
+        verification_code_expires_at: None,
         attributes: serde_json::json!({}),
         roles: None,
     };

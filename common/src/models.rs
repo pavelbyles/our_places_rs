@@ -30,7 +30,9 @@ pub struct NewUserRequest {
     #[validate(length(min = 1))]
     pub last_name: String,
     pub phone_number: Option<String>,
+    #[serde(default)]
     pub is_active: bool,
+    #[serde(default)]
     pub is_verified: bool,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<String>>,
@@ -45,7 +47,9 @@ pub struct UpdateUserRequest {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
+    #[serde(default)]
     pub is_active: Option<bool>,
+    #[serde(default)]
     pub is_verified: Option<bool>,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<String>>,
