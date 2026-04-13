@@ -134,7 +134,7 @@ where
     );
     query_builder.push_bind(parsed_res);
     query_builder.push(
-        r#"
+        r#"::image_resolution
             LIMIT 1
         ) AS primary_img ON true
         WHERE listing.deleted_at IS NULL

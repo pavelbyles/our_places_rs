@@ -15,10 +15,10 @@ pub struct UserProfile {
 pub async fn login_traditional(email: String, password: String) -> Result<(), ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use web_app_common::api_client::{get_client, user_api_url};
+        use web_app_common::api_client::{get_client, user_api_url, user_api_audience};
 
         let url = format!("{}/api/v1/users/login", user_api_url());
-        let audience = user_api_url();
+        let audience = user_api_audience();
 
         let payload = serde_json::json!({
             "email": email,
@@ -108,10 +108,10 @@ pub async fn register(
     #[cfg(feature = "ssr")]
     {
         use common::models::{NewBookerProfile, NewUserRequest};
-        use web_app_common::api_client::{get_client, user_api_url};
+        use web_app_common::api_client::{get_client, user_api_url, user_api_audience};
 
         let url = format!("{}/api/v1/users/", user_api_url());
-        let audience = user_api_url();
+        let audience = user_api_audience();
 
         let req_data = NewUserRequest {
             email: email.clone(),
@@ -235,10 +235,10 @@ pub async fn get_current_user() -> Result<Option<UserProfile>, ServerFnError> {
 pub async fn verify_email_code(email: String, code: String) -> Result<(), ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use web_app_common::api_client::{get_client, user_api_url};
+        use web_app_common::api_client::{get_client, user_api_url, user_api_audience};
 
         let url = format!("{}/api/v1/users/verify", user_api_url());
-        let audience = user_api_url();
+        let audience = user_api_audience();
 
         let payload = serde_json::json!({
             "email": email,
