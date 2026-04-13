@@ -103,7 +103,7 @@ pub struct UpdatedListingRequest {
 }
 
 /// Gives first 10 listings if no page or per_page is provided
-#[tracing::instrument]
+#[tracing::instrument(err)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings",

@@ -229,7 +229,10 @@ where
 
 /// Retrieves a single listing from the database by its UUID.
 #[tracing::instrument(skip(executor))]
-pub async fn get_listing_by_id<'a, A>(executor: A, id: Uuid) -> Result<crate::models::ListingDetails>
+pub async fn get_listing_by_id<'a, A>(
+    executor: A,
+    id: Uuid,
+) -> Result<crate::models::ListingDetails>
 where
     A: sqlx::Acquire<'a, Database = sqlx::Postgres>,
 {
