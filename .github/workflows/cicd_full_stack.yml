@@ -211,17 +211,19 @@ jobs:
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           BUCKET_NAME="gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX"
-          TOPIC_NAME="projects/${{ env.PROJECT_ID }}/topics/our-places-image-uploads-raw-$SUFFIX"
+          TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
 
-          echo "Checking if notification already exists for $TOPIC_NAME on $BUCKET_NAME..."
-          if gcloud storage buckets notifications list $BUCKET_NAME --format="value(topic)" | grep -q "$TOPIC_NAME"; then
-            echo "Notification already exists. Skipping creation."
-          else
-            echo "Creating notification config..."
-            gcloud storage buckets notifications create $BUCKET_NAME \
-              --topic=$TOPIC_NAME \
-              --event-types=OBJECT_FINALIZE
-          fi
+          echo "Cleaning up existing notifications for $BUCKET_NAME..."
+          # List all notification IDs and delete them one by one
+          for id in $(gcloud storage buckets notifications list $BUCKET_NAME --format="value(id)"); do
+            echo "Deleting notification $id..."
+            gcloud storage buckets notifications delete $BUCKET_NAME --notification=$id --quiet || true
+          done
+
+          echo "Creating fresh notification config for $TOPIC_NAME..."
+          gcloud storage buckets notifications create $BUCKET_NAME \
+            --topic=$TOPIC_NAME \
+            --event-types=OBJECT_FINALIZE
 
   # =========================================================
   # DEPLOY IMAGE WORKER
