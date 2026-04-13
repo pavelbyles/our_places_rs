@@ -233,16 +233,22 @@ jobs:
           TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
 
           echo "Cleaning up existing notifications for $BUCKET_NAME..."
-          # List all notification IDs and delete them one by one
-          for id in $(gcloud storage buckets notifications list $BUCKET_NAME --format="value(id)"); do
-            echo "Deleting notification $id..."
-            gcloud storage buckets notifications delete $BUCKET_NAME --notification=$id --quiet || true
-          done
+          # Fetch notification IDs using gsutil as a more reliable alternative for listing
+          # This captures IDs even if they are 'stuck' in the newer gcloud storage surface
+          IDS=$(gsutil notification list $BUCKET_NAME 2>/dev/null | grep "notificationConfigs/" | sed 's/.*notificationConfigs\///')
+          
+          if [ -n "$IDS" ]; then
+            for id in $IDS; do
+              echo "Deleting notification $id..."
+              gsutil notification delete -n "$id" "$BUCKET_NAME" || true
+            done
+          fi
 
           echo "Creating fresh notification config for $TOPIC_NAME..."
           gcloud storage buckets notifications create $BUCKET_NAME \
             --topic=$TOPIC_NAME \
-            --event-types=OBJECT_FINALIZE
+            --event-types=OBJECT_FINALIZE \
+            --project=${{ env.PROJECT_ID }}
 
   # =========================================================
   # DEPLOY IMAGE WORKER
