@@ -541,6 +541,10 @@ jobs:
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -655,6 +659,10 @@ jobs:
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
+            SMTP_HOST=${{ env.SMTP_HOST }}
+            SMTP_USER=${{ env.SMTP_USER }}
+            SMTP_PASS=${{ env.SMTP_PASS }}
+            SMTP_FROM=${{ env.SMTP_FROM }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
 
       - name: Comment on PR
@@ -693,6 +701,10 @@ jobs:
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -776,6 +788,10 @@ jobs:
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
+            SMTP_HOST=${{ env.SMTP_HOST }}
+            SMTP_USER=${{ env.SMTP_USER }}
+            SMTP_PASS=${{ env.SMTP_PASS }}
+            SMTP_FROM=${{ env.SMTP_FROM }}
             DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
