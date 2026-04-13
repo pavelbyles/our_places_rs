@@ -40,13 +40,8 @@ RUN npm install \
 WORKDIR /app/web_app_admin
 RUN cargo leptos build --release
 
-FROM debian:bookworm-slim AS runtime
+FROM gcr.io/distroless/cc-debian12 AS runtime
 WORKDIR /app
-RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && apt-get autoremove -y \
-  && apt-get clean -y \
-  && rm -rf /var/lib/apt/lists/*
 
 # Copy the server binary to the /app directory
 # Note: cargo-leptos outputs to the workspace target directory
