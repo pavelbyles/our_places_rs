@@ -191,8 +191,14 @@ jobs:
       - name: Create PubSub Topic
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          echo "Creating PubSub topic..."
-          gcloud pubsub topics create our-places-image-uploads-raw-$SUFFIX || echo "Topic already exists."
+          TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
+          echo "Checking if topic $TOPIC_NAME exists..."
+          if ! gcloud pubsub topics describe $TOPIC_NAME >/dev/null 2>&1; then
+            echo "Creating PubSub topic $TOPIC_NAME..."
+            gcloud pubsub topics create $TOPIC_NAME
+          else
+            echo "Topic already exists."
+          fi
 
       - name: Grant Pub/Sub Subscription Permission to SA
         run: |
