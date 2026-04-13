@@ -33,7 +33,7 @@ leptos = "0.8.17"
 leptos_meta = "0.8.6"
 leptos_actix = "0.8.7"
 leptos_router = "0.8.13"
-wasm-bindgen = "0.2.117"
+wasm-bindgen = "0.2.118"
 console_error_panic_hook = "0.1.7"
 reqwest = { version = "0.13.2", features = ["json"] }
 actix-files = "0.6.10"
