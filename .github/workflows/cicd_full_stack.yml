@@ -153,18 +153,31 @@ jobs:
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
           echo "Creating raw image bucket..."
-          gcloud storage buckets create gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
-            --location=us-central1 \
-            --default-storage-class=STANDARD \
-            --uniform-bucket-level-access \
-            --soft-delete-duration=0 || echo "Bucket already exists."
+          RAW_BUCKET="gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX"
+          echo "Checking if raw bucket $RAW_BUCKET exists..."
+          if ! gcloud storage buckets describe $RAW_BUCKET >/dev/null 2>&1; then
+            echo "Creating raw image bucket..."
+            gcloud storage buckets create $RAW_BUCKET \
+              --location=us-central1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Raw bucket already exists."
+          fi
             
-          echo "Creating public image bucket..."
-          gcloud storage buckets create gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
-            --location=us-central1 \
-            --default-storage-class=STANDARD \
-            --uniform-bucket-level-access \
-            --soft-delete-duration=0 || echo "Bucket already exists."
+          PUBLIC_BUCKET="gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX"
+          echo "Checking if public bucket $PUBLIC_BUCKET exists..."
+          if ! gcloud storage buckets describe $PUBLIC_BUCKET >/dev/null 2>&1; then
+            echo "Creating public image bucket..."
+            gcloud storage buckets create $PUBLIC_BUCKET \
+              --location=us-central1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Public bucket already exists."
+          fi
 
           echo "Making public image bucket accessible to allUsers..."
           gcloud storage buckets update gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
