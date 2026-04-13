@@ -210,9 +210,18 @@ jobs:
       - name: Create Notification Config
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          gcloud storage buckets notifications create gs://our-places-gcs-img-raw-$SUFFIX \
-            --topic=our-places-image-uploads-raw-$SUFFIX \
-            --event-types=OBJECT_FINALIZE
+          BUCKET_NAME="gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX"
+          TOPIC_NAME="projects/${{ env.PROJECT_ID }}/topics/our-places-image-uploads-raw-$SUFFIX"
+
+          echo "Checking if notification already exists for $TOPIC_NAME on $BUCKET_NAME..."
+          if gcloud storage buckets notifications list $BUCKET_NAME --format="value(topic)" | grep -q "$TOPIC_NAME"; then
+            echo "Notification already exists. Skipping creation."
+          else
+            echo "Creating notification config..."
+            gcloud storage buckets notifications create $BUCKET_NAME \
+              --topic=$TOPIC_NAME \
+              --event-types=OBJECT_FINALIZE
+          fi
 
   # =========================================================
   # DEPLOY IMAGE WORKER
