@@ -80,11 +80,26 @@ pub fn LoginPage() -> impl IntoView {
                         </div>
 
                         {move || login_action.value().get().map(|res| match res {
-                            Err(e) => view! {
-                                <div class="alert alert-error mt-4 shadow-md text-sm">
-                                    <span>{e.to_string()}</span>
-                                </div>
-                            }.into_any(),
+                            Err(e) => {
+                                let error_msg = e.to_string();
+                                let is_unverified = error_msg.contains("Account not verified");
+                                
+                                view! {
+                                    <div class="alert alert-error mt-4 shadow-md text-sm flex flex-col items-start gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            <span>{error_msg}</span>
+                                        </div>
+                                        {if is_unverified {
+                                            view! {
+                                                <a href="/verify" class="btn btn-xs btn-outline btn-ghost border-white/30 text-white hover:bg-white/10">"Verify Account Now"</a>
+                                            }.into_any()
+                                        } else {
+                                            view! { <div></div> }.into_any()
+                                        }}
+                                    </div>
+                                }.into_any()
+                            },
                             Ok(_) => view! {
                                 <div class="alert alert-success mt-4 shadow-md text-sm">
                                     <span>"Login successful! Redirecting..."</span>

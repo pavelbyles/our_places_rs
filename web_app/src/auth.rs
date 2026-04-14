@@ -32,11 +32,13 @@ pub async fn login_traditional(email: String, password: String) -> Result<(), Se
 
         if !response.status().is_success() {
             let status = response.status();
-            let err_text = response.text().await.unwrap_or_default();
+            let err_body: serde_json::Value = response.json().await.unwrap_or_else(|_| serde_json::json!({ "error": "Unknown login error" }));
+            let err_msg = err_body["error"].as_str().unwrap_or("Login failed");
+
             if status == reqwest::StatusCode::UNAUTHORIZED {
-                return Err(ServerFnError::new(err_text));
+                return Err(ServerFnError::new(err_msg));
             }
-            return Err(ServerFnError::new(format!("Login failed: {}", err_text)));
+            return Err(ServerFnError::new(err_msg));
         }
 
         let user_resp: common::models::UserResponse = response

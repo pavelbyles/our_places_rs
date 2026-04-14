@@ -53,6 +53,12 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
             }
+            ApiError::Unauthorized(msg) => {
+                HttpResponse::Unauthorized().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::FeatureDisabled(msg) => {
+                HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
+            }
             _ => HttpResponse::build(self.status_code()).finish(),
         }
     }
