@@ -121,6 +121,7 @@ pub async fn get_listings(
     query: web::Query<common::models::ListingQueryParams>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
+    tracing::info!("GET /api/v1/listings entered");
     let mut structure_types = Vec::new();
     let qs = req.query_string();
 
@@ -156,7 +157,10 @@ pub async fn get_listings(
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
         .await
-        .map_err(ApiError::Database)?;
+        .map_err(|e| {
+            tracing::error!("Database query failed: {:?}", e);
+            ApiError::Database(e)
+        })?;
     let response: Vec<ListingResponse> = listings
         .into_iter()
         .map(map_listing_with_owner_to_response)
