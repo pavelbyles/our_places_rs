@@ -52,6 +52,9 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'listing' AND column_name = 'days_between_bookings') THEN
             ALTER TABLE listing ADD COLUMN days_between_bookings INTEGER NOT NULL DEFAULT 0;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'listing' AND column_name = 'base_currency') THEN
+            ALTER TABLE listing ADD COLUMN base_currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+        END IF;
     END IF;
 
     -- Fix 'listing_history' table

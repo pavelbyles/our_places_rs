@@ -1,5 +1,5 @@
 -- Add migration script here
-ALTER TABLE listing_history
+ALTER TABLE public.listing_history
     ADD COLUMN user_id uuid,
     ADD COLUMN slug text,
     ADD COLUMN max_guests integer NOT NULL DEFAULT 1,
@@ -14,13 +14,13 @@ ALTER TABLE listing_history
     ADD COLUMN review_count integer NOT NULL DEFAULT 0,
     ADD COLUMN listing_details jsonb NOT NULL DEFAULT '[]'::jsonb;
 
-UPDATE listing_history lh
+UPDATE public.listing_history lh
 SET 
     user_id = l.user_id,
     slug = l.slug
-FROM listing l
+FROM public.listing l
 WHERE lh.listing_id = l.id;
 
-ALTER TABLE listing_history 
+ALTER TABLE public.listing_history 
     ALTER COLUMN user_id SET NOT NULL,
     ALTER COLUMN slug SET NOT NULL;

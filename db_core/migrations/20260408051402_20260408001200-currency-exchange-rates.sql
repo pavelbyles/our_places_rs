@@ -18,4 +18,4 @@ INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effec
 ('JMD', 'GBP', 0.005096, CURRENT_DATE),
 ('GBP', 'JMD', 196.200000, CURRENT_DATE);
 
-ALTER TABLE listing ADD COLUMN base_currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+ALTER TABLE public.listing ADD COLUMN base_currency VARCHAR(3) NOT NULL DEFAULT 'USD';
