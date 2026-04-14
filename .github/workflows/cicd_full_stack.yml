@@ -236,7 +236,7 @@ jobs:
           # List all notification IDs and delete them one by one
           for id in $(gcloud storage buckets notifications list $BUCKET_NAME --format="value(\"Notification Configuration\".id)"); do
             echo "Deleting notification $id..."
-            gcloud storage buckets notifications delete $BUCKET_NAME --notification=$id --quiet || true
+            gcloud storage buckets notifications delete projects/_/buckets/$BUCKET_NAME/notificationConfigs/$id --quiet || true
           done
 
           echo "Creating fresh notification config for $TOPIC_NAME..."
