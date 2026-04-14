@@ -12,11 +12,6 @@ pub fn VillaCard(
     #[prop(into)] city: Option<String>,
     #[prop(into)] id: String,
 ) -> impl IntoView {
-    let navigate = leptos_router::hooks::use_navigate();
-
-    let navigate_to_listing = move |_| {
-        navigate(&format!("/listing/{}", id), Default::default());
-    };
     view! {
         <div class="card md:card-side bg-base-100 shadow-sm border border-base-200">
             <figure class="md:w-2/5">
@@ -27,7 +22,9 @@ pub fn VillaCard(
                 />
             </figure>
             <div class="card-body md:w-3/5">
-                <h2 class="card-title text-2xl">{title}</h2>
+                <a href=format!("/listing/{}", id) class="hover:underline">
+                    <h2 class="card-title text-2xl">{title}</h2>
+                </a>
                 <p class="text-base-content/70 flex items-center gap-1">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 inline-block shrink-0">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
@@ -47,8 +44,7 @@ pub fn VillaCard(
                         "$" {price} <span class="text-sm font-normal opacity-70">"/night"</span>
                     </div>
 
-                    // TODO: `on_click` closure as a prop here to handle routing dynamically
-                    <button class="btn btn-primary" on:click=navigate_to_listing>"View Details"</button>
+                    <a class="btn btn-primary" href=format!("/listing/{}", id)>"View Details"</a>
                 </div>
             </div>
         </div>
