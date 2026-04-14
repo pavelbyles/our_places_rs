@@ -1,5 +1,5 @@
 -- Add migration script here
-ALTER TABLE public.listing 
+ALTER TABLE listing 
 ADD COLUMN max_guests INTEGER NOT NULL DEFAULT 1,
 ADD COLUMN bedrooms INTEGER NOT NULL DEFAULT 1,
 ADD COLUMN beds INTEGER NOT NULL DEFAULT 1,
@@ -22,4 +22,4 @@ ADD COLUMN listing_details JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- Create a GIN index on the room_details so we can eventually 
 -- search *inside* the JSON efficiently if needed.
-CREATE INDEX idx_listing_details ON public.listing USING GIN (listing_details);
+CREATE INDEX idx_listing_details ON listing USING GIN (listing_details);
