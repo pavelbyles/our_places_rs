@@ -20,10 +20,13 @@ async fn main() -> std::io::Result<()> {
 
     dotenv().ok();
     tracing_subscriber::fmt::init();
-    
-    // For development, we'll use a hardcoded key. 
+
+    // For development, we'll use a hardcoded key.
     // In production, this MUST be an environment variable (64+ bytes).
-    let secret_key = Key::from("this-is-a-very-secret-and-at-least-64-bytes-long-key-for-development-purposes-only".as_bytes());
+    let secret_key = Key::from(
+        "this-is-a-very-secret-and-at-least-64-bytes-long-key-for-development-purposes-only"
+            .as_bytes(),
+    );
 
     // Spawn background cleanup task
     tokio::spawn(async move {

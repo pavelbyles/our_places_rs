@@ -40,28 +40,35 @@ RUN npm install \
   && npm run build:css
 
 # Build the application
-# We go back to root or stay here,# Using --project web_app from root, or running inside web_app
 WORKDIR /app/web_app
-RUN rustup target add wasm32-unknown-unknown
+RUN rustup target add wasm32-unknown-unknown 
 ARG RELEASE_FLAG
-RUN cargo leptos build ${RELEASE_FLAG}
+RUN cargo leptos build
 
-FROM gcr.io/distroless/cc-debian12 AS runtime
-WORKDIR /app
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get autoremove -y \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/*
 
-# Copy the server binary to the /app directory
-# Note: cargo-leptos outputs to the workspace target directory
-COPY --from=builder /app/target/release/web_app /app/
+WORKDIR /app/web_app
+
+# Copy the server binary
+COPY --from=builder /app/target/debug/web_app ./server_binary
 
 # /target/site contains our JS/WASM/CSS, etc.
 COPY --from=builder /app/target/site /app/site
 
-# Set any required env variables
-# 0.0.0.0 is crucial for Docker/Cloud Run
+# Set hydration and site variables
 ENV LEPTOS_SITE_ADDR="0.0.0.0:8080"
-ENV LEPTOS_SITE_ROOT="site"
+ENV LEPTOS_SITE_ROOT="../site"
+ENV LEPTOS_OUTPUT_NAME="web_app"
+ENV LEPTOS_SITE_PKG_DIR="pkg"
+ENV LEPTOS_ENV="DEV"
+
 # Default to port 8080
 EXPOSE 8080
 
 # Run the server
-CMD ["./web_app"]
+CMD ["./server_binary"]
