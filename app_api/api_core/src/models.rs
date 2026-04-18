@@ -58,6 +58,34 @@ pub fn map_listing_to_response(
         added_at: listing.added_at,
         owner_name: None,
         primary_image_url: listing.primary_image_url,
+        max_guests: listing.max_guests,
+        bedrooms: listing.bedrooms,
+        full_bathrooms: listing.full_bathrooms,
+        latitude: listing.latitude,
+        longitude: listing.longitude,
+        overall_rating: listing.overall_rating,
+        city: listing.city,
+        base_currency: listing.base_currency,
+        slug: listing.slug.clone(),
+        listing_details: Some(listing.listing_details.0),
+        minimum_stay: listing.minimum_stay,
+        days_between_bookings: listing.days_between_bookings,
+    }
+}
+
+pub fn map_listing_details_to_response(
+    details: db_core::models::ListingDetails,
+) -> common::models::ListingDetails {
+    common::models::ListingDetails {
+        listing: map_listing_to_response(details.listing),
+        images: details
+            .images
+            .into_iter()
+            .map(|img| common::models::ListingImageResponse {
+                id: img.id,
+                url: img.upload_url.unwrap_or_default(),
+            })
+            .collect(),
     }
 }
 
@@ -85,6 +113,18 @@ pub fn map_listing_with_owner_to_response(
         added_at: listing.added_at,
         owner_name: listing.owner_name,
         primary_image_url: listing.primary_image_url,
+        max_guests: listing.max_guests,
+        bedrooms: listing.bedrooms,
+        full_bathrooms: listing.full_bathrooms,
+        latitude: listing.latitude,
+        longitude: listing.longitude,
+        overall_rating: listing.overall_rating,
+        city: listing.city,
+        base_currency: listing.base_currency,
+        slug: listing.slug.clone(),
+        listing_details: Some(listing.listing_details.0),
+        minimum_stay: listing.minimum_stay,
+        days_between_bookings: listing.days_between_bookings,
     }
 }
 

@@ -10,7 +10,8 @@ pub fn HomePage() -> impl IntoView {
     let count = RwSignal::new(0);
     let on_click = move |_| {
         spawn_local(async move {
-            let new_count = update_count(count.get()).await.unwrap_or(0);
+            // Use get_untracked() because we are in an async task where tracking isn't possible/needed
+            let new_count = update_count(count.get_untracked()).await.unwrap_or(0);
             count.set(new_count);
         });
     };

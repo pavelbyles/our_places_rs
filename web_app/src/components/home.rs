@@ -8,16 +8,14 @@ use leptos_meta::Title;
 #[component]
 #[allow(non_snake_case)]
 pub fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
     let count = RwSignal::new(0);
     let on_click = move |_| {
         spawn_local(async move {
-            let new_count = update_count(count.get()).await.unwrap_or(0);
+            let new_count = update_count(count.get_untracked()).await.unwrap_or(0);
             count.set(new_count);
         });
     };
 
-    // Creates a resource that invokes the server function to fetch listings
     let listings = Resource::new(|| (), |_| async move { fetch_listings().await });
 
     view! {
@@ -55,8 +53,8 @@ pub async fn update_count(count: i32) -> Result<i32, ServerFnError> {
 #[server]
 #[tracing::instrument]
 pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
-    use crate::api_client::get_client;
     use uuid::Uuid;
+    use web_app_common::api_client::get_client;
 
     let listing_api_url =
         std::env::var("LISTING_API_URL").unwrap_or("http://localhost:8082".to_string());
@@ -65,7 +63,7 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
     // Server-side logging
     tracing::info!("LISTING_API_URL: {}", listing_api_url);
 
-    let url = format!("{}/api/v1/listings/?page=1&per_page=10", listing_api_url);
+    let url = format!("{}/api/v1/listings?page=1&per_page=10", listing_api_url);
     let request_id = Uuid::new_v4();
 
     tracing::info!(

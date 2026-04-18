@@ -8,6 +8,17 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct BookingMetadata {
+    pub num_adults: u32,
+    pub num_children: u32,
+    pub num_infants: u32,
+    pub num_pets: u32,
+    pub message_to_host: Option<String>,
+    pub estimated_arrival_time: Option<String>,
+    pub is_business_trip: bool,
+}
+
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
@@ -19,6 +30,9 @@ pub struct User {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub is_verified: bool,
+    pub verification_code: Option<String>,
+    pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
@@ -54,13 +68,16 @@ pub struct NewUser {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub is_verified: bool,
+    pub verification_code: Option<String>,
+    pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: serde_json::Value,
     pub roles: Option<Vec<UserRole>>,
 }
 
 pub use common::models::{NewBookerProfile, NewHostProfile};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct UpdatedUser {
     pub email: Option<String>,
     pub password_hash: Option<String>,
@@ -68,6 +85,9 @@ pub struct UpdatedUser {
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
     pub is_active: Option<bool>,
+    pub is_verified: Option<bool>,
+    pub verification_code: Option<String>,
+    pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<UserRole>>,
 }
@@ -81,6 +101,16 @@ pub enum UserRole {
     Booker,
     Host,
     Admin,
+}
+
+impl std::fmt::Display for UserRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserRole::Booker => write!(f, "Booker"),
+            UserRole::Host => write!(f, "Host"),
+            UserRole::Admin => write!(f, "Admin"),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
@@ -114,6 +144,7 @@ pub struct Booking {
 
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
+    pub metadata: Json<BookingMetadata>,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -145,11 +176,41 @@ pub struct NewBooking {
     pub fee_breakdown: Vec<FeeItem>,
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
+    pub metadata: BookingMetadata,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct UpdatedBooking {
     pub status: Option<BookingStatus>,
+    pub metadata: Option<BookingMetadata>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
+pub struct BookingHistory {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+
+    pub confirmation_code: String,
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+    pub status: BookingStatus,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    pub currency: String,
+    pub daily_rate: Decimal,
+    pub number_of_persons: i32,
+    pub total_days: i32,
+    pub sub_total_price: Decimal,
+    pub discount_value: Option<Decimal>,
+    pub tax_value: Option<Decimal>,
+    pub fee_breakdown: Json<Vec<FeeItem>>,
+    pub total_price: Decimal,
+    pub cancellation_policy: CancellationPolicy,
+    pub metadata: Json<BookingMetadata>,
+
+    pub changed_by_id: Option<Uuid>,
+    pub change_reason: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
@@ -180,6 +241,24 @@ pub struct Listing {
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub primary_image_url: Option<String>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
+    pub slug: String,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub beds: i32,
+    pub full_bathrooms: i32,
+    pub half_bathrooms: i32,
+    pub square_meters: Option<i32>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub overall_rating: Option<f64>,
+    pub review_count: i32,
+    pub listing_details: Json<serde_json::Value>,
+    pub city: Option<String>,
+    pub base_currency: String,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -196,6 +275,20 @@ pub struct ListingWithOwner {
     pub deleted_at: Option<DateTime<Utc>>,
     pub owner_name: Option<String>,
     pub primary_image_url: Option<String>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub full_bathrooms: i32,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub overall_rating: Option<f64>,
+    pub city: Option<String>,
+    pub base_currency: String,
+    pub slug: String,
+    pub listing_details: Json<serde_json::Value>,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -216,6 +309,21 @@ pub struct NewListing {
     #[validate(length(min = 1, message = "Country cannot be empty"))]
     pub country: String,
     pub price_per_night: Option<Decimal>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub beds: i32,
+    pub full_bathrooms: i32,
+    pub half_bathrooms: i32,
+    pub square_meters: Option<i32>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub listing_details: Option<serde_json::Value>,
+    pub city: Option<String>,
+    pub base_currency: String,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -238,6 +346,22 @@ pub struct UpdatedListing {
     pub price_per_night: Option<Decimal>,
 
     pub is_active: Option<bool>,
+
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
+    pub max_guests: Option<i32>,
+    pub bedrooms: Option<i32>,
+    pub beds: Option<i32>,
+    pub full_bathrooms: Option<i32>,
+    pub half_bathrooms: Option<i32>,
+    pub square_meters: Option<i32>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub listing_details: Option<serde_json::Value>,
+    pub city: Option<String>,
+    pub base_currency: Option<String>,
+    pub minimum_stay: Option<i32>,
+    pub days_between_bookings: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]
@@ -307,4 +431,10 @@ pub struct ListingImage {
     pub is_primary: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListingDetails {
+    pub listing: Listing,
+    pub images: Vec<ListingImage>,
 }

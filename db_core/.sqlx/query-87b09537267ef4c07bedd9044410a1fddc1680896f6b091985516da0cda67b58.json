@@ -1,0 +1,171 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, booking_id, confirmation_code, guest_id, listing_id, \n            status as \"status: BookingStatus\", date_from, date_to, currency, \n            daily_rate, number_of_persons, total_days, sub_total_price, \n            discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\", \n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\", \n            changed_by_id, change_reason, created_at\n        FROM booking_history\n        WHERE booking_id = $1\n        ORDER BY created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "status: BookingStatus",
+        "type_info": {
+          "Custom": {
+            "name": "booking_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "daily_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "total_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "sub_total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "discount_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 14,
+        "name": "tax_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 15,
+        "name": "fee_breakdown: Json<Vec<FeeItem>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 17,
+        "name": "cancellation_policy: CancellationPolicy",
+        "type_info": {
+          "Custom": {
+            "name": "cancellation_policy",
+            "kind": {
+              "Enum": [
+                "flexible",
+                "moderate",
+                "strict"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "metadata: Json<crate::models::BookingMetadata>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 19,
+        "name": "changed_by_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 20,
+        "name": "change_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 21,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "87b09537267ef4c07bedd9044410a1fddc1680896f6b091985516da0cda67b58"
+}

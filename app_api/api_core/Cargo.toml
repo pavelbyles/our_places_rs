@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actix-web = "4.13.0"
+actix-web.workspace = true
 actix-cors = "0.7.1"
 tokio = { workspace = true, features = ["macros"] }
 serde = { workspace = true }
@@ -13,7 +13,7 @@ serde_json = { workspace = true }
 serde-xml-rs = { workspace = true }
 tracing = { workspace = true }
 tracing-actix-web = { workspace = true }
-tracing-subscriber = { version = "0.3.22", features = [
+tracing-subscriber = { workspace = true, features = [
   "registry",
   "env-filter",
   "json",
@@ -21,26 +21,14 @@ tracing-subscriber = { version = "0.3.22", features = [
 config = { workspace = true }
 utoipa = { workspace = true }
 thiserror = { workspace = true }
-validator = { version = "0.20.0", features = ["derive"] }
+validator = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 
-db_core = { path = "../../db_core" }
-common = { path = "../../common" }
-
-[dependencies.sqlx]
-version = "0.8.6"
-default-features = false
-features = [
-  "runtime-tokio-rustls",
-  "macros",
-  "postgres",
-  "uuid",
-  "chrono",
-  "migrate",
-  "rust_decimal",
-]
+db_core.workspace = true
+common.workspace = true
+sqlx.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

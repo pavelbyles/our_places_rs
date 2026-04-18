@@ -12,40 +12,13 @@ use db_core::models::{NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::str::FromStr;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct NewListingRequest {
-    #[schema(value_type = String, example = "Zen Loft")]
-    #[validate(length(min = 1, message = "Name cannot be empty"))]
-    pub name: String,
 
-    #[schema(value_type = String, format = "uuid")]
-    pub user_id: Uuid,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "A zen place to be")]
-    #[validate(length(
-        max = 2000,
-        message = "Description cannot be longer than 2000 characters"
-    ))]
-    pub description: Option<String>,
-
-    #[schema(value_type = String, example = "Apartment")]
-    pub listing_structure: StructureType,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "Jamaica")]
-    #[validate(length(min = 1, message = "Country cannot be empty"))]
-    pub country: String,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "150.00")]
-    pub price_per_night: Option<Decimal>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdatedListingRequest {
@@ -74,10 +47,63 @@ pub struct UpdatedListingRequest {
 
     #[serde(default)]
     pub is_active: Option<bool>,
+
+    #[serde(default)]
+    pub weekly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    pub monthly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
+    pub max_guests: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
+    pub bedrooms: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Beds cannot be negative"))]
+    pub beds: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
+    pub full_bathrooms: Option<i32>,
+
+    #[serde(default)]
+    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
+    pub half_bathrooms: Option<i32>,
+
+    #[serde(default)]
+    pub square_meters: Option<i32>,
+
+    #[serde(default)]
+    pub latitude: Option<f64>,
+
+    #[serde(default)]
+    pub longitude: Option<f64>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub listing_details: Option<serde_json::Value>,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Kingston")]
+    pub city: Option<String>,
+
+    #[serde(default)]
+    #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
+    pub minimum_stay: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    pub days_between_bookings: Option<i32>,
 }
 
 /// Gives first 10 listings if no page or per_page is provided
-#[tracing::instrument]
+#[tracing::instrument(err)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings",
@@ -95,6 +121,7 @@ pub async fn get_listings(
     query: web::Query<common::models::ListingQueryParams>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
+    tracing::info!("GET /api/v1/listings entered");
     let mut structure_types = Vec::new();
     let qs = req.query_string();
 
@@ -130,7 +157,10 @@ pub async fn get_listings(
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
         .await
-        .map_err(ApiError::Database)?;
+        .map_err(|e| {
+            tracing::error!("Database query failed: {:?}", e);
+            ApiError::Database(e)
+        })?;
     let response: Vec<ListingResponse> = listings
         .into_iter()
         .map(map_listing_with_owner_to_response)
@@ -150,25 +180,25 @@ pub async fn get_listings(
     path = "/api/v1/listings/{id}",
     tag = "listings",
     params(
-        ("id" = String, Path, description = "Listing UUID")
+        ("id" = String, Path, description = "Listing UUID or slug")
     ),
     responses(
-        (status = 200, description = "Listing found", body = ListingResponse),
+        (status = 200, description = "Listing found", body = common::models::ListingDetails),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn get_listing_by_id(
     req: HttpRequest,
-    path: web::Path<Uuid>,
+    path: web::Path<String>,
     pool: web::Data<PgPool>,
 ) -> Result<impl Responder, ApiError> {
-    let listing_id = path.into_inner();
-    let listing = db_listing::get_listing_by_id(pool.get_ref(), listing_id).await?;
+    let listing_id_or_slug = path.into_inner();
+    let listing_details = db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
     Ok(respond(
         &req,
-        Payload::Item(map_listing_to_response(listing)),
-        |_: Vec<ListingResponse>| (),
+        Payload::Item(api_core::models::map_listing_details_to_response(listing_details)),
+        |_: Vec<common::models::ListingDetails>| (),
         actix_web::http::StatusCode::OK,
     ))
 }
@@ -178,7 +208,7 @@ async fn get_listing_by_id(
     post,
     path = "/api/v1/listings",
     tag = "listings",
-    request_body = NewListingRequest,
+    request_body = common::models::NewListingRequest,
     responses(
         (status = 201, description = "Listing created", body = ListingResponse),
         (status = 400, description = "Validation error"),
@@ -188,13 +218,22 @@ async fn get_listing_by_id(
 async fn create_listing(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    new_listing: web::Json<NewListingRequest>,
+    new_listing: web::Json<common::models::NewListingRequest>,
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
     let req_data = new_listing.into_inner();
     req_data.validate()?;
 
-    let structure_id = req_data.listing_structure.id();
+    let structure_type = StructureType::from_str(&req_data.listing_structure).map_err(|_| {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "listing_structure",
+            validator::ValidationError::new("invalid_structure_type").with_message("Invalid structure type provided.".into()),
+        );
+        ApiError::ValidationError(errors)
+    })?;
+
+    let structure_id = structure_type.id();
 
     let mut attempts = 0;
     let max_attempts = settings.application.max_attempts;
@@ -208,6 +247,21 @@ async fn create_listing(
             listing_structure_id: structure_id,
             country: req_data.country.clone(),
             price_per_night: req_data.price_per_night,
+            weekly_discount_percentage: req_data.weekly_discount_percentage,
+            monthly_discount_percentage: req_data.monthly_discount_percentage,
+            max_guests: req_data.max_guests,
+            bedrooms: req_data.bedrooms,
+            beds: req_data.beds,
+            full_bathrooms: req_data.full_bathrooms,
+            half_bathrooms: req_data.half_bathrooms,
+            square_meters: req_data.square_meters,
+            latitude: req_data.latitude,
+            longitude: req_data.longitude,
+            listing_details: req_data.listing_details.clone(),
+            city: req_data.city.clone(),
+            base_currency: req_data.base_currency.clone(),
+            minimum_stay: req_data.minimum_stay,
+            days_between_bookings: req_data.days_between_bookings,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -284,6 +338,21 @@ async fn update_listing(
         country: req_data.country,
         price_per_night: req_data.price_per_night,
         is_active: req_data.is_active,
+        weekly_discount_percentage: req_data.weekly_discount_percentage,
+        monthly_discount_percentage: req_data.monthly_discount_percentage,
+        max_guests: req_data.max_guests,
+        bedrooms: req_data.bedrooms,
+        beds: req_data.beds,
+        full_bathrooms: req_data.full_bathrooms,
+        half_bathrooms: req_data.half_bathrooms,
+        square_meters: req_data.square_meters,
+        latitude: req_data.latitude,
+        longitude: req_data.longitude,
+        listing_details: req_data.listing_details,
+        city: req_data.city,
+        base_currency: None, // Frontend isn't sending option to update base currency yet, except maybe in full update.
+        minimum_stay: req_data.minimum_stay,
+        days_between_bookings: req_data.days_between_bookings,
     };
 
     let updated_listing =
@@ -443,9 +512,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
         components(
             schemas(
-                NewListingRequest, 
+                common::models::NewListingRequest,  
                 UpdatedListingRequest, 
                 ListingResponse, 
+                common::models::ListingDetails,
                 pagination::Pagination, 
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,

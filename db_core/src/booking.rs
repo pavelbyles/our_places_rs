@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::models::{
-    Booking, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
+    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking,
+    UpdatedBooking,
 };
 use chrono::Utc;
 use sqlx::types::Json;
@@ -9,11 +10,40 @@ use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 /// Creates a new booking in the database.
-#[tracing::instrument(skip(executor))]
-pub async fn create_booking<'e, E>(executor: E, new_booking: &NewBooking) -> Result<Booking>
-where
-    E: PgExecutor<'e>,
-{
+#[tracing::instrument(skip(pool))]
+pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<Booking> {
+    let mut tx = pool.begin().await?;
+
+    let _listing = sqlx::query!(
+        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+        new_booking.listing_id
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
+
+    let overlapping = sqlx::query!(
+        r#"
+        SELECT id FROM booking 
+        WHERE listing_id = $1 
+          AND status IN ('pending', 'confirmed') 
+          AND date_from < $3 
+          AND date_to > $2
+        LIMIT 1
+        "#,
+        new_booking.listing_id,
+        new_booking.date_from,
+        new_booking.date_to
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if overlapping.is_some() {
+        return Err(crate::error::DbError::ValidationError(
+            "Listing is not available for the selected dates".to_string(),
+        ));
+    }
+
     let booking = sqlx::query_as!(
         Booking,
         r#"
@@ -21,13 +51,14 @@ where
             id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, created_at, updated_at
+            total_price, cancellation_policy, metadata, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -47,11 +78,17 @@ where
         Json(&new_booking.fee_breakdown) as _,
         new_booking.total_price,
         new_booking.cancellation_policy as CancellationPolicy,
+        Json(&new_booking.metadata) as _,
         Utc::now(),
         Utc::now()
     )
-    .fetch_one(executor)
+    .fetch_one(&mut *tx)
     .await?;
+
+    // Record initial history
+    record_booking_history(&mut tx, &booking, "Booking created", None).await?;
+
+    tx.commit().await?;
 
     Ok(booking)
 }
@@ -72,6 +109,7 @@ where
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -99,6 +137,7 @@ where
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -124,28 +163,49 @@ pub async fn update_booking(
 
     let mut tx = pool.begin().await?;
 
-    let _current = sqlx::query!(r#"SELECT id FROM booking WHERE id = $1 FOR UPDATE"#, id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let current = sqlx::query!(
+        r#"SELECT id, status as "status: BookingStatus" FROM booking WHERE id = $1 FOR UPDATE"#,
+        id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
 
     let booking = sqlx::query_as!(
         Booking,
         r#"
         UPDATE booking
-        SET status = COALESCE($1, status), updated_at = $2
-        WHERE id = $3
+        SET status = COALESCE($1, status), 
+            metadata = COALESCE($2, metadata),
+            updated_at = $3
+        WHERE id = $4
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
+        updated_booking.metadata.as_ref().map(Json) as _,
         Utc::now(),
         id
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    // Record history if anything changed
+    let status_changed = updated_booking.status.map(|s| s != current.status).unwrap_or(false);
+    let metadata_changed = updated_booking.metadata.is_some();
+
+    if status_changed || metadata_changed {
+        let reason = match (status_changed, metadata_changed) {
+            (true, true) => "Status and metadata updated",
+            (true, false) => "Status updated",
+            (false, true) => "Metadata updated",
+            _ => "Booking updated",
+        };
+        record_booking_history(&mut tx, &booking, reason, None).await?;
+    }
 
     tx.commit().await?;
 
@@ -188,6 +248,7 @@ where
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
             created_at, updated_at
         FROM booking
         WHERE guest_id = $1
@@ -202,4 +263,133 @@ where
     .await?;
 
     Ok(bookings)
+}
+
+/// Checks if a listing is available for a specified date range.
+#[tracing::instrument(skip(executor))]
+pub async fn check_availability<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    date_from: chrono::NaiveDate,
+    date_to: chrono::NaiveDate,
+) -> Result<bool>
+where
+    E: PgExecutor<'e>,
+{
+    if date_from >= date_to {
+        return Ok(false);
+    }
+    
+    let overlapping = sqlx::query!(
+        r#"
+        SELECT count(*) as count FROM booking 
+        WHERE listing_id = $1 
+          AND status IN ('pending', 'confirmed') 
+          AND date_from < $3 
+          AND date_to > $2
+        "#,
+        listing_id,
+        date_from,
+        date_to
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(overlapping.count == Some(0))
+}
+
+/// Deletes pending bookings that are older than the specified minutes.
+#[tracing::instrument(skip(executor))]
+pub async fn cleanup_stale_bookings<'e, E>(
+    executor: E,
+    timeout_minutes: i64,
+) -> Result<u64>
+where
+    E: PgExecutor<'e>,
+{
+    let threshold = Utc::now() - chrono::Duration::minutes(timeout_minutes);
+
+    let result = sqlx::query!(
+        r#"
+        DELETE FROM booking
+        WHERE status = 'pending'
+          AND created_at < $1
+        "#,
+        threshold
+    )
+    .execute(executor)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+/// Retrieves the history of a specific booking.
+#[tracing::instrument(skip(executor))]
+pub async fn get_booking_history<'e, E>(executor: E, booking_id: Uuid) -> Result<Vec<BookingHistory>>
+where
+    E: PgExecutor<'e>,
+{
+    let history = sqlx::query_as!(
+        BookingHistory,
+        r#"
+        SELECT id, booking_id, confirmation_code, guest_id, listing_id, 
+            status as "status: BookingStatus", date_from, date_to, currency, 
+            daily_rate, number_of_persons, total_days, sub_total_price, 
+            discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>", 
+            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>", 
+            changed_by_id, change_reason, created_at
+        FROM booking_history
+        WHERE booking_id = $1
+        ORDER BY created_at ASC
+        "#,
+        booking_id
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(history)
+}
+
+async fn record_booking_history(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    booking: &Booking,
+    change_reason: &str,
+    changed_by_id: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+        INSERT INTO booking_history (
+            booking_id, confirmation_code, guest_id, listing_id, status,
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown,
+            total_price, cancellation_policy, metadata, change_reason, changed_by_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        "#,
+        booking.id,
+        booking.confirmation_code,
+        booking.guest_id,
+        booking.listing_id,
+        booking.status as BookingStatus,
+        booking.date_from,
+        booking.date_to,
+        booking.currency,
+        booking.daily_rate,
+        booking.number_of_persons,
+        booking.total_days,
+        booking.sub_total_price,
+        booking.discount_value,
+        booking.tax_value,
+        Json(&booking.fee_breakdown.0) as _,
+        booking.total_price,
+        booking.cancellation_policy as CancellationPolicy,
+        Json(&booking.metadata.0) as _,
+        change_reason,
+        changed_by_id
+    )
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }

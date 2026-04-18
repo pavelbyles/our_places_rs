@@ -34,6 +34,7 @@ impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             ApiError::Database(DbError::Sqlx(sqlx::Error::RowNotFound)) => StatusCode::NOT_FOUND,
+            ApiError::Database(DbError::ValidationError(_)) => StatusCode::BAD_REQUEST,
             // Validation errors are always 400 Bad Request
             ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
             // All other database errors are likely internal server errors.
@@ -48,9 +49,16 @@ impl ResponseError for ApiError {
 
     fn error_response(&self) -> HttpResponse {
         match self {
-            // For validation errors, return the actual validation details JSON
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
-            // For all other errors, use the default behavior (status code + canonical reason)
+            ApiError::Database(DbError::ValidationError(msg)) => {
+                HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Unauthorized(msg) => {
+                HttpResponse::Unauthorized().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::FeatureDisabled(msg) => {
+                HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
+            }
             _ => HttpResponse::build(self.status_code()).finish(),
         }
     }

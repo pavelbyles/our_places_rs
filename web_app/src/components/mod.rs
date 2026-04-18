@@ -1,6 +1,14 @@
 pub mod about;
+pub mod booking_card;
 pub mod hero;
 pub mod home;
 pub mod layout;
+pub mod layout_no_search;
+pub mod listing_detail;
+pub mod listings;
+pub mod login;
 pub mod not_found;
+pub mod register;
+pub mod verify;
 pub mod shell;
+pub mod checkout;

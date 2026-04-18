@@ -118,14 +118,20 @@ impl TokenProvider for LocalGcloudTokenProvider {
         }
 
         let audience = audience.to_string();
-        let output = tokio::task::spawn_blocking(move || {
+        let output_result = tokio::task::spawn_blocking(move || {
             // Runs: gcloud auth print-identity-token --audiences=...
-            let mut output = Command::new("gcloud")
+            let mut output = match Command::new("gcloud")
                 .arg("auth")
                 .arg("print-identity-token")
                 .arg(format!("--audiences={}", audience))
                 .output()
-                .context("Failed to execute gcloud command")?;
+            {
+                Ok(out) => out,
+                Err(e) => {
+                    tracing::warn!("Failed to execute gcloud (is it installed?): {}", e);
+                    return Ok::<_, anyhow::Error>(None);
+                }
+            };
 
             // If that failed (likely due to being a User account not supporting --audiences), try without audience
             if !output.status.success() {
@@ -133,34 +139,46 @@ impl TokenProvider for LocalGcloudTokenProvider {
                 if stderr.contains("Invalid account Type")
                     || stderr.contains("Requires valid service account")
                 {
-                    output = Command::new("gcloud")
+                    output = match Command::new("gcloud")
                         .arg("auth")
                         .arg("print-identity-token")
                         .output()
-                        .context("Failed to execute gcloud command (fallback)")?;
+                    {
+                        Ok(out) => out,
+                        Err(e) => {
+                            tracing::warn!("Failed to execute fallback gcloud: {}", e);
+                            return Ok::<_, anyhow::Error>(None);
+                        }
+                    };
                 }
             }
-            Ok::<_, anyhow::Error>(output)
+            Ok::<_, anyhow::Error>(Some(output))
         })
         .await??;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("gcloud command failed: {}", stderr);
+        if let Some(output) = output_result {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("gcloud command failed: {}", stderr);
+                return Ok(String::new());
+            }
+
+            let token = String::from_utf8(output.stdout)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+
+            // Cache for 50 minutes
+            *cache = Some(CachedToken {
+                token: token.clone(),
+                expires_at: Instant::now() + Duration::from_secs(50 * 60),
+            });
+
+            return Ok(token);
         }
 
-        let token = String::from_utf8(output.stdout)
-            .context("Invalid UTF-8 in gcloud output")?
-            .trim()
-            .to_string();
-
-        // Cache for 50 minutes
-        *cache = Some(CachedToken {
-            token: token.clone(),
-            expires_at: Instant::now() + Duration::from_secs(50 * 60),
-        });
-
-        Ok(token)
+        // Return empty token if gcloud is missing
+        Ok(String::new())
     }
 }
 

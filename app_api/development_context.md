@@ -7,10 +7,11 @@ The `app_api` directory contains the backend microservices built with **Axum**.
 1.  **listing_api**: Manages property listings (CRUD).
 2.  **booking_api**: Handles booking logic and reservation atomicity.
 3.  **user_api**: Authentication (JWT) and user profiles.
+4.  **image_worker_api**: Handles image processing and storage.
 
 ## Shared Dependencies
 - **db_core**: All services depend on `db_core` for database access and shared types.
-- **common**: Shared utilities.
+- **common**: Shared utilities and types.
 
 ## Database
 - Uses **PostgreSQL**.

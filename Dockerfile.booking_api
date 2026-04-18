@@ -4,7 +4,7 @@
 ARG BUILD_TYPE=release
 ARG BUILD_OUTPUT=release
 ARG RELEASE_FLAG=--release
-FROM rust:1.91.1-slim-bookworm AS build-env
+FROM rust:1.94.1-slim-bookworm AS build-env
 ARG BUILD_TYPE
 ARG BUILD_OUTPUT
 ARG RELEASE_FLAG
@@ -29,7 +29,7 @@ RUN apt-get update \
 && apt-get install -y --no-install-recommends curl ca-certificates pkg-config libssl-dev
 COPY --from=planner /app/recipe.json recipe.json
 ARG RELEASE_FLAG
-RUN cargo chef cook ${RELEASE_FLAG} --recipe-path recipe.json
+RUN cargo chef cook ${RELEASE_FLAG} -p booking_api --recipe-path recipe.json
 
 COPY . .
 ENV SQLX_OFFLINE=true

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -30,7 +30,10 @@ pub struct NewUserRequest {
     #[validate(length(min = 1))]
     pub last_name: String,
     pub phone_number: Option<String>,
+    #[serde(default)]
     pub is_active: bool,
+    #[serde(default)]
+    pub is_verified: bool,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<String>>,
     pub booker_profile: Option<NewBookerProfile>,
@@ -44,7 +47,10 @@ pub struct UpdateUserRequest {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub phone_number: Option<String>,
+    #[serde(default)]
     pub is_active: Option<bool>,
+    #[serde(default)]
+    pub is_verified: Option<bool>,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<String>>,
     pub booker_profile: Option<NewBookerProfile>,
@@ -64,12 +70,64 @@ pub struct ListingResponse {
     pub added_at: DateTime<Utc>,
     pub owner_name: Option<String>,
     pub primary_image_url: Option<String>,
+    pub max_guests: i32,
+    pub bedrooms: i32,
+    pub full_bathrooms: i32,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub overall_rating: Option<f64>,
+    pub city: Option<String>,
+    pub base_currency: String,
+    pub slug: String,
+    pub listing_details: Option<serde_json::Value>,
+    pub minimum_stay: i32,
+    pub days_between_bookings: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct BookingMetadataResponse {
+    pub num_adults: u32,
+    pub num_children: u32,
+    pub num_infants: u32,
+    pub num_pets: u32,
+    pub message_to_host: Option<String>,
+    pub estimated_arrival_time: Option<String>,
+    pub is_business_trip: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct BookingResponse {
+    pub id: Uuid,
+    pub confirmation_code: String,
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+    pub status: String,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    pub currency: String,
+    pub daily_rate: Decimal,
+    pub number_of_persons: i32,
+    pub total_days: i32,
+    pub sub_total_price: Decimal,
+    pub discount_value: Option<Decimal>,
+    pub tax_value: Option<Decimal>,
+    pub total_price: Decimal,
+    pub cancellation_policy: String,
+    pub metadata: BookingMetadataResponse,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingImageResponse {
     pub id: Uuid,
     pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
+pub struct ListingDetails {
+    pub listing: ListingResponse,
+    pub images: Vec<ListingImageResponse>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -106,6 +164,8 @@ pub struct UserResponse {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub is_active: bool,
+    pub is_verified: bool,
+    pub verification_code: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
@@ -135,4 +195,133 @@ pub struct ImagePresignResponse {
     pub client_file_id: String, // Mirrored back to the client
     pub file_id: uuid::Uuid,
     pub upload_url: String, // The GCS v4 Signed URL
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
+pub struct NewBookingRequest {
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+
+    pub check_in: NaiveDate,
+    pub check_out: NaiveDate,
+
+    pub num_adults: u32,
+    pub num_children: u32,
+    pub num_infants: u32,
+    pub num_pets: u32,
+
+    // Host communication and logistics
+    pub message_to_host: Option<String>,
+    pub estimated_arrival_time: Option<String>,
+    pub is_business_trip: bool,
+
+    pub currency: String,
+
+    pub agreed_cancellation_policy: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
+pub struct NewListingRequest {
+    #[schema(value_type = String, example = "Zen Loft")]
+    #[validate(length(min = 1, message = "Name cannot be empty"))]
+    pub name: String,
+
+    #[schema(value_type = String, format = "uuid")]
+    pub user_id: Uuid,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "A zen place to be")]
+    #[validate(length(
+        max = 2000,
+        message = "Description cannot be longer than 2000 characters"
+    ))]
+    pub description: Option<String>,
+
+    #[schema(value_type = String, example = "Apartment")]
+    pub listing_structure: String,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Jamaica")]
+    #[validate(length(min = 1, message = "Country cannot be empty"))]
+    pub country: String,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "150.00")]
+    pub price_per_night: Option<Decimal>,
+
+    #[serde(default)]
+    pub weekly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    pub monthly_discount_percentage: Option<Decimal>,
+
+    // --- NEW: Capacity & Room Breakdown ---
+    #[schema(example = 2)]
+    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
+    pub max_guests: i32,
+
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
+    pub bedrooms: i32,
+
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Beds cannot be negative"))]
+    pub beds: i32,
+
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
+    pub full_bathrooms: i32,
+
+    #[serde(default)]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
+    pub half_bathrooms: i32,
+
+    // --- NEW: Dimensions & Location ---
+    #[serde(default)]
+    #[schema(example = 65)]
+    pub square_meters: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 18.2206)]
+    pub latitude: Option<f64>,
+
+    #[serde(default)]
+    #[schema(example = -77.7990)]
+    pub longitude: Option<f64>,
+
+    // --- NEW: Dynamic Property Definitions (JSONB) ---
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub listing_details: Option<serde_json::Value>,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Kingston")]
+    pub city: Option<String>,
+
+    #[serde(default = "default_base_currency")]
+    #[schema(value_type = String, example = "USD")]
+    pub base_currency: String,
+
+    #[serde(default = "default_minimum_stay")]
+    #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
+    pub minimum_stay: i32,
+
+    #[serde(default = "default_days_between_bookings")]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    pub days_between_bookings: i32,
+}
+
+pub fn default_minimum_stay() -> i32 {
+    1
+}
+
+pub fn default_days_between_bookings() -> i32 {
+    0
+}
+
+pub fn default_base_currency() -> String {
+    "USD".to_string()
 }

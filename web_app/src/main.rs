@@ -1,3 +1,4 @@
+#![recursion_limit = "512"]
 #[cfg(feature = "ssr")]
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -9,10 +10,40 @@ async fn main() -> std::io::Result<()> {
     use web_app::app::*;
     use web_app::components::shell::AppShell;
 
+    use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+    use actix_web::cookie::Key;
+
     let conf = get_configuration(None).unwrap();
     let addr = conf.leptos_options.site_addr;
 
+    use dotenvy::dotenv;
+
+    dotenv().ok();
     tracing_subscriber::fmt::init();
+
+    // For development, we'll use a hardcoded key.
+    // In production, this MUST be an environment variable (64+ bytes).
+    let secret_key = Key::from(
+        "this-is-a-very-secret-and-at-least-64-bytes-long-key-for-development-purposes-only"
+            .as_bytes(),
+    );
+
+    // Spawn background cleanup task
+    tokio::spawn(async move {
+        let pool = web_app_common::api_client::get_pool().await;
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(600)); // every 10 mins
+        loop {
+            interval.tick().await;
+            match db_core::booking::cleanup_stale_bookings(&pool, 120).await {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Cleaned up {} stale bookings", count);
+                    }
+                }
+                Err(e) => tracing::error!("Error cleaning up bookings: {:?}", e),
+            }
+        }
+    });
 
     HttpServer::new(move || {
         // Generate the list of routes in your Leptos App
@@ -23,6 +54,10 @@ async fn main() -> std::io::Result<()> {
         println!("listening on http://{}", &addr);
 
         App::new()
+            .wrap(SessionMiddleware::new(
+                CookieSessionStore::default(),
+                secret_key.clone(),
+            ))
             // serve JS/WASM/CSS from `pkg`
             .service(Files::new("/pkg", format!("{site_root}/pkg")))
             // serve other assets from the `assets` directory

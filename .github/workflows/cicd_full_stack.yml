@@ -91,6 +91,8 @@ jobs:
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@nightly
+      - name: Install msmtp
+        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
       - name: Run web_app tests
         run: cargo test --manifest-path web_app/Cargo.toml --verbose
 
@@ -103,6 +105,8 @@ jobs:
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - uses: dtolnay/rust-toolchain@nightly
+      - name: Install msmtp
+        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
       - name: Run web_app tests
         run: cargo test --manifest-path web_app_admin/Cargo.toml --verbose
 
@@ -149,18 +153,31 @@ jobs:
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
           echo "Creating raw image bucket..."
-          gcloud storage buckets create gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX \
-            --location=us-central1 \
-            --default-storage-class=STANDARD \
-            --uniform-bucket-level-access \
-            --soft-delete-duration=0 || echo "Bucket already exists."
+          RAW_BUCKET="gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX"
+          echo "Checking if raw bucket $RAW_BUCKET exists..."
+          if ! gcloud storage buckets describe $RAW_BUCKET >/dev/null 2>&1; then
+            echo "Creating raw image bucket..."
+            gcloud storage buckets create $RAW_BUCKET \
+              --location=us-central1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Raw bucket already exists."
+          fi
             
-          echo "Creating public image bucket..."
-          gcloud storage buckets create gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
-            --location=us-central1 \
-            --default-storage-class=STANDARD \
-            --uniform-bucket-level-access \
-            --soft-delete-duration=0 || echo "Bucket already exists."
+          PUBLIC_BUCKET="gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX"
+          echo "Checking if public bucket $PUBLIC_BUCKET exists..."
+          if ! gcloud storage buckets describe $PUBLIC_BUCKET >/dev/null 2>&1; then
+            echo "Creating public image bucket..."
+            gcloud storage buckets create $PUBLIC_BUCKET \
+              --location=us-central1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Public bucket already exists."
+          fi
 
           echo "Making public image bucket accessible to allUsers..."
           gcloud storage buckets update gs://${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-$SUFFIX \
@@ -187,8 +204,14 @@ jobs:
       - name: Create PubSub Topic
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          echo "Creating PubSub topic..."
-          gcloud pubsub topics create our-places-image-uploads-raw-$SUFFIX || echo "Topic already exists."
+          TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
+          echo "Checking if topic $TOPIC_NAME exists..."
+          if ! gcloud pubsub topics describe $TOPIC_NAME >/dev/null 2>&1; then
+            echo "Creating PubSub topic $TOPIC_NAME..."
+            gcloud pubsub topics create $TOPIC_NAME
+          else
+            echo "Topic already exists."
+          fi
 
       - name: Grant Pub/Sub Subscription Permission to SA
         run: |
@@ -206,8 +229,19 @@ jobs:
       - name: Create Notification Config
         run: |
           SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          gcloud storage buckets notifications create gs://our-places-gcs-img-raw-$SUFFIX \
-            --topic=our-places-image-uploads-raw-$SUFFIX \
+          BUCKET_NAME="gs://${{ env.GCS_RAW_BUCKET_PREFIX }}-$SUFFIX"
+          TOPIC_NAME="our-places-image-uploads-raw-$SUFFIX"
+
+          echo "Cleaning up existing notifications for $BUCKET_NAME..."
+          # List all notification IDs and delete them one by one
+          for id in $(gcloud storage buckets notifications list $BUCKET_NAME --format="value(\"Notification Configuration\".id)"); do
+            echo "Deleting notification $id..."
+            gcloud storage buckets notifications delete projects/_/buckets/${BUCKET_NAME#gs://}/notificationConfigs/$id --quiet || true
+          done
+
+          echo "Creating fresh notification config for $TOPIC_NAME..."
+          gcloud storage buckets notifications create $BUCKET_NAME \
+            --topic=$TOPIC_NAME \
             --event-types=OBJECT_FINALIZE
 
   # =========================================================
@@ -537,6 +571,10 @@ jobs:
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -573,10 +611,10 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=PROD" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=DEV" >> $GITHUB_ENV
           fi
 
       - name: Fetch Gateway URL
@@ -601,6 +639,8 @@ jobs:
       - name: Build and Push Web App
         run: |
           docker build \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg LEPTOS_ENV=$LEPTOS_ENV \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f web_app/Dockerfile.web_app .
@@ -647,8 +687,16 @@ jobs:
             LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
             BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
             USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
+            LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
+            USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=256Mi --quiet"
+            SMTP_HOST=${{ env.SMTP_HOST }}
+            SMTP_USER=${{ env.SMTP_USER }}
+            SMTP_PASS=${{ env.SMTP_PASS }}
+            SMTP_FROM=${{ env.SMTP_FROM }}
+            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Comment on PR
         uses: actions/github-script@v6
@@ -686,6 +734,10 @@ jobs:
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -720,10 +772,10 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=PROD" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=DEV" >> $GITHUB_ENV
           fi
 
       - name: Fetch Gateway URL
@@ -745,6 +797,8 @@ jobs:
       - name: Build and Push Web App Admin
         run: |
           docker build \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg LEPTOS_ENV=$LEPTOS_ENV \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f web_app_admin/Dockerfile.web_app_admin .
@@ -765,7 +819,14 @@ jobs:
             LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
             BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
             USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
+            LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
+            BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
+            USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
             GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
+            SMTP_HOST=${{ env.SMTP_HOST }}
+            SMTP_USER=${{ env.SMTP_USER }}
+            SMTP_PASS=${{ env.SMTP_PASS }}
+            SMTP_FROM=${{ env.SMTP_FROM }}
             DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 

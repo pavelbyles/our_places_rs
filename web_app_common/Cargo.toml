@@ -1,0 +1,41 @@
+[package]
+name = "web_app_common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-files = { workspace = true, optional = true }
+actix-web = { workspace = true, optional = true, features = ["macros"] }
+leptos.workspace = true
+leptos_actix = { workspace = true, optional = true }
+leptos_router.workspace = true
+leptos_meta.workspace = true
+
+reqwest.workspace = true
+lettre = { version = "0.11", optional = true, default-features = false, features = ["builder", "smtp-transport", "sendmail-transport", "tokio1-rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+rust_decimal.workspace = true
+db_core = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
+
+anyhow.workspace = true
+common.workspace = true
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true }
+
+[features]
+csr = ["leptos/csr"]
+hydrate = ["leptos/hydrate"]
+ssr = [
+    "dep:actix-files",
+    "dep:actix-web",
+    "dep:leptos_actix",
+    "dep:lettre",
+    "dep:tokio",
+    "leptos/ssr",
+    "leptos_meta/ssr",
+    "leptos_router/ssr",
+    "dep:db_core",
+    "dep:sqlx",
+]

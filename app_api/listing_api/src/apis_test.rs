@@ -20,6 +20,9 @@ async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
         last_name: "User".to_string(),
         phone_number: None,
         is_active: true,
+        is_verified: true,
+        verification_code: None,
+        verification_code_expires_at: None,
         attributes: serde_json::json!({}),
         roles: None,
     };
@@ -88,6 +91,21 @@ async fn test_get_listing_by_id_success() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -107,10 +125,10 @@ async fn test_get_listing_by_id_success() {
     let resp = test::call_service(&app, req).await;
 
     assert!(resp.status().is_success());
-    let body: ListingResponse = test::read_body_json(resp).await;
-    assert_eq!(body.id, created_listing.id);
+    let body: common::models::ListingDetails = test::read_body_json(resp).await;
+    assert_eq!(body.listing.id, created_listing.id);
     assert_eq!(
-        body.listing_structure,
+        body.listing.listing_structure,
         format!("{:?}", StructureType::Apartment)
     );
 }
@@ -160,14 +178,30 @@ async fn test_create_listing_validation_error() {
             .configure(configure_routes),
     )
     .await;
-    // Create a listing with an EMPTY name
-    let invalid_listing = NewListingRequest {
+
+    // Create a listing request with an EMPTY name
+    let invalid_listing = common::models::NewListingRequest {
         name: "".to_string(), // invalid name - should not be empty
         user_id,              // Valid user ID
         description: None,
-        listing_structure: StructureType::Apartment,
+        listing_structure: "Apartment".to_string(),
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
 
     let req = test::TestRequest::post()
@@ -196,6 +230,21 @@ async fn test_delete_listing() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -231,6 +280,21 @@ async fn test_delete_listing() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -270,6 +334,21 @@ async fn test_delete_listing_hard_forbidden() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -316,6 +395,18 @@ async fn test_xml_serialization_of_vec() {
         added_at: Utc::now(),
         owner_name: None,
         primary_image_url: None,
+        max_guests: 2,
+        bedrooms: 1,
+        full_bathrooms: 1,
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        slug: "test".to_string(),
+        listing_details: None,
+        minimum_stay: 1,
+        days_between_bookings: 0,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -341,6 +432,21 @@ async fn test_update_listing_multiple_times() {
         listing_structure_id: 1,
         country: "Testland".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -363,6 +469,20 @@ async fn test_update_listing_multiple_times() {
         country: None,
         price_per_night: None,
         is_active: None,
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: None,
+        bedrooms: None,
+        beds: None,
+        full_bathrooms: None,
+        half_bathrooms: None,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        minimum_stay: None,
+        days_between_bookings: None,
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -382,6 +502,20 @@ async fn test_update_listing_multiple_times() {
         country: None,
         price_per_night: None,
         is_active: None,
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: None,
+        bedrooms: None,
+        beds: None,
+        full_bathrooms: None,
+        half_bathrooms: None,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        minimum_stay: None,
+        days_between_bookings: None,
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -392,6 +526,7 @@ async fn test_update_listing_multiple_times() {
     let body: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(body.name, updated_name_2);
 }
+
 #[actix_web::test]
 async fn test_get_listings_with_filter() {
     dotenvy::dotenv().ok();
@@ -410,6 +545,21 @@ async fn test_get_listings_with_filter() {
         listing_structure_id: 1, // Apartment
         country: "France".to_string(),
         price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -422,6 +572,21 @@ async fn test_get_listings_with_filter() {
         listing_structure_id: 2, // House
         country: "UK".to_string(),
         price_per_night: Some(dec!(200.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 4,
+        bedrooms: 2,
+        beds: 2,
+        full_bathrooms: 2,
+        half_bathrooms: 1,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await

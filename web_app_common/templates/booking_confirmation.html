@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; }
+        .header { background: #ff385c; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { padding: 30px; }
+        .footer { font-size: 12px; color: #999; text-align: center; margin-top: 20px; }
+        .btn { display: inline-block; padding: 12px 24px; background: #ff385c; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+        .details { background: #f7f7f7; padding: 15px; border-radius: 8px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Reservation Confirmed!</h1>
+        </div>
+        <div class="content">
+            <p>Hi {{first_name}},</p>
+            <p>Pack your bags! Your reservation for <strong>{{listing_name}}</strong> is confirmed.</p>
+            
+            <div class="details">
+                <p><strong>Confirmation Code:</strong> {{confirmation_code}}</p>
+                <p><strong>Check-in:</strong> {{check_in}}</p>
+                <p><strong>Check-out:</strong> {{check_out}}</p>
+                <p><strong>Guests:</strong> {{guests}}</p>
+            </div>
+
+            <p>You can find more details and manage your booking in your account.</p>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="{{site_url}}/bookings" class="btn">View Bookings</a>
+            </div>
+            
+            <p>Happy travels,<br>The Our Places Team</p>
+        </div>
+        <div class="footer">
+            &copy; 2026 Our Places, Inc.
+        </div>
+    </div>
+</body>
+</html>
