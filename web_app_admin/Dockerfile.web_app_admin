@@ -6,6 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     wget \
+    pkg-config \
+    libssl-dev \
+    git \
+    binaryen \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 # Install cargo-binstall for fast tool installation
