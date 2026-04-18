@@ -6968,6 +6968,7 @@ dependencies = [
  "actix-session",
  "actix-web",
  "anyhow",
+ "api_core",
  "async-trait",
  "chrono",
  "common",
