@@ -9,6 +9,7 @@
     - `booking_api`: Handles reservations.
     - `listing_api`: Manages property listings.
     - `user_api`: User authentication and management.
+    - `image_worker_api`: Handles image processing and storage.
 - **common/**: Shared business logic and types.
 - **db_core/**: Database entities and SQLx interaction.
 - **infra/**: Infrastructure as Code (Terraform/Pulumi).
