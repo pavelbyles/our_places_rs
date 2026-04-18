@@ -1,8 +1,7 @@
 ARG RELEASE_FLAG=--release
 
-FROM rust:1.94.1-slim-bookworm AS builder
+FROM rust:1.95.0-slim-bookworm AS builder
 
-# Install build dependencies and tools (including wasm-opt via binaryen)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
@@ -39,11 +38,20 @@ WORKDIR /app/web_app
 RUN npm install \
   && npm run build:css
 
+# Add the WASM target
+RUN rustup target add wasm32-unknown-unknown 
+
 # Build the application
 WORKDIR /app/web_app
-RUN rustup target add wasm32-unknown-unknown 
 ARG RELEASE_FLAG
-RUN cargo leptos build
+RUN cargo leptos build ${RELEASE_FLAG}
+
+# Find the binary and move it to a predictable path for the runtime
+RUN if [ "$RELEASE_FLAG" = "--release" ]; then \
+        cp /app/target/release/web_app /app/server_binary; \
+    else \
+        cp /app/target/debug/web_app /app/server_binary; \
+    fi
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update -y \
@@ -55,7 +63,7 @@ RUN apt-get update -y \
 WORKDIR /app/web_app
 
 # Copy the server binary
-COPY --from=builder /app/target/debug/web_app ./server_binary
+COPY --from=builder /app/server_binary ./server_binary
 
 # /target/site contains our JS/WASM/CSS, etc.
 COPY --from=builder /app/target/site /app/site
@@ -65,7 +73,12 @@ ENV LEPTOS_SITE_ADDR="0.0.0.0:8080"
 ENV LEPTOS_SITE_ROOT="../site"
 ENV LEPTOS_OUTPUT_NAME="web_app"
 ENV LEPTOS_SITE_PKG_DIR="pkg"
-ENV LEPTOS_ENV="DEV"
+
+RUN if [ "$RELEASE_FLAG" = "--release" ]; then \
+      ENV LEPTOS_ENV="PROD"; \
+    else \
+      ENV LEPTOS_ENV="DEV"; \
+    fi
 
 # Default to port 8080
 EXPOSE 8080
