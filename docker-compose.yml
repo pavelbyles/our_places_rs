@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data_dev:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -38,13 +38,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://0.0.0.0:8080/api/v1/bookings/health_check",
-        ]
+      test: [ "CMD", "curl", "-f", "http://0.0.0.0:8080/api/v1/bookings/health_check" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -75,13 +69,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://0.0.0.0:8080/api/v1/listings/health_check",
-        ]
+      test: [ "CMD", "curl", "-f", "http://0.0.0.0:8080/api/v1/listings/health_check" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -108,8 +96,7 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test:
-        ["CMD", "curl", "-f", "http://0.0.0.0:8080/api/v1/users/health_check"]
+      test: [ "CMD", "curl", "-f", "http://0.0.0.0:8080/api/v1/users/health_check" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -145,6 +132,7 @@ services:
       dockerfile: web_app/Dockerfile.web_app
       args:
         RELEASE_FLAG: ${WEB_APP_RELEASE_FLAG:-}
+        LEPTOS_ENV: ${WEB_APP_LEPTOS_ENV:-DEV}
     ports:
       - "8080:8080"
     environment:
@@ -167,6 +155,9 @@ services:
     build:
       context: .
       dockerfile: web_app_admin/Dockerfile.web_app_admin
+      args:
+        RELEASE_FLAG: ${WEB_APP_ADMIN_RELEASE_FLAG:-}
+        LEPTOS_ENV: ${WEB_APP_ADMIN_LEPTOS_ENV:-DEV}
     ports:
       - "8085:8080"
     environment:

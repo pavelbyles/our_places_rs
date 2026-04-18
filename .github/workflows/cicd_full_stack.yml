@@ -611,10 +611,10 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=PROD" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=DEV" >> $GITHUB_ENV
           fi
 
       - name: Fetch Gateway URL
@@ -639,6 +639,8 @@ jobs:
       - name: Build and Push Web App
         run: |
           docker build \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg LEPTOS_ENV=$LEPTOS_ENV \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f web_app/Dockerfile.web_app .
@@ -770,10 +772,10 @@ jobs:
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=PROD" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
-            echo "BUILD_OUTPUT=debug" >> $GITHUB_ENV
+            echo "LEPTOS_ENV=DEV" >> $GITHUB_ENV
           fi
 
       - name: Fetch Gateway URL
@@ -795,6 +797,8 @@ jobs:
       - name: Build and Push Web App Admin
         run: |
           docker build \
+            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
+            --build-arg LEPTOS_ENV=$LEPTOS_ENV \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }} \
             -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
             -f web_app_admin/Dockerfile.web_app_admin .

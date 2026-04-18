@@ -69,16 +69,12 @@ COPY --from=builder /app/server_binary ./server_binary
 COPY --from=builder /app/target/site /app/site
 
 # Set hydration and site variables
+ARG LEPTOS_ENV=DEV
 ENV LEPTOS_SITE_ADDR="0.0.0.0:8080"
 ENV LEPTOS_SITE_ROOT="../site"
 ENV LEPTOS_OUTPUT_NAME="web_app"
 ENV LEPTOS_SITE_PKG_DIR="pkg"
-
-RUN if [ "$RELEASE_FLAG" = "--release" ]; then \
-      ENV LEPTOS_ENV="PROD"; \
-    else \
-      ENV LEPTOS_ENV="DEV"; \
-    fi
+ENV LEPTOS_ENV=${LEPTOS_ENV}
 
 # Default to port 8080
 EXPOSE 8080
