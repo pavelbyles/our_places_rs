@@ -8,7 +8,6 @@ use leptos_meta::Title;
 #[component]
 #[allow(non_snake_case)]
 pub fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
     let count = RwSignal::new(0);
     let on_click = move |_| {
         spawn_local(async move {
@@ -17,7 +16,6 @@ pub fn HomePage() -> impl IntoView {
         });
     };
 
-    // Creates a resource that invokes the server function to fetch listings
     let listings = Resource::new(|| (), |_| async move { fetch_listings().await });
 
     view! {
