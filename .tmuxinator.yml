@@ -1,6 +1,22 @@
 # ./.tmuxinator.yml
+<%
+  branch = `git rev-parse --abbrev-ref HEAD`.strip
+  safe_branch = branch.gsub(/[\/_]/, '-').downcase.gsub(/[^a-z0-9-]/, '')
+  safe_schema = branch.gsub(/[\/-]/, '_').downcase.gsub(/[^a-z0-9_]/, '')
+  if branch == "main"
+    safe_schema = "public"
+  elsif safe_schema =~ /^[0-9]/
+    safe_schema = "_#{safe_schema}"
+  end
+%>
 
 name: ourplaces
+
+env:
+  SERVICE_SUFFIX: <%= safe_branch %>
+  SCHEMA_NAME: <%= safe_schema %>
+  GCS_RAW_BUCKET: our-places-gcs-img-raw-<%= safe_branch %>
+  GCS_PUBLIC_BUCKET: our-places-gcs-img-public-<%= safe_branch %>
 
 windows:
   - development:
@@ -11,7 +27,7 @@ windows:
         - commands:
           - docker compose up -d db 
           - cd app_api/listing_api
-          - EA__SERVER__PORT=8082 EA__DATABASE__HOST=localhost GCS_RAW_BUCKET=our-places-gcs-img-raw GOOGLE_APPLICATION_CREDENTIALS=/home/pav/Downloads/our-places-dev-sa-listing-api.json cargo run                                                       # Pane 1 - Listing API
+          - EA__SERVER__PORT=8082 EA__DATABASE__HOST=localhost GCS_RAW_BUCKET=our-places-gcs-img-raw-<%= safe_branch %> GOOGLE_APPLICATION_CREDENTIALS=/home/pav/Downloads/our-places-dev-sa-listing-api.json cargo run                                                       # Pane 1 - Listing API
         - commands:
           - cd app_api/booking_api
           - EA__SERVER__PORT=8081 EA__DATABASE__HOST=localhost cargo run    # Pane 2
