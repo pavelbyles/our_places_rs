@@ -227,7 +227,7 @@ pub async fn process_image(
     };
 
     let public_bucket =
-        std::env::var("GCS_PUBLIC_BUCKET").unwrap_or_else(|_| "our-places-public-img".to_string());
+        std::env::var("GCS_PUBLIC_BUCKET").unwrap_or_else(|_| "our-places-gcs-img-public".to_string());
 
     let variants_to_create = vec![
         (
