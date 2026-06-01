@@ -1,16 +1,45 @@
-@startuml Hello World
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
-skinparam Style strictuml
-skinparam SequenceMessageAlignment center
+@startuml
+skinparam componentStyle uml2
+skinparam backgroundColor white
+skinparam component {
+  BackgroundColor lightblue
+  BorderColor darkblue
+}
 
-System("System", "The system", "The new system")
+[web_app] as WA <<Leptos Web App>>
+[web_app_admin] as WAA <<Leptos Admin App>>
 
-[My component]
+package "app_api" {
+    [api_core] as AC <<API Infrastructure>>
+    [booking_api] as BA <<Service>>
+    [image_worker] as IW <<Service>>
+    [listing_api] as LA <<Service>>
+    [user_api] as UA <<Service>>
+}
 
-Person(personAlias, "Label", "Optional Description")
-Container(containerAlias, "Label", "Technology", "Optional Description")
-System(systemAlias, "Label", "Optional Description")
+[db_core] as DC <<Database Access>>
+[web_app_common] as WAC <<Shared Common>>
 
-Rel(personAlias, containerAlias, "Label",  "Optional technology")
-A -> B : Hello
+' Frontends usage of common
+WA ..> WAC : <<shared>>
+WAA ..> WAC : <<shared>>
+
+' Frontends usage of core (SSR)
+WA ..> AC
+WA ..> DC
+WAA ..> AC
+WAA ..> DC
+
+' API dependencies
+BA ..> AC
+BA ..> DC
+IW ..> AC
+IW ..> DC
+LA ..> AC
+LA ..> DC
+UA ..> AC
+UA ..> DC
+
+AC ..> DC
+
 @enduml

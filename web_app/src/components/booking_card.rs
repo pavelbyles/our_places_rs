@@ -1,21 +1,18 @@
+use crate::components::checkout::initiate_booking;
+use chrono::NaiveDate;
+use common::models::ListingResponse;
 use leptos::prelude::*;
 use num_format::{Locale, ToFormattedString};
 use rust_decimal::prelude::ToPrimitive;
-use web_app_common::listings::get_listing_by_id_server;
-use common::models::{ListingResponse};
-use chrono::{NaiveDate};
 use uuid::Uuid;
-use crate::components::checkout::initiate_booking;
+use web_app_common::listings::get_listing_by_id_server;
 
 #[component]
 #[allow(non_snake_case)]
 pub fn BookingCard(
-    #[prop(into)]
-    id_or_slug: String,
-    #[prop(optional)]
-    listing: Option<ListingResponse>
+    #[prop(into)] id_or_slug: String,
+    #[prop(optional)] listing: Option<ListingResponse>,
 ) -> impl IntoView {
-    
     let listing_resource = Resource::new(
         move || (id_or_slug.clone(), listing.clone()),
         |(id, opt_listing)| async move {
@@ -25,24 +22,26 @@ pub fn BookingCard(
                 if id.is_empty() {
                     return Err(ServerFnError::new("No ID provided"));
                 }
-                get_listing_by_id_server(id).await.map(|details| details.listing)
+                get_listing_by_id_server(id)
+                    .await
+                    .map(|details| details.listing)
             }
         },
     );
-    
+
     let (check_in, set_check_in) = signal(None::<String>);
     let (check_out, set_check_out) = signal(None::<String>);
     let (total_guests, set_total_guests) = signal(1u32);
 
-    let initiate_booking_action = Action::new(|(listing_id, check_in, check_out, guests): &(Uuid, NaiveDate, NaiveDate, u32)| {
-        let listing_id = *listing_id;
-        let check_in = *check_in;
-        let check_out = *check_out;
-        let guests = *guests;
-        async move {
-            initiate_booking(listing_id, check_in, check_out, guests, 0, 0, 0).await
-        }
-    });
+    let initiate_booking_action = Action::new(
+        |(listing_id, check_in, check_out, guests): &(Uuid, NaiveDate, NaiveDate, u32)| {
+            let listing_id = *listing_id;
+            let check_in = *check_in;
+            let check_out = *check_out;
+            let guests = *guests;
+            async move { initiate_booking(listing_id, check_in, check_out, guests, 0, 0, 0).await }
+        },
+    );
 
     Effect::new(move || {
         if let Some(Ok(booking_id)) = initiate_booking_action.value().get() {
@@ -52,26 +51,29 @@ pub fn BookingCard(
             );
         }
     });
-    
+
     let validation = Memo::new(move |_| {
         let l = listing_resource.get()?;
         let listing = l.ok()?;
-        
+
         let start_str = check_in.get()?;
         let end_str = check_out.get()?;
-        
+
         let start = NaiveDate::parse_from_str(&start_str, "%Y-%m-%d").ok()?;
         let end = NaiveDate::parse_from_str(&end_str, "%Y-%m-%d").ok()?;
-        
+
         if end <= start {
             return Some(Err("Check-out must be after check-in".to_string()));
         }
-        
+
         let nights = (end - start).num_days() as i32;
         if nights < listing.minimum_stay {
-            return Some(Err(format!("Minimum stay is {} nights", listing.minimum_stay)));
+            return Some(Err(format!(
+                "Minimum stay is {} nights",
+                listing.minimum_stay
+            )));
         }
-        
+
         Some(Ok(nights))
     });
 
@@ -101,18 +103,18 @@ pub fn BookingCard(
                                         <div class="grid grid-cols-2 border-b border-base-300">
                                             <div class="p-3 border-r border-base-300 hover:bg-base-200/50 transition-colors cursor-pointer">
                                                 <label class="block text-[10px] font-bold uppercase text-base-content/60">"Check-in"</label>
-                                                <input 
-                                                    type="date" 
-                                                    class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1" 
+                                                <input
+                                                    type="date"
+                                                    class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1"
                                                     on:change=move |ev| set_check_in.set(Some(event_target_value(&ev)))
                                                     prop:value=move || check_in.get().unwrap_or_default()
                                                 />
                                             </div>
                                             <div class="p-3 hover:bg-base-200/50 transition-colors cursor-pointer">
                                                 <label class="block text-[10px] font-bold uppercase text-base-content/60">"Check-out"</label>
-                                                <input 
-                                                    type="date" 
-                                                    class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1" 
+                                                <input
+                                                    type="date"
+                                                    class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1"
                                                     on:change=move |ev| set_check_out.set(Some(event_target_value(&ev)))
                                                     prop:value=move || check_out.get().unwrap_or_default()
                                                 />
@@ -123,7 +125,7 @@ pub fn BookingCard(
                                         })}
                                         <div class="p-3 hover:bg-base-200/50 transition-colors cursor-pointer">
                                             <label class="block text-[10px] font-bold uppercase text-base-content/60">"# of Guests"</label>
-                                            <select 
+                                            <select
                                                 class="w-full bg-transparent text-sm focus:outline-none cursor-pointer mt-1 appearance-none"
                                                 on:change=move |ev| set_total_guests.set(event_target_value(&ev).parse().unwrap_or(1))
                                                 prop:value=move || total_guests.get()
@@ -138,7 +140,7 @@ pub fn BookingCard(
                                     </div>
 
                                     <div class="flex flex-col gap-2">
-                                        <button 
+                                        <button
                                             class="btn btn-primary btn-lg w-full"
                                             disabled=move || validation.get().map(|r| r.is_err()).unwrap_or(true) || initiate_booking_action.pending().get()
                                             on:click=move |_| {

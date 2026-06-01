@@ -2,14 +2,15 @@ use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use leptos_router::{
     components::{Outlet, ParentRoute, Route, Router, Routes},
-    hooks::use_location, path,
+    hooks::use_location,
+    path,
 };
 
 use crate::auth::{get_current_user, UserProfile};
 use crate::components::{
-    about::AboutPage, home::HomePage, layout::Layout, layout_no_search::LayoutNoSearch,
-    listing_detail::ListingDetailPage, listings::ListingsPage, login::LoginPage,
-    not_found::NotFound, register::RegisterPage, verify::VerifyPage, checkout::CheckoutPage,
+    about::AboutPage, checkout::CheckoutPage, home::HomePage, layout::Layout,
+    layout_no_search::LayoutNoSearch, listing_detail::ListingDetailPage, listings::ListingsPage,
+    login::LoginPage, not_found::NotFound, register::RegisterPage, verify::VerifyPage,
 };
 
 #[derive(Clone, Debug)]
@@ -51,7 +52,7 @@ fn AppContent() -> impl IntoView {
     let location = use_location();
     let user = Resource::new(
         move || (refresh.get(), location.pathname.get()),
-        |_| async move { get_current_user().await }
+        |_| async move { get_current_user().await },
     );
     provide_context(AuthContext { user, refresh });
 

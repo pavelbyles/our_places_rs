@@ -1,7 +1,6 @@
 # ./.tmuxinator.yml
 
 name: ourplaces
-root: ~/code/our_places_rs
 
 windows:
   - development:

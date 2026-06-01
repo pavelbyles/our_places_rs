@@ -18,8 +18,6 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
-
-
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdatedListingRequest {
     #[serde(default)]
@@ -193,11 +191,14 @@ async fn get_listing_by_id(
     pool: web::Data<PgPool>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id_or_slug = path.into_inner();
-    let listing_details = db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
+    let listing_details =
+        db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
     Ok(respond(
         &req,
-        Payload::Item(api_core::models::map_listing_details_to_response(listing_details)),
+        Payload::Item(api_core::models::map_listing_details_to_response(
+            listing_details,
+        )),
         |_: Vec<common::models::ListingDetails>| (),
         actix_web::http::StatusCode::OK,
     ))
@@ -228,7 +229,8 @@ async fn create_listing(
         let mut errors = validator::ValidationErrors::new();
         errors.add(
             "listing_structure",
-            validator::ValidationError::new("invalid_structure_type").with_message("Invalid structure type provided.".into()),
+            validator::ValidationError::new("invalid_structure_type")
+                .with_message("Invalid structure type provided.".into()),
         );
         ApiError::ValidationError(errors)
     })?;
@@ -512,11 +514,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
         components(
             schemas(
-                common::models::NewListingRequest,  
-                UpdatedListingRequest, 
-                ListingResponse, 
+                common::models::NewListingRequest,
+                UpdatedListingRequest,
+                ListingResponse,
                 common::models::ListingDetails,
-                pagination::Pagination, 
+                pagination::Pagination,
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,
                 common::models::ImagePresignResponse,

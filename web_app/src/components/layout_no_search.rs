@@ -1,6 +1,6 @@
-use leptos::prelude::*;
 use crate::app::AuthContext;
 use crate::auth::logout;
+use leptos::prelude::*;
 
 #[component]
 pub fn LayoutNoSearch(children: Children) -> impl IntoView {
@@ -41,7 +41,7 @@ pub fn LayoutNoSearch(children: Children) -> impl IntoView {
                     <div class="flex-1">
                                                 <a href="/" class="btn btn-ghost text-xl font-bold tracking-tighter">"Our Places"</a>
                     </div>
-                    
+
                     <div class="hidden flex-none lg:block">
                         <ul class="menu menu-horizontal px-1 gap-1">
                             <li><a href="/home">"Home"</a></li>
@@ -74,7 +74,7 @@ pub fn LayoutNoSearch(children: Children) -> impl IntoView {
                                                     <li><a href="/profile">"Profile"</a></li>
                                                     <li><a href="/settings">"Settings"</a></li>
                                                     <li>
-                                                        <button 
+                                                        <button
                                                             class="text-error"
                                                             on:click=move |_| { logout_action.dispatch(()); }
                                                         >

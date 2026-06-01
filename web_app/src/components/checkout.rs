@@ -4,9 +4,9 @@ use chrono::NaiveDate;
 use common::models::ListingResponse;
 use leptos::prelude::*;
 use num_format::{Locale, ToFormattedString};
+use rust_decimal::prelude::ToPrimitive;
 #[cfg(feature = "ssr")]
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -216,7 +216,7 @@ pub async fn complete_booking(
     {
         use db_core::booking as db_booking;
         use db_core::listing as db_listing;
-        use db_core::models::{BookingStatus, UpdatedBooking, BookingMetadata};
+        use db_core::models::{BookingMetadata, BookingStatus, UpdatedBooking};
         use web_app_common::api_client::get_pool;
         use web_app_common::email::send_booking_confirmation;
 
@@ -261,7 +261,10 @@ pub async fn complete_booking(
         )
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to send confirmation email: {}", e)))?;
-        tracing::info!("Booking {} successfully confirmed and email sent.", booking_id);
+        tracing::info!(
+            "Booking {} successfully confirmed and email sent.",
+            booking_id
+        );
         leptos_actix::redirect("/");
         Ok(())
     }
@@ -281,10 +284,7 @@ pub fn CheckoutPage() -> impl IntoView {
     let auth = use_context::<AuthContext>().expect("AuthContext required");
     let user_resource = auth.user;
 
-    let checkout_data = Resource::new(
-        booking_id,
-        |id| async move { get_checkout_data(id).await },
-    );
+    let checkout_data = Resource::new(booking_id, |id| async move { get_checkout_data(id).await });
 
     let email = RwSignal::new(String::new());
     let name = RwSignal::new(String::new());
@@ -311,7 +311,13 @@ pub fn CheckoutPage() -> impl IntoView {
     });
 
     let complete_booking_action = Action::new(
-        move |(id, email, name, phone, metadata): &(Uuid, String, String, String, common::models::BookingMetadataResponse)| {
+        move |(id, email, name, phone, metadata): &(
+            Uuid,
+            String,
+            String,
+            String,
+            common::models::BookingMetadataResponse,
+        )| {
             let id = *id;
             let email = email.clone();
             let name = name.clone();
@@ -361,8 +367,8 @@ pub fn CheckoutPage() -> impl IntoView {
 
                                     <section>
                                         <h2 class="text-2xl font-semibold mb-4">"Contact Information"</h2>
-                                        <ContactForm 
-                                            user_resource=user_resource 
+                                        <ContactForm
+                                            user_resource=user_resource
                                             email=email
                                             name=name
                                             phone=phone
@@ -374,8 +380,8 @@ pub fn CheckoutPage() -> impl IntoView {
                                         <div class="space-y-4">
                                             <div class="form-control">
                                                 <label class="label cursor-pointer justify-start gap-4">
-                                                    <input type="checkbox" 
-                                                        class="checkbox checkbox-primary" 
+                                                    <input type="checkbox"
+                                                        class="checkbox checkbox-primary"
                                                         checked=is_business_trip
                                                         on:change:target=move |ev| is_business_trip.set(ev.target().checked())
                                                     />
@@ -385,8 +391,8 @@ pub fn CheckoutPage() -> impl IntoView {
 
                                             <div class="form-control">
                                                 <label class="label"><span class="label-text font-bold">"Message to host (optional)"</span></label>
-                                                <textarea 
-                                                    class="textarea textarea-bordered h-24" 
+                                                <textarea
+                                                    class="textarea textarea-bordered h-24"
                                                     placeholder="Tell the host about your trip..."
                                                     on:input:target=move |ev| message_to_host.set(ev.target().value())
                                                     prop:value=message_to_host
@@ -411,7 +417,7 @@ pub fn CheckoutPage() -> impl IntoView {
                                     </section>
 
                                     <div class="pt-8">
-                                        <button 
+                                        <button
                                             class="btn btn-primary btn-lg w-full"
                                             disabled=complete_booking_action.pending()
                                             on:click=move |_| {
@@ -513,7 +519,7 @@ fn ContactForm(
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                         <div class="form-control">
                             <label class="label"><span class="label-text">"Email"</span></label>
-                            <input type="email" 
+                            <input type="email"
                                 on:input:target=move |ev| email.set(ev.target().value())
                                 value=email class="input input-bordered" readonly />
                         </div>
@@ -525,7 +531,7 @@ fn ContactForm(
                         </div>
                         <div class="form-control md:col-span-2">
                             <label class="label"><span class="label-text">"Phone Number"</span></label>
-                            <input type="tel" 
+                            <input type="tel"
                                 on:input:target=move |ev| phone.set(ev.target().value())
                                 value=phone placeholder="+1 (555) 000-0000" class="input input-bordered" />
                         </div>
@@ -547,7 +553,7 @@ fn ContactForm(
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="form-control">
                                 <label class="label"><span class="label-text">"Email"</span></label>
-                                <input type="email" 
+                                <input type="email"
                                     on:input:target=move |ev| email.set(ev.target().value())
                                     prop:value=email
                                     placeholder="Your email address" class="input input-bordered" />
@@ -561,7 +567,7 @@ fn ContactForm(
                             </div>
                             <div class="form-control md:col-span-2">
                                 <label class="label"><span class="label-text">"Phone Number"</span></label>
-                                <input type="tel" 
+                                <input type="tel"
                                     on:input:target=move |ev| phone.set(ev.target().value())
                                     prop:value=phone
                                     placeholder="+1 (555) 000-0000" class="input input-bordered" />

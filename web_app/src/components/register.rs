@@ -13,7 +13,7 @@ pub fn RegisterPage() -> impl IntoView {
                         <h2 class="text-3xl font-bold">"Create Account"</h2>
                         <p class="mt-2 opacity-90">"Join Our Places today"</p>
                     </div>
-                    
+
                     <div class="p-8">
                         // Social Shortcuts
                         <div class="grid grid-cols-2 gap-3">
@@ -48,7 +48,7 @@ pub fn RegisterPage() -> impl IntoView {
                                     <input type="text" name="last_name" placeholder="Doe" class="input input-bordered w-full" required />
                                 </div>
                             </div>
-                            
+
                             <div class="form-control w-full mt-4">
                                 <label class="label"><span class="label-text">"Email Address"</span></label>
                                 <input type="email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required />
@@ -58,9 +58,9 @@ pub fn RegisterPage() -> impl IntoView {
                                 <label class="label"><span class="label-text">"Phone Number"</span></label>
                                 <input type="tel" name="phone_number" placeholder="+1 (555) 000-0000" class="input input-bordered w-full" />
                             </div>
-                            
+
                             <div class="collapse collapse-arrow bg-base-200 mt-6 overflow-visible opacity-50">
-                                <input type="checkbox" disabled /> 
+                                <input type="checkbox" disabled />
                                 <div class="collapse-title text-sm font-medium">
                                     "Set up Passwordless (Coming Soon)"
                                 </div>

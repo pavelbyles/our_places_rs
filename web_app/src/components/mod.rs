@@ -1,5 +1,6 @@
 pub mod about;
 pub mod booking_card;
+pub mod checkout;
 pub mod hero;
 pub mod home;
 pub mod layout;
@@ -9,6 +10,5 @@ pub mod listings;
 pub mod login;
 pub mod not_found;
 pub mod register;
-pub mod verify;
 pub mod shell;
-pub mod checkout;
+pub mod verify;

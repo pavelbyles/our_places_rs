@@ -3,9 +3,10 @@ use leptos::ev::SubmitEvent;
 use leptos::form::ActionForm;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use web_app_common::listings::{ListingSearchServer};
+use web_app_common::listings::ListingSearchServer;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CreateListingParams {
     pub name: String,
@@ -36,9 +37,10 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
     let user_id = Uuid::parse_str(&params.user_id)
         .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
 
-    use rust_decimal::prelude::FromPrimitive;
     let city = if let (Some(lat), Some(lon)) = (params.latitude, params.longitude) {
-        common::geocode::reverse_geocode(lat, lon).await.unwrap_or(None)
+        common::geocode::reverse_geocode(lat, lon)
+            .await
+            .unwrap_or(None)
     } else {
         None
     };
@@ -50,9 +52,15 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         listing_structure: params.listing_structure,
         country: params.country,
         base_currency: params.base_currency,
-        price_per_night: params.price_per_night.and_then(rust_decimal::Decimal::from_f64),
-        weekly_discount_percentage: params.weekly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
-        monthly_discount_percentage: params.monthly_discount_percentage.and_then(rust_decimal::Decimal::from_f64),
+        price_per_night: params
+            .price_per_night
+            .and_then(rust_decimal::Decimal::from_f64),
+        weekly_discount_percentage: params
+            .weekly_discount_percentage
+            .and_then(rust_decimal::Decimal::from_f64),
+        monthly_discount_percentage: params
+            .monthly_discount_percentage
+            .and_then(rust_decimal::Decimal::from_f64),
         latitude: params.latitude,
         longitude: params.longitude,
         city,
@@ -62,7 +70,9 @@ pub async fn create_listing_server(params: CreateListingParams) -> Result<String
         full_bathrooms: params.full_bathrooms.unwrap_or(0),
         half_bathrooms: params.half_bathrooms.unwrap_or(0),
         square_meters: params.square_meters,
-        listing_details: params.listing_details.and_then(|s| serde_json::from_str(&s).ok()),
+        listing_details: params
+            .listing_details
+            .and_then(|s| serde_json::from_str(&s).ok()),
         minimum_stay: params.minimum_stay.unwrap_or(1),
         days_between_bookings: params.days_between_bookings.unwrap_or(0),
     };
@@ -135,8 +145,29 @@ pub fn ListingsPage() -> impl IntoView {
     let (uploading_images, set_uploading_images) = signal(false);
 
     let (next_detail_id, set_next_detail_id) = signal(1usize);
-    
-    let (listing_details, set_listing_details) = signal(vec![(0usize, String::new(), String::new())]);
+
+    let (listing_details, set_listing_details) =
+        signal(vec![(0usize, String::new(), String::new())]);
+
+    // Signals for Add New Listing form
+    let (new_name, set_new_name) = signal(String::new());
+    let (new_description, set_new_description) = signal(String::new());
+    let (new_listing_structure, set_new_listing_structure) = signal(String::new());
+    let (new_country, set_new_country) = signal(String::new());
+    let (new_base_currency, set_new_base_currency) = signal("USD".to_string());
+    let (new_price_per_night, set_new_price_per_night) = signal(None::<f64>);
+    let (new_weekly_discount, set_new_weekly_discount) = signal(None::<f64>);
+    let (new_monthly_discount, set_new_monthly_discount) = signal(None::<f64>);
+    let (new_latitude, set_new_latitude) = signal(None::<f64>);
+    let (new_longitude, set_new_longitude) = signal(None::<f64>);
+    let (new_max_guests, set_new_max_guests) = signal(Some(1));
+    let (new_bedrooms, set_new_bedrooms) = signal(Some(0));
+    let (new_beds, set_new_beds) = signal(Some(0));
+    let (new_full_bathrooms, set_new_full_bathrooms) = signal(Some(0));
+    let (new_half_bathrooms, set_new_half_bathrooms) = signal(Some(0));
+    let (new_square_meters, set_new_square_meters) = signal(None::<i32>);
+    let (new_minimum_stay, set_new_minimum_stay) = signal(Some(1));
+    let (new_days_between_bookings, set_new_days_between_bookings) = signal(Some(0));
 
     let add_detail = move |_| {
         let id = next_detail_id.get();
@@ -237,7 +268,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                             )
                                                         {
                                                             let fut = wasm_bindgen_futures::JsFuture::from(
-                                                                window.fetch_with_request(&request), 
+                                                                window.fetch_with_request(&request),
                                                             );
                                                             upload_futures.push(fut);
                                                         }
@@ -336,6 +367,49 @@ pub fn ListingsPage() -> impl IntoView {
                 set.insert(structure);
             }
         });
+    };
+
+    let populate_from_existing = move |existing: common::models::ListingResponse| {
+        set_new_description.set(existing.description.unwrap_or_default());
+        set_new_listing_structure.set(existing.listing_structure.clone());
+        set_new_country.set(existing.country.clone());
+        set_new_base_currency.set(existing.base_currency.clone());
+        set_new_price_per_night.set(existing.price_per_night.and_then(|p| p.to_f64()));
+        set_new_latitude.set(existing.latitude);
+        set_new_longitude.set(existing.longitude);
+        set_new_max_guests.set(Some(existing.max_guests));
+        set_new_bedrooms.set(Some(existing.bedrooms));
+        set_new_full_bathrooms.set(Some(existing.full_bathrooms));
+        set_new_minimum_stay.set(Some(existing.minimum_stay));
+        set_new_days_between_bookings.set(Some(existing.days_between_bookings));
+
+        // Populate details
+        if let Some(details_json) = existing.listing_details {
+            if let Ok(details_map) =
+                serde_json::from_value::<std::collections::HashMap<String, String>>(details_json)
+            {
+                let mut new_details = Vec::new();
+                let mut max_id = 0;
+                for (k, v) in details_map {
+                    new_details.push((max_id, k, v));
+                    max_id += 1;
+                }
+                set_next_detail_id.set(max_id);
+                if new_details.is_empty() {
+                    new_details.push((0, String::new(), String::new()));
+                    set_next_detail_id.set(1);
+                }
+                set_listing_details.set(new_details);
+            }
+        }
+
+        // Set owner ID and placeholder email if email is unknown
+        set_owner_id_validated.set(Some(existing.user_id.to_string()));
+        set_owner_email_input.set(
+            existing
+                .owner_name
+                .unwrap_or_else(|| "owner@example.com".to_string()),
+        );
     };
 
     view! {
@@ -492,6 +566,7 @@ pub fn ListingsPage() -> impl IntoView {
                                     each=move || listings.get()
                                     key=|listing| listing.id
                                     children=move |listing| {
+                                        let listing_to_populate = listing.clone();
                                         view! {
                                             <div class="card bg-base-100 shadow-sm flex flex-row">
                                                 <figure class="w-48 h-48 flex-none">
@@ -501,16 +576,22 @@ pub fn ListingsPage() -> impl IntoView {
                                                         alt="Listing Image" />
                                                 </figure>
                                                 <div class="card-body">
-                                                    <h2 class="card-title">{listing.name}</h2>
+                                                    <h2 class="card-title">{listing.name.clone()}</h2>
                                                     <p class="text-sm text-gray-500">
-                                                        "Owner: " {listing.owner_name.unwrap_or_else(|| "Unknown".to_string())}
+                                                        "Owner: " {listing.owner_name.clone().unwrap_or_else(|| "Unknown".to_string())}
                                                     </p>
-                                                    <p class="text-sm">{listing.description.unwrap_or_default()}</p>
+                                                    <p class="text-sm">{listing.description.clone().unwrap_or_default()}</p>
                                                     <div class="card-actions justify-end">
-                                                        <span class="badge badge-outline">{listing.listing_structure}</span>
+                                                        <span class="badge badge-outline">{listing.listing_structure.clone()}</span>
                                                         <span class="badge badge-ghost">
                                                             {listing.price_per_night.map(|p| format!("${}", p)).unwrap_or_default()}
                                                         </span>
+                                                        <button
+                                                            class="btn btn-secondary btn-sm"
+                                                            on:click=move |_| populate_from_existing(listing_to_populate.clone())
+                                                        >
+                                                            "Populate"
+                                                        </button>
                                                         <button class="btn btn-primary btn-sm">View</button>
                                                     </div>
                                                 </div>
@@ -543,7 +624,15 @@ pub fn ListingsPage() -> impl IntoView {
                             <label for="listing_name" class="label">
                                 <span class="label-text">Listing Name</span>
                             </label>
-                            <input type="text" name="params[name]" placeholder="Listing Name" class="input input-bordered w-full max-w-xs" required />
+                            <input
+                                type="text"
+                                name="params[name]"
+                                placeholder="Listing Name"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_name.set(event_target_value(&ev))
+                                prop:value=move || new_name.get()
+                                required
+                            />
                         </div>
                         <div>
                             <label for="owner_email" class="label">
@@ -591,14 +680,25 @@ pub fn ListingsPage() -> impl IntoView {
                             <label class="label">
                                 <span class="label-text">Description</span>
                             </label>
-                            <textarea name="params[description]" placeholder="Description" class="textarea textarea-bordered h-24 w-full max-w-xs"></textarea>
+                            <textarea
+                                name="params[description]"
+                                placeholder="Description"
+                                class="textarea textarea-bordered h-24 w-full max-w-xs"
+                                on:input=move |ev| set_new_description.set(event_target_value(&ev))
+                                prop:value=move || new_description.get()
+                            ></textarea>
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Structure Type</span>
                             </label>
-                            <select name="params[listing_structure]" class="select select-bordered w-full max-w-xs">
-                                <option disabled selected>Select property type</option>
+                            <select
+                                name="params[listing_structure]"
+                                class="select select-bordered w-full max-w-xs"
+                                on:change=move |ev| set_new_listing_structure.set(event_target_value(&ev))
+                                prop:value=move || new_listing_structure.get()
+                            >
+                                <option disabled selected=move || new_listing_structure.get().is_empty()>Select property type</option>
                                 <option value="Apartment">Apartment</option>
                                 <option value="House">House</option>
                                 <option value="Studio">Studio</option>
@@ -610,8 +710,14 @@ pub fn ListingsPage() -> impl IntoView {
                             <label class="label">
                                 <span class="label-text">Country</span>
                             </label>
-                            <select name="params[country]" class="select select-bordered w-full max-w-xs" required>
-                                <option disabled selected value="">"Select country"</option>
+                            <select
+                                name="params[country]"
+                                class="select select-bordered w-full max-w-xs"
+                                on:change=move |ev| set_new_country.set(event_target_value(&ev))
+                                prop:value=move || new_country.get()
+                                required
+                            >
+                                <option disabled selected=move || new_country.get().is_empty() value="">"Select country"</option>
                                 {common::reference::SupportedCountry::LIST.iter().map(|c| {
                                     view! { <option value=c.iso2char>{c.name}</option> }
                                 }).collect::<Vec<_>>()}
@@ -621,8 +727,14 @@ pub fn ListingsPage() -> impl IntoView {
                             <label class="label">
                                 <span class="label-text">Base Currency</span>
                             </label>
-                            <select name="params[base_currency]" class="select select-bordered w-full max-w-xs" required>
-                                <option disabled selected value="">"Select base currency"</option>
+                            <select
+                                name="params[base_currency]"
+                                class="select select-bordered w-full max-w-xs"
+                                on:change=move |ev| set_new_base_currency.set(event_target_value(&ev))
+                                prop:value=move || new_base_currency.get()
+                                required
+                            >
+                                <option disabled selected=move || new_base_currency.get().is_empty() value="">"Select base currency"</option>
                                 <option value="USD">"USD - US Dollar"</option>
                                 <option value="JMD">"JMD - Jamaican Dollar"</option>
                                 <option value="GBP">"GBP - British Pound"</option>
@@ -632,85 +744,198 @@ pub fn ListingsPage() -> impl IntoView {
                             <label class="label">
                                 <span class="label-text">Price Per Night ($)</span>
                             </label>
-                            <input type="number" step="0.50" min="0" name="params[price_per_night]" placeholder="0.00" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                step="0.50"
+                                min="0"
+                                name="params[price_per_night]"
+                                placeholder="0.00"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_price_per_night.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_price_per_night.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Weekly Discount (%)</span>
                             </label>
-                            <input type="number" step="0.1" min="0" max="100" name="params[weekly_discount_percentage]" placeholder="0.0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="100"
+                                name="params[weekly_discount_percentage]"
+                                placeholder="0.0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_weekly_discount.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_weekly_discount.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Monthly Discount (%)</span>
                             </label>
-                            <input type="number" step="0.1" min="0" max="100" name="params[monthly_discount_percentage]" placeholder="0.0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="100"
+                                name="params[monthly_discount_percentage]"
+                                placeholder="0.0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_monthly_discount.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_monthly_discount.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Latitude</span>
                             </label>
-                            <input type="number" step="0.000001" min="-90" max="90" name="params[latitude]" placeholder="0.000000" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                step="0.000001"
+                                min="-90"
+                                max="90"
+                                name="params[latitude]"
+                                placeholder="0.000000"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_latitude.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_latitude.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Longitude</span>
                             </label>
-                            <input type="number" step="0.000001" min="-180" max="180" name="params[longitude]" placeholder="0.000000" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                step="0.000001"
+                                min="-180"
+                                max="180"
+                                name="params[longitude]"
+                                placeholder="0.000000"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_longitude.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_longitude.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Max Guests</span>
                             </label>
-                            <input type="number" min="1" name="params[max_guests]" placeholder="1" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="1"
+                                name="params[max_guests]"
+                                placeholder="1"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_max_guests.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_max_guests.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Bedrooms</span>
                             </label>
-                            <input type="number" min="0" name="params[bedrooms]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="0"
+                                name="params[bedrooms]"
+                                placeholder="0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_bedrooms.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_bedrooms.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Beds</span>
                             </label>
-                            <input type="number" min="0" name="params[beds]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="0"
+                                name="params[beds]"
+                                placeholder="0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_beds.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_beds.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Full Bathrooms</span>
                             </label>
-                            <input type="number" min="0" name="params[full_bathrooms]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="0"
+                                name="params[full_bathrooms]"
+                                placeholder="0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_full_bathrooms.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_full_bathrooms.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Half Bathrooms</span>
                             </label>
-                            <input type="number" min="0" name="params[half_bathrooms]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="0"
+                                name="params[half_bathrooms]"
+                                placeholder="0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_half_bathrooms.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_half_bathrooms.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Square Meters</span>
                             </label>
-                            <input type="number" min="0" name="params[square_meters]" placeholder="e.g. 100" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="0"
+                                name="params[square_meters]"
+                                placeholder="e.g. 100"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_square_meters.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_square_meters.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Minimum Stay (Nights)</span>
                             </label>
-                            <input type="number" min="1" name="params[minimum_stay]" placeholder="1" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="1"
+                                name="params[minimum_stay]"
+                                placeholder="1"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_minimum_stay.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_minimum_stay.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div>
                             <label class="label">
                                 <span class="label-text">Days Between Bookings</span>
                             </label>
-                            <input type="number" min="0" name="params[days_between_bookings]" placeholder="0" class="input input-bordered w-full max-w-xs" />
+                            <input
+                                type="number"
+                                min="0"
+                                name="params[days_between_bookings]"
+                                placeholder="0"
+                                class="input input-bordered w-full max-w-xs"
+                                on:input=move |ev| set_new_days_between_bookings.set(event_target_value(&ev).parse().ok())
+                                prop:value=move || new_days_between_bookings.get().map(|v| v.to_string()).unwrap_or_default()
+                            />
                         </div>
                         <div class="w-full max-w-xs flex flex-col">
                             <label class="label">
                                 <span class="label-text">Listing Details</span>
                             </label>
-                            
+
                             <For
                                 each=move || listing_details.get()
                                 key=|(id, _, _)| *id

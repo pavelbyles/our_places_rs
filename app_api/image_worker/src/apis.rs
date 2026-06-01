@@ -165,7 +165,10 @@ pub async fn process_image(
     {
         Ok(r) => r,
         Err(db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound)) => {
-            tracing::warn!("Image ID {} not found in database. This may be a stale Pub/Sub message for a deleted listing/image. Acknowledging message to stop retries.", image_id);
+            tracing::warn!(
+                "Image ID {} not found in database. This may be a stale Pub/Sub message for a deleted listing/image. Acknowledging message to stop retries.",
+                image_id
+            );
             return Ok(HttpResponse::Ok().finish());
         }
         Err(e) => {

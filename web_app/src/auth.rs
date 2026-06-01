@@ -15,7 +15,7 @@ pub struct UserProfile {
 pub async fn login_traditional(email: String, password: String) -> Result<(), ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use web_app_common::api_client::{get_client, user_api_url, user_api_audience};
+        use web_app_common::api_client::{get_client, user_api_audience, user_api_url};
 
         let url = format!("{}/api/v1/users/login", user_api_url());
         let audience = user_api_audience();
@@ -32,7 +32,10 @@ pub async fn login_traditional(email: String, password: String) -> Result<(), Se
 
         if !response.status().is_success() {
             let status = response.status();
-            let err_body: serde_json::Value = response.json().await.unwrap_or_else(|_| serde_json::json!({ "error": "Unknown login error" }));
+            let err_body: serde_json::Value = response
+                .json()
+                .await
+                .unwrap_or_else(|_| serde_json::json!({ "error": "Unknown login error" }));
             let err_msg = err_body["error"].as_str().unwrap_or("Login failed");
 
             if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -110,7 +113,7 @@ pub async fn register(
     #[cfg(feature = "ssr")]
     {
         use common::models::{NewBookerProfile, NewUserRequest};
-        use web_app_common::api_client::{get_client, user_api_url, user_api_audience};
+        use web_app_common::api_client::{get_client, user_api_audience, user_api_url};
 
         let url = format!("{}/api/v1/users/", user_api_url());
         let audience = user_api_audience();
@@ -237,7 +240,7 @@ pub async fn get_current_user() -> Result<Option<UserProfile>, ServerFnError> {
 pub async fn verify_email_code(email: String, code: String) -> Result<(), ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use web_app_common::api_client::{get_client, user_api_url, user_api_audience};
+        use web_app_common::api_client::{get_client, user_api_audience, user_api_url};
 
         let url = format!("{}/api/v1/users/verify", user_api_url());
         let audience = user_api_audience();

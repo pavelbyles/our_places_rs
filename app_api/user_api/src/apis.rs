@@ -333,21 +333,9 @@ async fn verify_user(
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid user or code".to_string()))?;
 
-    // Let's do a direct query for verification
-    let record = sqlx::query!(
-        r#"SELECT verification_code as "verification_code?", verification_code_expires_at as "verification_code_expires_at?" FROM "user" WHERE id = $1"#,
-        user.id
-    )
-    .fetch_one(pool.get_ref())
-    .await
-    .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
-
-    let verification_code: Option<String> = record.verification_code;
-    let verification_code_expires_at: Option<DateTime<Utc>> = record.verification_code_expires_at;
-
-    if let Some(code) = verification_code
-        && code == credentials.code
-        && let Some(expiry) = verification_code_expires_at
+    if let Some(code) = &user.verification_code
+        && code == &credentials.code
+        && let Some(expiry) = user.verification_code_expires_at
         && expiry > Utc::now()
     {
         // Success!

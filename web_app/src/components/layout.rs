@@ -1,6 +1,6 @@
-use leptos::prelude::*;
 use crate::app::AuthContext;
 use crate::auth::logout;
+use leptos::prelude::*;
 
 #[component]
 pub fn Layout(children: Children) -> impl IntoView {
@@ -77,7 +77,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                                                     <li><a href="/profile">"Profile"</a></li>
                                                     <li><a href="/settings">"Settings"</a></li>
                                                     <li>
-                                                        <button 
+                                                        <button
                                                             class="text-error"
                                                             on:click=move |_| { logout_action.dispatch(()); }
                                                         >

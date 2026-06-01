@@ -20,7 +20,7 @@ pub fn LoginPage() -> impl IntoView {
                         <h2 class="text-3xl font-bold">"Welcome Back"</h2>
                         <p class="mt-2 opacity-90">"Log in to your account"</p>
                     </div>
-                    
+
                     <div class="p-8">
                         // Social Login
                         <div class="flex flex-col gap-3">
@@ -83,7 +83,7 @@ pub fn LoginPage() -> impl IntoView {
                             Err(e) => {
                                 let error_msg = e.to_string();
                                 let is_unverified = error_msg.contains("Account not verified");
-                                
+
                                 view! {
                                     <div class="alert alert-error mt-4 shadow-md text-sm flex flex-col items-start gap-2">
                                         <div class="flex items-center gap-2">

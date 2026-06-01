@@ -6,7 +6,7 @@ use leptos_router::hooks::use_query_map;
 pub fn VerifyPage() -> impl IntoView {
     let query = use_query_map();
     let email = move || query.get().get("email").unwrap_or_default();
-    
+
     let auth = use_context::<crate::app::AuthContext>().expect("AuthContext should be provided");
     let verify_action = ServerAction::<VerifyEmailCode>::new();
 
@@ -15,7 +15,7 @@ pub fn VerifyPage() -> impl IntoView {
             auth.refresh();
         }
     });
-    
+
     view! {
         <div class="min-h-screen flex items-center justify-center bg-base-200">
             <div class="card w-full max-w-md bg-base-100 shadow-xl overflow-hidden">
@@ -24,7 +24,7 @@ pub fn VerifyPage() -> impl IntoView {
                         <h2 class="text-3xl font-bold">"Verify Email"</h2>
                         <p class="mt-2 opacity-90">"Enter the 6-digit code sent to your email"</p>
                     </div>
-                    
+
                     <div class="p-8">
                         <p class="text-center mb-6 text-sm opacity-70">
                             "We've sent a verification code to " <strong>{email}</strong>
@@ -32,18 +32,18 @@ pub fn VerifyPage() -> impl IntoView {
 
                         <ActionForm action=verify_action>
                             <input type="hidden" name="email" value=email />
-                            
+
                             <div class="form-control w-full">
                                 <label class="label">
                                     <span class="label-text font-semibold text-center w-full">"Verification Code"</span>
                                 </label>
-                                <input 
-                                    type="text" 
-                                    name="code" 
-                                    placeholder="XXXXXX" 
-                                    class="input input-bordered w-full text-center text-2xl tracking-[0.5em] font-mono" 
+                                <input
+                                    type="text"
+                                    name="code"
+                                    placeholder="XXXXXX"
+                                    class="input input-bordered w-full text-center text-2xl tracking-[0.5em] font-mono"
                                     maxlength="6"
-                                    required 
+                                    required
                                     autofocus
                                 />
                             </div>

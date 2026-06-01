@@ -1,7 +1,6 @@
 use crate::error::Result;
 use crate::models::{
-    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking,
-    UpdatedBooking,
+    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
 };
 use chrono::Utc;
 use sqlx::types::Json;
@@ -194,7 +193,10 @@ pub async fn update_booking(
     .await?;
 
     // Record history if anything changed
-    let status_changed = updated_booking.status.map(|s| s != current.status).unwrap_or(false);
+    let status_changed = updated_booking
+        .status
+        .map(|s| s != current.status)
+        .unwrap_or(false);
     let metadata_changed = updated_booking.metadata.is_some();
 
     if status_changed || metadata_changed {
@@ -279,7 +281,7 @@ where
     if date_from >= date_to {
         return Ok(false);
     }
-    
+
     let overlapping = sqlx::query!(
         r#"
         SELECT count(*) as count FROM booking 
@@ -300,10 +302,7 @@ where
 
 /// Deletes pending bookings that are older than the specified minutes.
 #[tracing::instrument(skip(executor))]
-pub async fn cleanup_stale_bookings<'e, E>(
-    executor: E,
-    timeout_minutes: i64,
-) -> Result<u64>
+pub async fn cleanup_stale_bookings<'e, E>(executor: E, timeout_minutes: i64) -> Result<u64>
 where
     E: PgExecutor<'e>,
 {
@@ -325,7 +324,10 @@ where
 
 /// Retrieves the history of a specific booking.
 #[tracing::instrument(skip(executor))]
-pub async fn get_booking_history<'e, E>(executor: E, booking_id: Uuid) -> Result<Vec<BookingHistory>>
+pub async fn get_booking_history<'e, E>(
+    executor: E,
+    booking_id: Uuid,
+) -> Result<Vec<BookingHistory>>
 where
     E: PgExecutor<'e>,
 {
