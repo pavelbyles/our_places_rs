@@ -400,11 +400,12 @@ pub fn CheckoutPage() -> impl IntoView {
                                                     prop:value=arrival_time
                                                 >
                                                     <option value="">"Select a time"</option>
-                                                    <option value="09:00">"09:00 AM – 10:00 AM"</option>
-                                                    <option value="12:00">"12:00 PM – 01:00 PM"</option>
-                                                    <option value="15:00">"03:00 PM – 04:00 PM"</option>
-                                                    <option value="18:00">"06:00 PM – 07:00 PM"</option>
-                                                    <option value="21:00">"09:00 PM – 10:00 PM"</option>
+                                                    <option value="09:00">"09:00 AM – 11:00 AM"</option>
+                                                    <option value="11:00">"11:00 AM – 01:00 PM"</option>
+                                                    <option value="13:00">"01:00 PM – 03:00 PM"</option>
+                                                    <option value="15:00">"03:00 PM – 05:00 PM"</option>
+                                                    <option value="17:00">"05:00 PM – 07:00 PM"</option>
+                                                    <option value="19:00">"07:00 PM – 12:00 AM"</option>
                                                 </select>
                                             </div>
                                         </div>
