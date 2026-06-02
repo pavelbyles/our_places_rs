@@ -51,7 +51,7 @@ async fn main() -> std::io::Result<()> {
         let leptos_options = &conf.leptos_options;
         let site_root = leptos_options.site_root.clone().to_string();
 
-        println!("listening on http://{}", &addr);
+        println!("listening on http://{}", addr);
 
         App::new()
             .wrap(SessionMiddleware::new(
