@@ -33,20 +33,18 @@ pub fn VerifyPage() -> impl IntoView {
                         <ActionForm action=verify_action>
                             <input type="hidden" name="email" value=email />
 
-                            <div class="form-control w-full">
-                                <label class="label">
-                                    <span class="label-text font-semibold text-center w-full">"Verification Code"</span>
-                                </label>
+                            <fieldset class="fieldset w-full">
+                                <legend class="fieldset-legend font-semibold text-center w-full">"Verification Code"</legend>
                                 <input
                                     type="text"
                                     name="code"
                                     placeholder="XXXXXX"
-                                    class="input input-bordered w-full text-center text-2xl tracking-[0.5em] font-mono"
+                                    class="input w-full text-center text-2xl tracking-[0.5em] font-mono"
                                     maxlength="6"
                                     required
                                     autofocus
                                 />
-                            </div>
+                            </fieldset>
 
                             <button type="submit" class="btn btn-primary w-full mt-8" disabled=move || verify_action.pending().get()>
                                 {move || if verify_action.pending().get() { "Verifying..." } else { "Verify & Login" }}

@@ -389,19 +389,19 @@ pub fn CheckoutPage() -> impl IntoView {
                                                 </label>
                                             </div>
 
-                                            <div class="form-control">
-                                                <label class="label"><span class="label-text font-bold">"Message to host (optional)"</span></label>
+                                            <fieldset class="fieldset w-full">
+                                                <legend class="fieldset-legend font-bold">"Message to host (optional)"</legend>
                                                 <textarea
-                                                    class="textarea textarea-bordered h-24"
+                                                    class="textarea h-24 w-full"
                                                     placeholder="Tell the host about your trip..."
                                                     on:input:target=move |ev| message_to_host.set(ev.target().value())
                                                     prop:value=message_to_host
                                                 ></textarea>
-                                            </div>
+                                            </fieldset>
 
-                                            <div class="form-control">
-                                                <label class="label"><span class="label-text font-bold">"Estimated Arrival Time (optional)"</span></label>
-                                                <select class="select select-bordered"
+                                            <fieldset class="fieldset w-full">
+                                                <legend class="fieldset-legend font-bold">"Estimated Arrival Time (optional)"</legend>
+                                                <select class="select w-full"
                                                     on:change:target=move |ev| arrival_time.set(ev.target().value())
                                                     prop:value=arrival_time
                                                 >
@@ -413,7 +413,7 @@ pub fn CheckoutPage() -> impl IntoView {
                                                     <option value="17:00">"05:00 PM – 07:00 PM"</option>
                                                     <option value="19:00">"07:00 PM – 12:00 AM"</option>
                                                 </select>
-                                            </div>
+                                            </fieldset>
                                         </div>
                                     </section>
 
@@ -518,24 +518,24 @@ fn ContactForm(
             {move || user_resource.get().map(|res| match res {
                 Ok(Some(_)) => view! {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                        <div class="form-control">
-                            <label class="label"><span class="label-text">"Email"</span></label>
+                        <fieldset class="fieldset">
+                            <legend class="fieldset-legend">"Email"</legend>
                             <input type="email"
                                 on:input:target=move |ev| email.set(ev.target().value())
-                                value=email class="input input-bordered" readonly />
-                        </div>
-                        <div class="form-control">
-                            <label class="label"><span class="label-text">"Full Name"</span></label>
+                                value=email class="input w-full" readonly />
+                        </fieldset>
+                        <fieldset class="fieldset">
+                            <legend class="fieldset-legend">"Full Name"</legend>
                             <input type="text"
                                 on:input:target=move |ev| name.set(ev.target().value())
-                                value=name class="input input-bordered" />
-                        </div>
-                        <div class="form-control md:col-span-2">
-                            <label class="label"><span class="label-text">"Phone Number"</span></label>
+                                value=name class="input w-full" />
+                        </fieldset>
+                        <fieldset class="fieldset md:col-span-2">
+                            <legend class="fieldset-legend">"Phone Number"</legend>
                             <input type="tel"
                                 on:input:target=move |ev| phone.set(ev.target().value())
-                                value=phone placeholder="+1 (555) 000-0000" class="input input-bordered" />
-                        </div>
+                                value=phone placeholder="+1 (555) 000-0000" class="input w-full" />
+                        </fieldset>
                     </div>
                 }.into_any(),
                 _ => view! {
@@ -552,27 +552,27 @@ fn ContactForm(
                             </div>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="form-control">
-                                <label class="label"><span class="label-text">"Email"</span></label>
+                            <fieldset class="fieldset">
+                                <legend class="fieldset-legend">"Email"</legend>
                                 <input type="email"
                                     on:input:target=move |ev| email.set(ev.target().value())
                                     prop:value=email
-                                    placeholder="Your email address" class="input input-bordered" />
-                            </div>
-                            <div class="form-control">
-                                <label class="label"><span class="label-text">"Full Name"</span></label>
+                                    placeholder="Your email address" class="input w-full" />
+                            </fieldset>
+                            <fieldset class="fieldset">
+                                <legend class="fieldset-legend">"Full Name"</legend>
                                 <input type="text"
                                     on:input:target=move |ev| name.set(ev.target().value())
                                     prop:value=name
-                                    placeholder="As it appears on ID" class="input input-bordered" />
-                            </div>
-                            <div class="form-control md:col-span-2">
-                                <label class="label"><span class="label-text">"Phone Number"</span></label>
+                                    placeholder="As it appears on ID" class="input w-full" />
+                            </fieldset>
+                            <fieldset class="fieldset md:col-span-2">
+                                <legend class="fieldset-legend">"Phone Number"</legend>
                                 <input type="tel"
                                     on:input:target=move |ev| phone.set(ev.target().value())
                                     prop:value=phone
-                                    placeholder="+1 (555) 000-0000" class="input input-bordered" />
-                            </div>
+                                    placeholder="+1 (555) 000-0000" class="input w-full" />
+                            </fieldset>
                         </div>
                     </div>
                 }.into_any()

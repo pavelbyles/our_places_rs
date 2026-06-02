@@ -48,14 +48,14 @@ pub fn LoginPage() -> impl IntoView {
                             <input type="radio" name="login_tabs" role="tab" class="tab" aria-label="Traditional" checked="checked" />
                             <div role="tabpanel" class="tab-content pt-6">
                                 <ActionForm action=login_action>
-                                    <div class="form-control w-full">
-                                        <label class="label"><span class="label-text">"Email Address"</span></label>
-                                        <input type="email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required />
-                                    </div>
-                                    <div class="form-control w-full mt-4">
-                                        <label class="label"><span class="label-text">"Password"</span></label>
-                                        <input type="password" name="password" placeholder="••••••••" class="input input-bordered w-full" required />
-                                    </div>
+                                    <fieldset class="fieldset w-full">
+                                        <legend class="fieldset-legend">"Email Address"</legend>
+                                        <input type="email" name="email" placeholder="you@example.com" class="input w-full" required />
+                                    </fieldset>
+                                    <fieldset class="fieldset w-full mt-4">
+                                        <legend class="fieldset-legend">"Password"</legend>
+                                        <input type="password" name="password" placeholder="••••••••" class="input w-full" required />
+                                    </fieldset>
                                     <button type="submit" class="btn btn-primary w-full mt-6" disabled=move || login_action.pending().get()>
                                         {move || if login_action.pending().get() { "Logging In..." } else { "Login" }}
                                     </button>
@@ -64,14 +64,14 @@ pub fn LoginPage() -> impl IntoView {
 
                             <input type="radio" name="login_tabs" role="tab" class="tab" aria-label="Passwordless" />
                             <div role="tabpanel" class="tab-content pt-6">
-                                <div class="form-control w-full">
-                                    <label class="label"><span class="label-text">"Email Address"</span></label>
-                                    <input type="email" placeholder="you@example.com" class="input input-bordered w-full" />
-                                </div>
-                                <div class="form-control w-full mt-4">
-                                    <label class="label"><span class="label-text">"Auth Code (TOTP)"</span></label>
-                                    <input type="text" placeholder="123 456" class="input input-bordered w-full text-center tracking-[0.5em] font-mono" />
-                                </div>
+                                <fieldset class="fieldset w-full">
+                                    <legend class="fieldset-legend">"Email Address"</legend>
+                                    <input type="email" placeholder="you@example.com" class="input w-full" />
+                                </fieldset>
+                                <fieldset class="fieldset w-full mt-4">
+                                    <legend class="fieldset-legend">"Auth Code (TOTP)"</legend>
+                                    <input type="text" placeholder="123 456" class="input w-full text-center tracking-[0.5em] font-mono" />
+                                </fieldset>
                                 <button class="btn btn-secondary w-full mt-6">"Log In with Code"</button>
                                 <p class="text-xs text-center mt-4 opacity-60">
                                     "Use the code from your Google Authenticator app."

@@ -18,11 +18,11 @@ pub fn ListingsPage() -> impl IntoView {
         <div class="flex flex-col items-center w-full mt-10 px-4 gap-12">
             <div class="join shadow-md">
                 <input
-                    class="input input-bordered join-item w-full max-w-xs"
+                    class="input join-item w-full max-w-xs"
                     placeholder="Search"
                 />
 
-                <select class="select select-bordered join-item">
+                <select class="select join-item">
                     <option disabled selected>"Filter"</option>
                     <option>"Apartment"</option>
                     <option>"Villa"</option>

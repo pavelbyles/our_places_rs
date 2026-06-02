@@ -3,6 +3,7 @@ use leptos::ev::SubmitEvent;
 use leptos::form::ActionForm;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+#[allow(unused_imports)]
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

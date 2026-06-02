@@ -39,25 +39,25 @@ pub fn RegisterPage() -> impl IntoView {
                         // Registration Form
                         <ActionForm action=register_action>
                             <div class="grid grid-cols-2 gap-4">
-                                <div class="form-control w-full">
-                                    <label class="label"><span class="label-text">"First Name"</span></label>
-                                    <input type="text" name="first_name" placeholder="John" class="input input-bordered w-full" required />
-                                </div>
-                                <div class="form-control w-full">
-                                    <label class="label"><span class="label-text">"Last Name"</span></label>
-                                    <input type="text" name="last_name" placeholder="Doe" class="input input-bordered w-full" required />
-                                </div>
+                                <fieldset class="fieldset w-full">
+                                    <legend class="fieldset-legend">"First Name"</legend>
+                                    <input type="text" name="first_name" placeholder="John" class="input w-full" required />
+                                </fieldset>
+                                <fieldset class="fieldset w-full">
+                                    <legend class="fieldset-legend">"Last Name"</legend>
+                                    <input type="text" name="last_name" placeholder="Doe" class="input w-full" required />
+                                </fieldset>
                             </div>
 
-                            <div class="form-control w-full mt-4">
-                                <label class="label"><span class="label-text">"Email Address"</span></label>
-                                <input type="email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required />
-                            </div>
+                            <fieldset class="fieldset w-full mt-4">
+                                <legend class="fieldset-legend">"Email Address"</legend>
+                                <input type="email" name="email" placeholder="you@example.com" class="input w-full" required />
+                            </fieldset>
 
-                            <div class="form-control w-full mt-4">
-                                <label class="label"><span class="label-text">"Phone Number"</span></label>
-                                <input type="tel" name="phone_number" placeholder="+1 (555) 000-0000" class="input input-bordered w-full" />
-                            </div>
+                            <fieldset class="fieldset w-full mt-4">
+                                <legend class="fieldset-legend">"Phone Number"</legend>
+                                <input type="tel" name="phone_number" placeholder="+1 (555) 000-0000" class="input w-full" />
+                            </fieldset>
 
                             <div class="collapse collapse-arrow bg-base-200 mt-6 overflow-visible opacity-50">
                                 <input type="checkbox" disabled />
@@ -68,10 +68,10 @@ pub fn RegisterPage() -> impl IntoView {
 
                             <div class="divider my-4">"OR"</div>
 
-                            <div class="form-control w-full">
-                                <label class="label"><span class="label-text">"Password"</span></label>
-                                <input type="password" name="password" placeholder="••••••••" class="input input-bordered w-full" required />
-                            </div>
+                            <fieldset class="fieldset w-full">
+                                <legend class="fieldset-legend">"Password"</legend>
+                                <input type="password" name="password" placeholder="••••••••" class="input w-full" required />
+                            </fieldset>
 
                             <button type="submit" class="btn btn-primary w-full mt-8" disabled=move || register_action.pending().get()>
                                 {move || if register_action.pending().get() { "Creating Account..." } else { "Create Account" }}

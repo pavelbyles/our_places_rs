@@ -43,7 +43,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                         <a href="/" class="btn btn-ghost text-xl font-bold tracking-tighter">"Our Places"</a>
                     </div>
                     <div class="hidden md:flex flex-none gap-2">
-                        <input type="text" placeholder="Search places..." class="input input-bordered w-24 md:w-64" />
+                        <input type="text" placeholder="Search places..." class="input w-24 md:w-64" />
                     </div>
                     <div class="hidden flex-none lg:block ml-4">
                         <ul class="menu menu-horizontal px-1 gap-1">

@@ -4,6 +4,9 @@ use leptos::either::Either;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_meta::Title;
+use num_format::{Locale, ToFormattedString};
+use rust_decimal::prelude::ToPrimitive;
+use web_app_common::components::villa_card::VillaCard;
 
 #[component]
 #[allow(non_snake_case)]
@@ -22,25 +25,68 @@ pub fn HomePage() -> impl IntoView {
         <>
             <Title text="Home" />
             <Hero />
-            <h1>"Welcome to Leptos!"</h1>
-            <button class="btn btn-primary" on:click=on_click>"Click Me: " {move || count.get()}</button>
 
-            <Suspense fallback=move || view! { <p>"Loading listings..."</p> }>
-                {move || {
-                    listings.get().map(|result| {
-                        match result {
-                            Ok(items) => Either::Left(view! {
-                                <ul>
-                                    {items.into_iter().map(|item| view! {
-                                        <li>{item.name}</li>
-                                    }).collect_view()}
-                                </ul>
-                            }),
-                            Err(e) => Either::Right(view! { <p>"Error loading listings: " {e.to_string()}</p> })
-                        }
-                    })
-                }}
-            </Suspense>
+            <div class="py-16 max-w-6xl mx-auto px-4 flex flex-col gap-12">
+                <div class="text-center max-w-2xl mx-auto flex flex-col gap-3">
+                    <span class="text-primary font-semibold tracking-wider uppercase text-sm">"Explore Stays"</span>
+                    <h2 class="text-4xl font-extrabold tracking-tight">"Featured Places to Stay"</h2>
+                    <p class="text-base-content/60">"Handpicked properties with premium amenities for a perfect getaway."</p>
+                </div>
+
+                <Suspense fallback=move || view! { <div class="flex justify-center py-12"><span class="loading loading-spinner loading-lg text-primary"></span></div> }>
+                    {move || {
+                        listings.get().map(|result| {
+                            match result {
+                                Ok(items) => {
+                                    if items.is_empty() {
+                                        Either::Left(view! {
+                                            <div class="text-center py-12 opacity-60 text-lg">"No featured listings found"</div>
+                                        }.into_any())
+                                    } else {
+                                        Either::Left(view! {
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                                {items.into_iter().map(|item| {
+                                                    let price_str = item.price_per_night
+                                                        .map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en))
+                                                        .unwrap_or_else(|| "0.00".to_string());
+                                                    let img_url = item.primary_image_url.clone().unwrap_or_else(|| "https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80".to_string());
+                                                    view! {
+                                                        <VillaCard
+                                                            title=item.name.clone()
+                                                            image_url=img_url
+                                                            price=price_str
+                                                            max_guests=item.max_guests
+                                                            bedrooms=item.bedrooms
+                                                            full_bathrooms=item.full_bathrooms
+                                                            country=item.country.clone()
+                                                            city=item.city.clone()
+                                                            id=item.slug.clone()
+                                                        />
+                                                    }
+                                                }).collect_view()}
+                                            </div>
+                                        }.into_any())
+                                    }
+                                }
+                                Err(e) => Either::Right(view! {
+                                    <div class="alert alert-error shadow-md max-w-lg mx-auto">
+                                        <span>"Error loading listings: " {e.to_string()}</span>
+                                    </div>
+                                })
+                            }
+                        })
+                    }}
+                </Suspense>
+
+                // Counter section styled beautifully
+                <div class="card bg-base-200 border border-base-300 p-8 text-center max-w-md mx-auto mt-8 flex flex-col items-center gap-4">
+                    <h3 class="text-xl font-bold">"Interactive Demo"</h3>
+                    <p class="text-sm text-base-content/70">"Test reactivity with a server function call that persists/updates count:"</p>
+                    <button class="btn btn-primary" on:click=on_click>
+                        "Click Counter: " {move || count.get()}
+                    </button>
+                </div>
+            </div>
         </>
     }
 }
