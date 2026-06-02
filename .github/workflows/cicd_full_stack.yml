@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - name: Run Clippy
@@ -90,7 +90,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install msmtp
         run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
       - name: Run web_app tests
@@ -104,7 +104,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install msmtp
         run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
       - name: Run web_app tests
