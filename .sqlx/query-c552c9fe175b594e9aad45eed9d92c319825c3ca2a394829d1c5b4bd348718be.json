@@ -1,0 +1,211 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE listing\n        SET\n            name = COALESCE($2, name),\n            description = COALESCE($3, description),\n            listing_structure_id = COALESCE($4, listing_structure_id),\n            country = COALESCE($5, country),\n            price_per_night = COALESCE($6, price_per_night),\n            is_active = COALESCE($7, is_active),\n            weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),\n            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage),\n            max_guests = COALESCE($10, max_guests),\n            bedrooms = COALESCE($11, bedrooms),\n            beds = COALESCE($12, beds),\n            full_bathrooms = COALESCE($13, full_bathrooms),\n            half_bathrooms = COALESCE($14, half_bathrooms),\n            square_meters = COALESCE($15, square_meters),\n            latitude = COALESCE($16, latitude),\n            longitude = COALESCE($17, longitude),\n            listing_details = COALESCE($18, listing_details),\n            city = COALESCE($19, city),\n            base_currency = COALESCE($20, base_currency),\n            minimum_stay = COALESCE($21, minimum_stay),\n            days_between_bookings = COALESCE($22, days_between_bookings)\n        WHERE id = $1\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_structure_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "country",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "price_per_night",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "added_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "primary_image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "weekly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "monthly_discount_percentage",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "slug",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "max_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "bedrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "beds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "full_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 18,
+        "name": "half_bathrooms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 19,
+        "name": "square_meters",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 21,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 22,
+        "name": "overall_rating",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 23,
+        "name": "review_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 24,
+        "name": "listing_details",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 25,
+        "name": "city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
+        "name": "base_currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 27,
+        "name": "minimum_stay",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 28,
+        "name": "days_between_bookings",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Numeric",
+        "Bool",
+        "Numeric",
+        "Numeric",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Float8",
+        "Float8",
+        "Jsonb",
+        "Text",
+        "Varchar",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c552c9fe175b594e9aad45eed9d92c319825c3ca2a394829d1c5b4bd348718be"
+}

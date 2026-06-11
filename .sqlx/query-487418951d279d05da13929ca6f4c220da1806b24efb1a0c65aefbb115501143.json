@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO listing_history (\n            listing_id, user_id, name, description, listing_structure_id, country, \n            price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, \n            slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings\n        )\n        SELECT \n            id, user_id, name, description, listing_structure_id, country, \n            price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, \n            slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings\n        FROM listing \n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "487418951d279d05da13929ca6f4c220da1806b24efb1a0c65aefbb115501143"
+}

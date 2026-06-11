@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO booking_history (\n            booking_id, confirmation_code, guest_id, listing_id, status,\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown,\n            total_price, cancellation_policy, metadata, change_reason, changed_by_id\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "booking_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        },
+        "Date",
+        "Date",
+        "Bpchar",
+        "Numeric",
+        "Int4",
+        "Int4",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Jsonb",
+        "Numeric",
+        {
+          "Custom": {
+            "name": "cancellation_policy",
+            "kind": {
+              "Enum": [
+                "flexible",
+                "moderate",
+                "strict"
+              ]
+            }
+          }
+        },
+        "Jsonb",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "614eb36f4ef56700afa9d495268d5cbb2dd71c3e093dbab52a2cdb3077d580e9"
+}

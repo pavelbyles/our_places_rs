@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            created_at, updated_at\n        FROM booking\n        ORDER BY created_at DESC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "status: BookingStatus",
+        "type_info": {
+          "Custom": {
+            "name": "booking_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "daily_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "total_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "sub_total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "discount_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "tax_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 14,
+        "name": "fee_breakdown: Json<Vec<FeeItem>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 15,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 16,
+        "name": "cancellation_policy: CancellationPolicy",
+        "type_info": {
+          "Custom": {
+            "name": "cancellation_policy",
+            "kind": {
+              "Enum": [
+                "flexible",
+                "moderate",
+                "strict"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "metadata: Json<crate::models::BookingMetadata>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "411ed291afdba6e78ea9b2956cb53c324e8d6f68a594aa9ac46f0a744004d160"
+}
