@@ -1,8 +1,12 @@
 {
-    "servers": {
-        "daisyUI": {
-            "type": "sse",
-            "url": "https://gitmcp.io/saadeghi/daisyui"
-        }
+  "mcpServers": {
+    "daisyUI": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://gitmcp.io/saadeghi/daisyui"
+      ]
     }
+  }
 }
