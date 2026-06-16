@@ -68,6 +68,7 @@ pub async fn initiate_booking(
                 verification_code_expires_at: None,
                 attributes: serde_json::json!({"is_guest": true}),
                 roles: Some(vec![db_core::models::UserRole::Booker]),
+                default_currency: user_currency.clone(),
             };
 
             db_user::create_user(&pool, &new_user)
@@ -86,8 +87,8 @@ pub async fn initiate_booking(
 
         let (rate, target_curr) = db_core::currency::get_exchange_rate_and_currency(
             &pool,
-            Some(user_currency),
-            Some(listing.base_currency.clone()),
+            &listing.base_currency,
+            &user_currency,
         )
         .await
         .unwrap_or((Decimal::ONE, listing.base_currency.clone()));

@@ -169,6 +169,7 @@ pub async fn get_listings(
         let mut rates = std::collections::HashMap::new();
         for listing in &response {
             let base = &listing.base_currency;
+            #[allow(clippy::collapsible_if)]
             if !rates.contains_key(base) {
                 if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
                     pool.get_ref(),
@@ -231,6 +232,7 @@ async fn get_listing_by_id(
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
 
     if let Some(target_currency) = &query.currency {
+        #[allow(clippy::collapsible_if)]
         if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
             &response.listing.base_currency,

@@ -306,7 +306,7 @@ pub async fn verify_email_code(email: String, code: String) -> Result<(), Server
 }
 
 #[cfg(feature = "ssr")]
-async fn try_extract_session() -> Result<Session, ServerFnError> {
+pub async fn try_extract_session() -> Result<Session, ServerFnError> {
     leptos_actix::extract::<Session>()
         .await
         .map_err(|_| ServerFnError::new("Session not found"))

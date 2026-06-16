@@ -138,6 +138,7 @@ async fn create_booking(
     let mut discount_value = None;
     let mut booking_currency = req_data.currency.clone();
 
+    #[allow(clippy::collapsible_if)]
     if req_data.currency != listing_details.listing.base_currency {
         if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
@@ -300,6 +301,7 @@ async fn get_bookings(
         let mut rates = std::collections::HashMap::new();
         for booking in &response {
             let base = &booking.currency;
+            #[allow(clippy::collapsible_if)]
             if !rates.contains_key(base) {
                 if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
                     pool.get_ref(),
@@ -360,6 +362,7 @@ async fn get_booking_by_id(
     let mut response = map_booking_to_response(booking);
 
     if let Some(target_currency) = &currency_query.currency {
+        #[allow(clippy::collapsible_if)]
         if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
             &response.currency,
