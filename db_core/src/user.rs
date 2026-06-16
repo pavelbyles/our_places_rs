@@ -251,6 +251,67 @@ pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User>
     Ok(updated)
 }
 
+#[tracing::instrument(skip(pool))]
+pub async fn regenerate_verification_code(
+    pool: &PgPool,
+    email: &str,
+    new_otp: &str,
+    expiry: chrono::DateTime<chrono::Utc>,
+) -> Result<Option<User>> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles FROM "user" WHERE email = $1 AND is_verified = FALSE FOR UPDATE"#)
+        .bind(email)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+    if let Some(current) = current {
+        sqlx::query(
+            r#"
+            INSERT INTO user_history
+            (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "#,
+        )
+        .bind(current.id)
+        .bind(&current.email)
+        .bind(&current.password_hash)
+        .bind(&current.first_name)
+        .bind(&current.last_name)
+        .bind(&current.phone_number)
+        .bind(current.is_active)
+        .bind(current.is_verified)
+        .bind(current.updated_at)
+        .bind(&current.attributes)
+        .bind(&current.roles)
+        .execute(&mut *tx)
+        .await?;
+
+        let updated = sqlx::query_as::<_, User>(
+            r#"
+            UPDATE "user"
+            SET
+                verification_code = $2,
+                verification_code_expires_at = $3,
+                updated_at = now()
+            WHERE id = $1
+            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+            "#,
+        )
+        .bind(current.id)
+        .bind(new_otp)
+        .bind(expiry)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(Some(updated))
+    } else {
+        tx.rollback().await?;
+        Ok(None)
+    }
+}
+
 /// Retrieves all users with optional filtering and pagination
 #[tracing::instrument(skip(executor))]
 pub async fn get_all_users<'e, E>(
