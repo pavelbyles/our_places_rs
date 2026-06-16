@@ -394,14 +394,10 @@ async fn resend_verification(
 
     let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
 
-    let updated = db_core::user::regenerate_verification_code(
-        pool.get_ref(),
-        &payload.email,
-        &otp,
-        expiry,
-    )
-    .await
-    .map_err(ApiError::Database)?;
+    let updated =
+        db_core::user::regenerate_verification_code(pool.get_ref(), &payload.email, &otp, expiry)
+            .await
+            .map_err(ApiError::Database)?;
 
     if let Some(user) = updated {
         return Ok(respond(

@@ -478,7 +478,7 @@ async fn test_resend_verification_success() {
         .to_request();
     let resp2 = test::call_service(&app, req2).await;
     assert_eq!(resp2.status(), 200);
-    
+
     let updated_user: UserResponse = test::read_body_json(resp2).await;
     let new_code = updated_user.verification_code.unwrap();
     assert_ne!(initial_code, new_code);
@@ -543,9 +543,10 @@ async fn test_resend_verification_already_verified() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let initial_user: UserResponse = test::read_body_json(resp).await;
-    
+
     // Verify the user
-    let verify_req_body = json!({ "email": email, "code": initial_user.verification_code.unwrap() });
+    let verify_req_body =
+        json!({ "email": email, "code": initial_user.verification_code.unwrap() });
     let req2 = test::TestRequest::post()
         .uri("/api/v1/users/verify")
         .set_json(&verify_req_body)
@@ -562,4 +563,3 @@ async fn test_resend_verification_already_verified() {
     let resp3 = test::call_service(&app, req3).await;
     assert_eq!(resp3.status(), 401);
 }
-
