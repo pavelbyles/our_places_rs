@@ -9,9 +9,18 @@ use web_app_common::listings::listing_search_server;
 pub fn ListingsPage() -> impl IntoView {
     let (search_trigger, set_search_trigger) = signal(0);
 
+    let auth_context = use_context::<crate::app::AuthContext>();
+    let currency = move || {
+        auth_context
+            .as_ref()
+            .and_then(|c| c.user.get())
+            .and_then(|res| res.ok().flatten())
+            .map(|u| u.default_currency)
+    };
+
     let listings = Resource::new(
-        move || search_trigger.get(),
-        |_| async move { listing_search_server(None, None, None, None).await },
+        move || (search_trigger.get(), currency()),
+        |(_, curr)| async move { listing_search_server(None, None, None, None, curr).await },
     );
 
     view! {
@@ -62,6 +71,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                     country=listing.country.clone()
                                                     city=listing.city.clone()
                                                     id=listing.slug.clone()
+                                                    currency=listing.base_currency.clone()
                                                 />
                                             }
                                         }

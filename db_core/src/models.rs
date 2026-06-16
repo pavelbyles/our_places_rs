@@ -37,6 +37,7 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
     pub roles: Vec<UserRole>,
+    pub default_currency: String,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -73,6 +74,7 @@ pub struct NewUser {
     pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: serde_json::Value,
     pub roles: Option<Vec<UserRole>>,
+    pub default_currency: String,
 }
 
 pub use common::models::{NewBookerProfile, NewHostProfile};
@@ -90,6 +92,7 @@ pub struct UpdatedUser {
     pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<UserRole>>,
+    pub default_currency: Option<String>,
 }
 
 #[derive(

@@ -15,9 +15,9 @@ where
 {
     let user = sqlx::query_as::<_, User>(
         r#"
-            INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+            INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
         "#,
     )
     .bind(new_user_request.id)
@@ -34,6 +34,7 @@ where
     .bind(Utc::now())
     .bind(&new_user_request.attributes)
     .bind(new_user_request.roles.clone().unwrap_or_default())
+    .bind(&new_user_request.default_currency)
     .fetch_one(executor)
     .await?;
 
@@ -49,7 +50,7 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>"
+            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency
             FROM "user" WHERE id = $1
         "#,
         id,
@@ -69,7 +70,7 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>"
+            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency
             FROM "user" WHERE email = $1
         "#,
         email,
@@ -84,15 +85,15 @@ where
 pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>" FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
     sqlx::query(
         r#"
         INSERT INTO user_history
-        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles, default_currency)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
     )
     .bind(current.id)
@@ -106,6 +107,7 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     .bind(current.updated_at)
     .bind(&current.attributes)
     .bind(&current.roles)
+    .bind(&current.default_currency)
     .execute(&mut *tx)
     .await?;
 
@@ -124,9 +126,10 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
             verification_code_expires_at = COALESCE($10, verification_code_expires_at),
             attributes = COALESCE($11, attributes),
             roles = COALESCE($12, roles),
+            default_currency = COALESCE($13, default_currency),
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
         "#,
     )
     .bind(id)
@@ -141,6 +144,7 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     .bind(updated_user.verification_code_expires_at)
     .bind(&updated_user.attributes)
     .bind(updated_user.roles.as_deref())
+    .bind(&updated_user.default_currency)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -205,15 +209,15 @@ where
 pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>" FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
     sqlx::query(
         r#"
         INSERT INTO user_history
-        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles, default_currency)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         "#,
     )
     .bind(current.id)
@@ -227,6 +231,7 @@ pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User>
     .bind(current.updated_at)
     .bind(&current.attributes)
     .bind(&current.roles)
+    .bind(&current.default_currency)
     .execute(&mut *tx)
     .await?;
 
@@ -239,7 +244,7 @@ pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User>
             verification_code_expires_at = NULL,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
         "#,
     )
     .bind(id)
@@ -266,7 +271,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
         FROM "user"
         WHERE 1 = 1
         "#,

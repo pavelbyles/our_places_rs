@@ -25,6 +25,7 @@ async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
         verification_code_expires_at: None,
         attributes: serde_json::json!({}),
         roles: None,
+        default_currency: "USD".to_string(),
     };
     create_user(&mut *conn, &new_user)
         .await

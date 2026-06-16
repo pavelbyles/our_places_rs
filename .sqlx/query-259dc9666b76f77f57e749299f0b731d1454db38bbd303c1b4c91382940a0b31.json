@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\" FROM \"user\" WHERE id = $1 FOR UPDATE",
+  "query": "SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency FROM \"user\" WHERE id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,11 @@
             }
           }
         }
+      },
+      {
+        "ordinal": 14,
+        "name": "default_currency",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -111,8 +116,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "a87028308c694bc4e3d71ab1521ca48fb4e7f7135fad150374745de6d639860e"
+  "hash": "259dc9666b76f77f57e749299f0b731d1454db38bbd303c1b4c91382940a0b31"
 }

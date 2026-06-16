@@ -669,6 +669,7 @@ mod tests {
             verification_code_expires_at: None,
             attributes: serde_json::json!({}),
             roles: None,
+            default_currency: "USD".to_string(),
         };
         create_user(&mut *conn, &new_user)
             .await
@@ -1037,6 +1038,7 @@ mod tests {
             structure_type: vec![],
             owner: None,
             resolution: None,
+            currency: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -1057,6 +1059,7 @@ mod tests {
             structure_type: vec![],
             owner: None,
             resolution: None,
+            currency: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -1075,6 +1078,7 @@ mod tests {
             structure_type: vec!["Villa".to_string()],
             owner: None,
             resolution: None,
+            currency: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await

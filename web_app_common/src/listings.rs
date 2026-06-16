@@ -6,6 +6,7 @@ pub async fn listing_search_server(
     owner_email: Option<String>,
     listing_structure: Option<Vec<String>>,
     max_price: Option<f64>,
+    currency: Option<String>,
 ) -> Result<Vec<common::models::ListingResponse>, ServerFnError> {
     let api_url = crate::api_client::listing_api_url();
     let mut url = format!("{}/api/v1/listings?page=1&per_page=20", api_url);
@@ -25,6 +26,10 @@ pub async fn listing_search_server(
 
     if let Some(s) = max_price.filter(|&s| s > 0.0) {
         url.push_str(&format!("&max_price={}", s));
+    }
+
+    if let Some(c) = currency {
+        url.push_str(&format!("&currency={}", c));
     }
 
     let res = crate::api_client::get_client()
@@ -49,9 +54,13 @@ pub async fn listing_search_server(
 #[server]
 pub async fn get_listing_by_id_server(
     id: String,
+    currency: Option<String>,
 ) -> Result<common::models::ListingDetails, ServerFnError> {
     let api_url = crate::api_client::listing_api_url();
-    let url = format!("{}/api/v1/listings/{}", api_url, id);
+    let mut url = format!("{}/api/v1/listings/{}", api_url, id);
+    if let Some(c) = currency {
+        url.push_str(&format!("?currency={}", c));
+    }
 
     let res = crate::api_client::get_client()
         .get(&url, &api_url)

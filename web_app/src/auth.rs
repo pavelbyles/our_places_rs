@@ -9,6 +9,7 @@ pub struct UserProfile {
     pub name: String,
     pub email: String,
     pub phone_number: Option<String>,
+    pub default_currency: String,
 }
 
 #[server]
@@ -70,6 +71,9 @@ pub async fn login_traditional(email: String, password: String) -> Result<(), Se
                 .insert("user_phone", phone)
                 .map_err(|_| ServerFnError::new("Failed to set session"))?;
         }
+        session
+            .insert("user_default_currency", user_resp.default_currency)
+            .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
         leptos_actix::redirect("/");
     }
@@ -94,6 +98,9 @@ pub async fn login_passwordless(email: String, _code: String) -> Result<(), Serv
                 "user_name",
                 email.split('@').next().unwrap_or("User").to_string(),
             )
+            .map_err(|_| ServerFnError::new("Failed to set session"))?;
+        session
+            .insert("user_default_currency", "USD".to_string())
             .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
         leptos_actix::redirect("/");
@@ -138,6 +145,7 @@ pub async fn register(
                 loyalty: None,
             }),
             host_profile: None,
+            default_currency: Some("USD".to_string()),
         };
 
         let response = get_client()
@@ -218,6 +226,11 @@ pub async fn get_current_user() -> Result<Option<UserProfile>, ServerFnError> {
         let name = session.get::<String>("user_name").ok().flatten();
         let email = session.get::<String>("user_email").ok().flatten();
         let phone_number = session.get::<String>("user_phone").ok().flatten();
+        let default_currency = session
+            .get::<String>("user_default_currency")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "USD".to_string());
 
         if let (Some(id), Some(name), Some(email)) = (user_id, name, email) {
             Ok(Some(UserProfile {
@@ -225,6 +238,7 @@ pub async fn get_current_user() -> Result<Option<UserProfile>, ServerFnError> {
                 name,
                 email,
                 phone_number,
+                default_currency,
             }))
         } else {
             Ok(None)
@@ -280,6 +294,9 @@ pub async fn verify_email_code(email: String, code: String) -> Result<(), Server
             .map_err(|_| ServerFnError::new("Failed to set session"))?;
         session
             .insert("user_email", user_resp.email.to_string())
+            .map_err(|_| ServerFnError::new("Failed to set session"))?;
+        session
+            .insert("user_default_currency", user_resp.default_currency)
             .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
         leptos_actix::redirect("/");
