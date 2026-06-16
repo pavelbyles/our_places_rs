@@ -265,7 +265,7 @@ pub async fn regenerate_verification_code(
 ) -> Result<Option<User>> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles FROM "user" WHERE email = $1 AND is_verified = FALSE FOR UPDATE"#)
+    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency FROM "user" WHERE email = $1 AND is_verified = FALSE FOR UPDATE"#)
         .bind(email)
         .fetch_optional(&mut *tx)
         .await?;
@@ -274,8 +274,8 @@ pub async fn regenerate_verification_code(
         sqlx::query(
             r#"
             INSERT INTO user_history
-            (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles, default_currency)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
         )
         .bind(current.id)
@@ -289,6 +289,7 @@ pub async fn regenerate_verification_code(
         .bind(current.updated_at)
         .bind(&current.attributes)
         .bind(&current.roles)
+        .bind(&current.default_currency)
         .execute(&mut *tx)
         .await?;
 
@@ -300,7 +301,7 @@ pub async fn regenerate_verification_code(
                 verification_code_expires_at = $3,
                 updated_at = now()
             WHERE id = $1
-            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles
+            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
             "#,
         )
         .bind(current.id)
