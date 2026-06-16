@@ -131,12 +131,26 @@ async fn create_booking(
         ));
     }
 
-    let daily_rate = listing_details
+    let mut actual_daily_rate = listing_details
         .listing
         .price_per_night
         .unwrap_or(Decimal::ZERO);
     let mut discount_value = None;
-    let actual_daily_rate = daily_rate; // Typically discount is distinct from daily rate deduction in presentation
+    let mut booking_currency = req_data.currency.clone();
+
+    #[allow(clippy::collapsible_if)]
+    if req_data.currency != listing_details.listing.base_currency {
+        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+            pool.get_ref(),
+            &listing_details.listing.base_currency,
+            &req_data.currency,
+        )
+        .await
+        {
+            actual_daily_rate = (actual_daily_rate * rate).round_dp(2);
+            booking_currency = final_curr;
+        }
+    }
 
     if let (Some(pct), true) = (
         listing_details.listing.monthly_discount_percentage,
@@ -190,8 +204,8 @@ async fn create_booking(
             listing_id: req_data.listing_id,
             date_from: req_data.check_in,
             date_to: req_data.check_out,
-            currency: req_data.currency.clone(),
-            daily_rate,
+            currency: booking_currency.clone(),
+            daily_rate: actual_daily_rate,
             number_of_persons: (req_data.num_adults + req_data.num_children + req_data.num_infants)
                 as i32,
             total_days,
@@ -249,6 +263,11 @@ async fn create_booking(
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct CurrencyQuery {
+    pub currency: Option<String>,
+}
+
 #[tracing::instrument]
 #[utoipa::path(
     get,
@@ -266,6 +285,7 @@ async fn get_bookings(
     req: HttpRequest,
     pool: web::Data<PgPool>,
     query: web::Query<pagination::Pagination>,
+    currency_query: web::Query<CurrencyQuery>,
 ) -> Result<impl Responder, ApiError> {
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
@@ -274,8 +294,41 @@ async fn get_bookings(
         .await
         .map_err(ApiError::Database)?;
 
-    let response: Vec<BookingResponse> =
+    let mut response: Vec<BookingResponse> =
         bookings.into_iter().map(map_booking_to_response).collect();
+
+    if let Some(target_currency) = &currency_query.currency {
+        let mut rates = std::collections::HashMap::new();
+        for booking in &response {
+            let base = &booking.currency;
+            #[allow(clippy::collapsible_if)]
+            if !rates.contains_key(base) {
+                if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+                    pool.get_ref(),
+                    base,
+                    target_currency,
+                )
+                .await
+                {
+                    rates.insert(base.clone(), (rate, final_curr));
+                }
+            }
+        }
+        for booking in &mut response {
+            if let Some((rate, final_curr)) = rates.get(&booking.currency) {
+                booking.daily_rate = (booking.daily_rate * rate).round_dp(2);
+                booking.sub_total_price = (booking.sub_total_price * rate).round_dp(2);
+                booking.total_price = (booking.total_price * rate).round_dp(2);
+                if let Some(d) = booking.discount_value {
+                    booking.discount_value = Some((d * rate).round_dp(2));
+                }
+                if let Some(t) = booking.tax_value {
+                    booking.tax_value = Some((t * rate).round_dp(2));
+                }
+                booking.currency = final_curr.clone();
+            }
+        }
+    }
 
     Ok(respond(
         &req,
@@ -300,14 +353,39 @@ async fn get_booking_by_id(
     req: HttpRequest,
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
+    currency_query: web::Query<CurrencyQuery>,
 ) -> Result<impl Responder, ApiError> {
     let booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
         .await
         .map_err(ApiError::Database)?;
 
+    let mut response = map_booking_to_response(booking);
+
+    if let Some(target_currency) = &currency_query.currency {
+        #[allow(clippy::collapsible_if)]
+        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+            pool.get_ref(),
+            &response.currency,
+            target_currency,
+        )
+        .await
+        {
+            response.daily_rate = (response.daily_rate * rate).round_dp(2);
+            response.sub_total_price = (response.sub_total_price * rate).round_dp(2);
+            response.total_price = (response.total_price * rate).round_dp(2);
+            if let Some(d) = response.discount_value {
+                response.discount_value = Some((d * rate).round_dp(2));
+            }
+            if let Some(t) = response.tax_value {
+                response.tax_value = Some((t * rate).round_dp(2));
+            }
+            response.currency = final_curr;
+        }
+    }
+
     Ok(respond(
         &req,
-        Payload::Item(map_booking_to_response(booking)),
+        Payload::Item(response),
         |_| (),
         actix_web::http::StatusCode::OK,
     ))

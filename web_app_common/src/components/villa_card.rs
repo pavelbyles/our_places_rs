@@ -11,6 +11,7 @@ pub fn VillaCard(
     #[prop(into)] country: String,
     #[prop(into)] city: Option<String>,
     #[prop(into)] id: String,
+    #[prop(into)] currency: String,
 ) -> impl IntoView {
     view! {
         <div class="card md:card-side bg-base-100 shadow-sm border border-base-200">
@@ -41,7 +42,7 @@ pub fn VillaCard(
                 <p class="text-base-content/70"> {max_guests} " guest(s)" | {bedrooms} " bedroom(s)" | {full_bathrooms} " bathroom(s)" </p>
                 <div class="card-actions justify-between items-center mt-4">
                     <div class="text-xl font-bold">
-                        "$" {price} <span class="text-sm font-normal opacity-70">"/night"</span>
+                        {currency} " " {price} <span class="text-sm font-normal opacity-70">"/night"</span>
                     </div>
 
                     <a class="btn btn-primary" href=format!("/listing/{}", id)>"View Details"</a>

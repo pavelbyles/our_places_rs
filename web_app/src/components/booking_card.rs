@@ -22,7 +22,14 @@ pub fn BookingCard(
                 if id.is_empty() {
                     return Err(ServerFnError::new("No ID provided"));
                 }
-                get_listing_by_id_server(id)
+                let auth_context = use_context::<crate::app::AuthContext>();
+                let currency = auth_context
+                    .as_ref()
+                    .and_then(|c| c.user.get())
+                    .and_then(|res| res.ok().flatten())
+                    .map(|u| u.default_currency);
+
+                get_listing_by_id_server(id, currency)
                     .await
                     .map(|details| details.listing)
             }
@@ -87,7 +94,7 @@ pub fn BookingCard(
                                 <div class="card-body gap-6">
                                     <div class="flex justify-between items-end">
                                         <div class="text-3xl font-bold text-primary">
-                                            "$" {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en))
+                                            {listing.base_currency.clone()} " " {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en))
                                             .unwrap_or_else(|| "0.00".to_string())}
                                             <span class="text-lg font-normal text-base-content/70">" / night"</span>
                                         </div>
@@ -165,10 +172,13 @@ pub fn BookingCard(
                                     <div class="flex flex-col gap-3">
                                         <div class="flex justify-between text-lg">
                                             <span class="underline">"Price per night"</span>
-                                            <span>"$" {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
+                                            <span>{listing.base_currency.clone()} " " {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
                                         </div>
-                                        {move || validation.get().and_then(|res| res.ok()).map(|nights| {
-                                            let total = listing.price_per_night.map(|p| p * rust_decimal::Decimal::from(nights)).unwrap_or_default();
+                                        {
+                                            let currency1 = listing.base_currency.clone();
+                                            let price1 = listing.price_per_night;
+                                            move || validation.get().and_then(|res| res.ok()).map(|nights| {
+                                            let total = price1.map(|p| p * rust_decimal::Decimal::from(nights)).unwrap_or_default();
                                             view! {
                                                 <div class="flex justify-between text-lg">
                                                     <span class="underline">"Nights"</span>
@@ -176,15 +186,18 @@ pub fn BookingCard(
                                                 </div>
                                                 <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
                                                     <span>"Total"</span>
-                                                    <span>"$" {total.to_i64().unwrap().to_formatted_string(&Locale::en)}</span>
+                                                    <span>{currency1.clone()} " " {total.to_i64().unwrap().to_formatted_string(&Locale::en)}</span>
                                                 </div>
                                             }
                                         })}
-                                        {move || if validation.get().is_none() {
+                                        {
+                                            let currency2 = listing.base_currency.clone();
+                                            let price2 = listing.price_per_night;
+                                            move || if validation.get().is_none() {
                                             view! {
                                                 <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
                                                     <span>"Total"</span>
-                                                    <span>"$" {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
+                                                    <span>{currency2.clone()} " " {price2.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
                                                 </div>
                                             }.into_any()
                                         } else {

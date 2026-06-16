@@ -9,6 +9,7 @@ pub mod listing_detail;
 pub mod listings;
 pub mod login;
 pub mod not_found;
+pub mod profile;
 pub mod register;
 pub mod shell;
 pub mod verify;

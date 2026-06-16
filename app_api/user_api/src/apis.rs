@@ -65,6 +65,7 @@ pub struct UserResponse {
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
     pub roles: Vec<String>,
+    pub default_currency: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -87,6 +88,7 @@ fn map_user_to_response(user: User) -> UserResponse {
         updated_at: user.updated_at,
         attributes: user.attributes,
         roles: user.roles.into_iter().map(|r| r.to_string()).collect(),
+        default_currency: user.default_currency,
     }
 }
 
@@ -152,6 +154,10 @@ async fn create_user(
                     .filter_map(|r| UserRole::from_str(&r).ok())
                     .collect()
             }),
+            default_currency: req_data
+                .default_currency
+                .clone()
+                .unwrap_or_else(|| "USD".to_string()),
         };
 
         match db_core::user::create_user(&mut *tx, &user).await {
@@ -466,6 +472,7 @@ async fn update_user(
                     .filter_map(|r| UserRole::from_str(&r).ok())
                     .collect()
             }),
+            default_currency: req_data.default_currency.clone(),
         };
 
         match db_core::user::update_user(pool.get_ref(), id, &updated).await {
