@@ -38,6 +38,11 @@ pub async fn initiate_booking(
 
         let pool = get_pool().await;
         let session = leptos_actix::extract::<Session>().await?;
+        let user_currency = session
+            .get::<String>("user_default_currency")
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "USD".to_string());
 
         // 1. Determine Guest ID
         let guest_id = if let Some(user_id_str) = session.get::<String>("user_id").ok().flatten() {
@@ -63,6 +68,7 @@ pub async fn initiate_booking(
                 verification_code_expires_at: None,
                 attributes: serde_json::json!({"is_guest": true}),
                 roles: Some(vec![db_core::models::UserRole::Booker]),
+                default_currency: user_currency.clone(),
             };
 
             db_user::create_user(&pool, &new_user)
@@ -78,7 +84,16 @@ pub async fn initiate_booking(
 
         let listing = listing_details.listing;
         let total_days = (check_out - check_in).num_days() as i32;
-        let daily_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
+
+        let (rate, target_curr) = db_core::currency::get_exchange_rate_and_currency(
+            &pool,
+            &listing.base_currency,
+            &user_currency,
+        )
+        .await
+        .unwrap_or((Decimal::ONE, listing.base_currency.clone()));
+
+        let daily_rate = listing.price_per_night.unwrap_or(Decimal::ZERO) * rate;
         let sub_total_price = daily_rate * Decimal::from(total_days);
 
         // Simple fees/tax for now
@@ -98,7 +113,7 @@ pub async fn initiate_booking(
             listing_id,
             date_from: check_in,
             date_to: check_out,
-            currency: "USD".to_string(),
+            currency: target_curr,
             daily_rate,
             number_of_persons: (adults + children + infants) as i32,
             total_days,
@@ -467,16 +482,16 @@ pub fn CheckoutPage() -> impl IntoView {
                                             <h3 class="text-xl font-bold mb-4">"Price details"</h3>
                                             <div class="space-y-3">
                                                 <div class="flex justify-between">
-                                                    <span>"$" {listing.price_per_night.unwrap_or_default().to_i64().unwrap_or_default().to_formatted_string(&Locale::en)} " x " {booking.total_days} " nights"</span>
-                                                    <span>"$" {booking.sub_total_price.to_i64().unwrap_or_default().to_formatted_string(&Locale::en)}</span>
+                                                    <span>{booking.currency.clone()} " " {listing.price_per_night.unwrap_or_default().to_i64().unwrap_or_default().to_formatted_string(&Locale::en)} " x " {booking.total_days} " nights"</span>
+                                                    <span>{booking.currency.clone()} " " {booking.sub_total_price.to_i64().unwrap_or_default().to_formatted_string(&Locale::en)}</span>
                                                 </div>
                                                 <div class="flex justify-between">
                                                     <span class="underline">"Service fee"</span>
-                                                    <span>"$" {booking.tax_value.unwrap_or_default().to_i64().unwrap_or_default().to_formatted_string(&Locale::en)}</span>
+                                                    <span>{booking.currency.clone()} " " {booking.tax_value.unwrap_or_default().to_i64().unwrap_or_default().to_formatted_string(&Locale::en)}</span>
                                                 </div>
                                                 <div class="flex justify-between font-bold text-lg pt-4 border-t border-base-200">
-                                                    <span>"Total (USD)"</span>
-                                                    <span>"$" {booking.total_price.to_i64().unwrap_or_default().to_formatted_string(&Locale::en)}</span>
+                                                    <span>"Total (" {booking.currency.clone()} ")"</span>
+                                                    <span>{booking.currency.clone()} " " {booking.total_price.to_i64().unwrap_or_default().to_formatted_string(&Locale::en)}</span>
                                                 </div>
                                             </div>
                                         </div>

@@ -9,12 +9,24 @@ pub fn ListingDetailPage() -> impl IntoView {
     let params = use_params_map();
     let id = move || params.with(|p| p.get("id").unwrap_or_default());
 
-    let listing_resource = Resource::new(id, |id_str| async move {
-        if id_str.is_empty() {
-            return Err(ServerFnError::new("No ID provided"));
-        }
-        get_listing_by_id_server(id_str).await
-    });
+    let auth_context = use_context::<crate::app::AuthContext>();
+    let currency = move || {
+        auth_context
+            .as_ref()
+            .and_then(|c| c.user.get())
+            .and_then(|res| res.ok().flatten())
+            .map(|u| u.default_currency)
+    };
+
+    let listing_resource = Resource::new(
+        move || (id(), currency()),
+        |(id_str, curr)| async move {
+            if id_str.is_empty() {
+                return Err(ServerFnError::new("No ID provided"));
+            }
+            get_listing_by_id_server(id_str, curr).await
+        },
+    );
 
     view! {
         <Suspense fallback=move || view! { <div class="p-10 text-center">"Loading listing..."</div> }>

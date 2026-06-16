@@ -61,6 +61,7 @@ pub fn HomePage() -> impl IntoView {
                                                             country=item.country.clone()
                                                             city=item.city.clone()
                                                             id=item.slug.clone()
+                                                            currency=item.base_currency.clone()
                                                         />
                                                     }
                                                 }).collect_view()}
@@ -109,7 +110,14 @@ pub async fn fetch_listings() -> Result<Vec<ListingResponse>, ServerFnError> {
     // Server-side logging
     tracing::info!("LISTING_API_URL: {}", listing_api_url);
 
-    let url = format!("{}/api/v1/listings?page=1&per_page=10", listing_api_url);
+    let mut url = format!("{}/api/v1/listings?page=1&per_page=10", listing_api_url);
+
+    #[cfg(feature = "ssr")]
+    if let Ok(session) = leptos_actix::extract::<actix_session::Session>().await {
+        if let Ok(Some(currency)) = session.get::<String>("user_default_currency") {
+            url.push_str(&format!("&currency={}", currency));
+        }
+    }
     let request_id = Uuid::new_v4();
 
     tracing::info!(

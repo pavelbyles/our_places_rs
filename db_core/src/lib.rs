@@ -1,5 +1,6 @@
 pub mod booking;
 pub mod connection;
+pub mod currency;
 pub mod error;
 pub mod listing;
 pub mod models;

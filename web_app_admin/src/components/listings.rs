@@ -357,6 +357,7 @@ pub fn ListingsPage() -> impl IntoView {
             owner_email: owner_email.get(),
             listing_structure: structure_arg,
             max_price: max_price.get(),
+            currency: None,
         });
     };
 

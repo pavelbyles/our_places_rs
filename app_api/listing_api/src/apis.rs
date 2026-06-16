@@ -151,6 +151,7 @@ pub async fn get_listings(
         structure_type: structure_types,
         owner: query.owner.clone(),
         resolution: query.resolution.clone(),
+        currency: query.currency.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -159,10 +160,38 @@ pub async fn get_listings(
             tracing::error!("Database query failed: {:?}", e);
             ApiError::Database(e)
         })?;
-    let response: Vec<ListingResponse> = listings
+    let mut response: Vec<ListingResponse> = listings
         .into_iter()
         .map(map_listing_with_owner_to_response)
         .collect();
+
+    if let Some(target_currency) = &query.currency {
+        let mut rates = std::collections::HashMap::new();
+        for listing in &response {
+            let base = &listing.base_currency;
+            #[allow(clippy::collapsible_if)]
+            if !rates.contains_key(base) {
+                if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+                    pool.get_ref(),
+                    base,
+                    target_currency,
+                )
+                .await
+                {
+                    rates.insert(base.clone(), (rate, final_curr));
+                }
+            }
+        }
+        for listing in &mut response {
+            if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
+                if let Some(price) = listing.price_per_night {
+                    let new_price = price * rate;
+                    listing.price_per_night = Some(new_price.round_dp(2));
+                }
+                listing.base_currency = final_curr.clone();
+            }
+        }
+    }
 
     Ok(respond(
         &req,
@@ -170,6 +199,11 @@ pub async fn get_listings(
         |items| ListingsWrapper { listing: items },
         actix_web::http::StatusCode::OK,
     ))
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CurrencyQuery {
+    pub currency: Option<String>,
 }
 
 #[tracing::instrument]
@@ -189,16 +223,34 @@ async fn get_listing_by_id(
     req: HttpRequest,
     path: web::Path<String>,
     pool: web::Data<PgPool>,
+    query: web::Query<CurrencyQuery>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id_or_slug = path.into_inner();
     let listing_details =
         db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
+    let mut response = api_core::models::map_listing_details_to_response(listing_details);
+
+    if let Some(target_currency) = &query.currency {
+        #[allow(clippy::collapsible_if)]
+        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+            pool.get_ref(),
+            &response.listing.base_currency,
+            target_currency,
+        )
+        .await
+        {
+            if let Some(price) = response.listing.price_per_night {
+                let new_price = price * rate;
+                response.listing.price_per_night = Some(new_price.round_dp(2));
+            }
+            response.listing.base_currency = final_curr;
+        }
+    }
+
     Ok(respond(
         &req,
-        Payload::Item(api_core::models::map_listing_details_to_response(
-            listing_details,
-        )),
+        Payload::Item(response),
         |_: Vec<common::models::ListingDetails>| (),
         actix_web::http::StatusCode::OK,
     ))

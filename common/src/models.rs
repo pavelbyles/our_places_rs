@@ -38,6 +38,7 @@ pub struct NewUserRequest {
     pub roles: Option<Vec<String>>,
     pub booker_profile: Option<NewBookerProfile>,
     pub host_profile: Option<NewHostProfile>,
+    pub default_currency: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -55,6 +56,7 @@ pub struct UpdateUserRequest {
     pub roles: Option<Vec<String>>,
     pub booker_profile: Option<NewBookerProfile>,
     pub host_profile: Option<NewHostProfile>,
+    pub default_currency: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -140,6 +142,7 @@ pub struct ListingFilter {
     pub structure_type: Vec<String>,
     pub owner: Option<String>,
     pub resolution: Option<String>,
+    pub currency: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -154,6 +157,7 @@ pub struct ListingQueryParams {
     pub structure_type: Vec<String>,
     pub owner: Option<String>,
     pub resolution: Option<String>,
+    pub currency: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -170,6 +174,7 @@ pub struct UserResponse {
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
     pub roles: Vec<String>,
+    pub default_currency: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
