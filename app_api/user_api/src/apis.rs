@@ -40,6 +40,12 @@ pub struct VerifyRequest {
     pub code: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct ResendVerificationRequest {
+    #[validate(email)]
+    pub email: String,
+}
+
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserFilter {
     pub search: Option<String>,
@@ -362,6 +368,53 @@ async fn verify_user(
 
 #[tracing::instrument]
 #[utoipa::path(
+    post,
+    path = "/api/v1/users/resend-verification",
+    tag = "auth",
+    request_body = ResendVerificationRequest,
+    responses(
+        (status = 200, description = "Resend verification successful", body = UserResponse),
+        (status = 401, description = "User not found or already verified"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn resend_verification(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    resend_req: web::Json<ResendVerificationRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = resend_req.into_inner();
+    payload.validate()?;
+
+    let otp: String = Alphanumeric
+        .sample_string(&mut rand::rng(), 6)
+        .to_uppercase();
+
+    tracing::info!("RESEND VERIFICATION CODE FOR {}: {}", payload.email, otp);
+
+    let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
+
+    let updated =
+        db_core::user::regenerate_verification_code(pool.get_ref(), &payload.email, &otp, expiry)
+            .await
+            .map_err(ApiError::Database)?;
+
+    if let Some(user) = updated {
+        return Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(user)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        ));
+    }
+
+    Err(ApiError::Unauthorized(
+        "User not found or already verified".to_string(),
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
     patch,
     path = "/api/v1/users/user/{id}",
     tag = "users",
@@ -624,13 +677,15 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_all_users,
             create_user,
             update_user,
+            resend_verification,
+            verify_user,
             get_user,
             get_user_bookings,
             get_user_listings,
             api_core::health::health_check,
         ),
         components(
-            schemas(NewUserRequest, UpdateUserRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse, UserFilter, UsersWrapper)
+            schemas(NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse, UserFilter, UsersWrapper)
         ),
         tags(
             (name = "users", description = "User management endpoints")
@@ -697,6 +752,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::post()
                     .wrap(from_fn(content_negotiation_middleware))
                     .to(verify_user),
+            )
+            .route(
+                "/resend-verification",
+                web::post()
+                    .wrap(from_fn(content_negotiation_middleware))
+                    .to(resend_verification),
             ),
     );
 }

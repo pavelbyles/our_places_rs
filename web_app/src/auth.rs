@@ -305,6 +305,49 @@ pub async fn verify_email_code(email: String, code: String) -> Result<(), Server
     Ok(())
 }
 
+#[server]
+pub async fn resend_verification_code(email: String) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use web_app_common::api_client::{get_client, user_api_audience, user_api_url};
+
+        let url = format!("{}/api/v1/users/resend-verification", user_api_url());
+        let audience = user_api_audience();
+
+        let payload = serde_json::json!({
+            "email": email
+        });
+
+        let response = get_client()
+            .post(&url, &audience, &payload)
+            .await
+            .map_err(|e| ServerFnError::new(format!("API Request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let err_text = response.text().await.unwrap_or_default();
+            return Err(ServerFnError::new(format!(
+                "Failed to resend code: {}",
+                err_text
+            )));
+        }
+
+        let user_resp: common::models::UserResponse = response
+            .json()
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to parse response: {}", e)))?;
+
+        if let Some(code) = user_resp.verification_code {
+            web_app_common::email::send_verification_email(&email, &user_resp.first_name, &code)
+                .await
+                .map_err(|e| {
+                    ServerFnError::new(format!("Failed to send verification email: {}", e))
+                })?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "ssr")]
 pub async fn try_extract_session() -> Result<Session, ServerFnError> {
     leptos_actix::extract::<Session>()

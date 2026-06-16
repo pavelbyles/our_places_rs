@@ -1,4 +1,4 @@
-use crate::auth::VerifyEmailCode;
+use crate::auth::{ResendVerificationCode, VerifyEmailCode};
 use leptos::prelude::*;
 use leptos_router::hooks::use_query_map;
 
@@ -9,6 +9,7 @@ pub fn VerifyPage() -> impl IntoView {
 
     let auth = use_context::<crate::app::AuthContext>().expect("AuthContext should be provided");
     let verify_action = ServerAction::<VerifyEmailCode>::new();
+    let resend_action = ServerAction::<ResendVerificationCode>::new();
 
     Effect::new(move || {
         if let Some(Ok(_)) = verify_action.value().get() {
@@ -68,7 +69,24 @@ pub fn VerifyPage() -> impl IntoView {
 
                         <div class="text-center mt-8">
                             <p class="text-xs opacity-60 mb-2">"Didn't receive the code?"</p>
-                            <button class="btn btn-link btn-xs no-underline">"Resend Code (Not implemented)"</button>
+                            <ActionForm action=resend_action>
+                                <input type="hidden" name="email" value=email />
+                                <button type="submit" class="btn btn-link btn-xs no-underline" disabled=move || resend_action.pending().get()>
+                                    {move || if resend_action.pending().get() { "Sending..." } else { "Resend Code" }}
+                                </button>
+                                {move || resend_action.value().get().map(|res| match res {
+                                    Err(e) => view! {
+                                        <div class="text-error text-xs mt-2">
+                                            <span>{e.to_string()}</span>
+                                        </div>
+                                    }.into_any(),
+                                    Ok(_) => view! {
+                                        <div class="text-success text-xs mt-2">
+                                            <span>"Verification code resent!"</span>
+                                        </div>
+                                    }.into_any(),
+                                })}
+                            </ActionForm>
                         </div>
                     </div>
                 </div>

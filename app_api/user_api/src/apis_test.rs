@@ -434,3 +434,132 @@ async fn test_get_all_users_with_filters() {
     assert_eq!(body.len(), 1);
     assert_eq!(body[0].last_name, "Chocolate");
 }
+
+#[actix_web::test]
+async fn test_resend_verification_success() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let email = format!("resend_{}@example.com", Uuid::now_v7());
+    let req_body = json!({
+        "email": email,
+        "password": "password123",
+        "first_name": "Test",
+        "last_name": "Resend",
+        "is_active": true,
+        "roles": ["booker"],
+        "booker_profile": { "loyalty": {"points": 0} }
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/")
+        .set_json(&req_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let initial_user: UserResponse = test::read_body_json(resp).await;
+    let initial_code = initial_user.verification_code.unwrap();
+
+    let resend_req_body = json!({ "email": email });
+    let req2 = test::TestRequest::post()
+        .uri("/api/v1/users/resend-verification")
+        .set_json(&resend_req_body)
+        .to_request();
+    let resp2 = test::call_service(&app, req2).await;
+    assert_eq!(resp2.status(), 200);
+
+    let updated_user: UserResponse = test::read_body_json(resp2).await;
+    let new_code = updated_user.verification_code.unwrap();
+    assert_ne!(initial_code, new_code);
+}
+
+#[actix_web::test]
+async fn test_resend_verification_nonexistent_user() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let resend_req_body = json!({ "email": "doesnt_exist@example.com" });
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/resend-verification")
+        .set_json(&resend_req_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 401);
+}
+
+#[actix_web::test]
+async fn test_resend_verification_already_verified() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let email = format!("verified_{}@example.com", Uuid::now_v7());
+    let req_body = json!({
+        "email": email,
+        "password": "password123",
+        "first_name": "Test",
+        "last_name": "Verified",
+        "is_active": true,
+        "roles": ["booker"],
+        "booker_profile": { "loyalty": {"points": 0} }
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/")
+        .set_json(&req_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let initial_user: UserResponse = test::read_body_json(resp).await;
+
+    // Verify the user
+    let verify_req_body =
+        json!({ "email": email, "code": initial_user.verification_code.unwrap() });
+    let req2 = test::TestRequest::post()
+        .uri("/api/v1/users/verify")
+        .set_json(&verify_req_body)
+        .to_request();
+    let resp2 = test::call_service(&app, req2).await;
+    assert_eq!(resp2.status(), 200);
+
+    // Try resend
+    let resend_req_body = json!({ "email": email });
+    let req3 = test::TestRequest::post()
+        .uri("/api/v1/users/resend-verification")
+        .set_json(&resend_req_body)
+        .to_request();
+    let resp3 = test::call_service(&app, req3).await;
+    assert_eq!(resp3.status(), 401);
+}
