@@ -481,38 +481,38 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/availability",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(check_availability),
+                    .to(check_availability)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_bookings),
+                    .to(get_bookings)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(create_booking),
+                    .to(create_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/bookings/{id}",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_booking_by_id),
+                    .to(get_booking_by_id)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/bookings/{id}",
                 web::patch()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(update_booking),
+                    .to(update_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/bookings/{id}",
                 web::delete()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(delete_booking),
+                    .to(delete_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/health_check",

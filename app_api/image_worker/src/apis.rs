@@ -349,8 +349,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/process_image",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(process_image),
+                    .to(process_image)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/health_check",
