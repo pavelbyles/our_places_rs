@@ -704,38 +704,38 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_all_users),
+                    .to(get_all_users)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(create_user),
+                    .to(create_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_user),
+                    .to(get_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}",
                 web::patch()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(update_user),
+                    .to(update_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}/bookings",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_user_bookings),
+                    .to(get_user_bookings)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}/listings",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_user_listings), // TODO: implement
+                    .to(get_user_listings) // TODO: implement
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/health_check",
@@ -744,20 +744,20 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/login",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(login),
+                    .to(login)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/verify",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(verify_user),
+                    .to(verify_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/resend-verification",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(resend_verification),
+                    .to(resend_verification)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
 }

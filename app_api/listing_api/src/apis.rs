@@ -598,38 +598,38 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_listings),
+                    .to(get_listings)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(create_listing),
+                    .to(create_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_listing_by_id),
+                    .to(get_listing_by_id)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}",
                 web::patch()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(update_listing),
+                    .to(update_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}",
                 web::delete()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(delete_listing),
+                    .to(delete_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}/images/presign",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(presign_batch),
+                    .to(presign_batch)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
 }
