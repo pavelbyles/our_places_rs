@@ -112,6 +112,56 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/users/verify:
+    post:
+      summary: Verify user
+      operationId: verifyUser
+      tags:
+        - users
+        - auth
+      x-google-backend: user-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyRequest"
+      responses:
+        "200":
+          description: Verification successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: Invalid code or expired
+        "500":
+          description: Internal server error
+
+  /api/v1/users/resend-verification:
+    post:
+      summary: Resend verification code
+      operationId: resendVerification
+      tags:
+        - users
+        - auth
+      x-google-backend: user-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendVerificationRequest"
+      responses:
+        "200":
+          description: Resend verification successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: User not found or already verified
+        "500":
+          description: Internal server error
+
   /api/v1/users/user/{email}:
     get:
       summary: Get user by email
@@ -613,6 +663,25 @@ components:
         email:
           type: string
         password:
+          type: string
+
+    VerifyRequest:
+      type: object
+      required:
+        - email
+        - code
+      properties:
+        email:
+          type: string
+        code:
+          type: string
+
+    ResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
           type: string
 
     UpdatedUserRequest:
