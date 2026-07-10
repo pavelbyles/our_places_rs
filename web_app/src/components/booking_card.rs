@@ -165,6 +165,18 @@ pub fn BookingCard(
                                             }}
                                         </button>
                                         <p class="text-center text-sm text-base-content/60">"You won't be charged yet"</p>
+                                        {move || {
+                                            if let Some(Err(e)) = initiate_booking_action.value().get() {
+                                                view! {
+                                                    <div class="alert alert-error mt-2 py-2 text-sm">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                        <span>{e.to_string().replace("Uh oh: ", "")}</span>
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                ().into_any()
+                                            }
+                                        }}
                                     </div>
 
                                     <div class="divider my-0"></div>

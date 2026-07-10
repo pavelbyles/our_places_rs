@@ -14,3 +14,5 @@ Actions to use whenever significant code changes are done
     execute: `cargo fmt --check`
 3. Keep sqlx files updated
     execute: `cargo sqlx prepare --workspace`
+4. Run unit tests
+    execute: `cargo test --workspace --exclude protoproj`

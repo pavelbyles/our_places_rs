@@ -1598,6 +1598,7 @@ name = "db_core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bcrypt",
  "chrono",
  "common",
  "dotenvy",

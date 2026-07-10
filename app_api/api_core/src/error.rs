@@ -20,6 +20,9 @@ pub enum ApiError {
 
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
+
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -44,6 +47,7 @@ impl ResponseError for ApiError {
             // Feature disabled error is 403 Forbidden
             ApiError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            ApiError::Forbidden(_) => StatusCode::FORBIDDEN,
         }
     }
 
@@ -57,6 +61,9 @@ impl ResponseError for ApiError {
                 HttpResponse::Unauthorized().json(serde_json::json!({ "error": msg }))
             }
             ApiError::FeatureDisabled(msg) => {
+                HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Forbidden(msg) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
             }
             _ => HttpResponse::build(self.status_code()).finish(),

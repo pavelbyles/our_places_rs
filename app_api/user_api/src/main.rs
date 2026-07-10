@@ -28,6 +28,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connecting to database");
     let db_connection_pool = create_connection_pool(&config.database.connection_string()).await;
     run_migrations(&db_connection_pool).await;
+    db_core::user::initialize_system_admin(&db_connection_pool).await;
     tracing::info!(
         "Done connecting to database: {} on {}",
         &config.database.database_name,

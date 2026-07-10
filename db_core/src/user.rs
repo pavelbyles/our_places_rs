@@ -265,7 +265,7 @@ pub async fn regenerate_verification_code(
 ) -> Result<Option<User>> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency FROM "user" WHERE email = $1 AND is_verified = FALSE FOR UPDATE"#)
+    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency FROM "user" WHERE email = $1 FOR UPDATE"#)
         .bind(email)
         .fetch_optional(&mut *tx)
         .await?;
@@ -335,7 +335,7 @@ where
         r#"
         SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
         FROM "user"
-        WHERE 1 = 1
+        WHERE NOT ('admin' = ANY(roles))
         "#,
     );
 
@@ -362,4 +362,218 @@ where
         .await?;
 
     Ok(users)
+}
+
+/// Initializes the default system admin if it doesn't exist.
+#[tracing::instrument(skip(pool))]
+pub async fn initialize_system_admin(pool: &PgPool) {
+    let admin_email = "pavelbyles@ourplaces.io";
+
+    // Check if admin already exists
+    let exists = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM "user" WHERE email = $1)"#,
+        admin_email
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(Some(false))
+    .unwrap_or(false);
+
+    if !exists {
+        tracing::info!("Initializing default system admin");
+
+        let password_hash = bcrypt::hash("admin_changeme_2026", bcrypt::DEFAULT_COST)
+            .expect("Failed to hash default admin password");
+
+        let new_user = NewUser {
+            id: Uuid::now_v7(),
+            email: admin_email.to_string(),
+            password_hash,
+            first_name: "System".to_string(),
+            last_name: "Admin".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![UserRole::Admin]),
+            default_currency: "USD".to_string(),
+        };
+
+        if let Err(e) = create_user(pool, &new_user).await {
+            tracing::error!("Failed to initialize system admin: {:?}", e);
+        } else {
+            tracing::info!("Default system admin initialized successfully");
+        }
+    }
+}
+
+/// Updates a user's password and clears any pending verification code.
+#[tracing::instrument(skip(pool))]
+pub async fn update_user_password(
+    pool: &PgPool,
+    id: Uuid,
+    new_password_hash: String,
+) -> Result<User> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_history
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles, default_currency)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "#,
+    )
+    .bind(current.id)
+    .bind(&current.email)
+    .bind(&current.password_hash)
+    .bind(&current.first_name)
+    .bind(&current.last_name)
+    .bind(&current.phone_number)
+    .bind(current.is_active)
+    .bind(current.is_verified)
+    .bind(current.updated_at)
+    .bind(&current.attributes)
+    .bind(&current.roles)
+    .bind(&current.default_currency)
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, User>(
+        r#"
+        UPDATE "user"
+        SET
+            password_hash = $2,
+            verification_code = NULL,
+            verification_code_expires_at = NULL,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
+        "#,
+    )
+    .bind(id)
+    .bind(new_password_hash)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(updated)
+}
+
+/// Updates a user's email, resets verification status, and sets a new verification code.
+#[tracing::instrument(skip(pool))]
+pub async fn update_user_email(
+    pool: &PgPool,
+    id: Uuid,
+    new_email: String,
+    verification_code: String,
+    expiry: chrono::DateTime<chrono::Utc>,
+) -> Result<User> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_history
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles, default_currency)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "#,
+    )
+    .bind(current.id)
+    .bind(&current.email)
+    .bind(&current.password_hash)
+    .bind(&current.first_name)
+    .bind(&current.last_name)
+    .bind(&current.phone_number)
+    .bind(current.is_active)
+    .bind(current.is_verified)
+    .bind(current.updated_at)
+    .bind(&current.attributes)
+    .bind(&current.roles)
+    .bind(&current.default_currency)
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, User>(
+        r#"
+        UPDATE "user"
+        SET
+            email = $2,
+            is_verified = FALSE,
+            verification_code = $3,
+            verification_code_expires_at = $4,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
+        "#,
+    )
+    .bind(id)
+    .bind(new_email)
+    .bind(verification_code)
+    .bind(expiry)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(updated)
+}
+
+/// Deactivates a user's account.
+#[tracing::instrument(skip(pool))]
+pub async fn deactivate_user(pool: &PgPool, id: Uuid) -> Result<User> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_history
+        (user_id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, valid_from, attributes, roles, default_currency)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "#,
+    )
+    .bind(current.id)
+    .bind(&current.email)
+    .bind(&current.password_hash)
+    .bind(&current.first_name)
+    .bind(&current.last_name)
+    .bind(&current.phone_number)
+    .bind(current.is_active)
+    .bind(current.is_verified)
+    .bind(current.updated_at)
+    .bind(&current.attributes)
+    .bind(&current.roles)
+    .bind(&current.default_currency)
+    .execute(&mut *tx)
+    .await?;
+
+    let updated = sqlx::query_as::<_, User>(
+        r#"
+        UPDATE "user"
+        SET
+            is_active = FALSE,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(updated)
 }

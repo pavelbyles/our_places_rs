@@ -137,7 +137,7 @@ where
         r#"::image_resolution
             LIMIT 1
         ) AS primary_img ON true
-        WHERE listing.deleted_at IS NULL
+        WHERE listing.deleted_at IS NULL AND "user".is_active = TRUE
         "#,
     );
 
@@ -252,7 +252,8 @@ where
               AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
             LIMIT 1
         ) AS primary_img ON true
-        WHERE listing.id = $1 AND listing.deleted_at IS NULL
+        INNER JOIN "user" ON listing.user_id = "user".id
+        WHERE listing.id = $1 AND listing.deleted_at IS NULL AND "user".is_active = TRUE
         "#,
         id
     )
@@ -304,7 +305,8 @@ where
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
                 LIMIT 1
             ) AS primary_img ON true
-            WHERE listing.id = $1 AND listing.deleted_at IS NULL
+            INNER JOIN "user" ON listing.user_id = "user".id
+            WHERE listing.id = $1 AND listing.deleted_at IS NULL AND "user".is_active = TRUE
             "#,
             id_uuid
         )
@@ -325,7 +327,8 @@ where
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
                 LIMIT 1
             ) AS primary_img ON true
-            WHERE listing.slug = $1 AND listing.deleted_at IS NULL
+            INNER JOIN "user" ON listing.user_id = "user".id
+            WHERE listing.slug = $1 AND listing.deleted_at IS NULL AND "user".is_active = TRUE
             "#,
             id_or_slug
         )
