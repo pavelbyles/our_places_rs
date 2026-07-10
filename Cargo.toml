@@ -37,7 +37,7 @@ wasm-bindgen = "0.2.118"
 console_error_panic_hook = "0.1.7"
 reqwest = { version = "0.13.2", features = ["json"] }
 actix-files = "0.6.10"
-http = "1.4.1"
+http = "1.4.2"
 web_app_common = { path = "web_app_common" }
 
 [workspace.dependencies.chrono]
