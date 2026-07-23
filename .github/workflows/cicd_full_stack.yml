@@ -126,7 +126,7 @@ jobs:
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@v3"
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
@@ -265,7 +265,7 @@ jobs:
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@v3"
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
@@ -296,7 +296,7 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy_image_worker
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ env.SERVICE_PREFIX_IMAGE_WORKER }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_IMAGE_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
@@ -384,7 +384,7 @@ jobs:
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@v3"
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
@@ -470,7 +470,7 @@ jobs:
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Deploy Booking API
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: booking-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/booking-api:${{ github.sha }}
@@ -502,7 +502,7 @@ jobs:
 
       - name: Deploy Listing API
         id: deploy_listing
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: listing-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/listing-api:${{ github.sha }}
@@ -534,7 +534,7 @@ jobs:
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
 
       - name: Deploy User API
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: user-api-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/user-api:${{ github.sha }}
@@ -586,7 +586,7 @@ jobs:
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@v3"
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
@@ -675,7 +675,7 @@ jobs:
 
       - name: Deploy Web App
         id: deploy_webapp
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
@@ -749,7 +749,7 @@ jobs:
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@v3"
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
@@ -807,7 +807,7 @@ jobs:
 
       - name: Deploy Web App Admin
         id: deploy_webapp_admin
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ steps.branch_name.outputs.SERVICE_NAME_ADMIN }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }}
