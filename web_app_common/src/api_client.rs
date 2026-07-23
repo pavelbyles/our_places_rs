@@ -88,7 +88,8 @@ pub async fn get_pool() -> db_core::PgPool {
         return pool.clone();
     }
 
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set for SSR operations");
+    let db_url = env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
     let pool = db_core::connection::create_connection_pool(&db_url).await;
     let _ = POOL.set(pool.clone());
     pool

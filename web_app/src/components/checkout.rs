@@ -134,9 +134,16 @@ pub async fn initiate_booking(
             },
         };
 
-        let booking = db_booking::create_booking(&pool, &new_booking)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Failed to create booking: {}", e)))?;
+        let booking = match db_booking::create_booking(&pool, &new_booking).await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!("Failed to create booking in DB: {:?}", e);
+                return Err(ServerFnError::new(format!(
+                    "Failed to create booking: {}",
+                    e
+                )));
+            }
+        };
 
         Ok(booking.id)
     }

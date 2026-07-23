@@ -1,10 +1,11 @@
 use actix_web::middleware::from_fn;
 use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
+use google_cloud_storage::client::Storage;
 use serde::Deserialize;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
-
+use uuid::Uuid;
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PubSubPayload {
     pub message: PubSubMessage,
@@ -59,6 +60,171 @@ impl PubSubMessage {
         let decoded = base64::engine::general_purpose::STANDARD.decode(&self.data)?;
         let metadata: GcsObjectMetadata = serde_json::from_slice(&decoded)?;
         Ok(metadata)
+    }
+}
+
+pub struct Initialized;
+pub struct Downloaded(pub Vec<u8>);
+pub struct Processed(pub Vec<(u32, &'static str, db_core::models::ImageResolution, Vec<u8>)>);
+
+pub struct ImageTask<State> {
+    pub listing_id: Uuid,
+    pub image_id: Uuid,
+    pub state: State,
+}
+
+impl ImageTask<Initialized> {
+    pub fn new(listing_id: Uuid, image_id: Uuid) -> Self {
+        Self {
+            listing_id,
+            image_id,
+            state: Initialized,
+        }
+    }
+
+    pub async fn download(
+        self,
+        client: &Storage,
+        bucket: &str,
+        object_name: &str,
+    ) -> Result<ImageTask<Downloaded>, actix_web::Error> {
+        let gcs_read_bucket = format!("projects/_/buckets/{}", bucket);
+        let mut stream_resp = client
+            .read_object(&gcs_read_bucket, object_name)
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to start download from GCS: {}", e);
+                actix_web::error::ErrorInternalServerError("Failed to download image")
+            })?;
+
+        let mut data = Vec::new();
+        while let Some(chunk_res) = stream_resp.next().await {
+            match chunk_res {
+                Ok(chunk) => data.extend_from_slice(&chunk),
+                Err(e) => {
+                    tracing::error!("Error reading chunk from GCS: {}", e);
+                    return Err(actix_web::error::ErrorInternalServerError("Download error"));
+                }
+            }
+        }
+
+        Ok(ImageTask {
+            listing_id: self.listing_id,
+            image_id: self.image_id,
+            state: Downloaded(data),
+        })
+    }
+}
+
+impl ImageTask<Downloaded> {
+    pub fn process(self) -> Result<ImageTask<Processed>, actix_web::Error> {
+        let img = image::load_from_memory(&self.state.0).map_err(|e| {
+            tracing::error!("Failed to decode image data: {}", e);
+            actix_web::error::ErrorInternalServerError("Invalid image format")
+        })?;
+
+        let variants_to_create = vec![
+            (
+                400,
+                "thumbnail",
+                db_core::models::ImageResolution::Thumbnail400w,
+            ),
+            (720, "mobile", db_core::models::ImageResolution::Mobile720w),
+            (
+                1280,
+                "tablet",
+                db_core::models::ImageResolution::Tablet1280w,
+            ),
+            (
+                1920,
+                "desktop",
+                db_core::models::ImageResolution::Desktop1920w,
+            ),
+            (
+                2560,
+                "highres",
+                db_core::models::ImageResolution::HighRes2560w,
+            ),
+        ];
+
+        let mut processed_variants = Vec::new();
+        for (width, folder, resolution_enum) in variants_to_create {
+            let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
+            let webp_encoder =
+                webp::Encoder::from_image(&resized).expect("Failed to create webp encoder");
+            let encoded = webp_encoder.encode(80.0);
+            let bytes = encoded.iter().copied().collect::<Vec<u8>>();
+            processed_variants.push((width, folder, resolution_enum, bytes));
+        }
+
+        Ok(ImageTask {
+            listing_id: self.listing_id,
+            image_id: self.image_id,
+            state: Processed(processed_variants),
+        })
+    }
+}
+
+impl ImageTask<Processed> {
+    pub async fn upload(
+        self,
+        client: &Storage,
+        public_bucket: &str,
+        pool: &sqlx::PgPool,
+        client_file_id: String,
+        raw_url: String,
+    ) -> Result<(), actix_web::Error> {
+        let mut db_variants = Vec::new();
+        let gcs_write_bucket = format!("projects/_/buckets/{}", public_bucket);
+
+        for (_width, folder, resolution_enum, bytes) in self.state.0 {
+            let target_name = format!(
+                "optimized/{}/{}_{}.webp",
+                folder, self.listing_id, self.image_id
+            );
+
+            if let Err(e) = client
+                .write_object(
+                    &gcs_write_bucket,
+                    &target_name,
+                    actix_web::web::Bytes::from(bytes.clone()),
+                )
+                .set_content_type("image/webp")
+                .send_buffered()
+                .await
+            {
+                tracing::error!("Failed to upload variant {}: {}", folder, e);
+                continue;
+            }
+
+            let public_url = format!(
+                "https://storage.googleapis.com/{}/{}",
+                public_bucket, target_name
+            );
+
+            db_variants.push((
+                self.listing_id,
+                self.image_id, // parent_id
+                client_file_id.clone(),
+                resolution_enum,
+                bytes.len() as i64,
+                "image/webp".to_string(),
+                public_url,
+            ));
+        }
+
+        if let Err(e) = db_core::listing::insert_listing_image_variants(pool, &db_variants).await {
+            tracing::error!("Failed to insert variants into DB: {}", e);
+        }
+
+        if let Err(e) =
+            db_core::listing::mark_listing_image_processed(pool, self.image_id, raw_url).await
+        {
+            tracing::error!("Failed to mark image as processed in DB: {}", e);
+        }
+
+        Ok(())
     }
 }
 
@@ -190,120 +356,15 @@ pub async fn process_image(
         }
     };
 
-    let gcs_read_bucket = format!("projects/_/buckets/{}", object_metadata.bucket);
-    let mut stream_resp = match client
-        .read_object(&gcs_read_bucket, &object_metadata.name)
-        .send()
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Failed to start download from GCS: {}", e);
-            return Err(actix_web::error::ErrorInternalServerError(
-                "Failed to download image",
-            ));
-        }
-    };
+    let task = ImageTask::new(listing_id, image_id);
 
-    let mut data = Vec::new();
-    while let Some(chunk_res) = stream_resp.next().await {
-        match chunk_res {
-            Ok(chunk) => data.extend_from_slice(&chunk),
-            Err(e) => {
-                tracing::error!("Error reading chunk from GCS: {}", e);
-                return Err(actix_web::error::ErrorInternalServerError("Download error"));
-            }
-        }
-    }
-
-    let img = match image::load_from_memory(&data) {
-        Ok(i) => i,
-        Err(e) => {
-            tracing::error!("Failed to decode image data: {}", e);
-            return Err(actix_web::error::ErrorInternalServerError(
-                "Invalid image format",
-            ));
-        }
-    };
+    let downloaded = task
+        .download(&client, &object_metadata.bucket, &object_metadata.name)
+        .await?;
+    let processed = downloaded.process()?;
 
     let public_bucket = std::env::var("GCS_PUBLIC_BUCKET")
         .unwrap_or_else(|_| "our-places-gcs-img-public".to_string());
-
-    let variants_to_create = vec![
-        (
-            400,
-            "thumbnail",
-            db_core::models::ImageResolution::Thumbnail400w,
-        ),
-        (720, "mobile", db_core::models::ImageResolution::Mobile720w),
-        (
-            1280,
-            "tablet",
-            db_core::models::ImageResolution::Tablet1280w,
-        ),
-        (
-            1920,
-            "desktop",
-            db_core::models::ImageResolution::Desktop1920w,
-        ),
-        (
-            2560,
-            "highres",
-            db_core::models::ImageResolution::HighRes2560w,
-        ),
-    ];
-
-    let mut db_variants = Vec::new();
-
-    // 4. Generates multiple optimized WebP variants of the image (thumbnail, mobile, tablet, desktop, highres).
-    for (width, folder, resolution_enum) in variants_to_create {
-        let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
-        let webp_encoder =
-            webp::Encoder::from_image(&resized).expect("Failed to create webp encoder");
-        let encoded = webp_encoder.encode(80.0);
-        let bytes = encoded.iter().copied().collect::<Vec<u8>>();
-
-        let target_name = format!("optimized/{}/{}_{}.webp", folder, listing_id, image_id);
-
-        let gcs_write_bucket = format!("projects/_/buckets/{}", public_bucket);
-
-        // 5. Uploads the transformed WebP variants to the public GCS bucket.
-        if let Err(e) = client
-            .write_object(
-                &gcs_write_bucket,
-                &target_name,
-                actix_web::web::Bytes::from(bytes.clone()),
-            )
-            .set_content_type("image/webp")
-            .send_buffered()
-            .await
-        {
-            tracing::error!("Failed to upload variant {}: {}", folder, e);
-            continue;
-        }
-
-        let public_url = format!(
-            "https://storage.googleapis.com/{}/{}",
-            public_bucket, target_name
-        );
-
-        db_variants.push((
-            listing_id,
-            image_id, // parent_id
-            raw_image_record.client_file_id.clone(),
-            resolution_enum,
-            bytes.len() as i64,
-            "image/webp".to_string(),
-            public_url,
-        ));
-    }
-
-    // 6. Records the variants and their public URLs in the database.
-    if let Err(e) =
-        db_core::listing::insert_listing_image_variants(pool.get_ref(), &db_variants).await
-    {
-        tracing::error!("Failed to insert variants into DB: {}", e);
-    }
 
     let raw_url = raw_image_record.upload_url.unwrap_or_else(|| {
         format!(
@@ -312,12 +373,15 @@ pub async fn process_image(
         )
     });
 
-    // 7. Marks the parent image record as fully processed.
-    if let Err(e) =
-        db_core::listing::mark_listing_image_processed(pool.get_ref(), image_id, raw_url).await
-    {
-        tracing::error!("Failed to mark image as processed in DB: {}", e);
-    }
+    processed
+        .upload(
+            &client,
+            &public_bucket,
+            pool.get_ref(),
+            raw_image_record.client_file_id.clone(),
+            raw_url,
+        )
+        .await?;
 
     Ok(HttpResponse::Ok().finish())
 }

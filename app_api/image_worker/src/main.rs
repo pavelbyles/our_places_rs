@@ -4,7 +4,8 @@ use db_core::{connection::create_connection_pool, run_migrations};
 use std::net::TcpListener;
 
 mod apis;
-
+#[cfg(test)]
+mod apis_test;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing

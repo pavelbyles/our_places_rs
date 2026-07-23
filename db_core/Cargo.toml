@@ -21,6 +21,7 @@ strum = "0.28.0"
 strum_macros = "0.28.0"
 utoipa.workspace = true
 common = { path = "../common" }
+bcrypt = "0.19.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

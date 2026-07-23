@@ -51,6 +51,37 @@ pub struct UserFilter {
     pub search: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordChangeRequest {
+    #[validate(email)]
+    pub email: String,
+    pub current_password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordChangeConfirm {
+    #[validate(email)]
+    pub email: String,
+    pub code: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct EmailChangeRequest {
+    #[validate(email)]
+    pub email: String,
+    pub current_password: String,
+    #[validate(email)]
+    pub new_email: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct DeactivateRequest {
+    #[validate(email)]
+    pub email: String,
+    pub current_password: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserResponse {
     pub id: Uuid,
@@ -308,6 +339,12 @@ async fn login(
         return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
     }
 
+    if !user.is_active {
+        return Err(ApiError::Unauthorized(
+            "Account has been deactivated".to_string(),
+        ));
+    }
+
     if !user.is_verified {
         return Err(ApiError::Unauthorized("Account not verified".to_string()));
     }
@@ -386,6 +423,16 @@ async fn resend_verification(
     let payload = resend_req.into_inner();
     payload.validate()?;
 
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("User not found or already verified".to_string()))?;
+
+    if user.is_verified {
+        return Err(ApiError::Unauthorized(
+            "User not found or already verified".to_string(),
+        ));
+    }
+
     let otp: String = Alphanumeric
         .sample_string(&mut rand::rng(), 6)
         .to_uppercase();
@@ -438,6 +485,25 @@ async fn update_user(
     const MAX_ATTEMPTS: u32 = 5;
 
     let id = path.into_inner();
+
+    // --- Admin Guard Middleware Logic ---
+    // Fetch the target user to check their roles. If they are an admin, deny the update.
+    let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    if target_user.roles.contains(&UserRole::Admin) {
+        let is_modifying_roles = req_data.roles.is_some();
+        let is_modifying_active = req_data.is_active.is_some();
+        let is_modifying_verified = req_data.is_verified.is_some();
+
+        if is_modifying_roles || is_modifying_active || is_modifying_verified {
+            return Err(ApiError::Forbidden(
+                "Cannot modify roles or active status of the system admin".to_string(),
+            ));
+        }
+    }
+    // ------------------------------------
 
     let password_hash = if let Some(ref password) = req_data.password {
         if !password.is_empty() {
@@ -670,6 +736,239 @@ async fn get_all_users(
     ))
 }
 
+// --- Profile Endpoints ---
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/password/request",
+    tag = "users",
+    request_body = PasswordChangeRequest,
+    responses(
+        (status = 200, description = "Password change requested", body = UserResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn request_password_change(
+    req: actix_web::HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<PasswordChangeRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    let valid = bcrypt::verify(&payload.current_password, &user.password_hash)
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    let otp: String = Alphanumeric
+        .sample_string(&mut rand::rng(), 6)
+        .to_uppercase();
+
+    tracing::info!("PASSWORD CHANGE CODE FOR {}: {}", payload.email, otp);
+
+    let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
+
+    // Reuse regenerate_verification_code, it just sets the code and expiry
+    let updated =
+        db_core::user::regenerate_verification_code(pool.get_ref(), &payload.email, &otp, expiry)
+            .await
+            .map_err(ApiError::Database)?;
+
+    if let Some(user) = updated {
+        return Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(user)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        ));
+    }
+
+    Err(ApiError::Internal)
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/password/confirm",
+    tag = "users",
+    request_body = PasswordChangeConfirm,
+    responses(
+        (status = 200, description = "Password updated", body = UserResponse),
+        (status = 400, description = "Validation error / Invalid code"),
+        (status = 401, description = "Invalid credentials / Expired code"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn confirm_password_change(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<PasswordChangeConfirm>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    if let Some(code) = &user.verification_code
+        && code == &payload.code
+        && let Some(expiry) = user.verification_code_expires_at
+        && expiry > Utc::now()
+    {
+        let new_hash = bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST)
+            .map_err(|_| ApiError::Internal)?;
+
+        let updated = db_core::user::update_user_password(pool.get_ref(), user.id, new_hash)
+            .await
+            .map_err(ApiError::Database)?;
+
+        return Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(updated)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        ));
+    }
+
+    Err(ApiError::Unauthorized(
+        "Invalid or expired verification code".to_string(),
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/email",
+    tag = "users",
+    request_body = EmailChangeRequest,
+    responses(
+        (status = 200, description = "Email updated", body = UserResponse),
+        (status = 400, description = "Validation error / Email taken"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn change_email(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<EmailChangeRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    let valid = bcrypt::verify(&payload.current_password, &user.password_hash)
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    let otp: String = Alphanumeric
+        .sample_string(&mut rand::rng(), 6)
+        .to_uppercase();
+
+    tracing::info!(
+        "VERIFICATION CODE FOR NEW EMAIL {}: {}",
+        payload.new_email,
+        otp
+    );
+
+    let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
+
+    match db_core::user::update_user_email(pool.get_ref(), user.id, payload.new_email, otp, expiry)
+        .await
+    {
+        Ok(updated) => Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(updated)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        )),
+        Err(e) => {
+            if let db_core::error::DbError::Sqlx(ref sqlx_error) = e
+                && let Some(db_error) = sqlx_error.as_database_error()
+                && db_error.code().as_deref() == Some("23505")
+            {
+                let mut map = std::collections::HashMap::new();
+                map.insert(
+                    std::borrow::Cow::from("new_email"),
+                    validator::ValidationErrorsKind::Field(vec![
+                        validator::ValidationError::new("unique")
+                            .with_message("Email already taken".into()),
+                    ]),
+                );
+                return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
+            }
+            Err(ApiError::Database(e))
+        }
+    }
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/deactivate",
+    tag = "users",
+    request_body = DeactivateRequest,
+    responses(
+        (status = 200, description = "Account deactivated", body = UserResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn deactivate_account(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<DeactivateRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    let valid = bcrypt::verify(&payload.current_password, &user.password_hash)
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    if user.roles.contains(&UserRole::Admin) {
+        return Err(ApiError::Forbidden(
+            "Cannot deactivate system admin".to_string(),
+        ));
+    }
+
+    let updated = db_core::user::deactivate_user(pool.get_ref(), user.id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(updated)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -682,10 +981,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_user,
             get_user_bookings,
             get_user_listings,
+            request_password_change,
+            confirm_password_change,
+            change_email,
+            deactivate_account,
             api_core::health::health_check,
         ),
         components(
-            schemas(NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse, UserFilter, UsersWrapper)
+            schemas(NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse, UserFilter, UsersWrapper, PasswordChangeRequest, PasswordChangeConfirm, EmailChangeRequest, DeactivateRequest)
         ),
         tags(
             (name = "users", description = "User management endpoints")
@@ -757,6 +1060,30 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/resend-verification",
                 web::post()
                     .to(resend_verification)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/password/request",
+                web::post()
+                    .to(request_password_change)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/password/confirm",
+                web::post()
+                    .to(confirm_password_change)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/email",
+                web::post()
+                    .to(change_email)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/deactivate",
+                web::post()
+                    .to(deactivate_account)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
