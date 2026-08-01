@@ -12,8 +12,8 @@ You must **optimize for performance, correctness, and minimal resource usage** a
 
 /our_places_rs
   /web_app/              # Leptos web frontend
-  /listing_api/          # Axum listing service
-  /booking_api/          # Axum booking service
+  /listing_api/          # Actix listing service
+  /booking_api/          # Actix booking service
   /shared/               # Shared Rust types & utilities
   /infra/                # Terraform / Pulumi infrastructure
   /scripts/              # Deployment & utility scripts
@@ -33,7 +33,7 @@ You must **optimize for performance, correctness, and minimal resource usage** a
 
 ### Core
 - **Language**: Rust 2024
-- **Web Framework**: Leptos (frontend) + Axum (backend)
+- **Web Framework**: Leptos (frontend) + Actix-web (backend)
 - **Build System**: Cargo (with workspaces)
 - **Deployment**: GCP Cloud Run (jobs)
 
@@ -45,7 +45,7 @@ You must **optimize for performance, correctness, and minimal resource usage** a
 - **Build**: `cargo leptos build`
 
 ### Backend Services (`listing_api`, `booking_api`)
-- **Framework**: Axum
+- **Framework**: Actix-web
 - **Runtime**: Tokio
 - **Serialization**: Serde
 - **Validation**: Valdi
@@ -81,7 +81,7 @@ You must **optimize for performance, correctness, and minimal resource usage** a
 
 ### Concurrency
 - **Target**: 1000+ concurrent requests
-- **Strategy**: Axum + Tokio worker threads
+- **Strategy**: Actix-web + Tokio worker threads
 
 ### Safety
 - Compile-time guarantees preferred over runtime checks
@@ -152,4 +152,4 @@ cargo leptos watch
 
 ### Booking Safety (Non-Negotiable)
 - No double bookings
-- All reservations are **atomic**
+- All reservations are **atomic** and **idempotent**
