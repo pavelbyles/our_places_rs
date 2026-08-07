@@ -57,10 +57,9 @@ version = "1.0.228"
 features = ["derive"]
 
 [workspace.dependencies.sqlx]
-version = "0.9.0"
+version = "0.8.6"
 features = [
-    "runtime-tokio",
-    "tls-rustls",
+    "runtime-tokio-rustls",
     "macros",
     "postgres",
     "uuid",
