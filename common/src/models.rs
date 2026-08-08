@@ -87,6 +87,13 @@ pub struct ListingResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct FeeItem {
+    pub name: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub amount: Decimal,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct BookingMetadataResponse {
     pub num_adults: u32,
     pub num_children: u32,

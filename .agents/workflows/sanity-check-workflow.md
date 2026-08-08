@@ -11,9 +11,10 @@ Actions to use whenever significant code changes are done
 2. Check linting with cargo clippy
     execute: `cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings`
     (Note: If this command fails due to a `DATABASE_URL` error, prepend the `DATABASE_URL` environment variable and run it again.)
-3. Ensure code is properly formatted
+3. Run `cargo audit`. (Ignore RUSTSEC-2024-0436 and RUSTSEC-2023-0071 as they are unpatched vulnerabilities.)
+4. Ensure code is properly formatted
     execute: `cargo fmt --check`
-4. Keep sqlx files updated
+5. Keep sqlx files updated
     execute: `cargo sqlx prepare --workspace`
-5. Run unit tests
+6. Run unit tests
     execute: `cargo test --workspace --exclude protoproj`
