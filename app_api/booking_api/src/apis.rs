@@ -90,7 +90,6 @@ async fn check_availability(
     ))
 }
 
-
 #[tracing::instrument]
 #[utoipa::path(
     post,
