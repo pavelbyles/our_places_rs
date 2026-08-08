@@ -2,6 +2,8 @@ use crate::app::AuthContext;
 use crate::auth::UserProfile;
 use chrono::NaiveDate;
 use common::models::ListingResponse;
+#[cfg(feature = "ssr")]
+use common::pricing::BookingCalculator;
 use leptos::prelude::*;
 use num_format::{Locale, ToFormattedString};
 use rust_decimal::prelude::ToPrimitive;
@@ -94,11 +96,14 @@ pub async fn initiate_booking(
         .unwrap_or((Decimal::ONE, listing.base_currency.clone()));
 
         let daily_rate = listing.price_per_night.unwrap_or(Decimal::ZERO) * rate;
-        let sub_total_price = daily_rate * Decimal::from(total_days);
 
-        // Simple fees/tax for now
-        let tax_value = sub_total_price * Decimal::new(1, 1); // 10%
-        let total_price = sub_total_price + tax_value;
+        let calculator = BookingCalculator::new(daily_rate, total_days)
+            .apply_discounts(
+                listing.monthly_discount_percentage,
+                listing.weekly_discount_percentage,
+            )
+            .apply_taxes()
+            .finalize();
 
         let confirmation_code = (0..8)
             .map(|_| {
@@ -114,14 +119,14 @@ pub async fn initiate_booking(
             date_from: check_in,
             date_to: check_out,
             currency: target_curr,
-            daily_rate,
+            daily_rate: calculator.actual_daily_rate,
             number_of_persons: (adults + children + infants) as i32,
-            total_days,
-            sub_total_price,
-            discount_value: None,
-            tax_value: Some(tax_value),
-            fee_breakdown: vec![],
-            total_price,
+            total_days: calculator.total_days,
+            sub_total_price: calculator.sub_total_price,
+            discount_value: calculator.discount_value,
+            tax_value: calculator.tax_value,
+            fee_breakdown: calculator.fee_breakdown,
+            total_price: calculator.total_price,
             cancellation_policy: db_core::models::CancellationPolicy::Flexible,
             metadata: BookingMetadata {
                 num_adults: adults,

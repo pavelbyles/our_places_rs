@@ -10,6 +10,7 @@ use api_core::{
 };
 use chrono::NaiveDate;
 use common::models::NewBookingRequest;
+use common::pricing::BookingCalculator;
 use db_core::booking as db_booking;
 use db_core::listing as db_listing;
 use db_core::models::{
@@ -89,101 +90,6 @@ async fn check_availability(
     ))
 }
 
-pub struct BaseRate;
-pub struct Discounted;
-pub struct Taxed;
-
-pub struct BookingCalculator<State> {
-    pub actual_daily_rate: Decimal,
-    pub total_days: i32,
-    pub sub_total_price: Decimal,
-    pub discount_value: Option<Decimal>,
-    pub discounted_subtotal: Decimal,
-    pub tax_value: Option<Decimal>,
-    pub fee_breakdown: Vec<FeeItem>,
-    pub total_price: Decimal,
-    pub state: State,
-}
-
-impl BookingCalculator<BaseRate> {
-    pub fn new(actual_daily_rate: Decimal, total_days: i32) -> Self {
-        let sub_total_price = actual_daily_rate * Decimal::from(total_days);
-        Self {
-            actual_daily_rate,
-            total_days,
-            sub_total_price,
-            discount_value: None,
-            discounted_subtotal: sub_total_price,
-            tax_value: None,
-            fee_breakdown: Vec::new(),
-            total_price: Decimal::ZERO,
-            state: BaseRate,
-        }
-    }
-
-    pub fn apply_discounts(
-        mut self,
-        monthly_pct: Option<Decimal>,
-        weekly_pct: Option<Decimal>,
-    ) -> BookingCalculator<Discounted> {
-        if let (Some(pct), true) = (monthly_pct, self.total_days >= 28) {
-            let discount = self.sub_total_price * (pct / Decimal::new(100, 0));
-            self.discount_value = Some(discount);
-            self.discounted_subtotal = self.sub_total_price - discount;
-        } else if let (Some(pct), true) = (weekly_pct, self.total_days >= 7) {
-            let discount = self.sub_total_price * (pct / Decimal::new(100, 0));
-            self.discount_value = Some(discount);
-            self.discounted_subtotal = self.sub_total_price - discount;
-        }
-
-        BookingCalculator {
-            actual_daily_rate: self.actual_daily_rate,
-            total_days: self.total_days,
-            sub_total_price: self.sub_total_price,
-            discount_value: self.discount_value,
-            discounted_subtotal: self.discounted_subtotal,
-            tax_value: self.tax_value,
-            fee_breakdown: self.fee_breakdown,
-            total_price: self.total_price,
-            state: Discounted,
-        }
-    }
-}
-
-impl BookingCalculator<Discounted> {
-    pub fn apply_taxes(mut self) -> BookingCalculator<Taxed> {
-        let tax_value_decimal = self.discounted_subtotal * Decimal::new(10, 2);
-        self.tax_value = Some(tax_value_decimal);
-
-        BookingCalculator {
-            actual_daily_rate: self.actual_daily_rate,
-            total_days: self.total_days,
-            sub_total_price: self.sub_total_price,
-            discount_value: self.discount_value,
-            discounted_subtotal: self.discounted_subtotal,
-            tax_value: self.tax_value,
-            fee_breakdown: self.fee_breakdown,
-            total_price: self.total_price,
-            state: Taxed,
-        }
-    }
-}
-
-impl BookingCalculator<Taxed> {
-    pub fn finalize(mut self) -> Self {
-        let platform_fee = self.discounted_subtotal * Decimal::new(5, 2);
-        self.fee_breakdown.push(FeeItem {
-            name: "Platform Fee".to_string(),
-            amount: platform_fee,
-        });
-
-        let total_fees: Decimal = self.fee_breakdown.iter().map(|f| f.amount).sum();
-        self.total_price =
-            self.discounted_subtotal + self.tax_value.unwrap_or(Decimal::ZERO) + total_fees;
-
-        self
-    }
-}
 
 #[tracing::instrument]
 #[utoipa::path(

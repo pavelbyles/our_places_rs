@@ -224,12 +224,7 @@ pub enum CancellationPolicy {
     Strict,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
-pub struct FeeItem {
-    pub name: String,
-    #[serde(with = "rust_decimal::serde::float")]
-    pub amount: Decimal,
-}
+pub use common::models::FeeItem;
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct Listing {
