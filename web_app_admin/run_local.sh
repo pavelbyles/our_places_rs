@@ -16,9 +16,9 @@ ensure_db_running() {
   (
     flock -x 200
     if ! is_db_ready; then
-      echo "Database is not running. Starting Docker container 'db'..."
+      echo "Database is not running. Starting Docker container 'ourplaces_db'..."
       ROOT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD/..")
-      (cd "$ROOT_DIR" && docker compose up -d db)
+      docker start ourplaces_db 2>/dev/null || (cd "$ROOT_DIR" && docker compose up -d db)
     fi
   ) 200>"$lockfile"
 
