@@ -18,22 +18,29 @@ env:
   GCS_RAW_BUCKET: our-places-gcs-img-raw-<%= safe_branch %>
   GCS_PUBLIC_BUCKET: our-places-gcs-img-public-<%= safe_branch %>
 
+enable_pane_titles: true
+
 windows:
   - development:
-      layout: "b369,180x45,0,0{148x45,0,0[148x13,0,0,1,148x8,0,14,2,148x11,0,23,3,148x10,0,35,4],31x45,149,0,5}"
+      layout: "181x55,0,0{122x55,0,0[122x16,0,0{59x16,0,0,1,62x16,60,0,6},122x11,0,17,2,122x13,0,29,3,122x12,0,43,4],58x55,123,0[58x27,123,0,5,58x27,123,28,8]}"
       panes:
-        - commands:
-          - l
-        - commands:
-          - docker compose up -d db 
+        - web_app:
+          - cd web_app && ./run_local.sh    # Pane 1: Top-Left (Left column, row 1, left split)
+        - web_app_admin:
+          - cd web_app_admin && ./run_local.sh    # Pane 2: Top-Right (Left column, row 1, right split)
+        - listing_api:
+          - docker compose up -d db
           - cd app_api/listing_api
-          - EA__SERVER__PORT=8082 EA__DATABASE__HOST=localhost GCS_RAW_BUCKET=our-places-gcs-img-raw-<%= safe_branch %> GOOGLE_APPLICATION_CREDENTIALS=/home/pav/Downloads/our-places-dev-sa-listing-api.json cargo run                                                       # Pane 1 - Listing API
-        - commands:
+          - ./run_local.sh    # Pane 3: Left column, row 2
+        - booking_api:
           - cd app_api/booking_api
-          - EA__SERVER__PORT=8081 EA__DATABASE__HOST=localhost cargo run    # Pane 2
-        - commands:
+          - ./run_local.sh    # Pane 4: Left column, row 3
+        - user_api:
           - cd app_api/user_api
-          - EA__SERVER__PORT=8083 EA__DATABASE__HOST=localhost cargo run    # Pane 3
-        - commands:
-          - cd web_app && npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch   # right pane
+          - ./run_local.sh    # Pane 5: Left column, row 4
+        - web_app_tailwind:
+          - cd web_app && npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch   # Pane 6: Right column, top half
+        - web_app_admin_tailwind:
+          - cd web_app_admin && npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch    # Pane 7: Right column, bottom half
+
 
