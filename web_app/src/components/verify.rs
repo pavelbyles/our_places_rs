@@ -5,7 +5,14 @@ use leptos_router::hooks::use_query_map;
 #[component]
 pub fn VerifyPage() -> impl IntoView {
     let query = use_query_map();
-    let email = move || query.get().get("email").unwrap_or_default();
+    let email = move || {
+        let val = query.get().get("email").unwrap_or_default();
+        if val.contains(' ') && !val.contains('+') {
+            val.replace(' ', "+")
+        } else {
+            val
+        }
+    };
 
     let auth = use_context::<crate::app::AuthContext>().expect("AuthContext should be provided");
     let verify_action = ServerAction::<VerifyEmailCode>::new();

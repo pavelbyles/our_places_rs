@@ -16,6 +16,8 @@ lettre = { version = "0.11", optional = true, default-features = false, features
 serde.workspace = true
 serde_json.workspace = true
 rust_decimal.workspace = true
+chrono.workspace = true
+uuid = { workspace = true, features = ["v4"] }
 db_core = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 

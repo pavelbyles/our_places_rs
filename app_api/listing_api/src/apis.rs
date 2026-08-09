@@ -630,8 +630,215 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::post()
                     .to(presign_batch)
                     .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides",
+                web::get()
+                    .to(get_price_overrides)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides",
+                web::post()
+                    .to(create_price_override)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides/{override_id}",
+                web::put()
+                    .to(update_price_override)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides/{override_id}",
+                web::delete()
+                    .to(delete_price_override)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/listings/{id}/price-overrides",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    request_body = common::models::CreatePriceOverrideRequest,
+    responses(
+        (status = 201, description = "Price override created", body = common::models::PriceOverride),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn create_price_override(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    req_body: web::Json<common::models::CreatePriceOverrideRequest>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let override_req = req_body.into_inner();
+
+    if override_req.end_date <= override_req.start_date {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "End date must be strictly after start date".to_string(),
+            ),
+        ));
+    }
+    if override_req.nightly_rate <= Decimal::ZERO {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Nightly rate must be greater than zero".to_string(),
+            ),
+        ));
+    }
+    if override_req.min_nights < 1 {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Minimum nights must be at least 1".to_string(),
+            ),
+        ));
+    }
+
+    let created_override =
+        db_listing::create_price_override(pool.get_ref(), listing_id, &override_req)
+            .await
+            .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(created_override),
+        |_: Vec<common::models::PriceOverride>| (),
+        actix_web::http::StatusCode::CREATED,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/price-overrides",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    responses(
+        (status = 200, description = "List of price overrides", body = Vec<common::models::PriceOverride>),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_price_overrides(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let overrides = db_listing::get_price_overrides_by_listing(pool.get_ref(), listing_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Collection(overrides),
+        |_: Vec<common::models::PriceOverride>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    put,
+    path = "/api/v1/listings/{id}/price-overrides/{override_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("override_id" = String, Path, description = "Price Override UUID")
+    ),
+    request_body = common::models::UpdatePriceOverrideRequest,
+    responses(
+        (status = 200, description = "Price override updated", body = common::models::PriceOverride),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn update_price_override(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+    req_body: web::Json<common::models::UpdatePriceOverrideRequest>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, override_id) = path.into_inner();
+    let override_req = req_body.into_inner();
+
+    if let (Some(start), Some(end)) = (override_req.start_date, override_req.end_date)
+        && end <= start
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "End date must be strictly after start date".to_string(),
+            ),
+        ));
+    }
+    if let Some(rate) = override_req.nightly_rate
+        && rate <= Decimal::ZERO
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Nightly rate must be greater than zero".to_string(),
+            ),
+        ));
+    }
+    if let Some(min_nights) = override_req.min_nights
+        && min_nights < 1
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Minimum nights must be at least 1".to_string(),
+            ),
+        ));
+    }
+
+    let updated_override =
+        db_listing::update_price_override(pool.get_ref(), override_id, listing_id, &override_req)
+            .await
+            .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(updated_override),
+        |_: Vec<common::models::PriceOverride>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/listings/{id}/price-overrides/{override_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("override_id" = String, Path, description = "Price Override UUID")
+    ),
+    responses(
+        (status = 204, description = "Price override deleted"),
+        (status = 404, description = "Price override not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn delete_price_override(
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, override_id) = path.into_inner();
+    db_listing::delete_price_override(pool.get_ref(), override_id, listing_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(HttpResponse::NoContent().finish())
 }
 
 #[cfg(test)]

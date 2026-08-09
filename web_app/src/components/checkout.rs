@@ -86,6 +86,11 @@ pub async fn initiate_booking(
 
         let listing = listing_details.listing;
         let total_days = (check_out - check_in).num_days() as i32;
+        if total_days <= 0 {
+            return Err(ServerFnError::new("Check-out must be after check-in"));
+        }
+
+        let mut base_nightly_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
 
         let (rate, target_curr) = db_core::currency::get_exchange_rate_and_currency(
             &pool,
@@ -95,15 +100,45 @@ pub async fn initiate_booking(
         .await
         .unwrap_or((Decimal::ONE, listing.base_currency.clone()));
 
-        let daily_rate = listing.price_per_night.unwrap_or(Decimal::ZERO) * rate;
+        if rate != Decimal::ONE {
+            base_nightly_rate = (base_nightly_rate * rate).round_dp(2);
+        }
 
-        let calculator = BookingCalculator::new(daily_rate, total_days)
-            .apply_discounts(
-                listing.monthly_discount_percentage,
-                listing.weekly_discount_percentage,
-            )
-            .apply_taxes()
-            .finalize();
+        let raw_overrides =
+            db_listing::get_active_overrides_for_dates(&pool, listing_id, check_in, check_out)
+                .await
+                .unwrap_or_default();
+
+        let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
+            .into_iter()
+            .map(|mut ovr| {
+                if rate != Decimal::ONE {
+                    ovr.nightly_rate = (ovr.nightly_rate * rate).round_dp(2);
+                }
+                ovr
+            })
+            .collect();
+
+        let dynamic_quote = common::pricing::calculate_dynamic_quote(
+            base_nightly_rate,
+            listing.minimum_stay,
+            &converted_overrides,
+            check_in,
+            check_out,
+        )
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let calculator = BookingCalculator::with_subtotal(
+            dynamic_quote.effective_daily_rate,
+            total_days,
+            dynamic_quote.subtotal,
+        )
+        .apply_discounts(
+            listing.monthly_discount_percentage,
+            listing.weekly_discount_percentage,
+        )
+        .apply_taxes()
+        .finalize();
 
         let confirmation_code = (0..8)
             .map(|_| {
@@ -150,7 +185,46 @@ pub async fn initiate_booking(
             }
         };
 
+        if session.get::<String>("user_id").ok().flatten().is_none() {
+            session
+                .insert("pending_booking_id", booking.id.to_string())
+                .ok();
+        }
+
         Ok(booking.id)
+    }
+}
+
+#[server]
+pub async fn claim_pending_booking(booking_id: Uuid) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use actix_session::Session;
+        use db_core::booking as db_booking;
+        use web_app_common::api_client::get_pool;
+
+        let session = leptos_actix::extract::<Session>().await?;
+        let user_id_str = session
+            .get::<String>("user_id")
+            .ok()
+            .flatten()
+            .ok_or_else(|| ServerFnError::new("Unauthorized"))?;
+
+        let user_id =
+            Uuid::parse_str(&user_id_str).map_err(|_| ServerFnError::new("Invalid user ID"))?;
+
+        let pool = get_pool().await;
+        db_booking::transfer_booking_guest(&pool, booking_id, user_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Failed to transfer booking: {}", e)))?;
+
+        session.remove("pending_booking_id");
+        Ok(())
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = booking_id;
+        Ok(())
     }
 }
 

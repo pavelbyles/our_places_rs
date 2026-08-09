@@ -32,6 +32,7 @@ dotenvy = { workspace = true, optional = true }
 web_app_common.workspace = true
 num-format = "0.4.4"
 rust_decimal.workspace = true
+urlencoding = { workspace = true }
 rand = "0.10.1"
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
 db_core = { workspace = true, optional = true }

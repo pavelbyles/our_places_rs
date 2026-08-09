@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency\n            FROM \"user\" WHERE email = $1\n        ",
+  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency, deleted_at\n            FROM \"user\" WHERE email = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -95,6 +95,11 @@
         "ordinal": 14,
         "name": "default_currency",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "deleted_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -117,8 +122,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "b99ee908c5aa35fb404bbd80361958714cc84495f1b38712ced55655efe4ad64"
+  "hash": "f4a6e0e72fe8f14675731004bbe7d7ceec7d770880c702b2064b75f58b8d7c6f"
 }

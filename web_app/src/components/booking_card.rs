@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use num_format::{Locale, ToFormattedString};
 use rust_decimal::prelude::ToPrimitive;
 use uuid::Uuid;
-use web_app_common::listings::get_listing_by_id_server;
+use web_app_common::listings::{get_listing_by_id_server, get_pricing_quote_server};
 
 #[component]
 #[allow(non_snake_case)]
@@ -59,6 +59,23 @@ pub fn BookingCard(
         }
     });
 
+    let quote_resource = Resource::new(
+        move || (listing_resource.get(), check_in.get(), check_out.get()),
+        |(l_res, start_opt, end_opt)| async move {
+            let listing = l_res?.ok()?;
+            let start_str = start_opt?;
+            let end_str = end_opt?;
+            let start = NaiveDate::parse_from_str(&start_str, "%Y-%m-%d").ok()?;
+            let end = NaiveDate::parse_from_str(&end_str, "%Y-%m-%d").ok()?;
+            if end <= start {
+                return None;
+            }
+            get_pricing_quote_server(listing.id, start, end, Some(listing.base_currency.clone()))
+                .await
+                .ok()
+        },
+    );
+
     let validation = Memo::new(move |_| {
         let l = listing_resource.get()?;
         let listing = l.ok()?;
@@ -74,11 +91,15 @@ pub fn BookingCard(
         }
 
         let nights = (end - start).num_days() as i32;
-        if nights < listing.minimum_stay {
-            return Some(Err(format!(
-                "Minimum stay is {} nights",
-                listing.minimum_stay
-            )));
+
+        let min_nights = if let Some(Some(quote)) = quote_resource.get() {
+            quote.required_min_nights
+        } else {
+            listing.minimum_stay
+        };
+
+        if nights < min_nights {
+            return Some(Err(format!("Minimum stay is {} nights", min_nights)));
         }
 
         Some(Ok(nights))
@@ -93,10 +114,28 @@ pub fn BookingCard(
                             view! {
                                 <div class="card-body gap-6">
                                     <div class="flex justify-between items-end">
-                                        <div class="text-3xl font-bold text-primary">
-                                            {listing.base_currency.clone()} " " {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en))
-                                            .unwrap_or_else(|| "0.00".to_string())}
+                                        <div class="text-3xl font-bold text-primary flex items-center gap-2">
+                                            <span>
+                                                {listing.base_currency.clone()} " " {
+                                                    let effective_rate = quote_resource.get()
+                                                        .and_then(|q| q)
+                                                        .map(|q| q.effective_daily_rate)
+                                                        .or(listing.price_per_night);
+                                                    effective_rate.map(|p| p.to_i64().unwrap_or(0).to_formatted_string(&Locale::en))
+                                                        .unwrap_or_else(|| "0.00".to_string())
+                                                }
+                                            </span>
                                             <span class="text-lg font-normal text-base-content/70">" / night"</span>
+                                            {move || {
+                                                if let Some(Some(quote)) = quote_resource.get() {
+                                                    if quote.nightly_breakdown.iter().any(|n| n.is_override) {
+                                                        return view! {
+                                                            <span class="badge badge-secondary badge-sm text-[10px] uppercase font-bold">"Seasonal Rate"</span>
+                                                        }.into_any();
+                                                    }
+                                                }
+                                                ().into_any()
+                                            }}
                                         </div>
                                         <div class="text-sm font-medium flex items-center gap-1">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 text-warning">
@@ -183,14 +222,27 @@ pub fn BookingCard(
 
                                     <div class="flex flex-col gap-3">
                                         <div class="flex justify-between text-lg">
-                                            <span class="underline">"Price per night"</span>
-                                            <span>{listing.base_currency.clone()} " " {listing.price_per_night.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
+                                            <span class="underline">"Effective price / night"</span>
+                                            <span>
+                                                {listing.base_currency.clone()} " " {
+                                                    let rate = quote_resource.get()
+                                                        .and_then(|q| q)
+                                                        .map(|q| q.effective_daily_rate)
+                                                        .or(listing.price_per_night);
+                                                    rate.map(|p| p.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())
+                                                }
+                                            </span>
                                         </div>
                                         {
                                             let currency1 = listing.base_currency.clone();
                                             let price1 = listing.price_per_night;
                                             move || validation.get().and_then(|res| res.ok()).map(|nights| {
-                                            let total = price1.map(|p| p * rust_decimal::Decimal::from(nights)).unwrap_or_default();
+                                            let total_str = if let Some(Some(quote)) = quote_resource.get() {
+                                                quote.subtotal.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
+                                            } else {
+                                                price1.map(|p| (p * rust_decimal::Decimal::from(nights)).to_i64().unwrap_or(0).to_formatted_string(&Locale::en))
+                                                    .unwrap_or_else(|| "0.00".to_string())
+                                            };
                                             view! {
                                                 <div class="flex justify-between text-lg">
                                                     <span class="underline">"Nights"</span>
@@ -198,7 +250,7 @@ pub fn BookingCard(
                                                 </div>
                                                 <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
                                                     <span>"Total"</span>
-                                                    <span>{currency1.clone()} " " {total.to_i64().unwrap().to_formatted_string(&Locale::en)}</span>
+                                                    <span>{currency1.clone()} " " {total_str}</span>
                                                 </div>
                                             }
                                         })}
@@ -209,7 +261,7 @@ pub fn BookingCard(
                                             view! {
                                                 <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
                                                     <span>"Total"</span>
-                                                    <span>{currency2.clone()} " " {price2.map(|p| p.to_i64().unwrap().to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
+                                                    <span>{currency2.clone()} " " {price2.map(|p| p.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
                                                 </div>
                                             }.into_any()
                                         } else {

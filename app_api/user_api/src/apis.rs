@@ -49,6 +49,7 @@ pub struct ResendVerificationRequest {
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserFilter {
     pub search: Option<String>,
+    pub is_deleted: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -97,6 +98,7 @@ pub struct UserResponse {
     pub attributes: serde_json::Value,
     pub roles: Vec<String>,
     pub default_currency: String,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -120,6 +122,7 @@ fn map_user_to_response(user: User) -> UserResponse {
         attributes: user.attributes,
         roles: user.roles.into_iter().map(|r| r.to_string()).collect(),
         default_currency: user.default_currency,
+        deleted_at: user.deleted_at,
     }
 }
 
@@ -345,6 +348,12 @@ async fn login(
         ));
     }
 
+    if user.deleted_at.is_some() {
+        return Err(ApiError::Unauthorized(
+            "Account has been deleted".to_string(),
+        ));
+    }
+
     if !user.is_verified {
         return Err(ApiError::Unauthorized("Account not verified".to_string()));
     }
@@ -380,13 +389,25 @@ async fn verify_user(
     // Fetch user
     let user = db_core::user::get_user_by_email(pool.get_ref(), &credentials.email)
         .await
-        .map_err(|_| ApiError::Unauthorized("Invalid user or code".to_string()))?;
+        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
 
-    if let Some(code) = &user.verification_code
-        && code == &credentials.code
-        && let Some(expiry) = user.verification_code_expires_at
-        && expiry > Utc::now()
-    {
+    let trimmed_code = credentials.code.trim();
+
+    if let Some(code) = &user.verification_code {
+        if !code.trim().eq_ignore_ascii_case(trimmed_code) {
+            return Err(ApiError::Unauthorized(
+                "Invalid verification code".to_string(),
+            ));
+        }
+
+        if let Some(expiry) = user.verification_code_expires_at
+            && expiry <= Utc::now()
+        {
+            return Err(ApiError::Unauthorized(
+                "Verification code has expired".to_string(),
+            ));
+        }
+
         // Success!
         let updated = db_core::user::complete_user_verification(pool.get_ref(), user.id)
             .await
@@ -400,7 +421,9 @@ async fn verify_user(
         ));
     }
 
-    Err(ApiError::ValidationError(validator::ValidationErrors::new())) // Generic error for bad code
+    Err(ApiError::Unauthorized(
+        "No verification code found for user".to_string(),
+    ))
 }
 
 #[tracing::instrument]
@@ -599,7 +622,7 @@ async fn update_user(
     path = "/api/v1/users/user/{email}",
     tag = "users",
     params(
-        ("email" = String, Path, description = "User email"),
+        ("email" = String, Path, description = "User email or UUID"),
     ),
     responses(
         (status = 200, description = "User found", body = UserResponse),
@@ -610,11 +633,18 @@ async fn update_user(
 async fn get_user(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    email: web::Path<String>,
+    email_or_id: web::Path<String>,
 ) -> Result<impl Responder, ApiError> {
-    let user = db_core::user::get_user_by_email(pool.get_ref(), &email)
-        .await
-        .map_err(ApiError::Database)?;
+    let val = email_or_id.into_inner();
+    let user = if let Ok(uuid) = Uuid::parse_str(&val) {
+        db_core::user::get_user_by_id(pool.get_ref(), uuid)
+            .await
+            .map_err(ApiError::Database)?
+    } else {
+        db_core::user::get_user_by_email(pool.get_ref(), &val)
+            .await
+            .map_err(ApiError::Database)?
+    };
 
     Ok(respond(
         &req,
@@ -722,9 +752,15 @@ async fn get_all_users(
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
 
-    let users = db_core::user::get_all_users(pool.get_ref(), page, per_page, filter.search.clone())
-        .await
-        .map_err(ApiError::Database)?;
+    let users = db_core::user::get_all_users(
+        pool.get_ref(),
+        page,
+        per_page,
+        filter.search.clone(),
+        filter.is_deleted,
+    )
+    .await
+    .map_err(ApiError::Database)?;
 
     let response: Vec<UserResponse> = users.into_iter().map(map_user_to_response).collect();
 
@@ -734,6 +770,116 @@ async fn get_all_users(
         |items| UsersWrapper { user: items },
         actix_web::http::StatusCode::OK,
     ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/users/user/{id}",
+    tag = "users",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    responses(
+        (status = 200, description = "User soft deleted", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn soft_delete_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let id = path.into_inner();
+    let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    if target_user.roles.contains(&UserRole::Admin) {
+        return Err(ApiError::Unauthorized(
+            "Cannot delete admin users".to_string(),
+        ));
+    }
+
+    let deleted = db_core::user::soft_delete_user(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(deleted)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/user/{id}/restore",
+    tag = "users",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    responses(
+        (status = 200, description = "User restored", body = UserResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn restore_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let id = path.into_inner();
+    let restored = db_core::user::restore_user(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(restored)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/users/user/{id}/hard",
+    tag = "users",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    responses(
+        (status = 204, description = "User hard deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn hard_delete_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let id = path.into_inner();
+    let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    if target_user.roles.contains(&UserRole::Admin) {
+        return Err(ApiError::Unauthorized(
+            "Cannot hard delete admin users".to_string(),
+        ));
+    }
+
+    db_core::user::hard_delete_user(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
 // --- Profile Endpoints ---
@@ -1026,6 +1172,24 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/user/{id}",
                 web::patch()
                     .to(update_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}",
+                web::delete()
+                    .to(soft_delete_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}/restore",
+                web::post()
+                    .to(restore_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}/hard",
+                web::delete()
+                    .to(hard_delete_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(

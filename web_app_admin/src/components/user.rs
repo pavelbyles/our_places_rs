@@ -60,12 +60,34 @@ pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFn
     if params.is_host {
         roles.push("host".to_string());
     }
+    if params.is_admin {
+        roles.push("admin".to_string());
+    }
 
     let attributes = serde_json::json!({
         "can_manage_bookings": params.can_manage_bookings,
         "can_manage_listings": params.can_manage_listings,
-        "is_admin": params.is_admin
     });
+
+    let booker_profile = if params.is_booker {
+        Some(common::models::NewBookerProfile {
+            emergency_contacts: None,
+            booking_preferences: None,
+            loyalty: None,
+        })
+    } else {
+        None
+    };
+
+    let host_profile = if params.is_host {
+        Some(common::models::NewHostProfile {
+            verified_status: Some("verified".to_string()),
+            payout_details: None,
+            description: None,
+        })
+    } else {
+        None
+    };
 
     let request = NewUserRequest {
         email: params.email,
@@ -77,8 +99,8 @@ pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFn
         attributes: Some(attributes),
         roles: Some(roles),
         is_verified: true,
-        booker_profile: None,
-        host_profile: None,
+        booker_profile,
+        host_profile,
         default_currency: None,
     };
 
@@ -108,12 +130,34 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
     if params.is_host {
         roles.push("host".to_string());
     }
+    if params.is_admin {
+        roles.push("admin".to_string());
+    }
 
     let attributes = serde_json::json!({
         "can_manage_bookings": params.can_manage_bookings,
         "can_manage_listings": params.can_manage_listings,
-        "is_admin": params.is_admin
     });
+
+    let booker_profile = if params.is_booker {
+        Some(common::models::NewBookerProfile {
+            emergency_contacts: None,
+            booking_preferences: None,
+            loyalty: None,
+        })
+    } else {
+        None
+    };
+
+    let host_profile = if params.is_host {
+        Some(common::models::NewHostProfile {
+            verified_status: Some("verified".to_string()),
+            payout_details: None,
+            description: None,
+        })
+    } else {
+        None
+    };
 
     let request = UpdateUserRequest {
         email: Some(params.email),
@@ -125,8 +169,8 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
         attributes: Some(attributes),
         roles: Some(roles),
         is_verified: Some(true),
-        booker_profile: None,
-        host_profile: None,
+        booker_profile,
+        host_profile,
         default_currency: None,
     };
 
@@ -153,12 +197,16 @@ pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFn
 #[server]
 pub async fn get_users_server(
     search: Option<String>,
+    is_deleted: Option<bool>,
 ) -> Result<Vec<common::models::UserResponse>, ServerFnError> {
     let api_url = crate::api_client::user_api_url();
-    let mut url = format!("{}/api/v1/users/?page=1&per_page=20", api_url);
+    let mut url = format!("{}/api/v1/users/?page=1&per_page=50", api_url);
 
     if let Some(s) = search {
         url.push_str(&format!("&search={}", s));
+    }
+    if let Some(deleted) = is_deleted {
+        url.push_str(&format!("&is_deleted={}", deleted));
     }
 
     let res = crate::api_client::get_client()
@@ -178,6 +226,66 @@ pub async fn get_users_server(
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(users)
+}
+
+#[server]
+pub async fn soft_delete_user_server(id: String) -> Result<(), ServerFnError> {
+    let api_url = crate::api_client::user_api_url();
+    let url = format!("{}/api/v1/users/user/{}", api_url, id);
+
+    let res = crate::api_client::get_client()
+        .delete(&url, &api_url)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to delete user: {}",
+            res.status()
+        )))
+    }
+}
+
+#[server]
+pub async fn restore_user_server(id: String) -> Result<(), ServerFnError> {
+    let api_url = crate::api_client::user_api_url();
+    let url = format!("{}/api/v1/users/user/{}/restore", api_url, id);
+
+    let res = crate::api_client::get_client()
+        .post(&url, &api_url, &serde_json::json!({}))
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to restore user: {}",
+            res.status()
+        )))
+    }
+}
+
+#[server]
+pub async fn hard_delete_user_server(id: String) -> Result<(), ServerFnError> {
+    let api_url = crate::api_client::user_api_url();
+    let url = format!("{}/api/v1/users/user/{}/hard", api_url, id);
+
+    let res = crate::api_client::get_client()
+        .delete(&url, &api_url)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to hard delete user: {}",
+            res.status()
+        )))
+    }
 }
 
 #[server]
@@ -208,6 +316,9 @@ pub async fn get_user_server(email: String) -> Result<common::models::UserRespon
 pub fn UserPage() -> impl IntoView {
     let create_user = ServerAction::<CreateUserServer>::new();
     let update_user = ServerAction::<UpdateUserServer>::new();
+    let soft_delete_user_action = ServerAction::<SoftDeleteUserServer>::new();
+    let restore_user_action = ServerAction::<RestoreUserServer>::new();
+    let hard_delete_user_action = ServerAction::<HardDeleteUserServer>::new();
     let created_user_value = create_user.value();
     let updated_user_value = update_user.value();
 
@@ -227,11 +338,36 @@ pub fn UserPage() -> impl IntoView {
     let (first_name, set_first_name) = signal(String::new());
     let (last_name, set_last_name) = signal(String::new());
 
-    // User List State
+    // User List State (Active)
     let (search, set_search) = signal(String::new());
     let users_resource = Resource::new(
-        move || search.get(),
-        |s| async move { get_users_server(Some(s)).await },
+        move || {
+            (
+                search.get(),
+                soft_delete_user_action.version().get(),
+                restore_user_action.version().get(),
+                hard_delete_user_action.version().get(),
+                created_user_value.get(),
+                updated_user_value.get(),
+            )
+        },
+        |(s, _, _, _, _, _)| async move { get_users_server(Some(s), Some(false)).await },
+    );
+
+    // Deleted Users State
+    let (deleted_search, set_deleted_search) = signal(String::new());
+    let deleted_users_resource = Resource::new(
+        move || {
+            (
+                deleted_search.get(),
+                soft_delete_user_action.version().get(),
+                restore_user_action.version().get(),
+                hard_delete_user_action.version().get(),
+                created_user_value.get(),
+                updated_user_value.get(),
+            )
+        },
+        |(s, _, _, _, _, _)| async move { get_users_server(Some(s), Some(true)).await },
     );
 
     let is_form_valid = move || {
@@ -315,10 +451,6 @@ pub fn UserPage() -> impl IntoView {
                                     <td class="text-left font-normal">"Can Manage Listings"</td>
                                     <td><div class="flex justify-end w-full"><input type="checkbox" name="params[can_manage_listings]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
-                                <tr>
-                                    <td class="text-left font-normal">"Is Admin"</td>
-                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_admin]" class="checkbox checkbox-sm" value="true" /></div></td>
-                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -340,6 +472,10 @@ pub fn UserPage() -> impl IntoView {
                                 <tr>
                                     <td class="text-left font-normal">"Is Host"</td>
                                     <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_host]" class="checkbox checkbox-sm" value="true" /></div></td>
+                                </tr>
+                                <tr>
+                                    <td class="text-left font-normal">"Is Admin"</td>
+                                    <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_admin]" class="checkbox checkbox-sm" value="true" /></div></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -431,10 +567,6 @@ pub fn UserPage() -> impl IntoView {
                                             <td class="text-left font-normal">"Can Manage Listings"</td>
                                             <td><div class="flex justify-end w-full"><input type="checkbox" name="params[can_manage_listings]" class="checkbox checkbox-sm" value="true" node_ref=can_manage_listings_ref /></div></td>
                                         </tr>
-                                        <tr>
-                                            <td class="text-left font-normal">"Is Admin"</td>
-                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_admin]" class="checkbox checkbox-sm" value="true" node_ref=is_admin_ref /></div></td>
-                                        </tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -456,6 +588,10 @@ pub fn UserPage() -> impl IntoView {
                                         <tr>
                                             <td class="text-left font-normal">"Is Host"</td>
                                             <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_host]" class="checkbox checkbox-sm" value="true" node_ref=is_host_ref /></div></td>
+                                        </tr>
+                                        <tr>
+                                            <td class="text-left font-normal">"Is Admin"</td>
+                                            <td><div class="flex justify-end w-full"><input type="checkbox" name="params[is_admin]" class="checkbox checkbox-sm" value="true" node_ref=is_admin_ref /></div></td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -552,9 +688,6 @@ pub fn UserPage() -> impl IntoView {
                                                                                  if let Some(ref input) = can_manage_listings_ref.get() {
                                                                                      input.set_checked(attrs.get("can_manage_listings").and_then(|v| v.as_bool()).unwrap_or(false));
                                                                                  }
-                                                                                 if let Some(ref input) = is_admin_ref.get() {
-                                                                                     input.set_checked(attrs.get("is_admin").and_then(|v| v.as_bool()).unwrap_or(false));
-                                                                                 }
 
                                                                                  // Populate Roles
                                                                                  let roles = &fresh_user.roles;
@@ -563,6 +696,9 @@ pub fn UserPage() -> impl IntoView {
                                                                                  }
                                                                                  if let Some(ref input) = is_host_ref.get() {
                                                                                      input.set_checked(roles.contains(&"host".to_string()));
+                                                                                 }
+                                                                                 if let Some(ref input) = is_admin_ref.get() {
+                                                                                     input.set_checked(roles.iter().any(|r| r.to_lowercase() == "admin"));
                                                                                  }
                                                                             },
                                                                             Err(e) => tracing::error!("Failed to fetch user details: {}", e),
@@ -575,9 +711,19 @@ pub fn UserPage() -> impl IntoView {
                                                                     <div>{format!("{} {}", user_clone2.first_name, user_clone2.last_name)}</div>
                                                                     <div class="text-xs uppercase font-semibold opacity-60">{user_clone2.email}</div>
                                                                 </div>
-                                                                <button class="btn btn-square btn-ghost">
-                                                                     <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></g></svg>
-                                                                </button>
+                                                                <div class="flex gap-1 ml-auto">
+                                                                    <button class="btn btn-square btn-ghost" title="Edit User">
+                                                                         <svg class="size-[1.2em]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></g></svg>
+                                                                    </button>
+                                                                    <ActionForm action=soft_delete_user_action attr:class="inline">
+                                                                        <input type="hidden" name="id" value=user_clone2.id.to_string() />
+                                                                        <button type="submit" class="btn btn-square btn-ghost text-error" title="Delete User">
+                                                                            <svg class="size-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    </ActionForm>
+                                                                </div>
                                                             </li>
                                                         }
                                                     }
@@ -593,8 +739,66 @@ pub fn UserPage() -> impl IntoView {
                 </div>
             </div>
 
-            <input type="radio" name="my_tabs_3" class="tab" aria-label="Tab 3" />
-            <div class="tab-content bg-base-100 border-base-300 p-6">Tab content 3</div>
+            <input type="radio" name="my_tabs_3" class="tab" aria-label="Deleted Users" />
+            <div class="tab-content bg-base-100 border-base-300 p-6">
+                <div class="card bg-base-300 rounded-box p-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-lg">"Deleted Users Archive"</h3>
+                        <label class="input input-sm">
+                            <input
+                                type="search"
+                                class="grow"
+                                placeholder="Search deleted users..."
+                                prop:value=move || deleted_search.get()
+                                on:input=move |ev| set_deleted_search.set(event_target_value(&ev))
+                            />
+                        </label>
+                    </div>
+                    <ul class="list bg-base-100 rounded-box shadow-md">
+                        <Suspense fallback=move || view! { <li class="p-4">"Loading deleted users..."</li> }>
+                            {move || {
+                                deleted_users_resource.get().map(|result| match result {
+                                    Ok(users) if users.is_empty() => view! { <li class="p-4 text-center opacity-60">"No soft-deleted users found"</li> }.into_any(),
+                                    Ok(users) => view! {
+                                        <For
+                                            each=move || users.clone()
+                                            key=|u| u.id
+                                            children=move |user: common::models::UserResponse| {
+                                                let id_str1 = user.id.to_string();
+                                                let id_str2 = user.id.to_string();
+                                                view! {
+                                                    <li class="list-row flex justify-between items-center p-3 hover:bg-base-200">
+                                                        <div>
+                                                            <div class="font-semibold">{format!("{} {}", user.first_name, user.last_name)}</div>
+                                                            <div class="text-xs opacity-60">{user.email}</div>
+                                                            {user.deleted_at.map(|d| view! { <div class="text-xs text-error">"Deleted: " {d.format("%Y-%m-%d %H:%M").to_string()}</div> })}
+                                                        </div>
+                                                        <div class="flex gap-2">
+                                                            <ActionForm action=restore_user_action attr:class="inline">
+                                                                <input type="hidden" name="id" value=id_str1 />
+                                                                <button type="submit" class="btn btn-sm btn-success">
+                                                                    "Restore"
+                                                                </button>
+                                                            </ActionForm>
+                                                            <ActionForm action=hard_delete_user_action attr:class="inline">
+                                                                <input type="hidden" name="id" value=id_str2 />
+                                                                <button type="submit" class="btn btn-sm btn-error">
+                                                                    "Hard Delete"
+                                                                </button>
+                                                            </ActionForm>
+                                                        </div>
+                                                    </li>
+                                                }
+                                            }
+                                        />
+                                    }.into_any(),
+                                    Err(e) => view! { <li class="text-error p-4">{format!("Error loading deleted users: {}", e)}</li> }.into_any()
+                                })
+                            }}
+                        </Suspense>
+                    </ul>
+                </div>
+            </div>
         </div>
         </RequireAuth>
     }

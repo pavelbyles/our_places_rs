@@ -3,7 +3,6 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UserAttribute {
-    IsAdmin,
     CanManageListings,
     CanManageBookings,
 }
@@ -11,7 +10,6 @@ pub enum UserAttribute {
 impl UserAttribute {
     pub fn as_str(&self) -> &'static str {
         match self {
-            UserAttribute::IsAdmin => "is_admin",
             UserAttribute::CanManageListings => "can_manage_listings",
             UserAttribute::CanManageBookings => "can_manage_bookings",
         }

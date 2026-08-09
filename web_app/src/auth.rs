@@ -154,7 +154,13 @@ pub async fn login_traditional(email: String, password: String) -> Result<(), Se
             .insert("user_default_currency", user_resp.default_currency)
             .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
-        leptos_actix::redirect("/");
+        let transferred_booking = try_transfer_pending_booking(&session, user_resp.id).await;
+
+        if let Some(booking_id) = transferred_booking {
+            leptos_actix::redirect(&format!("/checkout/{}", booking_id));
+        } else {
+            leptos_actix::redirect("/");
+        }
     }
 
     Ok(())
@@ -213,7 +219,6 @@ pub async fn register(
             is_active: true,
             is_verified: false,
             attributes: Some(serde_json::json!({
-                "is_admin": false,
                 "can_manage_listings": false,
                 "can_manage_bookings": false
             })),
@@ -255,7 +260,7 @@ pub async fn register(
         }
 
         // Redirect to verification page
-        leptos_actix::redirect(format!("/verify?email={}", email).as_str());
+        leptos_actix::redirect(format!("/verify?email={}", urlencoding::encode(&email)).as_str());
     }
 
     Ok(())
@@ -333,7 +338,17 @@ pub async fn verify_email_code(email: String, code: String) -> Result<(), Server
             .map_err(|e| ServerFnError::new(format!("API Request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(ServerFnError::new("Invalid or expired verification code"));
+            let error_text = response.text().await.unwrap_or_default();
+            if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&error_text) {
+                if let Some(msg) = json_val.get("message").and_then(|m| m.as_str()) {
+                    return Err(ServerFnError::new(msg.to_string()));
+                }
+            }
+            return Err(ServerFnError::new(if error_text.is_empty() {
+                "Invalid or expired verification code".to_string()
+            } else {
+                error_text
+            }));
         }
 
         let user_resp: common::models::UserResponse = response
@@ -362,7 +377,13 @@ pub async fn verify_email_code(email: String, code: String) -> Result<(), Server
             .insert("user_default_currency", user_resp.default_currency)
             .map_err(|_| ServerFnError::new("Failed to set session"))?;
 
-        leptos_actix::redirect("/");
+        let transferred_booking = try_transfer_pending_booking(&session, user_resp.id).await;
+
+        if let Some(booking_id) = transferred_booking {
+            leptos_actix::redirect(&format!("/checkout/{}", booking_id));
+        } else {
+            leptos_actix::redirect("/");
+        }
     }
 
     Ok(())
@@ -582,4 +603,33 @@ pub async fn try_extract_session() -> Result<Session, ServerFnError> {
     leptos_actix::extract::<Session>()
         .await
         .map_err(|_| ServerFnError::new("Session not found"))
+}
+
+#[cfg(feature = "ssr")]
+pub async fn try_transfer_pending_booking(
+    session: &Session,
+    new_user_id: uuid::Uuid,
+) -> Option<uuid::Uuid> {
+    let booking_id = if let Ok(Some(booking_id_str)) = session.get::<String>("pending_booking_id") {
+        uuid::Uuid::parse_str(&booking_id_str).ok()
+    } else {
+        None
+    };
+
+    if let Some(bid) = booking_id {
+        let pool = web_app_common::api_client::get_pool().await;
+        if db_core::booking::transfer_booking_guest(&pool, bid, new_user_id)
+            .await
+            .is_ok()
+        {
+            tracing::info!(
+                "Transferred pending booking {} to user {}",
+                bid,
+                new_user_id
+            );
+        }
+        session.remove("pending_booking_id");
+        return Some(bid);
+    }
+    None
 }

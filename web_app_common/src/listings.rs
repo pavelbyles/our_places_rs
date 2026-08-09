@@ -80,3 +80,71 @@ pub async fn get_listing_by_id_server(
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(details)
 }
+
+#[server]
+pub async fn get_pricing_quote_server(
+    listing_id: uuid::Uuid,
+    check_in: chrono::NaiveDate,
+    check_out: chrono::NaiveDate,
+    currency: Option<String>,
+) -> Result<common::models::DynamicPricingQuote, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use crate::api_client::get_pool;
+        use db_core::listing as db_listing;
+        use rust_decimal::Decimal;
+
+        let pool = get_pool().await;
+        let listing_details = db_listing::get_listing_by_id(&pool, listing_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("Listing not found: {}", e)))?;
+
+        let listing = listing_details.listing;
+        let mut base_nightly_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
+        let target_currency = currency.unwrap_or_else(|| listing.base_currency.clone());
+        let mut conversion_rate = Decimal::ONE;
+
+        if target_currency != listing.base_currency
+            && let Ok((rate, _)) = db_core::currency::get_exchange_rate_and_currency(
+                &pool,
+                &listing.base_currency,
+                &target_currency,
+            )
+            .await
+        {
+            conversion_rate = rate;
+            base_nightly_rate = (base_nightly_rate * rate).round_dp(2);
+        }
+
+        let raw_overrides =
+            db_listing::get_active_overrides_for_dates(&pool, listing_id, check_in, check_out)
+                .await
+                .unwrap_or_default();
+
+        let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
+            .into_iter()
+            .map(|mut ovr| {
+                if conversion_rate != Decimal::ONE {
+                    ovr.nightly_rate = (ovr.nightly_rate * conversion_rate).round_dp(2);
+                }
+                ovr
+            })
+            .collect();
+
+        let quote = common::pricing::calculate_dynamic_quote(
+            base_nightly_rate,
+            listing.minimum_stay,
+            &converted_overrides,
+            check_in,
+            check_out,
+        )
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        Ok(quote)
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, check_in, check_out, currency);
+        Err(ServerFnError::new("SSR feature required"))
+    }
+}

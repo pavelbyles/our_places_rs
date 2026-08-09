@@ -298,4 +298,57 @@ impl AuthenticatedClient {
             .await
             .context("Failed to send PATCH request")
     }
+
+    /// Creates a DELETE request builder with OIDC Authorization and API Key.
+    pub async fn delete_request(
+        &self,
+        url: &str,
+        audience: &str,
+    ) -> Result<reqwest::RequestBuilder> {
+        let token = self.token_provider.get_token(audience).await?;
+        let builder = self
+            .client
+            .delete(url)
+            .header(AUTHORIZATION, format!("Bearer {}", token));
+        Ok(self.add_api_key(builder))
+    }
+
+    /// Sends a DELETE request with OIDC Authorization.
+    pub async fn delete(&self, url: &str, audience: &str) -> Result<reqwest::Response> {
+        self.delete_request(url, audience)
+            .await?
+            .send()
+            .await
+            .context("Failed to send DELETE request")
+    }
+
+    /// Creates a PUT request builder with OIDC Authorization and API Key.
+    pub async fn put_request<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        audience: &str,
+        json: &T,
+    ) -> Result<reqwest::RequestBuilder> {
+        let token = self.token_provider.get_token(audience).await?;
+        let builder = self
+            .client
+            .put(url)
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .json(json);
+        Ok(self.add_api_key(builder))
+    }
+
+    /// Sends a PUT request with OIDC Authorization.
+    pub async fn put<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        audience: &str,
+        json: &T,
+    ) -> Result<reqwest::Response> {
+        self.put_request(url, audience, json)
+            .await?
+            .send()
+            .await
+            .context("Failed to send PUT request")
+    }
 }

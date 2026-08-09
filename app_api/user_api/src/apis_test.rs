@@ -563,3 +563,112 @@ async fn test_resend_verification_already_verified() {
     let resp3 = test::call_service(&app, req3).await;
     assert_eq!(resp3.status(), 401);
 }
+
+#[actix_web::test]
+async fn test_verify_user_lowercase_and_whitespace() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let email = format!("case_test_{}@example.com", Uuid::now_v7());
+    let req_body = json!({
+        "email": email,
+        "password": "password123",
+        "first_name": "Case",
+        "last_name": "Test",
+        "is_active": true,
+        "roles": ["booker"],
+        "booker_profile": { "loyalty": {"points": 0} }
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/")
+        .set_json(&req_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let initial_user: UserResponse = test::read_body_json(resp).await;
+
+    // Verify user using lowercase and extra surrounding whitespace
+    let raw_code = initial_user.verification_code.unwrap();
+    let modified_code = format!("  {}  ", raw_code.to_lowercase());
+
+    let verify_req_body = json!({ "email": email, "code": modified_code });
+    let req2 = test::TestRequest::post()
+        .uri("/api/v1/users/verify")
+        .set_json(&verify_req_body)
+        .to_request();
+    let resp2 = test::call_service(&app, req2).await;
+    assert_eq!(resp2.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_soft_restore_hard_delete_user() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let email = format!("to_delete_{}@example.com", Uuid::now_v7());
+    let req_body = json!({
+        "email": email,
+        "password": "password123",
+        "first_name": "Delete",
+        "last_name": "Me",
+        "is_active": true,
+        "roles": ["booker"],
+        "booker_profile": { "loyalty": {"points": 0} }
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/")
+        .set_json(&req_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let created_user: UserResponse = test::read_body_json(resp).await;
+
+    // Soft delete user
+    let req_soft = test::TestRequest::delete()
+        .uri(&format!("/api/v1/users/user/{}", created_user.id))
+        .to_request();
+    let resp_soft = test::call_service(&app, req_soft).await;
+    assert_eq!(resp_soft.status(), 200);
+    let soft_deleted: UserResponse = test::read_body_json(resp_soft).await;
+    assert!(soft_deleted.deleted_at.is_some());
+
+    // Restore user
+    let req_restore = test::TestRequest::post()
+        .uri(&format!("/api/v1/users/user/{}/restore", created_user.id))
+        .to_request();
+    let resp_restore = test::call_service(&app, req_restore).await;
+    assert_eq!(resp_restore.status(), 200);
+    let restored: UserResponse = test::read_body_json(resp_restore).await;
+    assert!(restored.deleted_at.is_none());
+
+    // Hard delete user
+    let req_hard = test::TestRequest::delete()
+        .uri(&format!("/api/v1/users/user/{}/hard", created_user.id))
+        .to_request();
+    let resp_hard = test::call_service(&app, req_hard).await;
+    assert_eq!(resp_hard.status(), 204);
+}

@@ -129,6 +129,110 @@ pub async fn presign_images_server(
     }
 }
 
+#[server]
+pub async fn get_price_overrides_server(
+    listing_id: String,
+) -> Result<Vec<common::models::PriceOverride>, ServerFnError> {
+    let api_url = crate::api_client::listing_api_url();
+    let res = crate::api_client::get_client()
+        .get(
+            &format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id),
+            &api_url,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        let overrides: Vec<common::models::PriceOverride> = res
+            .json()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(overrides)
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to fetch price overrides: {}",
+            res.status()
+        )))
+    }
+}
+
+#[server]
+pub async fn create_price_override_server(
+    listing_id: String,
+    start_date: String,
+    end_date: String,
+    nightly_rate: String,
+    min_nights: i32,
+) -> Result<common::models::PriceOverride, ServerFnError> {
+    use chrono::NaiveDate;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    let api_url = crate::api_client::listing_api_url();
+    let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+        .map_err(|_| ServerFnError::new("Invalid start date format (YYYY-MM-DD)"))?;
+    let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+        .map_err(|_| ServerFnError::new("Invalid end date format (YYYY-MM-DD)"))?;
+    let rate = Decimal::from_str(&nightly_rate)
+        .map_err(|_| ServerFnError::new("Invalid nightly rate decimal"))?;
+
+    let request = common::models::CreatePriceOverrideRequest {
+        start_date: start,
+        end_date: end,
+        nightly_rate: rate,
+        min_nights,
+    };
+
+    let res = crate::api_client::get_client()
+        .post(
+            &format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id),
+            &api_url,
+            &request,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        let created: common::models::PriceOverride = res
+            .json()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(created)
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to create price override: {}",
+            res.status()
+        )))
+    }
+}
+
+#[server]
+pub async fn delete_price_override_server(
+    listing_id: String,
+    override_id: String,
+) -> Result<(), ServerFnError> {
+    let api_url = crate::api_client::listing_api_url();
+    let res = crate::api_client::get_client()
+        .delete(
+            &format!(
+                "{}/api/v1/listings/{}/price-overrides/{}",
+                api_url, listing_id, override_id
+            ),
+            &api_url,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if res.status().is_success() {
+        Ok(())
+    } else {
+        Err(ServerFnError::new(format!(
+            "Failed to delete price override: {}",
+            res.status()
+        )))
+    }
+}
+
 #[component]
 #[allow(non_snake_case)]
 pub fn ListingsPage() -> impl IntoView {
@@ -296,10 +400,9 @@ pub fn ListingsPage() -> impl IntoView {
     });
 
     let on_email_input = move |ev| {
-        let val = event_target_value(&ev);
+        let val = event_target_value(&ev).trim().to_string();
         set_owner_email_input.set(val.clone());
         set_owner_id_validated.set(None);
-        set_owner_id_error.set(false);
 
         timeout_handle.update_value(|h: &mut Option<TimeoutHandle>| {
             if let Some(handle) = h.take() {
@@ -308,8 +411,18 @@ pub fn ListingsPage() -> impl IntoView {
         });
 
         if val.is_empty() {
+            set_owner_id_error.set(false);
             return;
         }
+
+        // Validate email format using validator
+        use validator::ValidateEmail;
+        if !val.validate_email() {
+            set_owner_id_error.set(true);
+            return;
+        }
+
+        set_owner_id_error.set(false);
 
         let handle = set_timeout_with_handle(
             move || {
@@ -326,7 +439,7 @@ pub fn ListingsPage() -> impl IntoView {
                     }
                 });
             },
-            std::time::Duration::from_secs(2),
+            std::time::Duration::from_millis(500),
         )
         .ok();
 
@@ -405,13 +518,20 @@ pub fn ListingsPage() -> impl IntoView {
             }
         }
 
-        // Set owner ID and placeholder email if email is unknown
-        set_owner_id_validated.set(Some(existing.user_id.to_string()));
-        set_owner_email_input.set(
-            existing
-                .owner_name
-                .unwrap_or_else(|| "owner@example.com".to_string()),
-        );
+        // Set owner ID and fetch actual owner email
+        let owner_id_str = existing.user_id.to_string();
+        set_owner_id_validated.set(Some(owner_id_str.clone()));
+        set_owner_id_error.set(false);
+        spawn_local(async move {
+            match crate::components::user::get_user_server(owner_id_str).await {
+                Ok(user) => {
+                    set_owner_email_input.set(user.email);
+                }
+                Err(e) => {
+                    leptos::logging::error!("Failed to fetch owner email by id: {:?}", e);
+                }
+            }
+        });
     };
 
     view! {
@@ -569,34 +689,57 @@ pub fn ListingsPage() -> impl IntoView {
                                     key=|listing| listing.id
                                     children=move |listing| {
                                         let listing_to_populate = listing.clone();
+                                        let (show_overrides, set_show_overrides) = signal(false);
+                                        let listing_id_str = listing.id.to_string();
+                                        let listing_name_str = listing.name.clone();
+
                                         view! {
-                                            <div class="card bg-base-100 shadow-sm flex flex-row">
-                                                <figure class="w-48 h-48 flex-none">
-                                                    <img
-                                                        class="h-full w-full object-cover"
-                                                        src={listing.primary_image_url.clone().unwrap_or_else(|| "https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp".to_string())}
-                                                        alt="Listing Image" />
-                                                </figure>
-                                                <div class="card-body">
-                                                    <h2 class="card-title">{listing.name.clone()}</h2>
-                                                    <p class="text-sm text-gray-500">
-                                                        "Owner: " {listing.owner_name.clone().unwrap_or_else(|| "Unknown".to_string())}
-                                                    </p>
-                                                    <p class="text-sm">{listing.description.clone().unwrap_or_default()}</p>
-                                                    <div class="card-actions justify-end">
-                                                        <span class="badge badge-outline">{listing.listing_structure.clone()}</span>
-                                                        <span class="badge badge-ghost">
-                                                            {listing.price_per_night.map(|p| format!("${}", p)).unwrap_or_default()}
-                                                        </span>
-                                                        <button
-                                                            class="btn btn-secondary btn-sm"
-                                                            on:click=move |_| populate_from_existing(listing_to_populate.clone())
-                                                        >
-                                                            "Populate"
-                                                        </button>
-                                                        <button class="btn btn-primary btn-sm">View</button>
+                                            <div class="card bg-base-100 shadow-sm flex flex-col p-4 mb-4">
+                                                <div class="flex flex-row">
+                                                    <figure class="w-48 h-48 flex-none">
+                                                        <img
+                                                            class="h-full w-full object-cover"
+                                                            src={listing.primary_image_url.clone().unwrap_or_else(|| "https://img.daisyui.com/images/stock/photo-1635805737707-575885ab0820.webp".to_string())}
+                                                            alt="Listing Image" />
+                                                    </figure>
+                                                    <div class="card-body">
+                                                        <h2 class="card-title">{listing.name.clone()}</h2>
+                                                        <p class="text-sm text-gray-500">
+                                                            "Owner: " {listing.owner_name.clone().unwrap_or_else(|| "Unknown".to_string())}
+                                                        </p>
+                                                        <p class="text-sm">{listing.description.clone().unwrap_or_default()}</p>
+                                                        <div class="card-actions justify-end">
+                                                            <span class="badge badge-outline">{listing.listing_structure.clone()}</span>
+                                                            <span class="badge badge-ghost">
+                                                                {listing.price_per_night.map(|p| format!("${}", p)).unwrap_or_default()}
+                                                            </span>
+                                                            <button
+                                                                class="btn btn-accent btn-sm"
+                                                                on:click=move |_| set_show_overrides.update(|v| *v = !*v)
+                                                            >
+                                                                {move || if show_overrides.get() { "Hide Seasonal Rates" } else { "Seasonal Rates" }}
+                                                            </button>
+                                                            <button
+                                                                class="btn btn-secondary btn-sm"
+                                                                on:click=move |_| populate_from_existing(listing_to_populate.clone())
+                                                            >
+                                                                "Populate"
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
+                                                {move || {
+                                                    if show_overrides.get() {
+                                                        view! {
+                                                            <PriceOverridesSection
+                                                                listing_id=listing_id_str.clone()
+                                                                listing_name=listing_name_str.clone()
+                                                            />
+                                                        }.into_any()
+                                                    } else {
+                                                        ().into_any()
+                                                    }
+                                                }}
                                             </div>
                                         }
                                     }
@@ -652,8 +795,8 @@ pub fn ListingsPage() -> impl IntoView {
                                 }
                             >
                                 <input
-                                    type="text"
-                                    placeholder="Owner Email"
+                                    type="email"
+                                    placeholder="Owner Email (e.g. host@example.com)"
                                     class="grow"
                                     on:input=on_email_input
                                     prop:value=move || owner_email_input.get()
@@ -1039,5 +1182,198 @@ pub fn ListingsPage() -> impl IntoView {
                 </div>
             </div>
         </RequireAuth>
+    }
+}
+
+#[component]
+#[allow(non_snake_case)]
+pub fn PriceOverridesSection(listing_id: String, listing_name: String) -> impl IntoView {
+    let (overrides, set_overrides) = signal(Vec::<common::models::PriceOverride>::new());
+    let (loading, set_loading) = signal(false);
+    let (error_msg, set_error_msg) = signal(None::<String>);
+
+    let (start_date, set_start_date) = signal(String::new());
+    let (end_date, set_end_date) = signal(String::new());
+    let (nightly_rate, set_nightly_rate) = signal(String::new());
+    let (min_nights, set_min_nights) = signal(1i32);
+
+    let lid_for_effect = listing_id.clone();
+    Effect::new(move |_| {
+        let lid = lid_for_effect.clone();
+        spawn_local(async move {
+            set_loading.set(true);
+            set_error_msg.set(None);
+            match get_price_overrides_server(lid).await {
+                Ok(data) => set_overrides.set(data),
+                Err(e) => set_error_msg.set(Some(e.to_string())),
+            }
+            set_loading.set(false);
+        });
+    });
+
+    let lid_for_add = listing_id.clone();
+    let on_add_override = move |ev: SubmitEvent| {
+        ev.prevent_default();
+        let lid = lid_for_add.clone();
+        let s_date = start_date.get();
+        let e_date = end_date.get();
+        let rate = nightly_rate.get();
+        let min_n = min_nights.get();
+
+        if s_date.is_empty() || e_date.is_empty() || rate.is_empty() {
+            set_error_msg.set(Some("Please fill out all required fields.".to_string()));
+            return;
+        }
+
+        set_loading.set(true);
+        spawn_local(async move {
+            match create_price_override_server(lid.clone(), s_date, e_date, rate, min_n).await {
+                Ok(_) => {
+                    set_start_date.set(String::new());
+                    set_end_date.set(String::new());
+                    set_nightly_rate.set(String::new());
+                    set_min_nights.set(1);
+                    if let Ok(data) = get_price_overrides_server(lid).await {
+                        set_overrides.set(data);
+                    }
+                    set_loading.set(false);
+                }
+                Err(e) => {
+                    set_error_msg.set(Some(e.to_string()));
+                    set_loading.set(false);
+                }
+            }
+        });
+    };
+
+    let lid_for_del = listing_id.clone();
+
+    view! {
+        <div class="mt-4 p-4 border border-base-300 rounded-box bg-base-200 space-y-4">
+            <div class="flex justify-between items-center">
+                <h3 class="font-bold text-md text-primary">"Seasonal Rates & Pricing Overrides — " {listing_name}</h3>
+            </div>
+
+            {move || error_msg.get().map(|msg| view! {
+                <div class="alert alert-error text-xs p-2">
+                    <span>{msg}</span>
+                </div>
+            })}
+
+            <div class="overflow-x-auto">
+                <table class="table table-zebra w-full text-xs">
+                    <thead>
+                        <tr>
+                            <th>"Start Date"</th>
+                            <th>"End Date"</th>
+                            <th>"Nightly Rate"</th>
+                            <th>"Min Stay"</th>
+                            <th>"Action"</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <For
+                            each=move || overrides.get()
+                            key=|ovr| ovr.id
+                            children={
+                                let lid_base = lid_for_del.clone();
+                                move |ovr| {
+                                    let ovr_id = ovr.id.to_string();
+                                    let lid_for_item = lid_base.clone();
+                                    view! {
+                                        <tr>
+                                            <td>{ovr.start_date.to_string()}</td>
+                                            <td>{ovr.end_date.to_string()}</td>
+                                            <td class="font-semibold text-primary">"$" {ovr.nightly_rate.to_string()}</td>
+                                            <td>{ovr.min_nights} " nights"</td>
+                                            <td>
+                                                <button
+                                                    class="btn btn-error btn-xs"
+                                                    on:click=move |_| {
+                                                        let lid_c = lid_for_item.clone();
+                                                        let ovr_c = ovr_id.clone();
+                                                        set_loading.set(true);
+                                                        spawn_local(async move {
+                                                            match delete_price_override_server(lid_c.clone(), ovr_c).await {
+                                                                Ok(_) => {
+                                                                    if let Ok(data) = get_price_overrides_server(lid_c).await {
+                                                                        set_overrides.set(data);
+                                                                    }
+                                                                    set_loading.set(false);
+                                                                }
+                                                                Err(e) => {
+                                                                    set_error_msg.set(Some(e.to_string()));
+                                                                    set_loading.set(false);
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                >
+                                                    "Delete"
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            }
+                        />
+                    </tbody>
+                </table>
+            </div>
+
+
+            <form on:submit=on_add_override class="flex flex-wrap gap-2 items-end pt-2 border-t border-base-300">
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs">Start Date</span></label>
+                    <input
+                        type="date"
+                        class="input input-bordered input-xs"
+                        on:input=move |ev| set_start_date.set(event_target_value(&ev))
+                        prop:value=move || start_date.get()
+                        required
+                    />
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs">End Date</span></label>
+                    <input
+                        type="date"
+                        class="input input-bordered input-xs"
+                        on:input=move |ev| set_end_date.set(event_target_value(&ev))
+                        prop:value=move || end_date.get()
+                        required
+                    />
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs">Nightly Rate ($)</span></label>
+                    <input
+                        type="number"
+                        step="0.01"
+                        placeholder="250.00"
+                        class="input input-bordered input-xs w-24"
+                        on:input=move |ev| set_nightly_rate.set(event_target_value(&ev))
+                        prop:value=move || nightly_rate.get()
+                        required
+                    />
+                </div>
+                <div class="form-control">
+                    <label class="label py-1"><span class="label-text text-xs">Min Nights</span></label>
+                    <input
+                        type="number"
+                        min="1"
+                        class="input input-bordered input-xs w-20"
+                        on:input=move |ev| {
+                            if let Ok(v) = event_target_value(&ev).parse::<i32>() {
+                                set_min_nights.set(v);
+                            }
+                        }
+                        prop:value=move || min_nights.get()
+                        required
+                    />
+                </div>
+                <button type="submit" class="btn btn-primary btn-xs" prop:disabled=move || loading.get()>
+                    "Add Rate Override"
+                </button>
+            </form>
+        </div>
     }
 }
