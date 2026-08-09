@@ -137,6 +137,7 @@ pub struct ListingImageResponse {
 pub struct ListingDetails {
     pub listing: ListingResponse,
     pub images: Vec<ListingImageResponse>,
+    pub host_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -182,6 +183,7 @@ pub struct UserResponse {
     pub attributes: serde_json::Value,
     pub roles: Vec<String>,
     pub default_currency: String,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
@@ -336,4 +338,48 @@ pub fn default_days_between_bookings() -> i32 {
 
 pub fn default_base_currency() -> String {
     "USD".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct PriceOverride {
+    pub id: Uuid,
+    pub listing_id: Uuid,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub nightly_rate: Decimal,
+    pub min_nights: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
+pub struct CreatePriceOverrideRequest {
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub nightly_rate: Decimal,
+    #[serde(default = "default_minimum_stay")]
+    pub min_nights: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
+pub struct UpdatePriceOverrideRequest {
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
+    pub nightly_rate: Option<Decimal>,
+    pub min_nights: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct NightlyRateBreakdown {
+    pub date: NaiveDate,
+    pub rate: Decimal,
+    pub is_override: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct DynamicPricingQuote {
+    pub nightly_breakdown: Vec<NightlyRateBreakdown>,
+    pub subtotal: Decimal,
+    pub effective_daily_rate: Decimal,
+    pub required_min_nights: i32,
 }

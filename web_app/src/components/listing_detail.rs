@@ -35,6 +35,7 @@ pub fn ListingDetailPage() -> impl IntoView {
                     Ok(details) => {
                         let listing = details.listing;
                         let images = details.images;
+                        let host_name = details.host_name;
 
                         let carousel_content = if images.is_empty() {
                             view! {
@@ -114,6 +115,32 @@ pub fn ListingDetailPage() -> impl IntoView {
                                                 {listing.city.clone().unwrap_or_default()} {if listing.city.is_some() { ", " } else { "" }} {listing.country.clone()}
                                             </p>
                                         </div>
+
+                                        {
+                                            let hn = host_name.clone();
+                                            view! {
+                                                {move || {
+                                                    hn.as_ref().map(|name| {
+                                                        let avatar_url = format!("https://ui-avatars.com/api/?name={}&background=random&size=80&rounded=true", name);
+                                                        view! {
+                                                            <div class="flex items-center gap-3 py-4 border-y border-base-200">
+                                                                <div class="avatar">
+                                                                    <div class="w-10 h-10 rounded-full ring ring-primary/20">
+                                                                        <img
+                                                                            src=avatar_url
+                                                                            alt=format!("Host {}", name)
+                                                                            width="40"
+                                                                            height="40"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                <span class="text-lg text-base-content/80">"Hosted by " {name.clone()}</span>
+                                                            </div>
+                                                        }
+                                                    })
+                                                }}
+                                            }
+                                        }
 
                                         <div class="hidden lg:block h-px bg-base-200"></div>
 

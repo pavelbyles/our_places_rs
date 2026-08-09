@@ -132,11 +132,12 @@ async fn create_booking(
         ));
     }
 
-    let mut actual_daily_rate = listing_details
+    let mut base_nightly_rate = listing_details
         .listing
         .price_per_night
         .unwrap_or(Decimal::ZERO);
     let mut booking_currency = req_data.currency.clone();
+    let mut conversion_rate = Decimal::ONE;
 
     #[allow(clippy::collapsible_if)]
     if req_data.currency != listing_details.listing.base_currency {
@@ -147,18 +148,63 @@ async fn create_booking(
         )
         .await
         {
-            actual_daily_rate = (actual_daily_rate * rate).round_dp(2);
+            conversion_rate = rate;
+            base_nightly_rate = (base_nightly_rate * rate).round_dp(2);
             booking_currency = final_curr;
         }
     }
 
-    let calculator = BookingCalculator::new(actual_daily_rate, total_days)
-        .apply_discounts(
-            listing_details.listing.monthly_discount_percentage,
-            listing_details.listing.weekly_discount_percentage,
-        )
-        .apply_taxes()
-        .finalize();
+    let raw_overrides = db_listing::get_active_overrides_for_dates(
+        pool.get_ref(),
+        req_data.listing_id,
+        req_data.check_in,
+        req_data.check_out,
+    )
+    .await
+    .unwrap_or_default();
+
+    let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
+        .into_iter()
+        .map(|mut ovr| {
+            if conversion_rate != Decimal::ONE {
+                ovr.nightly_rate = (ovr.nightly_rate * conversion_rate).round_dp(2);
+            }
+            ovr
+        })
+        .collect();
+
+    let dynamic_quote = common::pricing::calculate_dynamic_quote(
+        base_nightly_rate,
+        listing_details.listing.minimum_stay,
+        &converted_overrides,
+        req_data.check_in,
+        req_data.check_out,
+    )
+    .map_err(|err| match err {
+        common::pricing::PricingError::InvalidDateRange => {
+            ApiError::Database(db_core::error::DbError::ValidationError(
+                "Check-out date must be after check-in date".to_string(),
+            ))
+        }
+        common::pricing::PricingError::MinNightsNotMet { required, provided } => {
+            ApiError::Database(db_core::error::DbError::ValidationError(format!(
+                "Minimum night stay requirement not met for seasonal period: required {}, provided {}",
+                required, provided
+            )))
+        }
+    })?;
+
+    let calculator = BookingCalculator::with_subtotal(
+        dynamic_quote.effective_daily_rate,
+        total_days,
+        dynamic_quote.subtotal,
+    )
+    .apply_discounts(
+        listing_details.listing.monthly_discount_percentage,
+        listing_details.listing.weekly_discount_percentage,
+    )
+    .apply_taxes()
+    .finalize();
 
     let confirmation_code = generate_confirmation_code();
 

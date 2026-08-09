@@ -86,6 +86,7 @@ pub fn map_listing_details_to_response(
                 url: img.upload_url.unwrap_or_default(),
             })
             .collect(),
+        host_name: details.owner_name,
     }
 }
 

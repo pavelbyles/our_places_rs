@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, Default)]
 pub struct BookingMetadata {
     pub num_adults: u32,
     pub num_children: u32,
@@ -38,6 +38,7 @@ pub struct User {
     pub attributes: serde_json::Value,
     pub roles: Vec<UserRole>,
     pub default_currency: String,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -435,4 +436,47 @@ pub struct ListingImage {
 pub struct ListingDetails {
     pub listing: Listing,
     pub images: Vec<ListingImage>,
+    pub owner_name: Option<String>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct PriceOverride {
+    pub id: Uuid,
+    pub listing_id: Uuid,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub nightly_rate: Decimal,
+    pub min_nights: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<PriceOverride> for common::models::PriceOverride {
+    fn from(p: PriceOverride) -> Self {
+        common::models::PriceOverride {
+            id: p.id,
+            listing_id: p.listing_id,
+            start_date: p.start_date,
+            end_date: p.end_date,
+            nightly_rate: p.nightly_rate,
+            min_nights: p.min_nights,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        }
+    }
+}
+
+impl From<common::models::PriceOverride> for PriceOverride {
+    fn from(p: common::models::PriceOverride) -> Self {
+        PriceOverride {
+            id: p.id,
+            listing_id: p.listing_id,
+            start_date: p.start_date,
+            end_date: p.end_date,
+            nightly_rate: p.nightly_rate,
+            min_nights: p.min_nights,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        }
+    }
 }
