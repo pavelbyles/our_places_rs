@@ -87,6 +87,7 @@ pub fn map_listing_details_to_response(
             })
             .collect(),
         host_name: details.owner_name,
+        rating_summary: details.rating_summary,
     }
 }
 

@@ -212,6 +212,11 @@ pub fn ListingDetailPage() -> impl IntoView {
                                         }
                                     </div>
 
+                                    <div class="hidden lg:block h-px bg-base-200 mt-8 mb-4"></div>
+                                    
+                                    // Reviews Section
+                                    <ListingReviews listing_id=listing.id rating_summary=details.rating_summary />
+
                                     // Right Column: Booking Card
                                     <div class="lg:col-span-1">
                                         <div class="sticky top-8 flex flex-col gap-4">
@@ -231,5 +236,124 @@ pub fn ListingDetailPage() -> impl IntoView {
                 })
             }}
         </Suspense>
+    }
+}
+
+#[component]
+fn ListingReviews(
+    listing_id: uuid::Uuid,
+    rating_summary: Option<common::models::ListingRatingSummary>,
+) -> impl IntoView {
+    use web_app_common::reviews::get_listing_reviews_server;
+    
+    // We only fetch reviews if there's a rating summary indicating there are reviews
+    let review_count = rating_summary.as_ref().map(|s| s.review_count).unwrap_or(0);
+    
+    let reviews_resource = Resource::new(
+        move || listing_id,
+        |id| async move {
+            get_listing_reviews_server(id, 1, 10).await
+        }
+    );
+
+    view! {
+        <div class="flex flex-col gap-8 w-full">
+            {
+                if let Some(summary) = rating_summary.as_ref() {
+                    let overall = summary.overall_rating.unwrap_or(0.0);
+                    view! {
+                        <div class="flex flex-col gap-6">
+                            <div class="flex items-center gap-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                </svg>
+                                <span class="text-3xl font-bold text-base-content">{format!("{:.2}", overall)}</span>
+                                <span class="text-2xl text-base-content/60">"·"</span>
+                                <span class="text-2xl font-bold text-base-content">{summary.review_count} " Reviews"</span>
+                            </div>
+                            
+                            // Sub-ratings grid
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                                <RatingBar label="Cleanliness" value=summary.cleanliness_rating.unwrap_or(0.0) />
+                                <RatingBar label="Accuracy" value=summary.accuracy_rating.unwrap_or(0.0) />
+                                <RatingBar label="Location" value=summary.location_rating.unwrap_or(0.0) />
+                                <RatingBar label="Value" value=summary.value_rating.unwrap_or(0.0) />
+                            </div>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! {
+                        <div>
+                            <h2 class="text-2xl font-bold text-base-content">"No reviews (yet)"</h2>
+                            <p class="text-base-content/60 mt-2">"This host has no reviews for this place."</p>
+                        </div>
+                    }.into_any()
+                }
+            }
+
+            {
+                if review_count > 0 {
+                    view! {
+                        <Suspense fallback=move || view! { <div class="loading loading-spinner"></div> }>
+                            {move || reviews_resource.get().map(|res| match res {
+                                Ok(reviews) => {
+                                    view! {
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
+                                            <For
+                                                each=move || reviews.clone()
+                                                key=|review| review.id
+                                                children=move |review| {
+                                                    view! {
+                                                        <div class="flex flex-col gap-4">
+                                                            <div class="flex items-center gap-4">
+                                                                <div class="avatar">
+                                                                    <div class="w-12 h-12 rounded-full bg-base-300 text-base-content flex items-center justify-center font-bold text-xl uppercase">
+                                                                        {review.guest_first_name.chars().next().unwrap_or('?').to_string()}
+                                                                    </div>
+                                                                </div>
+                                                                <div class="flex flex-col">
+                                                                    <span class="font-bold text-base-content">{review.guest_first_name}</span>
+                                                                    <div class="flex items-center gap-1 text-sm text-base-content/70">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                                                        </svg>
+                                                                        <span>{format!("{:.1}", review.overall_rating)}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <p class="text-base-content/80 whitespace-pre-line leading-relaxed text-sm lg:text-base">
+                                                                {review.public_review_text.unwrap_or_default()}
+                                                            </p>
+                                                        </div>
+                                                    }
+                                                }
+                                            />
+                                        </div>
+                                    }.into_any()
+                                }
+                                Err(_) => view! { <div>"Failed to load reviews."</div> }.into_any(),
+                            })}
+                        </Suspense>
+                    }.into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
+            }
+        </div>
+    }
+}
+
+#[component]
+fn RatingBar(label: &'static str, value: f64) -> impl IntoView {
+    view! {
+        <div class="flex items-center justify-between w-full">
+            <span class="text-base-content/80 w-1/2">{label}</span>
+            <div class="flex items-center gap-3 w-1/2 justify-end">
+                <div class="w-full bg-base-300 rounded-full h-1">
+                    <div class="bg-base-content h-1 rounded-full" style=format!("width: {}%", (value / 5.0) * 100.0)></div>
+                </div>
+                <span class="text-sm font-semibold w-6 text-right">{format!("{:.1}", value)}</span>
+            </div>
+        </div>
     }
 }

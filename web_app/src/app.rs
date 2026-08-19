@@ -11,7 +11,7 @@ use crate::components::{
     about::AboutPage, checkout::CheckoutPage, home::HomePage, layout::Layout,
     layout_no_search::LayoutNoSearch, listing_detail::ListingDetailPage, listings::ListingsPage,
     login::LoginPage, not_found::NotFound, profile::ProfilePage, register::RegisterPage,
-    verify::VerifyPage,
+    verify::VerifyPage, review_submit::ReviewSubmitPage,
 };
 
 #[derive(Clone, Debug)]
@@ -72,6 +72,9 @@ fn AppContent() -> impl IntoView {
             </ParentRoute>
             <ParentRoute path=path!("listings") view=move || view! { <LayoutNoSearch><Outlet/></LayoutNoSearch> }>
                 <Route path=path!("") view=ListingsPage/>
+            </ParentRoute>
+            <ParentRoute path=path!("review") view=move || view! { <LayoutNoSearch><Outlet/></LayoutNoSearch> }>
+                <Route path=path!("submit/:token") view=ReviewSubmitPage/>
             </ParentRoute>
             <Route path=path!("*any") view=NotFound/>
         </Routes>

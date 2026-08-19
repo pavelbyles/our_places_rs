@@ -72,6 +72,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                     city=listing.city.clone()
                                                     id=listing.slug.clone()
                                                     currency=listing.base_currency.clone()
+                                                    rating=listing.overall_rating
                                                 />
                                             }
                                         }

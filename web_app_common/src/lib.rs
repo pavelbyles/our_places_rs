@@ -4,3 +4,4 @@ pub mod components;
 #[cfg(feature = "ssr")]
 pub mod email;
 pub mod listings;
+pub mod reviews;

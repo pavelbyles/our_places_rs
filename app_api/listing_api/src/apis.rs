@@ -562,6 +562,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             update_listing,
             delete_listing,
             presign_batch,
+            crate::reviews::get_review_token_info,
+            crate::reviews::submit_review,
+            crate::reviews::submit_host_reply,
+            crate::reviews::get_listing_reviews_handler,
             api_core::health::health_check,
         ),
         components(
@@ -574,11 +578,16 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,
                 common::models::ImagePresignResponse,
-                common::models::PendingImageMetadata
+                common::models::PendingImageMetadata,
+                common::models::ReviewTokenInfoResponse,
+                common::models::NewReviewRequest,
+                common::models::HostReplyRequest,
+                common::models::ReviewResponse
             )
         ),
         tags(
-            (name = "listings", description = "Listing management endpoints")
+            (name = "listings", description = "Listing management endpoints"),
+            (name = "reviews", description = "Review and rating endpoints")
         ),
     )]
     struct ApiDoc;
@@ -632,6 +641,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
+                "/{id}/reviews",
+                web::get()
+                    .to(crate::reviews::get_listing_reviews_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
                 "/{id}/price-overrides",
                 web::get()
                     .to(get_price_overrides)
@@ -656,6 +671,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
+
+    crate::reviews::configure_routes(cfg);
 }
 
 #[tracing::instrument]

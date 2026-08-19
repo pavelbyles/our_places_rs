@@ -13,3 +13,4 @@ pub mod profile;
 pub mod register;
 pub mod shell;
 pub mod verify;
+pub mod review_submit;

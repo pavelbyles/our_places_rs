@@ -6,6 +6,7 @@ pub mod listing;
 pub mod models;
 pub mod sessions;
 pub mod user;
+pub mod review;
 
 pub use sqlx::PgPool;
 use tracing::info;

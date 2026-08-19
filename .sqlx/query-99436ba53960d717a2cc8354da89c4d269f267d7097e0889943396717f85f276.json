@@ -1,0 +1,107 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE review\n        SET host_reply_text = $1, host_replied_at = NOW(), updated_at = NOW()\n        WHERE id = $2\n        RETURNING id, booking_id, listing_id, guest_id, \n                  cleanliness_rating, accuracy_rating, location_rating, value_rating, overall_rating, \n                  public_review_text, private_host_feedback, host_reply_text, host_replied_at, \n                  created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "cleanliness_rating",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "accuracy_rating",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "location_rating",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "value_rating",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "overall_rating",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "public_review_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "private_host_feedback",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "host_reply_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "host_replied_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "99436ba53960d717a2cc8354da89c4d269f267d7097e0889943396717f85f276"
+}
