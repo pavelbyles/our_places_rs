@@ -20,11 +20,14 @@ pub async fn login(email: String, password: String) -> Result<(), ServerFnError>
                 _ => ServerFnError::new(format!("Login failed: {}", e)),
             })?;
 
-        // Check for admin role
-        let is_admin = user.roles.iter().any(|r| r.to_lowercase() == "admin");
+        // Check for admin or host role
+        let is_authorized = user.roles.iter().any(|r| {
+            let role = r.to_lowercase();
+            role == "admin" || role == "host"
+        });
 
-        if !is_admin {
-            return Err(ServerFnError::new("Unauthorized: Admin access required"));
+        if !is_authorized {
+            return Err(ServerFnError::new("Unauthorized: Admin or Host access required"));
         }
 
         // Set session

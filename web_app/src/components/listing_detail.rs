@@ -324,6 +324,25 @@ fn ListingReviews(
                                                             <p class="text-base-content/80 whitespace-pre-line leading-relaxed text-sm lg:text-base">
                                                                 {review.public_review_text.unwrap_or_default()}
                                                             </p>
+                                                            {
+                                                                if let Some(reply) = review.host_reply_text {
+                                                                    view! {
+                                                                        <div class="mt-2 ml-4 p-4 bg-base-200/50 rounded-lg border-l-4 border-primary">
+                                                                            <div class="flex items-center gap-2 mb-2">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                                                                                    <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
+                                                                                </svg>
+                                                                                <span class="font-bold text-base-content text-sm">"Response from Host"</span>
+                                                                            </div>
+                                                                            <p class="text-base-content/80 whitespace-pre-line text-sm leading-relaxed">
+                                                                                {reply}
+                                                                            </p>
+                                                                        </div>
+                                                                    }.into_any()
+                                                                } else {
+                                                                    view! { <div></div> }.into_any()
+                                                                }
+                                                            }
                                                         </div>
                                                     }
                                                 }
