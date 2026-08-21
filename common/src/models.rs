@@ -235,6 +235,18 @@ pub struct NewBookingRequest {
     pub agreed_cancellation_policy: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema, Default)]
+pub struct UpdatedBookingRequest {
+    pub status: Option<String>,
+    pub metadata: Option<BookingMetadataResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
+pub struct TransferBookingRequest {
+    #[schema(value_type = String, format = "uuid")]
+    pub guest_id: Uuid,
+}
+
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 pub struct NewListingRequest {
     #[schema(value_type = String, example = "Zen Loft")]
@@ -454,6 +466,16 @@ pub struct ReviewResponse {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct BookingReviewEligibility {
+    pub booking_id: Uuid,
+    pub is_eligible: bool,
+    pub token: Option<String>,
+    pub has_reviewed: bool,
+    pub days_remaining: Option<i64>,
+    pub status_message: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,7 +493,10 @@ mod tests {
             public_review_text: None,
             private_host_feedback: None,
         };
-        assert_eq!(req1.calculate_overall_rating(), Decimal::from_str("4.50").unwrap());
+        assert_eq!(
+            req1.calculate_overall_rating(),
+            Decimal::from_str("4.50").unwrap()
+        );
 
         let req2 = NewReviewRequest {
             token: "xyz".to_string(),
@@ -482,7 +507,10 @@ mod tests {
             public_review_text: None,
             private_host_feedback: None,
         };
-        assert_eq!(req2.calculate_overall_rating(), Decimal::from_str("4.75").unwrap());
+        assert_eq!(
+            req2.calculate_overall_rating(),
+            Decimal::from_str("4.75").unwrap()
+        );
 
         let req3 = NewReviewRequest {
             token: "xyz".to_string(),
@@ -493,6 +521,9 @@ mod tests {
             public_review_text: None,
             private_host_feedback: None,
         };
-        assert_eq!(req3.calculate_overall_rating(), Decimal::from_str("3.25").unwrap());
+        assert_eq!(
+            req3.calculate_overall_rating(),
+            Decimal::from_str("3.25").unwrap()
+        );
     }
 }

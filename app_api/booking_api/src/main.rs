@@ -35,6 +35,23 @@ async fn main() -> anyhow::Result<()> {
         &config.database.host
     );
 
+    // Spawn background cleanup task for stale pending holds
+    let cleanup_pool = db_connection_pool.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(600)); // every 10 mins
+        loop {
+            interval.tick().await;
+            match db_core::booking::cleanup_stale_bookings(&cleanup_pool, 120).await {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Cleaned up {} stale bookings", count);
+                    }
+                }
+                Err(e) => tracing::error!("Error cleaning up bookings: {:?}", e),
+            }
+        }
+    });
+
     // Setup web server
     let http_port: u16 = sys::get_port(config.server.port);
     let address = format!("{}:{}", config.server.host, http_port);

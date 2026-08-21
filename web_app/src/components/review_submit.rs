@@ -10,7 +10,7 @@ pub async fn submit_review_action(
     location_rating: i32,
     value_rating: i32,
     public_review_text: Option<String>,
-    private_feedback_text: Option<String>,
+    private_host_feedback: Option<String>,
 ) -> Result<(), ServerFnError> {
     let req = common::models::NewReviewRequest {
         token: token.clone(),
@@ -19,7 +19,7 @@ pub async fn submit_review_action(
         location_rating,
         value_rating,
         public_review_text,
-        private_feedback_text,
+        private_host_feedback,
     };
     web_app_common::reviews::submit_review_server(token, req).await
 }
@@ -29,12 +29,9 @@ pub fn ReviewSubmitPage() -> impl IntoView {
     let params = use_params_map();
     let token = move || params.get().get("token").unwrap_or_default();
 
-    let token_info_resource = Resource::new(
-        token,
-        |t| async move {
-            get_review_token_info_server(t.clone()).await
-        }
-    );
+    let token_info_resource = Resource::new(token, |t| async move {
+        get_review_token_info_server(t.clone()).await
+    });
 
     let submit_action = ServerAction::<SubmitReviewAction>::new();
 
@@ -55,7 +52,7 @@ pub fn ReviewSubmitPage() -> impl IntoView {
                                             <p class="text-base-content/70 mt-2">
                                                 {move || match info.error_code.as_deref() {
                                                     Some("ALREADY_USED") => "This review link has already been used. You can only submit one review per stay.",
-                                                    Some("EXPIRED") => "This review link has expired. You only have 14 days after your stay to submit a review.",
+                                                    Some("EXPIRED") => "This review link has expired. You only have 15 days after your stay to submit a review.",
                                                     Some("NOT_YET_VALID") => "This review link is not yet valid. Please try again later.",
                                                     _ => "This review link is invalid or cannot be processed at this time."
                                                 }}
@@ -90,18 +87,18 @@ pub fn ReviewSubmitPage() -> impl IntoView {
                                             <div class="text-center mb-8">
                                                 <h1 class="text-3xl font-bold text-base-content mb-2">"Rate your stay"</h1>
                                                 <p class="text-base-content/70">
-                                                    "Hi " <strong>{info.guest_first_name.clone()}</strong> ", how was your stay at " 
+                                                    "Hi " <strong>{info.guest_first_name.clone()}</strong> ", how was your stay at "
                                                     <strong>{info.listing_name.clone()}</strong> "?"
                                                 </p>
                                                 <p class="text-xs text-base-content/50 mt-1">
                                                     {info.check_in.format("%b %d, %Y").to_string()} " - " {info.check_out.format("%b %d, %Y").to_string()}
                                                 </p>
                                             </div>
-                                            
+
                                             <div class="space-y-8">
                                                 <ActionForm action=submit_action>
-                                                    <input type="hidden" name="token" value=token.clone() />
-                                                
+                                                    <input type="hidden" name="token" value=token />
+
                                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 bg-base-200/50 p-6 rounded-box">
                                                     <RatingInput name="cleanliness_rating" label="Cleanliness" />
                                                     <RatingInput name="accuracy_rating" label="Accuracy" />
@@ -113,9 +110,9 @@ pub fn ReviewSubmitPage() -> impl IntoView {
                                                     <fieldset class="fieldset w-full">
                                                         <legend class="fieldset-legend font-semibold text-base text-base-content">"Public Review"</legend>
                                                         <p class="text-xs text-base-content/60 mb-2">"Share your experience with future guests. (Optional)"</p>
-                                                        <textarea 
-                                                            name="public_review_text" 
-                                                            class="textarea textarea-bordered h-32 w-full resize-none text-base" 
+                                                        <textarea
+                                                            name="public_review_text"
+                                                            class="textarea textarea-bordered h-32 w-full resize-none text-base"
                                                             placeholder="What was the highlight of your stay?"
                                                         ></textarea>
                                                     </fieldset>
@@ -125,9 +122,9 @@ pub fn ReviewSubmitPage() -> impl IntoView {
                                                     <fieldset class="fieldset w-full">
                                                         <legend class="fieldset-legend font-semibold text-base text-base-content">"Private Feedback for Host"</legend>
                                                         <p class="text-xs text-base-content/60 mb-2">"This won't be shown publicly. (Optional)"</p>
-                                                        <textarea 
-                                                            name="private_feedback_text" 
-                                                            class="textarea textarea-bordered h-24 w-full resize-none text-base" 
+                                                        <textarea
+                                                            name="private_host_feedback"
+                                                            class="textarea textarea-bordered h-24 w-full resize-none text-base"
                                                             placeholder="Any suggestions for the host to improve?"
                                                         ></textarea>
                                                     </fieldset>
@@ -142,9 +139,9 @@ pub fn ReviewSubmitPage() -> impl IntoView {
                                                     Ok(_) => view! { <div></div> }.into_any(),
                                                 })}
 
-                                                <button 
-                                                    type="submit" 
-                                                    class="btn btn-primary w-full text-lg h-14" 
+                                                <button
+                                                    type="submit"
+                                                    class="btn btn-primary w-full text-lg h-14"
                                                     disabled=move || submit_action.pending().get()
                                                 >
                                                     {move || if submit_action.pending().get() { "Submitting..." } else { "Submit Review" }}
@@ -180,7 +177,7 @@ fn RatingInput(name: &'static str, label: &'static str) -> impl IntoView {
             <div class="rating rating-lg rating-half flex flex-row-reverse group">
                 // We use flex-row-reverse and place inputs 5 to 1 so that peer hover works right-to-left
                 // Note: daisyUI rating doesn't natively support exact required validation with radio buttons easily, so we set default to 5
-                
+
                 <input type="radio" name=name value="5" class="mask mask-star bg-orange-400" checked />
                 <input type="radio" name=name value="4" class="mask mask-star bg-orange-400" />
                 <input type="radio" name=name value="3" class="mask mask-star bg-orange-400" />

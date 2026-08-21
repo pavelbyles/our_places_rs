@@ -3,10 +3,13 @@ use actix_web::{HttpRequest, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
 use api_core::error::ApiError;
 use api_core::response::{Payload, respond};
-use common::models::{HostReplyRequest, NewReviewRequest, ReviewResponse, ReviewTokenInfoResponse};
+use common::models::{
+    BookingReviewEligibility, HostReplyRequest, NewReviewRequest, ReviewResponse,
+    ReviewTokenInfoResponse,
+};
 use db_core::review as db_review;
-use uuid::Uuid;
 use sqlx::PgPool;
+use uuid::Uuid;
 use validator::Validate;
 
 #[tracing::instrument]
@@ -50,8 +53,10 @@ pub async fn get_review_token_info(
     .ok_or_else(|| ApiError::Database(db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound)))?;
 
     let now = chrono::Utc::now();
-    let is_valid = token_details.used_at.is_none() && token_details.valid_from <= now && token_details.expires_at >= now;
-    
+    let is_valid = token_details.used_at.is_none()
+        && token_details.valid_from <= now
+        && token_details.expires_at >= now;
+
     let error_code = if token_details.used_at.is_some() {
         Some("ALREADY_USED".to_string())
     } else if token_details.valid_from > now {
@@ -104,12 +109,14 @@ pub async fn submit_review(
 ) -> Result<impl Responder, ApiError> {
     let token_str = token.into_inner();
     let review_req = payload.into_inner();
-    
+
     // Ensure token in path matches token in body if provided, or override
     if review_req.token != token_str {
-        return Err(ApiError::Database(db_core::error::DbError::ValidationError(
-            "Token in path does not match token in body".to_string()
-        )));
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Token in path does not match token in body".to_string(),
+            ),
+        ));
     }
 
     if let Err(e) = review_req.validate() {
@@ -159,13 +166,18 @@ pub async fn submit_host_reply(
 
     // In a real app, host_id would be extracted from the JWT token via middleware.
     // For this prototype, we'll extract it from an `x-user-id` header or use a dummy UUID.
-    let host_id_str = req.headers().get("x-user-id").map(|h| h.to_str().unwrap_or(""));
+    let host_id_str = req
+        .headers()
+        .get("x-user-id")
+        .map(|h| h.to_str().unwrap_or(""));
     let host_id = if let Some(Ok(id)) = host_id_str.map(Uuid::parse_str) {
         id
     } else {
-        return Err(ApiError::Database(db_core::error::DbError::ValidationError(
-            "Missing or invalid x-user-id header".to_string()
-        )));
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Missing or invalid x-user-id header".to_string(),
+            ),
+        ));
     };
 
     let review = db_review::add_host_reply(pool.get_ref(), id, host_id, &reply_req.reply_text)
@@ -188,8 +200,12 @@ pub struct ReviewsQueryParams {
     pub per_page: i64,
 }
 
-fn default_page() -> i64 { 1 }
-fn default_per_page() -> i64 { 20 }
+fn default_page() -> i64 {
+    1
+}
+fn default_per_page() -> i64 {
+    20
+}
 
 #[tracing::instrument]
 #[utoipa::path(
@@ -226,6 +242,64 @@ pub async fn get_listing_reviews_handler(
     ))
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/reviews/booking/{booking_id}/token",
+    tag = "reviews",
+    params(
+        ("booking_id" = Uuid, Path, description = "Booking UUID")
+    ),
+    responses(
+        (status = 200, description = "Booking review eligibility and token", body = BookingReviewEligibility),
+        (status = 404, description = "Booking not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn get_booking_review_token(
+    pool: web::Data<PgPool>,
+    req: HttpRequest,
+    booking_id: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let b_id = booking_id.into_inner();
+
+    let guest_id = if let Some(h) = req.headers().get("x-user-id") {
+        if let Ok(s) = h.to_str() {
+            Uuid::parse_str(s).ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let target_guest_id = match guest_id {
+        Some(uid) => uid,
+        None => {
+            let row = sqlx::query!("SELECT guest_id FROM booking WHERE id = $1", b_id)
+                .fetch_optional(pool.get_ref())
+                .await
+                .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?
+                .ok_or_else(|| {
+                    ApiError::Database(db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound))
+                })?;
+            row.guest_id
+        }
+    };
+
+    let eligibility =
+        db_review::get_or_create_booking_review_token(pool.get_ref(), b_id, target_guest_id)
+            .await
+            .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(eligibility),
+        |_: Vec<BookingReviewEligibility>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/reviews")
@@ -242,10 +316,16 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
+                "/booking/{booking_id}/token",
+                web::get()
+                    .to(get_booking_review_token)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
                 "/{id}/reply",
                 web::post()
                     .to(submit_host_reply)
                     .wrap(from_fn(content_negotiation_middleware)),
-            )
+            ),
     );
 }

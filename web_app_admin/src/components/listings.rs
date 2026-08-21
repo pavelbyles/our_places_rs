@@ -1389,10 +1389,9 @@ pub async fn submit_host_reply_action(
     review_id: String,
     reply_text: String,
 ) -> Result<(), ServerFnError> {
-    let review_uuid = uuid::Uuid::parse_str(&review_id).map_err(|e| ServerFnError::new(e.to_string()))?;
-    let req = common::models::HostReplyRequest {
-        reply_text,
-    };
+    let review_uuid =
+        uuid::Uuid::parse_str(&review_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+    let req = common::models::HostReplyRequest { reply_text };
     web_app_common::reviews::submit_host_reply_server(review_uuid, req).await
 }
 
@@ -1400,20 +1399,18 @@ pub async fn submit_host_reply_action(
 #[allow(non_snake_case)]
 pub fn ListingReviewsAdminSection(listing_id: String, listing_name: String) -> impl IntoView {
     let lid = uuid::Uuid::parse_str(&listing_id).unwrap_or_default();
-    
+
     let (refresh, set_refresh) = signal(0);
-    
+
     let reviews_resource = Resource::new(
         move || (lid, refresh.get()),
-        |(id, _)| async move {
-            web_app_common::reviews::get_listing_reviews_server(id, 1, 50).await
-        }
+        |(id, _)| async move { web_app_common::reviews::get_listing_reviews_server(id, 1, 50).await },
     );
 
     view! {
         <div class="mt-4 p-4 border border-base-300 rounded-box bg-base-200 space-y-4">
             <h3 class="font-bold text-md text-primary">"Guest Reviews — " {listing_name}</h3>
-            
+
             <Suspense fallback=move || view! { <div class="loading loading-spinner"></div> }>
                 {move || reviews_resource.get().map(|res| match res {
                     Ok(reviews) => {
@@ -1443,7 +1440,10 @@ pub fn ListingReviewsAdminSection(listing_id: String, listing_name: String) -> i
 }
 
 #[component]
-fn AdminReviewCard(review: common::models::ReviewResponse, set_refresh: WriteSignal<i32>) -> impl IntoView {
+fn AdminReviewCard(
+    review: common::models::ReviewResponse,
+    set_refresh: WriteSignal<i32>,
+) -> impl IntoView {
     let review_id = review.id;
     let submit_reply = ServerAction::<SubmitHostReplyAction>::new();
     let (show_reply_form, set_show_reply_form) = signal(false);
@@ -1467,7 +1467,7 @@ fn AdminReviewCard(review: common::models::ReviewResponse, set_refresh: WriteSig
             <div class="mt-2 text-sm whitespace-pre-line">
                 {review.public_review_text.clone().unwrap_or_default()}
             </div>
-            
+
             <div class="mt-4 pt-4 border-t border-base-200">
                 {
                     let r = review.clone();
@@ -1484,22 +1484,22 @@ fn AdminReviewCard(review: common::models::ReviewResponse, set_refresh: WriteSig
                                 <ActionForm action=submit_reply>
                                     <div class="flex flex-col gap-2">
                                         <input type="hidden" name="review_id" value=review_id.to_string() />
-                                        <textarea 
+                                        <textarea
                                             name="reply_text"
                                             class="textarea textarea-bordered textarea-sm w-full"
                                             placeholder="Write a public reply to this review..."
                                             required
                                         ></textarea>
                                         <div class="flex gap-2 justify-end">
-                                            <button 
-                                                type="button" 
+                                            <button
+                                                type="button"
                                                 class="btn btn-ghost btn-xs"
                                                 on:click=move |_| set_show_reply_form.set(false)
                                             >
                                                 "Cancel"
                                             </button>
-                                            <button 
-                                                type="submit" 
+                                            <button
+                                                type="submit"
                                                 class="btn btn-primary btn-xs"
                                                 disabled=move || submit_reply.pending().get()
                                             >
@@ -1511,7 +1511,7 @@ fn AdminReviewCard(review: common::models::ReviewResponse, set_refresh: WriteSig
                             }.into_any()
                         } else {
                             view! {
-                                <button 
+                                <button
                                     class="btn btn-outline btn-xs"
                                     on:click=move |_| set_show_reply_form.set(true)
                                 >

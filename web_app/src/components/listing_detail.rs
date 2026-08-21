@@ -212,11 +212,6 @@ pub fn ListingDetailPage() -> impl IntoView {
                                         }
                                     </div>
 
-                                    <div class="hidden lg:block h-px bg-base-200 mt-8 mb-4"></div>
-                                    
-                                    // Reviews Section
-                                    <ListingReviews listing_id=listing.id rating_summary=details.rating_summary />
-
                                     // Right Column: Booking Card
                                     <div class="lg:col-span-1">
                                         <div class="sticky top-8 flex flex-col gap-4">
@@ -224,6 +219,11 @@ pub fn ListingDetailPage() -> impl IntoView {
                                         </div>
                                     </div>
                                 </div>
+
+                                <div class="h-px bg-base-200 my-4"></div>
+
+                                // Reviews Section (Full width below main details)
+                                <ListingReviews listing_id=listing.id rating_summary=details.rating_summary />
                             </div>
                         }.into_any()
                     }
@@ -245,15 +245,13 @@ fn ListingReviews(
     rating_summary: Option<common::models::ListingRatingSummary>,
 ) -> impl IntoView {
     use web_app_common::reviews::get_listing_reviews_server;
-    
+
     // We only fetch reviews if there's a rating summary indicating there are reviews
     let review_count = rating_summary.as_ref().map(|s| s.review_count).unwrap_or(0);
-    
+
     let reviews_resource = Resource::new(
         move || listing_id,
-        |id| async move {
-            get_listing_reviews_server(id, 1, 10).await
-        }
+        |id| async move { get_listing_reviews_server(id, 1, 10).await },
     );
 
     view! {
@@ -271,7 +269,7 @@ fn ListingReviews(
                                 <span class="text-2xl text-base-content/60">"·"</span>
                                 <span class="text-2xl font-bold text-base-content">{summary.review_count} " Reviews"</span>
                             </div>
-                            
+
                             // Sub-ratings grid
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
                                 <RatingBar label="Cleanliness" value=summary.cleanliness_rating.unwrap_or(0.0) />

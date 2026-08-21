@@ -33,12 +33,14 @@ web_app_common.workspace = true
 num-format = "0.4.4"
 rust_decimal.workspace = true
 urlencoding = { workspace = true }
-rand = "0.10.1"
-getrandom = { version = "0.4.2", features = ["wasm_js"] }
-db_core = { workspace = true, optional = true }
-sqlx = { workspace = true, optional = true }
-api_core = { workspace = true, optional = true }
+rand = "0.10.2"
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
 tokio = { workspace = true, optional = true }
+web-sys = { version = "0.3.104", features = [
+  "Clipboard",
+  "Navigator",
+  "Window",
+] }
 
 [features]
 csr = ["leptos/csr"]
@@ -52,9 +54,6 @@ ssr = [
   "leptos_meta/ssr",
   "leptos_router/ssr",
   "web_app_common/ssr",
-  "dep:db_core",
-  "dep:sqlx",
-  "dep:api_core",
   "dep:tokio",
   "dep:dotenvy",
 ]

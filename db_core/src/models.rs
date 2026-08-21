@@ -156,6 +156,7 @@ pub struct Booking {
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum BookingStatus {
     Pending,
     Confirmed,
@@ -219,6 +220,7 @@ pub struct BookingHistory {
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "cancellation_policy", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum CancellationPolicy {
     Flexible,
     Moderate,

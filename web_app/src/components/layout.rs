@@ -75,6 +75,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                                                         <span class="text-xs opacity-60 truncate">{u.email.clone()}</span>
                                                     </li>
                                                     <li><a href="/profile">"Profile"</a></li>
+                                                    <li><a href="/bookings">"My Bookings"</a></li>
                                                     <li><a href="/settings">"Settings"</a></li>
                                                     <li>
                                                         <button
@@ -172,6 +173,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                 <ul class="menu bg-base-200 min-h-full w-80 p-4">
                     <li><a href="/home">"Home"</a></li>
                     <li><a href="/listings">"Listings"</a></li>
+                    <li><a href="/bookings">"My Bookings"</a></li>
                     <li><a href="/about">"About"</a></li>
                 </ul>
             </div>

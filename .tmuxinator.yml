@@ -25,9 +25,11 @@ windows:
       layout: "181x55,0,0{122x55,0,0[122x16,0,0{59x16,0,0,1,62x16,60,0,6},122x11,0,17,2,122x13,0,29,3,122x12,0,43,4],58x55,123,0[58x27,123,0,5,58x27,123,28,8]}"
       panes:
         - web_app:
-          - cd web_app && ./run_local.sh    # Pane 1: Top-Left (Left column, row 1, left split)
+          - cd web_app        # Pane 1: Top-Left (Left column, row 1, left split)
+          - ./run_local.sh
         - web_app_admin:
-          - cd web_app_admin && ./run_local.sh    # Pane 2: Top-Right (Left column, row 1, right split)
+          - cd web_app_admin  # Pane 2: Top-Right (Left column, row 1, right split)
+          - ./run_local.sh
         - listing_api:
           - docker compose up -d db
           - cd app_api/listing_api
@@ -39,8 +41,12 @@ windows:
           - cd app_api/user_api
           - ./run_local.sh    # Pane 5: Left column, row 4
         - web_app_tailwind:
-          - cd web_app && npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch   # Pane 6: Right column, top half
+          - cd web_app
+          - npm install
+          - npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch   # Pane 6: Right column, top half
         - web_app_admin_tailwind:
-          - cd web_app_admin && npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch    # Pane 7: Right column, bottom half
+          - cd web_app_admin
+          - npm install
+          - npx tailwindcss -i ./style/tailwind.css -o ./style/output.css --watch    # Pane 7: Right column, bottom half
 
 

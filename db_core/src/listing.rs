@@ -279,7 +279,7 @@ where
             .fetch_optional(&mut *conn)
             .await?;
 
-    let rating_summary = crate::review::get_listing_rating_summary(&mut *conn, id).await?;
+    let rating_summary = crate::review::get_listing_rating_summary(&mut conn, id).await?;
 
     Ok(crate::models::ListingDetails {
         listing,
@@ -368,7 +368,7 @@ where
             .fetch_optional(&mut *conn)
             .await?;
 
-    let rating_summary = crate::review::get_listing_rating_summary(&mut *conn, listing.id).await?;
+    let rating_summary = crate::review::get_listing_rating_summary(&mut conn, listing.id).await?;
 
     Ok(crate::models::ListingDetails {
         listing,

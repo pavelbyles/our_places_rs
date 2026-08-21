@@ -27,7 +27,9 @@ pub async fn login(email: String, password: String) -> Result<(), ServerFnError>
         });
 
         if !is_authorized {
-            return Err(ServerFnError::new("Unauthorized: Admin or Host access required"));
+            return Err(ServerFnError::new(
+                "Unauthorized: Admin or Host access required",
+            ));
         }
 
         // Set session

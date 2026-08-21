@@ -28,23 +28,6 @@ async fn main() -> std::io::Result<()> {
             .as_bytes(),
     );
 
-    // Spawn background cleanup task
-    tokio::spawn(async move {
-        let pool = web_app_common::api_client::get_pool().await;
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(600)); // every 10 mins
-        loop {
-            interval.tick().await;
-            match db_core::booking::cleanup_stale_bookings(&pool, 120).await {
-                Ok(count) => {
-                    if count > 0 {
-                        tracing::info!("Cleaned up {} stale bookings", count);
-                    }
-                }
-                Err(e) => tracing::error!("Error cleaning up bookings: {:?}", e),
-            }
-        }
-    });
-
     HttpServer::new(move || {
         // Generate the list of routes in your Leptos App
         let routes = generate_route_list(App);

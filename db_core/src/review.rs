@@ -9,7 +9,10 @@ use uuid::Uuid;
 
 /// Creates a new single-use review token for a completed booking
 #[instrument(skip(conn))]
-pub async fn create_review_token(conn: &mut sqlx::PgConnection, booking_id: Uuid) -> Result<ReviewToken> {
+pub async fn create_review_token(
+    conn: &mut sqlx::PgConnection,
+    booking_id: Uuid,
+) -> Result<ReviewToken> {
     // Generate a secure random URL-safe token (UUID v4 is sufficiently random and secure for this use case)
     let token = Uuid::new_v4().to_string();
 
@@ -21,10 +24,10 @@ pub async fn create_review_token(conn: &mut sqlx::PgConnection, booking_id: Uuid
     .await?
     .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
 
-    // valid_from is 24 hours from now (or completed_at)
-    let valid_from = Utc::now() + Duration::hours(24);
-    // expires in 30 days
-    let expires_at = Utc::now() + Duration::days(30);
+    // valid immediately upon completion
+    let valid_from = Utc::now();
+    // expires in 15 days
+    let expires_at = Utc::now() + Duration::days(15);
 
     let review_token = sqlx::query_as!(
         ReviewToken,
@@ -45,6 +48,146 @@ pub async fn create_review_token(conn: &mut sqlx::PgConnection, booking_id: Uuid
     .await?;
 
     Ok(review_token)
+}
+
+/// Evaluates eligibility and retrieves or creates a single-use review token for a booking within 15 days post-stay
+#[instrument(skip(pool))]
+pub async fn get_or_create_booking_review_token(
+    pool: &PgPool,
+    booking_id: Uuid,
+    guest_id: Uuid,
+) -> Result<common::models::BookingReviewEligibility> {
+    // 1. Fetch booking details
+    let booking = sqlx::query!(
+        r#"
+        SELECT id, guest_id, listing_id, status as "status: crate::models::BookingStatus", date_to
+        FROM booking
+        WHERE id = $1
+        "#,
+        booking_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
+
+    if booking.guest_id != guest_id {
+        return Err(crate::error::DbError::ValidationError(
+            "User is not authorized to review this booking".to_string(),
+        ));
+    }
+
+    if booking.status == crate::models::BookingStatus::Cancelled {
+        return Ok(common::models::BookingReviewEligibility {
+            booking_id,
+            is_eligible: false,
+            token: None,
+            has_reviewed: false,
+            days_remaining: None,
+            status_message: "Cancelled bookings are not eligible for review".to_string(),
+        });
+    }
+
+    // 2. Check if a review already exists for this booking
+    let existing_review = sqlx::query!("SELECT id FROM review WHERE booking_id = $1", booking_id)
+        .fetch_optional(pool)
+        .await?;
+
+    if existing_review.is_some() {
+        return Ok(common::models::BookingReviewEligibility {
+            booking_id,
+            is_eligible: false,
+            token: None,
+            has_reviewed: true,
+            days_remaining: None,
+            status_message: "You have already submitted a review for this stay".to_string(),
+        });
+    }
+
+    // 3. Date checks: stay must be concluded and within 15 days of date_to
+    let today = Utc::now().date_naive();
+    let checkout_date = booking.date_to;
+    let cutoff_date = checkout_date + Duration::days(15);
+
+    if today < checkout_date {
+        return Ok(common::models::BookingReviewEligibility {
+            booking_id,
+            is_eligible: false,
+            token: None,
+            has_reviewed: false,
+            days_remaining: None,
+            status_message: "Reviews can only be submitted after your stay has ended".to_string(),
+        });
+    }
+
+    if today > cutoff_date {
+        return Ok(common::models::BookingReviewEligibility {
+            booking_id,
+            is_eligible: false,
+            token: None,
+            has_reviewed: false,
+            days_remaining: Some(0),
+            status_message: "The 15-day review period for this stay has expired".to_string(),
+        });
+    }
+
+    let days_remaining = (cutoff_date - today).num_days();
+
+    // 4. Look for an existing, unused, non-expired token
+    let existing_token = sqlx::query!(
+        r#"
+        SELECT token 
+        FROM review_token 
+        WHERE booking_id = $1 
+          AND used_at IS NULL 
+          AND expires_at > NOW()
+        ORDER BY created_at DESC 
+        LIMIT 1
+        "#,
+        booking_id
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(tok) = existing_token {
+        return Ok(common::models::BookingReviewEligibility {
+            booking_id,
+            is_eligible: true,
+            token: Some(tok.token),
+            has_reviewed: false,
+            days_remaining: Some(days_remaining),
+            status_message: "Eligible for review".to_string(),
+        });
+    }
+
+    // 5. If no active token exists, create a new one valid until cutoff date + 1 day
+    let new_token = Uuid::new_v4().to_string();
+    let valid_from = Utc::now() - Duration::hours(1);
+    let expires_at = Utc::now() + Duration::days(days_remaining + 1);
+
+    sqlx::query!(
+        r#"
+        INSERT INTO review_token (id, token, booking_id, guest_id, listing_id, valid_from, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "#,
+        Uuid::now_v7(),
+        new_token,
+        booking_id,
+        booking.guest_id,
+        booking.listing_id,
+        valid_from,
+        expires_at
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(common::models::BookingReviewEligibility {
+        booking_id,
+        is_eligible: true,
+        token: Some(new_token),
+        has_reviewed: false,
+        days_remaining: Some(days_remaining),
+        status_message: "Eligible for review".to_string(),
+    })
 }
 
 /// Retrieves a review token, checking its validity timeline
@@ -309,7 +452,6 @@ pub async fn get_listing_rating_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
     use rust_decimal_macros::dec;
     use sqlx_db_tester::TestPg;
     use std::env;
@@ -332,42 +474,51 @@ mod tests {
         // 1. Setup Data
         let host_id = Uuid::now_v7();
         let guest_id = Uuid::now_v7();
-        let listing_id = Uuid::now_v7();
         let booking_id = Uuid::now_v7();
 
         // Create Host
-        crate::user::create_user(&mut *tx, &crate::models::NewUser {
-            id: host_id,
-            email: "host@example.com".to_string(),
-            password_hash: "hash".to_string(),
-            first_name: "Host".to_string(),
-            last_name: "User".to_string(),
-            phone_number: None,
-            is_active: true,
-            is_verified: true,
-            verification_code: None,
-            verification_code_expires_at: None,
-            attributes: serde_json::json!({}),
-            roles: Some(vec![crate::models::UserRole::Host]),
-            default_currency: "USD".to_string(),
-        }).await.unwrap();
+        crate::user::create_user(
+            &mut *tx,
+            &crate::models::NewUser {
+                id: host_id,
+                email: "host@example.com".to_string(),
+                password_hash: "hash".to_string(),
+                first_name: "Host".to_string(),
+                last_name: "User".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: Some(vec![crate::models::UserRole::Host]),
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
 
         // Create Guest
-        crate::user::create_user(&mut *tx, &crate::models::NewUser {
-            id: guest_id,
-            email: "guest@example.com".to_string(),
-            password_hash: "hash".to_string(),
-            first_name: "Guest".to_string(),
-            last_name: "User".to_string(),
-            phone_number: None,
-            is_active: true,
-            is_verified: true,
-            verification_code: None,
-            verification_code_expires_at: None,
-            attributes: serde_json::json!({}),
-            roles: Some(vec![crate::models::UserRole::Booker]),
-            default_currency: "USD".to_string(),
-        }).await.unwrap();
+        crate::user::create_user(
+            &mut *tx,
+            &crate::models::NewUser {
+                id: guest_id,
+                email: "guest@example.com".to_string(),
+                password_hash: "hash".to_string(),
+                first_name: "Guest".to_string(),
+                last_name: "User".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: Some(vec![crate::models::UserRole::Booker]),
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
 
         // Create Listing
         // Create Listing
@@ -391,8 +542,13 @@ mod tests {
         assert_eq!(token.booking_id, booking_id);
 
         // Make the token valid immediately for the test
-        sqlx::query!("UPDATE review_token SET valid_from = NOW() - INTERVAL '1 day' WHERE token = $1", token.token)
-            .execute(&pool).await.unwrap();
+        sqlx::query!(
+            "UPDATE review_token SET valid_from = NOW() - INTERVAL '1 day' WHERE token = $1",
+            token.token
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         // 3. Get token info
         let token_info = get_token_info(&pool, &token.token).await.unwrap();
@@ -409,7 +565,9 @@ mod tests {
             private_host_feedback: Some("Needs more towels.".to_string()),
         };
 
-        let review = create_review_with_token(&pool, &token.token, &review_req).await.unwrap();
+        let review = create_review_with_token(&pool, &token.token, &review_req)
+            .await
+            .unwrap();
         assert_eq!(review.overall_rating, dec!(4.50));
 
         // 5. Trying to reuse token should fail
@@ -417,14 +575,20 @@ mod tests {
         assert!(reuse_err.is_err());
 
         // 6. Host replies
-        let updated_review = add_host_reply(&pool, review.id, host_id, "Thanks for staying!").await.unwrap();
-        assert_eq!(updated_review.host_reply_text.unwrap(), "Thanks for staying!");
+        let updated_review = add_host_reply(&pool, review.id, host_id, "Thanks for staying!")
+            .await
+            .unwrap();
+        assert_eq!(
+            updated_review.host_reply_text.unwrap(),
+            "Thanks for staying!"
+        );
 
         // 7. Verify aggregates
         let mut conn = pool.acquire().await.unwrap();
-        let summary = get_listing_rating_summary(&mut *conn, listing_id).await.unwrap();
+        let summary = get_listing_rating_summary(&mut *conn, listing_id)
+            .await
+            .unwrap();
         assert_eq!(summary.review_count, 1);
         assert_eq!(summary.overall_rating.unwrap(), 4.5);
     }
 }
-

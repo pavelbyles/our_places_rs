@@ -247,10 +247,10 @@ pub async fn update_booking(
     }
 
     // Trigger review token generation if booking transitions to Completed
-    if let Some(BookingStatus::Completed) = updated_booking.status {
-        if status_changed {
-            crate::review::create_review_token(&mut *tx, booking.id).await?;
-        }
+    if let Some(BookingStatus::Completed) = updated_booking.status
+        && status_changed
+    {
+        crate::review::create_review_token(&mut tx, booking.id).await?;
     }
 
     tx.commit().await?;

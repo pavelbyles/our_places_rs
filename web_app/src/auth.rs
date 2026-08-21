@@ -3,7 +3,7 @@ use actix_session::Session;
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct UserProfile {
     pub id: String,
     pub name: String,
@@ -617,8 +617,7 @@ pub async fn try_transfer_pending_booking(
     };
 
     if let Some(bid) = booking_id {
-        let pool = web_app_common::api_client::get_pool().await;
-        if db_core::booking::transfer_booking_guest(&pool, bid, new_user_id)
+        if web_app_common::bookings::transfer_booking_api(bid, new_user_id)
             .await
             .is_ok()
         {

@@ -101,4 +101,96 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn test_updated_booking_request_json_deserialization() {
+        use crate::apis::UpdatedBookingRequest;
+        use db_core::models::BookingStatus;
+
+        let json_data = r#"{"status":"confirmed"}"#;
+        let parsed: Result<UpdatedBookingRequest, _> = serde_json::from_str(json_data);
+        assert!(
+            parsed.is_ok(),
+            "Failed to deserialize status 'confirmed': {:?}",
+            parsed.err()
+        );
+        assert_eq!(parsed.unwrap().status, Some(BookingStatus::Confirmed));
+
+        let json_cancelled = r#"{"status":"cancelled"}"#;
+        let parsed_cancelled: UpdatedBookingRequest = serde_json::from_str(json_cancelled).unwrap();
+        assert_eq!(parsed_cancelled.status, Some(BookingStatus::Cancelled));
+
+        let json_pending = r#"{"status":"pending"}"#;
+        let parsed_pending: UpdatedBookingRequest = serde_json::from_str(json_pending).unwrap();
+        assert_eq!(parsed_pending.status, Some(BookingStatus::Pending));
+
+        let json_completed = r#"{"status":"completed"}"#;
+        let parsed_completed: UpdatedBookingRequest = serde_json::from_str(json_completed).unwrap();
+        assert_eq!(parsed_completed.status, Some(BookingStatus::Completed));
+    }
+
+    #[test]
+    fn test_cancellation_policy_json_deserialization() {
+        use db_core::models::CancellationPolicy;
+
+        let flex: CancellationPolicy = serde_json::from_str(r#""flexible""#).unwrap();
+        assert_eq!(flex, CancellationPolicy::Flexible);
+
+        let mod_policy: CancellationPolicy = serde_json::from_str(r#""moderate""#).unwrap();
+        assert_eq!(mod_policy, CancellationPolicy::Moderate);
+
+        let strict: CancellationPolicy = serde_json::from_str(r#""strict""#).unwrap();
+        assert_eq!(strict, CancellationPolicy::Strict);
+    }
+
+    #[test]
+    fn test_user_bookings_response_mapping() {
+        use crate::apis::map_booking_to_response;
+        use chrono::Utc;
+        use db_core::models::{Booking, BookingMetadata, BookingStatus, CancellationPolicy};
+        use rust_decimal::Decimal;
+        use sqlx::types::Json;
+        use uuid::Uuid;
+
+        let booking = Booking {
+            id: Uuid::new_v4(),
+            confirmation_code: "CONF-TEST123".to_string(),
+            guest_id: Uuid::new_v4(),
+            listing_id: Uuid::new_v4(),
+            status: BookingStatus::Confirmed,
+            date_from: chrono::NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            date_to: chrono::NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: Decimal::new(250, 0),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: Decimal::new(1000, 0),
+            discount_value: None,
+            tax_value: Some(Decimal::new(100, 0)),
+            fee_breakdown: Json(vec![]),
+            total_price: Decimal::new(1100, 0),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: Json(BookingMetadata {
+                num_adults: 2,
+                num_children: 0,
+                num_infants: 0,
+                num_pets: 0,
+                message_to_host: Some("Looking forward to the stay!".to_string()),
+                estimated_arrival_time: Some("15:00".to_string()),
+                is_business_trip: false,
+            }),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let res = map_booking_to_response(booking);
+        assert_eq!(res.confirmation_code, "CONF-TEST123");
+        assert_eq!(res.status, "Confirmed");
+        assert_eq!(res.total_price, Decimal::new(1100, 0));
+        assert_eq!(res.metadata.num_adults, 2);
+        assert_eq!(
+            res.metadata.message_to_host.as_deref(),
+            Some("Looking forward to the stay!")
+        );
+    }
 }

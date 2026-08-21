@@ -18,8 +18,6 @@ serde_json.workspace = true
 rust_decimal.workspace = true
 chrono.workspace = true
 uuid = { workspace = true, features = ["v4"] }
-db_core = { workspace = true, optional = true }
-sqlx = { workspace = true, optional = true }
 
 anyhow.workspace = true
 common.workspace = true
@@ -38,6 +36,4 @@ ssr = [
     "leptos/ssr",
     "leptos_meta/ssr",
     "leptos_router/ssr",
-    "dep:db_core",
-    "dep:sqlx",
 ]

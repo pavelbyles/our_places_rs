@@ -470,6 +470,76 @@ async fn delete_booking(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/bookings/bookings/{id}/transfer",
+    tag = "bookings",
+    request_body = common::models::TransferBookingRequest,
+    responses(
+        (status = 200, description = "Booking guest transferred", body = BookingResponse),
+        (status = 404, description = "Booking not found or not pending"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn transfer_booking(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    body: web::Json<common::models::TransferBookingRequest>,
+) -> Result<impl Responder, ApiError> {
+    body.validate().map_err(ApiError::ValidationError)?;
+
+    let booking = db_booking::transfer_booking_guest(pool.get_ref(), *id, body.guest_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_booking_to_response(booking)),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/user/{id}",
+    tag = "bookings",
+    params(
+        ("id" = Uuid, Path, description = "Guest user UUID"),
+        pagination::Pagination
+    ),
+    responses(
+        (status = 200, description = "List of bookings for user", body = [BookingResponse]),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_user_bookings(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    query: web::Query<pagination::Pagination>,
+) -> Result<impl Responder, ApiError> {
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(20).min(100);
+
+    let bookings = db_booking::get_bookings_by_user_id(pool.get_ref(), *id, page, per_page)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let response: Vec<BookingResponse> =
+        bookings.into_iter().map(map_booking_to_response).collect();
+
+    Ok(respond(
+        &req,
+        Payload::Collection(response),
+        |items| BookingsWrapper { booking: items },
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -478,12 +548,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             create_booking,
             get_bookings,
             get_booking_by_id,
+            get_user_bookings,
             update_booking,
             delete_booking,
+            transfer_booking,
             api_core::health::health_check,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse)
+            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse)
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -500,44 +572,56 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/bookings")
             .route(
+                "/health_check",
+                web::get().to(api_core::health::health_check),
+            )
+            .route(
                 "/availability",
                 web::get()
                     .to(check_availability)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/",
+                "",
                 web::get()
                     .to(get_bookings)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/",
+                "",
                 web::post()
                     .to(create_booking)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/bookings/{id}",
+                "/user/{id}",
+                web::get()
+                    .to(get_user_bookings)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}",
                 web::get()
                     .to(get_booking_by_id)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/bookings/{id}",
+                "/{id}",
                 web::patch()
                     .to(update_booking)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/bookings/{id}",
+                "/{id}",
                 web::delete()
                     .to(delete_booking)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
+                "/{id}/transfer",
+                web::post()
+                    .to(transfer_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
 }
