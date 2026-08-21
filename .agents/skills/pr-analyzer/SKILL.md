@@ -10,7 +10,7 @@ description: Creates a pull request in GitHub, runs the sanity-check workflow, a
 When invoked to analyze changes and create a PR, follow these steps systematically:
 
 1. **Run the Sanity Check Workflow**
-   - View and execute the instructions in the workflow file: `/home/pav/code/our_places_rs/.agents/workflows/sanity-check-workflow.md`.
+   - View and execute the instructions in the workflow file: `workflows/sanity-check-workflow.md`.
    - Ensure the code passes all sanity checks before proceeding.
 
 2. **Run Security Audit**
