@@ -174,15 +174,12 @@ fn RatingInput(name: &'static str, label: &'static str) -> impl IntoView {
     view! {
         <div class="flex flex-col items-center p-4 bg-base-100 rounded-xl shadow-sm border border-base-300">
             <span class="font-medium text-base-content/80 mb-3">{label}</span>
-            <div class="rating rating-lg rating-half flex flex-row-reverse group">
-                // We use flex-row-reverse and place inputs 5 to 1 so that peer hover works right-to-left
-                // Note: daisyUI rating doesn't natively support exact required validation with radio buttons easily, so we set default to 5
-
-                <input type="radio" name=name value="5" class="mask mask-star bg-orange-400" checked />
-                <input type="radio" name=name value="4" class="mask mask-star bg-orange-400" />
-                <input type="radio" name=name value="3" class="mask mask-star bg-orange-400" />
+            <div class="rating rating-lg">
+                <input type="radio" name=name value="1" class="mask mask-star bg-orange-400" checked />
                 <input type="radio" name=name value="2" class="mask mask-star bg-orange-400" />
-                <input type="radio" name=name value="1" class="mask mask-star bg-orange-400" />
+                <input type="radio" name=name value="3" class="mask mask-star bg-orange-400" />
+                <input type="radio" name=name value="4" class="mask mask-star bg-orange-400" />
+                <input type="radio" name=name value="5" class="mask mask-star bg-orange-400" />
             </div>
         </div>
     }

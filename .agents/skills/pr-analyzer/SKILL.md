@@ -30,7 +30,11 @@ When invoked to analyze changes and create a PR, follow these steps systematical
 
 4. **Create the Pull Request**
    - Ensure the user's changes are committed and pushed to a branch.
-   - Create a PR using the GitHub CLI (`gh pr create`). Use the findings from your analysis to write a helpful PR title and description.
+   - First, write your complete 8-point analysis to a temporary markdown file in your `scratch/` directory (e.g., `scratch/pr_body.md`).
+   - Create the PR using the GitHub CLI: `gh pr create --title "<Title>" --body-file <path_to_scratch_file>`.
+   - **Crucial Fallback**: If the `gh` CLI creates the PR but fails to attach the body (or throws a GraphQL deprecation error), immediately use the GitHub API to update it:
+     `gh api -X PATCH repos/{owner}/{repo}/pulls/{pr_number} -F body=@<path_to_scratch_file>`
+   - Always verify the PR description was successfully attached.
 
 5. **Output the Final Summary**
    - Present a detailed summary to the user documenting your findings for **each of the 8 analysis items**. 

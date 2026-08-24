@@ -6670,6 +6670,9 @@
   .w-24 {
     width: calc(var(--spacing) * 24);
   }
+  .w-32 {
+    width: calc(var(--spacing) * 32);
+  }
   .w-52 {
     width: calc(var(--spacing) * 52);
   }
@@ -6935,9 +6938,6 @@
   }
   .flex-col {
     flex-direction: column;
-  }
-  .flex-row-reverse {
-    flex-direction: row-reverse;
   }
   .flex-wrap {
     flex-wrap: wrap;
@@ -7345,6 +7345,12 @@
       border-color: color-mix(in oklab, var(--color-primary) 20%, transparent);
     }
   }
+  .border-success\/30 {
+    border-color: var(--color-success);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-success) 30%, transparent);
+    }
+  }
   .border-white\/30 {
     border-color: color-mix(in srgb, #fff 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -7595,6 +7601,12 @@
   }
   .bg-success {
     background-color: var(--color-success);
+  }
+  .bg-success\/10 {
+    background-color: var(--color-success);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-success) 10%, transparent);
+    }
   }
   .bg-success\/20 {
     background-color: var(--color-success);
@@ -8086,6 +8098,9 @@
   }
   .py-1 {
     padding-block: calc(var(--spacing) * 1);
+  }
+  .py-1\.5 {
+    padding-block: calc(var(--spacing) * 1.5);
   }
   .py-2 {
     padding-block: calc(var(--spacing) * 2);
