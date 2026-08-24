@@ -156,6 +156,7 @@ pub struct Booking {
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum BookingStatus {
     Pending,
     Confirmed,
@@ -219,6 +220,7 @@ pub struct BookingHistory {
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "cancellation_policy", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum CancellationPolicy {
     Flexible,
     Moderate,
@@ -437,6 +439,7 @@ pub struct ListingDetails {
     pub listing: Listing,
     pub images: Vec<ListingImage>,
     pub owner_name: Option<String>,
+    pub rating_summary: Option<common::models::ListingRatingSummary>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -479,4 +482,36 @@ impl From<common::models::PriceOverride> for PriceOverride {
             updated_at: p.updated_at,
         }
     }
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct ReviewToken {
+    pub id: Uuid,
+    pub token: String,
+    pub booking_id: Uuid,
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+    pub valid_from: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct Review {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub listing_id: Uuid,
+    pub guest_id: Uuid,
+    pub cleanliness_rating: i32,
+    pub accuracy_rating: i32,
+    pub location_rating: i32,
+    pub value_rating: i32,
+    pub overall_rating: Decimal,
+    pub public_review_text: Option<String>,
+    pub private_host_feedback: Option<String>,
+    pub host_reply_text: Option<String>,
+    pub host_replied_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

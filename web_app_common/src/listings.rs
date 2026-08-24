@@ -90,51 +90,40 @@ pub async fn get_pricing_quote_server(
 ) -> Result<common::models::DynamicPricingQuote, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use crate::api_client::get_pool;
-        use db_core::listing as db_listing;
         use rust_decimal::Decimal;
 
-        let pool = get_pool().await;
-        let listing_details = db_listing::get_listing_by_id(&pool, listing_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Listing not found: {}", e)))?;
-
+        // 1. Fetch listing details via listing_api (which applies currency conversion)
+        let listing_details =
+            get_listing_by_id_server(listing_id.to_string(), currency.clone()).await?;
         let listing = listing_details.listing;
-        let mut base_nightly_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
-        let target_currency = currency.unwrap_or_else(|| listing.base_currency.clone());
-        let mut conversion_rate = Decimal::ONE;
+        let base_nightly_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
 
-        if target_currency != listing.base_currency
-            && let Ok((rate, _)) = db_core::currency::get_exchange_rate_and_currency(
-                &pool,
-                &listing.base_currency,
-                &target_currency,
-            )
+        // 2. Fetch price overrides via listing_api
+        let api_url = crate::api_client::listing_api_url();
+        let audience = crate::api_client::listing_api_audience();
+        let url = format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id);
+
+        let res = crate::api_client::get_client()
+            .get(&url, &audience)
             .await
-        {
-            conversion_rate = rate;
-            base_nightly_rate = (base_nightly_rate * rate).round_dp(2);
-        }
+            .map_err(|e| ServerFnError::new(format!("Listing service connection error: {}", e)))?;
 
-        let raw_overrides =
-            db_listing::get_active_overrides_for_dates(&pool, listing_id, check_in, check_out)
-                .await
-                .unwrap_or_default();
+        let active_overrides: Vec<common::models::PriceOverride> = if res.status().is_success() {
+            let all_overrides: Vec<common::models::PriceOverride> =
+                res.json().await.unwrap_or_default();
+            all_overrides
+                .into_iter()
+                .filter(|ovr| ovr.start_date < check_out && ovr.end_date > check_in)
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
-            .into_iter()
-            .map(|mut ovr| {
-                if conversion_rate != Decimal::ONE {
-                    ovr.nightly_rate = (ovr.nightly_rate * conversion_rate).round_dp(2);
-                }
-                ovr
-            })
-            .collect();
-
+        // 3. Calculate dynamic quote
         let quote = common::pricing::calculate_dynamic_quote(
             base_nightly_rate,
             listing.minimum_stay,
-            &converted_overrides,
+            &active_overrides,
             check_in,
             check_out,
         )

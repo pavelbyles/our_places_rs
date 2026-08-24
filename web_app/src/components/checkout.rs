@@ -2,13 +2,9 @@ use crate::app::AuthContext;
 use crate::auth::UserProfile;
 use chrono::NaiveDate;
 use common::models::ListingResponse;
-#[cfg(feature = "ssr")]
-use common::pricing::BookingCalculator;
 use leptos::prelude::*;
 use num_format::{Locale, ToFormattedString};
 use rust_decimal::prelude::ToPrimitive;
-#[cfg(feature = "ssr")]
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,14 +27,9 @@ pub async fn initiate_booking(
     #[cfg(feature = "ssr")]
     {
         use actix_session::Session;
-        use db_core::booking as db_booking;
-        use db_core::listing as db_listing;
-        use db_core::models::{BookingMetadata, NewBooking, NewUser};
-        use db_core::user as db_user;
-        use rand::RngExt;
-        use web_app_common::api_client::get_pool;
+        use common::models::NewBookingRequest;
+        use web_app_common::bookings::create_booking_api;
 
-        let pool = get_pool().await;
         let session = leptos_actix::extract::<Session>().await?;
         let user_currency = session
             .get::<String>("user_default_currency")
@@ -51,139 +42,27 @@ pub async fn initiate_booking(
             Uuid::parse_str(&user_id_str)
                 .map_err(|e| ServerFnError::new(format!("Invalid session: {}", e)))?
         } else {
-            // Create a dummy guest
-            let mut rng = rand::rng();
-            let guest_num: u32 = rng.random_range(100000..999999);
-            let guest_id = Uuid::now_v7();
-            let dummy_email = format!("guest_{}@ourplaces.io", guest_num);
-
-            let new_user = NewUser {
-                id: guest_id,
-                email: dummy_email,
-                password_hash: "GUEST_PLACEHOLDER".to_string(),
-                first_name: "Guest".to_string(),
-                last_name: guest_num.to_string(),
-                phone_number: None,
-                is_active: true,
-                is_verified: false,
-                verification_code: None,
-                verification_code_expires_at: None,
-                attributes: serde_json::json!({"is_guest": true}),
-                roles: Some(vec![db_core::models::UserRole::Booker]),
-                default_currency: user_currency.clone(),
-            };
-
-            db_user::create_user(&pool, &new_user)
-                .await
-                .map_err(|e| ServerFnError::new(format!("Failed to create guest: {}", e)))?;
-            guest_id
+            // For shadow / unauthenticated checkout, generate guest UUID v7
+            Uuid::now_v7()
         };
 
-        // 2. Fetch Listing info for price/policy
-        let listing_details = db_listing::get_listing_by_id(&pool, listing_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Listing not found: {}", e)))?;
-
-        let listing = listing_details.listing;
-        let total_days = (check_out - check_in).num_days() as i32;
-        if total_days <= 0 {
-            return Err(ServerFnError::new("Check-out must be after check-in"));
-        }
-
-        let mut base_nightly_rate = listing.price_per_night.unwrap_or(Decimal::ZERO);
-
-        let (rate, target_curr) = db_core::currency::get_exchange_rate_and_currency(
-            &pool,
-            &listing.base_currency,
-            &user_currency,
-        )
-        .await
-        .unwrap_or((Decimal::ONE, listing.base_currency.clone()));
-
-        if rate != Decimal::ONE {
-            base_nightly_rate = (base_nightly_rate * rate).round_dp(2);
-        }
-
-        let raw_overrides =
-            db_listing::get_active_overrides_for_dates(&pool, listing_id, check_in, check_out)
-                .await
-                .unwrap_or_default();
-
-        let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
-            .into_iter()
-            .map(|mut ovr| {
-                if rate != Decimal::ONE {
-                    ovr.nightly_rate = (ovr.nightly_rate * rate).round_dp(2);
-                }
-                ovr
-            })
-            .collect();
-
-        let dynamic_quote = common::pricing::calculate_dynamic_quote(
-            base_nightly_rate,
-            listing.minimum_stay,
-            &converted_overrides,
-            check_in,
-            check_out,
-        )
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let calculator = BookingCalculator::with_subtotal(
-            dynamic_quote.effective_daily_rate,
-            total_days,
-            dynamic_quote.subtotal,
-        )
-        .apply_discounts(
-            listing.monthly_discount_percentage,
-            listing.weekly_discount_percentage,
-        )
-        .apply_taxes()
-        .finalize();
-
-        let confirmation_code = (0..8)
-            .map(|_| {
-                let idx = rand::rng().random_range(0..26);
-                (b'A' + idx as u8) as char
-            })
-            .collect::<String>();
-
-        let new_booking = NewBooking {
-            confirmation_code,
+        let req = NewBookingRequest {
             guest_id,
             listing_id,
-            date_from: check_in,
-            date_to: check_out,
-            currency: target_curr,
-            daily_rate: calculator.actual_daily_rate,
-            number_of_persons: (adults + children + infants) as i32,
-            total_days: calculator.total_days,
-            sub_total_price: calculator.sub_total_price,
-            discount_value: calculator.discount_value,
-            tax_value: calculator.tax_value,
-            fee_breakdown: calculator.fee_breakdown,
-            total_price: calculator.total_price,
-            cancellation_policy: db_core::models::CancellationPolicy::Flexible,
-            metadata: BookingMetadata {
-                num_adults: adults,
-                num_children: children,
-                num_infants: infants,
-                num_pets: pets,
-                message_to_host: None,
-                estimated_arrival_time: None,
-                is_business_trip: false,
-            },
+            check_in,
+            check_out,
+            num_adults: adults,
+            num_children: children,
+            num_infants: infants,
+            num_pets: pets,
+            message_to_host: None,
+            estimated_arrival_time: None,
+            is_business_trip: false,
+            currency: user_currency,
+            agreed_cancellation_policy: "flexible".to_string(),
         };
 
-        let booking = match db_booking::create_booking(&pool, &new_booking).await {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::error!("Failed to create booking in DB: {:?}", e);
-                return Err(ServerFnError::new(format!(
-                    "Failed to create booking: {}",
-                    e
-                )));
-            }
-        };
+        let booking = create_booking_api(req).await?;
 
         if session.get::<String>("user_id").ok().flatten().is_none() {
             session
@@ -193,6 +72,13 @@ pub async fn initiate_booking(
 
         Ok(booking.id)
     }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (
+            listing_id, check_in, check_out, adults, children, infants, pets,
+        );
+        Ok(Uuid::nil())
+    }
 }
 
 #[server]
@@ -200,8 +86,7 @@ pub async fn claim_pending_booking(booking_id: Uuid) -> Result<(), ServerFnError
     #[cfg(feature = "ssr")]
     {
         use actix_session::Session;
-        use db_core::booking as db_booking;
-        use web_app_common::api_client::get_pool;
+        use web_app_common::bookings::transfer_booking_api;
 
         let session = leptos_actix::extract::<Session>().await?;
         let user_id_str = session
@@ -213,10 +98,7 @@ pub async fn claim_pending_booking(booking_id: Uuid) -> Result<(), ServerFnError
         let user_id =
             Uuid::parse_str(&user_id_str).map_err(|_| ServerFnError::new("Invalid user ID"))?;
 
-        let pool = get_pool().await;
-        db_booking::transfer_booking_guest(&pool, booking_id, user_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Failed to transfer booking: {}", e)))?;
+        transfer_booking_api(booking_id, user_id).await?;
 
         session.remove("pending_booking_id");
         Ok(())
@@ -232,76 +114,28 @@ pub async fn claim_pending_booking(booking_id: Uuid) -> Result<(), ServerFnError
 pub async fn get_checkout_data(booking_id: Uuid) -> Result<CheckoutDetails, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use db_core::booking as db_booking;
-        use db_core::listing as db_listing;
-        use web_app_common::api_client::get_pool;
+        use actix_session::Session;
+        use web_app_common::bookings::get_booking_by_id_api;
+        use web_app_common::listings::get_listing_by_id_server;
 
-        let pool = get_pool().await;
-        let booking = db_booking::get_booking_by_id(&pool, booking_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Booking not found: {}", e)))?;
+        let session = leptos_actix::extract::<Session>().await.ok();
+        let currency = session
+            .as_ref()
+            .and_then(|s| s.get::<String>("user_default_currency").ok().flatten());
 
-        let listing_details = db_listing::get_listing_by_id(&pool, booking.listing_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Listing not found: {}", e)))?;
-        let listing = listing_details.listing;
+        let booking = get_booking_by_id_api(booking_id, currency.clone()).await?;
+        let listing_details =
+            get_listing_by_id_server(booking.listing_id.to_string(), currency).await?;
 
         Ok(CheckoutDetails {
-            booking: common::models::BookingResponse {
-                id: booking.id,
-                confirmation_code: booking.confirmation_code,
-                guest_id: booking.guest_id,
-                listing_id: booking.listing_id,
-                status: format!("{:?}", booking.status),
-                date_from: booking.date_from,
-                date_to: booking.date_to,
-                currency: booking.currency,
-                daily_rate: booking.daily_rate,
-                number_of_persons: booking.number_of_persons,
-                total_days: booking.total_days,
-                sub_total_price: booking.sub_total_price,
-                discount_value: booking.discount_value,
-                tax_value: booking.tax_value,
-                total_price: booking.total_price,
-                cancellation_policy: format!("{:?}", booking.cancellation_policy),
-                metadata: common::models::BookingMetadataResponse {
-                    num_adults: booking.metadata.num_adults,
-                    num_children: booking.metadata.num_children,
-                    num_infants: booking.metadata.num_infants,
-                    num_pets: booking.metadata.num_pets,
-                    message_to_host: booking.metadata.message_to_host.clone(),
-                    estimated_arrival_time: booking.metadata.estimated_arrival_time.clone(),
-                    is_business_trip: booking.metadata.is_business_trip,
-                },
-                created_at: booking.created_at,
-                updated_at: booking.updated_at,
-            },
-            listing: common::models::ListingResponse {
-                id: listing.id,
-                user_id: listing.user_id,
-                name: listing.name,
-                description: listing.description,
-                listing_structure: "Home".to_string(), // Placeholder or fetch
-                country: listing.country,
-                price_per_night: listing.price_per_night,
-                is_active: listing.is_active,
-                added_at: listing.added_at,
-                owner_name: None,
-                primary_image_url: listing.primary_image_url,
-                max_guests: listing.max_guests,
-                bedrooms: listing.bedrooms,
-                full_bathrooms: listing.full_bathrooms,
-                latitude: listing.latitude,
-                longitude: listing.longitude,
-                overall_rating: listing.overall_rating,
-                city: listing.city,
-                base_currency: listing.base_currency,
-                slug: listing.slug,
-                listing_details: Some(listing.listing_details.0),
-                minimum_stay: listing.minimum_stay,
-                days_between_bookings: listing.days_between_bookings,
-            },
+            booking,
+            listing: listing_details.listing,
         })
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = booking_id;
+        Err(ServerFnError::new("Not implemented on client"))
     }
 }
 
@@ -312,38 +146,24 @@ pub async fn complete_booking(
     full_name: String,
     _phone: String,
     metadata: common::models::BookingMetadataResponse,
-) -> Result<(), ServerFnError> {
+) -> Result<common::models::BookingResponse, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
-        use db_core::booking as db_booking;
-        use db_core::listing as db_listing;
-        use db_core::models::{BookingMetadata, BookingStatus, UpdatedBooking};
-        use web_app_common::api_client::get_pool;
+        use common::models::UpdatedBookingRequest;
+        use web_app_common::bookings::update_booking_api;
         use web_app_common::email::send_booking_confirmation;
+        use web_app_common::listings::get_listing_by_id_server;
 
-        let pool = get_pool().await;
         tracing::info!("Completing booking for ID: {}", booking_id);
 
-        let update = UpdatedBooking {
-            status: Some(BookingStatus::Confirmed),
-            metadata: Some(BookingMetadata {
-                num_adults: metadata.num_adults,
-                num_children: metadata.num_children,
-                num_infants: metadata.num_infants,
-                num_pets: metadata.num_pets,
-                message_to_host: metadata.message_to_host,
-                estimated_arrival_time: metadata.estimated_arrival_time,
-                is_business_trip: metadata.is_business_trip,
-            }),
+        let update_req = UpdatedBookingRequest {
+            status: Some("confirmed".to_string()),
+            metadata: Some(metadata),
         };
 
-        let booking = db_booking::update_booking(&pool, booking_id, &update)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Failed to confirm booking: {}", e)))?;
-
-        let listing_details = db_listing::get_listing_by_id(&pool, booking.listing_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("Listing not found: {}", e)))?;
+        let booking = update_booking_api(booking_id, update_req).await?;
+        let listing_details =
+            get_listing_by_id_server(booking.listing_id.to_string(), None).await?;
 
         let first_name = full_name
             .split_whitespace()
@@ -362,11 +182,82 @@ pub async fn complete_booking(
         )
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to send confirmation email: {}", e)))?;
+
         tracing::info!(
             "Booking {} successfully confirmed and email sent.",
             booking_id
         );
-        leptos_actix::redirect("/");
+        Ok(booking)
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (booking_id, email, full_name, _phone, metadata);
+        Err(ServerFnError::new("Not implemented on client"))
+    }
+}
+
+#[server]
+pub async fn cancel_booking(booking_id: Uuid) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use actix_session::Session;
+        use common::models::UpdatedBookingRequest;
+        use web_app_common::bookings::{
+            delete_booking_api, get_booking_by_id_api, update_booking_api,
+        };
+
+        let session = leptos_actix::extract::<Session>().await?;
+
+        // 1. Fetch booking details from booking_api
+        let booking = get_booking_by_id_api(booking_id, None).await?;
+
+        // 2. Authorization check:
+        let is_authorized = if let Some(user_id_str) =
+            session.get::<String>("user_id").ok().flatten()
+        {
+            if let Ok(user_id) = Uuid::parse_str(&user_id_str) {
+                booking.guest_id == user_id
+            } else {
+                false
+            }
+        } else if let Some(pending_id) = session.get::<String>("pending_booking_id").ok().flatten()
+        {
+            pending_id == booking_id.to_string() && booking.status.eq_ignore_ascii_case("pending")
+        } else {
+            false
+        };
+
+        if !is_authorized {
+            return Err(ServerFnError::new(
+                "Unauthorized: You do not have permission to cancel this booking",
+            ));
+        }
+
+        // 3. Handle according to status
+        let status_lower = booking.status.to_lowercase();
+        if status_lower == "pending" {
+            // Delete the in-flight hold via HTTP DELETE to booking_api
+            delete_booking_api(booking_id).await?;
+        } else if status_lower == "confirmed" {
+            // Transition confirmed booking to cancelled via HTTP PATCH to booking_api
+            let update_req = UpdatedBookingRequest {
+                status: Some("cancelled".to_string()),
+                metadata: None,
+            };
+            update_booking_api(booking_id, update_req).await?;
+        } else if status_lower == "completed" {
+            return Err(ServerFnError::new("Cannot cancel a completed booking"));
+        }
+
+        // 4. Session cleanup
+        session.remove("pending_booking_id");
+
+        leptos_actix::redirect(&format!("/listing/{}", booking.listing_id));
+        Ok(())
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = booking_id;
         Ok(())
     }
 }
@@ -428,8 +319,52 @@ pub fn CheckoutPage() -> impl IntoView {
         },
     );
 
+    let cancel_booking_action = Action::new(move |id: &Uuid| {
+        let id = *id;
+        async move { cancel_booking(id).await }
+    });
+
+    let confirmed_booking =
+        RwSignal::new(Option::<(common::models::BookingResponse, ListingResponse, String)>::None);
+
+    Effect::new(move || {
+        if let Some(Ok(booking)) = complete_booking_action.value().get() {
+            if let Some(Ok(data)) = checkout_data.get() {
+                confirmed_booking.set(Some((booking, data.listing.clone(), email.get())));
+            }
+        }
+    });
+
+    Effect::new(move || {
+        if let Some(Ok(())) = cancel_booking_action.value().get() {
+            if let Some(Ok(data)) = checkout_data.get() {
+                leptos_router::hooks::use_navigate()(
+                    &format!("/listing/{}", data.listing.id),
+                    Default::default(),
+                );
+            } else {
+                leptos_router::hooks::use_navigate()("/", Default::default());
+            }
+        }
+    });
+
     view! {
         <div class="container mx-auto px-4 py-12 max-w-6xl">
+            // Booking Confirmation Modal & Confetti Popup
+            {move || {
+                if let Some((booking, listing, guest_email)) = confirmed_booking.get() {
+                    view! {
+                        <BookingConfirmationModal
+                            booking=booking
+                            listing=listing
+                            email=guest_email
+                        />
+                    }.into_any()
+                } else {
+                    view! { <span class="hidden"></span> }.into_any()
+                }
+            }}
+
             <h1 class="text-3xl font-bold mb-8">"Confirm and Pay"</h1>
 
             <Suspense fallback=move || view! { <div class="loading loading-spinner loading-lg mx-auto block"></div> }>
@@ -518,10 +453,25 @@ pub fn CheckoutPage() -> impl IntoView {
                                         </div>
                                     </section>
 
-                                    <div class="pt-8">
+                                    <div class="pt-8 flex flex-col sm:flex-row gap-4">
                                         <button
-                                            class="btn btn-primary btn-lg w-full"
-                                            disabled=complete_booking_action.pending()
+                                            type="button"
+                                            class="btn btn-outline btn-error btn-lg flex-1 order-2 sm:order-1"
+                                            disabled=move || cancel_booking_action.pending().get() || complete_booking_action.pending().get()
+                                            on:click=move |_| {
+                                                cancel_booking_action.dispatch(booking_id());
+                                            }
+                                        >
+                                            {move || if cancel_booking_action.pending().get() {
+                                                view! { <span class="loading loading-spinner"></span> }.into_any()
+                                            } else {
+                                                view! { "Cancel Reservation" }.into_any()
+                                            }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary btn-lg flex-1 order-1 sm:order-2"
+                                            disabled=move || complete_booking_action.pending().get() || cancel_booking_action.pending().get()
                                             on:click=move |_| {
                                                 if let Some(Ok(data)) = checkout_data.get() {
                                                     let meta = common::models::BookingMetadataResponse {
@@ -603,6 +553,16 @@ pub fn CheckoutPage() -> impl IntoView {
                 }.into_any(),
                 _ => view! { <div></div> }.into_any()
             })}
+
+            {move || cancel_booking_action.value().get().map(|res| match res {
+                Err(e) => view! {
+                    <div class="alert alert-error mt-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span>"Failed to cancel booking: " {e.to_string()}</span>
+                    </div>
+                }.into_any(),
+                _ => view! { <div></div> }.into_any()
+            })}
         </div>
     }
 }
@@ -679,5 +639,235 @@ fn ContactForm(
                 }.into_any()
             })}
         </Suspense>
+    }
+}
+
+#[component]
+fn ConfettiCelebration() -> impl IntoView {
+    let particles = [
+        (4, 50, "3.1s", "1.2s", "#FF4757", 10, 0, 45),
+        (8, 200, "2.8s", "1.5s", "#2ED573", 8, 1, 0),
+        (12, 400, "3.6s", "1.1s", "#1E90FF", 12, 2, -30),
+        (16, 100, "3.0s", "1.7s", "#FFA502", 9, 0, 60),
+        (20, 300, "3.4s", "1.3s", "#9B59B6", 11, 1, 0),
+        (24, 50, "2.9s", "1.6s", "#FF6B81", 8, 2, 20),
+        (28, 500, "3.8s", "1.0s", "#70A1FF", 13, 0, -45),
+        (32, 150, "3.2s", "1.4s", "#ECCC68", 10, 1, 0),
+        (36, 350, "3.5s", "1.8s", "#00D2D3", 7, 2, 75),
+        (40, 0, "2.7s", "1.2s", "#FF4757", 12, 0, -15),
+        (44, 250, "3.3s", "1.5s", "#5352ED", 9, 1, 0),
+        (48, 450, "3.7s", "1.1s", "#2ED573", 11, 2, 40),
+        (52, 100, "3.0s", "1.6s", "#FFA502", 8, 0, -60),
+        (56, 300, "3.4s", "1.3s", "#FF6B81", 10, 1, 0),
+        (60, 50, "2.8s", "1.7s", "#1E90FF", 12, 2, 15),
+        (64, 400, "3.6s", "1.0s", "#9B59B6", 7, 0, 90),
+        (68, 150, "3.1s", "1.4s", "#ECCC68", 11, 1, 0),
+        (72, 350, "3.5s", "1.9s", "#00D2D3", 9, 2, -25),
+        (76, 50, "2.9s", "1.2s", "#FF4757", 13, 0, 35),
+        (80, 250, "3.3s", "1.5s", "#2ED573", 8, 1, 0),
+        (84, 450, "3.7s", "1.1s", "#70A1FF", 10, 2, -70),
+        (88, 100, "3.0s", "1.6s", "#FFA502", 12, 0, 50),
+        (92, 300, "3.4s", "1.3s", "#FF6B81", 7, 1, 0),
+        (96, 200, "2.8s", "1.7s", "#5352ED", 11, 2, -10),
+        (6, 600, "3.2s", "1.4s", "#2ED573", 9, 0, 30),
+        (14, 750, "3.5s", "1.2s", "#FF4757", 11, 1, 0),
+        (22, 650, "2.9s", "1.6s", "#FFA502", 8, 2, -45),
+        (30, 850, "3.7s", "1.1s", "#1E90FF", 12, 0, 60),
+        (38, 700, "3.0s", "1.5s", "#9B59B6", 10, 1, 0),
+        (46, 900, "3.6s", "1.3s", "#00D2D3", 7, 2, 15),
+        (54, 600, "2.8s", "1.8s", "#FF6B81", 13, 0, -30),
+        (62, 800, "3.4s", "1.0s", "#ECCC68", 9, 1, 0),
+        (70, 700, "3.1s", "1.4s", "#5352ED", 11, 2, 75),
+        (78, 950, "3.8s", "1.2s", "#2ED573", 8, 0, -60),
+        (86, 650, "2.9s", "1.6s", "#FF4757", 10, 1, 0),
+        (94, 850, "3.5s", "1.5s", "#70A1FF", 12, 2, 45),
+        (10, 1100, "3.3s", "1.3s", "#ECCC68", 10, 0, -15),
+        (26, 1200, "3.6s", "1.5s", "#00D2D3", 8, 1, 0),
+        (42, 1050, "3.0s", "1.7s", "#FF6B81", 11, 2, 60),
+        (58, 1150, "3.4s", "1.1s", "#9B59B6", 9, 0, -45),
+        (74, 1250, "3.7s", "1.4s", "#1E90FF", 12, 1, 0),
+        (90, 1100, "3.1s", "1.6s", "#2ED573", 7, 2, 30),
+    ];
+
+    view! {
+        <div class="fixed inset-0 pointer-events-none z-50 overflow-hidden" aria-hidden="true">
+            {particles.into_iter().map(|(left, delay, dur, wobble, color, size, shape, rotate)| {
+                let style = format!(
+                    "left: {}%; --fall-delay: {}ms; --fall-duration: {}; --wobble-duration: {}; background-color: {}; width: {}px; height: {}px; transform: rotate({}deg);",
+                    left, delay, dur, wobble, color, size, if shape == 2 { size * 2 } else { size }, rotate
+                );
+                let shape_class = match shape {
+                    1 => "rounded-full",
+                    2 => "rounded-xs",
+                    _ => "rounded-sm",
+                };
+                view! {
+                    <div
+                        class=format!("absolute top-0 animate-confetti-particle shadow-sm {}", shape_class)
+                        style=style
+                    ></div>
+                }
+            }).collect_view()}
+        </div>
+    }
+}
+
+#[component]
+fn BookingConfirmationModal(
+    booking: common::models::BookingResponse,
+    listing: common::models::ListingResponse,
+    email: String,
+) -> impl IntoView {
+    let copied = RwSignal::new(false);
+    let conf_code = booking.confirmation_code.clone();
+
+    let copy_code = move |_| {
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(window) = web_sys::window() {
+                let _ = window.navigator().clipboard().write_text(&conf_code);
+                copied.set(true);
+                leptos::prelude::set_timeout(
+                    move || copied.set(false),
+                    std::time::Duration::from_secs(2),
+                );
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = &conf_code;
+            copied.set(true);
+        }
+    };
+
+    view! {
+        <ConfettiCelebration />
+
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div class="card bg-base-100 max-w-lg w-full shadow-2xl border border-base-200 animate-modal-pop relative overflow-hidden">
+                // Decorative Top Accent Bar
+                <div class="h-2 w-full bg-gradient-to-r from-emerald-400 via-primary to-secondary"></div>
+
+                <div class="card-body p-6 sm:p-8 text-center items-center">
+                    // Success Burst Icon
+                    <div class="relative mb-3">
+                        <div class="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center animate-ping absolute inset-0 opacity-40"></div>
+                        <div class="w-16 h-16 rounded-full bg-success text-success-content flex items-center justify-center shadow-lg relative animate-checkmark-burst">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    // Heading & Subheading
+                    <h2 class="text-2xl sm:text-3xl font-black text-base-content tracking-tight">
+                        "Booking Confirmed! 🎉"
+                    </h2>
+                    <p class="text-sm text-base-content/70 mt-1 max-w-sm">
+                        "Pack your bags! Your luxury getaway in Jamaica is officially confirmed."
+                    </p>
+
+                    // Booking Snapshot Box
+                    <div class="w-full bg-base-200/60 rounded-2xl p-4 mt-5 text-left border border-base-300/60 space-y-3.5">
+                        // Listing Details Preview
+                        <div class="flex items-center gap-3 pb-3 border-b border-base-300/60">
+                            <div class="w-14 h-14 rounded-xl bg-base-300 overflow-hidden flex-shrink-0 shadow-inner">
+                                <img
+                                    src=listing.primary_image_url.clone().unwrap_or_else(|| "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80".to_string())
+                                    alt=listing.name.clone()
+                                    class="w-full h-full object-cover"
+                                />
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-[11px] font-bold uppercase tracking-wider text-primary truncate">
+                                    {listing.listing_structure.clone()}
+                                </p>
+                                <h3 class="font-bold text-sm sm:text-base text-base-content leading-snug line-clamp-1">
+                                    {listing.name.clone()}
+                                </h3>
+                                <p class="text-xs text-base-content/60">
+                                    {listing.city.clone().unwrap_or_else(|| "Jamaica".to_string())} ", " {listing.country.clone()}
+                                </p>
+                            </div>
+                        </div>
+
+                        // Confirmation Code with Copy Button
+                        <div class="flex items-center justify-between bg-base-100 rounded-xl px-3.5 py-2.5 border border-base-300/80">
+                            <div>
+                                <p class="text-[10px] uppercase font-bold text-base-content/50 tracking-wider">"Confirmation Code"</p>
+                                <p class="font-mono font-black text-base sm:text-lg text-primary tracking-wider">{booking.confirmation_code.clone()}</p>
+                            </div>
+                            <button
+                                type="button"
+                                class=move || format!("btn btn-xs sm:btn-sm gap-1.5 transition-all {}", if copied.get() { "btn-success text-white" } else { "btn-ghost border border-base-300" })
+                                on:click=copy_code
+                            >
+                                {move || if copied.get() {
+                                    view! {
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            <span>"Copied!"</span>
+                                        </>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                            </svg>
+                                            <span>"Copy"</span>
+                                        </>
+                                    }.into_any()
+                                }}
+                            </button>
+                        </div>
+
+                        // Dates, Guests, and Total Grid
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="bg-base-100/70 p-2.5 rounded-xl border border-base-300/50">
+                                <span class="text-base-content/60 block text-[10px] uppercase font-bold">"Dates"</span>
+                                <span class="font-bold text-base-content">{format!("{} – {}", booking.date_from, booking.date_to)}</span>
+                                <span class="text-base-content/50 block text-[11px]">{format!("{} nights", booking.total_days)}</span>
+                            </div>
+                            <div class="bg-base-100/70 p-2.5 rounded-xl border border-base-300/50">
+                                <span class="text-base-content/60 block text-[10px] uppercase font-bold">"Total Paid"</span>
+                                <span class="font-extrabold text-base sm:text-lg text-emerald-600 dark:text-emerald-400">
+                                    {format!("{} {:.2}", booking.currency, booking.total_price)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    // Email Receipt Notice
+                    <div class="flex items-center gap-2 mt-4 text-xs text-base-content/70">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <span>"Receipt & check-in details sent to " <strong class="text-base-content">{email}</strong></span>
+                    </div>
+
+                    // Action CTAs
+                    <div class="flex flex-col sm:flex-row gap-3 w-full mt-6">
+                        <a
+                            href="/bookings"
+                            class="btn btn-primary flex-1 gap-2 text-sm shadow-md"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            "View My Bookings"
+                        </a>
+                        <a
+                            href="/"
+                            class="btn btn-ghost border border-base-300 flex-1 text-sm"
+                        >
+                            "Explore More"
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
     }
 }

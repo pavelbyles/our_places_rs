@@ -621,3 +621,5 @@ async fn test_get_listings_with_filter() {
     assert_eq!(body.len(), 1);
     assert_eq!(body[0].name, "Apartment in Paris");
 }
+
+include!("apis_test_reviews.rs");

@@ -62,6 +62,7 @@ pub fn HomePage() -> impl IntoView {
                                                             city=item.city.clone()
                                                             id=item.slug.clone()
                                                             currency=item.base_currency.clone()
+                                                            rating=item.overall_rating
                                                         />
                                                     }
                                                 }).collect_view()}

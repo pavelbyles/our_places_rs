@@ -717,7 +717,7 @@ pub fn ListingsPage() -> impl IntoView {
                                                                 class="btn btn-accent btn-sm"
                                                                 on:click=move |_| set_show_overrides.update(|v| *v = !*v)
                                                             >
-                                                                {move || if show_overrides.get() { "Hide Seasonal Rates" } else { "Seasonal Rates" }}
+                                                                {move || if show_overrides.get() { "Hide Manage Section" } else { "Manage Rates & Reviews" }}
                                                             </button>
                                                             <button
                                                                 class="btn btn-secondary btn-sm"
@@ -731,10 +731,16 @@ pub fn ListingsPage() -> impl IntoView {
                                                 {move || {
                                                     if show_overrides.get() {
                                                         view! {
-                                                            <PriceOverridesSection
-                                                                listing_id=listing_id_str.clone()
-                                                                listing_name=listing_name_str.clone()
-                                                            />
+                                                            <div class="flex flex-col gap-4">
+                                                                <PriceOverridesSection
+                                                                    listing_id=listing_id_str.clone()
+                                                                    listing_name=listing_name_str.clone()
+                                                                />
+                                                                <ListingReviewsAdminSection
+                                                                    listing_id=listing_id_str.clone()
+                                                                    listing_name=listing_name_str.clone()
+                                                                />
+                                                            </div>
                                                         }.into_any()
                                                     } else {
                                                         ().into_any()
@@ -1374,6 +1380,148 @@ pub fn PriceOverridesSection(listing_id: String, listing_name: String) -> impl I
                     "Add Rate Override"
                 </button>
             </form>
+        </div>
+    }
+}
+
+#[server]
+pub async fn submit_host_reply_action(
+    review_id: String,
+    reply_text: String,
+) -> Result<(), ServerFnError> {
+    let review_uuid =
+        uuid::Uuid::parse_str(&review_id).map_err(|e| ServerFnError::new(e.to_string()))?;
+    let req = common::models::HostReplyRequest { reply_text };
+    web_app_common::reviews::submit_host_reply_server(review_uuid, req).await
+}
+
+#[component]
+#[allow(non_snake_case)]
+pub fn ListingReviewsAdminSection(listing_id: String, listing_name: String) -> impl IntoView {
+    let lid = uuid::Uuid::parse_str(&listing_id).unwrap_or_default();
+
+    let (refresh, set_refresh) = signal(0);
+
+    let reviews_resource = Resource::new(
+        move || (lid, refresh.get()),
+        |(id, _)| async move { web_app_common::reviews::get_listing_reviews_server(id, 1, 50).await },
+    );
+
+    view! {
+        <div class="mt-4 p-4 border border-base-300 rounded-box bg-base-200 space-y-4">
+            <h3 class="font-bold text-md text-primary">"Guest Reviews — " {listing_name}</h3>
+
+            <Suspense fallback=move || view! { <div class="loading loading-spinner"></div> }>
+                {move || reviews_resource.get().map(|res| match res {
+                    Ok(reviews) => {
+                        if reviews.is_empty() {
+                            view! { <p class="text-sm text-base-content/70">"No reviews yet."</p> }.into_any()
+                        } else {
+                            view! {
+                                <div class="grid grid-cols-1 gap-4">
+                                    <For
+                                        each=move || reviews.clone()
+                                        key=|review| review.id
+                                        children=move |review| {
+                                            view! {
+                                                <AdminReviewCard review=review set_refresh=set_refresh />
+                                            }
+                                        }
+                                    />
+                                </div>
+                            }.into_any()
+                        }
+                    }
+                    Err(e) => view! { <div class="alert alert-error"><span>{e.to_string()}</span></div> }.into_any(),
+                })}
+            </Suspense>
+        </div>
+    }
+}
+
+#[component]
+fn AdminReviewCard(
+    review: common::models::ReviewResponse,
+    set_refresh: WriteSignal<i32>,
+) -> impl IntoView {
+    let review_id = review.id;
+    let submit_reply = ServerAction::<SubmitHostReplyAction>::new();
+    let (show_reply_form, set_show_reply_form) = signal(false);
+
+    Effect::new(move || {
+        if let Some(Ok(_)) = submit_reply.value().get() {
+            set_show_reply_form.set(false);
+            set_refresh.update(|v| *v += 1);
+        }
+    });
+
+    view! {
+        <div class="card bg-base-100 shadow-sm border border-base-200 p-4">
+            <div class="flex justify-between items-start">
+                <div>
+                    <div class="font-bold">{review.guest_first_name.clone()}</div>
+                    <div class="text-xs text-base-content/60">{review.created_at.format("%b %d, %Y").to_string()}</div>
+                </div>
+                <div class="badge badge-primary">{format!("{:.1}", review.overall_rating)}</div>
+            </div>
+            <div class="mt-2 text-sm whitespace-pre-line">
+                {review.public_review_text.clone().unwrap_or_default()}
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-base-200">
+                {
+                    let r = review.clone();
+                    move || {
+                        if let Some(reply) = r.host_reply_text.clone() {
+                            view! {
+                                <div class="bg-base-200 p-3 rounded-lg">
+                                    <div class="font-semibold text-xs mb-1">"Your Reply:"</div>
+                                    <div class="text-sm">{reply}</div>
+                                </div>
+                            }.into_any()
+                        } else if show_reply_form.get() {
+                            view! {
+                                <ActionForm action=submit_reply>
+                                    <div class="flex flex-col gap-2">
+                                        <input type="hidden" name="review_id" value=review_id.to_string() />
+                                        <textarea
+                                            name="reply_text"
+                                            class="textarea textarea-bordered textarea-sm w-full"
+                                            placeholder="Write a public reply to this review..."
+                                            required
+                                        ></textarea>
+                                        <div class="flex gap-2 justify-end">
+                                            <button
+                                                type="button"
+                                                class="btn btn-ghost btn-xs"
+                                                on:click=move |_| set_show_reply_form.set(false)
+                                            >
+                                                "Cancel"
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                class="btn btn-primary btn-xs"
+                                                disabled=move || submit_reply.pending().get()
+                                            >
+                                                "Submit Reply"
+                                            </button>
+                                        </div>
+                                    </div>
+                                </ActionForm>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <button
+                                    class="btn btn-outline btn-xs"
+                                    on:click=move |_| set_show_reply_form.set(true)
+                                >
+                                    "Reply to Review"
+                                </button>
+                            }.into_any()
+                        }
+                    }
+                }
+            </div>
         </div>
     }
 }

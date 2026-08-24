@@ -4,6 +4,7 @@ pub mod currency;
 pub mod error;
 pub mod listing;
 pub mod models;
+pub mod review;
 pub mod sessions;
 pub mod user;
 

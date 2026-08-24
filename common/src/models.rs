@@ -138,6 +138,7 @@ pub struct ListingDetails {
     pub listing: ListingResponse,
     pub images: Vec<ListingImageResponse>,
     pub host_name: Option<String>,
+    pub rating_summary: Option<ListingRatingSummary>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
@@ -232,6 +233,18 @@ pub struct NewBookingRequest {
     pub currency: String,
 
     pub agreed_cancellation_policy: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema, Default)]
+pub struct UpdatedBookingRequest {
+    pub status: Option<String>,
+    pub metadata: Option<BookingMetadataResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
+pub struct TransferBookingRequest {
+    #[schema(value_type = String, format = "uuid")]
+    pub guest_id: Uuid,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
@@ -382,4 +395,135 @@ pub struct DynamicPricingQuote {
     pub subtotal: Decimal,
     pub effective_daily_rate: Decimal,
     pub required_min_nights: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
+pub struct NewReviewRequest {
+    pub token: String,
+    #[validate(range(min = 1, max = 5))]
+    pub cleanliness_rating: i32,
+    #[validate(range(min = 1, max = 5))]
+    pub accuracy_rating: i32,
+    #[validate(range(min = 1, max = 5))]
+    pub location_rating: i32,
+    #[validate(range(min = 1, max = 5))]
+    pub value_rating: i32,
+    pub public_review_text: Option<String>,
+    pub private_host_feedback: Option<String>,
+}
+
+impl NewReviewRequest {
+    pub fn calculate_overall_rating(&self) -> Decimal {
+        let sum = self.cleanliness_rating
+            + self.accuracy_rating
+            + self.location_rating
+            + self.value_rating;
+        let avg = Decimal::from(sum) / Decimal::from(4);
+        avg.round_dp(2)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
+pub struct HostReplyRequest {
+    #[validate(length(min = 1, max = 2000))]
+    pub reply_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct ReviewTokenInfoResponse {
+    pub is_valid: bool,
+    pub listing_name: String,
+    pub guest_first_name: String,
+    pub check_in: NaiveDate,
+    pub check_out: NaiveDate,
+    pub expires_at: DateTime<Utc>,
+    pub error_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct ListingRatingSummary {
+    pub overall_rating: Option<f64>,
+    pub cleanliness_rating: Option<f64>,
+    pub accuracy_rating: Option<f64>,
+    pub location_rating: Option<f64>,
+    pub value_rating: Option<f64>,
+    pub review_count: i32,
+    pub rating_distribution: std::collections::HashMap<i32, i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct ReviewResponse {
+    pub id: Uuid,
+    pub guest_first_name: String,
+    pub cleanliness_rating: i32,
+    pub accuracy_rating: i32,
+    pub location_rating: i32,
+    pub value_rating: i32,
+    pub overall_rating: f64,
+    pub public_review_text: Option<String>,
+    pub host_reply_text: Option<String>,
+    pub host_replied_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct BookingReviewEligibility {
+    pub booking_id: Uuid,
+    pub is_eligible: bool,
+    pub token: Option<String>,
+    pub has_reviewed: bool,
+    pub days_remaining: Option<i64>,
+    pub status_message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_overall_rating_calculation() {
+        let req1 = NewReviewRequest {
+            token: "xyz".to_string(),
+            cleanliness_rating: 5,
+            accuracy_rating: 4,
+            location_rating: 5,
+            value_rating: 4,
+            public_review_text: None,
+            private_host_feedback: None,
+        };
+        assert_eq!(
+            req1.calculate_overall_rating(),
+            Decimal::from_str("4.50").unwrap()
+        );
+
+        let req2 = NewReviewRequest {
+            token: "xyz".to_string(),
+            cleanliness_rating: 5,
+            accuracy_rating: 5,
+            location_rating: 4,
+            value_rating: 5,
+            public_review_text: None,
+            private_host_feedback: None,
+        };
+        assert_eq!(
+            req2.calculate_overall_rating(),
+            Decimal::from_str("4.75").unwrap()
+        );
+
+        let req3 = NewReviewRequest {
+            token: "xyz".to_string(),
+            cleanliness_rating: 3,
+            accuracy_rating: 3,
+            location_rating: 3,
+            value_rating: 4,
+            public_review_text: None,
+            private_host_feedback: None,
+        };
+        assert_eq!(
+            req3.calculate_overall_rating(),
+            Decimal::from_str("3.25").unwrap()
+        );
+    }
 }

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, guest_id, listing_id, status as \"status: crate::models::BookingStatus\", date_to\n        FROM booking\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "status: crate::models::BookingStatus",
+        "type_info": {
+          "Custom": {
+            "name": "booking_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "date_to",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "86f4715c6e64f6d3b0639de8b7a16c26135540ab28dc8ba6e818dc88aec88c2a"
+}

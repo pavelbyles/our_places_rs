@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE review_token\n        SET used_at = NOW()\n        WHERE token = $1 \n          AND used_at IS NULL \n          AND valid_from <= NOW() \n          AND expires_at > NOW()\n        RETURNING id, token, booking_id, guest_id, listing_id, valid_from, expires_at, used_at, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "valid_from",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "used_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "6ba88ef30cf899d11cd81d473306764f158a022b48ef20e35ef1ab66d90b10d8"
+}
