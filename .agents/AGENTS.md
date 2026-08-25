@@ -14,6 +14,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 ├── common/             # Isomorphic domain models, pricing math (rust_decimal), static reference data
 ├── db_core/            # PostgreSQL schema, SQLx entities, connection pooling, and migrations
 ├── app_api/            # Backend Microservices (Actix-web)
+│   ├── api_core/       # Shared Actix middleware, AppError definitions, auth extractors
 │   ├── listing_api/    # Property creation, search, geocoding (OSM/Nominatim), GCS signed URLs
 │   ├── booking_api/    # Booking state machine, availability locking, payment orchestration
 │   ├── user_api/       # JWT authentication, host profiles, shadow user promotion
@@ -21,8 +22,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 ├── web_app/            # Public-facing Leptos WASM frontend application
 ├── web_app_admin/      # Internal admin dashboard (listings, users, exchange rates)
 ├── web_app_common/     # Shared Leptos UI components (VillaCard, image components) & API client logic
-├── infra/              # Terraform / Pulumi GCP infrastructure definitions
-└── scripts/            # Deployment and operational scripts
+└── infra/              # Terraform / Pulumi GCP infrastructure definitions
 ```
 
 ### Monorepo Hard Rules
