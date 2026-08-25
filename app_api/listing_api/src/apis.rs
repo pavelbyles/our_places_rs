@@ -6,99 +6,17 @@ use api_core::models::{
 };
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
-use common::models::{ListingQueryParams, ListingResponse};
+use common::models::{ListingQueryParams, ListingResponse, UpdatedListingRequest};
 use db_core::listing as db_listing;
 use db_core::models::{NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::PgPool;
 use std::str::FromStr;
-use utoipa::{IntoParams, OpenApi, ToSchema};
+use utoipa::{IntoParams, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct UpdatedListingRequest {
-    #[serde(default)]
-    #[validate(length(min = 1, message = "Name cannot be empty"))]
-    pub name: Option<String>,
-
-    #[serde(default)]
-    #[validate(length(
-        max = 2000,
-        message = "Description cannot be longer than 2000 characters"
-    ))]
-    pub description: Option<String>,
-
-    #[serde(default)]
-    #[schema(value_type = Option<String>, example = "Villa")]
-    pub listing_structure: Option<StructureType>,
-
-    #[serde(default)]
-    #[validate(length(min = 1, message = "Country cannot be empty"))]
-    pub country: Option<String>,
-
-    #[serde(default)]
-    #[schema(value_type = Option<String>, example = "150.00")]
-    pub price_per_night: Option<Decimal>,
-
-    #[serde(default)]
-    pub is_active: Option<bool>,
-
-    #[serde(default)]
-    pub weekly_discount_percentage: Option<Decimal>,
-
-    #[serde(default)]
-    pub monthly_discount_percentage: Option<Decimal>,
-
-    #[serde(default)]
-    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
-    pub max_guests: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
-    pub bedrooms: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Beds cannot be negative"))]
-    pub beds: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
-    pub full_bathrooms: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
-    pub half_bathrooms: Option<i32>,
-
-    #[serde(default)]
-    pub square_meters: Option<i32>,
-
-    #[serde(default)]
-    pub latitude: Option<f64>,
-
-    #[serde(default)]
-    pub longitude: Option<f64>,
-
-    #[serde(default)]
-    #[schema(value_type = Object)]
-    pub listing_details: Option<serde_json::Value>,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "Kingston")]
-    pub city: Option<String>,
-
-    #[serde(default)]
-    #[schema(example = 1)]
-    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
-    pub minimum_stay: Option<i32>,
-
-    #[serde(default)]
-    #[schema(example = 0)]
-    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
-    pub days_between_bookings: Option<i32>,
-}
 
 /// Gives first 10 listings if no page or per_page is provided
 #[tracing::instrument(err)]
@@ -383,7 +301,30 @@ async fn update_listing(
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
 
-    let structure_id = req_data.listing_structure.map(|s| s.id());
+    let structure_id = if let Some(ref structure_str) = req_data.listing_structure {
+        let st = StructureType::from_str(structure_str).map_err(|_| {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add(
+                "listing_structure",
+                validator::ValidationError::new("invalid_structure_type")
+                    .with_message("Invalid structure type provided.".into()),
+            );
+            ApiError::ValidationError(errors)
+        })?;
+        Some(st.id())
+    } else {
+        None
+    };
+
+    let city = if req_data.city.is_some() {
+        req_data.city
+    } else if let (Some(lat), Some(lon)) = (req_data.latitude, req_data.longitude) {
+        common::geocode::reverse_geocode(lat, lon)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
 
     let updated_data = UpdatedListing {
         name: req_data.name,
@@ -403,8 +344,8 @@ async fn update_listing(
         latitude: req_data.latitude,
         longitude: req_data.longitude,
         listing_details: req_data.listing_details,
-        city: req_data.city,
-        base_currency: None, // Frontend isn't sending option to update base currency yet, except maybe in full update.
+        city,
+        base_currency: req_data.base_currency,
         minimum_stay: req_data.minimum_stay,
         days_between_bookings: req_data.days_between_bookings,
     };

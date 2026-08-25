@@ -180,3 +180,32 @@ pub async fn get_user_bookings_api(user_id: Uuid) -> Result<Vec<BookingResponse>
 
     Ok(bookings)
 }
+
+#[server]
+pub async fn get_listing_bookings_api(
+    listing_id: Uuid,
+) -> Result<Vec<BookingResponse>, ServerFnError> {
+    let api_url = crate::api_client::booking_api_url();
+    let audience = crate::api_client::booking_api_audience();
+    let url = format!("{}/api/v1/bookings/listing/{}", api_url, listing_id);
+
+    let res = crate::api_client::get_client()
+        .get(&url, &audience)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Booking service connection error: {}", e)))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(ServerFnError::new(format!(
+            "Failed to fetch listing bookings ({}): {}",
+            status, err_text
+        )));
+    }
+
+    let bookings: Vec<BookingResponse> = res.json().await.map_err(|e| {
+        ServerFnError::new(format!("Failed to parse listing bookings response: {}", e))
+    })?;
+
+    Ok(bookings)
+}

@@ -119,7 +119,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.full_bathrooms, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings,
         "user".first_name || ' ' || "user".last_name as owner_name,
         primary_img.upload_url as primary_image_url
         FROM listing
@@ -178,8 +178,15 @@ where
         }
 
         if let Some(owner) = f.owner {
-            query_builder.push(" AND \"user\".email ILIKE ");
-            query_builder.push_bind(format!("%{}%", owner));
+            let trimmed = owner.trim();
+            if trimmed.contains('@') {
+                query_builder.push(" AND LOWER(\"user\".email) = LOWER(");
+                query_builder.push_bind(trimmed.to_string());
+                query_builder.push(")");
+            } else {
+                query_builder.push(" AND \"user\".email ILIKE ");
+                query_builder.push_bind(format!("%{}%", trimmed));
+            }
         }
     }
 
@@ -1361,5 +1368,165 @@ mod tests {
             Ok(_) => println!("Successfully updated image"),
             Err(e) => panic!("Database error occurred: {:?}", e),
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_listings_owner_exact_email_filtering() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        // Create User 1: host_1@example.com
+        let id1 = Uuid::now_v7();
+        let email1 = format!("host_{}@example.com", id1);
+        let u1 = crate::user::create_user(
+            &mut *tx,
+            &crate::models::NewUser {
+                id: id1,
+                email: email1.clone(),
+                password_hash: "hash123".to_string(),
+                first_name: "Host".to_string(),
+                last_name: "One".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: None,
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::user::create_host_profile(
+            &mut *tx,
+            u1.id,
+            &crate::models::NewHostProfile {
+                verified_status: Some("verified".to_string()),
+                payout_details: None,
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create User 2: other_host_1@example.com
+        let id2 = Uuid::now_v7();
+        let email2 = format!("other_{}", email1);
+        let u2 = crate::user::create_user(
+            &mut *tx,
+            &crate::models::NewUser {
+                id: id2,
+                email: email2.clone(),
+                password_hash: "hash123".to_string(),
+                first_name: "Host".to_string(),
+                last_name: "Two".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: None,
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::user::create_host_profile(
+            &mut *tx,
+            u2.id,
+            &crate::models::NewHostProfile {
+                verified_status: Some("verified".to_string()),
+                payout_details: None,
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create Listing for User 1
+        let l1 = NewListing {
+            name: "Host 1 Listing".to_string(),
+            user_id: u1.id,
+            description: None,
+            listing_structure_id: 1,
+            country: "JM".to_string(),
+            price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+        };
+        create_listing(&mut *tx, &l1).await.unwrap();
+
+        // Create Listing for User 2
+        let l2 = NewListing {
+            name: "Host 2 Listing".to_string(),
+            user_id: u2.id,
+            description: None,
+            listing_structure_id: 1,
+            country: "JM".to_string(),
+            price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+        };
+        create_listing(&mut *tx, &l2).await.unwrap();
+
+        // Query with exact email for User 1
+        let filter1 = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: Some(u1.email.clone()),
+            resolution: None,
+            currency: None,
+        };
+        let results1 = get_listings(&mut *tx, 1, 10, Some(filter1)).await.unwrap();
+        assert_eq!(results1.len(), 1);
+        assert_eq!(results1[0].name, "Host 1 Listing");
+
+        // Query with exact email for User 2
+        let filter2 = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: Some(u2.email.clone()),
+            resolution: None,
+            currency: None,
+        };
+        let results2 = get_listings(&mut *tx, 1, 10, Some(filter2)).await.unwrap();
+        assert_eq!(results2.len(), 1);
+        assert_eq!(results2[0].name, "Host 2 Listing");
     }
 }

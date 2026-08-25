@@ -32,69 +32,232 @@ pub struct CreateListingParams {
     pub days_between_bookings: Option<i32>,
 }
 
+#[cfg(feature = "ssr")]
+async fn get_session_context() -> Result<crate::auth::AdminSessionUser, ServerFnError> {
+    let session = leptos_actix::extract::<actix_session::Session>()
+        .await
+        .map_err(|_| ServerFnError::new("Session not found"))?;
+    let user_id = session
+        .get::<String>("user_id")
+        .unwrap_or(None)
+        .ok_or_else(|| ServerFnError::new("Unauthorized: Not logged in"))?;
+    let user_name = session
+        .get::<String>("user_name")
+        .unwrap_or_default()
+        .unwrap_or_default();
+    let user_email = session
+        .get::<String>("user_email")
+        .unwrap_or_default()
+        .unwrap_or_default();
+    let is_admin = session
+        .get::<bool>("is_admin")
+        .unwrap_or(None)
+        .unwrap_or(false);
+    Ok(crate::auth::AdminSessionUser {
+        id: user_id,
+        name: user_name,
+        email: user_email,
+        is_admin,
+    })
+}
+
+#[cfg(feature = "ssr")]
+async fn ensure_listing_owner_or_admin(
+    listing_id: &str,
+) -> Result<common::models::ListingDetails, ServerFnError> {
+    let user = get_session_context().await?;
+    let listing_details =
+        web_app_common::listings::get_listing_by_id_server(listing_id.to_string(), None).await?;
+    if !user.is_admin && listing_details.listing.user_id.to_string() != user.id {
+        return Err(ServerFnError::new(
+            "Unauthorized: You can only manage your own listings",
+        ));
+    }
+    Ok(listing_details)
+}
+
 #[server]
 pub async fn create_listing_server(params: CreateListingParams) -> Result<String, ServerFnError> {
-    use uuid::Uuid;
-    let user_id = Uuid::parse_str(&params.user_id)
-        .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
+    #[cfg(feature = "ssr")]
+    {
+        use uuid::Uuid;
+        let session_user = get_session_context().await?;
+        let target_user_id_str = if session_user.is_admin {
+            params.user_id
+        } else {
+            session_user.id
+        };
+        let user_id = Uuid::parse_str(&target_user_id_str)
+            .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
 
-    let city = if let (Some(lat), Some(lon)) = (params.latitude, params.longitude) {
-        common::geocode::reverse_geocode(lat, lon)
-            .await
-            .unwrap_or(None)
-    } else {
-        None
-    };
+        let city = if let (Some(lat), Some(lon)) = (params.latitude, params.longitude) {
+            common::geocode::reverse_geocode(lat, lon)
+                .await
+                .unwrap_or(None)
+        } else {
+            None
+        };
 
-    let request = common::models::NewListingRequest {
-        name: params.name,
-        user_id,
-        description: params.description,
-        listing_structure: params.listing_structure,
-        country: params.country,
-        base_currency: params.base_currency,
-        price_per_night: params
-            .price_per_night
-            .and_then(rust_decimal::Decimal::from_f64),
-        weekly_discount_percentage: params
-            .weekly_discount_percentage
-            .and_then(rust_decimal::Decimal::from_f64),
-        monthly_discount_percentage: params
-            .monthly_discount_percentage
-            .and_then(rust_decimal::Decimal::from_f64),
-        latitude: params.latitude,
-        longitude: params.longitude,
-        city,
-        max_guests: params.max_guests.unwrap_or(1),
-        bedrooms: params.bedrooms.unwrap_or(0),
-        beds: params.beds.unwrap_or(0),
-        full_bathrooms: params.full_bathrooms.unwrap_or(0),
-        half_bathrooms: params.half_bathrooms.unwrap_or(0),
-        square_meters: params.square_meters,
-        listing_details: params
-            .listing_details
-            .and_then(|s| serde_json::from_str(&s).ok()),
-        minimum_stay: params.minimum_stay.unwrap_or(1),
-        days_between_bookings: params.days_between_bookings.unwrap_or(0),
-    };
+        let request = common::models::NewListingRequest {
+            name: params.name,
+            user_id,
+            description: params.description,
+            listing_structure: params.listing_structure,
+            country: params.country,
+            base_currency: params.base_currency,
+            price_per_night: params
+                .price_per_night
+                .and_then(rust_decimal::Decimal::from_f64),
+            weekly_discount_percentage: params
+                .weekly_discount_percentage
+                .and_then(rust_decimal::Decimal::from_f64),
+            monthly_discount_percentage: params
+                .monthly_discount_percentage
+                .and_then(rust_decimal::Decimal::from_f64),
+            latitude: params.latitude,
+            longitude: params.longitude,
+            city,
+            max_guests: params.max_guests.unwrap_or(1),
+            bedrooms: params.bedrooms.unwrap_or(0),
+            beds: params.beds.unwrap_or(0),
+            full_bathrooms: params.full_bathrooms.unwrap_or(0),
+            half_bathrooms: params.half_bathrooms.unwrap_or(0),
+            square_meters: params.square_meters,
+            listing_details: params
+                .listing_details
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            minimum_stay: params.minimum_stay.unwrap_or(1),
+            days_between_bookings: params.days_between_bookings.unwrap_or(0),
+        };
 
-    let api_url = crate::api_client::listing_api_url();
-    let res = crate::api_client::get_client()
-        .post(&format!("{}/api/v1/listings", api_url), &api_url, &request)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if res.status().is_success() {
-        let listing: common::models::ListingResponse = res
-            .json()
+        let api_url = crate::api_client::listing_api_url();
+        let res = crate::api_client::get_client()
+            .post(&format!("{}/api/v1/listings", api_url), &api_url, &request)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(listing.id.to_string())
-    } else {
-        Err(ServerFnError::new(format!(
-            "Failed to create listing: {}",
-            res.status()
-        )))
+
+        if res.status().is_success() {
+            let listing: common::models::ListingResponse = res
+                .json()
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(listing.id.to_string())
+        } else {
+            Err(ServerFnError::new(format!(
+                "Failed to create listing: {}",
+                res.status()
+            )))
+        }
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = params;
+        Err(ServerFnError::new("SSR required"))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UpdateListingParams {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub listing_structure: Option<String>,
+    pub country: Option<String>,
+    pub base_currency: Option<String>,
+    pub price_per_night: Option<f64>,
+    pub weekly_discount_percentage: Option<f64>,
+    pub monthly_discount_percentage: Option<f64>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub max_guests: Option<i32>,
+    pub bedrooms: Option<i32>,
+    pub beds: Option<i32>,
+    pub full_bathrooms: Option<i32>,
+    pub half_bathrooms: Option<i32>,
+    pub square_meters: Option<i32>,
+    pub listing_details: Option<String>,
+    pub minimum_stay: Option<i32>,
+    pub days_between_bookings: Option<i32>,
+    pub is_active: Option<bool>,
+}
+
+#[server]
+pub async fn update_listing_server(
+    listing_id: String,
+    params: UpdateListingParams,
+) -> Result<common::models::ListingResponse, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
+
+        let city = if let (Some(lat), Some(lon)) = (params.latitude, params.longitude) {
+            common::geocode::reverse_geocode(lat, lon)
+                .await
+                .unwrap_or(None)
+        } else {
+            None
+        };
+
+        let request = common::models::UpdatedListingRequest {
+            name: params.name,
+            description: params.description,
+            listing_structure: params.listing_structure,
+            country: params.country,
+            base_currency: params.base_currency,
+            price_per_night: params
+                .price_per_night
+                .and_then(rust_decimal::Decimal::from_f64),
+            weekly_discount_percentage: params
+                .weekly_discount_percentage
+                .and_then(rust_decimal::Decimal::from_f64),
+            monthly_discount_percentage: params
+                .monthly_discount_percentage
+                .and_then(rust_decimal::Decimal::from_f64),
+            latitude: params.latitude,
+            longitude: params.longitude,
+            city,
+            max_guests: params.max_guests,
+            bedrooms: params.bedrooms,
+            beds: params.beds,
+            full_bathrooms: params.full_bathrooms,
+            half_bathrooms: params.half_bathrooms,
+            square_meters: params.square_meters,
+            listing_details: params
+                .listing_details
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            minimum_stay: params.minimum_stay,
+            days_between_bookings: params.days_between_bookings,
+            is_active: params.is_active,
+        };
+
+        let api_url = crate::api_client::listing_api_url();
+        let res = crate::api_client::get_client()
+            .patch(
+                &format!("{}/api/v1/listings/{}", api_url, listing_id),
+                &api_url,
+                &request,
+            )
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if res.status().is_success() {
+            let listing: common::models::ListingResponse = res
+                .json()
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(listing)
+        } else {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            Err(ServerFnError::new(format!(
+                "Failed to update listing ({}): {}",
+                status, body
+            )))
+        }
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, params);
+        Err(ServerFnError::new("SSR required"))
     }
 }
 
@@ -103,29 +266,39 @@ pub async fn presign_images_server(
     listing_id: String,
     images: Vec<common::models::PendingImageMetadata>,
 ) -> Result<Vec<common::models::ImagePresignResponse>, ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let request = common::models::ImagePresignRequest { images };
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
 
-    let res = crate::api_client::get_client()
-        .post(
-            &format!("{}/api/v1/listings/{}/images/presign", api_url, listing_id),
-            &api_url,
-            &request,
-        )
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let api_url = crate::api_client::listing_api_url();
+        let request = common::models::ImagePresignRequest { images };
 
-    if res.status().is_success() {
-        let presign_res: Vec<common::models::ImagePresignResponse> = res
-            .json()
+        let res = crate::api_client::get_client()
+            .post(
+                &format!("{}/api/v1/listings/{}/images/presign", api_url, listing_id),
+                &api_url,
+                &request,
+            )
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(presign_res)
-    } else {
-        Err(ServerFnError::new(format!(
-            "Failed to presign images: {}",
-            res.status()
-        )))
+
+        if res.status().is_success() {
+            let presign_res: Vec<common::models::ImagePresignResponse> = res
+                .json()
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(presign_res)
+        } else {
+            Err(ServerFnError::new(format!(
+                "Failed to presign images: {}",
+                res.status()
+            )))
+        }
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, images);
+        Err(ServerFnError::new("SSR required"))
     }
 }
 
@@ -133,26 +306,36 @@ pub async fn presign_images_server(
 pub async fn get_price_overrides_server(
     listing_id: String,
 ) -> Result<Vec<common::models::PriceOverride>, ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let res = crate::api_client::get_client()
-        .get(
-            &format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id),
-            &api_url,
-        )
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
 
-    if res.status().is_success() {
-        let overrides: Vec<common::models::PriceOverride> = res
-            .json()
+        let api_url = crate::api_client::listing_api_url();
+        let res = crate::api_client::get_client()
+            .get(
+                &format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id),
+                &api_url,
+            )
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(overrides)
-    } else {
-        Err(ServerFnError::new(format!(
-            "Failed to fetch price overrides: {}",
-            res.status()
-        )))
+
+        if res.status().is_success() {
+            let overrides: Vec<common::models::PriceOverride> = res
+                .json()
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(overrides)
+        } else {
+            Err(ServerFnError::new(format!(
+                "Failed to fetch price overrides: {}",
+                res.status()
+            )))
+        }
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = listing_id;
+        Ok(Vec::new())
     }
 }
 
@@ -164,45 +347,67 @@ pub async fn create_price_override_server(
     nightly_rate: String,
     min_nights: i32,
 ) -> Result<common::models::PriceOverride, ServerFnError> {
-    use chrono::NaiveDate;
-    use rust_decimal::Decimal;
-    use std::str::FromStr;
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
 
-    let api_url = crate::api_client::listing_api_url();
-    let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
-        .map_err(|_| ServerFnError::new("Invalid start date format (YYYY-MM-DD)"))?;
-    let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
-        .map_err(|_| ServerFnError::new("Invalid end date format (YYYY-MM-DD)"))?;
-    let rate = Decimal::from_str(&nightly_rate)
-        .map_err(|_| ServerFnError::new("Invalid nightly rate decimal"))?;
+        use chrono::NaiveDate;
+        use rust_decimal::Decimal;
+        use std::str::FromStr;
 
-    let request = common::models::CreatePriceOverrideRequest {
-        start_date: start,
-        end_date: end,
-        nightly_rate: rate,
-        min_nights,
-    };
+        let api_url = crate::api_client::listing_api_url();
+        let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
+            .map_err(|_| ServerFnError::new("Invalid start date format (YYYY-MM-DD)"))?;
+        let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
+            .map_err(|_| ServerFnError::new("Invalid end date format (YYYY-MM-DD)"))?;
+        let rate = Decimal::from_str(&nightly_rate)
+            .map_err(|_| ServerFnError::new("Invalid nightly rate decimal"))?;
 
-    let res = crate::api_client::get_client()
-        .post(
-            &format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id),
-            &api_url,
-            &request,
-        )
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        if end <= start {
+            return Err(ServerFnError::new(
+                "End date must be strictly after start date",
+            ));
+        }
+        if rate <= Decimal::ZERO {
+            return Err(ServerFnError::new("Nightly rate must be greater than zero"));
+        }
+        if min_nights < 1 {
+            return Err(ServerFnError::new("Minimum nights must be at least 1"));
+        }
 
-    if res.status().is_success() {
-        let created: common::models::PriceOverride = res
-            .json()
+        let request = common::models::CreatePriceOverrideRequest {
+            start_date: start,
+            end_date: end,
+            nightly_rate: rate,
+            min_nights,
+        };
+
+        let res = crate::api_client::get_client()
+            .post(
+                &format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id),
+                &api_url,
+                &request,
+            )
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(created)
-    } else {
-        Err(ServerFnError::new(format!(
-            "Failed to create price override: {}",
-            res.status()
-        )))
+
+        if res.status().is_success() {
+            let created: common::models::PriceOverride = res
+                .json()
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            Ok(created)
+        } else {
+            Err(ServerFnError::new(format!(
+                "Failed to create price override: {}",
+                res.status()
+            )))
+        }
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, start_date, end_date, nightly_rate, min_nights);
+        Err(ServerFnError::new("SSR required"))
     }
 }
 
@@ -211,31 +416,88 @@ pub async fn delete_price_override_server(
     listing_id: String,
     override_id: String,
 ) -> Result<(), ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let res = crate::api_client::get_client()
-        .delete(
-            &format!(
-                "{}/api/v1/listings/{}/price-overrides/{}",
-                api_url, listing_id, override_id
-            ),
-            &api_url,
-        )
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
 
-    if res.status().is_success() {
-        Ok(())
-    } else {
-        Err(ServerFnError::new(format!(
-            "Failed to delete price override: {}",
-            res.status()
-        )))
+        let api_url = crate::api_client::listing_api_url();
+        let res = crate::api_client::get_client()
+            .delete(
+                &format!(
+                    "{}/api/v1/listings/{}/price-overrides/{}",
+                    api_url, listing_id, override_id
+                ),
+                &api_url,
+            )
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if res.status().is_success() {
+            Ok(())
+        } else {
+            Err(ServerFnError::new(format!(
+                "Failed to delete price override: {}",
+                res.status()
+            )))
+        }
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, override_id);
+        Err(ServerFnError::new("SSR required"))
+    }
+}
+
+#[server]
+pub async fn get_listing_bookings_server(
+    listing_id: String,
+) -> Result<Vec<common::models::BookingResponse>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
+        let lid = uuid::Uuid::parse_str(&listing_id)
+            .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
+        web_app_common::bookings::get_listing_bookings_api(lid).await
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = listing_id;
+        Ok(Vec::new())
+    }
+}
+
+#[server]
+pub async fn update_listing_booking_status_server(
+    listing_id: String,
+    booking_id: String,
+    status: String,
+) -> Result<common::models::BookingResponse, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let _ = ensure_listing_owner_or_admin(&listing_id).await?;
+        let bid = uuid::Uuid::parse_str(&booking_id)
+            .map_err(|e| ServerFnError::new(format!("Invalid UUID: {}", e)))?;
+        let req = common::models::UpdatedBookingRequest {
+            status: Some(status),
+            metadata: None,
+        };
+        web_app_common::bookings::update_booking_api(bid, req).await
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, booking_id, status);
+        Err(ServerFnError::new("SSR required"))
     }
 }
 
 #[component]
 #[allow(non_snake_case)]
 pub fn ListingsPage() -> impl IntoView {
+    let session_user_resource = Resource::new(
+        || (),
+        |_| async move { crate::auth::get_current_session_user().await },
+    );
+
     let listing_search = ServerAction::<ListingSearchServer>::new();
     let create_listing = ServerAction::<CreateListingServer>::new();
     let (name, set_name) = signal(None::<String>);
@@ -254,7 +516,13 @@ pub fn ListingsPage() -> impl IntoView {
     let (listing_details, set_listing_details) =
         signal(vec![(0usize, String::new(), String::new())]);
 
-    // Signals for Add New Listing form
+    // Signals for Add/Edit Listing form
+    let (editing_listing_id, set_editing_listing_id) = signal(None::<String>);
+    let (update_loading, set_update_loading) = signal(false);
+    let (update_success, set_update_success) = signal(None::<String>);
+    let (update_error, set_update_error) = signal(None::<String>);
+    let (new_is_active, set_new_is_active) = signal(true);
+
     let (new_name, set_new_name) = signal(String::new());
     let (new_description, set_new_description) = signal(String::new());
     let (new_listing_structure, set_new_listing_structure) = signal(String::new());
@@ -273,6 +541,32 @@ pub fn ListingsPage() -> impl IntoView {
     let (new_square_meters, set_new_square_meters) = signal(None::<i32>);
     let (new_minimum_stay, set_new_minimum_stay) = signal(Some(1));
     let (new_days_between_bookings, set_new_days_between_bookings) = signal(Some(0));
+
+    Effect::new(move |_| {
+        if let Some(Ok(Some(user))) = session_user_resource.get() {
+            if !user.is_admin {
+                set_owner_email.set(Some(user.email.clone()));
+                set_owner_email_input.set(user.email.clone());
+                set_owner_id_validated.set(Some(user.id.clone()));
+                set_owner_id_error.set(false);
+                listing_search.dispatch(ListingSearchServer {
+                    name: None,
+                    owner_email: Some(user.email.clone()),
+                    listing_structure: None,
+                    max_price: Some(0.0),
+                    currency: None,
+                });
+            } else {
+                listing_search.dispatch(ListingSearchServer {
+                    name: None,
+                    owner_email: None,
+                    listing_structure: None,
+                    max_price: Some(0.0),
+                    currency: None,
+                });
+            }
+        }
+    });
 
     let add_detail = move |_| {
         let id = next_detail_id.get();
@@ -465,9 +759,19 @@ pub fn ListingsPage() -> impl IntoView {
             Some(structure_vec)
         };
 
+        let effective_owner = if let Some(Ok(Some(user))) = session_user_resource.get() {
+            if !user.is_admin {
+                Some(user.email)
+            } else {
+                owner_email.get()
+            }
+        } else {
+            owner_email.get()
+        };
+
         listing_search.dispatch(ListingSearchServer {
             name: name.get(),
-            owner_email: owner_email.get(),
+            owner_email: effective_owner,
             listing_structure: structure_arg,
             max_price: max_price.get(),
             currency: None,
@@ -484,24 +788,79 @@ pub fn ListingsPage() -> impl IntoView {
         });
     };
 
-    let populate_from_existing = move |existing: common::models::ListingResponse| {
-        set_new_description.set(existing.description.unwrap_or_default());
+    let reset_form = move || {
+        set_editing_listing_id.set(None);
+        set_update_success.set(None);
+        set_update_error.set(None);
+        set_new_name.set(String::new());
+        set_new_description.set(String::new());
+        set_new_listing_structure.set(String::new());
+        set_new_country.set(String::new());
+        set_new_base_currency.set("USD".to_string());
+        set_new_price_per_night.set(None);
+        set_new_weekly_discount.set(None);
+        set_new_monthly_discount.set(None);
+        set_new_latitude.set(None);
+        set_new_longitude.set(None);
+        set_new_max_guests.set(Some(1));
+        set_new_bedrooms.set(Some(0));
+        set_new_beds.set(Some(0));
+        set_new_full_bathrooms.set(Some(0));
+        set_new_half_bathrooms.set(Some(0));
+        set_new_square_meters.set(None);
+        set_new_minimum_stay.set(Some(1));
+        set_new_days_between_bookings.set(Some(0));
+        set_new_is_active.set(true);
+        set_listing_details.set(vec![(0, String::new(), String::new())]);
+        set_next_detail_id.set(1);
+
+        if let Some(Ok(Some(user))) = session_user_resource.get() {
+            if !user.is_admin {
+                set_owner_email_input.set(user.email.clone());
+                set_owner_id_validated.set(Some(user.id.clone()));
+                set_owner_id_error.set(false);
+            } else {
+                set_owner_email_input.set(String::new());
+                set_owner_id_validated.set(None);
+                set_owner_id_error.set(false);
+            }
+        } else {
+            set_owner_email_input.set(String::new());
+            set_owner_id_validated.set(None);
+            set_owner_id_error.set(false);
+        }
+    };
+
+    let populate_fields = move |existing: &common::models::ListingResponse| {
+        set_new_name.set(existing.name.clone());
+        set_new_description.set(existing.description.clone().unwrap_or_default());
         set_new_listing_structure.set(existing.listing_structure.clone());
         set_new_country.set(existing.country.clone());
         set_new_base_currency.set(existing.base_currency.clone());
         set_new_price_per_night.set(existing.price_per_night.and_then(|p| p.to_f64()));
+        set_new_weekly_discount.set(existing.weekly_discount_percentage.and_then(|p| p.to_f64()));
+        set_new_monthly_discount.set(
+            existing
+                .monthly_discount_percentage
+                .and_then(|p| p.to_f64()),
+        );
         set_new_latitude.set(existing.latitude);
         set_new_longitude.set(existing.longitude);
         set_new_max_guests.set(Some(existing.max_guests));
         set_new_bedrooms.set(Some(existing.bedrooms));
+        set_new_beds.set(Some(existing.beds));
         set_new_full_bathrooms.set(Some(existing.full_bathrooms));
+        set_new_half_bathrooms.set(Some(existing.half_bathrooms));
+        set_new_square_meters.set(existing.square_meters);
         set_new_minimum_stay.set(Some(existing.minimum_stay));
         set_new_days_between_bookings.set(Some(existing.days_between_bookings));
+        set_new_is_active.set(existing.is_active);
 
         // Populate details
-        if let Some(details_json) = existing.listing_details {
-            if let Ok(details_map) =
-                serde_json::from_value::<std::collections::HashMap<String, String>>(details_json)
+        if let Some(details_json) = &existing.listing_details {
+            if let Ok(details_map) = serde_json::from_value::<
+                std::collections::HashMap<String, String>,
+            >(details_json.clone())
             {
                 let mut new_details = Vec::new();
                 let mut max_id = 0;
@@ -516,6 +875,9 @@ pub fn ListingsPage() -> impl IntoView {
                 }
                 set_listing_details.set(new_details);
             }
+        } else {
+            set_listing_details.set(vec![(0, String::new(), String::new())]);
+            set_next_detail_id.set(1);
         }
 
         // Set owner ID and fetch actual owner email
@@ -534,6 +896,114 @@ pub fn ListingsPage() -> impl IntoView {
         });
     };
 
+    let populate_from_existing = move |existing: common::models::ListingResponse| {
+        set_editing_listing_id.set(None);
+        set_update_success.set(None);
+        set_update_error.set(None);
+        populate_fields(&existing);
+    };
+
+    let edit_listing = move |existing: common::models::ListingResponse| {
+        set_editing_listing_id.set(Some(existing.id.to_string()));
+        set_update_success.set(None);
+        set_update_error.set(None);
+        populate_fields(&existing);
+    };
+
+    let on_form_submit = move |ev: SubmitEvent| {
+        if let Some(lid) = editing_listing_id.get() {
+            ev.prevent_default();
+            set_update_loading.set(true);
+            set_update_success.set(None);
+            set_update_error.set(None);
+
+            let map: std::collections::HashMap<_, _> = listing_details
+                .get()
+                .into_iter()
+                .filter(|(_, k, _)| !k.is_empty())
+                .map(|(_, k, v)| (k, v))
+                .collect();
+            let details_json = if map.is_empty() {
+                None
+            } else {
+                serde_json::to_string(&map).ok()
+            };
+
+            let params = UpdateListingParams {
+                name: if new_name.get().is_empty() {
+                    None
+                } else {
+                    Some(new_name.get())
+                },
+                description: if new_description.get().is_empty() {
+                    None
+                } else {
+                    Some(new_description.get())
+                },
+                listing_structure: if new_listing_structure.get().is_empty() {
+                    None
+                } else {
+                    Some(new_listing_structure.get())
+                },
+                country: if new_country.get().is_empty() {
+                    None
+                } else {
+                    Some(new_country.get())
+                },
+                base_currency: if new_base_currency.get().is_empty() {
+                    None
+                } else {
+                    Some(new_base_currency.get())
+                },
+                price_per_night: new_price_per_night.get(),
+                weekly_discount_percentage: new_weekly_discount.get(),
+                monthly_discount_percentage: new_monthly_discount.get(),
+                latitude: new_latitude.get(),
+                longitude: new_longitude.get(),
+                max_guests: new_max_guests.get(),
+                bedrooms: new_bedrooms.get(),
+                beds: new_beds.get(),
+                full_bathrooms: new_full_bathrooms.get(),
+                half_bathrooms: new_half_bathrooms.get(),
+                square_meters: new_square_meters.get(),
+                listing_details: details_json,
+                minimum_stay: new_minimum_stay.get(),
+                days_between_bookings: new_days_between_bookings.get(),
+                is_active: Some(new_is_active.get()),
+            };
+
+            spawn_local(async move {
+                match update_listing_server(lid, params).await {
+                    Ok(updated) => {
+                        set_update_success.set(Some(format!(
+                            "Listing '{}' updated successfully!",
+                            updated.name
+                        )));
+                        set_update_loading.set(false);
+                        let structures = selected_structures.get();
+                        let structure_vec: Vec<String> = structures.into_iter().collect();
+                        let structure_arg = if structure_vec.is_empty() {
+                            None
+                        } else {
+                            Some(structure_vec)
+                        };
+                        listing_search.dispatch(ListingSearchServer {
+                            name: name.get(),
+                            owner_email: owner_email.get(),
+                            listing_structure: structure_arg,
+                            max_price: max_price.get(),
+                            currency: None,
+                        });
+                    }
+                    Err(e) => {
+                        set_update_error.set(Some(e.to_string()));
+                        set_update_loading.set(false);
+                    }
+                }
+            });
+        }
+    };
+
     view! {
         <RequireAuth>
             <h1>"Listings Page"</h1>
@@ -545,26 +1015,39 @@ pub fn ListingsPage() -> impl IntoView {
                             <div class="flex flex-col mb-4">
                                 <form on:submit=on_submit class="form-control w-full space-y-4">
                                     <div class="flex flex-wrap gap-4 items-end">
-                                        <div class="form-control w-full max-w-xs">
-                                            <label class="label">
-                                                <span class="label-text">Owner Email</span>
-                                            </label>
-                                            <label class="input input-bordered flex items-center gap-2">
-                                                <svg class="h-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                                                    <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5" fill="none" stroke="currentColor">
-                                                        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                                                        <circle cx="12" cy="7" r="4"></circle>
-                                                    </g>
-                                                </svg>
-                                                <input
-                                                    type="email"
-                                                    class="grow"
-                                                    placeholder="username@domain.com"
-                                                    on:input=move |ev| set_owner_email.set(Some(event_target_value(&ev)))
-                                                    prop:value=move || owner_email.get().unwrap_or_default()
-                                                />
-                                            </label>
-                                        </div>
+                                        {move || {
+                                            let is_admin = session_user_resource.get()
+                                                .and_then(|r| r.ok())
+                                                .flatten()
+                                                .map(|u| u.is_admin)
+                                                .unwrap_or(false);
+                                            if is_admin {
+                                                view! {
+                                                    <div class="form-control w-full max-w-xs">
+                                                        <label class="label">
+                                                            <span class="label-text">Owner Email</span>
+                                                        </label>
+                                                        <label class="input input-bordered flex items-center gap-2">
+                                                            <svg class="h-[1em] opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                                                <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5" fill="none" stroke="currentColor">
+                                                                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                                                                    <circle cx="12" cy="7" r="4"></circle>
+                                                                </g>
+                                                            </svg>
+                                                            <input
+                                                                type="email"
+                                                                class="grow"
+                                                                placeholder="username@domain.com"
+                                                                on:input=move |ev| set_owner_email.set(Some(event_target_value(&ev)))
+                                                                prop:value=move || owner_email.get().unwrap_or_default()
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                ().into_any()
+                                            }
+                                        }}
 
                                         <div class="form-control w-full max-w-xs">
                                             <label class="label">
@@ -688,7 +1171,8 @@ pub fn ListingsPage() -> impl IntoView {
                                     each=move || listings.get()
                                     key=|listing| listing.id
                                     children=move |listing| {
-                                        let listing_to_populate = listing.clone();
+                                        let listing_for_edit = listing.clone();
+                                        let listing_for_populate = listing.clone();
                                         let (show_overrides, set_show_overrides) = signal(false);
                                         let listing_id_str = listing.id.to_string();
                                         let listing_name_str = listing.name.clone();
@@ -717,11 +1201,17 @@ pub fn ListingsPage() -> impl IntoView {
                                                                 class="btn btn-accent btn-sm"
                                                                 on:click=move |_| set_show_overrides.update(|v| *v = !*v)
                                                             >
-                                                                {move || if show_overrides.get() { "Hide Manage Section" } else { "Manage Rates & Reviews" }}
+                                                                {move || if show_overrides.get() { "Hide Manage Section" } else { "Manage Listing (Bookings, Rates & Reviews)" }}
+                                                            </button>
+                                                            <button
+                                                                class="btn btn-primary btn-sm"
+                                                                on:click=move |_| edit_listing(listing_for_edit.clone())
+                                                            >
+                                                                "Edit Listing"
                                                             </button>
                                                             <button
                                                                 class="btn btn-secondary btn-sm"
-                                                                on:click=move |_| populate_from_existing(listing_to_populate.clone())
+                                                                on:click=move |_| populate_from_existing(listing_for_populate.clone())
                                                             >
                                                                 "Populate"
                                                             </button>
@@ -732,6 +1222,10 @@ pub fn ListingsPage() -> impl IntoView {
                                                     if show_overrides.get() {
                                                         view! {
                                                             <div class="flex flex-col gap-4">
+                                                                <ListingBookingsAdminSection
+                                                                    listing_id=listing_id_str.clone()
+                                                                    listing_name=listing_name_str.clone()
+                                                                />
                                                                 <PriceOverridesSection
                                                                     listing_id=listing_id_str.clone()
                                                                     listing_name=listing_name_str.clone()
@@ -769,8 +1263,14 @@ pub fn ListingsPage() -> impl IntoView {
                 </div>
                 <div class="divider lg:divider-horizontal">-</div>
                 <div class="card bg-base-300 rounded-box grid grow place-items-center p-4">
-                    <h2>Add New Listing</h2>
-                    <ActionForm action={create_listing} attr:class="form-control w-full max-w-xs space-y-4">
+                    <h2 class="text-xl font-bold">
+                        {move || if editing_listing_id.get().is_some() {
+                            format!("Edit Listing: {}", new_name.get())
+                        } else {
+                            "Add New Listing".to_string()
+                        }}
+                    </h2>
+                    <ActionForm action={create_listing} on:submit=on_form_submit attr:class="form-control w-full max-w-xs space-y-4">
                         <div>
                             <label for="listing_name" class="label">
                                 <span class="label-text">Listing Name</span>
@@ -789,42 +1289,67 @@ pub fn ListingsPage() -> impl IntoView {
                             <label for="owner_email" class="label">
                                 <span class="label-text">Owner Email</span>
                             </label>
-                            <label
-                                class=move || {
-                                    if owner_id_validated.get().is_some() {
-                                        "input input-bordered flex items-center gap-2 w-full max-w-xs input-success"
-                                    } else if owner_id_error.get() {
-                                        "input input-bordered flex items-center gap-2 w-full max-w-xs input-error"
-                                    } else {
-                                        "input input-bordered flex items-center gap-2 w-full max-w-xs"
-                                    }
-                                }
-                            >
-                                <input
-                                    type="email"
-                                    placeholder="Owner Email (e.g. host@example.com)"
-                                    class="grow"
-                                    on:input=on_email_input
-                                    prop:value=move || owner_email_input.get()
-                                />
-                                {move || {
-                                    if owner_id_validated.get().is_some() {
-                                        view! {
+                            {move || {
+                                let is_admin = session_user_resource.get()
+                                    .and_then(|r| r.ok())
+                                    .flatten()
+                                    .map(|u| u.is_admin)
+                                    .unwrap_or(false);
+                                if is_admin {
+                                    view! {
+                                        <label
+                                            class=move || {
+                                                if owner_id_validated.get().is_some() {
+                                                    "input input-bordered flex items-center gap-2 w-full max-w-xs input-success"
+                                                } else if owner_id_error.get() {
+                                                    "input input-bordered flex items-center gap-2 w-full max-w-xs input-error"
+                                                } else {
+                                                    "input input-bordered flex items-center gap-2 w-full max-w-xs"
+                                                }
+                                            }
+                                        >
+                                            <input
+                                                type="email"
+                                                placeholder="Owner Email (e.g. host@example.com)"
+                                                class="grow"
+                                                on:input=on_email_input
+                                                prop:value=move || owner_email_input.get()
+                                            />
+                                            {move || {
+                                                if owner_id_validated.get().is_some() {
+                                                    view! {
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="fill-green-500 size-4">
+                                                            <path fill-rule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    }.into_any()
+                                                } else if owner_id_error.get() {
+                                                    view! {
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="fill-red-500 size-4">
+                                                            <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                                                        </svg>
+                                                    }.into_any()
+                                                } else {
+                                                    ().into_any()
+                                                }
+                                            }}
+                                        </label>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <label class="input input-bordered flex items-center gap-2 w-full max-w-xs bg-base-200 cursor-not-allowed">
+                                            <input
+                                                type="email"
+                                                class="grow bg-transparent cursor-not-allowed text-base-content/70"
+                                                disabled
+                                                prop:value=move || owner_email_input.get()
+                                            />
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="fill-green-500 size-4">
                                                 <path fill-rule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clip-rule="evenodd" />
                                             </svg>
-                                        }.into_any()
-                                    } else if owner_id_error.get() {
-                                        view! {
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="fill-red-500 size-4">
-                                                <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-                                            </svg>
-                                        }.into_any()
-                                    } else {
-                                        ().into_any()
-                                    }
-                                }}
-                            </label>
+                                        </label>
+                                    }.into_any()
+                                }
+                            }}
                             <input type="hidden" name="params[user_id]" value=move || owner_id_validated.get().unwrap_or_default() />
                         </div>
                         <div>
@@ -1161,33 +1686,260 @@ pub fn ListingsPage() -> impl IntoView {
                                 }
                             />
                         </div>
-                        <div>
-                            <label class="label">
-                                <span class="label-text">Upload images (max 10)</span>
-                            </label>
-                            <input type="file" id="file-upload" multiple />
+                        {move || if editing_listing_id.get().is_some() {
+                            view! {
+                                <div class="form-control">
+                                    <label class="label cursor-pointer justify-between">
+                                        <span class="label-text font-semibold">Active Listing</span>
+                                        <input
+                                            type="checkbox"
+                                            class="toggle toggle-primary"
+                                            on:change=move |ev| set_new_is_active.set(event_target_checked(&ev))
+                                            prop:checked=move || new_is_active.get()
+                                        />
+                                    </label>
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <div>
+                                    <label class="label">
+                                        <span class="label-text">Upload images (max 10)</span>
+                                    </label>
+                                    <input type="file" id="file-upload" multiple />
+                                </div>
+                            }.into_any()
+                        }}
+
+                        <div class="flex gap-2 items-center pt-2">
+                            {move || if editing_listing_id.get().is_some() {
+                                view! {
+                                    <button
+                                        type="submit"
+                                        class="btn btn-primary grow"
+                                        disabled=move || update_loading.get()
+                                    >
+                                        {move || if update_loading.get() { "Saving Changes..." } else { "Save Changes" }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-ghost"
+                                        on:click=move |_| reset_form()
+                                    >
+                                        "Cancel"
+                                    </button>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <button
+                                        type="submit"
+                                        class="btn btn-primary w-full"
+                                        disabled=move || create_listing.pending().get() || owner_id_validated.get().is_none() || uploading_images.get()
+                                    >
+                                        {move || {
+                                            if create_listing.pending().get() {
+                                                "Creating..."
+                                            } else if uploading_images.get() {
+                                                "Uploading Images..."
+                                            } else {
+                                                "Create Listing"
+                                            }
+                                        }}
+                                    </button>
+                                }.into_any()
+                            }}
                         </div>
 
-                        <button type="submit" class="btn btn-primary" disabled=move || create_listing.pending().get() || owner_id_validated.get().is_none() || uploading_images.get()>
-                            {move || {
-                                if create_listing.pending().get() {
-                                    "Creating..."
-                                } else if uploading_images.get() {
-                                    "Uploading Images..."
-                                } else {
-                                    "Create Listing"
-                                }
-                            }}
-                        </button>
-
-                        {move || create_listing.value().get().map(|v| match v {
-                            Ok(_) => view! { <div class="alert alert-success mt-4"><span>"Listing created successfully"</span></div> }.into_any(),
-                            Err(e) => view! { <div class="alert alert-error mt-4"><span>{e.to_string()}</span></div> }.into_any(),
+                        {move || update_success.get().map(|msg| view! {
+                            <div class="alert alert-success mt-4"><span>{msg}</span></div>
                         })}
+                        {move || update_error.get().map(|err| view! {
+                            <div class="alert alert-error mt-4"><span>{err}</span></div>
+                        })}
+                        {move || if editing_listing_id.get().is_none() {
+                            create_listing.value().get().map(|v| match v {
+                                Ok(_) => view! { <div class="alert alert-success mt-4"><span>"Listing created successfully"</span></div> }.into_any(),
+                                Err(e) => view! { <div class="alert alert-error mt-4"><span>{e.to_string()}</span></div> }.into_any(),
+                            })
+                        } else {
+                            None
+                        }}
                     </ActionForm>
                 </div>
             </div>
         </RequireAuth>
+    }
+}
+
+#[component]
+#[allow(non_snake_case)]
+pub fn ListingBookingsAdminSection(listing_id: String, listing_name: String) -> impl IntoView {
+    let (refresh_trigger, set_refresh_trigger) = signal(0);
+    let (action_message, set_action_message) = signal(None::<(bool, String)>);
+    let (loading_action, set_loading_action) = signal(false);
+
+    let lid_for_resource = listing_id.clone();
+    let bookings_resource = Resource::new(
+        move || (lid_for_resource.clone(), refresh_trigger.get()),
+        |(lid, _)| async move { get_listing_bookings_server(lid).await },
+    );
+
+    let lid_for_actions = listing_id.clone();
+
+    let update_status = move |booking_id: String, new_status: String| {
+        let lid = lid_for_actions.clone();
+        set_loading_action.set(true);
+        set_action_message.set(None);
+        spawn_local(async move {
+            match update_listing_booking_status_server(lid, booking_id, new_status.clone()).await {
+                Ok(_) => {
+                    set_action_message.set(Some((
+                        true,
+                        format!("Booking status updated to '{}' successfully!", new_status),
+                    )));
+                    set_refresh_trigger.update(|v| *v += 1);
+                }
+                Err(e) => {
+                    set_action_message.set(Some((
+                        false,
+                        format!("Failed to update booking status: {}", e),
+                    )));
+                }
+            }
+            set_loading_action.set(false);
+        });
+    };
+
+    view! {
+        <div class="mt-4 p-4 border border-base-300 rounded-box bg-base-200 space-y-4">
+            <div class="flex justify-between items-center">
+                <h3 class="font-bold text-md text-primary">"Bookings & Reservations — " {listing_name}</h3>
+                {move || if loading_action.get() {
+                    view! { <span class="loading loading-spinner loading-xs text-primary"></span> }.into_any()
+                } else {
+                    ().into_any()
+                }}
+            </div>
+
+            {move || action_message.get().map(|(is_success, msg)| {
+                let alert_class = if is_success { "alert alert-success text-xs p-2" } else { "alert alert-error text-xs p-2" };
+                view! {
+                    <div class=alert_class>
+                        <span>{msg}</span>
+                    </div>
+                }
+            })}
+
+            <Suspense fallback=move || view! { <div class="loading loading-spinner loading-sm"></div> }>
+                {move || bookings_resource.get().map(|res| match res {
+                    Ok(bookings) => {
+                        if bookings.is_empty() {
+                            view! {
+                                <p class="text-sm text-base-content/70">"No bookings found for this listing."</p>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <div class="overflow-x-auto">
+                                    <table class="table table-zebra w-full text-xs">
+                                        <thead>
+                                            <tr>
+                                                <th>"Confirmation"</th>
+                                                <th>"Dates"</th>
+                                                <th>"Guests"</th>
+                                                <th>"Total"</th>
+                                                <th>"Status"</th>
+                                                <th>"Actions"</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <For
+                                                each=move || bookings.clone()
+                                                key=|b| b.id
+                                                children={
+                                                    let update_fn = update_status.clone();
+                                                    move |booking| {
+                                                        let b_id = booking.id.to_string();
+                                                        let b_id_confirm = b_id.clone();
+                                                        let b_id_cancel = b_id.clone();
+                                                        let b_id_complete = b_id.clone();
+                                                        let status_lower = booking.status.to_lowercase();
+                                                        let status_badge_class = match status_lower.as_str() {
+                                                            "confirmed" => "badge badge-success badge-sm",
+                                                            "pending" => "badge badge-warning badge-sm",
+                                                            "completed" => "badge badge-info badge-sm",
+                                                            "cancelled" => "badge badge-error badge-sm",
+                                                            _ => "badge badge-ghost badge-sm",
+                                                        };
+
+                                                        let update_c = update_fn.clone();
+                                                        let update_canc = update_fn.clone();
+                                                        let update_comp = update_fn.clone();
+
+                                                        view! {
+                                                            <tr>
+                                                                <td class="font-mono font-bold text-primary">{booking.confirmation_code.clone()}</td>
+                                                                <td>{format!("{} → {}", booking.date_from, booking.date_to)}</td>
+                                                                <td>{booking.number_of_persons}</td>
+                                                                <td class="font-semibold">{format!("{} {}", booking.currency, booking.total_price)}</td>
+                                                                <td><span class=status_badge_class>{booking.status.clone()}</span></td>
+                                                                <td>
+                                                                    <div class="flex gap-1">
+                                                                        {if status_lower == "pending" {
+                                                                            view! {
+                                                                                <button
+                                                                                    class="btn btn-success btn-xs"
+                                                                                    on:click=move |_| update_c(b_id_confirm.clone(), "confirmed".to_string())
+                                                                                >
+                                                                                    "Confirm"
+                                                                                </button>
+                                                                                <button
+                                                                                    class="btn btn-error btn-xs"
+                                                                                    on:click=move |_| update_canc(b_id_cancel.clone(), "cancelled".to_string())
+                                                                                >
+                                                                                    "Cancel"
+                                                                                </button>
+                                                                            }.into_any()
+                                                                        } else if status_lower == "confirmed" {
+                                                                            view! {
+                                                                                <button
+                                                                                    class="btn btn-info btn-xs"
+                                                                                    on:click=move |_| update_comp(b_id_complete.clone(), "completed".to_string())
+                                                                                >
+                                                                                    "Complete"
+                                                                                </button>
+                                                                                <button
+                                                                                    class="btn btn-error btn-xs"
+                                                                                    on:click=move |_| update_canc(b_id_cancel.clone(), "cancelled".to_string())
+                                                                                >
+                                                                                    "Cancel"
+                                                                                </button>
+                                                                            }.into_any()
+                                                                        } else {
+                                                                            view! {
+                                                                                <span class="text-[10px] opacity-60">"None"</span>
+                                                                            }.into_any()
+                                                                        }}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    }
+                                                }
+                                            />
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }.into_any()
+                        }
+                    }
+                    Err(e) => view! {
+                        <div class="alert alert-error text-xs p-2">
+                            <span>{e.to_string()}</span>
+                        </div>
+                    }.into_any(),
+                })}
+            </Suspense>
+        </div>
     }
 }
 

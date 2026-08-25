@@ -193,4 +193,64 @@ mod tests {
             Some("Looking forward to the stay!")
         );
     }
+
+    #[test]
+    fn test_listing_bookings_response_mapping_all_statuses() {
+        use crate::apis::map_booking_to_response;
+        use chrono::Utc;
+        use db_core::models::{Booking, BookingMetadata, BookingStatus, CancellationPolicy};
+        use rust_decimal::Decimal;
+        use sqlx::types::Json;
+        use uuid::Uuid;
+
+        let statuses = vec![
+            (BookingStatus::Pending, "Pending"),
+            (BookingStatus::Confirmed, "Confirmed"),
+            (BookingStatus::Completed, "Completed"),
+            (BookingStatus::Cancelled, "Cancelled"),
+        ];
+
+        for (status, expected_str) in statuses {
+            let booking = Booking {
+                id: Uuid::new_v4(),
+                confirmation_code: "CONF-STATUS".to_string(),
+                guest_id: Uuid::new_v4(),
+                listing_id: Uuid::new_v4(),
+                status,
+                date_from: chrono::NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+                date_to: chrono::NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+                currency: "USD".to_string(),
+                daily_rate: Decimal::new(200, 0),
+                number_of_persons: 2,
+                total_days: 4,
+                sub_total_price: Decimal::new(800, 0),
+                discount_value: None,
+                tax_value: None,
+                fee_breakdown: Json(vec![]),
+                total_price: Decimal::new(800, 0),
+                cancellation_policy: CancellationPolicy::Flexible,
+                metadata: Json(BookingMetadata::default()),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+
+            let mapped = map_booking_to_response(booking);
+            assert_eq!(mapped.status, expected_str);
+        }
+    }
+
+    #[test]
+    fn test_pagination_params_deserialization() {
+        use api_core::pagination::Pagination;
+
+        let json = r#"{"page":2,"per_page":25}"#;
+        let parsed: Pagination = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.page, Some(2));
+        assert_eq!(parsed.per_page, Some(25));
+
+        let json_empty = "{}";
+        let parsed_empty: Pagination = serde_json::from_str(json_empty).unwrap();
+        assert_eq!(parsed_empty.page, None);
+        assert_eq!(parsed_empty.per_page, None);
+    }
 }

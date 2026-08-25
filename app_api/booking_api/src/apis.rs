@@ -540,6 +540,44 @@ async fn get_user_bookings(
     ))
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/listing/{id}",
+    tag = "bookings",
+    params(
+        ("id" = Uuid, Path, description = "Listing UUID"),
+        pagination::Pagination
+    ),
+    responses(
+        (status = 200, description = "List of bookings for listing", body = [BookingResponse]),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_listing_bookings(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    query: web::Query<pagination::Pagination>,
+) -> Result<impl Responder, ApiError> {
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(50).min(100);
+
+    let bookings = db_booking::get_bookings_by_listing_id(pool.get_ref(), *id, page, per_page)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let response: Vec<BookingResponse> =
+        bookings.into_iter().map(map_booking_to_response).collect();
+
+    Ok(respond(
+        &req,
+        Payload::Collection(response),
+        |items| BookingsWrapper { booking: items },
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -549,6 +587,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_bookings,
             get_booking_by_id,
             get_user_bookings,
+            get_listing_bookings,
             update_booking,
             delete_booking,
             transfer_booking,
@@ -597,6 +636,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/user/{id}",
                 web::get()
                     .to(get_user_bookings)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/listing/{id}",
+                web::get()
+                    .to(get_listing_bookings)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(

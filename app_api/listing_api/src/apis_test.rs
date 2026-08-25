@@ -392,13 +392,18 @@ async fn test_xml_serialization_of_vec() {
         listing_structure: format!("{:?}", StructureType::Apartment),
         country: "Test".to_string(),
         price_per_night: Some(dec!(100)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
         is_active: true,
         added_at: Utc::now(),
         owner_name: None,
         primary_image_url: None,
         max_guests: 2,
         bedrooms: 1,
+        beds: 1,
         full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
         latitude: None,
         longitude: None,
         overall_rating: None,
@@ -461,29 +466,14 @@ async fn test_update_listing_multiple_times() {
     )
     .await;
 
-    // 1. First Update
+    // 1. First Update - Name, Structure, Country, Base Currency
     let updated_name_1 = "Updated Name 1".to_string();
     let update_req_1 = UpdatedListingRequest {
         name: Some(updated_name_1.clone()),
-        description: None,
-        listing_structure: None,
-        country: None,
-        price_per_night: None,
-        is_active: None,
-        weekly_discount_percentage: None,
-        monthly_discount_percentage: None,
-        max_guests: None,
-        bedrooms: None,
-        beds: None,
-        full_bathrooms: None,
-        half_bathrooms: None,
-        square_meters: None,
-        latitude: None,
-        longitude: None,
-        listing_details: None,
-        city: None,
-        minimum_stay: None,
-        days_between_bookings: None,
+        listing_structure: Some("Townhouse".to_string()),
+        country: Some("JM".to_string()),
+        base_currency: Some("JMD".to_string()),
+        ..Default::default()
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -493,30 +483,18 @@ async fn test_update_listing_multiple_times() {
     assert_eq!(resp.status(), 200);
     let body: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(body.name, updated_name_1);
+    assert_eq!(body.listing_structure, "Townhouse");
+    assert_eq!(body.country, "JM");
+    assert_eq!(body.base_currency, "JMD");
 
     // 2. Second Update
     let updated_name_2 = "Updated Name 2".to_string();
     let update_req_2 = UpdatedListingRequest {
         name: Some(updated_name_2.clone()),
-        description: None,
-        listing_structure: None,
-        country: None,
-        price_per_night: None,
-        is_active: None,
-        weekly_discount_percentage: None,
-        monthly_discount_percentage: None,
-        max_guests: None,
-        bedrooms: None,
-        beds: None,
-        full_bathrooms: None,
-        half_bathrooms: None,
-        square_meters: None,
-        latitude: None,
-        longitude: None,
-        listing_details: None,
-        city: None,
-        minimum_stay: None,
-        days_between_bookings: None,
+        listing_structure: Some("Villa".to_string()),
+        country: Some("US".to_string()),
+        base_currency: Some("USD".to_string()),
+        ..Default::default()
     };
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
@@ -526,6 +504,9 @@ async fn test_update_listing_multiple_times() {
     assert_eq!(resp.status(), 200);
     let body: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(body.name, updated_name_2);
+    assert_eq!(body.listing_structure, "Villa");
+    assert_eq!(body.country, "US");
+    assert_eq!(body.base_currency, "USD");
 }
 
 #[actix_web::test]

@@ -11,7 +11,7 @@ pub fn Layout(children: Children) -> impl IntoView {
 
     let auth_status = Resource::new(
         move || location.pathname.get(),
-        |_| async move { crate::auth::get_current_user().await },
+        |_| async move { crate::auth::get_current_session_user().await },
     );
 
     view! {
@@ -56,23 +56,34 @@ pub fn Layout(children: Children) -> impl IntoView {
                                 let navigate = navigate_inner.clone();
                                 auth_status.get().map(move |status| {
                                     match status {
-                                        Ok(Some(name)) => {
+                                        Ok(Some(user)) => {
                                             let logout_action = ServerAction::<crate::auth::Logout>::new();
+                                            let is_admin = user.is_admin;
+                                            let user_name = user.name.clone();
+                                            let navigate_users = navigate.clone();
+                                            let navigate_listings = navigate.clone();
+                                            let navigate_admin = navigate.clone();
                                             view! {
                                                 <li>
-                                                    <button on:click={ let navigate = navigate.clone(); move |_| { navigate("/admin", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Admin">
+                                                    <button on:click={ move |_| { navigate_admin("/admin", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Admin">
                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" /></svg>
                                                         <span class="is-drawer-close:hidden">Admin</span>
                                                     </button>
                                                 </li>
+                                                {if is_admin {
+                                                    view! {
+                                                        <li>
+                                                            <button on:click={ move |_| { navigate_users("/admin/users", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Users">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>
+                                                                <span class="is-drawer-close:hidden">Users</span>
+                                                            </button>
+                                                        </li>
+                                                    }.into_any()
+                                                } else {
+                                                    ().into_any()
+                                                }}
                                                 <li>
-                                                    <button on:click={ let navigate = navigate.clone(); move |_| { navigate("/admin/users", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Users">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>
-                                                        <span class="is-drawer-close:hidden">Users</span>
-                                                    </button>
-                                                </li>
-                                                <li>
-                                                    <button on:click={ let navigate = navigate.clone(); move |_| { navigate("/admin/listings", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Listings">
+                                                    <button on:click={ move |_| { navigate_listings("/admin/listings", Default::default()); } } class="is-drawer-close:tooltip is-drawer-close:tooltip-right" data-tip="Listings">
                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V3.545M12.75 21h7.5V10.75M2.25 21h1.5m18 0h-18M2.25 9l4.5-1.636M18.75 3l-1.5.545m0 6.205 3 1m1.5.5-1.5-.5M6.75 7.364V3h-3v18m3-13.636 10.5-3.819" /></svg>
                                                         <span class="is-drawer-close:hidden">Listings</span>
                                                     </button>
@@ -80,7 +91,7 @@ pub fn Layout(children: Children) -> impl IntoView {
                                                 <li>
                                                     <button on:click=move |_| { logout_action.dispatch(crate::auth::Logout {}); } class="is-drawer-close:tooltip is-drawer-close:tooltip-right w-full text-start" data-tip="Logout">
                                                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" fill="none" stroke="currentColor" class="my-1.5 inline-block size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15" /></svg>
-                                                        <span class="is-drawer-close:hidden">{format!("Logout ({})", name)}</span>
+                                                        <span class="is-drawer-close:hidden">{format!("Logout ({})", user_name)}</span>
                                                     </button>
                                                 </li>
                                             }.into_any()

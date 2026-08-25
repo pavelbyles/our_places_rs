@@ -50,9 +50,26 @@ pub struct UpdateUserParams {
     pub is_host: bool,
 }
 
-#[server]
+#[cfg(feature = "ssr")]
+async fn ensure_admin() -> Result<(), ServerFnError> {
+    let session = leptos_actix::extract::<actix_session::Session>()
+        .await
+        .map_err(|_| ServerFnError::new("Session not found"))?;
+    let is_admin = session
+        .get::<bool>("is_admin")
+        .unwrap_or(None)
+        .unwrap_or(false);
+    if !is_admin {
+        return Err(ServerFnError::new("Unauthorized: Admin access required"));
+    }
+    Ok(())
+}
 
+#[server]
 pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    ensure_admin().await?;
+
     let mut roles = Vec::new();
     if params.is_booker {
         roles.push("booker".to_string());
@@ -121,8 +138,10 @@ pub async fn create_user_server(params: CreateUserParams) -> Result<(), ServerFn
 }
 
 #[server]
-
 pub async fn update_user_server(params: UpdateUserParams) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    ensure_admin().await?;
+
     let mut roles = Vec::new();
     if params.is_booker {
         roles.push("booker".to_string());
@@ -199,6 +218,9 @@ pub async fn get_users_server(
     search: Option<String>,
     is_deleted: Option<bool>,
 ) -> Result<Vec<common::models::UserResponse>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    ensure_admin().await?;
+
     let api_url = crate::api_client::user_api_url();
     let mut url = format!("{}/api/v1/users/?page=1&per_page=50", api_url);
 
@@ -230,6 +252,9 @@ pub async fn get_users_server(
 
 #[server]
 pub async fn soft_delete_user_server(id: String) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    ensure_admin().await?;
+
     let api_url = crate::api_client::user_api_url();
     let url = format!("{}/api/v1/users/user/{}", api_url, id);
 
@@ -250,6 +275,9 @@ pub async fn soft_delete_user_server(id: String) -> Result<(), ServerFnError> {
 
 #[server]
 pub async fn restore_user_server(id: String) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    ensure_admin().await?;
+
     let api_url = crate::api_client::user_api_url();
     let url = format!("{}/api/v1/users/user/{}/restore", api_url, id);
 
@@ -270,6 +298,9 @@ pub async fn restore_user_server(id: String) -> Result<(), ServerFnError> {
 
 #[server]
 pub async fn hard_delete_user_server(id: String) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    ensure_admin().await?;
+
     let api_url = crate::api_client::user_api_url();
     let url = format!("{}/api/v1/users/user/{}/hard", api_url, id);
 
@@ -370,6 +401,11 @@ pub fn UserPage() -> impl IntoView {
         |(s, _, _, _, _, _)| async move { get_users_server(Some(s), Some(true)).await },
     );
 
+    let session_user_resource = Resource::new(
+        || (),
+        |_| async move { crate::auth::get_current_session_user().await },
+    );
+
     let is_form_valid = move || {
         let e = email.get();
         // Basic check: must contain '@' and domain must contain '.'
@@ -385,10 +421,14 @@ pub fn UserPage() -> impl IntoView {
 
     view! {
         <RequireAuth>
-            <h1>"User Admin Page"</h1>
-            <div class="tabs tabs-lift">
-                <input type="radio" name="my_tabs_3" class="tab" aria-label="Add User" checked="checked" />
-                <div class="tab-content bg-base-100 border-base-300 p-6">
+            {move || {
+                match session_user_resource.get() {
+                    Some(Ok(Some(user))) if user.is_admin => {
+                        view! {
+                            <h1>"User Admin Page"</h1>
+                            <div class="tabs tabs-lift">
+                                <input type="radio" name="my_tabs_3" class="tab" aria-label="Add User" checked="checked" />
+                                <div class="tab-content bg-base-100 border-base-300 p-6">
                     <ActionForm action=create_user attr:class="form-control w-full max-w-xs space-y-4">
                         <hidden-input name="params[id]" value="" />
                         <div>
@@ -800,6 +840,23 @@ pub fn UserPage() -> impl IntoView {
                 </div>
             </div>
         </div>
+        }.into_any()
+                    }
+                    Some(Ok(Some(_))) => {
+                        view! {
+                            <div class="alert alert-error max-w-lg mx-auto my-8">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                <span>"Unauthorized: You must be an administrator to access User Management."</span>
+                            </div>
+                        }.into_any()
+                    }
+                    _ => view! {
+                        <div class="flex justify-center p-8">
+                            <span class="loading loading-spinner loading-md"></span>
+                        </div>
+                    }.into_any()
+                }
+            }}
         </RequireAuth>
     }
 }

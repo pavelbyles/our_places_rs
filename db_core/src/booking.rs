@@ -354,6 +354,44 @@ where
     Ok(bookings)
 }
 
+/// Retrieves bookings for a specific listing, sorted by date_from DESC, created_at DESC.
+#[tracing::instrument(skip(executor))]
+pub async fn get_bookings_by_listing_id<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    page: u32,
+    per_page: u32,
+) -> Result<Vec<Booking>>
+where
+    E: PgExecutor<'e>,
+{
+    let limit = per_page as i64;
+    let offset = ((page.max(1) - 1) * per_page) as i64;
+
+    let bookings = sqlx::query_as!(
+        Booking,
+        r#"
+        SELECT id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
+            created_at, updated_at
+        FROM booking
+        WHERE listing_id = $1
+        ORDER BY date_from DESC, created_at DESC
+        LIMIT $2 OFFSET $3
+        "#,
+        listing_id,
+        limit,
+        offset
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(bookings)
+}
+
 /// Checks if a listing is available for a specified date range.
 #[tracing::instrument(skip(executor))]
 pub async fn check_availability<'e, E>(
@@ -673,5 +711,19 @@ mod tests {
         // Verify Booking 1 on Villa 1 was automatically CANCELLED
         let b1_updated = get_booking_by_id(&pool, b1.id).await.unwrap();
         assert_eq!(b1_updated.status, BookingStatus::Cancelled);
+
+        // Test get_bookings_by_listing_id for listing1
+        let listing1_bookings = get_bookings_by_listing_id(&pool, listing1.id, 1, 10)
+            .await
+            .expect("Failed to fetch bookings for listing1");
+        assert_eq!(listing1_bookings.len(), 1);
+        assert_eq!(listing1_bookings[0].id, b1.id);
+
+        // Test get_bookings_by_listing_id for listing2
+        let listing2_bookings = get_bookings_by_listing_id(&pool, listing2.id, 1, 10)
+            .await
+            .expect("Failed to fetch bookings for listing2");
+        assert_eq!(listing2_bookings.len(), 1);
+        assert_eq!(listing2_bookings[0].id, b2.id);
     }
 }

@@ -107,22 +107,34 @@ pub fn BookingCard(
 
     view! {
         <div class="card bg-base-100 w-full shadow-xl border border-base-200">
-            <Suspense fallback=move || view! { <div class="p-4 text-center">"Loading price..."</div> }>
-                {move || {
-                    listing_resource.get().map(|res: Result<ListingResponse, ServerFnError>| match res {
+            {move || {
+                listing_resource.get().map(|res: Result<ListingResponse, ServerFnError>| match res {
                         Ok(listing) => {
                             view! {
                                 <div class="card-body gap-6">
                                     <div class="flex justify-between items-end">
                                         <div class="text-3xl font-bold text-primary flex items-center gap-2">
                                             <span>
-                                                {listing.base_currency.clone()} " " {
-                                                    let effective_rate = quote_resource.get()
-                                                        .and_then(|q| q)
-                                                        .map(|q| q.effective_daily_rate)
-                                                        .or(listing.price_per_night);
-                                                    effective_rate.map(|p| p.to_i64().unwrap_or(0).to_formatted_string(&Locale::en))
-                                                        .unwrap_or_else(|| "0.00".to_string())
+                                                {
+                                                    let currency = listing.base_currency.clone();
+                                                    let price = listing.price_per_night;
+                                                    move || {
+                                                        let effective_rate = quote_resource.get()
+                                                            .and_then(|q| q)
+                                                            .map(|q| q.effective_daily_rate)
+                                                            .or(price);
+                                                        let formatted = effective_rate.map(|p| {
+                                                            let rounded = p.round_dp(2);
+                                                            if rounded.fract().is_zero() {
+                                                                rounded.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
+                                                            } else {
+                                                                let int_part = rounded.trunc().to_i64().unwrap_or(0).to_formatted_string(&Locale::en);
+                                                                let frac_part = (rounded.fract().abs() * rust_decimal::Decimal::from(100)).round().to_i64().unwrap_or(0);
+                                                                format!("{}.{:02}", int_part, frac_part)
+                                                            }
+                                                        }).unwrap_or_else(|| "0.00".to_string());
+                                                        format!("{} {}", currency, formatted)
+                                                    }
                                                 }
                                             </span>
                                             <span class="text-lg font-normal text-base-content/70">" / night"</span>
@@ -205,10 +217,10 @@ pub fn BookingCard(
                                         </button>
                                         <p class="text-center text-sm text-base-content/60">"You won't be charged yet"</p>
                                         {move || {
-                                            if let Some(Err(e)) = initiate_booking_action.value().get() {
+                                             if let Some(Err(e)) = initiate_booking_action.value().get() {
                                                 view! {
                                                     <div class="alert alert-error mt-2 py-2 text-sm">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                                         <span>{e.to_string().replace("Uh oh: ", "")}</span>
                                                     </div>
                                                 }.into_any()
@@ -224,12 +236,26 @@ pub fn BookingCard(
                                         <div class="flex justify-between text-lg">
                                             <span class="underline">"Effective price / night"</span>
                                             <span>
-                                                {listing.base_currency.clone()} " " {
-                                                    let rate = quote_resource.get()
-                                                        .and_then(|q| q)
-                                                        .map(|q| q.effective_daily_rate)
-                                                        .or(listing.price_per_night);
-                                                    rate.map(|p| p.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())
+                                                {
+                                                    let currency = listing.base_currency.clone();
+                                                    let price = listing.price_per_night;
+                                                    move || {
+                                                        let rate = quote_resource.get()
+                                                            .and_then(|q| q)
+                                                            .map(|q| q.effective_daily_rate)
+                                                            .or(price);
+                                                        let formatted = rate.map(|p| {
+                                                            let rounded = p.round_dp(2);
+                                                            if rounded.fract().is_zero() {
+                                                                rounded.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
+                                                            } else {
+                                                                let int_part = rounded.trunc().to_i64().unwrap_or(0).to_formatted_string(&Locale::en);
+                                                                let frac_part = (rounded.fract().abs() * rust_decimal::Decimal::from(100)).round().to_i64().unwrap_or(0);
+                                                                format!("{}.{:02}", int_part, frac_part)
+                                                            }
+                                                        }).unwrap_or_else(|| "0.00".to_string());
+                                                        format!("{} {}", currency, formatted)
+                                                    }
                                                 }
                                             </span>
                                         </div>
@@ -237,36 +263,63 @@ pub fn BookingCard(
                                             let currency1 = listing.base_currency.clone();
                                             let price1 = listing.price_per_night;
                                             move || validation.get().and_then(|res| res.ok()).map(|nights| {
-                                            let total_str = if let Some(Some(quote)) = quote_resource.get() {
-                                                quote.subtotal.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
-                                            } else {
-                                                price1.map(|p| (p * rust_decimal::Decimal::from(nights)).to_i64().unwrap_or(0).to_formatted_string(&Locale::en))
-                                                    .unwrap_or_else(|| "0.00".to_string())
-                                            };
-                                            view! {
-                                                <div class="flex justify-between text-lg">
-                                                    <span class="underline">"Nights"</span>
-                                                    <span>{nights}</span>
-                                                </div>
-                                                <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
-                                                    <span>"Total"</span>
-                                                    <span>{currency1.clone()} " " {total_str}</span>
-                                                </div>
-                                            }
-                                        })}
+                                                let total_str = if let Some(Some(quote)) = quote_resource.get() {
+                                                    let rounded = quote.subtotal.round_dp(2);
+                                                    if rounded.fract().is_zero() {
+                                                        rounded.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
+                                                    } else {
+                                                        let int_part = rounded.trunc().to_i64().unwrap_or(0).to_formatted_string(&Locale::en);
+                                                        let frac_part = (rounded.fract().abs() * rust_decimal::Decimal::from(100)).round().to_i64().unwrap_or(0);
+                                                        format!("{}.{:02}", int_part, frac_part)
+                                                    }
+                                                } else {
+                                                    price1.map(|p| {
+                                                        let total = (p * rust_decimal::Decimal::from(nights)).round_dp(2);
+                                                        if total.fract().is_zero() {
+                                                            total.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
+                                                        } else {
+                                                            let int_part = total.trunc().to_i64().unwrap_or(0).to_formatted_string(&Locale::en);
+                                                            let frac_part = (total.fract().abs() * rust_decimal::Decimal::from(100)).round().to_i64().unwrap_or(0);
+                                                            format!("{}.{:02}", int_part, frac_part)
+                                                        }
+                                                    }).unwrap_or_else(|| "0.00".to_string())
+                                                };
+                                                view! {
+                                                    <div class="flex justify-between text-lg">
+                                                        <span class="underline">"Nights"</span>
+                                                        <span>{nights}</span>
+                                                    </div>
+                                                    <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
+                                                        <span>"Total"</span>
+                                                        <span>{currency1.clone()} " " {total_str}</span>
+                                                    </div>
+                                                }
+                                            })
+                                        }
                                         {
                                             let currency2 = listing.base_currency.clone();
                                             let price2 = listing.price_per_night;
                                             move || if validation.get().is_none() {
-                                            view! {
-                                                <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
-                                                    <span>"Total"</span>
-                                                    <span>{currency2.clone()} " " {price2.map(|p| p.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)).unwrap_or_else(|| "0.00".to_string())}</span>
-                                                </div>
-                                            }.into_any()
-                                        } else {
-                                            ().into_any()
-                                        }}
+                                                let formatted = price2.map(|p| {
+                                                    let rounded = p.round_dp(2);
+                                                    if rounded.fract().is_zero() {
+                                                        rounded.to_i64().unwrap_or(0).to_formatted_string(&Locale::en)
+                                                    } else {
+                                                        let int_part = rounded.trunc().to_i64().unwrap_or(0).to_formatted_string(&Locale::en);
+                                                        let frac_part = (rounded.fract().abs() * rust_decimal::Decimal::from(100)).round().to_i64().unwrap_or(0);
+                                                        format!("{}.{:02}", int_part, frac_part)
+                                                    }
+                                                }).unwrap_or_else(|| "0.00".to_string());
+                                                view! {
+                                                    <div class="flex justify-between text-lg font-bold mt-2 pt-4 border-t border-base-200">
+                                                        <span>"Total"</span>
+                                                        <span>{currency2.clone()} " " {formatted}</span>
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                ().into_any()
+                                            }
+                                        }
                                     </div>
                                 </div>
                             }.into_any()
@@ -279,7 +332,6 @@ pub fn BookingCard(
                         }.into_any()
                     })
                 }}
-            </Suspense>
         </div>
     }
 }

@@ -29,7 +29,7 @@ pub fn ListingDetailPage() -> impl IntoView {
     );
 
     view! {
-        <Suspense fallback=move || view! { <div class="p-10 text-center">"Loading listing..."</div> }>
+        <Transition fallback=move || view! { <div class="p-10 text-center">"Loading listing..."</div> }>
             {move || {
                 listing_resource.get().map(|res| match res {
                     Ok(details) => {
@@ -235,7 +235,7 @@ pub fn ListingDetailPage() -> impl IntoView {
                     }.into_any()
                 })
             }}
-        </Suspense>
+        </Transition>
     }
 }
 

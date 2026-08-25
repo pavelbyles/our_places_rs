@@ -28,6 +28,13 @@ pub fn listing_api_url() -> String {
         .to_string()
 }
 
+pub fn booking_api_url() -> String {
+    env::var("BOOKING_API_URL")
+        .unwrap_or_else(|_| "http://localhost:8081".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest {
     pub email: String,

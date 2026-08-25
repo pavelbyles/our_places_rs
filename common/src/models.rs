@@ -68,13 +68,18 @@ pub struct ListingResponse {
     pub listing_structure: String, // Simplified from enum for common compatibility if needed, or move enum here
     pub country: String,
     pub price_per_night: Option<Decimal>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
     pub is_active: bool,
     pub added_at: DateTime<Utc>,
     pub owner_name: Option<String>,
     pub primary_image_url: Option<String>,
     pub max_guests: i32,
     pub bedrooms: i32,
+    pub beds: i32,
     pub full_bathrooms: i32,
+    pub half_bathrooms: i32,
+    pub square_meters: Option<i32>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub overall_rating: Option<f64>,
@@ -351,6 +356,103 @@ pub fn default_days_between_bookings() -> i32 {
 
 pub fn default_base_currency() -> String {
     "USD".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, Default)]
+pub struct UpdatedListingRequest {
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "Zen Loft")]
+    #[validate(length(min = 1, message = "Name cannot be empty"))]
+    pub name: Option<String>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "A zen place to be")]
+    #[validate(length(
+        max = 2000,
+        message = "Description cannot be longer than 2000 characters"
+    ))]
+    pub description: Option<String>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "Apartment")]
+    pub listing_structure: Option<String>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "Jamaica")]
+    #[validate(length(min = 1, message = "Country cannot be empty"))]
+    pub country: Option<String>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "USD")]
+    pub base_currency: Option<String>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "150.00")]
+    pub price_per_night: Option<Decimal>,
+
+    #[serde(default)]
+    pub weekly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    pub monthly_discount_percentage: Option<Decimal>,
+
+    #[serde(default)]
+    #[schema(example = 2)]
+    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
+    pub max_guests: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
+    pub bedrooms: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Beds cannot be negative"))]
+    pub beds: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 1)]
+    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
+    pub full_bathrooms: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
+    pub half_bathrooms: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 65)]
+    pub square_meters: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 18.2206)]
+    pub latitude: Option<f64>,
+
+    #[serde(default)]
+    #[schema(example = -77.7990)]
+    pub longitude: Option<f64>,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "Kingston")]
+    pub city: Option<String>,
+
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub listing_details: Option<serde_json::Value>,
+
+    #[serde(default)]
+    #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
+    pub minimum_stay: Option<i32>,
+
+    #[serde(default)]
+    #[schema(example = 0)]
+    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    pub days_between_bookings: Option<i32>,
+
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
