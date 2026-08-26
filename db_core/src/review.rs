@@ -17,7 +17,7 @@ pub async fn create_review_token(
     let token = Uuid::new_v4().to_string();
 
     let booking = sqlx::query!(
-        "SELECT guest_id, listing_id FROM booking WHERE id = $1",
+        "SELECT guest_id, listing_id, date_to FROM booking WHERE id = $1",
         booking_id
     )
     .fetch_optional(&mut *conn)
@@ -26,8 +26,11 @@ pub async fn create_review_token(
 
     // valid immediately upon completion
     let valid_from = Utc::now();
-    // expires in 15 days
-    let expires_at = Utc::now() + Duration::days(15);
+    // expires strictly 15 days after checkout date at 23:59:59 UTC
+    let expires_at = (booking.date_to + Duration::days(15))
+        .and_hms_opt(23, 59, 59)
+        .unwrap_or_default()
+        .and_utc();
 
     let review_token = sqlx::query_as!(
         ReviewToken,
@@ -159,10 +162,13 @@ pub async fn get_or_create_booking_review_token(
         });
     }
 
-    // 5. If no active token exists, create a new one valid until cutoff date + 1 day
+    // 5. If no active token exists, create a new one valid until strictly 15 days post-checkout
     let new_token = Uuid::new_v4().to_string();
     let valid_from = Utc::now() - Duration::hours(1);
-    let expires_at = Utc::now() + Duration::days(days_remaining + 1);
+    let expires_at = cutoff_date
+        .and_hms_opt(23, 59, 59)
+        .unwrap_or_default()
+        .and_utc();
 
     sqlx::query!(
         r#"
@@ -234,6 +240,14 @@ pub async fn create_review_with_token(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| crate::error::DbError::ValidationError("Token is invalid, expired, or has already been used".to_string()))?;
+
+    // Acquire row-level lock on listing to serialize concurrent reviews
+    let _ = sqlx::query!(
+        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+        token.listing_id
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
 
     // Compute overall rating
     let overall_rating = req.calculate_overall_rating();
@@ -530,7 +544,7 @@ mod tests {
 
         // Create Booking (need to use raw SQL since create_booking sets status to pending and we need completed)
         let _ = sqlx::query!(
-            "INSERT INTO booking (id, confirmation_code, guest_id, listing_id, status, date_from, date_to, currency, daily_rate, number_of_persons, total_days, sub_total_price, total_price, cancellation_policy, metadata) VALUES ($1, 'ABCDEF', $2, $3, 'completed', '2026-01-01', '2026-01-05', 'USD', 100, 2, 4, 400, 400, 'flexible', '{}')",
+            "INSERT INTO booking (id, confirmation_code, guest_id, listing_id, status, date_from, date_to, currency, daily_rate, number_of_persons, total_days, sub_total_price, total_price, cancellation_policy, metadata) VALUES ($1, 'ABCDEF', $2, $3, 'completed', CURRENT_DATE - INTERVAL '5 days', CURRENT_DATE, 'USD', 100, 2, 4, 400, 400, 'flexible', '{}')",
             booking_id, guest_id, listing_id
         ).execute(&mut *tx).await.unwrap();
 

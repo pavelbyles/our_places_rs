@@ -389,8 +389,12 @@ pub async fn initialize_system_admin(pool: &PgPool) {
     if !exists {
         tracing::info!("Initializing default system admin");
 
-        let password_hash = bcrypt::hash("admin_changeme_2026", bcrypt::DEFAULT_COST)
-            .expect("Failed to hash default admin password");
+        let password_hash = tokio::task::spawn_blocking(|| {
+            bcrypt::hash("admin_changeme_2026", bcrypt::DEFAULT_COST)
+                .expect("Failed to hash default admin password")
+        })
+        .await
+        .expect("Failed to join blocking task");
 
         let new_user = NewUser {
             id: Uuid::now_v7(),

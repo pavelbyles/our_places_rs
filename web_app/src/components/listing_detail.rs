@@ -244,15 +244,33 @@ fn ListingReviews(
     listing_id: uuid::Uuid,
     rating_summary: Option<common::models::ListingRatingSummary>,
 ) -> impl IntoView {
+    use common::models::ReviewResponse;
     use web_app_common::reviews::get_listing_reviews_server;
 
     // We only fetch reviews if there's a rating summary indicating there are reviews
     let review_count = rating_summary.as_ref().map(|s| s.review_count).unwrap_or(0);
 
+    let page = RwSignal::new(1i64);
+    let reviews_list = RwSignal::new(Vec::<ReviewResponse>::new());
+
     let reviews_resource = Resource::new(
-        move || listing_id,
-        |id| async move { get_listing_reviews_server(id, 1, 10).await },
+        move || (listing_id, page.get()),
+        |(id, p)| async move { get_listing_reviews_server(id, p, 10).await },
     );
+
+    Effect::new(move |_| {
+        if let Some(Ok(new_reviews)) = reviews_resource.get() {
+            reviews_list.update(|list| {
+                for r in new_reviews {
+                    if !list.iter().any(|existing| existing.id == r.id) {
+                        list.push(r);
+                    }
+                }
+            });
+        }
+    });
+
+    let has_more = move || reviews_list.with(|l| (l.len() as i32) < review_count);
 
     view! {
         <div class="flex flex-col gap-8 w-full">
@@ -293,63 +311,79 @@ fn ListingReviews(
                 if review_count > 0 {
                     view! {
                         <Suspense fallback=move || view! { <div class="loading loading-spinner"></div> }>
-                            {move || reviews_resource.get().map(|res| match res {
-                                Ok(reviews) => {
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
+                            <For
+                                each=move || reviews_list.get()
+                                key=|review| review.id
+                                children=move |review| {
                                     view! {
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-                                            <For
-                                                each=move || reviews.clone()
-                                                key=|review| review.id
-                                                children=move |review| {
+                                        <div class="flex flex-col gap-4">
+                                            <div class="flex items-center gap-4">
+                                                <div class="avatar">
+                                                    <div class="w-12 h-12 rounded-full bg-base-300 text-base-content flex items-center justify-center font-bold text-xl uppercase">
+                                                        {review.guest_first_name.chars().next().unwrap_or('?').to_string()}
+                                                    </div>
+                                                </div>
+                                                <div class="flex flex-col">
+                                                    <span class="font-bold text-base-content">{review.guest_first_name}</span>
+                                                    <div class="flex items-center gap-1 text-sm text-base-content/70">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                                        </svg>
+                                                        <span>{format!("{:.1}", review.overall_rating)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p class="text-base-content/80 whitespace-pre-line leading-relaxed text-sm lg:text-base">
+                                                {review.public_review_text.unwrap_or_default()}
+                                            </p>
+                                            {
+                                                if let Some(reply) = review.host_reply_text {
                                                     view! {
-                                                        <div class="flex flex-col gap-4">
-                                                            <div class="flex items-center gap-4">
-                                                                <div class="avatar">
-                                                                    <div class="w-12 h-12 rounded-full bg-base-300 text-base-content flex items-center justify-center font-bold text-xl uppercase">
-                                                                        {review.guest_first_name.chars().next().unwrap_or('?').to_string()}
-                                                                    </div>
-                                                                </div>
-                                                                <div class="flex flex-col">
-                                                                    <span class="font-bold text-base-content">{review.guest_first_name}</span>
-                                                                    <div class="flex items-center gap-1 text-sm text-base-content/70">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                                                        </svg>
-                                                                        <span>{format!("{:.1}", review.overall_rating)}</span>
-                                                                    </div>
-                                                                </div>
+                                                        <div class="mt-2 ml-4 p-4 bg-base-200/50 rounded-lg border-l-4 border-primary">
+                                                            <div class="flex items-center gap-2 mb-2">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
+                                                                </svg>
+                                                                <span class="font-bold text-base-content text-sm">"Response from Host"</span>
                                                             </div>
-                                                            <p class="text-base-content/80 whitespace-pre-line leading-relaxed text-sm lg:text-base">
-                                                                {review.public_review_text.unwrap_or_default()}
+                                                            <p class="text-base-content/80 whitespace-pre-line text-sm leading-relaxed">
+                                                                {reply}
                                                             </p>
-                                                            {
-                                                                if let Some(reply) = review.host_reply_text {
-                                                                    view! {
-                                                                        <div class="mt-2 ml-4 p-4 bg-base-200/50 rounded-lg border-l-4 border-primary">
-                                                                            <div class="flex items-center gap-2 mb-2">
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                                                                                    <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
-                                                                                </svg>
-                                                                                <span class="font-bold text-base-content text-sm">"Response from Host"</span>
-                                                                            </div>
-                                                                            <p class="text-base-content/80 whitespace-pre-line text-sm leading-relaxed">
-                                                                                {reply}
-                                                                            </p>
-                                                                        </div>
-                                                                    }.into_any()
-                                                                } else {
-                                                                    view! { <div></div> }.into_any()
-                                                                }
-                                                            }
                                                         </div>
-                                                    }
+                                                    }.into_any()
+                                                } else {
+                                                    view! { <div></div> }.into_any()
                                                 }
-                                            />
+                                            }
                                         </div>
-                                    }.into_any()
+                                    }
                                 }
-                                Err(_) => view! { <div>"Failed to load reviews."</div> }.into_any(),
-                            })}
+                            />
+                        </div>
+
+                        {move || if has_more() {
+                            view! {
+                                <div class="mt-10 flex justify-center">
+                                    <button
+                                        class="btn btn-outline btn-wide"
+                                        disabled=move || reviews_resource.get().is_none()
+                                        on:click=move |_| page.update(|p| *p += 1)
+                                    >
+                                        {move || if reviews_resource.get().is_none() {
+                                            view! {
+                                                <span class="loading loading-spinner loading-sm"></span>
+                                                "Loading..."
+                                            }.into_any()
+                                        } else {
+                                            view! { "Show More Reviews" }.into_any()
+                                        }}
+                                    </button>
+                                </div>
+                            }.into_any()
+                        } else {
+                            view! { <div></div> }.into_any()
+                        }}
                         </Suspense>
                     }.into_any()
                 } else {

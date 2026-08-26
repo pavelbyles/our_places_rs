@@ -323,25 +323,56 @@ pub async fn get_bookings_by_user_id<'e, E>(
     guest_id: Uuid,
     page: u32,
     per_page: u32,
-) -> Result<Vec<Booking>>
+) -> Result<Vec<crate::models::BookingWithEligibility>>
 where
     E: PgExecutor<'e>,
 {
     let limit = per_page as i64;
     let offset = ((page.max(1) - 1) * per_page) as i64;
 
-    let bookings = sqlx::query_as!(
-        Booking,
+    let records = sqlx::query!(
         r#"
-        SELECT id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
-            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
-            sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
-            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
-            metadata as "metadata: Json<crate::models::BookingMetadata>",
-            created_at, updated_at
-        FROM booking
-        WHERE guest_id = $1
-        ORDER BY date_from ASC
+        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as "status: BookingStatus", 
+            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,
+            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            b.total_price, b.cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            b.metadata as "metadata: Json<crate::models::BookingMetadata>",
+            json_build_object(
+                'booking_id', b.id,
+                'is_eligible', 
+                    CASE 
+                        WHEN b.status = 'cancelled' THEN false
+                        WHEN r.id IS NOT NULL THEN false
+                        WHEN CURRENT_DATE < b.date_to THEN false
+                        WHEN CURRENT_DATE > (b.date_to + 15) THEN false
+                        ELSE true
+                    END,
+                'token', rt.token,
+                'has_reviewed', CASE WHEN r.id IS NOT NULL THEN true ELSE false END,
+                'days_remaining', 
+                    CASE 
+                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 0
+                        ELSE (b.date_to + 15) - CURRENT_DATE
+                    END,
+                'status_message', 
+                    CASE 
+                        WHEN b.status = 'cancelled' THEN 'Cancelled bookings are not eligible for review'
+                        WHEN r.id IS NOT NULL THEN 'You have already submitted a review for this stay'
+                        WHEN CURRENT_DATE < b.date_to THEN 'Reviews can only be submitted after your stay has ended'
+                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 'The 15-day review period for this stay has expired'
+                        ELSE 'Eligible for review'
+                    END
+            ) as "review_eligibility!",
+            b.created_at, b.updated_at
+        FROM booking b
+        LEFT JOIN review r ON r.booking_id = b.id
+        LEFT JOIN LATERAL (
+            SELECT token FROM review_token 
+            WHERE booking_id = b.id AND used_at IS NULL AND expires_at > NOW() 
+            ORDER BY created_at DESC LIMIT 1
+        ) rt ON true
+        WHERE b.guest_id = $1
+        ORDER BY b.date_from ASC
         LIMIT $2 OFFSET $3
         "#,
         guest_id,
@@ -350,6 +381,42 @@ where
     )
     .fetch_all(executor)
     .await?;
+
+    let mut bookings = Vec::with_capacity(records.len());
+    for r in records {
+        let booking = Booking {
+            id: r.id,
+            confirmation_code: r.confirmation_code,
+            guest_id: r.guest_id,
+            listing_id: r.listing_id,
+            status: r.status,
+            date_from: r.date_from,
+            date_to: r.date_to,
+            currency: r.currency,
+            daily_rate: r.daily_rate,
+            number_of_persons: r.number_of_persons,
+            total_days: r.total_days,
+            sub_total_price: r.sub_total_price,
+            discount_value: r.discount_value,
+            tax_value: r.tax_value,
+            fee_breakdown: r.fee_breakdown,
+            total_price: r.total_price,
+            cancellation_policy: r.cancellation_policy,
+            metadata: r.metadata,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        };
+
+        let eligibility = serde_json::from_value::<common::models::BookingReviewEligibility>(
+            r.review_eligibility,
+        )
+        .ok();
+
+        bookings.push(crate::models::BookingWithEligibility {
+            booking,
+            review_eligibility: eligibility,
+        });
+    }
 
     Ok(bookings)
 }
@@ -423,28 +490,6 @@ where
     .await?;
 
     Ok(overlapping.count == Some(0))
-}
-
-/// Deletes pending bookings that are older than the specified minutes.
-#[tracing::instrument(skip(executor))]
-pub async fn cleanup_stale_bookings<'e, E>(executor: E, timeout_minutes: i64) -> Result<u64>
-where
-    E: PgExecutor<'e>,
-{
-    let threshold = Utc::now() - chrono::Duration::minutes(timeout_minutes);
-
-    let result = sqlx::query!(
-        r#"
-        DELETE FROM booking
-        WHERE status = 'pending'
-          AND created_at < $1
-        "#,
-        threshold
-    )
-    .execute(executor)
-    .await?;
-
-    Ok(result.rows_affected())
 }
 
 /// Retrieves the history of a specific booking.

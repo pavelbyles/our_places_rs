@@ -151,6 +151,7 @@ pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
             estimated_arrival_time: booking.metadata.estimated_arrival_time.clone(),
             is_business_trip: booking.metadata.is_business_trip,
         },
+        review_eligibility: None,
         created_at: booking.created_at,
         updated_at: booking.updated_at,
     }

@@ -128,6 +128,8 @@ pub struct BookingResponse {
     pub total_price: Decimal,
     pub cancellation_policy: String,
     pub metadata: BookingMetadataResponse,
+    #[serde(default)]
+    pub review_eligibility: Option<BookingReviewEligibility>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -627,5 +629,88 @@ mod tests {
             req3.calculate_overall_rating(),
             Decimal::from_str("3.25").unwrap()
         );
+    }
+
+    #[test]
+    fn test_booking_response_serde_with_eligibility() {
+        let json_with_eligibility = r#"{
+            "id": "00000000-0000-0000-0000-000000000000",
+            "confirmation_code": "ABCDEF",
+            "guest_id": "00000000-0000-0000-0000-000000000000",
+            "listing_id": "00000000-0000-0000-0000-000000000000",
+            "status": "Completed",
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-05",
+            "currency": "USD",
+            "daily_rate": "100.00",
+            "number_of_persons": 2,
+            "total_days": 4,
+            "sub_total_price": "400.00",
+            "discount_value": null,
+            "tax_value": "40.00",
+            "total_price": "440.00",
+            "cancellation_policy": "Flexible",
+            "metadata": {
+                "num_adults": 2,
+                "num_children": 0,
+                "num_infants": 0,
+                "num_pets": 0,
+                "message_to_host": null,
+                "estimated_arrival_time": null,
+                "is_business_trip": false
+            },
+            "review_eligibility": {
+                "booking_id": "00000000-0000-0000-0000-000000000000",
+                "is_eligible": true,
+                "token": "tok123",
+                "has_reviewed": false,
+                "days_remaining": 10,
+                "status_message": "Eligible for review"
+            },
+            "created_at": "2026-08-01T12:00:00Z",
+            "updated_at": "2026-08-01T12:00:00Z"
+        }"#;
+
+        let response: crate::models::BookingResponse =
+            serde_json::from_str(json_with_eligibility).unwrap();
+        assert!(response.review_eligibility.is_some());
+        let eligibility = response.review_eligibility.unwrap();
+        assert_eq!(eligibility.token.as_deref(), Some("tok123"));
+        assert!(eligibility.is_eligible);
+
+        let json_without_eligibility = r#"{
+            "id": "00000000-0000-0000-0000-000000000000",
+            "confirmation_code": "ABCDEF",
+            "guest_id": "00000000-0000-0000-0000-000000000000",
+            "listing_id": "00000000-0000-0000-0000-000000000000",
+            "status": "Completed",
+            "date_from": "2026-08-01",
+            "date_to": "2026-08-05",
+            "currency": "USD",
+            "daily_rate": "100.00",
+            "number_of_persons": 2,
+            "total_days": 4,
+            "sub_total_price": "400.00",
+            "discount_value": null,
+            "tax_value": "40.00",
+            "total_price": "440.00",
+            "cancellation_policy": "Flexible",
+            "metadata": {
+                "num_adults": 2,
+                "num_children": 0,
+                "num_infants": 0,
+                "num_pets": 0,
+                "message_to_host": null,
+                "estimated_arrival_time": null,
+                "is_business_trip": false
+            },
+            "review_eligibility": null,
+            "created_at": "2026-08-01T12:00:00Z",
+            "updated_at": "2026-08-01T12:00:00Z"
+        }"#;
+
+        let response2: crate::models::BookingResponse =
+            serde_json::from_str(json_without_eligibility).unwrap();
+        assert!(response2.review_eligibility.is_none());
     }
 }

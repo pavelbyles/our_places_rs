@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT guest_id, listing_id FROM booking WHERE id = $1",
+  "query": "SELECT guest_id, listing_id, date_to FROM booking WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,11 @@
         "ordinal": 1,
         "name": "listing_id",
         "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "date_to",
+        "type_info": "Date"
       }
     ],
     "parameters": {
@@ -21,8 +26,9 @@
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "375fab27fe1ed6140d7e4b6d2b970ea52972c6dbcf4d9dd5091276ba5615e9ab"
+  "hash": "8347aa5f7a865131647721d9ead9d0e959868fb4bb6ec2a3c570d3712eb9bbce"
 }

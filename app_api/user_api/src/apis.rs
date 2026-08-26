@@ -156,8 +156,12 @@ async fn create_user(
             .await
             .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
 
-        let password_hash = bcrypt::hash(&req_data.password, bcrypt::DEFAULT_COST)
-            .map_err(|_| ApiError::Internal)?;
+        let password = req_data.password.clone();
+        let password_hash =
+            tokio::task::spawn_blocking(move || bcrypt::hash(&password, bcrypt::DEFAULT_COST))
+                .await
+                .map_err(|_| ApiError::Internal)?
+                .map_err(|_| ApiError::Internal)?;
 
         let otp: String = Alphanumeric
             .sample_string(&mut rand::rng(), 6)
@@ -335,7 +339,11 @@ async fn login(
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     // Verify password
-    let valid = bcrypt::verify(&credentials.password, &user.password_hash)
+    let password = credentials.password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     if !valid {
@@ -530,7 +538,13 @@ async fn update_user(
 
     let password_hash = if let Some(ref password) = req_data.password {
         if !password.is_empty() {
-            Some(bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|_| ApiError::Internal)?)
+            let pwd = password.clone();
+            Some(
+                tokio::task::spawn_blocking(move || bcrypt::hash(&pwd, bcrypt::DEFAULT_COST))
+                    .await
+                    .map_err(|_| ApiError::Internal)?
+                    .map_err(|_| ApiError::Internal)?,
+            )
         } else {
             None
         }
@@ -718,8 +732,14 @@ async fn get_user_bookings(
         .await
         .map_err(ApiError::Database)?;
 
-    let response: Vec<BookingResponse> =
-        bookings.into_iter().map(map_booking_to_response).collect();
+    let response: Vec<BookingResponse> = bookings
+        .into_iter()
+        .map(|b| {
+            let mut resp = map_booking_to_response(b.booking);
+            resp.review_eligibility = b.review_eligibility;
+            resp
+        })
+        .collect();
 
     Ok(respond(
         &req,
@@ -909,7 +929,11 @@ async fn request_password_change(
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
-    let valid = bcrypt::verify(&payload.current_password, &user.password_hash)
+    let current_password = payload.current_password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&current_password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     if !valid {
@@ -972,8 +996,12 @@ async fn confirm_password_change(
         && let Some(expiry) = user.verification_code_expires_at
         && expiry > Utc::now()
     {
-        let new_hash = bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST)
-            .map_err(|_| ApiError::Internal)?;
+        let new_password = payload.new_password.clone();
+        let new_hash =
+            tokio::task::spawn_blocking(move || bcrypt::hash(&new_password, bcrypt::DEFAULT_COST))
+                .await
+                .map_err(|_| ApiError::Internal)?
+                .map_err(|_| ApiError::Internal)?;
 
         let updated = db_core::user::update_user_password(pool.get_ref(), user.id, new_hash)
             .await
@@ -1017,7 +1045,11 @@ async fn change_email(
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
-    let valid = bcrypt::verify(&payload.current_password, &user.password_hash)
+    let current_password = payload.current_password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&current_password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     if !valid {
@@ -1090,7 +1122,11 @@ async fn deactivate_account(
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
-    let valid = bcrypt::verify(&payload.current_password, &user.password_hash)
+    let current_password = payload.current_password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&current_password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     if !valid {

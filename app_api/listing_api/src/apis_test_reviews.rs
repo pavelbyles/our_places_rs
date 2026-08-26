@@ -154,7 +154,7 @@ async fn test_reviews_endpoints() {
     
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/reviews/{}/reply", reviews[0].id))
-        .insert_header(("x-user-id", user_id.to_string()))
+        .insert_header(("Authorization", format!("Bearer {}", api_core::auth::generate_test_jwt(user_id))))
         .set_json(&reply_req)
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -246,7 +246,7 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
     // 3. Request booking review token via API
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/reviews/booking/{}/token", booking_id))
-        .insert_header(("x-user-id", guest_id.to_string()))
+        .insert_header(("Authorization", format!("Bearer {}", api_core::auth::generate_test_jwt(guest_id))))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_success());
@@ -280,7 +280,7 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
     // 5. Query token eligibility again - should indicate already reviewed
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/reviews/booking/{}/token", booking_id))
-        .insert_header(("x-user-id", guest_id.to_string()))
+        .insert_header(("Authorization", format!("Bearer {}", api_core::auth::generate_test_jwt(guest_id))))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_success());

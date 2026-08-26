@@ -175,9 +175,9 @@ fn RatingInput(name: &'static str, label: &'static str) -> impl IntoView {
         <div class="flex flex-col items-center p-4 bg-base-100 rounded-xl shadow-sm border border-base-300">
             <span class="font-medium text-base-content/80 mb-3">{label}</span>
             <div class="rating rating-lg">
-                <input type="radio" name=name value="1" class="mask mask-star bg-orange-400" checked />
+                <input type="radio" name=name value="1" class="mask mask-star bg-orange-400" />
                 <input type="radio" name=name value="2" class="mask mask-star bg-orange-400" />
-                <input type="radio" name=name value="3" class="mask mask-star bg-orange-400" />
+                <input type="radio" name=name value="3" class="mask mask-star bg-orange-400" checked />
                 <input type="radio" name=name value="4" class="mask mask-star bg-orange-400" />
                 <input type="radio" name=name value="5" class="mask mask-star bg-orange-400" />
             </div>
