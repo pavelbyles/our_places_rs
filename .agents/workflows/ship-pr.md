@@ -15,7 +15,7 @@ Run `/ship-pr` when feature or bug fix implementation is complete and ready for 
 ## Process
 
 ### Step 1: Run Sanity Checks
-Execute all checks outlined in [`sanity-check-workflow.md`](file:///home/pav/code/our_places_rs-feat-76-update-agent-skills/.agents/workflows/sanity-check-workflow.md):
+Execute all checks outlined in [`sanity-check-workflow.md`](.agents/workflows/sanity-check-workflow.md):
 ```bash
 # 1. Code formatting
 cargo fmt --check
@@ -47,8 +47,10 @@ Invoke the [`security-reviewer`](.agents/agents/security-reviewer/AGENT.md) agen
 - Secret isolation (no hardcoded credentials or API keys)
 
 ### Step 4: Create PR & Run PR Analysis
-Use the [`pr-analyzer`](.agents/skills/pr-analyzer/SKILL.md) skill to create the pull request and run the comprehensive 8-point analysis:
+Use the [`pr-analyzer`](.agents/skills/pr-analyzer/SKILL.md) skill to create the pull request and run the comprehensive 8-point analysis.
+Before creating the PR, ask the user who should be assigned as the reviewer (if they haven't already specified one).
+
 ```bash
-gh pr create --fill
+gh pr create --fill --reviewer <reviewer_username>
 ```
 Follow up with [`document-release.md`](.agents/workflows/document-release.md) once merged.
