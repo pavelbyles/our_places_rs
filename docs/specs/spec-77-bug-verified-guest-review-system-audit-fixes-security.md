@@ -172,3 +172,25 @@ This specification details the technical architecture, security mitigations, dat
 - **`test_live_rating_display_updates`**: Simulate star selection changes in `ReviewSubmitPage` and verify live overall rating display updates dynamically.
 - **`test_bookings_dashboard_single_network_request`**: Inspect network tab on `/bookings` with 20 past bookings; verify 0 secondary token calls occur ($O(1)$ API calls).
 - **`test_listing_detail_pagination_load_more`**: Render listing detail page with 15 reviews; verify page 1 displays 10 reviews and clicking "Load More Reviews" appends the remaining 5 reviews.
+
+### 4.4 Manual Verification (How to Test)
+
+1. **Verification of the `pg_cron` Booking Cleanup**
+   - **Trigger a hold**: As a guest user, initiate a booking checkout on a listing but **do not** complete the payment. This creates a `pending_payment` record.
+   - **Wait 15 Minutes**: Wait exactly 15 minutes.
+   - **Check the Database**: Verify that the database `pg_cron` job automatically transitions the booking status from `pending_payment` to `cancelled`, and check the `booking_status_history` table to ensure an immutable record of the cancellation was inserted.
+
+2. **Login & Registration Thread Health (Bcrypt offload)**
+   - **Create an Account**: Register a new user account through the web app. Verify the account is created successfully.
+   - **Login / Password Update**: Login with the new account, then update your password in the profile settings. Both actions should succeed seamlessly, confirming that the `spawn_blocking` refactor successfully hashes passwords without hanging the server.
+
+3. **Review Submission & UI**
+   - **Navigate to an Eligible Booking**: Log in as a guest who has recently completed a stay (within the 15-day window).
+   - **Network Tab Verification**: Open Chrome DevTools (Network tab) and visit your "Bookings" dashboard. Verify that there are no $N+1$ `GET` requests fetching review tokens.
+   - **Submit a Review**: Click to write a review. Verify that the stars default to **3**. Adjust the sliders and verify that the **Live Overall Rating** updates in real-time before you hit submit.
+   - **Pagination**: Navigate to a Listing page that has more than 10 reviews. Scroll to the reviews section and verify that a "Load More" button exists and successfully appends the next page of reviews.
+
+4. **Review Security & Access Control**
+   - **Token Expiration**: As a guest, attempt to leave a review for a booking where the checkout date is older than 15 days. The UI and API should block you, returning an expired state.
+   - **Host Reply Spoofing**: Log in as a standard user (not the host) and attempt to submit a "Host Reply" to an existing review using an API client. Ensure the API returns a `403 Forbidden` now that it strictly uses JWT claims instead of trusting the HTTP header.
+   - **Book Now Button**: From the homepage, click the "Book Now" button and verify it successfully routes you to the `/listings` page.
