@@ -45,7 +45,12 @@ Your job is to parse the user's natural language request and assign it to the mo
    - Keywords: "daisyui", "tailwind", "ui component", "styling", "modal", "card", "navbar", "drawer"
    - Route: `ACTIVATE_SKILL: daisyui`
 
-7. **DEFAULT: BACKEND / RUST CORE IMPLEMENTATION & REFACTORING**
+7. **MONADIC & FUNCTIONAL ARCHITECTURE**
+   - Keywords: "monad", "monadic", "railway oriented", "combinator chain", "functional pipeline", "Option chaining", "Result pipeline"
+   - Route: `ACTIVATE_SKILL: Monadic Design Specialist`
+   - *Underlying Skills*: `monad-design`, `rust-core`
+
+8. **DEFAULT: BACKEND / RUST CORE IMPLEMENTATION & REFACTORING**
    - Keywords: "create", "implement", "add feature", "change logic", "pricing", "database", "sqlx", "actix", "leptos logic"
    - Route: `ACTIVATE_SKILL: Rust Core Specialist`
 

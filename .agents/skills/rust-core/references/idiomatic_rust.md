@@ -50,10 +50,29 @@
       .collect();
   ```
 
-### Option & Result Combinators
+### Option & Result Combinators (Monadic Chaining)
 
-- Use `map`, `and_then`, `unwrap_or_else`.
-- Avoid excessive `if let Some(x) = y` nesting. - _Better_: `let value = y.ok_or(MyError::Missing)?.process();`
+- **Monadic Railway Pattern**: Prefer `.map()`, `.and_then()`, `.map_err()`, `.or_else()`, `.transpose()`, `.inspect()`, and `?` over nested imperative branching.
+- **Avoid Imperative Nesting**:
+  - _Bad (Nested Match Pyramid)_:
+    ```rust
+    if let Some(user) = fetch_user(id) {
+        if let Some(profile) = user.get_profile() {
+            if let Ok(data) = profile.load_data() {
+                // ...
+            }
+        }
+    }
+    ```
+  - _Good (Monadic Composition)_:
+    ```rust
+    let data = fetch_user(id)
+        .and_then(|u| u.get_profile())
+        .ok_or(MyError::NotFound)?
+        .load_data()?;
+    ```
+
+- **Monadic Error Mapping**: Use `.map_err(MyError::from)` or `thiserror` `#[from]` for seamless monadic error propagation across layer boundaries.
 
 ## Project Strictness
 

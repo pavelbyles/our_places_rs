@@ -69,6 +69,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 - **Domain vs. Application Errors**: Use `thiserror` for crate/library error enums and map them to unified application errors (`AppError`) in Actix-web handlers.
 - **Consistent HTTP Payloads**: Errors return structured JSON payloads with explicit error codes (e.g., `{ "code": "DATE_UNAVAILABLE", "message": "The requested dates are no longer available." }`).
 - **No Swallowed Errors**: Log errors using `tracing::error!` or `tracing::warn!` before returning user-facing API responses.
+- **Monadic Pipelines**: Prefer monadic combinator chains (`.and_then()`, `.map()`, `.or_else()`, `.transpose()`) and Railway-Oriented Programming over deeply nested `if let` or `match` blocks. Ensure domain functions return pure monadic types (`Result<T, E>`, `Option<T>`).
 
 ---
 
@@ -106,7 +107,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 - **NEVER use `f32` or `f64` for money, rates, or taxes**. Always use `rust_decimal::Decimal`.
 - **NEVER run CPU-intensive or blocking synchronous I/O** directly on Tokio async worker threads. Use `tokio::task::spawn_blocking`.
 - **NEVER stream raw image upload bytes through Actix HTTP endpoints**. Always issue GCP V4 Signed URLs for direct client-to-GCS uploads.
-- **NEVER call `.unwrap()` or `.expect()` in production code paths or HTTP handlers**. Always use `Result<T, E>` error propagation.
+- **NEVER call `.unwrap()` or `.expect()` in production code paths or HTTP handlers**. Always use `Result<T, E>` error propagation and monadic combinators (`.and_then()`, `.map()`, `.or_else()`, `?`).
 - **NEVER bypass row-level database locking (`SELECT ... FOR UPDATE`)** when evaluating date holds or reservation availability.
 
 ---

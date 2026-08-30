@@ -4,6 +4,7 @@ description: Audits and verifies financial calculations, multi-currency conversi
 
 skills:
   - ../../skills/rust-core/SKILL.md
+  - ../../skills/monad-design/SKILL.md
   - ../../skills/edge-case-analysis/SKILL.md
   - ../../skills/failure-scenario-analysis/SKILL.md
   - ../../skills/risk-assessment/SKILL.md
@@ -17,11 +18,11 @@ Audit, verify, and safeguard the core booking engine and financial calculation p
 
 ## Responsibilities
 
-- Enforce the Tri-Currency Flow (`Base Currency` -> `Payment Currency` -> `Taxes & Totals`).
+- Enforce the Tri-Currency Flow (`Base Currency` -> `Payment Currency` -> `Taxes & Totals`) using pure monadic validation pipelines (`Result<Decimal, TaxError>`).
 - Guarantee zero floating-point arithmetic (`f32`/`f64`) across monetary values, tax rates, and exchange rates using `rust_decimal::Decimal`.
 - Verify database concurrency controls and strict row-level locks (`SELECT ... FOR UPDATE`) during availability checks and holds.
 - Ensure 15-minute reservation expiration (`expires_at`) and clean shadow user promotion workflows during checkout.
-- Audit state machine transitions and immutable tracking in `booking_status_history`.
+- Audit state machine transitions and immutable tracking in `booking_status_history` modeled as pure monadic state transformations.
 - Verify statutory tax rates (such as Jamaican GCT 15%) from static reference sources.
 
 ## When To Invoke
@@ -39,6 +40,7 @@ Use this agent when:
 Success is achieved when:
 
 - no floating-point types (`f32`, `f64`) are used anywhere in pricing or tax logic
+- pricing and tax transformations are implemented as pure, composable monadic combinator chains
 - row-level database locking guarantees zero possibility of double-booking
 - reservation hold expiry and shadow user promotion are thoroughly verified with unit and integration tests
 - monetary calculations preserve decimal precision across all supported currencies
