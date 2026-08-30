@@ -1,8 +1,11 @@
 use crate::error::Result;
+#[allow(unused_imports)]
 use crate::models::{
     Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
 };
+#[allow(unused_imports)]
 use chrono::Utc;
+#[allow(unused_imports)]
 use sqlx::types::Json;
 
 use sqlx::{PgExecutor, PgPool};

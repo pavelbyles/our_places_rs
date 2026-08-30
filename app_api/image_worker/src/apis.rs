@@ -151,8 +151,10 @@ impl ImageTask<Downloaded> {
         let mut processed_variants = Vec::new();
         for (width, folder, resolution_enum) in variants_to_create {
             let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
-            let webp_encoder =
-                webp::Encoder::from_image(&resized).expect("Failed to create webp encoder");
+            let webp_encoder = webp::Encoder::from_image(&resized).map_err(|e| {
+                tracing::error!("Failed to create webp encoder: {}", e);
+                actix_web::error::ErrorInternalServerError("Failed to encode image")
+            })?;
             let encoded = webp_encoder.encode(80.0);
             let bytes = encoded.iter().copied().collect::<Vec<u8>>();
             processed_variants.push((width, folder, resolution_enum, bytes));
