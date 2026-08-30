@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            created_at, updated_at\n        FROM booking\n        WHERE guest_id = $1\n        ORDER BY date_from ASC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\", \n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            json_build_object(\n                'booking_id', b.id,\n                'is_eligible', \n                    CASE \n                        WHEN b.status = 'cancelled' THEN false\n                        WHEN r.id IS NOT NULL THEN false\n                        WHEN CURRENT_DATE < b.date_to THEN false\n                        WHEN CURRENT_DATE > (b.date_to + 15) THEN false\n                        ELSE true\n                    END,\n                'token', rt.token,\n                'has_reviewed', CASE WHEN r.id IS NOT NULL THEN true ELSE false END,\n                'days_remaining', \n                    CASE \n                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 0\n                        ELSE (b.date_to + 15) - CURRENT_DATE\n                    END,\n                'status_message', \n                    CASE \n                        WHEN b.status = 'cancelled' THEN 'Cancelled bookings are not eligible for review'\n                        WHEN r.id IS NOT NULL THEN 'You have already submitted a review for this stay'\n                        WHEN CURRENT_DATE < b.date_to THEN 'Reviews can only be submitted after your stay has ended'\n                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 'The 15-day review period for this stay has expired'\n                        ELSE 'Eligible for review'\n                    END\n            ) as \"review_eligibility!\",\n            b.created_at, b.updated_at\n        FROM booking b\n        LEFT JOIN review r ON r.booking_id = b.id\n        LEFT JOIN LATERAL (\n            SELECT token FROM review_token \n            WHERE booking_id = b.id AND used_at IS NULL AND expires_at > NOW() \n            ORDER BY created_at DESC LIMIT 1\n        ) rt ON true\n        WHERE b.guest_id = $1\n        ORDER BY b.date_from ASC\n        LIMIT $2 OFFSET $3\n        ",
   "describe": {
     "columns": [
       {
@@ -118,11 +118,16 @@
       },
       {
         "ordinal": 18,
+        "name": "review_eligibility!",
+        "type_info": "Json"
+      },
+      {
+        "ordinal": 19,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -153,9 +158,10 @@
       false,
       false,
       false,
+      null,
       false,
       false
     ]
   },
-  "hash": "d6c75bd6111e63d31090bce91b9f9fa2970f67392cecd45d6009f144d42369cb"
+  "hash": "476419d2cb33c080ca303bf22ccb8c08f7fdde1399290facb3112bf97f2c9141"
 }

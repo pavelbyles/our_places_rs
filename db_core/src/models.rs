@@ -154,6 +154,11 @@ pub struct Booking {
     pub updated_at: DateTime<Utc>,
 }
 
+pub struct BookingWithEligibility {
+    pub booking: Booking,
+    pub review_eligibility: Option<common::models::BookingReviewEligibility>,
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]

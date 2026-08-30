@@ -154,6 +154,7 @@ pub async fn submit_review(
 pub async fn submit_host_reply(
     pool: web::Data<PgPool>,
     req: HttpRequest,
+    claims: api_core::auth::Claims,
     review_id: web::Path<Uuid>,
     payload: web::Json<HostReplyRequest>,
 ) -> Result<impl Responder, ApiError> {
@@ -164,21 +165,7 @@ pub async fn submit_host_reply(
         return Err(ApiError::ValidationError(e));
     }
 
-    // In a real app, host_id would be extracted from the JWT token via middleware.
-    // For this prototype, we'll extract it from an `x-user-id` header or use a dummy UUID.
-    let host_id_str = req
-        .headers()
-        .get("x-user-id")
-        .map(|h| h.to_str().unwrap_or(""));
-    let host_id = if let Some(Ok(id)) = host_id_str.map(Uuid::parse_str) {
-        id
-    } else {
-        return Err(ApiError::Database(
-            db_core::error::DbError::ValidationError(
-                "Missing or invalid x-user-id header".to_string(),
-            ),
-        ));
-    };
+    let host_id = claims.sub;
 
     let review = db_review::add_host_reply(pool.get_ref(), id, host_id, &reply_req.reply_text)
         .await
@@ -259,19 +246,12 @@ pub async fn get_listing_reviews_handler(
 pub async fn get_booking_review_token(
     pool: web::Data<PgPool>,
     req: HttpRequest,
+    claims: api_core::auth::Claims,
     booking_id: web::Path<Uuid>,
 ) -> Result<impl Responder, ApiError> {
     let b_id = booking_id.into_inner();
 
-    let guest_id = if let Some(h) = req.headers().get("x-user-id") {
-        if let Ok(s) = h.to_str() {
-            Uuid::parse_str(s).ok()
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let guest_id = Some(claims.sub);
 
     let target_guest_id = match guest_id {
         Some(uid) => uid,

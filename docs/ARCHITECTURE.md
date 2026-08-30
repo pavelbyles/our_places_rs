@@ -17,38 +17,37 @@
 The following diagram illustrates the crate boundaries, data access layers, and external service integrations within the monorepo:
 
 ```mermaid
----
-config:
-  layout: elk
----
 flowchart TB
- subgraph s1["WebAssembly Frontend - Leptos"]
+    subgraph s1["WebAssembly Frontend - Leptos"]
         WA["web_app - Guest Portal"]
         WAA["web_app_admin - Admin Dashboard"]
         WAC["web_app_common - Shared UI & API Client"]
-  end
- subgraph s2["Shared Isomorphic Crates"]
+    end
+    subgraph s2["Shared Isomorphic Crates"]
         COM["common - Isomorphic Pricing & Ref Data"]
         DBC["db_core - SQLx PostgreSQL Entities & Migrations"]
-  end
- subgraph s3["Actix-web API Services"]
+    end
+    subgraph s3["Actix-web API Services"]
         LA["listing_api - Listings & Geocoding"]
         BA["booking_api - Booking State Machine"]
         UA["user_api - Auth & Profiles"]
         IW["image_worker - Background Image Processor"]
-  end
- subgraph s4["Google Cloud Platform"]
+    end
+    subgraph s4["Google Cloud Platform"]
         PG[("PostgreSQL Database")]
         GCS[("Google Cloud Storage")]
         PS["GCP Pub/Sub Event Bus"]
-  end
+    end
     WA --> WAC
     WAA --> WAC
     WA -.-> COM
     WAA -.-> COM
-    LA --> COM & DBC
-    BA --> COM & DBC
-    UA --> COM & DBC
+    LA --> COM
+    LA --> DBC
+    BA --> COM
+    BA --> DBC
+    UA --> COM
+    UA --> DBC
     IW --> DBC
     DBC --> PG
     LA -- V4 Signed URL --> GCS
@@ -152,6 +151,29 @@ flowchart LR
 4. **Responsive Delivery**: Frontend renders standard `<picture>` and `srcset` tags allowing native browser resolution negotiation.
 
 ---
+
+### 4.4. Verified Guest Review & Token Lifecycle State Machine
+
+Authentic reviews are gated by single-use, time-bound verification tokens issued upon stay completion.
+
+```mermaid
+stateDiagram-v2
+    [*] --> StayActive: Guest Booking Confirmed
+    StayActive --> ReviewEligible: Stay Concluded (today >= date_to)
+    ReviewEligible --> TokenActive: Token Issued (expires date_to + 15d)
+    TokenActive --> TokenExpired: 15-Day Window Expired (410 Gone)
+    TokenActive --> ReviewSubmitted: Review Posted (used_at = NOW())
+    ReviewSubmitted --> HostReplied: Host Response Posted
+    TokenExpired --> [*]
+    HostReplied --> [*]
+```
+
+- **Eligibility Window**: Opens immediately post-checkout (`today >= date_to`) and strictly expires 15 days after checkout (`date_to + 15 days` at 23:59:59 UTC).
+- **Single-Use Invalidation**: Review tokens are consumed atomically inside a PostgreSQL transaction (`UPDATE review_token SET used_at = NOW() WHERE token = $1 AND used_at IS NULL ... RETURNING ...`).
+- **Rating Recalculation & Row Locking**: Review submission acquires a row lock (`SELECT id FROM listing WHERE id = $1 FOR UPDATE`) to recalculate property aggregate ratings (`overall_rating` and `review_count`) atomically without race conditions.
+
+---
+
 
 ## 5. Security & Cross-Cutting Concerns
 

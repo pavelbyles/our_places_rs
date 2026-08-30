@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:18
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=our_places"]
     container_name: ourplaces_db
     ports:
       - "5432:5432"

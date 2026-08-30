@@ -529,8 +529,14 @@ async fn get_user_bookings(
         .await
         .map_err(ApiError::Database)?;
 
-    let response: Vec<BookingResponse> =
-        bookings.into_iter().map(map_booking_to_response).collect();
+    let response: Vec<BookingResponse> = bookings
+        .into_iter()
+        .map(|b| {
+            let mut resp = map_booking_to_response(b.booking);
+            resp.review_eligibility = b.review_eligibility;
+            resp
+        })
+        .collect();
 
     Ok(respond(
         &req,

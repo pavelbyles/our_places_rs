@@ -35,7 +35,7 @@ ensure_db_running
 
 # Determine safe branch name for GCS bucket
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-SAFE_BRANCH=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[_\/]\/-/g' | sed 's/[^a-z0-9-]//g')
+SAFE_BRANCH=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[_\/]\/-/g' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
 
 # Run Listing API service
 EA__SERVER__PORT="${EA__SERVER__PORT:-8082}" \

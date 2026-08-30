@@ -43,7 +43,7 @@ jobs:
           fi
 
           # Same sanitization logic as CI/CD
-          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g')
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
           SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
            if [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"

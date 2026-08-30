@@ -14,7 +14,7 @@ pub fn Hero() -> impl IntoView {
                 <p class="mb-5">
                     "Discover our handpicked collection of exceptional stays. From a luxury beachfront villa to highly-rated city apartments, step into an experience that is truly one-of-a-kind."
                 </p>
-                <button class="btn btn-primary">"Book Now"</button>
+                <a href="/listings" class="btn btn-primary">"Book Now"</a>
                 </div>
             </div>
         </div>
