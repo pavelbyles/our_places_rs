@@ -8,54 +8,34 @@ use leptos::prelude::*;
 pub async fn get_review_token_info_server(
     token: String,
 ) -> Result<ReviewTokenInfoResponse, ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let audience = crate::api_client::listing_api_audience();
-    let url = format!("{}/api/v1/reviews/token/{}", api_url, token);
-
-    let res = crate::api_client::get_client()
-        .get(&url, &audience)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "Failed to fetch review token info: {}",
-            res.status()
-        )));
+    #[cfg(feature = "ssr")]
+    {
+        common::app_client::get_review_token_info(&token)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
-
-    let token_info: ReviewTokenInfoResponse = res
-        .json()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(token_info)
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = token;
+        Err(ServerFnError::new("SSR required"))
+    }
 }
 
 #[server]
 pub async fn get_booking_review_token_server(
     booking_id: uuid::Uuid,
 ) -> Result<BookingReviewEligibility, ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let audience = crate::api_client::listing_api_audience();
-    let url = format!("{}/api/v1/reviews/booking/{}/token", api_url, booking_id);
-
-    let res = crate::api_client::get_client()
-        .get(&url, &audience)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "Failed to fetch booking review token: {}",
-            res.status()
-        )));
+    #[cfg(feature = "ssr")]
+    {
+        common::app_client::get_booking_review_token(booking_id)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
-
-    let eligibility: BookingReviewEligibility = res
-        .json()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(eligibility)
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = booking_id;
+        Err(ServerFnError::new("SSR required"))
+    }
 }
 
 #[server]
@@ -63,23 +43,17 @@ pub async fn submit_review_server(
     token: String,
     req: NewReviewRequest,
 ) -> Result<(), ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let audience = crate::api_client::listing_api_audience();
-    let url = format!("{}/api/v1/reviews/token/{}", api_url, token);
-
-    let res = crate::api_client::get_client()
-        .post(&url, &audience, &req)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "Failed to submit review: {}",
-            res.status()
-        )));
+    #[cfg(feature = "ssr")]
+    {
+        common::app_client::submit_review(&token, &req)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
-
-    Ok(())
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (token, req);
+        Err(ServerFnError::new("SSR required"))
+    }
 }
 
 #[server]
@@ -87,23 +61,17 @@ pub async fn submit_host_reply_server(
     review_id: uuid::Uuid,
     req: HostReplyRequest,
 ) -> Result<(), ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let audience = crate::api_client::listing_api_audience();
-    let url = format!("{}/api/v1/reviews/{}/reply", api_url, review_id);
-
-    let res = crate::api_client::get_client()
-        .post(&url, &audience, &req)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "Failed to submit host reply: {}",
-            res.status()
-        )));
+    #[cfg(feature = "ssr")]
+    {
+        common::app_client::submit_host_reply(review_id, &req)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
-
-    Ok(())
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (review_id, req);
+        Err(ServerFnError::new("SSR required"))
+    }
 }
 
 #[server]
@@ -112,28 +80,15 @@ pub async fn get_listing_reviews_server(
     page: i64,
     per_page: i64,
 ) -> Result<Vec<ReviewResponse>, ServerFnError> {
-    let api_url = crate::api_client::listing_api_url();
-    let audience = crate::api_client::listing_api_audience();
-    let url = format!(
-        "{}/api/v1/listings/{}/reviews?page={}&per_page={}",
-        api_url, listing_id, page, per_page
-    );
-
-    let res = crate::api_client::get_client()
-        .get(&url, &audience)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(ServerFnError::new(format!(
-            "Failed to fetch listing reviews: {}",
-            res.status()
-        )));
+    #[cfg(feature = "ssr")]
+    {
+        common::app_client::get_listing_reviews(listing_id, page, per_page)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
-
-    let reviews: Vec<ReviewResponse> = res
-        .json()
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(reviews)
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = (listing_id, page, per_page);
+        Err(ServerFnError::new("SSR required"))
+    }
 }

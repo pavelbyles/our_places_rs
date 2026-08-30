@@ -1,3 +1,5 @@
+#[cfg(not(target_arch = "wasm32"))]
+pub mod app_client;
 pub mod auth;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gcs;
