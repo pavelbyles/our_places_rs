@@ -1,7 +1,7 @@
 # ./.tmuxinator.yml
 <%
   branch = `git rev-parse --abbrev-ref HEAD`.strip
-  safe_branch = branch.gsub(/[\/_]/, '-').downcase.gsub(/[^a-z0-9-]/, '')
+  safe_branch = branch.gsub(/[\/_]/, '-').downcase.gsub(/[^a-z0-9-]/, '')[0...35].sub(/-$/, '')
   safe_schema = branch.gsub(/[\/-]/, '_').downcase.gsub(/[^a-z0-9_]/, '')
   if branch == "main"
     safe_schema = "public"
