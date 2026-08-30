@@ -25,6 +25,22 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
+fn map_pricing_error(err: common::pricing::PricingError) -> ApiError {
+    match err {
+        common::pricing::PricingError::InvalidDateRange => {
+            ApiError::Database(db_core::error::DbError::ValidationError(
+                "Check-out date must be after check-in date".to_string(),
+            ))
+        }
+        common::pricing::PricingError::MinNightsNotMet { required, provided } => {
+            ApiError::Database(db_core::error::DbError::ValidationError(format!(
+                "Minimum night stay requirement not met for seasonal period: required {}, provided {}",
+                required, provided
+            )))
+        }
+    }
+}
+
 pub fn generate_confirmation_code() -> String {
     const CHARSET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -123,14 +139,16 @@ async fn create_booking(
             }
         })?;
 
-    let total_days = (req_data.check_out - req_data.check_in).num_days() as i32;
-    if total_days <= 0 {
-        return Err(ApiError::Database(
-            db_core::error::DbError::ValidationError(
+    let total_days = (req_data.check_out - req_data.check_in)
+        .num_days()
+        .try_into()
+        .ok()
+        .filter(|&days| days > 0)
+        .ok_or_else(|| {
+            ApiError::Database(db_core::error::DbError::ValidationError(
                 "Check-out date must be after check-in date".to_string(),
-            ),
-        ));
-    }
+            ))
+        })?;
 
     let mut base_nightly_rate = listing_details
         .listing
@@ -180,19 +198,7 @@ async fn create_booking(
         req_data.check_in,
         req_data.check_out,
     )
-    .map_err(|err| match err {
-        common::pricing::PricingError::InvalidDateRange => {
-            ApiError::Database(db_core::error::DbError::ValidationError(
-                "Check-out date must be after check-in date".to_string(),
-            ))
-        }
-        common::pricing::PricingError::MinNightsNotMet { required, provided } => {
-            ApiError::Database(db_core::error::DbError::ValidationError(format!(
-                "Minimum night stay requirement not met for seasonal period: required {}, provided {}",
-                required, provided
-            )))
-        }
-    })?;
+    .map_err(map_pricing_error)?;
 
     let calculator = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
@@ -207,12 +213,10 @@ async fn create_booking(
     .finalize();
 
     let confirmation_code = generate_confirmation_code();
-
-    let policy = match req_data.agreed_cancellation_policy.to_lowercase().as_str() {
-        "strict" => CancellationPolicy::Strict,
-        "moderate" => CancellationPolicy::Moderate,
-        _ => CancellationPolicy::Flexible, // Default fallback
-    };
+    let policy = req_data
+        .agreed_cancellation_policy
+        .parse::<CancellationPolicy>()
+        .unwrap_or(CancellationPolicy::Flexible);
 
     let mut attempts = 0;
     let max_attempts = settings.application.max_attempts;
@@ -319,33 +323,20 @@ async fn get_bookings(
         bookings.into_iter().map(map_booking_to_response).collect();
 
     if let Some(target_currency) = &currency_query.currency {
-        let mut rates = std::collections::HashMap::new();
-        for booking in &response {
-            let base = &booking.currency;
-            #[allow(clippy::collapsible_if)]
-            if !rates.contains_key(base) {
-                if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
-                    pool.get_ref(),
-                    base,
-                    target_currency,
-                )
-                .await
-                {
-                    rates.insert(base.clone(), (rate, final_curr));
-                }
-            }
-        }
+        let rates = db_core::currency::get_exchange_rates_cache(
+            pool.get_ref(),
+            response.iter().map(|b| &b.currency),
+            target_currency,
+        )
+        .await;
+
         for booking in &mut response {
             if let Some((rate, final_curr)) = rates.get(&booking.currency) {
                 booking.daily_rate = (booking.daily_rate * rate).round_dp(2);
                 booking.sub_total_price = (booking.sub_total_price * rate).round_dp(2);
                 booking.total_price = (booking.total_price * rate).round_dp(2);
-                if let Some(d) = booking.discount_value {
-                    booking.discount_value = Some((d * rate).round_dp(2));
-                }
-                if let Some(t) = booking.tax_value {
-                    booking.tax_value = Some((t * rate).round_dp(2));
-                }
+                booking.discount_value = booking.discount_value.map(|d| (d * rate).round_dp(2));
+                booking.tax_value = booking.tax_value.map(|t| (t * rate).round_dp(2));
                 booking.currency = final_curr.clone();
             }
         }
@@ -382,8 +373,8 @@ async fn get_booking_by_id(
 
     let mut response = map_booking_to_response(booking);
 
+    #[allow(clippy::collapsible_if)]
     if let Some(target_currency) = &currency_query.currency {
-        #[allow(clippy::collapsible_if)]
         if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
             &response.currency,
@@ -394,12 +385,8 @@ async fn get_booking_by_id(
             response.daily_rate = (response.daily_rate * rate).round_dp(2);
             response.sub_total_price = (response.sub_total_price * rate).round_dp(2);
             response.total_price = (response.total_price * rate).round_dp(2);
-            if let Some(d) = response.discount_value {
-                response.discount_value = Some((d * rate).round_dp(2));
-            }
-            if let Some(t) = response.tax_value {
-                response.tax_value = Some((t * rate).round_dp(2));
-            }
+            response.discount_value = response.discount_value.map(|d| (d * rate).round_dp(2));
+            response.tax_value = response.tax_value.map(|t| (t * rate).round_dp(2));
             response.currency = final_curr;
         }
     }

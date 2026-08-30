@@ -25,20 +25,22 @@ pub async fn reverse_geocode(lat: f64, lon: f64) -> Result<Option<String>, reqwe
         lat, lon
     );
 
-    let res = client.get(&url).send().await?;
+    let locality = client
+        .get(&url)
+        .send()
+        .await?
+        .json::<NominatimResponse>()
+        .await
+        .ok()
+        .and_then(|data| data.address)
+        .and_then(|addr| {
+            addr.city
+                .or(addr.town)
+                .or(addr.village)
+                .or(addr.suburb)
+                .or(addr.neighbourhood)
+                .or(addr.county)
+        });
 
-    if let Ok(data) = res.json::<NominatimResponse>().await {
-        if let Some(address) = data.address {
-            let locality = address
-                .city
-                .or(address.town)
-                .or(address.village)
-                .or(address.suburb)
-                .or(address.neighbourhood)
-                .or(address.county);
-            return Ok(locality);
-        }
-    }
-
-    Ok(None)
+    Ok(locality)
 }

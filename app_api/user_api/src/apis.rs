@@ -477,17 +477,14 @@ async fn resend_verification(
             .await
             .map_err(ApiError::Database)?;
 
-    if let Some(user) = updated {
-        return Ok(respond(
-            &req,
-            Payload::Item(map_user_to_response(user)),
-            |_: Vec<UserResponse>| (),
-            actix_web::http::StatusCode::OK,
-        ));
-    }
+    let user = updated
+        .ok_or_else(|| ApiError::Unauthorized("User not found or already verified".to_string()))?;
 
-    Err(ApiError::Unauthorized(
-        "User not found or already verified".to_string(),
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(user)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
     ))
 }
 
@@ -650,15 +647,11 @@ async fn get_user(
     email_or_id: web::Path<String>,
 ) -> Result<impl Responder, ApiError> {
     let val = email_or_id.into_inner();
-    let user = if let Ok(uuid) = Uuid::parse_str(&val) {
-        db_core::user::get_user_by_id(pool.get_ref(), uuid)
-            .await
-            .map_err(ApiError::Database)?
-    } else {
-        db_core::user::get_user_by_email(pool.get_ref(), &val)
-            .await
-            .map_err(ApiError::Database)?
-    };
+    let user = match Uuid::parse_str(&val) {
+        Ok(uuid) => db_core::user::get_user_by_id(pool.get_ref(), uuid).await,
+        Err(_) => db_core::user::get_user_by_email(pool.get_ref(), &val).await,
+    }
+    .map_err(ApiError::Database)?;
 
     Ok(respond(
         &req,
@@ -954,16 +947,14 @@ async fn request_password_change(
             .await
             .map_err(ApiError::Database)?;
 
-    if let Some(user) = updated {
-        return Ok(respond(
-            &req,
-            Payload::Item(map_user_to_response(user)),
-            |_: Vec<UserResponse>| (),
-            actix_web::http::StatusCode::OK,
-        ));
-    }
+    let user = updated.ok_or(ApiError::Internal)?;
 
-    Err(ApiError::Internal)
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(user)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
 }
 
 #[tracing::instrument]

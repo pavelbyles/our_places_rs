@@ -84,28 +84,16 @@ pub async fn get_listings(
         .collect();
 
     if let Some(target_currency) = &query.currency {
-        let mut rates = std::collections::HashMap::new();
-        for listing in &response {
-            let base = &listing.base_currency;
-            #[allow(clippy::collapsible_if)]
-            if !rates.contains_key(base) {
-                if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
-                    pool.get_ref(),
-                    base,
-                    target_currency,
-                )
-                .await
-                {
-                    rates.insert(base.clone(), (rate, final_curr));
-                }
-            }
-        }
+        let rates = db_core::currency::get_exchange_rates_cache(
+            pool.get_ref(),
+            response.iter().map(|l| &l.base_currency),
+            target_currency,
+        )
+        .await;
+
         for listing in &mut response {
             if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
-                if let Some(price) = listing.price_per_night {
-                    let new_price = price * rate;
-                    listing.price_per_night = Some(new_price.round_dp(2));
-                }
+                listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
                 listing.base_currency = final_curr.clone();
             }
         }
@@ -149,8 +137,8 @@ async fn get_listing_by_id(
 
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
 
+    #[allow(clippy::collapsible_if)]
     if let Some(target_currency) = &query.currency {
-        #[allow(clippy::collapsible_if)]
         if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
             &response.listing.base_currency,
@@ -158,10 +146,10 @@ async fn get_listing_by_id(
         )
         .await
         {
-            if let Some(price) = response.listing.price_per_night {
-                let new_price = price * rate;
-                response.listing.price_per_night = Some(new_price.round_dp(2));
-            }
+            response.listing.price_per_night = response
+                .listing
+                .price_per_night
+                .map(|p| (p * rate).round_dp(2));
             response.listing.base_currency = final_curr;
         }
     }

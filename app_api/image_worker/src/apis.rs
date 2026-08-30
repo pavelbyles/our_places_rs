@@ -148,17 +148,21 @@ impl ImageTask<Downloaded> {
             ),
         ];
 
-        let mut processed_variants = Vec::new();
-        for (width, folder, resolution_enum) in variants_to_create {
-            let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
-            let webp_encoder = webp::Encoder::from_image(&resized).map_err(|e| {
-                tracing::error!("Failed to create webp encoder: {}", e);
-                actix_web::error::ErrorInternalServerError("Failed to encode image")
-            })?;
-            let encoded = webp_encoder.encode(80.0);
-            let bytes = encoded.iter().copied().collect::<Vec<u8>>();
-            processed_variants.push((width, folder, resolution_enum, bytes));
-        }
+        let processed_variants = variants_to_create
+            .into_iter()
+            .map(|(width, folder, resolution_enum)| {
+                let resized = img.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
+                webp::Encoder::from_image(&resized)
+                    .map(|encoder| {
+                        let bytes = encoder.encode(80.0).iter().copied().collect::<Vec<u8>>();
+                        (width, folder, resolution_enum, bytes)
+                    })
+                    .map_err(|e| {
+                        tracing::error!("Failed to create webp encoder: {}", e);
+                        actix_web::error::ErrorInternalServerError("Failed to encode image")
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ImageTask {
             listing_id: self.listing_id,

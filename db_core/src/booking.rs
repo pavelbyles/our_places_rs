@@ -39,18 +39,15 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
     .fetch_all(&mut *tx)
     .await?;
 
-    for b in overlapping {
-        if b.status == BookingStatus::Confirmed {
-            return Err(crate::error::DbError::ValidationError(
-                "Listing is not available for the selected dates".to_string(),
-            ));
-        }
+    let has_conflict = overlapping.iter().any(|b| {
+        b.status == BookingStatus::Confirmed
+            || (b.status == BookingStatus::Pending && b.guest_id != new_booking.guest_id)
+    });
 
-        if b.status == BookingStatus::Pending && b.guest_id != new_booking.guest_id {
-            return Err(crate::error::DbError::ValidationError(
-                "Listing is not available for the selected dates".to_string(),
-            ));
-        }
+    if has_conflict {
+        return Err(crate::error::DbError::ValidationError(
+            "Listing is not available for the selected dates".to_string(),
+        ));
     }
 
     // Cancel any existing pending holds for this guest across all listings
