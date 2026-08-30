@@ -1,0 +1,31 @@
+[package]
+name = "web_app_tc"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "web_app_tc"
+path = "src/main.rs"
+
+[dependencies]
+topcoat = { workspace = true, features = ["htmx", "tailwind"] }
+web_app_common_tc = { workspace = true }
+common = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+dotenvy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+topcoat = { version = "0.6.2", default-features = false, features = ["tailwind"] }
+
+[dev-dependencies]
+rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

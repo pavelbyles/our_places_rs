@@ -1,0 +1,25 @@
+[package]
+name = "web_app_common_tc"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+topcoat = { workspace = true, features = ["htmx", "tailwind"] }
+common = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+rust_decimal = { workspace = true }
+
+[build-dependencies]
+topcoat = { version = "0.6.2", default-features = false, features = ["tailwind"] }
+
+[dev-dependencies]
+rust_decimal_macros = { workspace = true }

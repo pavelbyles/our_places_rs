@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+    name: "emerald";
+    default: true;
+    prefersdark: false;
+    color-scheme: "light";
+}
+
+@plugin "daisyui/theme" {
+    name: "sunset";
+    default: false;
+    prefersdark: true;
+    color-scheme: "dark";
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
