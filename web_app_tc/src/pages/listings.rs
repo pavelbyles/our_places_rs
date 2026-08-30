@@ -36,9 +36,10 @@ pub async fn listings_page(_cx: &Cx) -> Result {
 
             // Editorial Filter Capsule
             <form
-                class="w-full max-w-4xl bg-base-100 dark:bg-base-200 p-2 md:p-3 rounded-2xl md:rounded-full border border-base-200/80 shadow-md flex flex-col md:flex-row items-center gap-2"
+                class="w-full max-w-4xl bg-base-100 dark:bg-base-200 p-2 md:p-3 rounded-2xl md:rounded-full border border-base-300 dark:border-base-100/20 shadow-lg flex flex-col md:flex-row items-center gap-3"
                 hx-get="/listings/filter"
                 hx-target="#listings-grid"
+                hx-swap="outerHTML"
                 hx-trigger="submit, change from:select"
             >
                 <div class="flex-1 w-full px-4">
@@ -70,7 +71,7 @@ pub async fn listings_page(_cx: &Cx) -> Result {
                     </select>
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-sm rounded-full px-6 w-full md:w-auto font-bold tracking-wide">
+                <button type="submit" class="btn btn-primary btn-sm rounded-full px-6 w-full md:w-auto font-bold tracking-wide shadow-md">
                     "Filter Stays"
                 </button>
             </form>
