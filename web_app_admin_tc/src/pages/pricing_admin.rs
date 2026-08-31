@@ -5,7 +5,7 @@ use topcoat::{
     view::view,
 };
 use uuid::Uuid;
-use web_app_common_tc::api_client::{get_listing_by_id, get_price_overrides};
+use web_app_common_tc::get_api_client;
 
 #[page("/admin/listings/{id}/pricing")]
 pub async fn admin_pricing_page(cx: &Cx, id: String) -> Result {
@@ -32,10 +32,12 @@ pub async fn admin_pricing_remove_handler(cx: &Cx, id: String) -> Result {
     render_pricing_overrides_table_fragment(cx, id, false).await
 }
 
-async fn render_pricing_content(__cx: &Cx, id: String) -> Result {
+async fn render_pricing_content(cx: &Cx, id: String) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
     let id_str = if !id.trim().is_empty() { id } else { "kingston-skyline-luxury-penthouse".to_string() };
 
-    let listing_details = get_listing_by_id(&id_str, None).await.ok();
+    let listing_details = api.get_listing_by_id(&id_str, None).await.ok();
     let listing_slug = if let Some(ref d) = listing_details {
         if !d.listing.slug.is_empty() {
             d.listing.slug.clone()
@@ -151,12 +153,14 @@ async fn render_pricing_overrides_table_fragment(__cx: &Cx, id: String, added_ne
     render_pricing_table_inner(__cx, &id_str, added_new).await
 }
 
-async fn render_pricing_table_inner(__cx: &Cx, slug: &str, show_added_badge: bool) -> Result {
-    let listing_details = get_listing_by_id(slug, None).await.ok();
+async fn render_pricing_table_inner(cx: &Cx, slug: &str, show_added_badge: bool) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let listing_details = api.get_listing_by_id(slug, None).await.ok();
     let overrides = if let Some(ref d) = listing_details {
-        get_price_overrides(d.listing.id).await.unwrap_or_default()
+        api.get_price_overrides(d.listing.id).await.unwrap_or_default()
     } else if let Ok(uuid) = Uuid::parse_str(slug) {
-        get_price_overrides(uuid).await.unwrap_or_default()
+        api.get_price_overrides(uuid).await.unwrap_or_default()
     } else {
         Vec::new()
     };

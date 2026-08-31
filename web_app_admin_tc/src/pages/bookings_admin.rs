@@ -5,7 +5,10 @@ use topcoat::{
     router::page,
     view::view,
 };
-use web_app_common_tc::api_client::{ListingSearchParams, get_all_bookings, get_all_users, search_listings};
+use web_app_common_tc::{
+    client::ListingSearchParams,
+    get_api_client,
+};
 
 #[page("/bookings")]
 pub async fn bookings_alias_page(cx: &Cx) -> Result {
@@ -17,13 +20,15 @@ pub async fn admin_bookings_page(cx: &Cx) -> Result {
     render_bookings_content(cx).await
 }
 
-async fn render_bookings_content(__cx: &Cx) -> Result {
-    let bookings = get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
-    let listings = search_listings(ListingSearchParams {
+async fn render_bookings_content(cx: &Cx) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let bookings = api.get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
+    let listings = api.search_listings(ListingSearchParams {
         per_page: Some(50),
         ..Default::default()
     }).await.unwrap_or_default();
-    let users = get_all_users(Some(1), Some(50), None).await.unwrap_or_default();
+    let users = api.get_all_users(Some(1), Some(50), None).await.unwrap_or_default();
 
     let listing_map: HashMap<uuid::Uuid, (String, String)> = listings
         .into_iter()

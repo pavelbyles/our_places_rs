@@ -4,7 +4,10 @@ use topcoat::{
     router::page,
     view::view,
 };
-use web_app_common_tc::api_client::{ListingSearchParams, get_listing_by_id, search_listings};
+use web_app_common_tc::{
+    client::ListingSearchParams,
+    get_api_client,
+};
 
 #[page("/admin/listings")]
 pub async fn admin_listings_page(cx: &Cx) -> Result {
@@ -16,8 +19,10 @@ pub async fn listings_alias_page(cx: &Cx) -> Result {
     render_listings_content(cx).await
 }
 
-async fn render_listings_content(__cx: &Cx) -> Result {
-    let listings = search_listings(ListingSearchParams {
+async fn render_listings_content(cx: &Cx) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let listings = api.search_listings(ListingSearchParams {
         per_page: Some(50),
         ..Default::default()
     }).await.unwrap_or_default();
@@ -166,7 +171,8 @@ async fn render_listings_content(__cx: &Cx) -> Result {
 
 #[page("/admin/listings/clone/{slug}")]
 pub async fn admin_clone_listing_page(cx: &Cx, slug: String) -> Result {
-    let template = get_listing_by_id(&slug, None).await.ok().map(|d| d.listing);
+    let api = get_api_client(cx);
+    let template = api.get_listing_by_id(&slug, None).await.ok().map(|d| d.listing);
     render_new_or_cloned_listing(cx, template).await
 }
 
@@ -527,10 +533,12 @@ pub async fn listings_edit_alias_page(cx: &Cx, id: String) -> Result {
     render_edit_listing_content(cx, id).await
 }
 
-async fn render_edit_listing_content(__cx: &Cx, id: String) -> Result {
+async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
     let id_str = if !id.trim().is_empty() { id } else { "the-reef-house".to_string() };
 
-    let listing_details = get_listing_by_id(&id_str, None).await.ok();
+    let listing_details = api.get_listing_by_id(&id_str, None).await.ok();
 
     let listing = listing_details.as_ref().map(|d| &d.listing);
     let title = listing.map(|l| l.name.clone()).unwrap_or_else(|| "The Reef House".to_string());

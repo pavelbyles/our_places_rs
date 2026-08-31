@@ -4,12 +4,16 @@ use topcoat::{
     router::page,
     view::view,
 };
-use web_app_common_tc::api_client::{ListingSearchParams, search_listings};
-use web_app_common_tc::components::villa_card::villa_card;
+use web_app_common_tc::{
+    client::ListingSearchParams,
+    components::villa_card::villa_card,
+    get_api_client,
+};
 
 #[page("/listings")]
-pub async fn listings_page(_cx: &Cx) -> Result {
-    let listings = search_listings(ListingSearchParams {
+pub async fn listings_page(cx: &Cx) -> Result {
+    let api = get_api_client(cx);
+    let listings = api.search_listings(ListingSearchParams {
         per_page: Some(20),
         ..Default::default()
     }).await.unwrap_or_default();
@@ -95,8 +99,9 @@ pub async fn listings_page(_cx: &Cx) -> Result {
 }
 
 #[page("/listings/filter")]
-pub async fn listings_filter(_cx: &Cx) -> Result {
-    let listings = search_listings(ListingSearchParams {
+pub async fn listings_filter(cx: &Cx) -> Result {
+    let api = get_api_client(cx);
+    let listings = api.search_listings(ListingSearchParams {
         per_page: Some(20),
         ..Default::default()
     }).await.unwrap_or_default();

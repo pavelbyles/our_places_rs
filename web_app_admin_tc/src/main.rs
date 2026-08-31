@@ -21,7 +21,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Link admin layout for Topcoat auto-discovery
     let _ = layout::admin_layout;
 
-    let mut builder = Router::builder().discover();
+    let api_client = web_app_common_tc::TopcoatApiClient::from_env();
+
+    let mut builder = Router::builder()
+        .discover()
+        .app_context(api_client);
+
     if let Ok(bundle) = AssetBundle::load() {
         builder = builder.assets(bundle);
     }

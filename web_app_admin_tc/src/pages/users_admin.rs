@@ -4,7 +4,7 @@ use topcoat::{
     router::page,
     view::view,
 };
-use web_app_common_tc::api_client::get_all_users;
+use web_app_common_tc::get_api_client;
 
 #[page("/admin/users")]
 pub async fn admin_users_page(cx: &Cx) -> Result {
@@ -16,8 +16,10 @@ pub async fn users_alias_page(cx: &Cx) -> Result {
     render_users_directory(cx).await
 }
 
-async fn render_users_directory(__cx: &Cx) -> Result {
-    let users = get_all_users(Some(1), Some(50), None).await.unwrap_or_default();
+async fn render_users_directory(cx: &Cx) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let users = api.get_all_users(Some(1), Some(50), None).await.unwrap_or_default();
     let total_count = users.len();
 
     view! {

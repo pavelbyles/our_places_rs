@@ -6,8 +6,10 @@ use topcoat::{
     router::{page, path_param},
     view::view,
 };
-use web_app_common_tc::api_client::get_listing_by_id;
-use web_app_common_tc::components::price_breakdown::price_breakdown;
+use web_app_common_tc::{
+    components::price_breakdown::price_breakdown,
+    get_api_client,
+};
 
 path_param!(slug);
 
@@ -50,7 +52,8 @@ pub async fn checkout_cad_page(cx: &Cx, id: String) -> Result {
 
 async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Result {
     let __cx = cx;
-    let details_opt = get_listing_by_id(&id, None).await.ok();
+    let api = get_api_client(cx);
+    let details_opt = api.get_listing_by_id(&id, None).await.ok();
 
     let target_curr = settlement_currency.to_uppercase();
 

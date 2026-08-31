@@ -4,7 +4,10 @@ use topcoat::{
     router::page,
     view::view,
 };
-use web_app_common_tc::api_client::{ListingSearchParams, get_all_bookings, search_listings};
+use web_app_common_tc::{
+    client::ListingSearchParams,
+    get_api_client,
+};
 
 #[page("/admin")]
 pub async fn admin_alias_dashboard(cx: &Cx) -> Result {
@@ -16,13 +19,15 @@ pub async fn dashboard(cx: &Cx) -> Result {
     render_dashboard_content(cx).await
 }
 
-async fn render_dashboard_content(__cx: &Cx) -> Result {
-    let listings = search_listings(ListingSearchParams {
+async fn render_dashboard_content(cx: &Cx) -> Result {
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let listings = api.search_listings(ListingSearchParams {
         per_page: Some(10),
         ..Default::default()
     }).await.unwrap_or_default();
 
-    let bookings = get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
+    let bookings = api.get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
 
     let listing_count = listings.len();
     let active_holds = bookings.iter().filter(|b| b.status == "pending_payment" || b.status == "PendingPayment").count();

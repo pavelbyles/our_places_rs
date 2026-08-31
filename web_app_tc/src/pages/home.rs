@@ -4,11 +4,14 @@ use topcoat::{
     router::page,
     view::view,
 };
-use web_app_common_tc::api_client::{ListingSearchParams, search_listings};
-use web_app_common_tc::components::villa_card::villa_card;
+use web_app_common_tc::{
+    client::ListingSearchParams,
+    components::villa_card::villa_card,
+    get_api_client,
+};
 
 #[page("/")]
-pub async fn home(_cx: &Cx) -> Result {
+pub async fn home(cx: &Cx) -> Result {
     let hero_bg = "https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=2000&q=85";
 
     // Dynamic relative dates (check-in defaults to tomorrow; past dates disallowed)
@@ -20,7 +23,8 @@ pub async fn home(_cx: &Cx) -> Result {
     let val_checkin = tomorrow.format("%Y-%m-%d").to_string();
     let val_checkout = default_checkout.format("%Y-%m-%d").to_string();
 
-    let listings = search_listings(ListingSearchParams {
+    let api = get_api_client(cx);
+    let listings = api.search_listings(ListingSearchParams {
         per_page: Some(12),
         ..Default::default()
     }).await.unwrap_or_default();

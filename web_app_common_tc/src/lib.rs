@@ -1,8 +1,11 @@
 pub mod api_client;
 pub mod auth;
+pub mod client;
 pub mod components;
 pub mod layout;
 pub mod theme;
+
+pub use client::{get_api_client, TopcoatApiClient};
 
 pub use auth::{AuthUser, auth_init_script, get_authenticated_admin, get_authenticated_guest};
 
