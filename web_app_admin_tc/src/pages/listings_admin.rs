@@ -1,13 +1,16 @@
 use topcoat::{
     Result,
     context::Cx,
-    router::page,
+    router::{page, path_param},
     view::view,
 };
 use web_app_common_tc::{
     client::ListingSearchParams,
     get_api_client,
 };
+
+path_param!(id);
+path_param!(slug);
 
 #[page("/admin/listings")]
 pub async fn admin_listings_page(cx: &Cx) -> Result {
@@ -17,6 +20,18 @@ pub async fn admin_listings_page(cx: &Cx) -> Result {
 #[page("/listings")]
 pub async fn listings_alias_page(cx: &Cx) -> Result {
     render_listings_content(cx).await
+}
+
+#[page("/admin/listings/{id}")]
+pub async fn admin_listing_detail_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_edit_listing_content(cx, id.to_string()).await
+}
+
+#[page("/listings/{id}")]
+pub async fn listings_alias_detail_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_edit_listing_content(cx, id.to_string()).await
 }
 
 async fn render_listings_content(cx: &Cx) -> Result {
@@ -170,9 +185,10 @@ async fn render_listings_content(cx: &Cx) -> Result {
 }
 
 #[page("/admin/listings/clone/{slug}")]
-pub async fn admin_clone_listing_page(cx: &Cx, slug: String) -> Result {
+pub async fn admin_clone_listing_page(cx: &Cx) -> Result {
+    let slug: &str = path_param::<Slug>(cx);
     let api = get_api_client(cx);
-    let template = api.get_listing_by_id(&slug, None).await.ok().map(|d| d.listing);
+    let template = api.get_listing_by_id(slug, None).await.ok().map(|d| d.listing);
     render_new_or_cloned_listing(cx, template).await
 }
 
@@ -524,13 +540,15 @@ async fn render_new_or_cloned_listing(__cx: &Cx, template: Option<common::models
 }
 
 #[page("/admin/listings/{id}/edit")]
-pub async fn admin_edit_listing_page(cx: &Cx, id: String) -> Result {
-    render_edit_listing_content(cx, id).await
+pub async fn admin_edit_listing_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_edit_listing_content(cx, id.to_string()).await
 }
 
 #[page("/listings/{id}/edit")]
-pub async fn listings_edit_alias_page(cx: &Cx, id: String) -> Result {
-    render_edit_listing_content(cx, id).await
+pub async fn listings_edit_alias_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_edit_listing_content(cx, id.to_string()).await
 }
 
 async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {

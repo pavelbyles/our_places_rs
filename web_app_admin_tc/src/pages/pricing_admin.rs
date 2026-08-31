@@ -1,35 +1,42 @@
 use topcoat::{
     Result,
     context::Cx,
-    router::page,
+    router::{page, path_param},
     view::view,
 };
 use uuid::Uuid;
 use web_app_common_tc::get_api_client;
 
+path_param!(id);
+
 #[page("/admin/listings/{id}/pricing")]
-pub async fn admin_pricing_page(cx: &Cx, id: String) -> Result {
-    render_pricing_content(cx, id).await
+pub async fn admin_pricing_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_pricing_content(cx, id.to_string()).await
 }
 
 #[page("/listings/{id}/pricing")]
-pub async fn listings_pricing_alias_page(cx: &Cx, id: String) -> Result {
-    render_pricing_content(cx, id).await
+pub async fn listings_pricing_alias_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_pricing_content(cx, id.to_string()).await
 }
 
 #[page("/admin/listings/{id}/pricing/add")]
-pub async fn admin_pricing_add_handler(cx: &Cx, id: String) -> Result {
-    render_pricing_overrides_table_fragment(cx, id, true).await
+pub async fn admin_pricing_add_handler(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_pricing_overrides_table_fragment(cx, id.to_string(), true).await
 }
 
 #[page("/listings/{id}/pricing/add")]
-pub async fn listings_pricing_add_alias_handler(cx: &Cx, id: String) -> Result {
-    render_pricing_overrides_table_fragment(cx, id, true).await
+pub async fn listings_pricing_add_alias_handler(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_pricing_overrides_table_fragment(cx, id.to_string(), true).await
 }
 
 #[page("/admin/listings/{id}/pricing/remove")]
-pub async fn admin_pricing_remove_handler(cx: &Cx, id: String) -> Result {
-    render_pricing_overrides_table_fragment(cx, id, false).await
+pub async fn admin_pricing_remove_handler(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_pricing_overrides_table_fragment(cx, id.to_string(), false).await
 }
 
 async fn render_pricing_content(cx: &Cx, id: String) -> Result {
