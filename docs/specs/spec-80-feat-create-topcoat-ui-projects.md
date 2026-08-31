@@ -2,14 +2,12 @@
 
 ## Overview
 
-The **Our Places** short-term luxury villa booking platform currently operates using WebAssembly frontend applications built on Leptos (`web_app` for guests, `web_app_admin` for administrators, and `web_app_common` for shared components). 
+The **Our Places** short-term luxury villa booking platform originally operated using WebAssembly frontend applications built on Leptos (`web_app` for guests, `web_app_admin` for administrators, and `web_app_common` for shared components). 
 
-To optimize cold-start performance, eliminate heavy client-side WebAssembly bundles, and leverage modern server-driven UI paradigms on GCP Cloud Run ($0.25\text{ vCPU}$, $256\text{MB RAM}$), this specification details the architectural migration and implementation of new **Topcoat** UI projects:
-- **`web_app_common_tc`**: Shared Topcoat UI library, Tailwind CSS/DaisyUI design tokens, HTMX 4 integration, automated time-of-day theme engine, and backend API clients.
-- **`web_app_tc`**: High-performance, server-rendered public guest portal for villa search, booking checkout with 15-minute atomic holds, verified review submission, and guest profile management.
-- **`web_app_admin_tc`**: Secure, server-rendered internal administration dashboard for listing management, dynamic seasonal pricing rules, booking audit logs, and user role management.
-
-The implementation is structured into sequential, independently testable phases: Phase 1 (Foundation & Shared UI), Phase 2 (Public Guest Portal), Phase 3 (UI Polish & Leptos Parity Tightening), and Phase 4 (Administrative Dashboard).
+To optimize cold-start performance, eliminate heavy client-side WebAssembly bundles, and leverage modern server-driven UI paradigms on GCP Cloud Run ($0.25\text{ vCPU}$, $256\text{MB RAM}$), this specification details the architectural migration and implementation of the **Topcoat** UI projects:
+- **`web_app_common_tc`**: Shared Topcoat UI library, Tailwind CSS/DaisyUI design tokens, HTMX integration, automated time-of-day theme engine, shared sample datasets, and backend API clients.
+- **`web_app_tc`**: High-performance, server-rendered public guest portal running on **Port 3000** for villa search, dynamic seasonal pricing calculation, booking checkout with 15-minute atomic holds, verified review submission, and guest profile management.
+- **`web_app_admin_tc`**: Secure, server-rendered internal administration dashboard running on **Port 3002** for 23-field listing studio editing & cloning, dynamic seasonal pricing rules, booking audit logs, and type-enforced user capability management.
 
 ---
 
@@ -17,10 +15,10 @@ The implementation is structured into sequential, independently testable phases:
 
 ```mermaid
 flowchart TB
-    subgraph s1["Topcoat UI Layer (Server-Rendered SSR + HTMX 4)"]
+    subgraph s1["Topcoat UI Layer (Server-Rendered SSR + HTMX)"]
         WTC["web_app_tc (Guest Portal :3000)"]
         WATC["web_app_admin_tc (Admin Dashboard :3002)"]
-        WCTC["web_app_common_tc (Layouts, Themes, Components, HTMX 4)"]
+        WCTC["web_app_common_tc (Layouts, Themes, Components, HTMX)"]
     end
     subgraph s2["Shared Isomorphic Crates"]
         COM["common (Tri-Currency Pricing, DTOs, Static Reference)"]
@@ -61,230 +59,172 @@ The foundation crate encapsulates shared layouts, HTMX assets, Tailwind/DaisyUI 
 
 #### 1.1. Crate Configuration & Build Pipeline
 - **Crate**: `web_app_common_tc` (Rust 2024 edition, target library `rlib`).
-- **Dependencies**: `topcoat` (features: `htmx`, `tailwind`, `router`, `view`), `common`, `serde`, `serde_json`, `reqwest`, `tracing`, `chrono`, `anyhow`.
-- **Build Script (`build.rs`)**: Uses `topcoat::tailwind::BuildConfig::new().input("src/style/tailwind.css").render()` to execute the standalone Tailwind CLI v4 pipeline.
+- **Dependencies**: `topcoat` (features: `htmx`, `tailwind`, `router`, `view`), `common`, `serde`, `serde_json`, `reqwest`, `tracing`, `chrono`, `rust_decimal`.
+- **Topcoat Linkme Layout Architecture**:
+  - `#[layout("/")]` macros must reside strictly in binary crates (`web_app_tc` and `web_app_admin_tc`) to prevent linker collisions during static route table aggregation.
+  - `web_app_common_tc` exports reusable layout functions (`guest_base_layout`, `admin_base_layout`) which are invoked by the binary crate layouts.
 
 #### 1.2. Tailwind CSS & DaisyUI Theme Configuration
-- **Input Stylesheet (`src/style/tailwind.css`)**:
-  - `@import "tailwindcss";`
-  - `@plugin "daisyui";`
-  - `@plugin "daisyui/theme" { name: "emerald"; default: true; color-scheme: "light"; }`
-  - `@plugin "daisyui/theme" { name: "sunset"; default: false; color-scheme: "dark"; }`
-  - `@custom-variant dark (&:where(.dark, .dark *));`
-- **Tailwind Config (`tailwind.config.js`)**:
-  - `darkMode: 'class'` (enforces class-based theme selector rather than OS `prefers-color-scheme`).
-  - Scanned content: `./src/**/*.{rs,html}`, `../web_app_tc/src/**/*.{rs,html}`, `../web_app_admin_tc/src/**/*.{rs,html}`.
+- **Design Tokens**:
+  - Primary Theme: `emerald` (Light luxury theme).
+  - Dark Theme: `night` / `sunset` (Dark luxury theme).
+  - Class-based theme selector `.dark` and `data-theme` attribute toggling.
+- **Embedded Luxury Tokens**:
+  - Dedicated glassmorphic classes (`.search-capsule`, `.hero-luxury`, `.frosted-dropdown-menu`) embedded directly in layout `<style>` to ensure zero-FOUC and eliminate external bundle dependency failures.
 
 #### 1.3. Time-of-Day Automated Theme Engine & Manual Switcher (`src/theme.rs`)
 - **Automated Default Selection**:
   - If no manual theme preference is stored in `localStorage`, the client time of day is evaluated.
-  - If current local hour $\ge 18$ (6:00 PM) or $< 6$ (6:00 AM), the dark theme (`sunset`) and `.dark` class are applied.
+  - If current local hour $\ge 18$ (6:00 PM) or $< 6$ (6:00 AM), dark mode (`night`/`sunset`) is applied.
   - Otherwise, the light theme (`emerald`) is applied.
-- **FOUC Prevention**: Inline synchronous JavaScript executed in `<head>` before browser DOM rendering:
-  ```javascript
-  (function() {
-      try {
-          var stored = localStorage.getItem('theme');
-          var theme = stored;
-          if (!theme) {
-              var hour = new Date().getHours();
-              theme = (hour >= 18 || hour < 6) ? 'sunset' : 'emerald';
-          }
-          document.documentElement.setAttribute('data-theme', theme);
-          if (theme === 'sunset') {
-              document.documentElement.classList.add('dark');
-          } else {
-              document.documentElement.classList.remove('dark');
-          }
-      } catch (e) {
-          document.documentElement.setAttribute('data-theme', 'emerald');
-      }
-  })();
-  ```
-- **Interactive Component (`theme_toggle`)**:
-  - DaisyUI button visible on all pages in the top navigation bar.
-  - Toggles `data-theme` between `emerald` and `sunset`, toggles the `.dark` class on `<html>`, and writes the choice to `localStorage.setItem('theme', ...)`.
+- **Interactive Switcher (`theme_toggle`)**:
+  - Toggles `data-theme` and `.dark` class dynamically and saves to `localStorage.setItem('theme', ...)`.
 
-#### 1.4. HTMX 4 Integration & Base Layout (`src/layout.rs`)
-- **Vendored Script**: Self-hosted `htmx.4.0.0.min.js` placed in `src/assets/htmx.min.js` and bundled content-hashed via Topcoat asset pipeline.
-- **HTMX Fragment Routing**:
-  - Topcoat router layout inspects `hx_request(cx)`.
-  - Full browser navigation: renders complete HTML document shell (`<!DOCTYPE html>`, `<head>`, scripts, header, footer, `(slot?)`).
-  - HTMX AJAX request: bypasses document shell and returns only the rendered inner component fragment `(slot?)`.
-
-#### 1.5. Shared UI Components
-- **`VillaCard`**: Visual property card featuring image carousel/thumbnail, title, location (parish, Jamaica), base/converted nightly rate, overall rating, and review count badge.
-- **`ResponsiveImage`**: Generates HTML `<picture>` and `srcset` tags for 640px (mobile), 1024px (tablet), and 1920px (desktop) WebP assets hosted on GCS.
+#### 1.4. Shared UI Components
+- **`VillaCard`**: Visual property card featuring image thumbnail, title, location (parish, Jamaica), base/converted nightly rate, overall rating, and review count badge.
+- **`ResponsiveImage`**: Generates HTML `<picture>` and `srcset` tags for 640px (mobile), 1024px (tablet), and 1920px (desktop) WebP assets.
 - **`StarRating`**: Renders SVG star icons (with fractional support) and review count link.
 - **`PriceBreakdown`**: Itemized stay summary calculating nights, effective daily rate, statutory GCT 15% (`common::reference::JAMAICAN_GCT_RATE`), and tri-currency conversions (`rust_decimal::Decimal`).
 
-#### 1.6. Shared Backend HTTP Client (`src/api_client.rs`)
-- Re-exports `common::app_client::get_client()` with automatic Google Cloud Run IAM OIDC authentication token generation for zero-trust microservice communication.
-
 ---
 
-### Phase 2: Public Guest Portal (`web_app_tc`)
+### Phase 2: Public Guest Portal (`web_app_tc` : Port 3000)
 
 The guest application provides full feature parity with the Leptos `web_app`, running on port `3000`.
 
 #### 2.1. Routing Map & Page Structure
 | Route | Method | Layout | Description |
 | :--- | :--- | :--- | :--- |
-| `/` | `GET` | `base_layout` | Landing hero, featured villas, search filter bar. |
-| `/listings` | `GET` | `base_layout` | Search results grid with HTMX live filtering (dates, guests, parish). |
-| `/listings/{id}` | `GET` | `base_layout` | Villa detail view, amenities, reviews, interactive booking widget. |
-| `/checkout/{id}` | `GET`, `POST` | `base_layout` | 15-minute hold checkout flow, guest details, payment quote. |
-| `/login` | `GET`, `POST` | `base_layout` | Guest login (password or 6-digit email code). |
-| `/register` | `GET`, `POST` | `base_layout` | Account registration with shadow user promotion. |
-| `/verify` | `GET`, `POST` | `base_layout` | 6-digit email verification code input. |
-| `/bookings` | `GET` | `base_layout` | Guest reservation dashboard (upcoming, active, past). |
-| `/bookings/{id}` | `GET` | `base_layout` | Itemized booking details, receipt, and cancellation modal. |
-| `/reviews/submit` | `GET`, `POST` | `base_layout` | Verified guest review submission gated by 15-day token. |
-| `/profile` | `GET`, `POST` | `base_layout` | User profile management, password update, currency preferences. |
-| `/about` | `GET` | `base_layout` | About Our Places and Jamaican villa portfolio story. |
-
-#### 2.2. Interactive HTMX 4 Workflows
-1. **Dynamic Search & Filtering (`/listings`)**:
-   - Filter form triggers `hx-get="/listings/filter"` on `input` or `change` event with `hx-target="#listings-grid"` and `hx-push-url="true"`.
-   - Server returns filtered `<div id="listings-grid">` partial containing matching `VillaCard` items without full-page reload.
-2. **Dynamic Stay Pricing Quote (`/listings/{id}`)**:
-   - Date range selector triggers `hx-post="/listings/{id}/quote"` on date selection.
-   - Evaluates `common::pricing::calculate_dynamic_quote` against seasonal price overrides.
-   - Updates the booking sidebar with itemized nightly rates, statutory GCT 15%, and converted currency total.
-3. **Atomic Booking Hold & Timer (`/checkout/{id}`)**:
-   - Initiates `POST /bookings/hold` against `booking_api`.
-   - Creates a `pending_payment` reservation hold with 15-minute `expires_at`.
-   - Renders a client-side countdown timer in the checkout header.
-   - If timer reaches zero before payment, HTMX swaps the form for an expiration alert with a re-hold button.
-4. **Verified Review Submission (`/reviews/submit?token=...`)**:
-   - Validates the token's 15-day eligibility window post-stay.
-   - On submission (`hx-post="/reviews/submit"`), invokes `listing_api` with row-level atomic rating aggregation.
+| `/` | `GET` | `guest_layout` | Full-bleed Caribbean hero, featured villas, floating search capsule. |
+| `/listings` | `GET` | `guest_layout` | Search directory with structure, price, and parish filtering. |
+| `/listings/{id}` | `GET` | `guest_layout` | Villa studio details, amenities, reviews, interactive booking widget. |
+| `/listings/{id}/quote` | `POST` | Fragment | Dynamic HTMX stay price quote calculating seasonal overrides and 15% GCT. |
+| `/checkout/{id}` | `GET`, `POST` | `guest_layout` | 15-minute hold checkout flow, guest details, tri-currency payment summary. |
+| `/login` | `GET`, `POST` | `guest_layout` | Guest login (password or 6-digit email code). |
+| `/register` | `GET`, `POST` | `guest_layout` | Account registration with shadow user promotion. |
+| `/verify` | `GET`, `POST` | `guest_layout` | 6-digit email verification code input. |
+| `/bookings` | `GET` | `guest_layout` | Guest reservation dashboard (upcoming, active, past). |
+| `/bookings/{id}` | `GET` | `guest_layout` | Itemized booking details, receipt, and cancellation modal. |
+| `/reviews/submit` | `GET`, `POST` | `guest_layout` | Verified guest review submission gated by 15-day token. |
+| `/profile` | `GET`, `POST` | `guest_layout` | User profile management, password update, currency preferences. |
+| `/about` | `GET` | `guest_layout` | About Our Places and Jamaican villa portfolio story. |
 
 ---
 
-### Phase 3: UI Polish & Leptos Parity Tightening (`web_app_tc` & `web_app_common_tc`)
+### Phase 3: Administrative Dashboard (`web_app_admin_tc` : Port 3002)
 
-This phase focuses on tightening the user interface, component fidelity, and visual polish of `web_app_tc` and `web_app_common_tc` to strictly match the design, interactivity, and layout of the original Leptos `web_app` project (while preserving the Topcoat theme configuration `emerald` light / `sunset` dark).
-
-#### 3.1. Header & Navigation Parity (`web_app_common_tc/src/layout.rs`)
-- **Interactive Profile Avatar & Dropdown**:
-  - Implement full DaisyUI dropdown (`dropdown dropdown-end`) with avatar image (`https://ui-avatars.com/api/?name=...&background=random` or initials placeholder).
-  - Header in dropdown displaying authenticated user's full name and email with truncation.
-  - Menu items: `Profile` (`/profile`), `My Bookings` (`/bookings`), `Settings` (`/profile`), and `Logout` button.
-  - Unauthenticated fallback: `Log In` button (`/login`) and `Sign Up` button (`/register`).
-- **Navbar Search Bar**:
-  - Add search places input (`input w-24 md:w-64`) in the top navigation bar matching Leptos navbar layout.
-- **Responsive Mobile Drawer**:
-  - Implement DaisyUI drawer toggle (`drawer`, `my-drawer-2`, `drawer-content`) with hamburger button on mobile screens.
-- **Header Controls Integration**:
-  - Seamless layout containing `currency_selector`, `theme_toggle`, search bar, navigation links (`Home`, `Listings`, `About`), and user profile avatar dropdown.
-
-#### 3.2. Page UI & Visual Polish
-1. **Hero & Landing Page (`web_app_tc/src/pages/home.rs`)**:
-   - Full viewport hero section (`hero min-h-screen` or `hero min-h-[75vh]`) with backdrop overlay, luxury headline, subheadline, and direct booking CTA.
-   - Featured villa grid layout, spacing, typography, and card transitions matching Leptos `home.rs`.
-2. **Listings Search Page (`web_app_tc/src/pages/listings.rs`)**:
-   - Match Leptos search layout: `join` search bar with text input, property type filter dropdown (`select join-item`), and primary search trigger button.
-   - Two-column responsive card grid (`grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-5xl`).
-3. **Listing Details (`web_app_tc/src/pages/listing_detail.rs`)**:
-   - DaisyUI multi-image carousel with slide indicators and prev/next controls (`carousel`, `carousel-item`, prev/next circle buttons).
-   - Host summary banner, amenities grid, verified reviews, and sticky booking card with dynamic price calculation.
-4. **Checkout & Auth Flows (`checkout.rs`, `auth.rs`, `review.rs`)**:
-   - Clean card containers, social login buttons (Google/Facebook), tabbed login methods (Traditional vs. Passwordless TOTP), and 6-digit verification code input.
-   - Star rating inputs with DaisyUI mask classes (`mask mask-star`).
-
----
-
-### Phase 4: Administrative Dashboard (`web_app_admin_tc`)
-
-The admin application provides full feature parity with the Leptos `web_app_admin`, running on port `3002`.
+The administrative portal runs on port `3002` with executive controls, 23-field listing editing, dynamic pricing overrides, and type-safe access control.
 
 #### 3.1. Routing Map & Page Structure
 | Route | Method | Layout | Description |
 | :--- | :--- | :--- | :--- |
-| `/login` | `GET`, `POST` | `base_layout` | Admin/Host authentication and session initialization. |
-| `/` | `GET` | `base_layout` | Administrative KPI dashboard (listings, revenue, system telemetry). |
-| `/admin/listings` | `GET` | `base_layout` | Listing management table with search and ownership filters. |
-| `/admin/listings/new` | `GET`, `POST` | `base_layout` | Villa creation wizard with Nominatim geocoding & direct GCS uploads. |
-| `/admin/listings/{id}/edit` | `GET`, `POST` | `base_layout` | Villa edit form, photo management, and amenity toggles. |
-| `/admin/listings/{id}/pricing` | `GET`, `POST` | `base_layout` | Seasonal dynamic price overrides & minimum night stay configuration. |
-| `/admin/bookings` | `GET` | `base_layout` | Master booking schedule, hold status, and date lock monitor. |
-| `/admin/users` | `GET` | `base_layout` | User directory, role assignment (`admin`, `host`, `booker`), shadow audits. |
-| `/admin/exchange-rates` | `GET`, `POST` | `base_layout` | Live currency exchange rates sync and manual override panel. |
-
-#### 3.2. Administrative HTMX 4 Workflows
-1. **Dynamic Seasonal Price Overrides (`/admin/listings/{id}/pricing`)**:
-   - Form for adding/editing date overrides (`start_date`, `end_date`, `nightly_rate`, `min_nights`).
-   - `hx-post="/admin/listings/{id}/pricing"` validates non-overlapping intervals via `listing_api` and swaps the updated override table fragment into `#price-overrides-table`.
-2. **Direct-to-GCS Photo Management**:
-   - Topcoat admin requests V4 Signed Upload URL from `listing_api` (`POST /listings/{id}/images/signed-url`).
-   - Client JS uploads image directly to Google Cloud Storage (bypassing backend servers).
-   - Once upload completes, HTMX sends `POST /admin/listings/{id}/images/register` to record the GCS URI and trigger the `image_worker` Pub/Sub resizing pipeline.
-3. **Telemetry & Live Telemetry Stream (`/admin/htmx/stats`)**:
-   - Admin KPI metrics refresh on-demand or via HTMX polling (`hx-trigger="every 30s"`).
+| `/login` | `GET`, `POST` | `admin_layout` | Admin/Host authentication and session initialization. |
+| `/` or `/admin` | `GET` | `admin_layout` | Executive KPI dashboard (gross revenue, occupancy, bookings schedule). |
+| `/admin/listings` | `GET` | `admin_layout` | Listing directory with status badges and quick action controls. |
+| `/admin/listings/new` | `GET`, `POST` | `admin_layout` | 23-field villa studio wizard with GPS geocoding and GCS presigned URLs. |
+| `/admin/listings/{id}/edit` | `GET`, `POST` | `admin_layout` | Executive studio editor with Caribbean country selector and metric stat tiles. |
+| `/admin/listings/clone/{id}` | `GET`, `POST` | `admin_layout` | 1-click property cloning and template generation with `(Copy)` naming. |
+| `/admin/listings/{id}/pricing` | `GET` | `admin_layout` | Seasonal dynamic price overrides and minimum night stay manager. |
+| `/admin/listings/{id}/pricing/add` | `POST` | Fragment | Live HTMX handler for adding seasonal overrides and returning updated table. |
+| `/admin/listings/{id}/pricing/remove` | `POST` | Fragment | Live HTMX handler for removing overrides with instant table refresh. |
+| `/admin/bookings` | `GET` | `admin_layout` | Master booking schedule, hold status, and date lock monitor. |
+| `/admin/users` | `GET` | `admin_layout` | User directory with search and role badges (`admin`, `host`, `booker`). |
+| `/admin/users/new` | `GET`, `POST` | `admin_layout` | User invitation with **algebraic type-enforced capability constraints**. |
+| `/admin/exchange-rates` | `GET`, `POST` | `admin_layout` | Live currency exchange rates sync and statutory tax rate panel. |
 
 ---
 
-## 2. Performance & Scalability Considerations
+## 2. New Architectural & Functional Enhancements
 
-1. **Cloud Run Scale-to-Zero Latency Budget**:
-   - **Cold Start**: Target $< 300\text{ms}$ (p50) and $< 1.0\text{s}$ (p95) on Cloud Run $0.25\text{ vCPU}$, $256\text{MB RAM}$.
-   - **Binary Size Optimization**: Topcoat server-rendered binaries compiled with release profile `opt-level = "z"`, `lto = true`, and `codegen-units = 1`.
-   - **Zero Client WASM Overhead**: Unlike Leptos (which downloads a 2–5MB WASM bundle before interactivity), Topcoat serves raw HTML with lightweight HTMX 4 (~36KB), achieving sub-100ms First Contentful Paint (FCP) and Largest Contentful Paint (LCP).
-2. **Big-O Efficiency & Database Query Safeguards**:
-   - **No N+1 Query Loops**: Listing queries join property amenities, photos, and price overrides in single indexed SQL statements.
-   - **Pagination**: All listings, bookings, and user tables use keyset or bounded offset/limit pagination ($O(1)$ / $O(\log N)$ index scans).
-3. **Async Runtime Non-Blocking Guardrail**:
-   - All I/O is purely asynchronous with Tokio and Actix HTTP clients. CPU-intensive operations (such as bcrypt password hashing) must strictly run via `tokio::task::spawn_blocking`.
-4. **Bandwidth Preservation**:
-   - Raw image streaming through Topcoat or Actix endpoints is strictly prohibited. Image uploads use direct GCP V4 Signed URLs to GCS.
+Beyond standard feature parity, Topcoat introduces substantial enhancements to developer velocity, runtime safety, and user experience:
+
+### 2.1. 1-Click Listing Template Cloning (`/admin/listings/clone/{id}`)
+* **Workflow**: Deep-clones all 23 database fields from an existing villa into a new pre-filled studio form.
+* **Naming Semantics**: Automatically appends `(Copy)` to the title (e.g. `"The Reef House"` $\rightarrow$ `"The Reef House (Copy)"`).
+* **Identity Isolation**: Generates a fresh `Uuid::now_v7()` upon submission, preventing accidental overwrites while preserving complex geocodes, amenities, and pricing configurations.
+
+### 2.2. Executive Studio Card Design System with 2px High-Contrast Borders
+* **Visual Structure**: Form controls are grouped into high-contrast 2px bordered studio cards (`border-2 border-base-300 dark:border-base-content/20 bg-base-100 rounded-xl px-4 py-2.5`) with domain icon headers:
+  - `🏷️ Property Identity & Branding`
+  - `📍 Caribbean Location & GPS Coordinates`
+  - `🛏️ Accommodations & Spatial Architecture`
+  - `💰 Financial Yield & Length-of-Stay Incentives`
+  - `🖼️ High-Resolution Media Management`
+  - `✨ Bespoke Amenities & House Rules`
+* **Studio Header Banner**: Displays the property thumbnail avatar, publication status badge (`Active` / `Draft`), location metadata, and current nightly rate.
+
+### 2.3. Interactive Caribbean Country Selector
+* Upgraded from a static/readonly field to a dynamic dropdown supporting 7 primary Caribbean luxury rental jurisdictions:
+  - 🇯🇲 **Jamaica** (`Jamaica`)
+  - 🇧🇧 **Barbados** (`Barbados`)
+  - 🇧🇸 **Bahamas** (`Bahamas`)
+  - 🇱🇨 **Saint Lucia** (`Saint Lucia`)
+  - 🇰🇾 **Cayman Islands** (`Cayman Islands`)
+  - 🇹🇨 **Turks and Caicos** (`Turks and Caicos`)
+  - 🇩🇴 **Dominican Republic** (`Dominican Republic`)
+
+### 2.4. Rust Algebraic Type-Enforced Role Capabilities (`RoleCapabilityProfile`)
+* Uses Rust's algebraic type system to prevent unprivileged `Booker` accounts from possessing administrative permissions:
+  ```rust
+  pub enum PrivilegedScope {
+      Host,
+      Admin,
+  }
+
+  pub struct RoleCapabilityProfile {
+      pub scope: Option<PrivilegedScope>,
+      pub is_booker: bool,
+      pub permissions: GranularPermissions,
+  }
+  ```
+* **Constraint Invariant**: Calling `RoleCapabilityProfile::build()` with permissions but without `is_host` or `is_admin` returns `Err(PermissionTypeConstraintError::BookerCannotHoldPrivileges)`.
+* **Client-Side Reactive Enforcement**: Synchronized with JavaScript on `/admin/users/new` that automatically disables and clears permission checkboxes when pure booker accounts are selected.
+
+### 2.5. Real-Time HTMX Dynamic Pricing Manager
+* Live HTMX endpoints (`/admin/listings/{id}/pricing/add`, `/admin/listings/{id}/pricing/remove`) swap the `#price-overrides-container` table partial on the fly with live status badges and toast feedback banners, eliminating full-page refreshes.
+
+### 2.6. Embedded Luxury Styling & Zero-FOUC Guarantee
+* Inlined critical luxury styling tokens (`.search-capsule`, `.hero-luxury`, `.frosted-dropdown-menu`, backdrop filters) directly into the `<head>` of `guest_base_layout`, guaranteeing consistent rendering across standalone servers and CDN caches.
 
 ---
 
-## 3. Threat Modeling & Security Review (OWASP Top 10)
+## 3. Monadic Architecture & Safety Guardrails
 
-| Threat Category | Potential Attack Vector | Topcoat & Architecture Mitigation |
-| :--- | :--- | :--- |
-| **Injection (SQL / Command)** | Malicious SQL inputs in search filters or dynamic parameters. | Compile-time verified parameterized queries via `sqlx::query!`. Dynamic user inputs are never concatenated into raw SQL strings. |
-| **Cross-Site Scripting (XSS)** | Injection of malicious scripts in review comments or listing descriptions. | Topcoat's `view!` macro automatically HTML-escapes all dynamic string variables `(name)`. Raw unescaped HTML injections are prevented at compile-time. |
-| **Cross-Site Request Forgery (CSRF)** | Unauthorized HTMX POST/PUT actions from third-party sites. | SameSite HTTP-only cookies and strict `Origin` / `Referer` validation enforced via Topcoat router origin layers. |
-| **Broken Access Control** | Host editing another host's listing or viewing unowned bookings. | Route handlers validate user JWT claims (`sub`, `roles`). `listing_api` enforces that `listing.host_id == claims.sub` before mutation. |
-| **Concurrency Double-Booking** | Two guests simultaneously submitting checkout for the same villa dates. | PostgreSQL serializable transaction with row-level locks (`SELECT * FROM listing WHERE id = $1 FOR UPDATE`) and exclusion constraints. |
-| **Shadow User Hijacking** | Malicious actor claiming a guest's pending reservation hold. | Booking holds are tied to cryptographically secure UUIDv7 IDs. Promotion requires verifying the user's email via a 6-digit code. |
-| **Sensitive Data Exposure** | Plaintext credentials or internal stack traces leaked to clients. | Passwords hashed with `bcrypt` (work factor 12). Error responses use unified `AppError` payloads stripping internal database errors before returning to clients. |
+1. **Zero `unwrap()` / Zero `expect()` Policy**:
+   - Production code and page handlers strictly avoid panicking methods, utilizing pure monadic combinator chains (`.ok().or_else(...)`, `.as_ref().map(...).unwrap_or_else(...)`, `.map_err(...)`).
+2. **Tri-Currency Decimal Precision**:
+   - Money and statutory tax rates exclusively use `rust_decimal::Decimal` (e.g. `dec!(0.15)` for 15% Jamaican GCT). Floating-point (`f32`/`f64`) money math is strictly prohibited.
+3. **15-Minute Atomic Holds**:
+   - Database row-level locks (`SELECT ... FOR UPDATE`) protect date ranges against double-booking during checkout.
 
 ---
 
-## 4. Comprehensive Test Plan
+## 4. Comprehensive Automated Test Plan
 
-### 4.1. Unit Testing
-- **Tri-Currency Mathematics (`common/src/pricing.rs`)**:
-  - Test base price conversion to payment currency without floating-point drift (`rust_decimal::Decimal`).
-  - Test static Jamaican GCT 15% computation.
-  - Test seasonal dynamic rate override application across partial and full stay date intervals.
-- **Theme Script Logic (`web_app_common_tc/src/theme.rs`)**:
-  - Verify 6:00 PM time-of-day rule defaults to `sunset` (dark) when `localStorage` is empty.
-  - Verify stored user preference overrides time-of-day condition.
-- **HTMX Header Parsing (`web_app_common_tc/src/layout.rs`)**:
-  - Verify `hx_request(cx)` returns `true` when `HX-Request: "true"` header is present and bypasses document shell.
+The Topcoat projects are validated by **20 automated unit and integration tests**:
 
-### 4.2. Integration Testing
-- **Backend API Integration (`web_app_common_tc/src/api_client.rs`)**:
-  - Verify HTTP communication with `listing_api`, `booking_api`, and `user_api` test containers.
-  - Test response deserialization into shared `common::models` DTOs.
-- **Topcoat Router & Page Discovery (`web_app_tc` & `web_app_admin_tc`)**:
-  - Test `GET /` returns HTTP 200 with `<html data-theme="emerald">`, Tailwind stylesheet, and HTMX script.
-  - Test `GET /htmx/welcome` with `HX-Request: "true"` returns bare `<div class="alert alert-success">` fragment without outer layout wrapper.
-  - Test `GET /admin/htmx/stats` returns refreshed timestamp telemetry fragment.
+### 4.1. `web_app_common_tc` (`foundation_tests.rs`) — 7 Tests
+- `test_tri_currency_conversion_precision`: Validates zero-floating-point conversions from USD to JMD (155.50) and EUR (0.92).
+- `test_seasonal_dynamic_pricing_calculation_with_overrides`: Verifies that active `PriceOverride` intervals (e.g. Christmas / New Year peak at `$1,000/night`) correctly override base rates and enforce minimum-stay thresholds.
+- `test_length_of_stay_weekly_discount_calculation`: Tests 10% weekly discount deductions followed by 15% statutory GCT compounding.
+- `test_discount_and_stay_totals`: Validates stay subtotaling, custom discounts, and tax lines.
+- `test_statutory_tax_calculation_precision`: Verifies Jamaican statutory 15% GCT against `SupportedCountry::LIST`.
+- `test_theme_scripts_contain_expected_themes_and_classes`: Tests zero-FOUC theme hydration script tokens.
+- `test_sample_listings_lookup_and_slug_normalization`: Verifies case-insensitive slug lookup and structure matching.
 
-### 4.3. End-to-End (E2E) Verification Scenarios
-1. **Theme Switcher & Persistence**:
-   - Open `http://127.0.0.1:3000`.
-   - Click theme toggle button $\rightarrow$ verify `data-theme="sunset"` and `class="dark"` applied to `<html>`.
-   - Refresh page $\rightarrow$ verify `sunset` theme persists from `localStorage`.
-2. **HTMX Dynamic Fragment Swap**:
-   - Click **"Explore Stays (HTMX)"** on `/` $\rightarrow$ verify network request is made via HTMX and `#htmx-demo` is updated in-place without page reload.
-3. **15-Minute Hold Concurrency Test**:
-   - Two concurrent sessions initiate hold on Villa A for overlapping dates $\rightarrow$ Session 1 receives HTTP 201 Created with 15-minute countdown; Session 2 receives HTTP 409 Conflict `"DATE_UNAVAILABLE"`.
-4. **Verified Review Life-Cycle**:
-   - Guest with completed stay accesses `/reviews/submit?token=<valid_token>` $\rightarrow$ submits 5-star review $\rightarrow$ verify review is recorded, token is invalidated (`used_at = NOW()`), and listing average rating is atomically updated.
+### 4.2. `web_app_admin_tc` (`admin_portal_tests.rs`) — 8 Tests
+- `test_granular_permissions_type_constraint`: Validates algebraic data type constraints (`RoleCapabilityProfile`) ensuring unprivileged `Booker` roles cannot hold administrative permissions.
+- `test_listing_23_fields_coordinate_and_price_boundaries`: Validates Caribbean GPS boundaries ($17.0 \le \text{lat} \le 19.0$, $-79.0 \le \text{lon} \le -76.0$), positive rates, and positive guest limits across all 23 listing fields.
+- `test_seasonal_override_inverted_dates_rejection`: Enforces date range integrity by verifying that inverted intervals are rejected.
+- `test_listing_clone_and_field_coverage`: Tests deep-cloning properties with `(Copy)` naming semantics and 5 database structures (`Apartment`, `House`, `Townhouse`, `Studio`, `Villa`).
+- `test_admin_seasonal_override_interval_validation`: Validates rate bounds and minimum stay criteria for peak season overrides.
+- `test_admin_role_authorization_and_shadow_user_audit`: Verifies role strings (`admin`, `host`, `booker`) and 15-minute shadow hold promotion windows.
+- `test_admin_kpi_revenue_and_tax_estimation`: Tests executive KPI revenue calculations with statutory 15% GCT projections.
+- `test_admin_layout_navigation_sections`: Tests navigation sections across the executive portal.
+
+### 4.3. `web_app_tc` (`guest_portal_tests.rs`) — 5 Tests
+- `test_fifteen_minute_booking_hold_expiry_calculation`: Tests timestamp math for 15-minute reservation holds and hold expiration detection.
+- `test_guest_stay_with_length_of_stay_discount_and_gct`: Validates 10-night luxury booking with 10% weekly discount and 15% Jamaican statutory GCT.
+- `test_guest_stay_subtotal_and_statutory_gct`: Tests 5-night stay gross and net totals.
+- `test_sample_listings_validity_and_parity`: Validates parity of featured Jamaican villas.
+- `test_get_listing_by_id_api`: Verifies live API fetch over `listing_api` with fallback.

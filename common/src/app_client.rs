@@ -3,6 +3,7 @@ use crate::models::{
     BookingResponse, BookingReviewEligibility, DynamicPricingQuote, HostReplyRequest,
     ListingDetails, ListingResponse, NewBookingRequest, NewReviewRequest, PriceOverride,
     ReviewResponse, ReviewTokenInfoResponse, TransferBookingRequest, UpdatedBookingRequest,
+    UserResponse,
 };
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
@@ -142,6 +143,67 @@ pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<Listi
         .context("Failed to deserialize listing details")
 }
 
+pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<ListingResponse> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!("{}/api/v1/listings", api_url);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to create listing ({}): {}", status, err_text);
+    }
+
+    res.json::<ListingResponse>()
+        .await
+        .context("Failed to parse listing response")
+}
+
+pub async fn update_listing(id: &str, req: &crate::models::UpdatedListingRequest) -> Result<ListingResponse> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!("{}/api/v1/listings/{}", api_url, id);
+
+    let res = get_client()
+        .patch(&url, &audience, req)
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to update listing ({}): {}", status, err_text);
+    }
+
+    res.json::<ListingResponse>()
+        .await
+        .context("Failed to parse listing response")
+}
+
+pub async fn delete_listing(id: &str) -> Result<()> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!("{}/api/v1/listings/{}", api_url, id);
+
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to delete listing ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
 pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -159,6 +221,52 @@ pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>>
     res.json::<Vec<PriceOverride>>()
         .await
         .context("Failed to deserialize price overrides")
+}
+
+pub async fn create_price_override(
+    listing_id: Uuid,
+    req: &crate::models::CreatePriceOverrideRequest,
+) -> Result<PriceOverride> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to create price override ({}): {}", status, err_text);
+    }
+
+    res.json::<PriceOverride>()
+        .await
+        .context("Failed to parse price override response")
+}
+
+pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Result<()> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!(
+        "{}/api/v1/listings/{}/price-overrides/{}",
+        api_url, listing_id, override_id
+    );
+
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to delete price override ({}): {}", status, err_text);
+    }
+
+    Ok(())
 }
 
 pub async fn get_pricing_quote(
@@ -351,6 +459,32 @@ pub async fn get_listing_bookings(listing_id: Uuid) -> Result<Vec<BookingRespons
         .context("Failed to parse listing bookings response")
 }
 
+pub async fn get_all_bookings(
+    page: Option<u32>,
+    per_page: Option<u32>,
+) -> Result<Vec<BookingResponse>> {
+    let api_url = booking_api_url();
+    let audience = booking_api_audience();
+    let page = page.unwrap_or(1);
+    let per_page = per_page.unwrap_or(50);
+    let url = format!("{}/api/v1/bookings?page={}&per_page={}", api_url, page, per_page);
+
+    let res = get_client()
+        .get(&url, &audience)
+        .await
+        .context("Failed to connect to booking service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to fetch bookings ({}): {}", status, err_text);
+    }
+
+    res.json::<Vec<BookingResponse>>()
+        .await
+        .context("Failed to parse bookings response")
+}
+
 // -----------------------------------------------------------------------------
 // Review API Clients
 // -----------------------------------------------------------------------------
@@ -461,4 +595,34 @@ pub async fn fetch_user_profile(user_id: &str) -> Result<Response> {
     let url = format!("{}/api/v1/users/{}", user_api_url(), user_id);
     let audience = user_api_audience();
     get_client().get(&url, &audience).await
+}
+
+pub async fn get_all_users(
+    page: Option<u32>,
+    per_page: Option<u32>,
+    search: Option<String>,
+) -> Result<Vec<UserResponse>> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let page = page.unwrap_or(1);
+    let per_page = per_page.unwrap_or(50);
+    let mut url = format!("{}/api/v1/users?page={}&per_page={}", api_url, page, per_page);
+    if let Some(s) = search.filter(|s| !s.is_empty()) {
+        url.push_str(&format!("&search={}", s));
+    }
+
+    let res = get_client()
+        .get(&url, &audience)
+        .await
+        .context("Failed to connect to user service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to fetch users ({}): {}", status, err_text);
+    }
+
+    res.json::<Vec<UserResponse>>()
+        .await
+        .context("Failed to parse users response")
 }

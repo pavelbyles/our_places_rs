@@ -3,16 +3,25 @@ use topcoat::{
     router::{Router, RouterBuilderDiscoverExt},
 };
 
-mod pages;
+use web_app_admin_tc::layout;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let mut builder = Router::builder()
-        .discover()
-        .layout(web_app_common_tc::base_layout);
+    // Default to port 3002 for web_app_admin_tc
+    if std::env::var("PORT").is_err() {
+        // SAFETY: Called single-threaded at process startup before async runtime work
+        unsafe {
+            std::env::set_var("PORT", "3002");
+        }
+    }
+
+    // Link admin layout for Topcoat auto-discovery
+    let _ = layout::admin_layout;
+
+    let mut builder = Router::builder().discover();
     if let Ok(bundle) = AssetBundle::load() {
         builder = builder.assets(bundle);
     }

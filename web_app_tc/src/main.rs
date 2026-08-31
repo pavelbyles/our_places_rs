@@ -3,6 +3,7 @@ use topcoat::{
     router::{Router, RouterBuilderDiscoverExt},
 };
 
+mod layout;
 mod pages;
 
 #[tokio::main]
@@ -10,12 +11,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    // Ensure web_app_common_tc is linked so auto-discovery collects its layout
-    let _ = web_app_common_tc::base_layout;
+    // Link guest layout for Topcoat auto-discovery
+    let _ = layout::guest_layout;
 
     let mut builder = Router::builder().discover();
-    if let Ok(bundle) = AssetBundle::load() {
-        builder = builder.assets(bundle);
+    match AssetBundle::load() {
+        Ok(bundle) => {
+            builder = builder.assets(bundle);
+        }
+        Err(e) => {
+            tracing::error!("Failed to load assets: {}", e);
+        }
     }
     let router = builder.build();
 

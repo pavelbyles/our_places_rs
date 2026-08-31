@@ -374,7 +374,7 @@ where
 /// Initializes the default system admin if it doesn't exist.
 #[tracing::instrument(skip(pool))]
 pub async fn initialize_system_admin(pool: &PgPool) {
-    let admin_email = "pavelbyles@ourplaces.io";
+    let admin_email = "admin@ourplaces.io";
 
     // Check if admin already exists
     let exists = sqlx::query_scalar!(

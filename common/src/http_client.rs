@@ -223,10 +223,10 @@ impl AuthenticatedClient {
     /// Creates a GET request builder with OIDC Authorization and API Key.
     pub async fn get_request(&self, url: &str, audience: &str) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .get(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token));
+        let mut builder = self.client.get(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
         Ok(self.add_api_key(builder))
     }
 
@@ -247,11 +247,11 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .post(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json);
+        let mut builder = self.client.post(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let builder = builder.json(json);
         Ok(self.add_api_key(builder))
     }
 
@@ -277,11 +277,11 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .patch(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json);
+        let mut builder = self.client.patch(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let builder = builder.json(json);
         Ok(self.add_api_key(builder))
     }
 
@@ -306,10 +306,10 @@ impl AuthenticatedClient {
         audience: &str,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .delete(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token));
+        let mut builder = self.client.delete(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
         Ok(self.add_api_key(builder))
     }
 
@@ -330,11 +330,11 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .put(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json);
+        let mut builder = self.client.put(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let builder = builder.json(json);
         Ok(self.add_api_key(builder))
     }
 

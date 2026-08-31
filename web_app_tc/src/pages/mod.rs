@@ -7,4 +7,3 @@ pub mod listing_detail;
 pub mod listings;
 pub mod profile;
 pub mod review;
-pub mod sample_data;

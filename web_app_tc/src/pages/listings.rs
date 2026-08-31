@@ -6,20 +6,13 @@ use topcoat::{
 };
 use web_app_common_tc::api_client::{ListingSearchParams, search_listings};
 use web_app_common_tc::components::villa_card::villa_card;
-use crate::pages::sample_data::get_sample_listings;
 
 #[page("/listings")]
 pub async fn listings_page(_cx: &Cx) -> Result {
-    let api_listings = search_listings(ListingSearchParams {
+    let listings = search_listings(ListingSearchParams {
         per_page: Some(20),
         ..Default::default()
     }).await.unwrap_or_default();
-
-    let listings = if !api_listings.is_empty() {
-        api_listings
-    } else {
-        get_sample_listings()
-    };
 
     view! {
         <div class="flex flex-col items-center w-full max-w-7xl mx-auto px-2 md:px-4 py-8 gap-10">
@@ -66,8 +59,10 @@ pub async fn listings_page(_cx: &Cx) -> Result {
                     <select name="structure" class="select select-ghost select-sm w-full font-medium focus:bg-transparent">
                         <option value="" selected=(true)>"All Types"</option>
                         <option value="Villa">"Villa"</option>
+                        <option value="House">"House"</option>
                         <option value="Apartment">"Apartment"</option>
-                        <option value="Estate">"Estate"</option>
+                        <option value="Townhouse">"Townhouse"</option>
+                        <option value="Studio">"Studio"</option>
                     </select>
                 </div>
 
@@ -101,16 +96,10 @@ pub async fn listings_page(_cx: &Cx) -> Result {
 
 #[page("/listings/filter")]
 pub async fn listings_filter(_cx: &Cx) -> Result {
-    let api_listings = search_listings(ListingSearchParams {
+    let listings = search_listings(ListingSearchParams {
         per_page: Some(20),
         ..Default::default()
     }).await.unwrap_or_default();
-
-    let listings = if !api_listings.is_empty() {
-        api_listings
-    } else {
-        get_sample_listings()
-    };
 
     view! {
         <div id="listings-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full pb-16">

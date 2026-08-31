@@ -27,8 +27,8 @@ pub async fn price_breakdown(
             <h3 class="font-bold text-sm text-base-content/80 uppercase tracking-wider">"Price Breakdown"</h3>
             <div class="space-y-1.5 text-sm">
                 <div class="flex justify-between items-center text-base-content/80">
-                    <span>(nights_label)</span>
-                    <span class="font-medium">(subtotal_str)</span>
+                    <span id="breakdown-nights-label">(nights_label)</span>
+                    <span class="font-medium" id="breakdown-subtotal">(subtotal_str)</span>
                 </div>
                 if let Some(discount) = discount_amount {
                     if discount > Decimal::ZERO {
@@ -47,13 +47,13 @@ pub async fn price_breakdown(
                             </svg>
                         </span>
                     </span>
-                    <span class="font-medium">(tax_str)</span>
+                    <span class="font-medium" id="breakdown-tax">(tax_str)</span>
                 </div>
             </div>
             <div class="divider my-1"></div>
             <div class="flex justify-between items-center text-base font-bold text-primary">
                 <span>"Total Due"</span>
-                <span class="text-lg font-black">(total_str)</span>
+                <span class="text-lg font-black" id="breakdown-total">(total_str)</span>
             </div>
         </div>
     }

@@ -7779,10 +7779,14 @@ dependencies = [
  "chrono",
  "common",
  "dotenvy",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "thiserror 2.0.20",
  "tokio",
  "topcoat",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "web_app_common_tc",
 ]
 

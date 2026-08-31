@@ -4,24 +4,26 @@ use rust_decimal_macros::dec;
 use topcoat::{
     Result,
     context::Cx,
-    router::page,
+    router::{page, path_param},
     view::view,
 };
 use web_app_common_tc::{
-    api_client::{get_listing_by_id, get_pricing_quote},
+    api_client::{get_listing_by_id, get_listing_reviews, get_pricing_quote},
     components::price_breakdown::price_breakdown,
 };
-use crate::pages::sample_data::{get_sample_listing_details, get_sample_reviews};
 
-#[page("/listings/{id}")]
-pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
-    // Attempt live API fetch from listing_api, with fallback to sample data
-    let details_opt = match get_listing_by_id(&id, None).await {
-        Ok(details) => Some(details),
-        Err(_) => get_sample_listing_details(&id),
+path_param!(slug);
+
+#[page("/listings/{slug}")]
+pub async fn listing_detail(cx: &Cx) -> Result {
+    let slug: &str = path_param::<Slug>(cx);
+    let details_opt = get_listing_by_id(slug, None).await.ok();
+
+    let reviews = if let Some(ref d) = details_opt {
+        get_listing_reviews(d.listing.id, 1, 20).await.unwrap_or_default()
+    } else {
+        Vec::new()
     };
-
-    let reviews = get_sample_reviews();
     let amenities = vec![
         "Infinity Pool".to_string(),
         "Ocean View".to_string(),
@@ -41,6 +43,14 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
             let price_num = listing.price_per_night.unwrap_or(dec!(500.00));
             let currency = listing.base_currency.clone();
             let slug = listing.slug.clone();
+
+            let today = chrono::Utc::now().date_naive();
+            let tomorrow = today + chrono::Days::new(1);
+            let default_checkout = today + chrono::Days::new(6);
+            let min_checkin = tomorrow.format("%Y-%m-%d").to_string();
+            let min_checkout = (tomorrow + chrono::Days::new(1)).format("%Y-%m-%d").to_string();
+            let val_checkin = tomorrow.format("%Y-%m-%d").to_string();
+            let val_checkout = default_checkout.format("%Y-%m-%d").to_string();
 
             <div class="max-w-7xl mx-auto px-2 md:px-4 py-6 space-y-8">
                 // Breadcrumbs & Title Bar
@@ -203,21 +213,27 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
                             </div>
 
                             <div class="space-y-4">
-                                for rev in reviews {
-                                    <div class="card bg-base-100 border border-base-200/80 p-6 rounded-3xl space-y-3 shadow-xs">
-                                        <div class="flex justify-between items-start">
-                                            <div>
-                                                <h4 class="font-bold text-base text-base-content">(rev.guest_first_name.clone())</h4>
-                                                <span class="text-xs text-base-content/50">"Verified Stay · Jamaica"</span>
-                                            </div>
-                                            <div class="badge badge-sm badge-warning font-bold">
-                                                (format!("{:.1} ★", rev.overall_rating))
-                                            </div>
-                                        </div>
-                                        <p class="text-sm text-base-content/80 leading-relaxed">
-                                            (rev.public_review_text.clone().unwrap_or_default())
-                                        </p>
+                                if reviews.is_empty() {
+                                    <div class="p-6 bg-base-100 border border-base-200/80 rounded-3xl text-center text-xs text-base-content/60">
+                                        "No guest reviews submitted yet for this property."
                                     </div>
+                                } else {
+                                    for rev in reviews {
+                                        <div class="card bg-base-100 border border-base-200/80 p-6 rounded-3xl space-y-3 shadow-xs">
+                                            <div class="flex justify-between items-start">
+                                                <div>
+                                                    <h4 class="font-bold text-base text-base-content">(rev.guest_first_name.clone())</h4>
+                                                    <span class="text-xs text-base-content/50">"Verified Stay · Jamaica"</span>
+                                                </div>
+                                                <div class="badge badge-sm badge-warning font-bold">
+                                                    (format!("{:.1} ★", rev.overall_rating))
+                                                </div>
+                                            </div>
+                                            <p class="text-sm text-base-content/80 leading-relaxed">
+                                                (rev.public_review_text.clone().unwrap_or_default())
+                                            </p>
+                                        </div>
+                                    }
                                 }
                             </div>
                         </div>
@@ -246,11 +262,12 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
                                         <input
                                             type="date"
                                             name="check_in"
-                                            value="2026-09-10"
-                                            class="input input-sm w-full bg-base-100 rounded-xl font-medium"
-                                            hx-post=(format!("/listings/{}/quote", slug))
-                                            hx-target="#quote-breakdown"
-                                            hx-trigger="change"
+                                            id="reserve-check-in"
+                                            min=(min_checkin.clone())
+                                            value=(val_checkin)
+                                            class="input input-sm w-full bg-base-100 rounded-xl font-medium cursor-pointer"
+                                            onchange=(format!("recalculateListingQuote({}, '{}')", price_num, currency))
+                                            oninput=(format!("recalculateListingQuote({}, '{}')", price_num, currency))
                                         />
                                     </div>
                                     <div>
@@ -260,11 +277,12 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
                                         <input
                                             type="date"
                                             name="check_out"
-                                            value="2026-09-15"
-                                            class="input input-sm w-full bg-base-100 rounded-xl font-medium"
-                                            hx-post=(format!("/listings/{}/quote", slug))
-                                            hx-target="#quote-breakdown"
-                                            hx-trigger="change"
+                                            id="reserve-check-out"
+                                            min=(min_checkout)
+                                            value=(val_checkout)
+                                            class="input input-sm w-full bg-base-100 rounded-xl font-medium cursor-pointer"
+                                            onchange=(format!("recalculateListingQuote({}, '{}')", price_num, currency))
+                                            oninput=(format!("recalculateListingQuote({}, '{}')", price_num, currency))
                                         />
                                     </div>
                                 </div>
@@ -299,7 +317,7 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
                                     class="btn btn-warning hover:btn-warning/90 text-neutral font-bold rounded-2xl w-full py-3.5 shadow-lg tracking-wide uppercase text-xs flex justify-center items-center gap-2"
                                 >
                                     <span>"Reserve (15-Min Hold)"</span>
-                                    <span class="badge badge-neutral text-[10px] font-mono">"09:42 ⏱"</span>
+                                    <span class="badge badge-neutral text-[10px] font-mono">"15-Min Hold ⏱"</span>
                                 </a>
 
                                 <p class="text-center text-xs text-base-content/60 font-medium">
@@ -309,6 +327,50 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
                         </div>
                     </div>
                 </div>
+
+                <script>
+                    (r#"
+                    function recalculateListingQuote(rate, currency) {
+                        try {
+                            var ciEl = document.getElementById('reserve-check-in');
+                            var coEl = document.getElementById('reserve-check-out');
+                            if (!ciEl) return;
+                            if (!coEl) return;
+                            
+                            var ci = new Date(ciEl.value);
+                            var co = new Date(coEl.value);
+                            if (isNaN(ci.getTime())) return;
+                            if (isNaN(co.getTime())) return;
+                            
+                            var minCo = new Date(ci.getTime() + 86400000);
+                            var minCoStr = minCo.toISOString().split('T')[0];
+                            coEl.min = minCoStr;
+                            
+                            var diffDays = Math.round((co.getTime() - ci.getTime()) / 86400000);
+                            if (diffDays === 0 || diffDays !== Math.abs(diffDays)) {
+                                diffDays = 1;
+                                coEl.value = minCoStr;
+                            }
+                            
+                            var subtotal = rate * diffDays;
+                            var tax = subtotal * 0.15;
+                            var total = subtotal + tax;
+                            
+                            var nightsLabel = document.getElementById('breakdown-nights-label');
+                            var subtotalEl = document.getElementById('breakdown-subtotal');
+                            var taxEl = document.getElementById('breakdown-tax');
+                            var totalEl = document.getElementById('breakdown-total');
+                            
+                            if (nightsLabel) nightsLabel.innerText = diffDays + ' night(s) × ' + currency + ' ' + rate.toFixed(2);
+                            if (subtotalEl) subtotalEl.innerText = currency + ' ' + subtotal.toFixed(2);
+                            if (taxEl) taxEl.innerText = currency + ' ' + tax.toFixed(2);
+                            if (totalEl) totalEl.innerText = currency + ' ' + total.toFixed(2);
+                        } catch(e) {
+                            console.error('Failed to recalculate quote:', e);
+                        }
+                    }
+                    "#)
+                </script>
             </div>
         } else {
             <div class="max-w-md mx-auto py-20 text-center space-y-4">
@@ -320,40 +382,42 @@ pub async fn listing_detail(_cx: &Cx, id: String) -> Result {
     }
 }
 
-#[page("/listings/{id}/quote")]
-pub async fn listing_quote(_cx: &Cx, id: String) -> Result {
-    let details_opt = match get_listing_by_id(&id, None).await {
-        Ok(details) => Some(details),
-        Err(_) => get_sample_listing_details(&id),
-    };
+#[page("/listings/{slug}/quote")]
+pub async fn listing_quote(cx: &Cx) -> Result {
+    let slug: &str = path_param::<Slug>(cx);
+    let details_opt = get_listing_by_id(slug, None).await.ok();
 
-    let (price_num, currency, listing_id) = if let Some(ref d) = details_opt {
-        (
-            d.listing.price_per_night.unwrap_or(dec!(500.00)),
-            d.listing.base_currency.clone(),
-            d.listing.id,
-        )
-    } else {
-        (dec!(500.00), "USD".to_string(), uuid::Uuid::nil())
-    };
+    let (price_num, currency, listing_id) = details_opt
+        .as_ref()
+        .map(|d| {
+            (
+                d.listing.price_per_night.unwrap_or(dec!(500.00)),
+                d.listing.base_currency.clone(),
+                d.listing.id,
+            )
+        })
+        .unwrap_or_else(|| (dec!(500.00), "USD".to_string(), uuid::Uuid::nil()));
 
     let check_in = NaiveDate::from_ymd_opt(2026, 9, 10).unwrap_or_default();
     let check_out = NaiveDate::from_ymd_opt(2026, 9, 15).unwrap_or_default();
 
-    // Call booking_api dynamic quote if available
-    let (subtotal, tax, total, nights) = if let Ok(quote) = get_pricing_quote(listing_id, check_in, check_out, Some(&currency)).await {
-        let nights = quote.nightly_breakdown.len() as i64;
-        let subtotal = quote.subtotal;
-        let tax = subtotal * dec!(0.15);
-        let total = subtotal + tax;
-        (subtotal, tax, total, nights)
-    } else {
-        let nights = 5;
-        let subtotal = price_num * Decimal::from(nights);
-        let tax = subtotal * dec!(0.15);
-        let total = subtotal + tax;
-        (subtotal, tax, total, nights)
-    };
+    // Call booking_api dynamic quote with monadic fallback pipeline
+    let (subtotal, tax, total, nights) = get_pricing_quote(listing_id, check_in, check_out, Some(&currency))
+        .await
+        .map(|quote| {
+            let nights = quote.nightly_breakdown.len() as i64;
+            let subtotal = quote.subtotal;
+            let tax = subtotal * dec!(0.15);
+            let total = subtotal + tax;
+            (subtotal, tax, total, nights)
+        })
+        .unwrap_or_else(|_| {
+            let nights = 5;
+            let subtotal = price_num * Decimal::from(nights);
+            let tax = subtotal * dec!(0.15);
+            let total = subtotal + tax;
+            (subtotal, tax, total, nights)
+        });
 
     view! {
         <div id="quote-breakdown">

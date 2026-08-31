@@ -13,7 +13,7 @@ pub fn theme_init_script() -> &'static str {
             var theme = stored;
             if (!theme) {
                 var hour = new Date().getHours();
-                theme = (hour >= 18 || hour < 6) ? 'night' : 'emerald';
+                theme = ([18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5].indexOf(hour) !== -1) ? 'night' : 'emerald';
             }
             if (theme === 'sunset') theme = 'night'; // migrate legacy sunset to dark slate-navy night
             document.documentElement.setAttribute('data-theme', theme);

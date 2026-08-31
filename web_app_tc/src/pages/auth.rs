@@ -16,19 +16,29 @@ pub async fn login_page(_cx: &Cx) -> Result {
                 </div>
 
                 <div class="p-8 space-y-6">
-                    <form action="/profile" method="GET" class="space-y-4">
+                    <div id="guest-login-error" class="alert alert-error text-xs py-2.5 px-4 rounded-2xl font-semibold shadow-sm items-center gap-2" style="display: none;">
+                        <span>"⚠️"</span>
+                        <span id="guest-login-error-text">"Authentication error"</span>
+                    </div>
+
+                    <form
+                        id="guest-login-form"
+                        class="space-y-4"
+                        onsubmit="handleGuestLogin(event); return false;"
+                    >
                         <div>
                             <label class="label text-xs font-bold uppercase text-base-content/70">"Email Address"</label>
-                            <input type="email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required=(true) />
+                            <input type="email" id="guest-email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required=(true) />
                         </div>
 
                         <div>
                             <label class="label text-xs font-bold uppercase text-base-content/70">"Password"</label>
-                            <input type="password" name="password" placeholder="••••••••" class="input input-bordered w-full" required=(true) />
+                            <input type="password" id="guest-password" name="password" placeholder="••••••••" class="input input-bordered w-full" required=(true) />
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-full mt-4">
-                            "Log In"
+                        <button id="btn-guest-login" type="submit" class="btn btn-primary w-full mt-4 font-bold flex items-center justify-center gap-2">
+                            <span id="btn-guest-spinner" class="loading loading-spinner loading-xs hidden"></span>
+                            <span id="btn-guest-text">"Log In"</span>
                         </button>
                     </form>
 
@@ -45,6 +55,110 @@ pub async fn login_page(_cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
+
+        <script>
+            r#"
+            function handleGuestLogin(e) {
+                if (e) {
+                    try {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    } catch(err) {}
+                }
+                
+                var errBox = document.getElementById('guest-login-error');
+                var errText = document.getElementById('guest-login-error-text');
+                if (errBox) {
+                    errBox.style.display = 'none';
+                }
+
+                var emailEl = document.getElementById('guest-email');
+                var passEl = document.getElementById('guest-password');
+                var btn = document.getElementById('btn-guest-login');
+                var spinner = document.getElementById('btn-guest-spinner');
+                var btnText = document.getElementById('btn-guest-text');
+
+                var email = '';
+                var pass = '';
+                if (emailEl) {
+                    if (emailEl.value) {
+                        email = emailEl.value.trim();
+                    }
+                }
+                if (passEl) {
+                    if (passEl.value) {
+                        pass = passEl.value.trim();
+                    }
+                }
+
+                if (!email) {
+                    if (errText) errText.innerText = 'Please enter your email.';
+                    if (errBox) errBox.style.display = 'flex';
+                    return false;
+                }
+                if (!pass) {
+                    if (errText) errText.innerText = 'Please enter your password.';
+                    if (errBox) errBox.style.display = 'flex';
+                    return false;
+                }
+
+                if (btn) btn.disabled = true;
+                if (spinner) spinner.classList.remove('hidden');
+                if (btnText) btnText.innerText = 'Authenticating...';
+
+                fetch('http://localhost:8083/api/v1/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ email: email, password: pass })
+                })
+                .then(function(res) {
+                    if (res.ok) {
+                        return res.json().then(function(data) {
+                            var u = data.data || data;
+                            var name = (u.first_name || '') + ' ' + (u.last_name || '');
+                            name = name.trim();
+                            if (!name) {
+                                name = u.name || 'Guest User';
+                            }
+                            if (window.loginUser) {
+                                window.loginUser(name, u.email || email, 'guest');
+                            } else {
+                                localStorage.setItem('op_auth_user', JSON.stringify({ name: name, email: u.email || email, role: 'guest' }));
+                                window.location.href = '/';
+                            }
+                        });
+                    } else {
+                        return res.json().then(function(err) {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Log In';
+                            if (errText) errText.innerText = err.message || 'Invalid email or password.';
+                            if (errBox) errBox.style.display = 'flex';
+                        }).catch(function() {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Log In';
+                            if (errText) errText.innerText = 'Invalid email or password.';
+                            if (errBox) errBox.style.display = 'flex';
+                        });
+                    }
+                })
+                .catch(function(err) {
+                    console.error('user_api connection failed:', err);
+                    if (btn) btn.disabled = false;
+                    if (spinner) spinner.classList.add('hidden');
+                    if (btnText) btnText.innerText = 'Log In';
+                    if (errText) errText.innerText = 'Unable to connect to authentication service. Please ensure the user API is running.';
+                    if (errBox) errBox.style.display = 'flex';
+                });
+
+                return false;
+            }
+            "#
+        </script>
     }
 }
 
@@ -59,30 +173,40 @@ pub async fn register_page(_cx: &Cx) -> Result {
                 </div>
 
                 <div class="p-8 space-y-6">
-                    <form action="/verify" method="GET" class="space-y-4">
+                    <div id="guest-reg-error" class="alert alert-error text-xs py-2.5 px-4 rounded-2xl font-semibold shadow-sm items-center gap-2" style="display: none;">
+                        <span>"⚠️"</span>
+                        <span id="guest-reg-error-text">"Registration error"</span>
+                    </div>
+
+                    <form
+                        id="guest-reg-form"
+                        class="space-y-4"
+                        onsubmit="handleGuestRegister(event); return false;"
+                    >
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="label text-xs font-bold uppercase text-base-content/70">"First Name"</label>
-                                <input type="text" name="first_name" placeholder="John" class="input input-bordered w-full" required=(true) />
+                                <input type="text" id="reg-first-name" name="first_name" placeholder="John" class="input input-bordered w-full" required=(true) />
                             </div>
                             <div>
                                 <label class="label text-xs font-bold uppercase text-base-content/70">"Last Name"</label>
-                                <input type="text" name="last_name" placeholder="Doe" class="input input-bordered w-full" required=(true) />
+                                <input type="text" id="reg-last-name" name="last_name" placeholder="Doe" class="input input-bordered w-full" required=(true) />
                             </div>
                         </div>
 
                         <div>
                             <label class="label text-xs font-bold uppercase text-base-content/70">"Email Address"</label>
-                            <input type="email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required=(true) />
+                            <input type="email" id="reg-email" name="email" placeholder="you@example.com" class="input input-bordered w-full" required=(true) />
                         </div>
 
                         <div>
                             <label class="label text-xs font-bold uppercase text-base-content/70">"Password"</label>
-                            <input type="password" name="password" placeholder="••••••••" class="input input-bordered w-full" required=(true) />
+                            <input type="password" id="reg-password" name="password" placeholder="••••••••" class="input input-bordered w-full" required=(true) />
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-full mt-4">
-                            "Create Account"
+                        <button id="btn-guest-reg" type="submit" class="btn btn-primary w-full mt-4 font-bold flex items-center justify-center gap-2">
+                            <span id="btn-reg-spinner" class="loading loading-spinner loading-xs hidden"></span>
+                            <span id="btn-reg-text">"Create Account"</span>
                         </button>
                     </form>
 
@@ -93,6 +217,101 @@ pub async fn register_page(_cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
+
+        <script>
+            r#"
+            function handleGuestRegister(e) {
+                if (e) {
+                    try {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    } catch(err) {}
+                }
+
+                var errBox = document.getElementById('guest-reg-error');
+                var errText = document.getElementById('guest-reg-error-text');
+                if (errBox) errBox.style.display = 'none';
+
+                var fnEl = document.getElementById('reg-first-name');
+                var lnEl = document.getElementById('reg-last-name');
+                var emailEl = document.getElementById('reg-email');
+                var passEl = document.getElementById('reg-password');
+                var btn = document.getElementById('btn-guest-reg');
+                var spinner = document.getElementById('btn-reg-spinner');
+                var btnText = document.getElementById('btn-reg-text');
+
+                var firstName = (fnEl && fnEl.value) ? fnEl.value.trim() : '';
+                var lastName = (lnEl && lnEl.value) ? lnEl.value.trim() : '';
+                var email = (emailEl && emailEl.value) ? emailEl.value.trim() : '';
+                var pass = (passEl && passEl.value) ? passEl.value.trim() : '';
+
+                if (!email) {
+                    if (errText) errText.innerText = 'Please enter your email.';
+                    if (errBox) errBox.style.display = 'flex';
+                    return false;
+                }
+
+                if (btn) btn.disabled = true;
+                if (spinner) spinner.classList.remove('hidden');
+                if (btnText) btnText.innerText = 'Creating Account...';
+
+                fetch('http://localhost:8083/api/v1/users', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        first_name: firstName,
+                        last_name: lastName,
+                        email: email,
+                        password: pass,
+                        roles: ['booker']
+                    })
+                })
+                .then(function(res) {
+                    if (res.ok) {
+                        return res.json().then(function(data) {
+                            var u = data.data || data;
+                            var fullName = (u.first_name || firstName) + ' ' + (u.last_name || lastName);
+                            fullName = fullName.trim();
+                            if (!fullName) fullName = 'Guest User';
+                            if (window.loginUser) {
+                                window.loginUser(fullName, u.email || email, 'booker');
+                            } else {
+                                localStorage.setItem('op_auth_user', JSON.stringify({ name: fullName, email: u.email || email, role: 'booker' }));
+                                window.location.href = '/';
+                            }
+                        });
+                    } else {
+                        return res.json().then(function(err) {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Create Account';
+                            if (errText) errText.innerText = err.message || 'Registration failed.';
+                            if (errBox) errBox.style.display = 'flex';
+                        }).catch(function() {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Create Account';
+                            if (errText) errText.innerText = 'Registration failed. Please try again.';
+                            if (errBox) errBox.style.display = 'flex';
+                        });
+                    }
+                })
+                .catch(function(err) {
+                    console.error('user_api connection failed:', err);
+                    if (btn) btn.disabled = false;
+                    if (spinner) spinner.classList.add('hidden');
+                    if (btnText) btnText.innerText = 'Create Account';
+                    if (errText) errText.innerText = 'Unable to connect to user service. Please ensure user_api is running.';
+                    if (errBox) errBox.style.display = 'flex';
+                });
+
+                return false;
+            }
+            "#
+        </script>
     }
 }
 
@@ -107,11 +326,32 @@ pub async fn verify_page(_cx: &Cx) -> Result {
                 </div>
 
                 <div class="p-8 space-y-6">
-                    <form action="/profile" method="GET" class="space-y-4">
+                    <div id="verify-error" class="alert alert-error text-xs py-2.5 px-4 rounded-2xl font-semibold shadow-sm items-center gap-2" style="display: none;">
+                        <span>"⚠️"</span>
+                        <span id="verify-error-text">"Verification error"</span>
+                    </div>
+
+                    <form
+                        class="space-y-4"
+                        onsubmit="handleEmailVerify(event); return false;"
+                    >
+                        <div>
+                            <label class="label text-xs font-bold uppercase text-base-content/70">"Email Address"</label>
+                            <input
+                                type="email"
+                                id="verify-email"
+                                name="email"
+                                placeholder="you@example.com"
+                                class="input input-bordered w-full"
+                                required=(true)
+                            />
+                        </div>
+
                         <div>
                             <label class="label text-xs font-bold uppercase text-center w-full block text-base-content/70">"6-Digit Code"</label>
                             <input
                                 type="text"
+                                id="verify-code"
                                 name="code"
                                 placeholder="123456"
                                 maxlength="6"
@@ -120,8 +360,9 @@ pub async fn verify_page(_cx: &Cx) -> Result {
                             />
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-full mt-4">
-                            "Verify & Continue"
+                        <button id="btn-verify" type="submit" class="btn btn-primary w-full mt-4 font-bold flex items-center justify-center gap-2">
+                            <span id="btn-verify-spinner" class="loading loading-spinner loading-xs hidden"></span>
+                            <span id="btn-verify-text">"Verify & Continue"</span>
                         </button>
                     </form>
 
@@ -132,5 +373,89 @@ pub async fn verify_page(_cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
+
+        <script>
+            r#"
+            function handleEmailVerify(e) {
+                if (e) {
+                    try {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    } catch(err) {}
+                }
+
+                var errBox = document.getElementById('verify-error');
+                var errText = document.getElementById('verify-error-text');
+                if (errBox) errBox.style.display = 'none';
+
+                var emailEl = document.getElementById('verify-email');
+                var codeEl = document.getElementById('verify-code');
+                var btn = document.getElementById('btn-verify');
+                var spinner = document.getElementById('btn-verify-spinner');
+                var btnText = document.getElementById('btn-verify-text');
+
+                var email = (emailEl && emailEl.value) ? emailEl.value.trim() : '';
+                var code = (codeEl && codeEl.value) ? codeEl.value.trim() : '';
+
+                if (!email || !code) {
+                    if (errText) errText.innerText = 'Please enter both your email and verification code.';
+                    if (errBox) errBox.style.display = 'flex';
+                    return false;
+                }
+
+                if (btn) btn.disabled = true;
+                if (spinner) spinner.classList.remove('hidden');
+                if (btnText) btnText.innerText = 'Verifying...';
+
+                fetch('http://localhost:8083/api/v1/users/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ email: email, code: code })
+                })
+                .then(function(res) {
+                    if (res.ok) {
+                        return res.json().then(function(data) {
+                            var u = data.data || data;
+                            var fullName = (u.first_name || '') + ' ' + (u.last_name || '');
+                            fullName = fullName.trim() || 'Verified Guest';
+                            if (window.loginUser) {
+                                window.loginUser(fullName, u.email || email, 'booker');
+                            } else {
+                                localStorage.setItem('op_auth_user', JSON.stringify({ name: fullName, email: u.email || email, role: 'booker' }));
+                                window.location.href = '/';
+                            }
+                        });
+                    } else {
+                        return res.json().then(function(err) {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Verify & Continue';
+                            if (errText) errText.innerText = err.message || 'Invalid verification code.';
+                            if (errBox) errBox.style.display = 'flex';
+                        }).catch(function() {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Verify & Continue';
+                            if (errText) errText.innerText = 'Invalid verification code.';
+                            if (errBox) errBox.style.display = 'flex';
+                        });
+                    }
+                })
+                .catch(function(err) {
+                    console.error('user_api verify connection failed:', err);
+                    if (btn) btn.disabled = false;
+                    if (spinner) spinner.classList.add('hidden');
+                    if (btnText) btnText.innerText = 'Verify & Continue';
+                    if (errText) errText.innerText = 'Unable to connect to verification service.';
+                    if (errBox) errBox.style.display = 'flex';
+                });
+
+                return false;
+            }
+            "#
+        </script>
     }
 }

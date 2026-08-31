@@ -12,11 +12,11 @@ pub async fn review_submit_page(_cx: &Cx) -> Result {
             <div class="card bg-base-100 shadow-xl border border-base-200 rounded-3xl overflow-hidden">
                 <div class="bg-primary text-primary-content p-8 text-center space-y-2">
                     <h1 class="text-3xl font-black">"Rate Your Stay"</h1>
-                    <p class="text-sm opacity-90">"How was your experience at Villa Serenity — Montego Bay?"</p>
+                    <p class="text-sm opacity-90">"Share your verified experience with the host and future travelers."</p>
                 </div>
 
                 <div class="p-8 space-y-8">
-                    <form action="/bookings" method="GET" class="space-y-6">
+                    <form action="/reviews/success" method="GET" class="space-y-6">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/60 p-6 rounded-2xl border border-base-300">
                             // Cleanliness
                             <div class="space-y-2 text-center">
@@ -89,6 +89,29 @@ pub async fn review_submit_page(_cx: &Cx) -> Result {
                             "Submit Verified Review →"
                         </button>
                     </form>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[page("/reviews/success")]
+pub async fn review_success_page(_cx: &Cx) -> Result {
+    view! {
+        <div class="max-w-2xl mx-auto px-4 py-16 space-y-8 text-center">
+            <div class="card bg-base-100 shadow-xl border border-base-200 p-8 md:p-12 rounded-3xl space-y-6">
+                <div class="w-16 h-16 bg-success/20 text-success rounded-full flex items-center justify-center mx-auto text-3xl font-bold">
+                    "✓"
+                </div>
+                <div class="space-y-2">
+                    <h1 class="text-3xl font-serif font-bold text-base-content">"Thank You for Your Review!"</h1>
+                    <p class="text-sm text-base-content/70 max-w-md mx-auto">
+                        "Your verified review has been submitted and aggregated into the property's overall rating."
+                    </p>
+                </div>
+                <div class="flex flex-col sm:flex-row justify-center gap-3 pt-4">
+                    <a href="/listings" class="btn btn-primary rounded-xl">"Explore More Villas"</a>
+                    <a href="/bookings" class="btn btn-outline rounded-xl">"View My Bookings"</a>
                 </div>
             </div>
         </div>
