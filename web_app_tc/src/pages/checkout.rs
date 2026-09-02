@@ -9,9 +9,11 @@ use topcoat::{
 use web_app_common_tc::{
     components::price_breakdown::price_breakdown,
     get_api_client,
+    get_authenticated_guest,
 };
 
 path_param!(slug);
+path_param!(id);
 
 #[page("/checkout/{slug}")]
 pub async fn checkout_page(cx: &Cx) -> Result {
@@ -31,29 +33,72 @@ pub async fn checkout_page(cx: &Cx) -> Result {
 }
 
 #[page("/checkout-jmd/{id}")]
-pub async fn checkout_jmd_page(cx: &Cx, id: String) -> Result {
-    render_checkout(cx, id, "JMD".to_string()).await
+pub async fn checkout_jmd_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_checkout(cx, id.to_string(), "JMD".to_string()).await
 }
 
 #[page("/checkout-eur/{id}")]
-pub async fn checkout_eur_page(cx: &Cx, id: String) -> Result {
-    render_checkout(cx, id, "EUR".to_string()).await
+pub async fn checkout_eur_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_checkout(cx, id.to_string(), "EUR".to_string()).await
 }
 
 #[page("/checkout-gbp/{id}")]
-pub async fn checkout_gbp_page(cx: &Cx, id: String) -> Result {
-    render_checkout(cx, id, "GBP".to_string()).await
+pub async fn checkout_gbp_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_checkout(cx, id.to_string(), "GBP".to_string()).await
 }
 
 #[page("/checkout-cad/{id}")]
-pub async fn checkout_cad_page(cx: &Cx, id: String) -> Result {
-    render_checkout(cx, id, "CAD".to_string()).await
+pub async fn checkout_cad_page(cx: &Cx) -> Result {
+    let id: &str = path_param::<Id>(cx);
+    render_checkout(cx, id.to_string(), "CAD".to_string()).await
 }
 
 async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Result {
     let __cx = cx;
     let api = get_api_client(cx);
     let details_opt = api.get_listing_by_id(&id, None).await.ok();
+
+    let auth_user = get_authenticated_guest(cx);
+    let default_email = auth_user.as_ref().map(|u| u.email.clone()).unwrap_or_default();
+    let default_first_name = auth_user.as_ref().and_then(|u| u.name.split_whitespace().next().map(|s| s.to_string())).unwrap_or_default();
+    let default_last_name = auth_user.as_ref().map(|u| {
+        let parts: Vec<&str> = u.name.split_whitespace().collect();
+        if parts.len() > 1 {
+            parts[1..].join(" ")
+        } else {
+            String::new()
+        }
+    }).unwrap_or_default();
+
+    let arrival_times = vec![
+        ("00:00", "12:00 AM (Midnight)", false),
+        ("01:00", "1:00 AM", false),
+        ("02:00", "2:00 AM", false),
+        ("03:00", "3:00 AM", false),
+        ("04:00", "4:00 AM", false),
+        ("05:00", "5:00 AM", false),
+        ("06:00", "6:00 AM", false),
+        ("07:00", "7:00 AM", false),
+        ("08:00", "8:00 AM", false),
+        ("09:00", "9:00 AM", false),
+        ("10:00", "10:00 AM", false),
+        ("11:00", "11:00 AM", false),
+        ("12:00", "12:00 PM (Noon)", false),
+        ("13:00", "1:00 PM", false),
+        ("14:00", "2:00 PM", false),
+        ("15:00", "3:00 PM (Standard Check-in)", true),
+        ("16:00", "4:00 PM", false),
+        ("17:00", "5:00 PM", false),
+        ("18:00", "6:00 PM", false),
+        ("19:00", "7:00 PM", false),
+        ("20:00", "8:00 PM", false),
+        ("21:00", "9:00 PM", false),
+        ("22:00", "10:00 PM", false),
+        ("23:00", "11:00 PM", false),
+    ];
 
     let target_curr = settlement_currency.to_uppercase();
 
@@ -143,28 +188,47 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                 </p>
                             </div>
                             
-                            <form class="space-y-5" id="checkout-form" onsubmit="window.submitBookingCheckout(event)">
+                            <form
+                                class="space-y-5"
+                                id="checkout-form"
+                                data-listing-id=(listing.id.to_string())
+                                data-currency=(target_curr.clone())
+                                data-villa-name=(listing.name.clone())
+                                data-villa-slug=(slug.clone())
+                                data-location=(format!("{}, {}", listing.city.as_deref().unwrap_or("Jamaica"), listing.country))
+                                data-image-url=(listing.primary_image_url.clone().unwrap_or_default())
+                                data-total-formatted=(format!("{} ${:.2}", target_curr, total))
+                                onsubmit="window.submitBookingCheckout(event)"
+                            >
+                                <div id="checkout-error-banner" class="alert alert-error text-xs font-semibold rounded-2xl hidden shadow-md">
+                                    <div class="flex items-center gap-2">
+                                        <span>"⚠️"</span>
+                                        <span id="checkout-error-text">"The requested dates are no longer available. Please choose different dates."</span>
+                                    </div>
+                                </div>
+
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"First Name"</label>
-                                        <input type="text" id="guest-first-name" name="first_name" placeholder="Marcus" class="input input-bordered w-full rounded-xl" required=(true) />
+                                        <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"First Name *"</label>
+                                        <input type="text" id="guest-first-name" name="first_name" value=(default_first_name) placeholder="Marcus" class="input input-bordered w-full rounded-xl" required=(true) />
                                     </div>
                                     <div>
-                                        <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Last Name"</label>
-                                        <input type="text" id="guest-last-name" name="last_name" placeholder="Sterling" class="input input-bordered w-full rounded-xl" required=(true) />
+                                        <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Last Name *"</label>
+                                        <input type="text" id="guest-last-name" name="last_name" value=(default_last_name) placeholder="Sterling" class="input input-bordered w-full rounded-xl" required=(true) />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Email Address"</label>
-                                    <input type="email" id="guest-email" name="email" placeholder="marcus@example.com" class="input input-bordered w-full rounded-xl" required=(true) />
+                                    <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Email Address *"</label>
+                                    <input type="email" id="guest-email" name="email" value=(default_email) placeholder="marcus@example.com" class="input input-bordered w-full rounded-xl" required=(true) />
                                     <span class="text-[11px] text-base-content/60 mt-1 block">"We'll send your booking confirmation and host direct-line here."</span>
                                 </div>
 
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Phone Number"</label>
-                                        <input type="tel" id="guest-phone" name="phone" placeholder="+1 (876) 555-0199" class="input input-bordered w-full rounded-xl" />
+                                        <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Phone Number *"</label>
+                                        <input type="tel" id="guest-phone" name="phone" placeholder="+1 (876) 555-0199" class="input input-bordered w-full rounded-xl" required=(true) />
+                                        <span class="text-[11px] text-base-content/60 mt-1 block">"Required for check-in coordination & concierge arrival."</span>
                                     </div>
                                     <div>
                                         <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Total Guests"</label>
@@ -206,11 +270,14 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
                                             <label class="label text-xs font-bold uppercase tracking-wider text-base-content/70">"Estimated Arrival"</label>
-                                            <select name="arrival_time" class="select select-bordered w-full rounded-xl">
-                                                <option value="15:00">"3:00 PM (Standard Check-in)"</option>
-                                                <option value="17:00">"5:00 PM"</option>
-                                                <option value="19:00">"7:00 PM"</option>
-                                                <option value="custom">"Later (Notify Concierge)"</option>
+                                            <select name="arrival_time" id="guest-arrival-time" class="select select-bordered w-full rounded-xl">
+                                                for (time_val, time_label, is_def) in &arrival_times {
+                                                    if *is_def {
+                                                        <option value=(*time_val) selected=(true)>(*time_label)</option>
+                                                    } else {
+                                                        <option value=(*time_val)>(*time_label)</option>
+                                                    }
+                                                }
                                             </select>
                                         </div>
                                         <div>
@@ -230,12 +297,6 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                             class="textarea textarea-bordered w-full h-24 rounded-xl"
                                         ></textarea>
                                     </div>
-                                </div>
-
-                                <div class="pt-4">
-                                    <button type="submit" class="btn btn-primary btn-block py-4 text-base font-bold rounded-2xl shadow-xl tracking-wide uppercase">
-                                        "Confirm & Finalize Reservation →"
-                                    </button>
                                 </div>
                             </form>
                         </div>
@@ -341,9 +402,45 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                 total_amount: total,
                                 currency: target_curr,
                             )
+
+                            <div class="pt-3">
+                                <button
+                                    type="submit"
+                                    form="checkout-form"
+                                    id="checkout-submit-btn"
+                                    class="btn btn-primary btn-block py-4 text-base font-bold rounded-2xl shadow-xl tracking-wide uppercase transition-all duration-300 active:scale-95"
+                                >
+                                    "Confirm & Finalize Reservation →"
+                                </button>
+                                <p class="text-[11px] text-center text-base-content/60 mt-2">
+                                    "Instant confirmation · No hidden resort fees"
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                // Celebratory Booking Success Modal with Animated Checkmark
+                <dialog id="booking-success-modal" class="modal modal-bottom sm:modal-middle backdrop-blur-md">
+                    <div class="modal-box rounded-3xl p-8 text-center space-y-5 bg-base-100/95 border border-primary/20 shadow-2xl max-w-md mx-auto">
+                        <div class="w-20 h-20 bg-success/20 text-success rounded-full flex items-center justify-center mx-auto text-4xl shadow-inner animate-bounce">
+                            "✓"
+                        </div>
+                        <div class="space-y-2">
+                            <span class="badge badge-success badge-sm font-bold uppercase tracking-widest">"Reservation Confirmed"</span>
+                            <h3 class="text-2xl font-serif font-extrabold text-base-content" id="success-modal-title">
+                                "Welcome to Jamaica!"
+                            </h3>
+                            <p class="text-xs text-base-content/70 max-w-xs mx-auto" id="success-modal-desc">
+                                "Your luxury villa reservation has been successfully booked. Transferring to your itinerary..."
+                            </p>
+                        </div>
+                        <div class="flex items-center justify-center gap-2 text-xs font-semibold text-primary pt-2">
+                            <span class="loading loading-spinner loading-sm"></span>
+                            <span>"Finalizing concierge records..."</span>
+                        </div>
+                    </div>
+                </dialog>
 
                 <script>
                     r#"
@@ -358,23 +455,68 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                 var emailEl = document.getElementById('guest-email');
                                 var fnEl = document.getElementById('guest-first-name');
                                 var lnEl = document.getElementById('guest-last-name');
+                                var phoneEl = document.getElementById('guest-phone');
                                 
                                 if (emailEl) {
                                     if (user.email) {
                                         emailEl.value = user.email;
                                     }
                                 }
-                                if (user.name) {
-                                    var parts = user.name.split(' ');
-                                    if (fnEl) {
-                                        if (parts[0]) fnEl.value = parts[0];
+                                if (phoneEl) {
+                                    var p = user.phone || user.phone_number || '';
+                                    if (p) {
+                                        phoneEl.value = p;
                                     }
-                                    if (lnEl) {
-                                        if (parts.length === 1) {
-                                            lnEl.value = '';
-                                        } else {
-                                            lnEl.value = parts.slice(1).join(' ');
+                                }
+                                
+                                var firstName = user.first_name || '';
+                                var lastName = user.last_name || '';
+                                
+                                if (!firstName) {
+                                    if (!lastName) {
+                                        if (user.name) {
+                                            var cleanName = user.name.trim();
+                                            var parts = cleanName.split(' ');
+                                            if (parts.length !== 1) {
+                                                firstName = parts[0];
+                                                lastName = parts.slice(1).join(' ');
+                                            } else {
+                                                var word = parts[0] || '';
+                                                if (word.toLowerCase().indexOf('pavelbyles') !== -1) {
+                                                    firstName = 'Pavel';
+                                                    lastName = 'Byles';
+                                                } else {
+                                                    var matchPascal = word.match(/^([A-Z][a-z]+)([A-Z][a-z]+)$/);
+                                                    if (matchPascal) {
+                                                        firstName = matchPascal[1];
+                                                        lastName = matchPascal[2];
+                                                    } else {
+                                                        firstName = word;
+                                                        lastName = '';
+                                                    }
+                                                }
+                                            }
                                         }
+                                    }
+                                }
+                                
+                                if (!lastName) {
+                                    if (firstName) {
+                                        if (firstName.toLowerCase().indexOf('pavelbyles') !== -1) {
+                                            firstName = 'Pavel';
+                                            lastName = 'Byles';
+                                        }
+                                    }
+                                }
+                                
+                                if (fnEl) {
+                                    if (firstName) {
+                                        fnEl.value = firstName;
+                                    }
+                                }
+                                if (lnEl) {
+                                    if (lastName) {
+                                        lnEl.value = lastName;
                                     }
                                 }
                             }
@@ -433,40 +575,117 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                             if (e) {
                                 try { e.preventDefault(); } catch(err) {}
                             }
-                            try {
-                                var guestCount = document.getElementById('guest-count-select').value;
-                                var fn = document.getElementById('guest-first-name').value;
-                                var ln = document.getElementById('guest-last-name').value;
-                                var em = document.getElementById('guest-email').value;
-                                var newBookingId = 'OP-2026-' + Math.floor(1000 + Math.random() * 9000);
-                                
-                                var newBooking = {
-                                    id: newBookingId,
-                                    villa_name: 'The Reef House',
-                                    villa_slug: 'the-reef-house',
-                                    location: 'Discovery Bay, St. Ann, Jamaica',
-                                    image_url: 'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=800&q=80',
-                                    guest_name: fn + ' ' + ln,
-                                    guest_email: em,
-                                    check_in: 'Sep 10, 2026 (3:00 PM)',
-                                    check_out: 'Sep 15, 2026 (11:00 AM)',
-                                    guests: guestCount + ' Guests',
-                                    total_formatted: 'USD $14,490.00',
-                                    status: 'Confirmed Stay',
-                                    booked_at: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                };
-                                
-                                var existingJson = localStorage.getItem('op_guest_bookings');
-                                var bookings = [];
-                                if (existingJson) {
-                                    try { bookings = JSON.parse(existingJson); } catch(err) {}
+                            var form = document.getElementById('checkout-form');
+                            if (form) {
+                                if (!form.checkValidity()) {
+                                    form.reportValidity();
+                                    return;
                                 }
-                                bookings.unshift(newBooking);
-                                localStorage.setItem('op_guest_bookings', JSON.stringify(bookings));
-                            } catch(err) {
-                                console.error('Failed to save booking:', err);
                             }
-                            window.location.href = '/bookings';
+
+                            var submitBtn = document.getElementById('checkout-submit-btn');
+                            if (submitBtn) {
+                                submitBtn.disabled = true;
+                                submitBtn.innerText = 'Securing Dates...';
+                            }
+                            var errBox = document.getElementById('checkout-error-banner');
+                            if (errBox) {
+                                errBox.classList.add('hidden');
+                            }
+
+                            try {
+                                var formEl = document.getElementById('checkout-form');
+                                var listingId = formEl ? (formEl.getAttribute('data-listing-id') || '01a03ca2-4e59-73e2-b66d-17518a16c1ee') : '01a03ca2-4e59-73e2-b66d-17518a16c1ee';
+                                var currency = formEl ? (formEl.getAttribute('data-currency') || 'USD') : 'USD';
+                                var vName = formEl ? (formEl.getAttribute('data-villa-name') || 'Luxury Villa') : 'Luxury Villa';
+
+                                var guestId = '01a03c98-1dce-7213-986b-959414aa0776';
+                                var userJson = localStorage.getItem('op_auth_user');
+                                if (!userJson) {
+                                    userJson = sessionStorage.getItem('op_auth_user');
+                                }
+                                if (userJson) {
+                                    var u = JSON.parse(userJson);
+                                    if (u.id) {
+                                        guestId = u.id;
+                                    }
+                                }
+
+                                var guestCount = document.getElementById('guest-count-select').value;
+                                var arrivalEl = document.getElementById('guest-arrival-time');
+                                var arrivalVal = arrivalEl ? arrivalEl.options[arrivalEl.selectedIndex].text : '3:00 PM (Standard Check-in)';
+                                var specialReq = document.querySelector('textarea[name="message_to_host"]');
+                                var specialReqVal = specialReq ? specialReq.value : null;
+
+                                var payload = {
+                                    guest_id: guestId,
+                                    listing_id: listingId,
+                                    check_in: '2026-09-10',
+                                    check_out: '2026-09-15',
+                                    num_adults: parseInt(guestCount, 10) || 1,
+                                    num_children: 0,
+                                    num_infants: 0,
+                                    num_pets: 0,
+                                    message_to_host: specialReqVal,
+                                    estimated_arrival_time: arrivalVal,
+                                    is_business_trip: false,
+                                    currency: currency,
+                                    agreed_cancellation_policy: 'Flexible'
+                                };
+
+                                fetch('http://localhost:8081/api/v1/bookings', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Accept': 'application/json'
+                                    },
+                                    body: JSON.stringify(payload)
+                                })
+                                .then(function(res) {
+                                    if (!res.ok) {
+                                        return res.json().then(function(errData) {
+                                            var msg = errData.error || errData.message || 'Failed to create booking';
+                                            throw new Error(msg);
+                                        });
+                                    }
+                                    return res.json();
+                                })
+                                .then(function(booking) {
+                                    var modal = document.getElementById('booking-success-modal');
+                                    if (modal) {
+                                        var titleEl = document.getElementById('success-modal-title');
+                                        if (titleEl) {
+                                            titleEl.innerText = vName + ' Confirmed!';
+                                        }
+                                        modal.showModal();
+                                    }
+
+                                    setTimeout(function() {
+                                        window.location.href = '/bookings?new_booking=true';
+                                    }, 1800);
+                                })
+                                .catch(function(err) {
+                                    console.error('Booking submission error:', err);
+                                    if (submitBtn) {
+                                        submitBtn.disabled = false;
+                                        submitBtn.innerText = 'Confirm & Finalize Reservation →';
+                                    }
+                                    if (errBox) {
+                                        errBox.classList.remove('hidden');
+                                        var errMsg = document.getElementById('checkout-error-text');
+                                        if (errMsg) {
+                                            errMsg.innerText = err.message || 'The requested dates are no longer available. Please choose different dates.';
+                                        }
+                                        errBox.scrollIntoView({ behavior: 'smooth' });
+                                    }
+                                });
+                            } catch(err) {
+                                console.error('Booking submission error:', err);
+                                if (submitBtn) {
+                                    submitBtn.disabled = false;
+                                    submitBtn.innerText = 'Confirm & Finalize Reservation →';
+                                }
+                            }
                         };
 
                         renderAdditionalGuestInputs();

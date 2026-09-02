@@ -21,14 +21,29 @@ pub async fn admin_bookings_page(cx: &Cx) -> Result {
 }
 
 async fn render_bookings_content(cx: &Cx) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     let __cx = cx;
     let api = get_api_client(cx);
+
     let bookings = api.get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
     let listings = api.search_listings(ListingSearchParams {
         per_page: Some(50),
         ..Default::default()
     }).await.unwrap_or_default();
-    let users = api.get_all_users(Some(1), Some(50), None).await.unwrap_or_default();
+    let users = match api.get_all_users(Some(1), Some(50), None).await {
+        Ok(users) => users,
+        Err(err) => {
+            tracing::error!("Failed to fetch users in bookings admin: {:?}", err);
+            Vec::new()
+        }
+    };
 
     let listing_map: HashMap<uuid::Uuid, (String, String)> = listings
         .into_iter()
@@ -43,6 +58,12 @@ async fn render_bookings_content(cx: &Cx) -> Result {
             (u.id, (name, u.email))
         })
         .collect();
+
+    let pending_bookings: Vec<&common::models::BookingResponse> = bookings
+        .iter()
+        .filter(|b| b.status.eq_ignore_ascii_case("pending") || b.status.eq_ignore_ascii_case("pending_payment"))
+        .collect();
+    let pending_count = pending_bookings.len();
 
     let total_count = bookings.len();
 
@@ -72,6 +93,56 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                     </a>
                 </div>
             </div>
+
+            // Dedicated Pending Approvals Section
+            if pending_count > 0 {
+                <div class="card bg-warning/10 border border-warning/30 p-5 rounded-2xl shadow-sm space-y-3" id="pending-approvals-card">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2 text-warning font-bold text-sm">
+                            <span>"⚡"</span>
+                            <span>(format!("{} Reservation{} Awaiting Host / Admin Approval", pending_count, if pending_count == 1 { "" } else { "s" }))</span>
+                        </div>
+                        <span class="text-xs text-base-content/60">"Review & confirm date holds"</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        for pb in &pending_bookings {
+                            let pb_id = pb.id.to_string();
+                            let (v_name, _) = listing_map.get(&pb.listing_id).cloned().unwrap_or_else(|| ("Luxury Villa".to_string(), "Jamaica".to_string()));
+                            let (g_name, g_email) = user_map.get(&pb.guest_id).cloned().unwrap_or_else(|| ("Guest".to_string(), "guest@ourplaces.io".to_string()));
+                            let dates = format!("{} – {}", pb.date_from.format("%b %d"), pb.date_to.format("%b %d, %Y"));
+                            let total = format!("{} {:.2}", pb.currency, pb.total_price);
+                            
+                            <div class="bg-base-100 dark:bg-base-200 p-4 rounded-xl border border-warning/20 flex flex-col justify-between gap-3 shadow-sm" id=(format!("pending-card-{}", pb_id))>
+                                <div class="space-y-1">
+                                    <div class="flex justify-between items-start">
+                                        <h4 class="font-serif font-bold text-sm text-base-content">(v_name)</h4>
+                                        <span class="badge badge-warning badge-xs font-bold">"Pending"</span>
+                                    </div>
+                                    <p class="text-xs text-base-content/70">(format!("{} ({})", g_name, g_email))</p>
+                                    <p class="text-[11px] text-base-content/60 font-medium">(dates) " · " <strong class="text-primary font-bold">(total)</strong></p>
+                                </div>
+                                <div class="flex gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        class="btn btn-success btn-xs flex-1 text-white font-bold"
+                                        id=(format!("btn-direct-approve-{}", pb_id))
+                                        onclick=(format!("approveAdminBookingDirect('{}')", pb_id))
+                                    >
+                                        "✓ Approve Booking"
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-ghost btn-xs text-error font-semibold"
+                                        onclick=(format!("rejectAdminBookingDirect('{}')", pb_id))
+                                    >
+                                        "Reject"
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
 
             // Filter Bar
             <div class="bg-base-100 dark:bg-base-200/80 p-4 rounded-2xl border border-base-200 dark:border-base-100/20 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -152,6 +223,8 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                                         _ => "badge badge-error badge-sm font-semibold",
                                     };
 
+                                    let is_pending = b.status.eq_ignore_ascii_case("pending") || b.status.eq_ignore_ascii_case("pending_payment");
+
                                     <tr id=(format!("admin-row-{}", idx + 1))>
                                         <td>
                                             <div class="font-serif font-bold text-sm text-base-content">(villa_name.clone())</div>
@@ -173,21 +246,40 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                                             <span class=(badge_class) id=(format!("admin-status-{}", idx + 1))>(status_display)</span>
                                         </td>
                                         <td class="text-right space-x-1" id=(format!("admin-actions-{}", idx + 1))>
+                                            if is_pending {
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-success btn-xs text-white font-bold"
+                                                    id=(format!("btn-approve-{}", idx + 1))
+                                                    onclick=(format!("approveAdminBooking('{}', '{}')", b_id, idx + 1))
+                                                >
+                                                    "✓ Approve"
+                                                </button>
+                                            }
                                             <button
                                                 type="button"
                                                 class="btn btn-ghost btn-xs text-primary font-bold"
-                                                onclick=(format!("openAdminBookingDetails('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')",
-                                                    conf_code, villa_name, guest_name, guest_email, dates_str, capacity_str, subtotal_str, tax_str, total_str, status_display, villa_location
-                                                ))
+                                                data-ref=(conf_code.clone())
+                                                data-villa=(villa_name.clone())
+                                                data-guest=(guest_name.clone())
+                                                data-email=(guest_email.clone())
+                                                data-dates=(dates_str.clone())
+                                                data-capacity=(capacity_str.clone())
+                                                data-subtotal=(subtotal_str.clone())
+                                                data-tax=(tax_str.clone())
+                                                data-total=(total_str.clone())
+                                                data-status=(status_display.to_string())
+                                                data-location=(villa_location.clone())
+                                                onclick="openAdminBookingDetailsFromBtn(this)"
                                             >
                                                 "Details"
                                             </button>
                                             <button
                                                 type="button"
                                                 class="btn btn-ghost btn-xs text-error font-bold"
-                                                onclick=(format!("openAdminCancelDialog('{}', '{}', '{}')", conf_code, villa_name, idx + 1))
+                                                onclick=(format!("openAdminCancelDialog('{}', '{}', '{}')", b_id, villa_name, idx + 1))
                                             >
-                                                "Cancel"
+                                                "Reject / Cancel"
                                             </button>
                                         </td>
                                     </tr>
@@ -343,6 +435,133 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                 var activeAdminCancelRow = null;
                 var activeAdminCancelRef = null;
 
+                function approveAdminBookingDirect(bookingId) {
+                    try {
+                        var btn = document.getElementById('btn-direct-approve-' + bookingId);
+                        if (btn) {
+                            btn.disabled = true;
+                            btn.innerText = 'Approving...';
+                        }
+
+                        fetch('http://localhost:8081/api/v1/bookings/' + bookingId, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({ status: 'confirmed' })
+                        })
+                        .then(function(res) {
+                            if (!res.ok) {
+                                throw new Error('Failed to approve booking in PostgreSQL');
+                            }
+                            return res.json();
+                        })
+                        .then(function() {
+                            var card = document.getElementById('pending-card-' + bookingId);
+                            if (card) {
+                                card.className = 'bg-base-100 dark:bg-base-200 p-4 rounded-xl border border-success/30 flex flex-col justify-between gap-3 shadow-sm opacity-75';
+                                var badge = card.querySelector('.badge');
+                                if (badge) {
+                                    badge.className = 'badge badge-success badge-xs font-bold';
+                                    badge.innerText = 'Approved';
+                                }
+                            }
+                            if (btn) {
+                                btn.className = 'btn btn-ghost btn-xs text-success font-bold flex-1';
+                                btn.innerText = '✓ Approved';
+                                btn.disabled = true;
+                            }
+                            setTimeout(function() {
+                                window.location.reload();
+                            }, 800);
+                        })
+                        .catch(function(err) {
+                            console.error('Failed to approve booking:', err);
+                            alert('Approval failed: ' + err.message);
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerText = '✓ Approve Booking';
+                            }
+                        });
+                    } catch(e) {
+                        console.error('Direct approval error:', e);
+                    }
+                }
+
+                function rejectAdminBookingDirect(bookingId) {
+                    try {
+                        if (!confirm('Are you sure you want to reject this reservation hold and release dates back to availability?')) {
+                            return;
+                        }
+
+                        fetch('http://localhost:8081/api/v1/bookings/' + bookingId, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({ status: 'refunded' })
+                        })
+                        .then(function() {
+                            window.location.reload();
+                        })
+                        .catch(function(err) {
+                            console.error('Failed to reject booking:', err);
+                            alert('Rejection failed: ' + err.message);
+                        });
+                    } catch(e) {
+                        console.error('Direct reject error:', e);
+                    }
+                }
+
+                function approveAdminBooking(bookingId, rowId) {
+                    try {
+                        var btn = document.getElementById('btn-approve-' + rowId);
+                        if (btn) {
+                            btn.disabled = true;
+                            btn.innerText = 'Approving...';
+                        }
+
+                        fetch('http://localhost:8081/api/v1/bookings/' + bookingId, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({ status: 'confirmed' })
+                        })
+                        .then(function(res) {
+                            if (!res.ok) {
+                                throw new Error('Failed to update booking status in PostgreSQL');
+                            }
+                            return res.json();
+                        })
+                        .then(function(data) {
+                            var statusEl = document.getElementById('admin-status-' + rowId);
+                            if (statusEl) {
+                                statusEl.className = 'badge badge-success badge-sm font-bold';
+                                statusEl.innerText = 'Confirmed';
+                            }
+                            if (btn) {
+                                btn.className = 'btn btn-ghost btn-xs text-success font-bold';
+                                btn.innerText = '✓ Approved';
+                                btn.disabled = true;
+                            }
+                        })
+                        .catch(function(err) {
+                            console.error('Failed to approve booking:', err);
+                            alert('Approval failed: ' + err.message);
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerText = '✓ Approve';
+                            }
+                        });
+                    } catch(e) {
+                        console.error('Approve error:', e);
+                    }
+                }
+
                 function openAdminCancelDialog(ref, villaName, rowId) {
                     try {
                         activeAdminCancelRow = rowId;
@@ -366,7 +585,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         if (dialog) dialog.close();
                         
                         if (activeAdminCancelRef) {
-                            fetch('http://localhost:8081/api/v1/bookings/booking/' + activeAdminCancelRef, {
+                            fetch('http://localhost:8081/api/v1/bookings/' + activeAdminCancelRef, {
                                 method: 'PATCH',
                                 headers: {
                                     'Content-Type': 'application/json',
@@ -399,8 +618,21 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                     }
                 }
 
-                function openAdminBookingDetails(ref, villa, guest, email, dates, nights, subtotal, tax, total, status, location) {
+                function openAdminBookingDetailsFromBtn(btn) {
                     try {
+                        if (!btn) return;
+                        var ref = btn.getAttribute('data-ref') || '';
+                        var villa = btn.getAttribute('data-villa') || '';
+                        var guest = btn.getAttribute('data-guest') || '';
+                        var email = btn.getAttribute('data-email') || '';
+                        var dates = btn.getAttribute('data-dates') || '';
+                        var nights = btn.getAttribute('data-capacity') || '';
+                        var subtotal = btn.getAttribute('data-subtotal') || '';
+                        var tax = btn.getAttribute('data-tax') || '';
+                        var total = btn.getAttribute('data-total') || '';
+                        var status = btn.getAttribute('data-status') || '';
+                        var location = btn.getAttribute('data-location') || '';
+
                         var vnEl = document.getElementById('detail-villa-name');
                         var refEl = document.getElementById('detail-ref-id');
                         var gnEl = document.getElementById('detail-guest-name');
@@ -411,8 +643,8 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         var txEl = document.getElementById('detail-tax');
                         var ttEl = document.getElementById('detail-total');
                         var sbEl = document.getElementById('detail-status-badge');
-                        
-                        if (vnEl) vnEl.innerText = villa + ' — ' + location;
+
+                        if (vnEl) vnEl.innerText = villa + (location ? ' — ' + location : '');
                         if (refEl) refEl.innerText = 'Audit Ref: ' + ref;
                         if (gnEl) gnEl.innerText = guest;
                         if (geEl) geEl.innerText = email;
@@ -421,8 +653,11 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         if (stEl) stEl.innerText = subtotal;
                         if (txEl) txEl.innerText = tax;
                         if (ttEl) ttEl.innerText = total;
-                        if (sbEl) sbEl.innerText = status;
-                        
+                        if (sbEl) {
+                            sbEl.innerText = status;
+                            sbEl.className = (status === 'Confirmed' ? 'badge badge-success font-bold text-xs' : (status === 'Pending' || status === 'Pending Hold' ? 'badge badge-warning font-bold text-xs' : 'badge badge-error font-bold text-xs'));
+                        }
+
                         var dialog = document.getElementById('admin-booking-details-dialog');
                         if (dialog) dialog.showModal();
                     } catch(e) {
@@ -432,7 +667,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
 
                 function extendAdminHold(ref, rowId) {
                     try {
-                        fetch('http://localhost:8081/api/v1/bookings/booking/' + ref, {
+                        fetch('http://localhost:8081/api/v1/bookings/' + ref, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -489,29 +724,31 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             var trs = table.querySelectorAll('tbody tr');
                             trs.forEach(function(tr) {
                                 var tds = tr.querySelectorAll('td');
-                                if (tds && tds.length >= 5) {
-                                    var villaEl = tds[0].querySelector('div:first-child');
-                                    var refEl = tds[0].querySelector('div:last-child');
-                                    var guestEl = tds[1].querySelector('div:first-child');
-                                    var emailEl = tds[1].querySelector('div:last-child');
-                                    var datesEl = tds[2].querySelector('div:first-child');
-                                    var capEl = tds[2].querySelector('div:last-child');
-                                    var totEl = tds[3].querySelector('div:first-child');
-                                    var taxEl = tds[3].querySelector('div:last-child');
-                                    var statusEl = tds[4].querySelector('span');
+                                if (tds) {
+                                    if (tds.length !== 0) {
+                                        var villaEl = tds[0].querySelector('div:first-child');
+                                        var refEl = tds[0].querySelector('div:last-child');
+                                        var guestEl = tds[1].querySelector('div:first-child');
+                                        var emailEl = tds[1].querySelector('div:last-child');
+                                        var datesEl = tds[2].querySelector('div:first-child');
+                                        var capEl = tds[2].querySelector('div:last-child');
+                                        var totEl = tds[3].querySelector('div:first-child');
+                                        var taxEl = tds[3].querySelector('div:last-child');
+                                        var statusEl = tds[4].querySelector('span');
 
-                                    var row = [
-                                        refEl ? refEl.innerText.trim() : '',
-                                        villaEl ? villaEl.innerText.trim() : '',
-                                        guestEl ? guestEl.innerText.trim() : '',
-                                        emailEl ? emailEl.innerText.trim() : '',
-                                        datesEl ? datesEl.innerText.trim() : '',
-                                        capEl ? capEl.innerText.trim() : '',
-                                        totEl ? totEl.innerText.trim() : '',
-                                        taxEl ? taxEl.innerText.trim() : '',
-                                        statusEl ? statusEl.innerText.trim() : ''
-                                    ];
-                                    rows.push(row);
+                                        var row = [
+                                            refEl ? refEl.innerText.trim() : '',
+                                            villaEl ? villaEl.innerText.trim() : '',
+                                            guestEl ? guestEl.innerText.trim() : '',
+                                            emailEl ? emailEl.innerText.trim() : '',
+                                            datesEl ? datesEl.innerText.trim() : '',
+                                            capEl ? capEl.innerText.trim() : '',
+                                            totEl ? totEl.innerText.trim() : '',
+                                            taxEl ? taxEl.innerText.trim() : '',
+                                            statusEl ? statusEl.innerText.trim() : ''
+                                        ];
+                                        rows.push(row);
+                                    }
                                 }
                             });
                         }

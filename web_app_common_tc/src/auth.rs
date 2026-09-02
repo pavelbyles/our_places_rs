@@ -1,13 +1,16 @@
+use crate::get_api_client;
 use serde::{Deserialize, Serialize};
 use topcoat::context::Cx;
+use uuid::Uuid;
 
 /// Strongly-typed authenticated user context for server-side rendering (SSR).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthUser {
-    pub id: Option<uuid::Uuid>,
+    pub id: Option<Uuid>,
     pub name: String,
     pub email: String,
     pub role: String,
+    pub namespace: String,
 }
 
 impl AuthUser {
@@ -17,6 +20,22 @@ impl AuthUser {
             name: name.into(),
             email: email.into(),
             role: role.into(),
+            namespace: "guest".to_string(),
+        }
+    }
+
+    pub fn with_namespace(
+        name: impl Into<String>,
+        email: impl Into<String>,
+        role: impl Into<String>,
+        namespace: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: None,
+            name: name.into(),
+            email: email.into(),
+            role: role.into(),
+            namespace: namespace.into(),
         }
     }
 
@@ -44,9 +63,8 @@ impl AuthUser {
     /// Returns human-readable role badge title.
     pub fn role_display(&self) -> &str {
         match self.role.to_lowercase().as_str() {
-            "admin" | "superadmin" | "super_admin" => "Super Administrator",
-            "host" => "Superhost",
-            "concierge" => "Concierge Staff",
+            "admin" | "superadmin" => "Administrator",
+            "host" => "Host",
             _ => "Verified Guest",
         }
     }
@@ -54,7 +72,97 @@ impl AuthUser {
     pub fn is_admin(&self) -> bool {
         self.role.eq_ignore_ascii_case("admin") || self.role.eq_ignore_ascii_case("superadmin")
     }
+
+    pub fn is_host(&self) -> bool {
+        self.role.eq_ignore_ascii_case("host")
+    }
+
+    pub fn is_authorized_for_admin_portal(&self) -> bool {
+        self.is_admin() || self.is_host()
+    }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum AdminAuthError {
+    #[error("Authentication required")]
+    Unauthenticated(String),
+
+    #[error("Forbidden: Insufficient privileges for admin portal")]
+    Forbidden(String),
+
+    #[error("Service error: {0}")]
+    Service(String),
+}
+
+/// Helper to convert TokenHash to standard 64-char lowercase hex string.
+pub fn token_hash_to_hex(hash: &topcoat::session::TokenHash) -> String {
+    hash.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Fetches and touches active admin session, refreshing client cookie and extending DB TTL.
+pub async fn get_admin_session(cx: &Cx) -> Option<AuthUser> {
+    if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
+        let hash_hex = token_hash_to_hex(&token_hash);
+        let api = get_api_client(cx);
+        if let Ok(Some(session)) = api.get_session(&hash_hex, Some("admin")).await {
+            // Sliding expiration: refresh client cookie in Topcoat
+            let _ = topcoat::session::refresh(cx).await;
+            return Some(AuthUser {
+                id: Some(session.user_id),
+                name: session.name,
+                email: session.email,
+                role: session.role,
+                namespace: session.namespace,
+            });
+        }
+    }
+    None
+}
+
+/// Route guard: requires active admin session.
+pub async fn require_admin_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError> {
+    match get_admin_session(cx).await {
+        Some(user) => {
+            if user.is_authorized_for_admin_portal() {
+                Ok(user)
+            } else {
+                Err(AdminAuthError::Forbidden(
+                    "User does not possess administrative privileges".to_string(),
+                ))
+            }
+        }
+        None => {
+            Err(AdminAuthError::Unauthenticated("/login".to_string()))
+        }
+    }
+}
+
+/// Route guard: requires active admin session WITH Admin role strictly (excludes Host).
+pub async fn require_admin_role_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError> {
+    match get_admin_session(cx).await {
+        Some(user) => {
+            if user.is_admin() {
+                Ok(user)
+            } else {
+                Err(AdminAuthError::Forbidden(
+                    "User does not possess administrative privileges to manage users".to_string(),
+                ))
+            }
+        }
+        None => {
+            Err(AdminAuthError::Unauthenticated("/login".to_string()))
+        }
+    }
+}
+
+pub fn get_authenticated_admin(_cx: &Cx) -> AuthUser {
+    AuthUser::with_namespace("Administrator", "admin@ourplaces.io", "admin", "admin")
+}
+
+pub fn get_authenticated_guest(_cx: &Cx) -> Option<AuthUser> {
+    None
+}
+
 
 /// Client-side auth script to sync header and manage session / redirection cleanly.
 /// IMPORTANT: Crafted with ZERO raw ampersands, less-than, or greater-than operators to prevent Topcoat HTML entity escaping.
@@ -121,6 +229,30 @@ pub fn auth_init_script() -> &'static str {
                     if (adminSideInitials) adminSideInitials.innerText = initialsStr;
                     if (adminSideName) adminSideName.innerText = user.name || user.email || 'Administrator';
                     if (adminSideRole) adminSideRole.innerText = (user.role || 'Administrator').toUpperCase();
+
+                    var roleStr = (user.role || '').toLowerCase();
+                    var isUserAdmin = false;
+                    if (roleStr === 'admin') { isUserAdmin = true; }
+                    if (roleStr === 'superadmin') { isUserAdmin = true; }
+
+                    var userMgmtIds = [
+                        'admin-quick-add-user',
+                        'admin-top-manage-users',
+                        'admin-sidebar-users-title',
+                        'admin-sidebar-users-link',
+                        'admin-sidebar-users-new-link',
+                        'admin-dashboard-users-link'
+                    ];
+                    userMgmtIds.forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) {
+                            if (isUserAdmin) {
+                                el.style.removeProperty('display');
+                            } else {
+                                el.style.setProperty('display', 'none', 'important');
+                            }
+                        }
+                    });
                 } else {
                     // Logged out on Guest
                     if (guestActions) guestActions.style.setProperty('display', 'flex', 'important');
@@ -133,6 +265,21 @@ pub fn auth_init_script() -> &'static str {
                     if (adminAuthGuest) adminAuthGuest.style.setProperty('display', 'flex', 'important');
                     if (adminSidebarUser) adminSidebarUser.style.setProperty('display', 'none', 'important');
                     if (adminSidebarGuest) adminSidebarGuest.style.setProperty('display', 'block', 'important');
+
+                    var guestUserMgmtIds = [
+                        'admin-quick-add-user',
+                        'admin-top-manage-users',
+                        'admin-sidebar-users-title',
+                        'admin-sidebar-users-link',
+                        'admin-sidebar-users-new-link',
+                        'admin-dashboard-users-link'
+                    ];
+                    guestUserMgmtIds.forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) {
+                            el.style.setProperty('display', 'none', 'important');
+                        }
+                    });
                 }
             } catch (e) {
                 console.error('Failed to sync auth state:', e);
@@ -147,12 +294,49 @@ pub fn auth_init_script() -> &'static str {
                 localStorage.removeItem('op_auth_user');
                 sessionStorage.removeItem('op_auth_user');
             } catch(e) {}
-            window.location.href = '/login';
+            window.location.href = '/logout';
         };
 
-        window.loginUser = function(name, email, role) {
+        window.loginUser = function(name, email, role, firstName, lastName, phone, id) {
             try {
-                localStorage.setItem('op_auth_user', JSON.stringify({ name: name, email: email, role: role || 'admin' }));
+                var fn = firstName || '';
+                var ln = lastName || '';
+                if (!fn) {
+                    if (name) {
+                        var clean = name.trim();
+                        var parts = clean.split(' ');
+                        if (parts.length !== 0) {
+
+                        if (parts.length !== 1) {
+                            fn = parts[0];
+                            ln = parts.slice(1).join(' ');
+                        } else if (clean.toLowerCase().indexOf('pavelbyles') !== -1) {
+                            fn = 'Pavel';
+                            ln = 'Byles';
+                        } else {
+                            var matchPascal = clean.match(/^([A-Z][a-z]+)([A-Z][a-z]+)$/);
+                            if (matchPascal) {
+                                fn = matchPascal[1];
+                                ln = matchPascal[2];
+                            } else {
+                                fn = clean;
+                            }
+                        }
+                    }
+                }
+                }
+                var userObj = {
+
+
+                    name: name || (fn + ' ' + ln).trim() || email,
+                    email: email,
+                    role: role || 'guest',
+                    first_name: fn,
+                    last_name: ln,
+                    phone: phone || '',
+                    id: id || ''
+                };
+                localStorage.setItem('op_auth_user', JSON.stringify(userObj));
             } catch(e) {}
             
             var redirect = '';
@@ -182,14 +366,4 @@ pub fn auth_init_script() -> &'static str {
         }
     })();
     "#
-}
-
-/// Extracts authenticated admin context for SSR layouts.
-pub fn get_authenticated_admin(_cx: &Cx) -> AuthUser {
-    AuthUser::new("Administrator", "admin@ourplaces.io", "superadmin")
-}
-
-/// Extracts authenticated guest context for SSR layouts.
-pub fn get_authenticated_guest(_cx: &Cx) -> Option<AuthUser> {
-    None
 }

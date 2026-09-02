@@ -301,6 +301,103 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/sessions:
+    post:
+      summary: Create or register a session
+      operationId: createSession
+      tags:
+        - sessions
+      x-google-backend: user-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionRequest"
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          description: Validation error
+        "500":
+          description: Internal server error
+
+  /api/v1/sessions/{token_hash}:
+    get:
+      summary: Get and touch session by token hash
+      operationId: getSession
+      tags:
+        - sessions
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: token_hash
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: namespace
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "404":
+          description: Session not found or expired
+        "500":
+          description: Internal server error
+    delete:
+      summary: Delete a session
+      operationId: deleteSession
+      tags:
+        - sessions
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: token_hash
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Session deleted
+        "500":
+          description: Internal server error
+
+  /api/v1/users/{user_id}/sessions:
+    delete:
+      summary: Revoke all active sessions for a user
+      operationId: revokeUserSessions
+      tags:
+        - users
+        - sessions
+      x-google-backend: user-backend
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: namespace
+          schema:
+            type: string
+      responses:
+        "204":
+          description: User sessions revoked
+        "500":
+          description: Internal server error
+
+
+
   # ----------------------------------------------------------------------------
   # LISTING API
   # ----------------------------------------------------------------------------
@@ -930,3 +1027,68 @@ components:
       properties:
         status:
           type: string
+
+    CreateSessionRequest:
+      type: object
+      required:
+        - token_hash
+        - user_id
+        - email
+        - name
+        - role
+        - namespace
+        - ttl_seconds
+      properties:
+        token_hash:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        namespace:
+          type: string
+        ttl_seconds:
+          type: integer
+          format: int64
+
+    SessionResponse:
+      type: object
+      required:
+        - token_hash
+        - user_id
+        - email
+        - name
+        - role
+        - namespace
+        - created_at
+        - last_accessed_at
+        - expires_at
+      properties:
+        token_hash:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        namespace:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_accessed_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: integer
+          format: int64
+

@@ -19,6 +19,12 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
     let toggle_script = theme_toggle_script();
     let auth_script = auth_init_script();
 
+    let admin_session = web_app_common_tc::auth::get_admin_session(cx).await;
+    let is_admin_ssr = match &admin_session {
+        Some(user) => user.is_admin(),
+        None => true,
+    };
+
     view! {
         <!DOCTYPE html>
         <html lang="en" data-theme="emerald">
@@ -27,21 +33,50 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>"Our Places - Executive Admin Console"</title>
                 <link href=(topcoat::tailwind::stylesheet!()) rel="stylesheet" type="text/css" />
-                // Immediate Route Guard: If not logged in, redirect immediately to /login with redirect query param
+                // Immediate Route Guard: If not logged in as Admin / Host / Staff, immediately hide document and redirect to /login?redirect=...
                 <script>
                     r#"
                     (function() {
                         try {
                             var path = window.location.pathname;
                             if (path !== '/login') {
-                                var userJson = localStorage.getItem('op_auth_user');
-                                if (!userJson) {
-                                    userJson = sessionStorage.getItem('op_auth_user');
-                                }
-                                if (!userJson) {
-                                    var curPath = window.location.pathname + window.location.search;
-                                    var target = (curPath === '/' || curPath === '') ? '/' : curPath;
-                                    window.location.replace('/login?redirect=' + encodeURIComponent(target));
+                                if (path !== '/login/') {
+                                    var isAuthedAdmin = false;
+                                    var isStrictAdmin = false;
+                                    var userJson = localStorage.getItem('op_auth_user');
+                                    if (!userJson) {
+                                        userJson = sessionStorage.getItem('op_auth_user');
+                                    }
+                                    if (userJson) {
+                                        try {
+                                            var u = JSON.parse(userJson);
+                                            if (u) {
+                                                if (u.email) {
+                                                    var r = (u.role || '').toLowerCase();
+                                                    if (r === 'admin') { isAuthedAdmin = true; isStrictAdmin = true; }
+                                                    if (r === 'superadmin') { isAuthedAdmin = true; isStrictAdmin = true; }
+                                                    if (r === 'host') { isAuthedAdmin = true; }
+                                                }
+                                            }
+                                        } catch(e) {}
+                                    }
+
+                                    if (!isAuthedAdmin) {
+                                        document.documentElement.style.display = 'none';
+                                        var curPath = window.location.pathname + window.location.search + window.location.hash;
+                                        var target = (curPath === '/' || curPath === '') ? '/' : curPath;
+                                        window.location.replace('/login?redirect=' + encodeURIComponent(target));
+                                        return;
+                                    }
+
+                                    // Non-admin accounts (e.g. host) must not access user management
+                                    if (path.indexOf('/admin/users') === 0 || path === '/users' || path === '/users/') {
+                                        if (!isStrictAdmin) {
+                                            document.documentElement.style.display = 'none';
+                                            window.location.replace('/admin');
+                                            return;
+                                        }
+                                    }
                                 }
                             }
                         } catch(e) {}
@@ -51,8 +86,9 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                 <script>(init_script)</script>
                 <script>(toggle_script)</script>
                 <script>(auth_script)</script>
-                <script src=(topcoat::asset::asset!("https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"))></script>
+                <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
             </head>
+
             <body class="min-h-screen bg-base-200/50 text-base-content antialiased">
                 <div class="drawer lg:drawer-open min-h-screen">
                     <input id="admin-drawer" type="checkbox" class="drawer-toggle" />
@@ -89,7 +125,9 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                                     </div>
                                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-2xl border border-base-200">
                                         <li><a href="/admin/listings/new" class="font-semibold">"🌴 New Villa Listing"</a></li>
-                                        <li><a href="/admin/users/new" class="font-semibold">"👤 Invite / Add User"</a></li>
+                                        if is_admin_ssr {
+                                            <li id="admin-quick-add-user"><a href="/admin/users/new" class="font-semibold">"👤 Invite / Add User"</a></li>
+                                        }
                                         <li><a href="/admin/exchange-rates" class="font-semibold">"💱 Sync Exchange Rates"</a></li>
                                     </ul>
                                 </div>
@@ -117,10 +155,13 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                                             </div>
                                         </li>
                                         <li><a href="/admin">"Dashboard"</a></li>
-                                        <li><a href="/admin/users">"Manage Users"</a></li>
+                                        if is_admin_ssr {
+                                            <li id="admin-top-manage-users"><a href="/admin/users">"Manage Users"</a></li>
+                                        }
                                         <li class="border-t border-base-200 mt-2 pt-2">
-                                            <a href="/login" class="text-error font-medium" onclick="logoutUser(event)">"Logout"</a>
+                                            <a href="/logout" class="text-error font-medium" onclick="logoutUser(event)">"Logout"</a>
                                         </li>
+
                                     </ul>
                                 </div>
                             </div>
@@ -195,21 +236,23 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                                     </li>
 
                                     // Section: Users & Governance
-                                    <li class="menu-title text-[11px] uppercase tracking-wider font-bold text-base-content/50 pt-3">
-                                        "Users & Governance"
-                                    </li>
-                                    <li>
-                                        <a href="/admin/users" class="flex items-center gap-3 font-semibold rounded-xl active:bg-primary">
-                                            <span>"👥"</span>
-                                            <span>"User Management"</span>
-                                        </a>
-                                    </li>
-                                    <li>
-                                        <a href="/admin/users/new" class="flex items-center gap-3 text-xs font-medium rounded-xl text-base-content/80">
-                                            <span>"✉️"</span>
-                                            <span>"Invite User"</span>
-                                        </a>
-                                    </li>
+                                    if is_admin_ssr {
+                                        <li id="admin-sidebar-users-title" class="menu-title text-[11px] uppercase tracking-wider font-bold text-base-content/50 pt-3">
+                                            "Users & Governance"
+                                        </li>
+                                        <li id="admin-sidebar-users-link">
+                                            <a href="/admin/users" class="flex items-center gap-3 font-semibold rounded-xl active:bg-primary">
+                                                <span>"👥"</span>
+                                                <span>"User Management"</span>
+                                            </a>
+                                        </li>
+                                        <li id="admin-sidebar-users-new-link">
+                                            <a href="/admin/users/new" class="flex items-center gap-3 text-xs font-medium rounded-xl text-base-content/80">
+                                                <span>"✉️"</span>
+                                                <span>"Invite User"</span>
+                                            </a>
+                                        </li>
+                                    }
 
                                     // Section: Configuration & Finance
                                     <li class="menu-title text-[11px] uppercase tracking-wider font-bold text-base-content/50 pt-3">
@@ -244,9 +287,10 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                                         <div class="text-[10px] text-base-content/70 truncate" id="admin-sidebar-user-role">"Super Administrator"</div>
                                     </div>
                                 </div>
-                                <a href="/login" class="btn btn-outline btn-error btn-xs w-full rounded-xl font-bold" onclick="logoutUser(event)">
+                                <a href="/logout" class="btn btn-outline btn-error btn-xs w-full rounded-xl font-bold" onclick="logoutUser(event)">
                                     "Sign Out"
                                 </a>
+
                             </div>
                         </aside>
                     </div>

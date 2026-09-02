@@ -40,8 +40,17 @@ pub async fn admin_pricing_remove_handler(cx: &Cx) -> Result {
 }
 
 async fn render_pricing_content(cx: &Cx, id: String) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     let __cx = cx;
     let api = get_api_client(cx);
+
     let id_str = if !id.trim().is_empty() { id } else { "kingston-skyline-luxury-penthouse".to_string() };
 
     let listing_details = api.get_listing_by_id(&id_str, None).await.ok();
@@ -156,9 +165,18 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result {
 }
 
 async fn render_pricing_overrides_table_fragment(__cx: &Cx, id: String, added_new: bool) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(__cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     let id_str = if !id.trim().is_empty() { id } else { "kingston-skyline-luxury-penthouse".to_string() };
     render_pricing_table_inner(__cx, &id_str, added_new).await
 }
+
 
 async fn render_pricing_table_inner(cx: &Cx, slug: &str, show_added_badge: bool) -> Result {
     let __cx = cx;

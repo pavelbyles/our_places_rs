@@ -118,15 +118,26 @@ pub async fn login_page(_cx: &Cx) -> Result {
                     if (res.ok) {
                         return res.json().then(function(data) {
                             var u = data.data || data;
-                            var name = (u.first_name || '') + ' ' + (u.last_name || '');
-                            name = name.trim();
+                            var fn = u.first_name || '';
+                            var ln = u.last_name || '';
+                            var name = (fn + ' ' + ln).trim();
                             if (!name) {
                                 name = u.name || 'Guest User';
                             }
+                            var phone = u.phone_number || u.phone || '';
+                            var uid = u.id || '';
                             if (window.loginUser) {
-                                window.loginUser(name, u.email || email, 'guest');
+                                window.loginUser(name, u.email || email, 'guest', fn, ln, phone, uid);
                             } else {
-                                localStorage.setItem('op_auth_user', JSON.stringify({ name: name, email: u.email || email, role: 'guest' }));
+                                localStorage.setItem('op_auth_user', JSON.stringify({
+                                    name: name,
+                                    email: u.email || email,
+                                    role: 'guest',
+                                    first_name: fn,
+                                    last_name: ln,
+                                    phone: phone,
+                                    id: uid
+                                }));
                                 window.location.href = '/';
                             }
                         });

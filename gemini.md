@@ -153,3 +153,15 @@ cargo leptos watch
 ### Booking Safety (Non-Negotiable)
 - No double bookings
 - All reservations are **atomic** and **idempotent**
+
+### Token Efficiency
+- Treat tokens and context as limited resources
+- Be aware of the token limits and use them wisely
+- Do not repeat the same information in the same context
+- Try to make each token count
+
+
+## Working Style
+- Assume I'm an experienced programmer - skip simple explanations unless explicitly requested
+ - Optimize for clarity over sophistication
+ - If something is wrong, tell me what it is first, then explain why and how you will fix it

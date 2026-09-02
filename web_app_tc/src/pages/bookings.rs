@@ -22,6 +22,18 @@ pub async fn bookings_page(cx: &Cx) -> Result {
 
     view! {
         <div class="max-w-5xl mx-auto px-2 py-8 space-y-8">
+            // Booking Success Notification Toast Banner
+            <div id="booking-success-toast" class="alert alert-success shadow-lg rounded-2xl hidden flex items-center justify-between transition-all duration-500">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">"🎉"</span>
+                    <div>
+                        <div class="font-bold text-sm">"Reservation Successfully Confirmed!"</div>
+                        <div class="text-xs opacity-90">"Your Jamaican villa stay is officially locked in. Concierge notification dispatched."</div>
+                    </div>
+                </div>
+                <button class="btn btn-ghost btn-xs rounded-full font-bold" onclick="document.getElementById('booking-success-toast').remove()">"✕"</button>
+            </div>
+
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h1 class="text-3xl font-extrabold tracking-tight">"My Bookings & Stays"</h1>
@@ -35,7 +47,7 @@ pub async fn bookings_page(cx: &Cx) -> Result {
             // Container for Active / Upcoming Reservations
             <div id="upcoming-bookings-container" class="space-y-6">
                 if bookings.is_empty() {
-                    <div class="card bg-base-100 dark:bg-base-200 border border-base-200 dark:border-base-100/20 p-12 text-center rounded-3xl space-y-4 shadow-sm">
+                    <div class="card bg-base-100 dark:bg-base-200 border border-base-200 dark:border-base-100/20 p-12 text-center rounded-3xl space-y-4 shadow-sm" id="no-bookings-card">
                         <div class="text-4xl">"🌴"</div>
                         <h3 class="text-xl font-bold font-serif text-base-content">"No Active Bookings"</h3>
                         <p class="text-xs text-base-content/70 max-w-md mx-auto">
@@ -74,9 +86,9 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                         let start_str = b.date_from.format("%b %d, %Y").to_string();
                         let end_str = b.date_to.format("%b %d, %Y").to_string();
                         let total_str = format!("{} {}", b.currency, b.total_price);
-                        let is_confirmed = b.status == "confirmed" || b.status == "completed";
-                        let is_cancelled = b.status == "cancelled" || b.status == "refunded";
-                        let is_hold = b.status == "pending_payment" || b.status == "hold";
+                        let is_confirmed = b.status.eq_ignore_ascii_case("confirmed") || b.status.eq_ignore_ascii_case("completed");
+                        let is_cancelled = b.status.eq_ignore_ascii_case("cancelled") || b.status.eq_ignore_ascii_case("refunded");
+                        let is_hold = b.status.eq_ignore_ascii_case("pending") || b.status.eq_ignore_ascii_case("pending_payment") || b.status.eq_ignore_ascii_case("hold");
 
                         let badge_class = if is_confirmed {
                             "badge badge-success font-bold"
@@ -157,7 +169,15 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                                         </div>
                                     }
 
-                                    if !is_cancelled {
+                                    if is_cancelled {
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-disabled opacity-50 cursor-not-allowed w-full mt-1"
+                                            disabled=(true)
+                                        >
+                                            "Cancelled"
+                                        </button>
+                                    } else {
                                         <button
                                             type="button"
                                             id=(cancel_btn_id)
@@ -208,13 +228,13 @@ pub async fn bookings_page(cx: &Cx) -> Result {
 
         <script>
             r#"
-            var activeCancelBookingId = '';
+            var activeCancelBookingId = null;
 
-            function openGuestCancelModal(id, name) {
+            function openGuestCancelModal(bookingId, villaName) {
                 try {
-                    activeCancelBookingId = id;
+                    activeCancelBookingId = bookingId;
                     var nameEl = document.getElementById('cancel-modal-villa-name');
-                    if (nameEl) nameEl.innerText = (name ? name : 'Villa Reservation') + ' (#' + id + ')';
+                    if (nameEl) nameEl.innerText = villaName || 'your stay';
                     var modal = document.getElementById('cancel-booking-modal');
                     if (modal) modal.showModal();
                 } catch(e) {
@@ -228,7 +248,7 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                     if (modal) modal.close();
                     
                     if (activeCancelBookingId) {
-                        fetch('http://localhost:8081/api/v1/bookings/booking/' + activeCancelBookingId, {
+                        fetch('http://localhost:8081/api/v1/bookings/' + activeCancelBookingId, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -242,12 +262,15 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                         var badge = document.getElementById('status-badge-' + activeCancelBookingId);
                         if (badge) {
                             badge.className = 'badge badge-error font-bold';
-                            badge.innerText = 'Cancelled by Guest';
+                            badge.innerText = 'Cancelled';
                         }
                         
                         var cancelBtn = document.getElementById('btn-cancel-' + activeCancelBookingId);
                         if (cancelBtn) {
-                            cancelBtn.remove();
+                            cancelBtn.disabled = true;
+                            cancelBtn.className = 'btn btn-sm btn-disabled opacity-50 cursor-not-allowed w-full mt-1';
+                            cancelBtn.innerText = 'Cancelled';
+                            cancelBtn.removeAttribute('onclick');
                         }
                         
                         var card = document.getElementById('booking-card-' + activeCancelBookingId);
@@ -263,6 +286,22 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                     console.error('Cancellation error:', e);
                 }
             }
+
+            (function() {
+                try {
+                    // Clean up any legacy localStorage mock bookings
+                    localStorage.removeItem('op_guest_bookings');
+
+                    if (window.location.search.indexOf('new_booking=true') !== -1) {
+                        var toast = document.getElementById('booking-success-toast');
+                        if (toast) {
+                            toast.classList.remove('hidden');
+                        }
+                    }
+                } catch(err) {
+                    console.error('Bookings script error:', err);
+                }
+            })();
             "#
         </script>
     }

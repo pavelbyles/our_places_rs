@@ -1,8 +1,11 @@
 use chrono::NaiveDate;
 use common::models::{
-    BookingResponse, DynamicPricingQuote, ListingDetails, ListingResponse, NewBookingRequest,
-    PriceOverride, ReviewResponse, UserResponse,
+    BookingResponse, CreateSessionRequest, DynamicPricingQuote, ListingDetails, ListingResponse,
+    LoginRequest, NewBookingRequest, PriceOverride, ReviewResponse, SessionResponse,
+    UpdateUserRequest, UserResponse,
 };
+
+
 pub use common::app_client::ListingSearchParams;
 use std::sync::Arc;
 use topcoat::context::{try_app_context, Cx};
@@ -123,6 +126,15 @@ impl TopcoatApiClient {
         common::app_client::get_all_users(page, per_page, role).await
     }
 
+    /// Update user credentials and profile for admin
+    pub async fn update_user(
+        &self,
+        id: Uuid,
+        req: &UpdateUserRequest,
+    ) -> anyhow::Result<UserResponse> {
+        common::app_client::update_user(id, req).await
+    }
+
     /// Get seasonal price overrides for a listing
     pub async fn get_price_overrides(
         &self,
@@ -130,7 +142,45 @@ impl TopcoatApiClient {
     ) -> anyhow::Result<Vec<PriceOverride>> {
         common::app_client::get_price_overrides(listing_id).await
     }
+
+    /// Create and persist session in user_api
+    pub async fn create_session(
+        &self,
+        req: &CreateSessionRequest,
+    ) -> anyhow::Result<SessionResponse> {
+        common::app_client::create_session(req).await
+    }
+
+    /// Retrieve session from user_api
+    pub async fn get_session(
+        &self,
+        token_hash: &str,
+        namespace: Option<&str>,
+    ) -> anyhow::Result<Option<SessionResponse>> {
+        common::app_client::get_session(token_hash, namespace).await
+    }
+
+    /// Delete session in user_api
+    pub async fn delete_session(&self, token_hash: &str) -> anyhow::Result<()> {
+        common::app_client::delete_session(token_hash).await
+    }
+
+    /// Revoke all sessions for a user
+    pub async fn revoke_user_sessions(
+        &self,
+        user_id: Uuid,
+        namespace: Option<&str>,
+    ) -> anyhow::Result<()> {
+        common::app_client::revoke_user_sessions(user_id, namespace).await
+    }
+
+    /// Authenticate user credentials with user_api
+    pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
+        common::app_client::login_user(req).await
+    }
 }
+
+
 
 static DEFAULT_CLIENT: std::sync::OnceLock<TopcoatApiClient> = std::sync::OnceLock::new();
 

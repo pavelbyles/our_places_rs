@@ -156,9 +156,10 @@ pub async fn guest_base_layout(__cx: &Cx, slot: Result) -> Result {
                 </style>
                 <script>(init_script)</script>
                 <script>(toggle_script)</script>
-                <script src=(topcoat::asset::asset!("https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"))></script>
+                <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
                 <script>(auth_script)</script>
             </head>
+
             <body class="min-h-screen bg-base-100 text-base-content antialiased">
                 <div class="drawer">
                     <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />

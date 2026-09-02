@@ -336,7 +336,7 @@ where
         r#"
         SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
         FROM "user"
-        WHERE NOT ('admin' = ANY(roles))
+        WHERE 1 = 1
         "#,
     );
 

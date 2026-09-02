@@ -4,7 +4,8 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use uuid::Uuid;
 use web_app_admin_tc::{
-    GranularPermissions, PermissionTypeConstraintError, RoleCapabilityProfile,
+    AdminUpdateUserPayload, GranularPermissions, PermissionTypeConstraintError,
+    RoleCapabilityProfile, UserFilterQuery,
 };
 
 #[test]
@@ -45,6 +46,31 @@ fn test_admin_role_authorization_and_shadow_user_audit() {
     // Shadow user audit: A user with a temporary hold can be promoted
     let shadow_hold_seconds = 15 * 60;
     assert_eq!(shadow_hold_seconds, 900);
+}
+
+#[test]
+fn test_manage_users_access_control_role_boundaries() {
+    use web_app_common_tc::auth::AuthUser;
+
+    // 1. Admin user: Authorized for both admin portal and user management
+    let admin_user = AuthUser::new("Admin User", "admin@ourplaces.io", "admin");
+    assert!(admin_user.is_admin());
+    assert!(admin_user.is_authorized_for_admin_portal());
+
+    // 2. Superadmin user: Authorized for both admin portal and user management
+    let superadmin_user = AuthUser::new("Super Admin", "super@ourplaces.io", "superadmin");
+    assert!(superadmin_user.is_admin());
+    assert!(superadmin_user.is_authorized_for_admin_portal());
+
+    // 3. Host user: Authorized for general admin portal (listings/bookings) BUT NOT user management
+    let host_user = AuthUser::new("Host User", "host@ourplaces.io", "host");
+    assert!(!host_user.is_admin(), "Host must not be considered an admin");
+    assert!(host_user.is_authorized_for_admin_portal(), "Host is authorized for listings/bookings");
+
+    // 4. Guest / Booker user: Not authorized for admin portal or user management
+    let guest_user = AuthUser::new("Guest Booker", "guest@example.com", "booker");
+    assert!(!guest_user.is_admin());
+    assert!(!guest_user.is_authorized_for_admin_portal());
 }
 
 #[test]
@@ -160,4 +186,58 @@ fn test_seasonal_override_inverted_dates_rejection() {
     // Rule: End date must strictly follow start date
     let is_valid = end > start;
     assert!(!is_valid, "Inverted seasonal interval must be rejected");
+}
+
+#[test]
+fn test_user_search_and_role_filter_matching() {
+    let query = UserFilterQuery {
+        q: Some("Pavel".to_string()),
+        role: Some("admin".to_string()),
+    };
+
+    assert_eq!(query.q.as_deref(), Some("Pavel"));
+    assert_eq!(query.role.as_deref(), Some("admin"));
+
+    // Matching logic verification
+    let first_name = "Pavel";
+    let last_name = "Byles";
+    let email = "pavel@ourplaces.io";
+    let roles = vec!["admin".to_string(), "host".to_string()];
+
+    let q_lower = query.q.as_ref().unwrap().to_lowercase();
+    let full_name = format!("{} {}", first_name, last_name).to_lowercase();
+    let matches_search = full_name.contains(&q_lower) || email.to_lowercase().contains(&q_lower);
+    assert!(matches_search, "Search must match first name");
+
+    let role_lower = query.role.as_ref().unwrap().to_lowercase();
+    let matches_role = roles.iter().any(|r| r.to_lowercase() == role_lower);
+    assert!(matches_role, "Role filter must match admin");
+}
+
+#[test]
+fn test_user_credentials_update_payload_mapping() {
+    let target_id = Uuid::new_v4();
+    let payload = AdminUpdateUserPayload {
+        id: target_id,
+        email: Some("updated.host@ourplaces.io".to_string()),
+        password: Some("newSecurePassword123!".to_string()),
+        first_name: Some("Elena".to_string()),
+        last_name: Some("Rostova".to_string()),
+        phone_number: Some("+1 876 555 0199".to_string()),
+        is_active: Some(true),
+        is_verified: Some(true),
+        roles: Some(vec!["host".to_string()]),
+        can_manage_bookings: Some(true),
+        can_manage_listings: Some(true),
+        default_currency: Some("JMD".to_string()),
+    };
+
+    assert_eq!(payload.id, target_id);
+    assert_eq!(payload.email.as_deref(), Some("updated.host@ourplaces.io"));
+    assert_eq!(payload.password.as_deref(), Some("newSecurePassword123!"));
+    assert!(payload.is_active.unwrap());
+    assert!(payload.is_verified.unwrap());
+    assert!(payload.can_manage_bookings.unwrap());
+    assert!(payload.can_manage_listings.unwrap());
+    assert_eq!(payload.default_currency.as_deref(), Some("JMD"));
 }

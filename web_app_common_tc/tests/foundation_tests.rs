@@ -130,15 +130,57 @@ fn test_pure_rust_ssr_auth_user_initials_and_roles() {
 
     let admin = AuthUser::new("Maya J.", "maya@ourplaces.com", "admin");
     assert_eq!(admin.initials(), "MJ");
-    assert_eq!(admin.role_display(), "Super Administrator");
+    assert_eq!(admin.role_display(), "Administrator");
     assert!(admin.is_admin());
+    assert!(admin.is_authorized_for_admin_portal());
 
     let guest = AuthUser::new("David Sterling", "david@example.com", "guest");
     assert_eq!(guest.initials(), "DS");
     assert_eq!(guest.role_display(), "Verified Guest");
     assert!(!guest.is_admin());
+    assert!(!guest.is_authorized_for_admin_portal());
 
-    let single_name = AuthUser::new("Elena", "elena@example.com", "host");
-    assert_eq!(single_name.initials(), "EL");
-    assert_eq!(single_name.role_display(), "Superhost");
+    let host = AuthUser::new("Elena", "elena@example.com", "host");
+    assert_eq!(host.initials(), "EL");
+    assert_eq!(host.role_display(), "Host");
+    assert!(host.is_host());
+    assert!(host.is_authorized_for_admin_portal());
 }
+
+#[test]
+fn test_session_models_and_namespace_isolation() {
+    use common::models::{CreateSessionRequest, SessionResponse};
+
+    let req = CreateSessionRequest {
+        token_hash: "a".repeat(64),
+        user_id: Uuid::now_v7(),
+        email: "host@ourplaces.io".to_string(),
+        name: "Host User".to_string(),
+        role: "host".to_string(),
+        namespace: "admin".to_string(),
+        ttl_seconds: 604800,
+    };
+
+    let json = serde_json::to_string(&req).expect("Serialization should succeed");
+    let deserialized: CreateSessionRequest = serde_json::from_str(&json).expect("Deserialization should succeed");
+    assert_eq!(deserialized.namespace, "admin");
+    assert_eq!(deserialized.role, "host");
+    assert_eq!(deserialized.ttl_seconds, 604800);
+
+    let session_resp = SessionResponse {
+        token_hash: "a".repeat(64),
+        user_id: req.user_id,
+        email: req.email.clone(),
+        name: req.name.clone(),
+        role: req.role.clone(),
+        namespace: "guest".to_string(),
+        created_at: chrono::Utc::now(),
+        last_accessed_at: chrono::Utc::now(),
+        expires_at: 1800000000,
+    };
+
+    let resp_json = serde_json::to_string(&session_resp).expect("Serialization should succeed");
+    let resp_deserialized: SessionResponse = serde_json::from_str(&resp_json).expect("Deserialization should succeed");
+    assert_eq!(resp_deserialized.namespace, "guest");
+}
+

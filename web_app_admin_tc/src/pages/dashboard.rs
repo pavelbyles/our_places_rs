@@ -20,8 +20,23 @@ pub async fn dashboard(cx: &Cx) -> Result {
 }
 
 async fn render_dashboard_content(cx: &Cx) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     let __cx = cx;
     let api = get_api_client(cx);
+
+    let admin_user = web_app_common_tc::auth::get_admin_session(cx).await;
+    let is_admin = match &admin_user {
+        Some(u) => u.is_admin(),
+        None => true,
+    };
+
     let listings = api.search_listings(ListingSearchParams {
         per_page: Some(10),
         ..Default::default()
@@ -235,7 +250,9 @@ async fn render_dashboard_content(cx: &Cx) -> Result {
                         <ul class="menu menu-sm p-0 space-y-1">
                             <li><a href="/admin/listings" class="font-medium">"🌴 Villa Listings Catalog"</a></li>
                             <li><a href="/admin/bookings" class="font-medium">"📅 Reservation Holds & Bookings"</a></li>
-                            <li><a href="/admin/users" class="font-medium">"👥 User Directory & Roles"</a></li>
+                            if is_admin {
+                                <li id="admin-dashboard-users-link"><a href="/admin/users" class="font-medium">"👥 User Directory & Roles"</a></li>
+                            }
                             <li><a href="/admin/exchange-rates" class="font-medium">"💱 Tri-Currency Exchange Rates"</a></li>
                         </ul>
                     </div>

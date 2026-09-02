@@ -394,15 +394,48 @@ async fn test_get_all_users_with_filters() {
         assert_eq!(resp.status(), 201);
     }
 
-    // 1. Test get all (pagination default)
-    let req = test::TestRequest::get()
-        .uri("/api/v1/users/") // Use trailing slash or not? Route is "/" in scope "/api/v1/users"
+    // 1. Test get all (pagination default) - test BOTH trailing slash and without trailing slash
+    let req_with_slash = test::TestRequest::get()
+        .uri("/api/v1/users/")
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    let resp_with_slash = test::call_service(&app, req_with_slash).await;
+    assert_eq!(resp_with_slash.status(), 200);
 
-    let body: Vec<UserResponse> = test::read_body_json(resp).await;
+    let req_without_slash = test::TestRequest::get()
+        .uri("/api/v1/users")
+        .to_request();
+    let resp_without_slash = test::call_service(&app, req_without_slash).await;
+    assert_eq!(resp_without_slash.status(), 200);
+
+    let body: Vec<UserResponse> = test::read_body_json(resp_without_slash).await;
     assert!(body.len() >= 3);
+
+    // Also verify POST without trailing slash works
+    let post_without_slash = test::TestRequest::post()
+        .uri("/api/v1/users")
+        .set_json(&json!({
+            "email": "admin_test_listing@example.com",
+            "password": "password123",
+            "first_name": "Admin",
+            "last_name": "User",
+            "phone_number": "+1234567891",
+            "is_active": true,
+            "roles": ["admin"],
+        }))
+        .to_request();
+    let resp_post = test::call_service(&app, post_without_slash).await;
+    assert_eq!(resp_post.status(), 201);
+
+    // Verify admin user is returned in GET /api/v1/users
+    let req_admin_check = test::TestRequest::get()
+        .uri("/api/v1/users?search=admin_test_listing")
+        .to_request();
+    let resp_admin_check = test::call_service(&app, req_admin_check).await;
+    assert_eq!(resp_admin_check.status(), 200);
+    let admin_body: Vec<UserResponse> = test::read_body_json(resp_admin_check).await;
+    assert_eq!(admin_body.len(), 1);
+    assert_eq!(admin_body[0].email, "admin_test_listing@example.com");
+    assert!(admin_body[0].roles.contains(&"Admin".to_string()) || admin_body[0].roles.contains(&"admin".to_string()));
 
     // 2. Test search filter (email)
     let req = test::TestRequest::get()

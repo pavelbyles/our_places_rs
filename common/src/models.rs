@@ -41,8 +41,17 @@ pub struct NewUserRequest {
     pub default_currency: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
+pub struct LoginRequest {
+    #[validate(email)]
+    pub email: String,
+    #[validate(length(min = 1))]
+    pub password: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
+
     pub email: Option<String>,
     pub password: Option<String>,
     pub first_name: Option<String>,
@@ -579,6 +588,36 @@ pub struct BookingReviewEligibility {
     pub days_remaining: Option<i64>,
     pub status_message: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct CreateSessionRequest {
+    pub token_hash: String,
+    pub user_id: Uuid,
+    pub email: String,
+    pub name: String,
+    pub role: String,
+    pub namespace: String,
+    pub ttl_seconds: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct SessionResponse {
+    pub token_hash: String,
+    pub user_id: Uuid,
+    pub email: String,
+    pub name: String,
+    pub role: String,
+    pub namespace: String,
+    pub created_at: DateTime<Utc>,
+    pub last_accessed_at: DateTime<Utc>,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+pub struct RefreshSessionRequest {
+    pub ttl_seconds: Option<i64>,
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -1,10 +1,13 @@
 use crate::http_client::AuthenticatedClient;
 use crate::models::{
-    BookingResponse, BookingReviewEligibility, DynamicPricingQuote, HostReplyRequest,
-    ListingDetails, ListingResponse, NewBookingRequest, NewReviewRequest, PriceOverride,
-    ReviewResponse, ReviewTokenInfoResponse, TransferBookingRequest, UpdatedBookingRequest,
-    UserResponse,
+    BookingResponse, BookingReviewEligibility, CreateSessionRequest, DynamicPricingQuote,
+    HostReplyRequest, ListingDetails, ListingResponse, LoginRequest, NewBookingRequest,
+    NewReviewRequest, PriceOverride, ReviewResponse, ReviewTokenInfoResponse, SessionResponse,
+    TransferBookingRequest, UpdatedBookingRequest, UpdateUserRequest, UserResponse,
 };
+
+
+
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
 use reqwest::Response;
@@ -626,3 +629,148 @@ pub async fn get_all_users(
         .await
         .context("Failed to parse users response")
 }
+
+pub async fn update_user(id: Uuid, req: &UpdateUserRequest) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/user/{}", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .patch(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to update user ({}): {}", status, err_text);
+    }
+
+    res.json::<UserResponse>()
+        .await
+        .context("Failed to parse updated user response")
+}
+
+// -----------------------------------------------------------------------------
+// Session API Clients (Token-hash backed via user_api)
+// -----------------------------------------------------------------------------
+
+pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionResponse> {
+    let url = format!("{}/api/v1/sessions", user_api_url());
+    let audience = user_api_audience();
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for session creation")?;
+
+
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to create session ({}): {}", status, err_text);
+    }
+
+    res.json::<SessionResponse>()
+        .await
+        .context("Failed to parse session creation response")
+}
+
+pub async fn get_session(
+    token_hash: &str,
+    namespace: Option<&str>,
+) -> Result<Option<SessionResponse>> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let mut url = format!("{}/api/v1/sessions/{}", api_url, token_hash);
+    if let Some(ns) = namespace {
+        url.push_str(&format!("?namespace={}", ns));
+    }
+
+    let res = get_client()
+        .get(&url, &audience)
+        .await
+        .context("Failed to connect to user service for session lookup")?;
+
+    if res.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to fetch session ({}): {}", status, err_text);
+    }
+
+    let session = res
+        .json::<SessionResponse>()
+        .await
+        .context("Failed to parse session response")?;
+
+    Ok(Some(session))
+}
+
+pub async fn delete_session(token_hash: &str) -> Result<()> {
+    let url = format!("{}/api/v1/sessions/{}", user_api_url(), token_hash);
+    let audience = user_api_audience();
+
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to user service for session deletion")?;
+
+    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to delete session ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
+pub async fn revoke_user_sessions(user_id: Uuid, namespace: Option<&str>) -> Result<()> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let mut url = format!("{}/api/v1/users/{}/sessions", api_url, user_id);
+    if let Some(ns) = namespace {
+        url.push_str(&format!("?namespace={}", ns));
+    }
+
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to user service for user session revocation")?;
+
+    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to revoke user sessions ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
+pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let url = format!("{}/api/v1/users/login", api_url);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for login")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Login failed ({}): {}", status, err_text);
+    }
+
+    let user: UserResponse = res
+        .json()
+        .await
+        .context("Failed to parse user response from login")?;
+
+    Ok(user)
+}
+
+

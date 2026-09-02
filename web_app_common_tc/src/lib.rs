@@ -7,7 +7,11 @@ pub mod theme;
 
 pub use client::{get_api_client, TopcoatApiClient};
 
-pub use auth::{AuthUser, auth_init_script, get_authenticated_admin, get_authenticated_guest};
+pub use auth::{
+    AdminAuthError, AuthUser, auth_init_script, get_admin_session, get_authenticated_admin,
+    get_authenticated_guest, require_admin_auth, token_hash_to_hex,
+};
+
 
 pub use components::currency_selector::currency_selector;
 pub use components::price_breakdown::price_breakdown;

@@ -35,8 +35,17 @@ pub async fn listings_alias_detail_page(cx: &Cx) -> Result {
 }
 
 async fn render_listings_content(cx: &Cx) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     let __cx = cx;
     let api = get_api_client(cx);
+
     let listings = api.search_listings(ListingSearchParams {
         per_page: Some(50),
         ..Default::default()
@@ -198,7 +207,16 @@ pub async fn admin_new_listing_page(cx: &Cx) -> Result {
 }
 
 async fn render_new_or_cloned_listing(__cx: &Cx, template: Option<common::models::ListingResponse>) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(__cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     // Pre-populate fields from template if cloning
+
     let initial_name = template.as_ref()
         .map(|t| format!("{} (Copy)", t.name))
         .unwrap_or_default();
@@ -552,8 +570,17 @@ pub async fn listings_edit_alias_page(cx: &Cx) -> Result {
 }
 
 async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {
+    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
+        return view! {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        };
+    }
+
     let __cx = cx;
     let api = get_api_client(cx);
+
     let id_str = if !id.trim().is_empty() { id } else { "the-reef-house".to_string() };
 
     let listing_details = api.get_listing_by_id(&id_str, None).await.ok();
