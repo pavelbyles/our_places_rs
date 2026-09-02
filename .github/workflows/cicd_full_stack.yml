@@ -76,7 +76,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_tc --exclude web_app_admin_tc --exclude protoproj
+        run: cargo build --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_common --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
       - name: Run DB and Migrations (Local Test)
         run: cargo make --cwd app_api/listing_api db-migrate
       - name: Run testsTest API
@@ -84,7 +84,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo test --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_tc --exclude web_app_admin_tc --exclude protoproj
+        run: cargo test --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_common --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
 
   test-web:
     name: Test Web
