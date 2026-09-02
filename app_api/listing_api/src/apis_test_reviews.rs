@@ -42,20 +42,20 @@ async fn test_reviews_endpoints() {
     // 2. Create a booking to attach the review to
     let booking_id = Uuid::now_v7();
     let conf_code = format!("TEST{}", booking_id.simple().to_string().chars().take(8).collect::<String>());
-    sqlx::query!(
+    sqlx::query(
         "INSERT INTO booking (id, confirmation_code, guest_id, listing_id, date_from, date_to, daily_rate, number_of_persons, total_days, sub_total_price, total_price, cancellation_policy, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'flexible', 'completed')",
-        booking_id,
-        conf_code,
-        guest_id,
-        listing.id,
-        Utc::now().date_naive() - chrono::Duration::days(10),
-        Utc::now().date_naive() - chrono::Duration::days(5),
-        dec!(100.00),
-        2,
-        5,
-        dec!(500.00),
-        dec!(500.00)
     )
+    .bind(booking_id)
+    .bind(conf_code)
+    .bind(guest_id)
+    .bind(listing.id)
+    .bind(Utc::now().date_naive() - chrono::Duration::days(10))
+    .bind(Utc::now().date_naive() - chrono::Duration::days(5))
+    .bind(dec!(100.00))
+    .bind(2)
+    .bind(5)
+    .bind(dec!(500.00))
+    .bind(dec!(500.00))
     .execute(&mut *conn)
     .await
     .unwrap();
@@ -64,11 +64,11 @@ async fn test_reviews_endpoints() {
     let token = db_core::review::create_review_token(&mut *conn, booking_id).await.unwrap();
 
     // Make the token valid immediately for the test
-    sqlx::query!(
+    sqlx::query(
         "UPDATE review_token SET valid_from = $1 WHERE id = $2",
-        Utc::now() - chrono::Duration::hours(1),
-        token.id
     )
+    .bind(Utc::now() - chrono::Duration::hours(1))
+    .bind(token.id)
     .execute(&mut *conn)
     .await
     .unwrap();
@@ -216,20 +216,20 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
             .take(8)
             .collect::<String>()
     );
-    sqlx::query!(
+    sqlx::query(
         "INSERT INTO booking (id, confirmation_code, guest_id, listing_id, date_from, date_to, daily_rate, number_of_persons, total_days, sub_total_price, total_price, cancellation_policy, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'flexible', 'confirmed')",
-        booking_id,
-        conf_code,
-        guest_id,
-        listing.id,
-        Utc::now().date_naive() - chrono::Duration::days(9),
-        Utc::now().date_naive() - chrono::Duration::days(5),
-        dec!(150.00),
-        2,
-        4,
-        dec!(600.00),
-        dec!(600.00)
     )
+    .bind(booking_id)
+    .bind(conf_code)
+    .bind(guest_id)
+    .bind(listing.id)
+    .bind(Utc::now().date_naive() - chrono::Duration::days(9))
+    .bind(Utc::now().date_naive() - chrono::Duration::days(5))
+    .bind(dec!(150.00))
+    .bind(2)
+    .bind(4)
+    .bind(dec!(600.00))
+    .bind(dec!(600.00))
     .execute(&mut *conn)
     .await
     .unwrap();
