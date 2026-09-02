@@ -17,6 +17,22 @@ env:
 on:
   push:
     branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Select services to build & deploy'
+        required: true
+        default: 'changed'
+        type: choice
+        options:
+          - 'changed'
+          - 'all'
+          - 'backend'
+          - 'image_worker'
+          - 'webapp'
+          - 'webapp_admin'
+          - 'webapp_tc'
+          - 'webapp_admin_tc'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,16 +44,16 @@ jobs:
   # =========================================================
   changes:
     name: Detect Changes
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      image_worker: ${{ steps.filter.outputs.image_worker }}
-      webapp: ${{ steps.filter.outputs.webapp }}
-      webapp_admin: ${{ steps.filter.outputs.webapp_admin }}
-      webapp_tc: ${{ steps.filter.outputs.webapp_tc }}
-      webapp_admin_tc: ${{ steps.filter.outputs.webapp_admin_tc }}
-      docs_only: ${{ steps.filter.outputs.docs_only }}
+      backend: ${{ steps.eval.outputs.backend }}
+      image_worker: ${{ steps.eval.outputs.image_worker }}
+      webapp: ${{ steps.eval.outputs.webapp }}
+      webapp_admin: ${{ steps.eval.outputs.webapp_admin }}
+      webapp_tc: ${{ steps.eval.outputs.webapp_tc }}
+      webapp_admin_tc: ${{ steps.eval.outputs.webapp_admin_tc }}
+      docs_only: ${{ steps.eval.outputs.docs_only }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
@@ -99,12 +115,44 @@ jobs:
               - 'web_app_admin_tc/Dockerfile.web_app_admin_tc'
               - '.github/workflows/cicd_full_stack.yml'
 
+      - name: Evaluate Change Flags
+        id: eval
+        run: |
+          TARGET="${{ inputs.deploy_target || 'changed' }}"
+          echo "deploy_target=$TARGET"
+
+          if [ "$TARGET" = "all" ]; then
+            echo "backend=true" >> $GITHUB_OUTPUT
+            echo "image_worker=true" >> $GITHUB_OUTPUT
+            echo "webapp=true" >> $GITHUB_OUTPUT
+            echo "webapp_admin=true" >> $GITHUB_OUTPUT
+            echo "webapp_tc=true" >> $GITHUB_OUTPUT
+            echo "webapp_admin_tc=true" >> $GITHUB_OUTPUT
+            echo "docs_only=false" >> $GITHUB_OUTPUT
+          elif [ "$TARGET" != "changed" ]; then
+            echo "backend=${{ inputs.deploy_target == 'backend' || steps.filter.outputs.backend == 'true' }}" >> $GITHUB_OUTPUT
+            echo "image_worker=${{ inputs.deploy_target == 'image_worker' || steps.filter.outputs.image_worker == 'true' }}" >> $GITHUB_OUTPUT
+            echo "webapp=${{ inputs.deploy_target == 'webapp' || steps.filter.outputs.webapp == 'true' }}" >> $GITHUB_OUTPUT
+            echo "webapp_admin=${{ inputs.deploy_target == 'webapp_admin' || steps.filter.outputs.webapp_admin == 'true' }}" >> $GITHUB_OUTPUT
+            echo "webapp_tc=${{ inputs.deploy_target == 'webapp_tc' || steps.filter.outputs.webapp_tc == 'true' }}" >> $GITHUB_OUTPUT
+            echo "webapp_admin_tc=${{ inputs.deploy_target == 'webapp_admin_tc' || steps.filter.outputs.webapp_admin_tc == 'true' }}" >> $GITHUB_OUTPUT
+            echo "docs_only=false" >> $GITHUB_OUTPUT
+          else
+            echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
+            echo "image_worker=${{ steps.filter.outputs.image_worker }}" >> $GITHUB_OUTPUT
+            echo "webapp=${{ steps.filter.outputs.webapp }}" >> $GITHUB_OUTPUT
+            echo "webapp_admin=${{ steps.filter.outputs.webapp_admin }}" >> $GITHUB_OUTPUT
+            echo "webapp_tc=${{ steps.filter.outputs.webapp_tc }}" >> $GITHUB_OUTPUT
+            echo "webapp_admin_tc=${{ steps.filter.outputs.webapp_admin_tc }}" >> $GITHUB_OUTPUT
+            echo "docs_only=${{ steps.filter.outputs.docs_only }}" >> $GITHUB_OUTPUT
+          fi
+
   # =========================================================
   # GENERAL QUALITY CHECKS
   # =========================================================
   audit:
     name: Audit
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -117,7 +165,7 @@ jobs:
 
   lint-check:
     name: Lint Check
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -138,7 +186,7 @@ jobs:
   # =========================================================
   test-api:
     name: Test API
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -167,7 +215,7 @@ jobs:
 
   test-web:
     name: Test Web
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -181,7 +229,7 @@ jobs:
 
   test-web-admin:
     name: Test Web Admin
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -195,7 +243,7 @@ jobs:
 
   test-web-tc:
     name: Test Web Topcoat
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -211,7 +259,7 @@ jobs:
 
   test-web-admin-tc:
     name: Test Web Admin Topcoat
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -232,7 +280,7 @@ jobs:
     name: Setup GCS Buckets
     runs-on: ubuntu-latest
     needs: [audit, lint-check, test-api, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.image_worker == 'true' || needs.changes.outputs.backend == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.image_worker == 'true' || needs.changes.outputs.backend == 'true')
     env:
       SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     steps:
@@ -366,7 +414,7 @@ jobs:
     name: Build & Deploy Image Worker
     runs-on: ubuntu-latest
     needs: [setup-gcs-image-gcs-items, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.image_worker == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.image_worker == 'true')
     env:
       SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
@@ -476,7 +524,7 @@ jobs:
     name: Build & Deploy APIs
     runs-on: ubuntu-latest
     needs: [audit, lint-check, test-api, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.docs_only != 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.docs_only != 'true')
     defaults:
       run:
         working-directory: ./app_api
@@ -689,7 +737,7 @@ jobs:
     name: Build & Deploy WebApp
     runs-on: ubuntu-latest
     needs: [deploy-api, test-web, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp == 'true')
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -857,7 +905,7 @@ jobs:
     name: Build & Deploy WebApp Admin
     runs-on: ubuntu-latest
     needs: [deploy-api, test-web-admin, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_admin == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_admin == 'true')
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -993,7 +1041,7 @@ jobs:
     name: Build & Deploy WebApp Topcoat
     runs-on: ubuntu-latest
     needs: [deploy-api, test-web-tc, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_tc == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_tc == 'true')
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -1159,7 +1207,7 @@ jobs:
     name: Build & Deploy WebApp Admin Topcoat
     runs-on: ubuntu-latest
     needs: [deploy-api, test-web-admin-tc, changes]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_admin_tc == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_admin_tc == 'true')
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
