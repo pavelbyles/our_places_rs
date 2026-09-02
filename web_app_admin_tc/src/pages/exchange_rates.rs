@@ -1,9 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
 
 #[page("/admin/exchange-rates")]
 pub async fn admin_exchange_rates_page(cx: &Cx) -> Result {

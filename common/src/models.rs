@@ -51,7 +51,6 @@ pub struct LoginRequest {
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
-
     pub email: Option<String>,
     pub password: Option<String>,
     pub first_name: Option<String>,
@@ -617,7 +616,6 @@ pub struct SessionResponse {
 pub struct RefreshSessionRequest {
     pub ttl_seconds: Option<i64>,
 }
-
 
 #[cfg(test)]
 mod tests {

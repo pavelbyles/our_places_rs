@@ -1,8 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::layout,
-};
+use topcoat::{Result, context::Cx, router::layout};
 
 #[layout("/")]
 pub async fn guest_layout(cx: &Cx, slot: Result) -> Result {

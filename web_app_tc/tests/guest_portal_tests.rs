@@ -61,7 +61,11 @@ async fn test_get_listing_by_id_api() {
 
     for slug in slugs {
         let res = common::app_client::get_listing_by_id(slug, None).await;
-        println!("API response for {}: {:?}", slug, res.as_ref().map(|d| &d.listing.name));
+        println!(
+            "API response for {}: {:?}",
+            slug,
+            res.as_ref().map(|d| &d.listing.name)
+        );
         assert!(res.is_ok(), "Failed to fetch listing: {}", slug);
     }
 }
@@ -104,11 +108,3 @@ fn test_tri_currency_cross_currency_checkout_settlement() {
     assert_eq!(cad_gct, dec!(663.00));
     assert_eq!(cad_total, dec!(5083.00));
 }
-
-
-
-
-
-
-
-

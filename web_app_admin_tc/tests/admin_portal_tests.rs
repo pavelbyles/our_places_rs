@@ -64,8 +64,14 @@ fn test_manage_users_access_control_role_boundaries() {
 
     // 3. Host user: Authorized for general admin portal (listings/bookings) BUT NOT user management
     let host_user = AuthUser::new("Host User", "host@ourplaces.io", "host");
-    assert!(!host_user.is_admin(), "Host must not be considered an admin");
-    assert!(host_user.is_authorized_for_admin_portal(), "Host is authorized for listings/bookings");
+    assert!(
+        !host_user.is_admin(),
+        "Host must not be considered an admin"
+    );
+    assert!(
+        host_user.is_authorized_for_admin_portal(),
+        "Host is authorized for listings/bookings"
+    );
 
     // 4. Guest / Booker user: Not authorized for admin portal or user management
     let guest_user = AuthUser::new("Guest Booker", "guest@example.com", "booker");
@@ -129,12 +135,8 @@ fn test_granular_permissions_type_constraint() {
     );
 
     // 4. Standard Booker with NO granular perms -> Allowed as unprivileged
-    let standard_booker = RoleCapabilityProfile::build(
-        false,
-        false,
-        true,
-        GranularPermissions::default(),
-    );
+    let standard_booker =
+        RoleCapabilityProfile::build(false, false, true, GranularPermissions::default());
     assert!(standard_booker.is_ok());
     assert!(!standard_booker.unwrap().is_privileged());
 }
@@ -173,8 +175,14 @@ fn test_listing_23_fields_coordinate_and_price_boundaries() {
     // Caribbean GPS coordinate validation bounds
     let lat = req.latitude.unwrap();
     let lon = req.longitude.unwrap();
-    assert!(lat >= 17.0 && lat <= 19.0, "Latitude must be within Jamaica bounds");
-    assert!(lon >= -79.0 && lon <= -76.0, "Longitude must be within Jamaica bounds");
+    assert!(
+        lat >= 17.0 && lat <= 19.0,
+        "Latitude must be within Jamaica bounds"
+    );
+    assert!(
+        lon >= -79.0 && lon <= -76.0,
+        "Longitude must be within Jamaica bounds"
+    );
 }
 
 #[test]

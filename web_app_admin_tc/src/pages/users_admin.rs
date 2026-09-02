@@ -53,10 +53,16 @@ pub async fn admin_update_user_api(
 
     let mut attrs = serde_json::Map::new();
     if let Some(cmb) = payload.can_manage_bookings {
-        attrs.insert("can_manage_bookings".to_string(), serde_json::Value::Bool(cmb));
+        attrs.insert(
+            "can_manage_bookings".to_string(),
+            serde_json::Value::Bool(cmb),
+        );
     }
     if let Some(cml) = payload.can_manage_listings {
-        attrs.insert("can_manage_listings".to_string(), serde_json::Value::Bool(cml));
+        attrs.insert(
+            "can_manage_listings".to_string(),
+            serde_json::Value::Bool(cml),
+        );
     }
 
     let pwd = payload.password.filter(|p| !p.trim().is_empty());
@@ -103,7 +109,7 @@ pub async fn users_alias_page(cx: &Cx) -> Result {
 
 async fn render_users_directory(cx: &Cx) -> Result {
     match web_app_common_tc::auth::require_admin_role_auth(cx).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(web_app_common_tc::auth::AdminAuthError::Forbidden(_)) => {
             return view! {
                 <div class="p-8 text-center">
@@ -986,7 +992,10 @@ pub struct GranularPermissions {
 
 impl GranularPermissions {
     pub fn has_any_permission(&self) -> bool {
-        self.can_manage_listings || self.can_manage_bookings || self.can_configure_rates || self.can_manage_users
+        self.can_manage_listings
+            || self.can_manage_bookings
+            || self.can_configure_rates
+            || self.can_manage_users
     }
 }
 
@@ -1005,7 +1014,9 @@ pub enum RoleCapabilityProfile {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum PermissionTypeConstraintError {
-    #[error("Granular permissions are restricted: Booker/Guest accounts cannot hold administrative or host capabilities")]
+    #[error(
+        "Granular permissions are restricted: Booker/Guest accounts cannot hold administrative or host capabilities"
+    )]
     BookerCannotHoldPrivileges,
 }
 
@@ -1040,7 +1051,7 @@ impl RoleCapabilityProfile {
 #[page("/admin/users/new")]
 pub async fn admin_new_user_page(cx: &Cx) -> Result {
     match web_app_common_tc::auth::require_admin_role_auth(cx).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(web_app_common_tc::auth::AdminAuthError::Forbidden(_)) => {
             return view! {
                 <div class="p-8 text-center">

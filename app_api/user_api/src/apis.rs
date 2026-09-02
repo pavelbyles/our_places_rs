@@ -34,7 +34,6 @@ pub struct SessionNamespaceQuery {
     pub namespace: Option<String>,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct VerifyRequest {
     pub email: String,
@@ -1177,8 +1176,7 @@ async fn create_session_handler(
         expires_at,
     };
 
-    let state_bytes = serde_json::to_vec(&session_resp)
-        .map_err(|_| ApiError::Internal)?;
+    let state_bytes = serde_json::to_vec(&session_resp).map_err(|_| ApiError::Internal)?;
 
     sessions_db
         .save_session(
@@ -1233,8 +1231,8 @@ async fn get_session_handler(
 
     match record {
         Some(r) => {
-            let session: SessionResponse = serde_json::from_slice(&r.state)
-                .unwrap_or_else(|_| SessionResponse {
+            let session: SessionResponse =
+                serde_json::from_slice(&r.state).unwrap_or_else(|_| SessionResponse {
                     token_hash: r.id,
                     user_id: r.user_id.unwrap_or_default(),
                     email: r.email.unwrap_or_default(),
@@ -1259,7 +1257,6 @@ async fn get_session_handler(
     }
 }
 
-
 #[tracing::instrument]
 #[utoipa::path(
     delete,
@@ -1279,7 +1276,10 @@ async fn delete_session_handler(
 ) -> Result<actix_web::HttpResponse, ApiError> {
     let token_hash = path.into_inner();
     let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
-    let _ = sessions_db.delete(&token_hash).await.map_err(|_| ApiError::Internal)?;
+    sessions_db
+        .delete(&token_hash)
+        .await
+        .map_err(|_| ApiError::Internal)?;
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
@@ -1305,7 +1305,10 @@ async fn revoke_user_sessions_handler(
     let user_id = path.into_inner();
     let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
     let ns = query.namespace.as_deref();
-    let _ = sessions_db.delete_user_sessions(user_id, ns).await.map_err(|_| ApiError::Internal)?;
+    sessions_db
+        .delete_user_sessions(user_id, ns)
+        .await
+        .map_err(|_| ApiError::Internal)?;
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
@@ -1503,7 +1506,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             ),
     );
 }
-
 
 #[cfg(test)]
 #[path = "apis_test.rs"]

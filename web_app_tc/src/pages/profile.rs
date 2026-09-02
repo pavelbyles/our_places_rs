@@ -1,9 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
 
 #[page("/profile")]
 pub async fn profile_page(_cx: &Cx) -> Result {

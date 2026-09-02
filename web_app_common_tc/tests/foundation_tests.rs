@@ -92,13 +92,9 @@ fn test_seasonal_dynamic_pricing_calculation_with_overrides() {
     };
 
     let overrides = vec![peak_override];
-    let quote = common::pricing::calculate_dynamic_quote(
-        base_rate,
-        3,
-        &overrides,
-        check_in,
-        check_out,
-    ).expect("Dynamic pricing quote calculation should succeed");
+    let quote =
+        common::pricing::calculate_dynamic_quote(base_rate, 3, &overrides, check_in, check_out)
+            .expect("Dynamic pricing quote calculation should succeed");
 
     assert_eq!(quote.nightly_breakdown.len(), 5);
     // All 5 nights are inside peak season, so subtotal should be 5 * 1000 = 5000
@@ -162,7 +158,8 @@ fn test_session_models_and_namespace_isolation() {
     };
 
     let json = serde_json::to_string(&req).expect("Serialization should succeed");
-    let deserialized: CreateSessionRequest = serde_json::from_str(&json).expect("Deserialization should succeed");
+    let deserialized: CreateSessionRequest =
+        serde_json::from_str(&json).expect("Deserialization should succeed");
     assert_eq!(deserialized.namespace, "admin");
     assert_eq!(deserialized.role, "host");
     assert_eq!(deserialized.ttl_seconds, 604800);
@@ -180,7 +177,7 @@ fn test_session_models_and_namespace_isolation() {
     };
 
     let resp_json = serde_json::to_string(&session_resp).expect("Serialization should succeed");
-    let resp_deserialized: SessionResponse = serde_json::from_str(&resp_json).expect("Deserialization should succeed");
+    let resp_deserialized: SessionResponse =
+        serde_json::from_str(&resp_json).expect("Deserialization should succeed");
     assert_eq!(resp_deserialized.namespace, "guest");
 }
-

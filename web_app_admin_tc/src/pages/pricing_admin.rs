@@ -51,7 +51,11 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result {
     let __cx = cx;
     let api = get_api_client(cx);
 
-    let id_str = if !id.trim().is_empty() { id } else { "kingston-skyline-luxury-penthouse".to_string() };
+    let id_str = if !id.trim().is_empty() {
+        id
+    } else {
+        "kingston-skyline-luxury-penthouse".to_string()
+    };
 
     let listing_details = api.get_listing_by_id(&id_str, None).await.ok();
     let listing_slug = if let Some(ref d) = listing_details {
@@ -66,10 +70,12 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result {
         "kingston-skyline-luxury-penthouse".to_string()
     };
 
-    let listing_name = listing_details.as_ref()
+    let listing_name = listing_details
+        .as_ref()
         .map(|d| d.listing.name.clone())
         .unwrap_or_else(|| "Kingston Skyline Luxury Penthouse".to_string());
-    let base_rate = listing_details.as_ref()
+    let base_rate = listing_details
+        .as_ref()
         .and_then(|d| d.listing.price_per_night)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "1800".to_string());
@@ -173,17 +179,22 @@ async fn render_pricing_overrides_table_fragment(__cx: &Cx, id: String, added_ne
         };
     }
 
-    let id_str = if !id.trim().is_empty() { id } else { "kingston-skyline-luxury-penthouse".to_string() };
+    let id_str = if !id.trim().is_empty() {
+        id
+    } else {
+        "kingston-skyline-luxury-penthouse".to_string()
+    };
     render_pricing_table_inner(__cx, &id_str, added_new).await
 }
-
 
 async fn render_pricing_table_inner(cx: &Cx, slug: &str, show_added_badge: bool) -> Result {
     let __cx = cx;
     let api = get_api_client(cx);
     let listing_details = api.get_listing_by_id(slug, None).await.ok();
     let overrides = if let Some(ref d) = listing_details {
-        api.get_price_overrides(d.listing.id).await.unwrap_or_default()
+        api.get_price_overrides(d.listing.id)
+            .await
+            .unwrap_or_default()
     } else if let Ok(uuid) = Uuid::parse_str(slug) {
         api.get_price_overrides(uuid).await.unwrap_or_default()
     } else {

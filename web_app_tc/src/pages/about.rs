@@ -1,9 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
 
 #[page("/about")]
 pub async fn about_page(_cx: &Cx) -> Result {

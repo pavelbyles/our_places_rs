@@ -6,7 +6,9 @@ use topcoat::{
 #[component]
 pub async fn star_rating(rating: Option<f64>, review_count: Option<i64>) -> Result {
     let formatted_rating = rating.map(|r| format!("{:.1}", r));
-    let count_text = review_count.map(|c| format!("({} reviews)", c)).unwrap_or_default();
+    let count_text = review_count
+        .map(|c| format!("({} reviews)", c))
+        .unwrap_or_default();
 
     view! {
         if let Some(r_str) = formatted_rating {

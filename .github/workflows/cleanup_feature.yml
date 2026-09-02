@@ -57,7 +57,16 @@ jobs:
       - name: Delete Cloud Run Services
         run: |
           SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
-          SERVICES=("booking-api-$SUFFIX" "listing-api-$SUFFIX" "user-api-$SUFFIX" "our-places-web-app-$SUFFIX" "our-places-image-worker-$SUFFIX")
+          SERVICES=(
+            "booking-api-$SUFFIX"
+            "listing-api-$SUFFIX"
+            "user-api-$SUFFIX"
+            "our-places-image-worker-$SUFFIX"
+            "our-places-web-app-$SUFFIX"
+            "our-places-web-app-admin-$SUFFIX"
+            "our-places-web-app-tc-$SUFFIX"
+            "our-places-web-app-admin-tc-$SUFFIX"
+          )
 
           for SERVICE in "${SERVICES[@]}"; do
             echo "Attempting to delete service: $SERVICE"

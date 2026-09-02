@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE sessions\n                SET last_accessed_at = $1, ttl = $2\n                WHERE id = $3\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "09ea9e07af68b71ada93354d2529b39b87fb7bf5fe9ccbdd7e7a57cc1b890234"
+}

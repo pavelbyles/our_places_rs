@@ -1,24 +1,20 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
-use web_app_common_tc::{
-    client::ListingSearchParams,
-    get_api_client,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
+use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
 #[page("/bookings")]
 pub async fn bookings_page(cx: &Cx) -> Result {
     let api = get_api_client(cx);
-    let bookings = api.get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
-    let listings = api.search_listings(ListingSearchParams {
-        per_page: Some(50),
-        ..Default::default()
-    })
-    .await
-    .unwrap_or_default();
+    let bookings = api
+        .get_all_bookings(Some(1), Some(50))
+        .await
+        .unwrap_or_default();
+    let listings = api
+        .search_listings(ListingSearchParams {
+            per_page: Some(50),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
 
     view! {
         <div class="max-w-5xl mx-auto px-2 py-8 space-y-8">

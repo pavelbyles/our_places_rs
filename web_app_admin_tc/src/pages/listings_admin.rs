@@ -4,10 +4,7 @@ use topcoat::{
     router::{page, path_param},
     view::view,
 };
-use web_app_common_tc::{
-    client::ListingSearchParams,
-    get_api_client,
-};
+use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
 path_param!(id);
 path_param!(slug);
@@ -46,10 +43,13 @@ async fn render_listings_content(cx: &Cx) -> Result {
     let __cx = cx;
     let api = get_api_client(cx);
 
-    let listings = api.search_listings(ListingSearchParams {
-        per_page: Some(50),
-        ..Default::default()
-    }).await.unwrap_or_default();
+    let listings = api
+        .search_listings(ListingSearchParams {
+            per_page: Some(50),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
 
     view! {
         <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
@@ -197,7 +197,11 @@ async fn render_listings_content(cx: &Cx) -> Result {
 pub async fn admin_clone_listing_page(cx: &Cx) -> Result {
     let slug: &str = path_param::<Slug>(cx);
     let api = get_api_client(cx);
-    let template = api.get_listing_by_id(slug, None).await.ok().map(|d| d.listing);
+    let template = api
+        .get_listing_by_id(slug, None)
+        .await
+        .ok()
+        .map(|d| d.listing);
     render_new_or_cloned_listing(cx, template).await
 }
 
@@ -206,7 +210,10 @@ pub async fn admin_new_listing_page(cx: &Cx) -> Result {
     render_new_or_cloned_listing(cx, None).await
 }
 
-async fn render_new_or_cloned_listing(__cx: &Cx, template: Option<common::models::ListingResponse>) -> Result {
+async fn render_new_or_cloned_listing(
+    __cx: &Cx,
+    template: Option<common::models::ListingResponse>,
+) -> Result {
     if let Err(_err) = web_app_common_tc::auth::require_admin_auth(__cx).await {
         return view! {
             <script>
@@ -217,33 +224,42 @@ async fn render_new_or_cloned_listing(__cx: &Cx, template: Option<common::models
 
     // Pre-populate fields from template if cloning
 
-    let initial_name = template.as_ref()
+    let initial_name = template
+        .as_ref()
         .map(|t| format!("{} (Copy)", t.name))
         .unwrap_or_default();
-    let initial_desc = template.as_ref()
+    let initial_desc = template
+        .as_ref()
         .and_then(|t| t.description.clone())
         .unwrap_or_default();
-    let initial_structure = template.as_ref()
+    let initial_structure = template
+        .as_ref()
         .map(|t| t.listing_structure.clone())
         .unwrap_or_else(|| "Villa".to_string());
-    let initial_country = template.as_ref()
+    let initial_country = template
+        .as_ref()
         .map(|t| t.country.clone())
         .unwrap_or_else(|| "Jamaica".to_string());
-    let initial_currency = template.as_ref()
+    let initial_currency = template
+        .as_ref()
         .map(|t| t.base_currency.clone())
         .unwrap_or_else(|| "USD".to_string());
-    let initial_city = template.as_ref()
+    let initial_city = template
+        .as_ref()
         .and_then(|t| t.city.clone())
         .unwrap_or_else(|| "Montego Bay".to_string());
-    let initial_price = template.as_ref()
+    let initial_price = template
+        .as_ref()
         .and_then(|t| t.price_per_night)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "1800".to_string());
-    let initial_weekly_disc = template.as_ref()
+    let initial_weekly_disc = template
+        .as_ref()
         .and_then(|t| t.weekly_discount_percentage)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "10".to_string());
-    let initial_monthly_disc = template.as_ref()
+    let initial_monthly_disc = template
+        .as_ref()
         .and_then(|t| t.monthly_discount_percentage)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "20".to_string());
@@ -252,11 +268,23 @@ async fn render_new_or_cloned_listing(__cx: &Cx, template: Option<common::models
     let initial_beds = template.as_ref().map(|t| t.beds).unwrap_or(6);
     let initial_full_baths = template.as_ref().map(|t| t.full_bathrooms).unwrap_or(5);
     let initial_half_baths = template.as_ref().map(|t| t.half_bathrooms).unwrap_or(1);
-    let initial_sq_meters = template.as_ref().and_then(|t| t.square_meters).unwrap_or(450);
+    let initial_sq_meters = template
+        .as_ref()
+        .and_then(|t| t.square_meters)
+        .unwrap_or(450);
     let initial_min_stay = template.as_ref().map(|t| t.minimum_stay).unwrap_or(3);
-    let initial_days_between = template.as_ref().map(|t| t.days_between_bookings).unwrap_or(1);
-    let initial_lat = template.as_ref().and_then(|t| t.latitude).unwrap_or(18.4762);
-    let initial_lon = template.as_ref().and_then(|t| t.longitude).unwrap_or(-77.9189);
+    let initial_days_between = template
+        .as_ref()
+        .map(|t| t.days_between_bookings)
+        .unwrap_or(1);
+    let initial_lat = template
+        .as_ref()
+        .and_then(|t| t.latitude)
+        .unwrap_or(18.4762);
+    let initial_lon = template
+        .as_ref()
+        .and_then(|t| t.longitude)
+        .unwrap_or(-77.9189);
     let initial_image = template.as_ref()
         .and_then(|t| t.primary_image_url.clone())
         .unwrap_or_else(|| "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80".to_string());
@@ -581,20 +609,45 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {
     let __cx = cx;
     let api = get_api_client(cx);
 
-    let id_str = if !id.trim().is_empty() { id } else { "the-reef-house".to_string() };
+    let id_str = if !id.trim().is_empty() {
+        id
+    } else {
+        "the-reef-house".to_string()
+    };
 
     let listing_details = api.get_listing_by_id(&id_str, None).await.ok();
 
     let listing = listing_details.as_ref().map(|d| &d.listing);
-    let title = listing.map(|l| l.name.clone()).unwrap_or_else(|| "The Reef House".to_string());
-    let desc = listing.and_then(|l| l.description.clone()).unwrap_or_else(|| "Luxury oceanfront sanctuary".to_string());
-    let structure = listing.map(|l| l.listing_structure.clone()).unwrap_or_else(|| "Villa".to_string());
-    let currency = listing.map(|l| l.base_currency.clone()).unwrap_or_else(|| "USD".to_string());
-    let city = listing.and_then(|l| l.city.clone()).unwrap_or_else(|| "Port Antonio".to_string());
-    let country = listing.map(|l| l.country.clone()).unwrap_or_else(|| "Jamaica".to_string());
-    let price = listing.and_then(|l| l.price_per_night).map(|p| format!("{:.0}", p)).unwrap_or_else(|| "1800".to_string());
-    let weekly_disc = listing.and_then(|l| l.weekly_discount_percentage).map(|p| format!("{:.0}", p)).unwrap_or_else(|| "10".to_string());
-    let monthly_disc = listing.and_then(|l| l.monthly_discount_percentage).map(|p| format!("{:.0}", p)).unwrap_or_else(|| "20".to_string());
+    let title = listing
+        .map(|l| l.name.clone())
+        .unwrap_or_else(|| "The Reef House".to_string());
+    let desc = listing
+        .and_then(|l| l.description.clone())
+        .unwrap_or_else(|| "Luxury oceanfront sanctuary".to_string());
+    let structure = listing
+        .map(|l| l.listing_structure.clone())
+        .unwrap_or_else(|| "Villa".to_string());
+    let currency = listing
+        .map(|l| l.base_currency.clone())
+        .unwrap_or_else(|| "USD".to_string());
+    let city = listing
+        .and_then(|l| l.city.clone())
+        .unwrap_or_else(|| "Port Antonio".to_string());
+    let country = listing
+        .map(|l| l.country.clone())
+        .unwrap_or_else(|| "Jamaica".to_string());
+    let price = listing
+        .and_then(|l| l.price_per_night)
+        .map(|p| format!("{:.0}", p))
+        .unwrap_or_else(|| "1800".to_string());
+    let weekly_disc = listing
+        .and_then(|l| l.weekly_discount_percentage)
+        .map(|p| format!("{:.0}", p))
+        .unwrap_or_else(|| "10".to_string());
+    let monthly_disc = listing
+        .and_then(|l| l.monthly_discount_percentage)
+        .map(|p| format!("{:.0}", p))
+        .unwrap_or_else(|| "20".to_string());
     let guests = listing.map(|l| l.max_guests).unwrap_or(10);
     let bedrooms = listing.map(|l| l.bedrooms).unwrap_or(5);
     let beds = listing.map(|l| l.beds).unwrap_or(6);

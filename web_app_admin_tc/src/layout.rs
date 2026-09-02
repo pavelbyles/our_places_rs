@@ -1,10 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    htmx::hx_request,
-    router::layout,
-    view::view,
-};
+use topcoat::{Result, context::Cx, htmx::hx_request, router::layout, view::view};
 use web_app_common_tc::auth::auth_init_script;
 use web_app_common_tc::theme::{theme_init_script, theme_toggle, theme_toggle_script};
 

@@ -16,9 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_client = web_app_common_tc::TopcoatApiClient::from_env();
 
-    let mut builder = Router::builder()
-        .discover()
-        .app_context(api_client);
+    let mut builder = Router::builder().discover().app_context(api_client);
 
     match AssetBundle::load() {
         Ok(bundle) => {

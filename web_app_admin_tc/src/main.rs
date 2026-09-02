@@ -5,7 +5,6 @@ use topcoat::{
     session::{RouterBuilderSessionExt, SessionConfig, cookie::CookieTokenStore},
 };
 
-
 use web_app_admin_tc::layout;
 
 #[tokio::main]
@@ -40,7 +39,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         builder = builder.assets(bundle);
     }
     let router = builder.build();
-
 
     tracing::info!("Starting web_app_admin_tc on 0.0.0.0:3002");
     topcoat::start(router).await?;

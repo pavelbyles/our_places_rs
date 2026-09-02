@@ -1,8 +1,8 @@
+use chrono::NaiveDate;
 pub use common::app_client::*;
 use common::models::{
     BookingResponse, DynamicPricingQuote, ListingDetails, ListingResponse, NewBookingRequest,
 };
-use chrono::NaiveDate;
 use uuid::Uuid;
 
 /// Search listings with parameters via listing_api
@@ -31,8 +31,6 @@ pub async fn get_pricing_quote_tc(
 }
 
 /// Create a 15-minute booking hold via booking_api
-pub async fn create_booking_hold_tc(
-    req: &NewBookingRequest,
-) -> anyhow::Result<BookingResponse> {
+pub async fn create_booking_hold_tc(req: &NewBookingRequest) -> anyhow::Result<BookingResponse> {
     common::app_client::create_booking(req).await
 }

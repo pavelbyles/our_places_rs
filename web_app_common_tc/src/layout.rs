@@ -1,12 +1,7 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    htmx::hx_request,
-    view::view,
-};
 use crate::auth::auth_init_script;
 use crate::components::currency_selector::currency_selector;
 use crate::theme::{theme_init_script, theme_toggle, theme_toggle_script};
+use topcoat::{Result, context::Cx, htmx::hx_request, view::view};
 
 pub async fn guest_base_layout(__cx: &Cx, slot: Result) -> Result {
     // If request was initiated by HTMX, swap the inner page fragment only

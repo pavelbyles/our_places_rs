@@ -21,7 +21,7 @@ pub async fn admin_login_api(
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<AdminLoginResponse>> {
     let api = get_api_client(cx);
-    
+
     // Authenticate credentials against user_api
     match api.login_user(&payload).await {
         Ok(user_resp) => {
@@ -44,7 +44,6 @@ pub async fn admin_login_api(
                 Ok(session) => {
                     let hash_hex = token_hash_to_hex(&session.token_hash);
                     let primary_role = user_resp
-
                         .roles
                         .first()
                         .cloned()
@@ -73,7 +72,9 @@ pub async fn admin_login_api(
                         return Ok(Json(AdminLoginResponse {
                             success: false,
                             user: None,
-                            message: Some("Failed to persist session. Please try again.".to_string()),
+                            message: Some(
+                                "Failed to persist session. Please try again.".to_string(),
+                            ),
                         }));
                     }
 
@@ -98,7 +99,10 @@ pub async fn admin_login_api(
             Ok(Json(AdminLoginResponse {
                 success: false,
                 user: None,
-                message: Some("Invalid email or password. Access restricted to authorized administrators.".to_string()),
+                message: Some(
+                    "Invalid email or password. Access restricted to authorized administrators."
+                        .to_string(),
+                ),
             }))
         }
     }
@@ -420,4 +424,3 @@ pub async fn login_page(cx: &Cx) -> Result {
         </script>
     }
 }
-

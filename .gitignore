@@ -37,3 +37,8 @@ web_app/dist/
 # Credentials
 docs/listing_api/oauth_config_util/*.json
 
+# Node modules
+node_modules/
+**/node_modules/
+
+

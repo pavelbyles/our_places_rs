@@ -131,9 +131,7 @@ pub async fn require_admin_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError> {
                 ))
             }
         }
-        None => {
-            Err(AdminAuthError::Unauthenticated("/login".to_string()))
-        }
+        None => Err(AdminAuthError::Unauthenticated("/login".to_string())),
     }
 }
 
@@ -149,9 +147,7 @@ pub async fn require_admin_role_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError
                 ))
             }
         }
-        None => {
-            Err(AdminAuthError::Unauthenticated("/login".to_string()))
-        }
+        None => Err(AdminAuthError::Unauthenticated("/login".to_string())),
     }
 }
 
@@ -162,7 +158,6 @@ pub fn get_authenticated_admin(_cx: &Cx) -> AuthUser {
 pub fn get_authenticated_guest(_cx: &Cx) -> Option<AuthUser> {
     None
 }
-
 
 /// Client-side auth script to sync header and manage session / redirection cleanly.
 /// IMPORTANT: Crafted with ZERO raw ampersands, less-than, or greater-than operators to prevent Topcoat HTML entity escaping.

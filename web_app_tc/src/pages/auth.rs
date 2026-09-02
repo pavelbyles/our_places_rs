@@ -1,9 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
 
 #[page("/login")]
 pub async fn login_page(_cx: &Cx) -> Result {

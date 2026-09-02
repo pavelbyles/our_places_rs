@@ -3,10 +3,8 @@ use crate::models::{
     BookingResponse, BookingReviewEligibility, CreateSessionRequest, DynamicPricingQuote,
     HostReplyRequest, ListingDetails, ListingResponse, LoginRequest, NewBookingRequest,
     NewReviewRequest, PriceOverride, ReviewResponse, ReviewTokenInfoResponse, SessionResponse,
-    TransferBookingRequest, UpdatedBookingRequest, UpdateUserRequest, UserResponse,
+    TransferBookingRequest, UpdateUserRequest, UpdatedBookingRequest, UserResponse,
 };
-
-
 
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
@@ -167,7 +165,10 @@ pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<Li
         .context("Failed to parse listing response")
 }
 
-pub async fn update_listing(id: &str, req: &crate::models::UpdatedListingRequest) -> Result<ListingResponse> {
+pub async fn update_listing(
+    id: &str,
+    req: &crate::models::UpdatedListingRequest,
+) -> Result<ListingResponse> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!("{}/api/v1/listings/{}", api_url, id);
@@ -470,7 +471,10 @@ pub async fn get_all_bookings(
     let audience = booking_api_audience();
     let page = page.unwrap_or(1);
     let per_page = per_page.unwrap_or(50);
-    let url = format!("{}/api/v1/bookings?page={}&per_page={}", api_url, page, per_page);
+    let url = format!(
+        "{}/api/v1/bookings?page={}&per_page={}",
+        api_url, page, per_page
+    );
 
     let res = get_client()
         .get(&url, &audience)
@@ -609,7 +613,10 @@ pub async fn get_all_users(
     let audience = user_api_audience();
     let page = page.unwrap_or(1);
     let per_page = per_page.unwrap_or(50);
-    let mut url = format!("{}/api/v1/users?page={}&per_page={}", api_url, page, per_page);
+    let mut url = format!(
+        "{}/api/v1/users?page={}&per_page={}",
+        api_url, page, per_page
+    );
     if let Some(s) = search.filter(|s| !s.is_empty()) {
         url.push_str(&format!("&search={}", s));
     }
@@ -661,8 +668,6 @@ pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionRespons
         .post(&url, &audience, req)
         .await
         .context("Failed to connect to user service for session creation")?;
-
-
 
     if !res.status().is_success() {
         let status = res.status();
@@ -772,5 +777,3 @@ pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
 
     Ok(user)
 }
-
-

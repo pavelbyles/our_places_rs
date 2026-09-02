@@ -1,14 +1,6 @@
 use std::collections::HashMap;
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
-use web_app_common_tc::{
-    client::ListingSearchParams,
-    get_api_client,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
+use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
 #[page("/bookings")]
 pub async fn bookings_alias_page(cx: &Cx) -> Result {
@@ -32,11 +24,17 @@ async fn render_bookings_content(cx: &Cx) -> Result {
     let __cx = cx;
     let api = get_api_client(cx);
 
-    let bookings = api.get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
-    let listings = api.search_listings(ListingSearchParams {
-        per_page: Some(50),
-        ..Default::default()
-    }).await.unwrap_or_default();
+    let bookings = api
+        .get_all_bookings(Some(1), Some(50))
+        .await
+        .unwrap_or_default();
+    let listings = api
+        .search_listings(ListingSearchParams {
+            per_page: Some(50),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
     let users = match api.get_all_users(Some(1), Some(50), None).await {
         Ok(users) => users,
         Err(err) => {
@@ -47,21 +45,35 @@ async fn render_bookings_content(cx: &Cx) -> Result {
 
     let listing_map: HashMap<uuid::Uuid, (String, String)> = listings
         .into_iter()
-        .map(|l| (l.id, (l.name, l.city.unwrap_or_else(|| "Jamaica".to_string()))))
+        .map(|l| {
+            (
+                l.id,
+                (l.name, l.city.unwrap_or_else(|| "Jamaica".to_string())),
+            )
+        })
         .collect();
 
     let user_map: HashMap<uuid::Uuid, (String, String)> = users
         .into_iter()
         .map(|u| {
-            let full_name = format!("{} {}", u.first_name, u.last_name).trim().to_string();
-            let name = if full_name.is_empty() { "Guest".to_string() } else { full_name };
+            let full_name = format!("{} {}", u.first_name, u.last_name)
+                .trim()
+                .to_string();
+            let name = if full_name.is_empty() {
+                "Guest".to_string()
+            } else {
+                full_name
+            };
             (u.id, (name, u.email))
         })
         .collect();
 
     let pending_bookings: Vec<&common::models::BookingResponse> = bookings
         .iter()
-        .filter(|b| b.status.eq_ignore_ascii_case("pending") || b.status.eq_ignore_ascii_case("pending_payment"))
+        .filter(|b| {
+            b.status.eq_ignore_ascii_case("pending")
+                || b.status.eq_ignore_ascii_case("pending_payment")
+        })
         .collect();
     let pending_count = pending_bookings.len();
 
@@ -111,7 +123,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             let (g_name, g_email) = user_map.get(&pb.guest_id).cloned().unwrap_or_else(|| ("Guest".to_string(), "guest@ourplaces.io".to_string()));
                             let dates = format!("{} – {}", pb.date_from.format("%b %d"), pb.date_to.format("%b %d, %Y"));
                             let total = format!("{} {:.2}", pb.currency, pb.total_price);
-                            
+
                             <div class="bg-base-100 dark:bg-base-200 p-4 rounded-xl border border-warning/20 flex flex-col justify-between gap-3 shadow-sm" id=(format!("pending-card-{}", pb_id))>
                                 <div class="space-y-1">
                                     <div class="flex justify-between items-start">

@@ -1,0 +1,9 @@
+{
+  "name": "our_places_rs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Our Places Monorepo Workspace",
+  "dependencies": {
+    "daisyui": "^5.5.20"
+  }
+}

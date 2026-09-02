@@ -395,15 +395,11 @@ async fn test_get_all_users_with_filters() {
     }
 
     // 1. Test get all (pagination default) - test BOTH trailing slash and without trailing slash
-    let req_with_slash = test::TestRequest::get()
-        .uri("/api/v1/users/")
-        .to_request();
+    let req_with_slash = test::TestRequest::get().uri("/api/v1/users/").to_request();
     let resp_with_slash = test::call_service(&app, req_with_slash).await;
     assert_eq!(resp_with_slash.status(), 200);
 
-    let req_without_slash = test::TestRequest::get()
-        .uri("/api/v1/users")
-        .to_request();
+    let req_without_slash = test::TestRequest::get().uri("/api/v1/users").to_request();
     let resp_without_slash = test::call_service(&app, req_without_slash).await;
     assert_eq!(resp_without_slash.status(), 200);
 
@@ -435,7 +431,10 @@ async fn test_get_all_users_with_filters() {
     let admin_body: Vec<UserResponse> = test::read_body_json(resp_admin_check).await;
     assert_eq!(admin_body.len(), 1);
     assert_eq!(admin_body[0].email, "admin_test_listing@example.com");
-    assert!(admin_body[0].roles.contains(&"Admin".to_string()) || admin_body[0].roles.contains(&"admin".to_string()));
+    assert!(
+        admin_body[0].roles.contains(&"Admin".to_string())
+            || admin_body[0].roles.contains(&"admin".to_string())
+    );
 
     // 2. Test search filter (email)
     let req = test::TestRequest::get()

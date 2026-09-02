@@ -1,0 +1,66 @@
+ARG RELEASE_FLAG=--release
+
+FROM rust:1.95.0-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    npm \
+    pkg-config \
+    libssl-dev \
+    git \
+    make \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /app
+WORKDIR /app
+
+# Install daisyui for Tailwind CSS v4 build
+RUN npm install daisyui@^5.5.20
+
+# Copy the entire workspace to preserve common crate and workspace structure
+COPY . .
+
+# Ensure daisyui is resolvable by build.rs Tailwind compiler across all crates
+RUN ln -s /app/node_modules /app/web_app_admin_tc/node_modules 2>/dev/null || true && \
+    ln -s /app/node_modules /app/web_app_common_tc/node_modules 2>/dev/null || true
+
+# Set SQLX_OFFLINE to true so we don't need a running DB connection to build
+ENV SQLX_OFFLINE=true
+ENV NODE_PATH=/app/node_modules
+
+ARG RELEASE_FLAG
+RUN if [ "$RELEASE_FLAG" = "--release" ]; then \
+        cargo build --release -p web_app_common_tc --bin topcoat_bundler; \
+        cargo build --release -p web_app_admin_tc; \
+        cp /app/target/release/web_app_admin_tc /app/server_binary; \
+        mkdir -p /app/assets; \
+        /app/target/release/topcoat_bundler /app/server_binary /app/assets; \
+    else \
+        cargo build -p web_app_common_tc --bin topcoat_bundler; \
+        cargo build -p web_app_admin_tc; \
+        cp /app/target/debug/web_app_admin_tc /app/server_binary; \
+        mkdir -p /app/assets; \
+        /app/target/debug/topcoat_bundler /app/server_binary /app/assets; \
+    fi
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get autoremove -y \
+  && apt-get clean -y \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the server binary and assets
+COPY --from=builder /app/server_binary ./server_binary
+COPY --from=builder /app/assets ./assets
+
+# Default to port 8080 and host 0.0.0.0 for Cloud Run
+ENV HOST=0.0.0.0
+ENV PORT=8080
+EXPOSE 8080
+
+# Run the server
+CMD ["./server_binary"]

@@ -8,6 +8,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 topcoat = { workspace = true, features = ["htmx", "tailwind", "session"] }
+topcoat-asset = { version = "0.6.2", features = ["bundler"] }
 
 common = { workspace = true }
 serde = { workspace = true }

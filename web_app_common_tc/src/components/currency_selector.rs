@@ -5,7 +5,9 @@ use topcoat::{
 
 #[component]
 pub async fn currency_selector(current_currency: Option<String>) -> Result {
-    let active = current_currency.unwrap_or_else(|| "USD".to_string()).to_uppercase();
+    let active = current_currency
+        .unwrap_or_else(|| "USD".to_string())
+        .to_uppercase();
 
     view! {
         <div class="dropdown dropdown-end">

@@ -180,5 +180,56 @@ services:
       booking_api:
         condition: service_healthy
 
+  web_app_tc:
+    build:
+      context: .
+      dockerfile: web_app_tc/Dockerfile.web_app_tc
+      args:
+        RELEASE_FLAG: ${WEB_APP_TC_RELEASE_FLAG:-}
+    ports:
+      - "3000:8080"
+    environment:
+      - RUST_LOG=info,web_app_tc=debug
+      - HOST=0.0.0.0
+      - PORT=8080
+      - LISTING_API_URL=http://listing_api:8080
+      - USER_API_URL=http://user_api:8080
+      - BOOKING_API_URL=http://booking_api:8080
+    depends_on:
+      db:
+        condition: service_healthy
+      listing_api:
+        condition: service_healthy
+      user_api:
+        condition: service_healthy
+      booking_api:
+        condition: service_healthy
+
+  web_app_admin_tc:
+    build:
+      context: .
+      dockerfile: web_app_admin_tc/Dockerfile.web_app_admin_tc
+      args:
+        RELEASE_FLAG: ${WEB_APP_ADMIN_TC_RELEASE_FLAG:-}
+    ports:
+      - "3002:8080"
+    environment:
+      - RUST_LOG=info,web_app_admin_tc=debug
+      - HOST=0.0.0.0
+      - PORT=8080
+      - LISTING_API_URL=http://listing_api:8080
+      - USER_API_URL=http://user_api:8080
+      - BOOKING_API_URL=http://booking_api:8080
+      - DATABASE_URL=postgres://postgres:password@db:5432/our_places
+    depends_on:
+      db:
+        condition: service_healthy
+      listing_api:
+        condition: service_healthy
+      user_api:
+        condition: service_healthy
+      booking_api:
+        condition: service_healthy
+
 volumes:
   postgres_data_dev:

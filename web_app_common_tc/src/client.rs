@@ -5,10 +5,9 @@ use common::models::{
     UpdateUserRequest, UserResponse,
 };
 
-
 pub use common::app_client::ListingSearchParams;
 use std::sync::Arc;
-use topcoat::context::{try_app_context, Cx};
+use topcoat::context::{Cx, try_app_context};
 use uuid::Uuid;
 
 /// Strongly-typed HTTP Client & API Gateway Service registered in Topcoat's `app_context`.
@@ -100,10 +99,7 @@ impl TopcoatApiClient {
     }
 
     /// Create a 15-minute booking hold
-    pub async fn create_booking(
-        &self,
-        req: &NewBookingRequest,
-    ) -> anyhow::Result<BookingResponse> {
+    pub async fn create_booking(&self, req: &NewBookingRequest) -> anyhow::Result<BookingResponse> {
         common::app_client::create_booking(req).await
     }
 
@@ -179,8 +175,6 @@ impl TopcoatApiClient {
         common::app_client::login_user(req).await
     }
 }
-
-
 
 static DEFAULT_CLIENT: std::sync::OnceLock<TopcoatApiClient> = std::sync::OnceLock::new();
 

@@ -74,10 +74,10 @@ impl SessionsDb {
                 return Ok(None);
             }
 
-            if let Some(ns) = expected_namespace {
-                if r.namespace != ns {
-                    return Ok(None);
-                }
+            if let Some(ns) = expected_namespace
+                && r.namespace != ns
+            {
+                return Ok(None);
             }
 
             let new_ttl = if let Some(extend_sec) = extend_ttl_seconds {
@@ -170,7 +170,11 @@ impl SessionsDb {
     }
 
     /// Revoke all active sessions for a user, optionally scoped to a specific namespace.
-    pub async fn delete_user_sessions(&self, user_id: Uuid, namespace: Option<&str>) -> Result<u64> {
+    pub async fn delete_user_sessions(
+        &self,
+        user_id: Uuid,
+        namespace: Option<&str>,
+    ) -> Result<u64> {
         let rows_affected = if let Some(ns) = namespace {
             sqlx::query!(
                 "DELETE FROM sessions WHERE user_id = $1 AND namespace = $2",

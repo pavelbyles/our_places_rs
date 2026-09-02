@@ -1,13 +1,5 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
-use web_app_common_tc::{
-    client::ListingSearchParams,
-    get_api_client,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
+use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
 #[page("/admin")]
 pub async fn admin_alias_dashboard(cx: &Cx) -> Result {
@@ -37,17 +29,32 @@ async fn render_dashboard_content(cx: &Cx) -> Result {
         None => true,
     };
 
-    let listings = api.search_listings(ListingSearchParams {
-        per_page: Some(10),
-        ..Default::default()
-    }).await.unwrap_or_default();
+    let listings = api
+        .search_listings(ListingSearchParams {
+            per_page: Some(10),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
 
-    let bookings = api.get_all_bookings(Some(1), Some(50)).await.unwrap_or_default();
+    let bookings = api
+        .get_all_bookings(Some(1), Some(50))
+        .await
+        .unwrap_or_default();
 
     let listing_count = listings.len();
-    let active_holds = bookings.iter().filter(|b| b.status == "pending_payment" || b.status == "PendingPayment").count();
-    let total_revenue: rust_decimal::Decimal = bookings.iter()
-        .filter(|b| b.status == "confirmed" || b.status == "Confirmed" || b.status == "completed" || b.status == "Completed")
+    let active_holds = bookings
+        .iter()
+        .filter(|b| b.status == "pending_payment" || b.status == "PendingPayment")
+        .count();
+    let total_revenue: rust_decimal::Decimal = bookings
+        .iter()
+        .filter(|b| {
+            b.status == "confirmed"
+                || b.status == "Confirmed"
+                || b.status == "completed"
+                || b.status == "Completed"
+        })
         .map(|b| b.total_price)
         .sum();
 
@@ -264,7 +271,9 @@ async fn render_dashboard_content(cx: &Cx) -> Result {
 
 #[page("/admin/htmx/stats")]
 pub async fn admin_htmx_stats(_cx: &Cx) -> Result {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
     view! {
         <div class="space-y-2 text-xs">
             <div class="flex justify-between py-1 border-b border-base-200/50">

@@ -7,9 +7,7 @@ use topcoat::{
     view::view,
 };
 use web_app_common_tc::{
-    components::price_breakdown::price_breakdown,
-    get_api_client,
-    get_authenticated_guest,
+    components::price_breakdown::price_breakdown, get_api_client, get_authenticated_guest,
 };
 
 path_param!(slug);
@@ -62,16 +60,25 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
     let details_opt = api.get_listing_by_id(&id, None).await.ok();
 
     let auth_user = get_authenticated_guest(cx);
-    let default_email = auth_user.as_ref().map(|u| u.email.clone()).unwrap_or_default();
-    let default_first_name = auth_user.as_ref().and_then(|u| u.name.split_whitespace().next().map(|s| s.to_string())).unwrap_or_default();
-    let default_last_name = auth_user.as_ref().map(|u| {
-        let parts: Vec<&str> = u.name.split_whitespace().collect();
-        if parts.len() > 1 {
-            parts[1..].join(" ")
-        } else {
-            String::new()
-        }
-    }).unwrap_or_default();
+    let default_email = auth_user
+        .as_ref()
+        .map(|u| u.email.clone())
+        .unwrap_or_default();
+    let default_first_name = auth_user
+        .as_ref()
+        .and_then(|u| u.name.split_whitespace().next().map(|s| s.to_string()))
+        .unwrap_or_default();
+    let default_last_name = auth_user
+        .as_ref()
+        .map(|u| {
+            let parts: Vec<&str> = u.name.split_whitespace().collect();
+            if parts.len() > 1 {
+                parts[1..].join(" ")
+            } else {
+                String::new()
+            }
+        })
+        .unwrap_or_default();
 
     let arrival_times = vec![
         ("00:00", "12:00 AM (Midnight)", false),
@@ -187,7 +194,7 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                     "Enter your contact details to finalize the reservation."
                                 </p>
                             </div>
-                            
+
                             <form
                                 class="space-y-5"
                                 id="checkout-form"

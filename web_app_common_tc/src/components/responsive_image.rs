@@ -4,15 +4,12 @@ use topcoat::{
 };
 
 #[component]
-pub async fn responsive_image(
-    src: String,
-    alt: String,
-    class: Option<String>,
-) -> Result {
+pub async fn responsive_image(src: String, alt: String, class: Option<String>) -> Result {
     let css_class = class.unwrap_or_else(|| "object-cover w-full h-full".to_string());
-    
+
     // Check if the image is a GCS asset URL that supports resolution variants
-    let is_gcs_url = src.contains("storage.googleapis.com") || src.starts_with("https://storage.cloud.google.com");
+    let is_gcs_url = src.contains("storage.googleapis.com")
+        || src.starts_with("https://storage.cloud.google.com");
     let fallback_src = src.clone();
     let alt_text = alt.clone();
 

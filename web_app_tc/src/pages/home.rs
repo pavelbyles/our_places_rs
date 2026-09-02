@@ -1,13 +1,6 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
 use web_app_common_tc::{
-    client::ListingSearchParams,
-    components::villa_card::villa_card,
-    get_api_client,
+    client::ListingSearchParams, components::villa_card::villa_card, get_api_client,
 };
 
 #[page("/")]
@@ -19,15 +12,20 @@ pub async fn home(cx: &Cx) -> Result {
     let tomorrow = today + chrono::Days::new(1);
     let default_checkout = today + chrono::Days::new(6);
     let min_checkin = tomorrow.format("%Y-%m-%d").to_string();
-    let min_checkout = (tomorrow + chrono::Days::new(1)).format("%Y-%m-%d").to_string();
+    let min_checkout = (tomorrow + chrono::Days::new(1))
+        .format("%Y-%m-%d")
+        .to_string();
     let val_checkin = tomorrow.format("%Y-%m-%d").to_string();
     let val_checkout = default_checkout.format("%Y-%m-%d").to_string();
 
     let api = get_api_client(cx);
-    let listings = api.search_listings(ListingSearchParams {
-        per_page: Some(12),
-        ..Default::default()
-    }).await.unwrap_or_default();
+    let listings = api
+        .search_listings(ListingSearchParams {
+            per_page: Some(12),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_default();
 
     view! {
         <div class="flex flex-col gap-16">

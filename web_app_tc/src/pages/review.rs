@@ -1,9 +1,4 @@
-use topcoat::{
-    Result,
-    context::Cx,
-    router::page,
-    view::view,
-};
+use topcoat::{Result, context::Cx, router::page, view::view};
 
 #[page("/reviews/submit")]
 pub async fn review_submit_page(_cx: &Cx) -> Result {

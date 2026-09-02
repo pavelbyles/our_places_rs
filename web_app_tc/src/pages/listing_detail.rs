@@ -7,10 +7,7 @@ use topcoat::{
     router::{page, path_param},
     view::view,
 };
-use web_app_common_tc::{
-    components::price_breakdown::price_breakdown,
-    get_api_client,
-};
+use web_app_common_tc::{components::price_breakdown::price_breakdown, get_api_client};
 
 path_param!(slug);
 
@@ -21,7 +18,9 @@ pub async fn listing_detail(cx: &Cx) -> Result {
     let details_opt = api.get_listing_by_id(slug, None).await.ok();
 
     let reviews = if let Some(ref d) = details_opt {
-        api.get_listing_reviews(d.listing.id, 1, 20).await.unwrap_or_default()
+        api.get_listing_reviews(d.listing.id, 1, 20)
+            .await
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -404,7 +403,8 @@ pub async fn listing_quote(cx: &Cx) -> Result {
     let check_out = NaiveDate::from_ymd_opt(2026, 9, 15).unwrap_or_default();
 
     // Call booking_api dynamic quote with monadic fallback pipeline
-    let (subtotal, tax, total, nights) = api.get_pricing_quote(listing_id, check_in, check_out, Some(&currency))
+    let (subtotal, tax, total, nights) = api
+        .get_pricing_quote(listing_id, check_in, check_out, Some(&currency))
         .await
         .map(|quote| {
             let nights = quote.nightly_breakdown.len() as i64;
