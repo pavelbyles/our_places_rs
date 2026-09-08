@@ -117,6 +117,55 @@ Concurrent requests for overlapping date windows on `villa_id=987` acquire row-l
 
 ### Guardrails Check
 - Invariant: Zero double bookings via strict PostgreSQL row-level locks.
+""",
+        "draft-intent:Originator Idea to Proto-Spec Test": """
+# Intent: Guest Self-Service Booking Cancellation
+
+## Metadata
+- Author: Product Team
+- Date: 2026-09-08
+- Status: Draft
+
+## 1. Problem Statement & Motivation
+Guests currently have to email support to cancel bookings, causing delay and support burden.
+
+## 2. Proposed Outcome
+Provide a 1-click self-service cancellation flow in the guest dashboard.
+
+## 3. Scope Boundaries
+### In Scope (MVP)
+- Cancellation before 48 hours of check-in with automated refund calculation.
+### Out of Scope
+- Partial date changes or manual host dispute flows.
+
+## 4. Constraints & Invariants
+- Enforce strict 15% statutory tax refund rules.
+- Maintain idempotent cancellation status transitions.
+""",
+        "pr-remediation:PR Review Comment Remediation Test": """
+1. Inspect the PR comments and check run failure details:
+```bash
+gh pr view 42 --comments
+gh pr checks 42
+```
+
+2. Replace the unwrap violation in the database handler with proper error mapping:
+```rust
+let pool = state.db_pool.acquire().await.map_err(|e| AppError::DbError(e.to_string()))?;
+```
+
+3. Run the verification sanity-check before pushing:
+```bash
+cargo check --workspace
+cargo test --workspace
+# Run sanity-check workflow
+```
+
+4. Push fix and update PR thread:
+```bash
+git push origin feat/42-fix-branch
+gh pr comment 42 --body "Resolved unwrap violation by mapping DB connection error to AppError::DbError."
+```
 """
     }
 

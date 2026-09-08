@@ -3,62 +3,27 @@ name: risk-assessment
 description: Quantify likelihood and impact for identified security threats, technical vulnerabilities, and operational risks.
 ---
 
-## Purpose
+# Risk Assessment
 
-Assess the likelihood and impact of identified security threats and vulnerabilities.
+Quantify and prioritize technical, operational, and architectural risks to guide engineering and security decisions.
 
-## Security Reviewer Perspective
+## Assessment Process
 
-The Security Reviewer prioritizes understanding risk so that resources are focused where they matter most.
+```mermaid
+graph LR
+    Threat[1. Identify Threat] --> Likelihood[2. Estimate Likelihood]
+    Likelihood --> Impact[3. Quantify Impact]
+    Impact --> Score[4. Calculate Risk Score]
+    Score --> Mitigate[5. Define Mitigations]
+```
 
-Focus on:
+1. **Threat Identification**: Detail threat actors, failure modes, and vulnerability preconditions.
+2. **Likelihood Estimation**: Score probability based on ease of exploitation and exposure (1 = Rare, 5 = Frequent).
+3. **Impact Quantification**: Score damage to data integrity, financial accuracy, uptime, and user trust (1 = Negligible, 5 = Catastrophic).
+4. **Calculate Risk**: $\text{Risk Level} = \text{Likelihood} \times \text{Impact}$.
+5. **Formulate Mitigations**: Specify architectural safeguards, defense-in-depth controls, or acceptance criteria.
 
-- likelihood
-- impact
-- exploitability
-- business consequences
+---
 
-Avoid:
-
-- subjective assessments
-- unsupported conclusions
-- unprioritized findings
-
-## Invocation Triggers
-
-Use this skill when:
-
-- evaluating findings
-- reviewing threats
-- assessing vulnerabilities
-- making security decisions
-
-## Inputs
-
-- threat information
-- vulnerability data
-- business context
-- system information
-
-## Process
-
-1. Identify risks.
-2. Assess likelihood.
-3. Assess impact.
-4. Determine exploitability.
-5. Determine severity.
-6. Prioritize risks.
-7. Recommend treatment options.
-
-## Deliverables
-
-- risk assessment
-- risk register
-- prioritization recommendations
-
-## Completion Criteria
-
-- risks identified
-- severity assigned
-- prioritization completed
-- treatment recommendations documented
+## Risk Matrices & Templates
+* For $5 \times 5$ risk scoring grids, impact criteria, and risk register templates, see **[REFERENCE.md](REFERENCE.md)**.
