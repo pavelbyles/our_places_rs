@@ -2,11 +2,81 @@
   "version": "1",
   "skills": [
     {
-      "id": "rust-core",
-      "name": "Rust Core Specialist",
-      "description": "Implementing idiomatic, safe, and performant Rust code.",
-      "path": "skills/rust-core",
-      "entrypoint": "skills/rust-core/SKILL.md"
+      "id": "assumption-review",
+      "name": "assumption-review",
+      "description": "Identify, evaluate, and challenge assumptions that influence decisions, designs, and implementations. Use when reviewing requirements, evaluating designs, assessing implementation plans, or preparing risk analyses.",
+      "path": "skills/assumption-review",
+      "entrypoint": "skills/assumption-review/SKILL.md"
+    },
+    {
+      "id": "auto-triage-incident",
+      "name": "Auto-Triage Incident",
+      "description": "Diagnose production incidents, log anomalies, bug reports, and metric breaches, then generate a machine-actionable intent.md proto-spec to restart the AI-native SDLC loop.",
+      "path": "skills/auto-triage-incident",
+      "entrypoint": "skills/auto-triage-incident/SKILL.md"
+    },
+    {
+      "id": "create-worktree",
+      "name": "create-worktree",
+      "description": "Create a git worktree for a GitHub issue branching from an up-to-date source branch, following workspace branch and directory naming conventions.",
+      "path": "skills/create-worktree",
+      "entrypoint": "skills/create-worktree/SKILL.md"
+    },
+    {
+      "id": "daisyui",
+      "name": "DaisyUI skill",
+      "description": "Official daisyUI component library skill. The mandatory UI library for Tailwind CSS. TRIGGER when generating any HTML or JSX code even if the user does not explicitly ask for this skill.",
+      "path": "skills/daisyui",
+      "entrypoint": "skills/daisyui/SKILL.md"
+    },
+    {
+      "id": "draft-intent",
+      "name": "Draft Intent",
+      "description": "Collaboratively brainstorm, scope, and generate structured intent.md proto-specs from raw ideas, feature requests, or problem descriptions to initiate Stage 1 of the AI-native SDLC.",
+      "path": "skills/draft-intent",
+      "entrypoint": "skills/draft-intent/SKILL.md"
+    },
+    {
+      "id": "edge-case-analysis",
+      "name": "edge-case-analysis",
+      "description": "Identify unusual, extreme, or uncommon conditions that may produce unexpected system behavior. Use when reviewing requirements, evaluating designs, assessing implementations, or preparing testing strategies.",
+      "path": "skills/edge-case-analysis",
+      "entrypoint": "skills/edge-case-analysis/SKILL.md"
+    },
+    {
+      "id": "failure-scenario-analysis",
+      "name": "failure-scenario-analysis",
+      "description": "Explore how systems behave when components, dependencies, or processes fail. Use when reviewing architectures, evaluating integrations, assessing operational readiness, or analyzing critical systems.",
+      "path": "skills/failure-scenario-analysis",
+      "entrypoint": "skills/failure-scenario-analysis/SKILL.md"
+    },
+    {
+      "id": "general-debug",
+      "name": "Debug Helper",
+      "description": "Systematic logic error isolation.",
+      "path": "skills/general-debug",
+      "entrypoint": "skills/general-debug/SKILL.md"
+    },
+    {
+      "id": "generate-spec",
+      "name": "generate-spec",
+      "description": "Generate a feature specification document in docs/specs/ using the GitHub issue description derived from the current branch name.",
+      "path": "skills/generate-spec",
+      "entrypoint": "skills/generate-spec/SKILL.md"
+    },
+    {
+      "id": "grill-me",
+      "name": "grill-me",
+      "description": "Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree.",
+      "path": "skills/grill-me",
+      "entrypoint": "skills/grill-me/skill.md"
+    },
+    {
+      "id": "handoff",
+      "name": "Agent handoff",
+      "description": "Compact the current conversation into a handoff document for another agent to pick up.",
+      "path": "skills/handoff",
+      "entrypoint": "skills/handoff/skill.md"
     },
     {
       "id": "lint-hunter",
@@ -16,32 +86,88 @@
       "entrypoint": "skills/lint-hunter/SKILL.md"
     },
     {
-      "id": "general-debug",
-      "name": "General Debugger",
-      "description": "General debugging strategies for Rust.",
-      "path": "skills/general-debug",
-      "entrypoint": "skills/general-debug/SKILL.md"
+      "id": "monad-design",
+      "name": "Monadic Design Specialist",
+      "description": "Contemplate and apply the Monad design pattern (Option, Result, Either, Task, State Monads, Railway-Oriented Programming, combinator pipelines) during code generation and architectural design.",
+      "path": "skills/monad-design",
+      "entrypoint": "skills/monad-design/SKILL.md"
+    },
+    {
+      "id": "pr-analyzer",
+      "name": "pr-analyzer",
+      "description": "Creates a pull request in GitHub, runs the sanity-check workflow, and performs a comprehensive 8-point analysis of the code changes.",
+      "path": "skills/pr-analyzer",
+      "entrypoint": "skills/pr-analyzer/SKILL.md"
+    },
+    {
+      "id": "pr-remediation",
+      "name": "PR Remediation",
+      "description": "Automatically sweep, diagnose, and remediate unresolved pull request review comments and failing CI checks.",
+      "path": "skills/pr-remediation",
+      "entrypoint": "skills/pr-remediation/SKILL.md"
+    },
+    {
+      "id": "resilience-exploration",
+      "name": "resilience-exploration",
+      "description": "Evaluate how effectively a system can withstand, recover from, and adapt to disruption. Use when reviewing architectures, evaluating operational readiness, assessing reliability, or analyzing critical systems.",
+      "path": "skills/resilience-exploration",
+      "entrypoint": "skills/resilience-exploration/SKILL.md"
+    },
+    {
+      "id": "risk-assessment",
+      "name": "risk-assessment",
+      "description": "Assess the likelihood and impact of identified security threats and vulnerabilities. Use when evaluating findings, reviewing threats, assessing vulnerabilities, or making security decisions.",
+      "path": "skills/risk-assessment",
+      "entrypoint": "skills/risk-assessment/SKILL.md"
     },
     {
       "id": "router",
       "name": "Agent Router",
-      "description": "Analyzing user intent and delegating tasks.",
+      "description": "Analyzing user intent and delegating tasks. Use when analyzing new requests, classifying intent, or routing tasks to specialist skills and agents.",
       "path": "skills/router",
       "entrypoint": "skills/router/SKILL.md"
     },
     {
-      "id": "handoff",
-      "name": "Agent handoff",
-      "description": "Compact the current conversation into a handoff document for another agent to pick up",
-      "path": "skills/handoff",
-      "entrypoint": "skills/handoff/skill.md"
+      "id": "rust-core",
+      "name": "Rust Core Specialist",
+      "description": "Implementing idiomatic, safe, monad-driven, and performant Rust code.",
+      "path": "skills/rust-core",
+      "entrypoint": "skills/rust-core/SKILL.md"
     },
     {
-      "id": "daisyui",
-      "name": "DaisyUI skill",
-      "description": "Official daisyUI skill",
-      "path": "skills/daisyui",
-      "entrypoint": "skills/daisyui/SKILL.md"
+      "id": "security-posture-assessment",
+      "name": "security-posture-assessment",
+      "description": "Evaluate the overall security maturity, readiness, and effectiveness of a system, platform, application, or organization.",
+      "path": "skills/security-posture-assessment",
+      "entrypoint": "skills/security-posture-assessment/SKILL.md"
+    },
+    {
+      "id": "security-review",
+      "name": "security-review",
+      "description": "Evaluate a system, application, architecture, or implementation for security weaknesses and risks.",
+      "path": "skills/security-review",
+      "entrypoint": "skills/security-review/SKILL.md"
+    },
+    {
+      "id": "topcoat",
+      "name": "topcoat",
+      "description": "Build web applications using Tokio's Topcoat Rust framework. Use when writing, debugging, or reviewing Topcoat SSR pages, view! templates, routes, and dynamic path parameters.",
+      "path": "skills/topcoat",
+      "entrypoint": "skills/topcoat/SKILL.md"
+    },
+    {
+      "id": "vulnerability-analysis",
+      "name": "vulnerability-analysis",
+      "description": "Analyze discovered vulnerabilities to determine severity, exploitability, impact, and remediation priorities.",
+      "path": "skills/vulnerability-analysis",
+      "entrypoint": "skills/vulnerability-analysis/SKILL.md"
+    },
+    {
+      "id": "write-new-skill",
+      "name": "write-a-skill",
+      "description": "Create new agent skills with proper structure, progressive disclosure, and bundled resources.",
+      "path": "skills/write-new-skill",
+      "entrypoint": "skills/write-new-skill/skill.md"
     }
   ]
 }

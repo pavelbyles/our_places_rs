@@ -1,0 +1,155 @@
+{
+  "version": "1.0",
+  "description": "Synthetic benchmark eval suite to verify agent skill compliance after edits",
+  "benchmarks": [
+    {
+      "skill_id": "rust-core",
+      "name": "Zero-Unwrap & Error Propagation Test",
+      "prompt": "Write an Actix-web handler in Rust that parses a JSON payload containing `user_id` (UUID) and `amount` (string), converts `amount` to Decimal, and returns a JSON response.",
+      "assertions": [
+        {
+          "type": "not_contains",
+          "value": ".unwrap()",
+          "reason": "Production code paths must never use .unwrap()"
+        },
+        {
+          "type": "not_contains",
+          "value": ".expect(",
+          "reason": "Production code paths must never use .expect()"
+        },
+        {
+          "type": "contains",
+          "value": "rust_decimal::Decimal",
+          "reason": "Financial amount must use rust_decimal::Decimal"
+        },
+        {
+          "type": "contains",
+          "value": "Result<",
+          "reason": "Handler must return Result<impl Responder, ...>"
+        }
+      ]
+    },
+    {
+      "skill_id": "rust-core",
+      "name": "Async Non-Blocking I/O Test",
+      "prompt": "Write a Rust function that performs bcrypt password hashing inside an Actix-web async request handler.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "spawn_blocking",
+          "reason": "CPU-intensive bcrypt hashing must be offloaded to tokio::task::spawn_blocking"
+        },
+        {
+          "type": "not_contains",
+          "value": ".unwrap()",
+          "reason": "Task join handle errors must be handled safely"
+        }
+      ]
+    },
+    {
+      "skill_id": "monad-design",
+      "name": "Railway-Oriented Combinator Pipeline Test",
+      "prompt": "Implement a domain service function `process_booking_payment` that takes a `BookingRequest`, validates the date range, checks property availability, applies a discount code if present, and commits the hold. Do NOT use deeply nested if-let or match blocks.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": ".and_then(",
+          "reason": "Must use monadic combinator .and_then() for step chaining"
+        },
+        {
+          "type": "not_contains",
+          "value": "match ",
+          "reason": "Avoid multi-level nested match pyramids in favor of combinators"
+        },
+        {
+          "type": "contains",
+          "value": "Result<",
+          "reason": "Function signature must return a pure Result monad"
+        }
+      ]
+    },
+    {
+      "skill_id": "grill-me",
+      "name": "Decision-Tree Stress Test",
+      "prompt": "I want to add multi-currency payouts to hosts in Jamaica. Let's start building it immediately.",
+      "assertions": [
+        {
+          "type": "not_contains",
+          "value": "```rust",
+          "reason": "grill-me must not output implementation code immediately"
+        },
+        {
+          "type": "contains_pattern",
+          "pattern": "\\?|Question|Recommended",
+          "reason": "Must interrogate the plan and ask structured decision-tree questions with recommendations"
+        }
+      ]
+    },
+    {
+      "skill_id": "auto-triage-incident",
+      "name": "Telemetry to Intent Artifact Test",
+      "prompt": "Triage this production incident: `ERROR booking_api: deadlock detected on property_availability row locks during concurrent hold initiation for villa_id=987`.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "docs/intent/intent-",
+          "reason": "Must propose creating a structured intent artifact"
+        },
+        {
+          "type": "contains",
+          "value": "P0",
+          "reason": "Booking deadlock/outage must be classified as P0 Critical"
+        },
+        {
+          "type": "contains",
+          "value": "Root Cause Hypothesis",
+          "reason": "Intent artifact must include Root Cause Hypothesis section"
+        }
+      ]
+    },
+    {
+      "skill_id": "draft-intent",
+      "name": "Originator Idea to Proto-Spec Test",
+      "prompt": "We want to allow guests to split payments between two credit cards during checkout. Help me draft an intent.md proto-spec for this.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "Problem Statement",
+          "reason": "Intent artifact must include Problem Statement & Motivation section"
+        },
+        {
+          "type": "contains",
+          "value": "Scope Boundaries",
+          "reason": "Intent artifact must explicitly define In-Scope vs Out-of-Scope non-goals"
+        },
+        {
+          "type": "contains",
+          "value": "Constraints",
+          "reason": "Intent artifact must capture domain/system invariants"
+        }
+      ]
+    },
+    {
+      "skill_id": "pr-remediation",
+      "name": "PR Review Comment Remediation Test",
+      "prompt": "Our CI failed with `clippy::unwrap_used` on PR #42, and reviewer @bob commented 'Please replace unwrap with AppError::DbError'. Remediate this PR.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "gh pr",
+          "reason": "Must use gh CLI to inspect and interact with the PR"
+        },
+        {
+          "type": "not_contains",
+          "value": ".unwrap()",
+          "reason": "Must resolve the unwrap violation cleanly"
+        },
+        {
+          "type": "contains",
+          "value": "sanity-check",
+          "reason": "Must execute verification/sanity checks before pushing fix"
+        }
+      ]
+    }
+  ]
+}
