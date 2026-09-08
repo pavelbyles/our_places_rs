@@ -45,6 +45,7 @@ graph TD
   - `## Success Metrics & Acceptance Signals`
   - `## Open Questions & Flagged Concerns`
 
-### 5. Review & Hand off to Design (Stage 2)
-- Present the generated draft to the originator for correction and sign-off.
-- Once accepted, commit `intent.md` to version control to trigger Stage 2 (`/create-spec-from-hl-req` or `/start-feature`).
+### 5. Review & Terse Handoff to Design (Stage 2)
+- Present the generated draft to the originator for sign-off by providing the file path link and flagged questions. **DO NOT re-summarize or dump the full intent content in chat.**
+- Once accepted, commit `intent.md` to trigger Stage 2 (`/create-spec-from-hl-req` or `/start-feature`).
+

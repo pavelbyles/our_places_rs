@@ -41,5 +41,6 @@ Follow this process to generate a specification document:
      - `## Acceptance Criteria`: A comprehensive checklist of conditions that must be met for the feature to be considered complete.
    - Write the generated content to the target spec file.
 
-6. **Review**:
-   - Once written, let the user know the spec has been generated and is ready for their review.
+6. **Review & Terse Handoff**:
+   - Save the spec to `docs/specs/spec-<branch_name>.md`.
+   - Output only the clickable file link and a compact list of open questions. **DO NOT re-summarize or paste the spec into chat.**

@@ -45,6 +45,8 @@ graph TD
   - `## Reproduction & Verification Plan` (Target test harness to reproduce before fixing)
   - `## Open Questions & Policy Checks`
 
-### 5. Handoff to Downstream SDLC Stages
+### 5. Terse Handoff to Downstream SDLC Stages
+- Output the created incident intent path, severity tier, and next action. **DO NOT re-summarize or dump the full intent content in chat.**
 - **For immediate diagnosis**: Trigger investigation workflows to reproduce root cause with a failing test.
 - **For implementation**: Feed `intent.md` into spec generation or branch setup to restart the AI-native SDLC loop.
+

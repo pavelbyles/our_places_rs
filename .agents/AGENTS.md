@@ -150,3 +150,13 @@ cargo clippy --workspace
 # Database Migrations
 sqlx migrate run
 ```
+
+---
+
+## 13. Communication & Token Efficiency Directives
+
+- **No Artifact Re-Summarization**: When generating or editing an artifact (`intent.md`, `spec.md`, `plan.md`, `walkthrough.md`, `REFERENCE.md`), NEVER re-summarize or regurgitate its full contents in chat. Output only the file path link and a concise bullet list of open questions or next steps.
+- **Terse & Monadic Formatting**: Prefer compact markdown tables, task checklists (`- [ ]`), and minimal diffs over verbose conversational prose.
+- **No Conversational Filler**: Omit preambles, apologies, and rhetorical sign-offs. Jump directly to actionable information.
+- **Targeted Code Slices**: When proposing or reviewing code, output only the specific modified function or struct slice, never full 200+ line files.
+
