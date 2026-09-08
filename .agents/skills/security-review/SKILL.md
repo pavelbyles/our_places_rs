@@ -1,6 +1,6 @@
 ---
 name: security-review
-description: Evaluate a system, application, architecture, or implementation for security weaknesses and risks. Use when reviewing new systems, approving architectural changes, assessing applications, validating security requirements, or evaluating third-party integrations.
+description: Audit architectures and code implementations for security vulnerabilities, attack surfaces, and threat models.
 ---
 
 ## Purpose

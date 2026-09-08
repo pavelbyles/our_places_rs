@@ -1,6 +1,6 @@
 ---
 name: edge-case-analysis
-description: Identify unusual, extreme, or uncommon conditions that may produce unexpected system behavior. Use when reviewing requirements, evaluating designs, assessing implementations, or preparing testing strategies.
+description: Uncover boundary conditions, extreme inputs, and edge cases across system architectures and implementations.
 ---
 
 ## Purpose

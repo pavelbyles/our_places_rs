@@ -1,6 +1,6 @@
 ---
 name: auto-triage-incident
-description: Diagnose production incidents, log anomalies, bug reports, and metric breaches, then generate a machine-actionable intent.md proto-spec to restart the AI-native SDLC loop. Use when triaging production errors, investigating alerts, responding to bug reports, processing log anomalies, or when the user mentions "triage incident", "auto triage", or "incident intent".
+description: Diagnose production errors, metric breaches, and log anomalies, generating an actionable intent.md proto-spec to restart the SDLC loop.
 ---
 
 # Auto-Triage Incident

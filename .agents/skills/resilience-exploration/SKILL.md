@@ -1,6 +1,6 @@
 ---
 name: resilience-exploration
-description: Evaluate how effectively a system can withstand, recover from, and adapt to disruption. Use when reviewing architectures, evaluating operational readiness, assessing reliability, or analyzing critical systems.
+description: Evaluate system recovery, fault tolerance, data integrity, and operational resilience under disruption.
 ---
 
 ## Purpose

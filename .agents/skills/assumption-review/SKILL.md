@@ -1,6 +1,6 @@
 ---
 name: assumption-review
-description: Identify, evaluate, and challenge assumptions that influence decisions, designs, and implementations. Use when reviewing requirements, evaluating designs, assessing implementation plans, or preparing risk analyses.
+description: Identify and challenge underlying assumptions in requirements, technical designs, and implementation plans.
 ---
 
 ## Purpose

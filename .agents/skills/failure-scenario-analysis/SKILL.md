@@ -1,6 +1,6 @@
 ---
 name: failure-scenario-analysis
-description: Explore how systems behave when components, dependencies, or processes fail. Use when reviewing architectures, evaluating integrations, assessing operational readiness, or analyzing critical systems.
+description: Analyze component failures, dependency outages, error propagation, and blast radiuses across architectures.
 ---
 
 ## Purpose

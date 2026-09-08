@@ -1,6 +1,6 @@
 ---
 name: draft-intent
-description: Collaboratively brainstorm, scope, and generate structured intent.md proto-specs from raw ideas, feature requests, or problem descriptions to initiate Stage 1 of the AI-native SDLC. Use when capturing new feature ideas, scoping requirements, drafting proto-specs, or when the user mentions "draft intent", "proto spec", "create intent", or "intent.md".
+description: Brainstorm and generate structured intent.md proto-specs from feature ideas, problem statements, or incident reports for Stage 1 SDLC.
 ---
 
 # Draft Intent (Proto-Spec)

@@ -1,6 +1,6 @@
 ---
 name: generate-spec
-description: Generate a feature specification document in docs/specs/ using the GitHub issue description derived from the current branch name. Use when user wants to create, write, or generate a spec for the feature being developed.
+description: Generate detailed feature specifications in docs/specs/spec-<branch>.md using GitHub issue context and codebase exploration.
 ---
 
 # Generate Feature Spec

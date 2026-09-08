@@ -1,6 +1,6 @@
 ---
 name: Agent Router
-description: Analyzing user intent and delegating tasks. Use when analyzing new requests, classifying intent, or routing tasks to specialist skills and agents.
+description: Classify user intent and route complex tasks to dedicated specialist skills or workflows.
 version: 1.1.0
 rpi_phase: Research
 trigger:

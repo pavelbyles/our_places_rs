@@ -1,6 +1,6 @@
 ---
 name: create-worktree
-description: Create a git worktree for a GitHub issue branching from an up-to-date source branch, following workspace branch and directory naming conventions. Use when creating a new worktree, setting up a branch for a GitHub issue, or when the user mentions creating a worktree.
+description: Create isolated git worktrees and branches for GitHub issues following workspace naming conventions.
 ---
 
 # Create Worktree

@@ -1,6 +1,6 @@
 ---
 name: pr-remediation
-description: Automatically sweep, diagnose, and remediate unresolved pull request review comments and failing CI checks. Use when addressing PR feedback, fixing failing CI builds on a PR, resolving code review comments, or when the user mentions "remediate PR", "fix PR comments", or "auto fix PR".
+description: Autonomously diagnose and fix unresolved PR review comments and failing CI checks.
 ---
 
 # PR Remediation Loop

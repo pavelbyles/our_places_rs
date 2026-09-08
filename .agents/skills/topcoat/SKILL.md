@@ -1,6 +1,6 @@
 ---
 name: topcoat
-description: Build web applications using Tokio's Topcoat Rust framework. Use when writing, debugging, or reviewing Topcoat SSR pages, view! templates, routes, dynamic path parameters (path_param!), query parameters (query_param!), layouts, HTMX integration, request context (Cx), app state (app_context), and module routers.
+description: Build Topcoat SSR web apps, view! templates, HTMX integration, and module routes in Rust.
 ---
 
 # Topcoat Framework Guide

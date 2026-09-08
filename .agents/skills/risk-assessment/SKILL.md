@@ -1,6 +1,6 @@
 ---
 name: risk-assessment
-description: Assess the likelihood and impact of identified security threats and vulnerabilities. Use when evaluating findings, reviewing threats, assessing vulnerabilities, or making security decisions.
+description: Quantify likelihood and impact for identified security threats, technical vulnerabilities, and operational risks.
 ---
 
 ## Purpose

@@ -1,6 +1,6 @@
 ---
 name: security-posture-assessment
-description: Evaluate the overall security maturity, readiness, and effectiveness of a system, platform, application, or organization. Use when evaluating organizational security, preparing audits, reviewing platforms, assessing readiness, or planning security improvements.
+description: Assess overall security maturity, organizational controls, compliance readiness, and platform hardening.
 ---
 
 ## Purpose

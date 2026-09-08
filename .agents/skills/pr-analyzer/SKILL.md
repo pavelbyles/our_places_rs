@@ -1,6 +1,6 @@
 ---
 name: pr-analyzer
-description: Creates a pull request in GitHub, runs the sanity-check workflow, and performs a comprehensive 8-point analysis of the code changes. Use when the user asks to create a PR, review code changes, or perform PR analysis.
+description: Create GitHub pull requests, run sanity checks, and perform comprehensive 8-point code quality and security reviews.
 ---
 
 # PR Analyzer & Creator

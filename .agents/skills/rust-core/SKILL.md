@@ -1,6 +1,6 @@
 ---
 name: Rust Core Specialist
-description: Implementing idiomatic, safe, monad-driven, and performant Rust code. Use when writing, refactoring, or designing Rust logic, Option/Result combinator chains, monadic error propagation, or railway-oriented pipelines.
+description: Implement idiomatic, high-performance, panic-free Rust code using strict monadic error propagation and Option/Result combinators.
 version: 1.2.0
 rpi_phase: Implementation
 trigger:
