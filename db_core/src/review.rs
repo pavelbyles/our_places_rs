@@ -537,16 +537,26 @@ mod tests {
         // Create Listing
         // Create Listing
         let listing_id = Uuid::now_v7();
-        let _ = sqlx::query!(
+        let _ = sqlx::query(
             "INSERT INTO listing (id, user_id, name, listing_structure_id, country, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, base_currency, minimum_stay, added_at) VALUES ($1, $2, $3, 1, 'Jamaica', 'test-villa', 2, 1, 1, 1, 0, 'USD', 1, NOW())",
-            listing_id, host_id, "Test Villa"
-        ).execute(&mut *tx).await.unwrap();
+        )
+        .bind(listing_id)
+        .bind(host_id)
+        .bind("Test Villa")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
 
         // Create Booking (need to use raw SQL since create_booking sets status to pending and we need completed)
-        let _ = sqlx::query!(
+        let _ = sqlx::query(
             "INSERT INTO booking (id, confirmation_code, guest_id, listing_id, status, date_from, date_to, currency, daily_rate, number_of_persons, total_days, sub_total_price, total_price, cancellation_policy, metadata) VALUES ($1, 'ABCDEF', $2, $3, 'completed', CURRENT_DATE - INTERVAL '5 days', CURRENT_DATE, 'USD', 100, 2, 4, 400, 400, 'flexible', '{}')",
-            booking_id, guest_id, listing_id
-        ).execute(&mut *tx).await.unwrap();
+        )
+        .bind(booking_id)
+        .bind(guest_id)
+        .bind(listing_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
 
         tx.commit().await.unwrap();
 
@@ -556,10 +566,10 @@ mod tests {
         assert_eq!(token.booking_id, booking_id);
 
         // Make the token valid immediately for the test
-        sqlx::query!(
+        sqlx::query(
             "UPDATE review_token SET valid_from = NOW() - INTERVAL '1 day' WHERE token = $1",
-            token.token
         )
+        .bind(&token.token)
         .execute(&pool)
         .await
         .unwrap();
