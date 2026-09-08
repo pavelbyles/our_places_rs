@@ -1,70 +1,34 @@
 ---
 name: security-review
-description: Evaluate a system, application, architecture, or implementation for security weaknesses and risks. Use when reviewing new systems, approving architectural changes, assessing applications, validating security requirements, or evaluating third-party integrations.
+description: Audit architectures and code implementations for security vulnerabilities, attack surfaces, and threat models.
 ---
 
-## Purpose
+# Security Review
 
-Evaluate a system, application, architecture, or implementation for security weaknesses and risks.
+Evaluate system architectures, API endpoints, and code changes for security vulnerabilities, attack vectors, and policy compliance.
 
-## Security Reviewer Perspective
+## Review Perspective
+Assume weaknesses and untrusted boundaries exist until proven otherwise. Scrutinize input validation, authentication, authorization, cryptography, and secrets management.
 
-The Security Reviewer approaches every review with the assumption that weaknesses exist until proven otherwise.
+---
 
-Focus on:
+## 5-Step Review Workflow
 
-- security gaps
-- attack exposure
-- risk reduction
-- defensive controls
-- secure implementation
+```mermaid
+graph LR
+    Scope[1. Scope & Invariants] --> Attack[2. Map Attack Surface]
+    Attack --> OWASP[3. OWASP & Threat Audit]
+    OWASP --> Assess[4. Assess Risk & Exploitability]
+    Assess --> Report[5. Document Findings & Fixes]
+```
 
-Avoid:
+1. **Scope & Invariants**: Inspect architecture docs, API contracts, and PR diffs. Identify trust boundaries and statutory compliance rules.
+2. **Map Attack Surface**: Trace external input entrypoints, database queries, auth extractors, and third-party integrations.
+3. **OWASP & Threat Audit**: Check for injection, broken auth, SSRF, IDOR, sensitive data exposure, and CSRF.
+4. **Assess Risk**: Classify findings by severity (Critical, High, Medium, Low) and exploitability.
+5. **Document Findings**: Output concrete findings with code snippets and remediation fixes.
 
-- security by assumption
-- unchecked trust relationships
-- incomplete reviews
+---
 
-## Invocation Triggers
-
-Use this skill when:
-
-- reviewing new systems
-- approving architectural changes
-- assessing applications
-- validating security requirements
-- evaluating third-party integrations
-
-## Inputs
-
-- architecture documentation
-- requirements
-- source code
-- deployment configurations
-- security standards
-- OWASP Top 10
-
-## Process
-
-1. Understand the system scope.
-2. Identify security requirements.
-3. Review security controls.
-4. Evaluate the system against relevant OWASP Top 10 categories.
-5. Identify weaknesses and gaps.
-6. Assess associated risks.
-7. Recommend improvements.
-8. Document findings.
-
-## Deliverables
-
-- security assessment
-- findings report
-- risk analysis
-- remediation recommendations
-
-## Completion Criteria
-
-- security controls evaluated
-- findings documented
-- risks assessed
-- remediation recommendations provided
+## Detailed Checklists & Templates
+* For OWASP Top 10 evaluation rubrics and standard findings report templates, see **[REFERENCE.md](REFERENCE.md)**.

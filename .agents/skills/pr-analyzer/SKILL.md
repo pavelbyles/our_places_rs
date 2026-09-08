@@ -1,6 +1,6 @@
 ---
 name: pr-analyzer
-description: Creates a pull request in GitHub, runs the sanity-check workflow, and performs a comprehensive 8-point analysis of the code changes. Use when the user asks to create a PR, review code changes, or perform PR analysis.
+description: Create GitHub pull requests, run sanity checks, and perform comprehensive 8-point code quality and security reviews.
 ---
 
 # PR Analyzer & Creator
@@ -36,6 +36,13 @@ When invoked to analyze changes and create a PR, follow these steps systematical
      `gh api -X PATCH repos/{owner}/{repo}/pulls/{pr_number} -F body=@<path_to_scratch_file>`
    - Always verify the PR description was successfully attached.
 
-5. **Output the Final Summary**
-   - Present a detailed summary to the user documenting your findings for **each of the 8 analysis items**. 
-   - You must explicitly list all 8 items and provide your findings for each one so the user has a clear record of the analysis.
+5. **Output Terse PR Scorecard**
+   - Output the created PR link and present findings as a compact 8-point scorecard table:
+     ```markdown
+     | Dimension | Status | Key Finding |
+     | :--- | :---: | :--- |
+     | 1. Core Logic | Pass | Implements required feature behavior |
+     | 2. Edge Cases | Pass | Handles boundary limits and empty sets |
+     | ... | ... | ... |
+     ```
+

@@ -1,6 +1,6 @@
 ---
 name: Lint Hunter
-description: Debugging compiler errors and tracing lifetimes.
+description: Resolve Rust compiler errors, borrow-checker conflicts, and lifetime constraints.
 version: 1.1.0
 rpi_phase: Verification
 trigger:

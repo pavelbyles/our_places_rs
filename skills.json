@@ -2,46 +2,172 @@
   "version": "1",
   "skills": [
     {
-      "id": "rust-core",
-      "name": "Rust Core Specialist",
-      "description": "Implementing idiomatic, safe, and performant Rust code.",
-      "path": "skills/rust-core",
-      "entrypoint": "skills/rust-core/SKILL.md"
+      "id": "assumption-review",
+      "name": "assumption-review",
+      "description": "Identify and challenge underlying assumptions in requirements, technical designs, and implementation plans.",
+      "path": "skills/assumption-review",
+      "entrypoint": "skills/assumption-review/SKILL.md"
     },
     {
-      "id": "lint-hunter",
-      "name": "Lint Hunter",
-      "description": "Debugging compiler errors and tracing lifetimes.",
-      "path": "skills/lint-hunter",
-      "entrypoint": "skills/lint-hunter/SKILL.md"
+      "id": "auto-triage-incident",
+      "name": "Auto-Triage Incident",
+      "description": "Diagnose production errors, metric breaches, and log anomalies, generating an actionable intent.md proto-spec to restart the SDLC loop.",
+      "path": "skills/auto-triage-incident",
+      "entrypoint": "skills/auto-triage-incident/SKILL.md"
     },
     {
-      "id": "general-debug",
-      "name": "General Debugger",
-      "description": "General debugging strategies for Rust.",
-      "path": "skills/general-debug",
-      "entrypoint": "skills/general-debug/SKILL.md"
-    },
-    {
-      "id": "router",
-      "name": "Agent Router",
-      "description": "Analyzing user intent and delegating tasks.",
-      "path": "skills/router",
-      "entrypoint": "skills/router/SKILL.md"
-    },
-    {
-      "id": "handoff",
-      "name": "Agent handoff",
-      "description": "Compact the current conversation into a handoff document for another agent to pick up",
-      "path": "skills/handoff",
-      "entrypoint": "skills/handoff/skill.md"
+      "id": "create-worktree",
+      "name": "create-worktree",
+      "description": "Create isolated git worktrees and branches for GitHub issues following workspace naming conventions.",
+      "path": "skills/create-worktree",
+      "entrypoint": "skills/create-worktree/SKILL.md"
     },
     {
       "id": "daisyui",
       "name": "DaisyUI skill",
-      "description": "Official daisyUI skill",
+      "description": "Build UI with daisyUI component classes and Tailwind CSS styling.",
       "path": "skills/daisyui",
       "entrypoint": "skills/daisyui/SKILL.md"
+    },
+    {
+      "id": "draft-intent",
+      "name": "Draft Intent",
+      "description": "Brainstorm and generate structured intent.md proto-specs from feature ideas, problem statements, or incident reports for Stage 1 SDLC.",
+      "path": "skills/draft-intent",
+      "entrypoint": "skills/draft-intent/SKILL.md"
+    },
+    {
+      "id": "edge-case-analysis",
+      "name": "edge-case-analysis",
+      "description": "Uncover boundary conditions, extreme inputs, and edge cases across system architectures and implementations.",
+      "path": "skills/edge-case-analysis",
+      "entrypoint": "skills/edge-case-analysis/SKILL.md"
+    },
+    {
+      "id": "failure-scenario-analysis",
+      "name": "failure-scenario-analysis",
+      "description": "Analyze component failures, dependency outages, error propagation, and blast radiuses across architectures.",
+      "path": "skills/failure-scenario-analysis",
+      "entrypoint": "skills/failure-scenario-analysis/SKILL.md"
+    },
+    {
+      "id": "general-debug",
+      "name": "Debug Helper",
+      "description": "Isolate runtime logic errors and bugs through systematic root-cause tracing.",
+      "path": "skills/general-debug",
+      "entrypoint": "skills/general-debug/SKILL.md"
+    },
+    {
+      "id": "generate-spec",
+      "name": "generate-spec",
+      "description": "Generate detailed feature specifications in docs/specs/spec-<branch>.md using GitHub issue context and codebase exploration.",
+      "path": "skills/generate-spec",
+      "entrypoint": "skills/generate-spec/SKILL.md"
+    },
+    {
+      "id": "grill-me",
+      "name": "grill-me",
+      "description": "Interrogate plans and designs through interactive Socratic questioning to stress-test assumptions and resolve decision trees.",
+      "path": "skills/grill-me",
+      "entrypoint": "skills/grill-me/skill.md"
+    },
+    {
+      "id": "handoff",
+      "name": "Agent handoff",
+      "description": "Compact conversation history into a structured handoff document for subsequent agents.",
+      "path": "skills/handoff",
+      "entrypoint": "skills/handoff/skill.md"
+    },
+    {
+      "id": "lint-hunter",
+      "name": "Lint Hunter",
+      "description": "Resolve Rust compiler errors, borrow-checker conflicts, and lifetime constraints.",
+      "path": "skills/lint-hunter",
+      "entrypoint": "skills/lint-hunter/SKILL.md"
+    },
+    {
+      "id": "monad-design",
+      "name": "Monadic Design Specialist",
+      "description": "Design type-safe data pipelines, error flows, and functional domain models using Monads, Option/Result combinators, and Railway-Oriented Programming.",
+      "path": "skills/monad-design",
+      "entrypoint": "skills/monad-design/SKILL.md"
+    },
+    {
+      "id": "pr-analyzer",
+      "name": "pr-analyzer",
+      "description": "Create GitHub pull requests, run sanity checks, and perform comprehensive 8-point code quality and security reviews.",
+      "path": "skills/pr-analyzer",
+      "entrypoint": "skills/pr-analyzer/SKILL.md"
+    },
+    {
+      "id": "pr-remediation",
+      "name": "PR Remediation",
+      "description": "Autonomously diagnose and fix unresolved PR review comments and failing CI checks.",
+      "path": "skills/pr-remediation",
+      "entrypoint": "skills/pr-remediation/SKILL.md"
+    },
+    {
+      "id": "resilience-exploration",
+      "name": "resilience-exploration",
+      "description": "Evaluate system recovery, fault tolerance, data integrity, and operational resilience under disruption.",
+      "path": "skills/resilience-exploration",
+      "entrypoint": "skills/resilience-exploration/SKILL.md"
+    },
+    {
+      "id": "risk-assessment",
+      "name": "risk-assessment",
+      "description": "Quantify likelihood and impact for identified security threats, technical vulnerabilities, and operational risks.",
+      "path": "skills/risk-assessment",
+      "entrypoint": "skills/risk-assessment/SKILL.md"
+    },
+    {
+      "id": "router",
+      "name": "Agent Router",
+      "description": "Classify user intent and route complex tasks to dedicated specialist skills or workflows.",
+      "path": "skills/router",
+      "entrypoint": "skills/router/SKILL.md"
+    },
+    {
+      "id": "rust-core",
+      "name": "Rust Core Specialist",
+      "description": "Implement idiomatic, high-performance, panic-free Rust code using strict monadic error propagation and Option/Result combinators.",
+      "path": "skills/rust-core",
+      "entrypoint": "skills/rust-core/SKILL.md"
+    },
+    {
+      "id": "security-posture-assessment",
+      "name": "security-posture-assessment",
+      "description": "Assess overall security maturity, organizational controls, compliance readiness, and platform hardening.",
+      "path": "skills/security-posture-assessment",
+      "entrypoint": "skills/security-posture-assessment/SKILL.md"
+    },
+    {
+      "id": "security-review",
+      "name": "security-review",
+      "description": "Audit architectures and code implementations for security vulnerabilities, attack surfaces, and threat models.",
+      "path": "skills/security-review",
+      "entrypoint": "skills/security-review/SKILL.md"
+    },
+    {
+      "id": "topcoat",
+      "name": "topcoat",
+      "description": "Build Topcoat SSR web apps, view! templates, HTMX integration, and module routes in Rust.",
+      "path": "skills/topcoat",
+      "entrypoint": "skills/topcoat/SKILL.md"
+    },
+    {
+      "id": "vulnerability-analysis",
+      "name": "vulnerability-analysis",
+      "description": "Analyze discovered vulnerabilities to determine exploitability, severity ratings, and remediation priorities.",
+      "path": "skills/vulnerability-analysis",
+      "entrypoint": "skills/vulnerability-analysis/SKILL.md"
+    },
+    {
+      "id": "write-new-skill",
+      "name": "write-a-skill",
+      "description": "Author structured agent skills following progressive disclosure and workspace standards.",
+      "path": "skills/write-new-skill",
+      "entrypoint": "skills/write-new-skill/skill.md"
     }
   ]
 }

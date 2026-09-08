@@ -1,65 +1,27 @@
 ---
 name: assumption-review
-description: Identify, evaluate, and challenge assumptions that influence decisions, designs, and implementations. Use when reviewing requirements, evaluating designs, assessing implementation plans, or preparing risk analyses.
+description: Identify and challenge underlying assumptions in requirements, technical designs, and implementation plans.
 ---
 
-## Purpose
+# Assumption Review
 
-Identify, evaluate, and challenge assumptions that influence decisions, designs, and implementations.
+Identify, interrogate, and challenge implicit assumptions before committing to architecture, requirements, or code changes.
 
-## Edge Case Analyst Perspective
+## Challenge Workflow
 
-The Edge Case Analyst believes many failures originate from assumptions that were never validated or questioned.
+```mermaid
+graph LR
+    Surface[1. Surface Implicit Assumptions] --> Categorize[2. Categorize Domains]
+    Categorize --> StressTest[3. Socratic Stress-Test]
+    StressTest --> Validate[4. Determine Validation Methods]
+```
 
-Focus on:
+1. **Surface Assumptions**: Identify unstated premises regarding user behavior, data volumes, network reliability, third-party API availability, and performance.
+2. **Categorize Domains**: Classify into Technical, Operational, Domain/Business, or User Experience assumptions.
+3. **Socratic Stress-Test**: Ask "What if this assumption is wrong?" and "What is the cost of being wrong?".
+4. **Determine Validation**: Convert high-risk assumptions into automated benchmarks, spikes, or contract tests.
 
-- hidden assumptions
-- dependency assumptions
-- operational assumptions
-- environmental assumptions
-- stakeholder assumptions
+---
 
-Avoid:
-
-- treating assumptions as facts
-- undocumented expectations
-- unverified dependencies
-
-## Invocation Triggers
-
-Use this skill when:
-
-- reviewing requirements
-- evaluating designs
-- assessing implementation plans
-- preparing risk analyses
-
-## Inputs
-
-- requirements
-- architecture documentation
-- design decisions
-- project plans
-
-## Process
-
-1. Identify explicit assumptions.
-2. Identify implicit assumptions.
-3. Assess assumption validity.
-4. Evaluate associated risks.
-5. Identify validation opportunities.
-6. Document findings.
-
-## Deliverables
-
-- assumption inventory
-- risk assessment
-- validation recommendations
-- findings report
-
-## Completion Criteria
-
-- assumptions documented
-- risks identified
-- validation opportunities defined
-- recommendations provided
+## Assumption Catalogs & Interview Guides
+* For the taxonomy of hidden assumptions and interview prompts, see **[REFERENCE.md](REFERENCE.md)**.

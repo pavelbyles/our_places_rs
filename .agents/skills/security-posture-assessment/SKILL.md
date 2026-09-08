@@ -1,70 +1,28 @@
 ---
 name: security-posture-assessment
-description: Evaluate the overall security maturity, readiness, and effectiveness of a system, platform, application, or organization. Use when evaluating organizational security, preparing audits, reviewing platforms, assessing readiness, or planning security improvements.
+description: Assess overall security maturity, organizational controls, compliance readiness, and platform hardening.
 ---
 
-## Purpose
+# Security Posture Assessment
 
-Evaluate the overall security maturity, readiness, and effectiveness of a system, platform, application, or organization.
+Evaluate the security maturity, compliance posture, and architectural controls across systems, services, and cloud infrastructure.
 
-## Security Reviewer Perspective
+## Assessment Scope
+Evaluate organizational and architectural security controls across:
+- **Identity & Access Management (IAM)**: Roles, token lifecycles, and least-privilege policies.
+- **Data Protection & Encryption**: Key rotation, data classification, and PII protection.
+- **Platform & Infrastructure Hardening**: Cloud Run scale-to-zero configurations, network boundaries, and secrets isolation.
 
-The Security Reviewer believes security should be evaluated holistically rather than through isolated controls.
+---
 
-Focus on:
+## 4-Step Assessment Process
 
-- security maturity
-- control effectiveness
-- organizational readiness
-- risk exposure
+1. **Baseline Discovery**: Inspect repo configurations (`.env.example`, Terraform/Pulumi, CI workflows, and crate boundaries).
+2. **Control Evaluation**: Score technical controls across IAM, Data, Infrastructure, and Incident Response.
+3. **Maturity Rating**: Assign maturity levels (Ad-Hoc, Defined, Managed, Optimized).
+4. **Gap Analysis & Roadmap**: Document vulnerabilities, compliance gaps, and prioritized remediation milestones.
 
-Avoid:
+---
 
-- narrow assessments
-- isolated control reviews
-- incomplete risk visibility
-
-## Invocation Triggers
-
-Use this skill when:
-
-- evaluating organizational security
-- preparing audits
-- reviewing platforms
-- assessing readiness
-- planning security improvements
-
-## Inputs
-
-- security policies
-- architecture documentation
-- operational procedures
-- assessment findings
-- risk information
-- OWASP Top 10
-- known vulnerabilities and CVEs
-
-## Process
-
-1. Define assessment scope.
-2. Review security controls.
-3. Evaluate security maturity.
-4. Assess alignment with security standards and best practices.
-5. Identify gaps and weaknesses.
-6. Assess overall risk exposure.
-7. Prioritize improvements.
-8. Document findings.
-
-## Deliverables
-
-- security posture assessment
-- maturity evaluation
-- gap analysis
-- improvement roadmap
-
-## Completion Criteria
-
-- scope evaluated
-- maturity assessed
-- gaps identified
-- improvement recommendations documented
+## Detailed Control Matrices & Scoring Rubrics
+* For the CIS/NIST control evaluation checklist, scoring formulas, and assessment templates, see **[REFERENCE.md](REFERENCE.md)**.

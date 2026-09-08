@@ -1,6 +1,6 @@
 ---
 name: Monadic Design Specialist
-description: Contemplate and apply the Monad design pattern (Option, Result, Either, Task, State Monads, Railway-Oriented Programming, combinator pipelines) during code generation and architectural design. Use when designing data flow pipelines, error handling, state transformations, or functional domain models.
+description: Design type-safe data pipelines, error flows, and functional domain models using Monads, Option/Result combinators, and Railway-Oriented Programming.
 version: 1.0.0
 rpi_phase: Architecture
 trigger:

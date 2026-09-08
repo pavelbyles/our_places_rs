@@ -1,6 +1,6 @@
 ---
 name: generate-spec
-description: Generate a feature specification document in docs/specs/ using the GitHub issue description derived from the current branch name. Use when user wants to create, write, or generate a spec for the feature being developed.
+description: Generate detailed feature specifications in docs/specs/spec-<branch>.md using GitHub issue context and codebase exploration.
 ---
 
 # Generate Feature Spec
@@ -41,5 +41,6 @@ Follow this process to generate a specification document:
      - `## Acceptance Criteria`: A comprehensive checklist of conditions that must be met for the feature to be considered complete.
    - Write the generated content to the target spec file.
 
-6. **Review**:
-   - Once written, let the user know the spec has been generated and is ready for their review.
+6. **Review & Terse Handoff**:
+   - Save the spec to `docs/specs/spec-<branch_name>.md`.
+   - Output only the clickable file link and a compact list of open questions. **DO NOT re-summarize or paste the spec into chat.**

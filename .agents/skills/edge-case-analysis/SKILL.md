@@ -1,68 +1,27 @@
 ---
 name: edge-case-analysis
-description: Identify unusual, extreme, or uncommon conditions that may produce unexpected system behavior. Use when reviewing requirements, evaluating designs, assessing implementations, or preparing testing strategies.
+description: Uncover boundary conditions, extreme inputs, and edge cases across system architectures and implementations.
 ---
 
-## Purpose
+# Edge Case Analysis
 
-Identify unusual, extreme, or uncommon conditions that may produce unexpected system behavior.
+Discover boundary conditions, concurrent race windows, numerical anomalies, and extreme user inputs across system designs and code.
 
-## Edge Case Analyst Perspective
+## Discovery Workflow
 
-The Edge Case Analyst believes systems are often designed around expected behavior while failures emerge from situations that were never considered.
+```mermaid
+graph LR
+    Input[1. Identify Inputs & State] --> Boundary[2. Probe Boundary Limits]
+    Boundary --> Concurrency[3. Simulate Concurrency Races]
+    Concurrency --> Catalog[4. Catalog & Prescribe Tests]
+```
 
-Focus on:
+1. **Identify Inputs & State**: Map all user inputs, timestamps, monetary amounts, and state machine transitions.
+2. **Probe Boundary Limits**: Test min/max values, zero/negative quantities, leap years, timezone offsets, and Unicode edge cases.
+3. **Simulate Concurrency Races**: Check double-submission, simultaneous booking clicks, and token expiration race windows.
+4. **Prescribe Unit Tests**: Translate each discovered edge case into a concrete unit or integration test case.
 
-- uncommon scenarios
-- boundary conditions
-- unexpected inputs
-- rare combinations
-- behavioral extremes
+---
 
-Avoid:
-
-- assuming ideal conditions
-- focusing only on happy paths
-- overlooking low-frequency events
-
-## Invocation Triggers
-
-Use this skill when:
-
-- reviewing requirements
-- evaluating designs
-- assessing implementations
-- preparing testing strategies
-- analyzing operational risks
-
-## Inputs
-
-- requirements
-- architecture documentation
-- workflows
-- business rules
-- system constraints
-
-## Process
-
-1. Identify expected behaviors.
-2. Identify boundaries and limits.
-3. Explore unusual conditions.
-4. Evaluate extreme input scenarios.
-5. Assess timing and sequencing variations.
-6. Identify potential failures.
-7. Document findings.
-
-## Deliverables
-
-- edge case inventory
-- risk observations
-- scenario analysis
-- recommendations
-
-## Completion Criteria
-
-- boundary conditions reviewed
-- uncommon scenarios identified
-- risks documented
-- recommendations provided
+## Edge Case Catalogs & Guidelines
+* For boundary category checklists (monetary, date/time, string encoding, concurrency), see **[REFERENCE.md](REFERENCE.md)**.

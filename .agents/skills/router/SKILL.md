@@ -1,62 +1,73 @@
 ---
-name: Agent Router
-description: Analyzing user intent and delegating tasks. Use when analyzing new requests, classifying intent, or routing tasks to specialist skills and agents.
-version: 1.1.0
-rpi_phase: Research
-trigger:
-  - "New request"
-  - "Analyze intent"
-capabilities:
-  - Classify intent
-  - Route tasks
+name: router
+description: Classify user intent and route complex tasks to dedicated specialist skills or workflows.
 ---
 
-<role_definition>
-You are the **Agent Router**, the switchboard of the workspace.
-Your job is to parse the user's natural language request and assign it to the most capable Specialist, Agent, or Skill.
-</role_definition>
+# Agent Router
 
-<decision_tree>
+Parse user intent and route tasks to the single most appropriate specialist skill or workflow across the AI-native SDLC.
 
-1. **COMPILER ERRORS & LINT ISSUES**
-   - Keywords: "compiler error", "fail to compile", "clippy", "borrow checker", "lifetime", "E0...", "type mismatch"
-   - Route: `ACTIVATE_SKILL: Lint Hunter`
+## Strict Dispatch Constraints
 
-2. **RUNTIME BUGS & LOGIC ERRORS**
-   - Keywords: "runtime panic", "wrong output", "logic error", "unexpected behavior", "debug", "test failing"
-   - Route: `ACTIVATE_SKILL: Debug Helper`
+* **Single-Skill Selection**: Select **exactly one** primary specialist skill per user request.
+* **No Cascade Loading**: Never read multiple overlapping skill files into context simultaneously unless executing a formal multi-stage workflow.
+* **Progressive Disclosure**: Only read the primary skill's `SKILL.md` first; load companion `REFERENCE.md` files only on demand.
 
-3. **EDGE CASES, RESILIENCE & ASSUMPTION REVIEW**
-   - Keywords: "edge case", "failure scenario", "resilience", "assumption", "what if", "stress test architecture", "boundary conditions"
-   - Route: `ACTIVATE_AGENT: Edge Case Analyst`
-   - *Underlying Skills*: `edge-case-analysis`, `assumption-review`, `failure-scenario-analysis`, `resilience-exploration`
+---
 
-4. **REQUIREMENTS, SPECS & DESIGN ALIGNMENT**
-   - Keywords: "grill me", "stress test my plan", "interview me on design" -> `ACTIVATE_SKILL: grill-me`
-   - Keywords: "write spec", "generate spec", "feature spec" -> `ACTIVATE_SKILL: generate-spec`
+## Stage-Aware Routing Matrix
 
-5. **WORKSPACE & GIT OPERATIONS**
-   - Keywords: "create worktree", "worktree for issue", "new worktree", "branch for issue" -> `ACTIVATE_SKILL: create-worktree`
-   - Keywords: "create pr", "open pull request", "pr review", "analyze changes" -> `ACTIVATE_SKILL: pr-analyzer`
-   - Keywords: "handoff", "compact context", "summarize session for next agent" -> `ACTIVATE_SKILL: handoff`
-   - Keywords: "create skill", "write skill", "new skill" -> `ACTIVATE_SKILL: write-a-skill`
+### Stage 1: Plan
+* "draft intent", "proto-spec", "new feature idea", "scope requirements" $\rightarrow$ `draft-intent`
+* "create worktree", "new branch for issue", "isolate worktree" $\rightarrow$ `create-worktree`
 
-6. **FRONTEND UI & STYLING**
-   - Keywords: "daisyui", "tailwind", "ui component", "styling", "modal", "card", "navbar", "drawer"
-   - Route: `ACTIVATE_SKILL: daisyui`
+### Stage 2: Design
+* "write spec", "generate spec", "feature specification" $\rightarrow$ `generate-spec`
+* "grill me", "interview on design", "stress-test plan", "decision tree" $\rightarrow$ `grill-me`
+* "security audit", "OWASP review", "threat model", "vulnerabilities" $\rightarrow$ `security-review`
+* "edge case", "boundary condition", "extreme input", "type limit" $\rightarrow$ `edge-case-analysis`
+* "failure scenario", "outage blast radius", "dependency failure" $\rightarrow$ `failure-scenario-analysis`
+* "challenge assumptions", "unstated assumptions", "what if wrong" $\rightarrow$ `assumption-review`
+* "system resilience", "fault tolerance", "recovery under disruption" $\rightarrow$ `resilience-exploration`
+* "risk assessment", "risk matrix", "likelihood and impact" $\rightarrow$ `risk-assessment`
+* "security posture", "compliance readiness", "maturity rating" $\rightarrow$ `security-posture-assessment`
+* "vulnerability triage", "CVSS scoring", "scanner findings" $\rightarrow$ `vulnerability-analysis`
 
-7. **MONADIC & FUNCTIONAL ARCHITECTURE**
-   - Keywords: "monad", "monadic", "railway oriented", "combinator chain", "functional pipeline", "Option chaining", "Result pipeline"
-   - Route: `ACTIVATE_SKILL: Monadic Design Specialist`
-   - *Underlying Skills*: `monad-design`, `rust-core`
+### Stage 3: Build
+* "implement Rust", "pricing logic", "database entity", "sqlx", "actix handler" $\rightarrow$ `rust-core`
+* "monad", "railway-oriented", "Result pipeline", "combinator chain" $\rightarrow$ `monad-design`
+* "topcoat", "SSR template", "view! macro", "path_param!", "HTMX swap" $\rightarrow$ `topcoat`
+* "daisyui", "tailwind styling", "modal", "card", "navbar", "drawer" $\rightarrow$ `daisyui`
+* "author skill", "write skill", "create new skill" $\rightarrow$ `write-new-skill`
+* "handoff session", "compact context", "summarize state for next agent" $\rightarrow$ `handoff`
 
-8. **DEFAULT: BACKEND / RUST CORE IMPLEMENTATION & REFACTORING**
-   - Keywords: "create", "implement", "add feature", "change logic", "pricing", "database", "sqlx", "actix", "leptos logic"
-   - Route: `ACTIVATE_SKILL: Rust Core Specialist`
+### Stage 4: Test
+* "compiler error", "borrow checker", "lifetime issue", "E0..." $\rightarrow$ `lint-hunter`
+* "runtime panic", "logic bug", "test failing", "debug helper" $\rightarrow$ `general-debug`
+* "eval skills", "skill benchmark regression", "eval suite" $\rightarrow$ `/eval-skills`
 
-</decision_tree>
+### Stage 5: Deploy
+* "create PR", "open pull request", "analyze PR changes", "ship PR" $\rightarrow$ `pr-analyzer` (or `/ship-pr`)
+* "fix PR comments", "remediate PR", "failing CI check on PR" $\rightarrow$ `pr-remediation` (or `/remediate-pr`)
+* "document release", "sync docs post-ship", "release notes" $\rightarrow$ `/document-release`
 
-<output_format>
-`> ROUTING: [Skill or Agent Name]`
-`> REASONING: [Brief explanation]`
-</output_format>
+### Stage 6: Maintain
+* "triage alert", "production incident", "log anomaly", "metric breach" $\rightarrow$ `auto-triage-incident`
+* "investigate root cause", "systematic debugging on live issue" $\rightarrow$ `/investigate`
+
+---
+
+## Anti-Patterns & Negative Triggers
+
+* **DO NOT** activate `pr-analyzer` or `security-review` for simple syntax checks or code explanations.
+* **DO NOT** activate `draft-intent` if a feature branch and formal `spec.md` already exist (proceed to `generate-spec` or `rust-core`).
+* **DO NOT** activate `auto-triage-incident` for local compiler warnings (use `lint-hunter`).
+
+---
+
+## Output Format
+```
+> ROUTING: [Skill or Workflow Name]
+> SDLC STAGE: [Stage 1-6]
+> REASONING: [Brief 1-sentence explanation]
+```

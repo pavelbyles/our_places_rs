@@ -1,6 +1,6 @@
 ---
 name: Debug Helper
-description: Systematic logic error isolation.
+description: Isolate runtime logic errors and bugs through systematic root-cause tracing.
 version: 1.0.0
 rpi_phase: Verification
 trigger:

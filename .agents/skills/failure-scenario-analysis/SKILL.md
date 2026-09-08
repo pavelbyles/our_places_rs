@@ -1,66 +1,29 @@
 ---
 name: failure-scenario-analysis
-description: Explore how systems behave when components, dependencies, or processes fail. Use when reviewing architectures, evaluating integrations, assessing operational readiness, or analyzing critical systems.
+description: Analyze component failures, dependency outages, error propagation, and blast radiuses across architectures.
 ---
 
-## Purpose
+# Failure Scenario Analysis
 
-Explore how systems behave when components, dependencies, or processes fail.
+Analyze how distributed microservices, databases, and third-party integrations behave under partial or total failure.
 
-## Edge Case Analyst Perspective
+## Analysis Workflow
 
-The Edge Case Analyst assumes failures will occur and believes understanding failure behavior is critical to building resilient systems.
+```mermaid
+graph LR
+    Component[1. Select Component] --> Inject[2. Model Failure Modes]
+    Inject --> Trace[3. Trace Error Propagation]
+    Trace --> Blast[4. Measure Blast Radius]
+    Blast --> Fortify[5. Propose Safeguards]
+```
 
-Focus on:
+1. **Select Component**: Identify target service, background worker, or external API dependency.
+2. **Model Failure Modes**: Simulate crash failures, hang/timeouts, data corruption, and dropped connections.
+3. **Trace Error Propagation**: Verify error propagation paths using Rust `Result<T, AppError>` combinators (no unhandled panics).
+4. **Measure Blast Radius**: Determine which upstream user workflows and dependent services are impacted.
+5. **Propose Safeguards**: Add timeouts, circuit breakers, fallback responses, and alerting triggers.
 
-- failure modes
-- dependency failures
-- degradation behavior
-- recovery paths
-- operational impact
+---
 
-Avoid:
-
-- assuming dependencies are always available
-- ignoring cascading failures
-- overlooking recovery challenges
-
-## Invocation Triggers
-
-Use this skill when:
-
-- reviewing architectures
-- evaluating integrations
-- assessing operational readiness
-- analyzing critical systems
-
-## Inputs
-
-- architecture diagrams
-- dependency maps
-- operational workflows
-- system documentation
-
-## Process
-
-1. Identify critical dependencies.
-2. Identify potential failure modes.
-3. Analyze system behavior during failure.
-4. Assess downstream impacts.
-5. Evaluate recovery paths.
-6. Identify mitigation opportunities.
-7. Document findings.
-
-## Deliverables
-
-- failure scenario analysis
-- dependency risk assessment
-- recovery recommendations
-- resilience findings
-
-## Completion Criteria
-
-- failure modes identified
-- impacts assessed
-- recovery considerations documented
-- recommendations provided
+## Failure Catalogs & Blast Radius Templates
+* For outage simulation matrices and cascading failure checklists, see **[REFERENCE.md](REFERENCE.md)**.
