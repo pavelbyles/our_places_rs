@@ -3,7 +3,7 @@
 ## 1. Project Overview & Role
 **Our Places** is a high-performance, full-stack short-term property rental platform for luxury villas and apartments owned by me and my partners. The MVP is focused on 5 properties in Jamaica.
 
-The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP Cloud Run scale-to-zero** workloads. Core domain logic, pricing mathematics, and data models are shared seamlessly between backend services (Actix-web) and the WebAssembly frontend (Leptos).
+The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP Cloud Run scale-to-zero** workloads. Core domain logic, pricing mathematics, and data models are shared seamlessly between backend services (Actix-web) and frontend applications (Topcoat SSR & HTMX).
 
 ---
 
@@ -19,9 +19,9 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 │   ├── booking_api/    # Booking state machine, availability locking, payment orchestration
 │   ├── user_api/       # JWT authentication, host profiles, shadow user promotion
 │   └── image_worker/   # Pub/Sub background worker for image processing
-├── web_app/            # Public-facing Leptos WASM frontend application
-├── web_app_admin/      # Internal admin dashboard (listings, users, exchange rates)
-├── web_app_common/     # Shared Leptos UI components (VillaCard, image components) & API client logic
+├── web_app_tc/         # Public-facing Topcoat SSR & HTMX frontend application
+├── web_app_admin_tc/   # Internal admin dashboard (listings, bookings, messaging, rates)
+├── web_app_common_tc/  # Shared Topcoat UI components, themes, layouts & API client logic
 └── infra/              # Terraform / Pulumi GCP infrastructure definitions
 ```
 
@@ -35,7 +35,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 ## 3. Technology Stack
 
 - **Language & Edition**: Rust 2024
-- **Frontend**: Leptos (fine-grained reactivity WASM), TailwindCSS, DaisyUI
+- **Frontend**: Topcoat (SSR & HTMX), TailwindCSS v4, DaisyUI v5
 - **Backend APIs**: Actix-web, Tokio async runtime
 - **Database**: PostgreSQL interfaced via compile-time verified `sqlx`
 - **Infrastructure**: GCP Cloud Run (scale-to-zero), GCS (image storage), Pub/Sub (events)

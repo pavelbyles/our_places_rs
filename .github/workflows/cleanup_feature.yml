@@ -62,8 +62,6 @@ jobs:
             "listing-api-$SUFFIX"
             "user-api-$SUFFIX"
             "our-places-image-worker-$SUFFIX"
-            "our-places-web-app-$SUFFIX"
-            "our-places-web-app-admin-$SUFFIX"
             "our-places-web-app-tc-$SUFFIX"
             "our-places-web-app-admin-tc-$SUFFIX"
           )

@@ -165,7 +165,9 @@ async fn execute_create_listing(
 
     let target_user_id = if let Some(uid) = payload.user_id {
         uid
-    } else if auth_user.is_host() && let Some(uid) = auth_user.id {
+    } else if auth_user.is_host()
+        && let Some(uid) = auth_user.id
+    {
         uid
     } else if let Ok(hosts) = api
         .get_all_users(Some(1), Some(10), Some("host".to_string()))

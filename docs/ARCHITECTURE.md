@@ -18,10 +18,10 @@ The following diagram illustrates the crate boundaries, data access layers, and 
 
 ```mermaid
 flowchart TB
-    subgraph s1["WebAssembly Frontend - Leptos"]
-        WA["web_app - Guest Portal"]
-        WAA["web_app_admin - Admin Dashboard"]
-        WAC["web_app_common - Shared UI & API Client"]
+    subgraph s1["Server-Side Rendered Frontend - Topcoat & HTMX"]
+        WA["web_app_tc - Guest Portal"]
+        WAA["web_app_admin_tc - Admin Dashboard"]
+        WAC["web_app_common_tc - Shared UI & API Client"]
     end
     subgraph s2["Shared Isomorphic Crates"]
         COM["common - Isomorphic Pricing & Ref Data"]
@@ -68,9 +68,9 @@ flowchart TB
 | **`app_api/booking_api`** | Native | Availability checking, `SELECT FOR UPDATE` locking, 15-min reservation holds, payment orchestration. | `common`, `db_core` |
 | **`app_api/user_api`** | Native | JWT authentication, bcrypt password hashing, shadow user registration and promotion. | `common`, `db_core` |
 | **`app_api/image_worker`** | Native | Event-driven background service processing GCS image upload events to multi-resolution WebP. | `db_core` |
-| **`web_app/`** | WASM / SSR | Public guest-facing Leptos application (villas, search, booking checkout, user portal). | `common`, `web_app_common` |
-| **`web_app_admin/`** | WASM / SSR | Internal administration dashboard (exchanges rates, listings, user promotion, audits). | `common`, `web_app_common` |
-| **`web_app_common/`** | WASM | Shared Leptos UI components (VillaCard, responsive image picture tags, centralized HTTP client). | `common` |
+| **`web_app_tc/`** | Native / SSR | Public guest-facing Topcoat SSR & HTMX application (villas, search, booking checkout, messaging). | `common`, `web_app_common_tc` |
+| **`web_app_admin_tc/`** | Native / SSR | Internal administration dashboard (exchanges rates, listings, bookings, messaging, audits). | `common`, `web_app_common_tc` |
+| **`web_app_common_tc/`** | Native / SSR | Shared Topcoat UI components, layouts, theme engine, and centralized HTTP client. | `common` |
 
 ---
 

@@ -62,7 +62,7 @@ Run the test suites in the same isolated configurations as CI to catch environme
 
 1. **Backend & Shared Domain Tests (mirrors `test-api` job)**:
    ```bash
-   cargo test --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_common --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
+   cargo test --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
    ```
 2. **Topcoat Web & Common Tests (mirrors `test-web-tc` job)**:
    ```bash

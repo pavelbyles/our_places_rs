@@ -5,8 +5,6 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT }}
   GAR_REPO: ${{ vars.GAR_REPO}}
   REGION: us-central1
-  SERVICE_PREFIX: our-places-web-app
-  SERVICE_PREFIX_ADMIN: our-places-web-app-admin
   SERVICE_PREFIX_TC: our-places-web-app-tc
   SERVICE_PREFIX_ADMIN_TC: our-places-web-app-admin-tc
   SERVICE_PREFIX_IMAGE_WORKER: our-places-image-worker
@@ -29,8 +27,6 @@ on:
           - 'all'
           - 'backend'
           - 'image_worker'
-          - 'webapp'
-          - 'webapp_admin'
           - 'webapp_tc'
           - 'webapp_admin_tc'
 
@@ -49,8 +45,6 @@ jobs:
     outputs:
       backend: ${{ steps.eval.outputs.backend }}
       image_worker: ${{ steps.eval.outputs.image_worker }}
-      webapp: ${{ steps.eval.outputs.webapp }}
-      webapp_admin: ${{ steps.eval.outputs.webapp_admin }}
       webapp_tc: ${{ steps.eval.outputs.webapp_tc }}
       webapp_admin_tc: ${{ steps.eval.outputs.webapp_admin_tc }}
       docs_only: ${{ steps.eval.outputs.docs_only }}
@@ -84,20 +78,6 @@ jobs:
               - 'Cargo.*'
               - 'Dockerfile.image_worker'
               - '.github/workflows/cicd_full_stack.yml'
-            webapp:
-              - 'web_app/**'
-              - 'web_app_common/**'
-              - 'common/**'
-              - 'Cargo.*'
-              - 'web_app/Dockerfile.web_app'
-              - '.github/workflows/cicd_full_stack.yml'
-            webapp_admin:
-              - 'web_app_admin/**'
-              - 'web_app_common/**'
-              - 'common/**'
-              - 'Cargo.*'
-              - 'web_app_admin/Dockerfile.web_app_admin'
-              - '.github/workflows/cicd_full_stack.yml'
             webapp_tc:
               - 'web_app_tc/**'
               - 'web_app_common_tc/**'
@@ -124,24 +104,18 @@ jobs:
           if [ "$TARGET" = "all" ]; then
             echo "backend=true" >> $GITHUB_OUTPUT
             echo "image_worker=true" >> $GITHUB_OUTPUT
-            echo "webapp=true" >> $GITHUB_OUTPUT
-            echo "webapp_admin=true" >> $GITHUB_OUTPUT
             echo "webapp_tc=true" >> $GITHUB_OUTPUT
             echo "webapp_admin_tc=true" >> $GITHUB_OUTPUT
             echo "docs_only=false" >> $GITHUB_OUTPUT
           elif [ "$TARGET" != "changed" ]; then
             echo "backend=${{ inputs.deploy_target == 'backend' || steps.filter.outputs.backend == 'true' }}" >> $GITHUB_OUTPUT
             echo "image_worker=${{ inputs.deploy_target == 'image_worker' || steps.filter.outputs.image_worker == 'true' }}" >> $GITHUB_OUTPUT
-            echo "webapp=${{ inputs.deploy_target == 'webapp' || steps.filter.outputs.webapp == 'true' }}" >> $GITHUB_OUTPUT
-            echo "webapp_admin=${{ inputs.deploy_target == 'webapp_admin' || steps.filter.outputs.webapp_admin == 'true' }}" >> $GITHUB_OUTPUT
             echo "webapp_tc=${{ inputs.deploy_target == 'webapp_tc' || steps.filter.outputs.webapp_tc == 'true' }}" >> $GITHUB_OUTPUT
             echo "webapp_admin_tc=${{ inputs.deploy_target == 'webapp_admin_tc' || steps.filter.outputs.webapp_admin_tc == 'true' }}" >> $GITHUB_OUTPUT
             echo "docs_only=false" >> $GITHUB_OUTPUT
           else
             echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
             echo "image_worker=${{ steps.filter.outputs.image_worker }}" >> $GITHUB_OUTPUT
-            echo "webapp=${{ steps.filter.outputs.webapp }}" >> $GITHUB_OUTPUT
-            echo "webapp_admin=${{ steps.filter.outputs.webapp_admin }}" >> $GITHUB_OUTPUT
             echo "webapp_tc=${{ steps.filter.outputs.webapp_tc }}" >> $GITHUB_OUTPUT
             echo "webapp_admin_tc=${{ steps.filter.outputs.webapp_admin_tc }}" >> $GITHUB_OUTPUT
             echo "docs_only=${{ steps.filter.outputs.docs_only }}" >> $GITHUB_OUTPUT
@@ -203,7 +177,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo build --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_common --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
+        run: cargo build --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
       - name: Run DB and Migrations (Local Test)
         run: cargo make --cwd app_api/listing_api db-migrate
       - name: Run testsTest API
@@ -211,35 +185,7 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
-        run: cargo test --verbose --workspace --exclude web_app --exclude web_app_admin --exclude web_app_common --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
-
-  test-web:
-    name: Test Web
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install msmtp
-        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
-      - name: Run web_app tests
-        run: cargo test --manifest-path web_app/Cargo.toml --verbose
-
-  test-web-admin:
-    name: Test Web Admin
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-      - uses: Swatinem/rust-cache@v2
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install msmtp
-        run: sudo apt-get update && sudo apt-get install -y msmtp msmtp-mta
-      - name: Run web_app tests
-        run: cargo test --manifest-path web_app_admin/Cargo.toml --verbose
+        run: cargo test --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
 
   test-web-tc:
     name: Test Web Topcoat
@@ -730,309 +676,6 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
-  # =========================================================
-  # DEPLOY WEBAPP
-  # =========================================================
-  deploy-web:
-    name: Build & Deploy WebApp
-    runs-on: ubuntu-latest
-    needs: [deploy-api, test-web, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp == 'true')
-    env:
-      SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-    permissions:
-      contents: "read"
-      id-token: "write"
-      issues: "write"
-      pull-requests: "write"
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - id: "auth"
-        name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
-        with:
-          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Sanitize Branch Name
-        id: branch_name
-        shell: bash
-        run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SERVICE_NAME="${{ env.SERVICE_PREFIX }}-$SAFE_BRANCH_slug"
-          SERVICE_NAME_ADMIN="${{ env.SERVICE_PREFIX_ADMIN }}-$SAFE_BRANCH_slug"
-          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
-          echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
-          echo "SERVICE_NAME_ADMIN=$SERVICE_NAME_ADMIN" >> $GITHUB_OUTPUT
-
-      - name: Set Release Flag
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
-            echo "LEPTOS_ENV=PROD" >> $GITHUB_ENV
-          else
-            echo "RELEASE_FLAG=" >> $GITHUB_ENV
-            echo "LEPTOS_ENV=DEV" >> $GITHUB_ENV
-          fi
-
-      - name: Fetch Gateway URL
-        id: fetch_gateway
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            GATEWAY_ID="our-places-app-api-gw-prod"
-          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
-            GATEWAY_ID="our-places-app-api-gw"
-          fi
-
-          echo "Fetching URL for Gateway: $GATEWAY_ID"
-            
-          gcloud api-gateway gateways describe $GATEWAY_ID \
-            --location=us-central1 \
-            --project=our-places-dev \
-            --format="value(defaultHostname)" > gateway_url.txt
-              
-          echo "GATEWAY_URL=https://$(cat gateway_url.txt)" >> $GITHUB_OUTPUT
-
-      - name: Build and Push Web App
-        run: |
-          docker buildx build \
-            --cache-from type=gha,scope=web-app \
-            --cache-to type=gha,mode=max,scope=web-app \
-            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
-            --build-arg LEPTOS_ENV=$LEPTOS_ENV \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
-            -f web_app/Dockerfile.web_app \
-            --push .
-
-      - name: Grant Service Permissions
-        run: |
-          # Grant Web App SA permission to invoke the Backend APIs
-          WEB_APP_SA_EMAIL="${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
-          SUFFIX="${{ needs.deploy-api.outputs.service_suffix }}"
-
-          echo "Granting run.invoker to $WEB_APP_SA_EMAIL for $SUFFIX services"
-
-          gcloud run services add-iam-policy-binding listing-api-$SUFFIX \
-            --region=${{ env.REGION }} \
-            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
-            --role="roles/run.invoker" \
-            --quiet
-
-          gcloud run services add-iam-policy-binding booking-api-$SUFFIX \
-            --region=${{ env.REGION }} \
-            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
-            --role="roles/run.invoker" \
-            --quiet
-
-          gcloud run services add-iam-policy-binding user-api-$SUFFIX \
-            --region=${{ env.REGION }} \
-            --member="serviceAccount:$WEB_APP_SA_EMAIL" \
-            --role="roles/run.invoker" \
-            --quiet
-
-      - name: Deploy Web App
-        id: deploy_webapp
-        uses: google-github-actions/deploy-cloudrun@v3
-        with:
-          service: ${{ steps.branch_name.outputs.SERVICE_NAME }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX }}:${{ github.sha }}
-          region: ${{ env.REGION }}
-          env_vars: |
-            LOG_FORMAT=json
-            RUST_LOG=info
-            LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
-            LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
-            USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
-            GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-            SMTP_HOST=${{ env.SMTP_HOST }}
-            SMTP_USER=${{ env.SMTP_USER }}
-            SMTP_PASS=${{ env.SMTP_PASS }}
-            SMTP_FROM=${{ env.SMTP_FROM }}
-            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
-
-      - name: Comment on PR
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
-            const webappUrl = '${{ steps.deploy_webapp.outputs.url }}';
-            const listingUrl = '${{ needs.deploy-api.outputs.listing_url }}';
-            const bookingUrl = '${{ needs.deploy-api.outputs.booking_url }}';
-            const userUrl = '${{ needs.deploy-api.outputs.user_url }}';
-            const schemaName = '${{ needs.deploy-api.outputs.schema_name }}';
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🚀 **Web App Preview Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Web App:** [${webappUrl}](${webappUrl})\n- **Listing API:** [${listingUrl}](${listingUrl})\n- **Booking API:** [${bookingUrl}](${bookingUrl})\n- **User API:** [${userUrl}](${userUrl})\n- **Database Schema:** \`${schemaName}\`\n\nAll services are up and connected!`
-            });
-
-  # =========================================================
-  # DEPLOY WEBAPP ADMIN
-  # =========================================================
-  deploy-admin:
-    name: Build & Deploy WebApp Admin
-    runs-on: ubuntu-latest
-    needs: [deploy-api, test-web-admin, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.webapp_admin == 'true')
-    env:
-      SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      GATEWAY_KEY: ${{ secrets[format('INFRA_GATEWAY_API_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-    permissions:
-      contents: "read"
-      id-token: "write"
-      issues: "write"
-      pull-requests: "write"
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - id: "auth"
-        name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
-        with:
-          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Sanitize Branch Name
-        id: branch_name
-        shell: bash
-        run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SERVICE_NAME_ADMIN="${{ env.SERVICE_PREFIX_ADMIN }}-$SAFE_BRANCH_slug"
-          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
-          echo "SERVICE_NAME_ADMIN=$SERVICE_NAME_ADMIN" >> $GITHUB_OUTPUT
-
-      - name: Set Release Flag
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
-            echo "LEPTOS_ENV=PROD" >> $GITHUB_ENV
-          else
-            echo "RELEASE_FLAG=" >> $GITHUB_ENV
-            echo "LEPTOS_ENV=DEV" >> $GITHUB_ENV
-          fi
-
-      - name: Fetch Gateway URL
-        id: fetch_gateway
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            GATEWAY_ID="our-places-app-api-gw-prod"
-          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
-            GATEWAY_ID="our-places-app-api-gw"
-          fi
-
-          echo "Fetching URL for Gateway: $GATEWAY_ID"
-            
-          gcloud api-gateway gateways describe $GATEWAY_ID             --location=us-central1             --project=our-places-dev             --format="value(defaultHostname)" > gateway_url.txt
-              
-          echo "GATEWAY_URL=https://$(cat gateway_url.txt)" >> $GITHUB_OUTPUT
-
-      - name: Build and Push Web App Admin
-        run: |
-          docker buildx build \
-            --cache-from type=gha,scope=web-app-admin \
-            --cache-to type=gha,mode=max,scope=web-app-admin \
-            --build-arg RELEASE_FLAG=$RELEASE_FLAG \
-            --build-arg LEPTOS_ENV=$LEPTOS_ENV \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }} \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
-            -f web_app_admin/Dockerfile.web_app_admin \
-            --push .
-
-      - name: Deploy Web App Admin
-        id: deploy_webapp_admin
-        uses: google-github-actions/deploy-cloudrun@v3
-        with:
-          service: ${{ steps.branch_name.outputs.SERVICE_NAME_ADMIN }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_ADMIN }}:${{ github.sha }}
-          region: ${{ env.REGION }}
-          env_vars: |
-            LOG_FORMAT=json
-            RUST_LOG=info
-            LEPTOS_SITE_ADDR=0.0.0.0:8080
-            LISTING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.booking_url }}
-            USER_API_URL=${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && steps.fetch_gateway.outputs.GATEWAY_URL || needs.deploy-api.outputs.user_url }}
-            LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
-            BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
-            USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
-            GATEWAY_API_KEY=${{ env.GATEWAY_KEY }}
-            SMTP_HOST=${{ env.SMTP_HOST }}
-            SMTP_USER=${{ env.SMTP_USER }}
-            SMTP_PASS=${{ env.SMTP_PASS }}
-            SMTP_FROM=${{ env.SMTP_FROM }}
-            DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ needs.deploy-api.outputs.schema_name }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
-
-      - name: Show Deployed URL for the Web App Admin
-        run: echo "Deployed Web App Admin URL ${{ steps.deploy_webapp_admin.outputs.url }}"
-
-      - name: Comment Admin URL on PR
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const branch = '${{ steps.branch_name.outputs.SERVICE_SUFFIX }}';
-            const adminUrl = '${{ steps.deploy_webapp_admin.outputs.url }}';
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🚀 **Admin Web App Deployed!**\n\n- **Branch:** \`${branch}\`\n- **Admin App:** [${adminUrl}](${adminUrl})`
-            });
 
   # =========================================================
   # DEPLOY WEBAPP TOPCOAT
