@@ -1,6 +1,6 @@
 ARG RELEASE_FLAG=--release
 
-FROM rust:1.95.0-slim-bookworm AS builder
+FROM rust:1.98.1-slim-bookworm AS builder
 
 # Install Node.js 20 LTS and npm from official node image
 COPY --from=node:20-bookworm-slim /usr/local/bin /usr/local/bin
