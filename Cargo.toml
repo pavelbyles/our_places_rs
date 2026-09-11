@@ -22,7 +22,7 @@ actix-web = "4.13.0"
 api_core = { path = "app_api/api_core" }
 common = { path = "common" }
 db_core = { path = "db_core" }
-topcoat = { version = "0.6.2", features = ["htmx", "tailwind", "session"] }
+topcoat = { version = "0.7.0", features = ["htmx", "tailwind", "session"] }
 
 web_app_common_tc = { path = "web_app_common_tc" }
 anyhow = "1.0.102"
@@ -30,7 +30,7 @@ dotenvy = "0.15.7"
 rust_decimal_macros = "1.40.0"
 serde-xml-rs = "0.8.2"
 serde_json = "1.0.151"
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 tracing = "0.1.44"
 tracing-actix-web = "0.7.21"
 tracing-log = "0.2.0"

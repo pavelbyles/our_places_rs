@@ -1,8 +1,14 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 
 #[page("/profile")]
-pub async fn profile_page(_cx: &Cx) -> Result {
-    view! {
+pub async fn profile_page(cx: &Cx) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! {
         <div class="max-w-3xl mx-auto px-2 py-8 space-y-8">
             <div class="card bg-base-100 border border-base-200 shadow-md p-8 rounded-3xl space-y-6">
                 <div class="flex items-center gap-4">
@@ -25,7 +31,7 @@ pub async fn profile_page(_cx: &Cx) -> Result {
 
                 <form
                     action="/profile"
-                    method="GET"
+                    method="POST"
                     class="space-y-4"
                     onsubmit="event.preventDefault(); var name = this.first_name.value + ' ' + this.last_name.value; try { localStorage.setItem('op_auth_user', JSON.stringify({ name: name, email: document.getElementById('profile-display-email').innerText.split(' · ')[0], role: 'guest' })); } catch(e){} alert('Profile preferences saved successfully!');"
                 >
@@ -98,5 +104,5 @@ pub async fn profile_page(_cx: &Cx) -> Result {
             })();
             "#
         </script>
-    }
+    })
 }

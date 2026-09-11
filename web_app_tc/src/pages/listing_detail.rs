@@ -5,14 +5,14 @@ use topcoat::{
     Result,
     context::Cx,
     router::{page, path_param},
-    view::view,
+    view::{View, view},
 };
 use web_app_common_tc::{components::price_breakdown::price_breakdown, get_api_client};
 
 path_param!(slug);
 
 #[page("/listings/{slug}")]
-pub async fn listing_detail(cx: &Cx) -> Result {
+pub async fn listing_detail(cx: &Cx) -> Result<impl View> {
     let api = get_api_client(cx);
     let slug: &str = path_param::<Slug>(cx);
     let details_opt = api.get_listing_by_id(slug, None).await.ok();
@@ -35,7 +35,7 @@ pub async fn listing_detail(cx: &Cx) -> Result {
         "Free Private Parking".to_string(),
     ];
 
-    view! {
+    Ok(view! {
         if let Some(details) = details_opt {
             let listing = details.listing;
             let images = details.images;
@@ -379,11 +379,11 @@ pub async fn listing_detail(cx: &Cx) -> Result {
                 <a href="/listings" class="btn btn-primary">"Browse All Listings"</a>
             </div>
         }
-    }
+    })
 }
 
 #[page("/listings/{slug}/quote")]
-pub async fn listing_quote(cx: &Cx) -> Result {
+pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let api = get_api_client(cx);
     let slug: &str = path_param::<Slug>(cx);
     let details_opt = api.get_listing_by_id(slug, None).await.ok();
@@ -421,7 +421,7 @@ pub async fn listing_quote(cx: &Cx) -> Result {
             (subtotal, tax, total, nights)
         });
 
-    view! {
+    Ok(view! {
         <div id="quote-breakdown">
             price_breakdown(
                 nights: nights,
@@ -433,5 +433,5 @@ pub async fn listing_quote(cx: &Cx) -> Result {
                 currency: currency,
             )
         </div>
-    }
+    })
 }

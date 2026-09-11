@@ -1,27 +1,56 @@
+use common::models::{
+    BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
+    MarkMessagesReadResponse, UpdatedBookingRequest,
+};
+use jsonwebtoken::{EncodingKey, Header, encode};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::{content::Json, page, path_param, route},
+    view::{View, view},
+};
+use uuid::Uuid;
 use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
+#[derive(Serialize, Deserialize)]
+struct Claims {
+    sub: Uuid,
+    exp: usize,
+}
+
+fn generate_jwt_for_user(user_id: Uuid) -> String {
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
+    let claims = Claims {
+        sub: user_id,
+        exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .unwrap()
+}
+
+path_param!(id);
+
 #[page("/bookings")]
-pub async fn bookings_alias_page(cx: &Cx) -> Result {
+pub async fn bookings_alias_page(cx: &Cx) -> Result<impl View> {
     render_bookings_content(cx).await
 }
 
 #[page("/admin/bookings")]
-pub async fn admin_bookings_page(cx: &Cx) -> Result {
+pub async fn admin_bookings_page(cx: &Cx) -> Result<impl View> {
     render_bookings_content(cx).await
 }
 
-async fn render_bookings_content(cx: &Cx) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
-
+async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
     let __cx = cx;
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
     let api = get_api_client(cx);
 
     let bookings = api
@@ -68,19 +97,25 @@ async fn render_bookings_content(cx: &Cx) -> Result {
         })
         .collect();
 
-    let pending_bookings: Vec<&common::models::BookingResponse> = bookings
+    let pending_bookings: Vec<common::models::BookingResponse> = bookings
         .iter()
         .filter(|b| {
             b.status.eq_ignore_ascii_case("pending")
                 || b.status.eq_ignore_ascii_case("pending_payment")
         })
+        .cloned()
         .collect();
     let pending_count = pending_bookings.len();
 
     let total_count = bookings.len();
 
-    view! {
-        <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
+    Ok(view! {
+        if !is_authed {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        } else {
+            <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
             // Header
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-200 pb-4">
                 <div class="space-y-1">
@@ -145,6 +180,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                                     <button
                                         type="button"
                                         class="btn btn-ghost btn-xs text-error font-semibold"
+                                        id=(format!("btn-direct-reject-{}", pb_id))
                                         onclick=(format!("rejectAdminBookingDirect('{}')", pb_id))
                                     >
                                         "Reject"
@@ -221,21 +257,25 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                                     let tax_val = b.tax_value.unwrap_or(rust_decimal::Decimal::ZERO);
                                     let tax_str = format!("{} {:.2}", b.currency, tax_val);
                                     let total_str = format!("{} {:.2}", b.currency, b.total_price);
-                                    let status_display = match b.status.as_str() {
-                                        "confirmed" | "Confirmed" => "Confirmed",
-                                        "pending_payment" | "PendingPayment" => "Pending Hold",
-                                        "completed" | "Completed" => "Completed Stay",
-                                        "refunded" | "Refunded" => "Refunded / Cancelled",
-                                        s => s,
+                                    let status_lower = b.status.to_lowercase();
+                                    let is_cancelled = status_lower == "cancelled" || status_lower == "refunded";
+                                    let is_completed = status_lower == "completed";
+                                    let is_pending = status_lower == "pending" || status_lower == "pending_payment";
+                                    let can_cancel = !is_cancelled && !is_completed;
+
+                                    let status_display = match status_lower.as_str() {
+                                        "confirmed" => "Confirmed",
+                                        "pending" | "pending_payment" => "Pending Hold",
+                                        "completed" => "Completed Stay",
+                                        "cancelled" | "refunded" => "Cancelled",
+                                        _ => b.status.as_str(),
                                     };
-                                    let badge_class = match b.status.as_str() {
-                                        "confirmed" | "Confirmed" => "badge badge-success badge-sm font-bold",
-                                        "pending_payment" | "PendingPayment" => "badge badge-warning badge-sm font-bold",
-                                        "completed" | "Completed" => "badge badge-neutral badge-sm font-semibold",
+                                    let badge_class = match status_lower.as_str() {
+                                        "confirmed" => "badge badge-success badge-sm font-bold",
+                                        "pending" | "pending_payment" => "badge badge-warning badge-sm font-bold",
+                                        "completed" => "badge badge-neutral badge-sm font-semibold",
                                         _ => "badge badge-error badge-sm font-semibold",
                                     };
-
-                                    let is_pending = b.status.eq_ignore_ascii_case("pending") || b.status.eq_ignore_ascii_case("pending_payment");
 
                                     <tr id=(format!("admin-row-{}", idx + 1))>
                                         <td>
@@ -271,6 +311,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                                             <button
                                                 type="button"
                                                 class="btn btn-ghost btn-xs text-primary font-bold"
+                                                data-id=(b_id.clone())
                                                 data-ref=(conf_code.clone())
                                                 data-villa=(villa_name.clone())
                                                 data-guest=(guest_name.clone())
@@ -286,13 +327,16 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                                             >
                                                 "Details"
                                             </button>
-                                            <button
-                                                type="button"
-                                                class="btn btn-ghost btn-xs text-error font-bold"
-                                                onclick=(format!("openAdminCancelDialog('{}', '{}', '{}')", b_id, villa_name, idx + 1))
-                                            >
-                                                "Reject / Cancel"
-                                            </button>
+                                            if can_cancel {
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-ghost btn-xs text-error font-bold"
+                                                    id=(format!("btn-cancel-{}", idx + 1))
+                                                    onclick=(format!("openAdminCancelDialog('{}', '{}', '{}', '{}')", b_id, conf_code, villa_name, idx + 1))
+                                                >
+                                                    "Reject / Cancel"
+                                                </button>
+                                            }
                                         </td>
                                     </tr>
                                 }
@@ -346,6 +390,14 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             <span>"Total Settled Amount:"</span>
                             <span class="text-primary font-black" id="detail-total">"USD 0.00"</span>
                         </div>
+                    </div>
+
+                    // Messaging Section
+                    <div class="bg-base-200/80 p-4 rounded-2xl space-y-2 text-xs mt-4 flex flex-row items-center justify-between">
+                        <div class="font-bold text-xs uppercase tracking-wider text-base-content/70">
+                            "Host/Guest Communications"
+                        </div>
+                        <a id="admin-msg-link" href="#" class="btn btn-primary btn-sm rounded-xl font-bold">"💬 Open Messages"</a>
                     </div>
 
                     <div class="modal-action flex justify-end gap-2 pt-2">
@@ -416,16 +468,16 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                 <div class="modal-box rounded-3xl p-6 space-y-4">
                     <div class="flex items-center gap-3 text-error">
                         <span class="text-2xl">"⚠️"</span>
-                        <h3 class="font-extrabold text-lg text-base-content">"Cancel / Release Reservation"</h3>
+                        <h3 class="font-extrabold text-lg text-base-content">"Cancel Reservation"</h3>
                     </div>
                     <p class="text-sm text-base-content/80">
-                        "Are you sure you want to release the PostgreSQL date lock for "
+                        "Are you sure you want to cancel the reservation for "
                         <strong class="font-bold" id="admin-dialog-villa-name">"Villa"</strong>
-                        " (Ref: "<code id="admin-dialog-booking-ref" class="font-mono text-primary font-bold">"REF"</code>")?"
+                        " (Booking Code: "<code id="admin-dialog-booking-ref" class="font-mono text-primary font-bold">"REF"</code>")?"
                     </p>
                     <div class="bg-base-200/60 p-4 rounded-2xl text-xs space-y-1">
-                        <div class="font-bold text-base-content">"Audit Log Impact"</div>
-                        <div class="text-base-content/70">"This action will transition the hold state to refunded/released and notify the guest via email."</div>
+                        <div class="font-bold text-base-content">"Status Update"</div>
+                        <div class="text-base-content/70">"This action will release the dates back to availability and notify the guest via email."</div>
                     </div>
                     <div class="modal-action flex justify-end gap-2 pt-2">
                         <form method="dialog">
@@ -446,6 +498,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                 r#"
                 var activeAdminCancelRow = null;
                 var activeAdminCancelRef = null;
+                var activeAdminCancelBookingId = null;
 
                 function approveAdminBookingDirect(bookingId) {
                     try {
@@ -455,7 +508,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             btn.innerText = 'Approving...';
                         }
 
-                        fetch('http://localhost:8081/api/v1/bookings/' + bookingId, {
+                        fetch('/api/bookings/' + bookingId, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -465,7 +518,9 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         })
                         .then(function(res) {
                             if (!res.ok) {
-                                throw new Error('Failed to approve booking in PostgreSQL');
+                                return res.text().then(function(t) {
+                                    throw new Error(t || ('Server error (' + res.status + ')'));
+                                });
                             }
                             return res.json();
                         })
@@ -507,13 +562,31 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             return;
                         }
 
-                        fetch('http://localhost:8081/api/v1/bookings/' + bookingId, {
+                        var btn = document.getElementById('btn-direct-reject-' + bookingId);
+                        if (btn) {
+                            btn.disabled = true;
+                            btn.replaceChildren();
+                            var sp = document.createElement('span');
+                            sp.className = 'loading loading-spinner loading-xs text-error mr-1';
+                            btn.appendChild(sp);
+                            btn.appendChild(document.createTextNode(' Rejecting...'));
+                        }
+
+                        fetch('/api/bookings/' + bookingId, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Accept': 'application/json'
                             },
-                            body: JSON.stringify({ status: 'refunded' })
+                            body: JSON.stringify({ status: 'cancelled' })
+                        })
+                        .then(function(res) {
+                            if (!res.ok) {
+                                return res.text().then(function(t) {
+                                    throw new Error(t || ('Server error (' + res.status + ')'));
+                                });
+                            }
+                            return res.json();
                         })
                         .then(function() {
                             window.location.reload();
@@ -521,6 +594,10 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         .catch(function(err) {
                             console.error('Failed to reject booking:', err);
                             alert('Rejection failed: ' + err.message);
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.textContent = 'Reject';
+                            }
                         });
                     } catch(e) {
                         console.error('Direct reject error:', e);
@@ -535,7 +612,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             btn.innerText = 'Approving...';
                         }
 
-                        fetch('http://localhost:8081/api/v1/bookings/' + bookingId, {
+                        fetch('/api/bookings/' + bookingId, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -545,7 +622,9 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         })
                         .then(function(res) {
                             if (!res.ok) {
-                                throw new Error('Failed to update booking status in PostgreSQL');
+                                return res.text().then(function(t) {
+                                    throw new Error(t || ('Server error (' + res.status + ')'));
+                                });
                             }
                             return res.json();
                         })
@@ -574,15 +653,16 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                     }
                 }
 
-                function openAdminCancelDialog(ref, villaName, rowId) {
+                function openAdminCancelDialog(bookingId, confCode, villaName, rowId) {
                     try {
                         activeAdminCancelRow = rowId;
-                        activeAdminCancelRef = ref;
+                        activeAdminCancelBookingId = bookingId;
+                        activeAdminCancelRef = confCode;
                         
                         var villaEl = document.getElementById('admin-dialog-villa-name');
                         var refEl = document.getElementById('admin-dialog-booking-ref');
                         if (villaEl) villaEl.innerText = villaName;
-                        if (refEl) refEl.innerText = ref;
+                        if (refEl) refEl.innerText = confCode;
                         
                         var dialog = document.getElementById('admin-cancel-dialog');
                         if (dialog) dialog.showModal();
@@ -596,35 +676,65 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         var dialog = document.getElementById('admin-cancel-dialog');
                         if (dialog) dialog.close();
                         
-                        if (activeAdminCancelRef) {
-                            fetch('http://localhost:8081/api/v1/bookings/' + activeAdminCancelRef, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Accept': 'application/json'
-                                },
-                                body: JSON.stringify({ status: 'refunded' })
-                            }).catch(function(err) {
-                                console.error('Failed to cancel booking via booking_api:', err);
-                            });
+                        var targetId = activeAdminCancelBookingId;
+                        var targetRow = activeAdminCancelRow;
+                        if (!targetId) return;
+
+                        var cancelBtn = document.getElementById('btn-cancel-' + targetRow);
+                        if (cancelBtn) {
+                            cancelBtn.disabled = true;
+                            cancelBtn.replaceChildren();
+                            var sp = document.createElement('span');
+                            sp.className = 'loading loading-spinner loading-xs text-error mr-1';
+                            cancelBtn.appendChild(sp);
+                            cancelBtn.appendChild(document.createTextNode(' Cancelling...'));
                         }
 
-                        if (activeAdminCancelRow) {
-                            var statusEl = document.getElementById('admin-status-' + activeAdminCancelRow);
-                            var actionsEl = document.getElementById('admin-actions-' + activeAdminCancelRow);
-                            var rowEl = document.getElementById('admin-row-' + activeAdminCancelRow);
-                            
-                            if (statusEl) {
-                                statusEl.className = 'badge badge-error badge-sm font-bold';
-                                statusEl.innerText = 'Cancelled / Released';
+                        fetch('/api/bookings/' + targetId, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({ status: 'cancelled' })
+                        })
+                        .then(function(res) {
+                            if (!res.ok) {
+                                return res.text().then(function(t) {
+                                    throw new Error(t || ('Server error (' + res.status + ')'));
+                                });
                             }
-                            if (actionsEl) {
-                                actionsEl.innerHTML = '<span class="text-xs text-base-content/50 font-medium">Refunded</span>';
+                            return res.json();
+                        })
+                        .then(function() {
+                            if (targetRow) {
+                                var statusEl = document.getElementById('admin-status-' + targetRow);
+                                var rowEl = document.getElementById('admin-row-' + targetRow);
+                                
+                                if (statusEl) {
+                                    statusEl.className = 'badge badge-error badge-sm font-semibold';
+                                    statusEl.innerText = 'Cancelled';
+                                }
+                                if (cancelBtn) {
+                                    cancelBtn.remove();
+                                }
+                                var approveBtn = document.getElementById('btn-approve-' + targetRow);
+                                if (approveBtn) {
+                                    approveBtn.remove();
+                                }
+                                if (rowEl) {
+                                    rowEl.style.opacity = '0.7';
+                                }
                             }
-                            if (rowEl) {
-                                rowEl.style.opacity = '0.7';
+                        })
+                        .catch(function(err) {
+                            console.error('Failed to cancel booking via booking_api:', err);
+                            alert('Cancellation failed: ' + err.message);
+                            if (cancelBtn) {
+                                cancelBtn.disabled = false;
+                                cancelBtn.textContent = 'Reject / Cancel';
                             }
-                        }
+                        });
                     } catch(e) {
                         console.error('Failed to execute admin cancellation:', e);
                     }
@@ -633,6 +743,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                 function openAdminBookingDetailsFromBtn(btn) {
                     try {
                         if (!btn) return;
+                        var b_id = btn.getAttribute('data-id') || '';
                         var ref = btn.getAttribute('data-ref') || '';
                         var villa = btn.getAttribute('data-villa') || '';
                         var guest = btn.getAttribute('data-guest') || '';
@@ -670,6 +781,13 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                             sbEl.className = (status === 'Confirmed' ? 'badge badge-success font-bold text-xs' : (status === 'Pending' || status === 'Pending Hold' ? 'badge badge-warning font-bold text-xs' : 'badge badge-error font-bold text-xs'));
                         }
 
+                        var msgLink = document.getElementById('admin-msg-link');
+                        if (msgLink) {
+                            if (ref || b_id) {
+                                msgLink.href = '/admin/bookings/' + (ref || b_id) + '/messages';
+                            }
+                        }
+
                         var dialog = document.getElementById('admin-booking-details-dialog');
                         if (dialog) dialog.showModal();
                     } catch(e) {
@@ -679,7 +797,7 @@ async fn render_bookings_content(cx: &Cx) -> Result {
 
                 function extendAdminHold(ref, rowId) {
                     try {
-                        fetch('http://localhost:8081/api/v1/bookings/' + ref, {
+                        fetch('/api/bookings/' + ref, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -777,8 +895,132 @@ async fn render_bookings_content(cx: &Cx) -> Result {
                         console.error('Failed to export CSV:', e);
                     }
                 }
+
+                window.approveAdminBookingDirect = approveAdminBookingDirect;
+                window.rejectAdminBookingDirect = rejectAdminBookingDirect;
+                window.approveAdminBooking = approveAdminBooking;
+                window.openAdminCancelDialog = openAdminCancelDialog;
+                window.executeAdminCancellation = executeAdminCancellation;
+                window.openAdminBookingDetailsFromBtn = openAdminBookingDetailsFromBtn;
+                window.extendAdminHold = extendAdminHold;
+                window.openAdminInvoiceDialog = openAdminInvoiceDialog;
+                window.exportBookingsCsv = exportBookingsCsv;
                 "#
             </script>
         </div>
+        }
+    })
+}
+
+#[route(PATCH "/api/bookings/{id}")]
+pub async fn update_booking_admin_api(
+    cx: &Cx,
+    Json(payload): Json<UpdatedBookingRequest>,
+) -> Result<Json<BookingResponse>> {
+    web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let api = get_api_client(cx);
+    let resp = api
+        .update_booking(id, &payload)
+        .await
+        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+    Ok(Json(resp))
+}
+
+#[route(GET "/api/bookings/{id}/messages")]
+pub async fn get_booking_messages_admin_api(cx: &Cx) -> Result<Json<BookingMessagesWrapper>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let url = format!(
+        "{}/api/v1/bookings/{}/messages",
+        common::app_client::booking_api_url(),
+        id
+    );
+    let client = reqwest::Client::new();
+    let res = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Failed to fetch messages: {}", res.status()).into());
     }
+
+    let resp = res
+        .json::<BookingMessagesWrapper>()
+        .await
+        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/messages")]
+pub async fn send_booking_message_admin_api(
+    cx: &Cx,
+    Json(payload): Json<CreateBookingMessageRequest>,
+) -> Result<Json<BookingMessageResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let url = format!(
+        "{}/api/v1/bookings/{}/messages",
+        common::app_client::booking_api_url(),
+        id
+    );
+    let client = reqwest::Client::new();
+    let res = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Failed to send message: {}", res.status()).into());
+    }
+
+    let resp = res
+        .json::<BookingMessageResponse>()
+        .await
+        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+    Ok(Json(resp))
+}
+
+#[route(PATCH "/api/bookings/{id}/messages/read")]
+pub async fn mark_messages_read_admin_api(cx: &Cx) -> Result<Json<MarkMessagesReadResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let url = format!(
+        "{}/api/v1/bookings/{}/messages/read",
+        common::app_client::booking_api_url(),
+        id
+    );
+    let client = reqwest::Client::new();
+    let res = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Failed to mark read: {}", res.status()).into());
+    }
+
+    let resp = res
+        .json::<MarkMessagesReadResponse>()
+        .await
+        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+    Ok(Json(resp))
 }

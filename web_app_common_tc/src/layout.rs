@@ -1,21 +1,24 @@
 use crate::auth::auth_init_script;
 use crate::components::currency_selector::currency_selector;
 use crate::theme::{theme_init_script, theme_toggle, theme_toggle_script};
-use topcoat::{Result, context::Cx, htmx::hx_request, view::view};
+use topcoat::{Result, context::Cx, view::view};
 
-pub async fn guest_base_layout(__cx: &Cx, slot: Result) -> Result {
-    // If request was initiated by HTMX, swap the inner page fragment only
-    if hx_request(__cx) {
-        return slot;
-    }
+pub async fn guest_base_layout<'a>(
+    __cx: &'a Cx,
+    slot: topcoat::view::Child<'a>,
+) -> Result<impl topcoat::view::View + 'a> {
+    let is_hx_partial = topcoat::htmx::hx_request(__cx) && !topcoat::htmx::hx_boosted(__cx);
 
     let init_script = theme_init_script();
     let toggle_script = theme_toggle_script();
     let auth_script = auth_init_script();
 
-    view! {
-        <!DOCTYPE html>
-        <html lang="en" data-theme="emerald">
+    Ok(view! {
+        if is_hx_partial {
+            (slot)
+        } else {
+            <!DOCTYPE html>
+            <html lang="en" data-theme="emerald">
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -155,7 +158,7 @@ pub async fn guest_base_layout(__cx: &Cx, slot: Result) -> Result {
                 <script>(auth_script)</script>
             </head>
 
-            <body class="min-h-screen bg-base-100 text-base-content antialiased">
+            <body class="min-h-screen bg-base-100 text-base-content antialiased" hx-boost="false">
                 <div class="drawer">
                     <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
                     <div class="drawer-content flex flex-col min-h-screen">
@@ -236,7 +239,7 @@ pub async fn guest_base_layout(__cx: &Cx, slot: Result) -> Result {
 
                         // Main Slot Content
                         <main class="flex-grow w-full">
-                            (slot?)
+                            (slot)
                         </main>
 
                         // Footer matching Leptos design
@@ -303,5 +306,6 @@ pub async fn guest_base_layout(__cx: &Cx, slot: Result) -> Result {
                 </div>
             </body>
         </html>
-    }
+        }
+    })
 }

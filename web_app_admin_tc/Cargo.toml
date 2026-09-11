@@ -26,10 +26,15 @@ dotenvy = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+jsonwebtoken = "9.3.0"
+anyhow = { workspace = true }
+reqwest = { workspace = true }
 
 
 [build-dependencies]
-topcoat = { version = "0.6.2", default-features = false, features = ["tailwind"] }
+topcoat = { version = "0.6.2", default-features = false, features = [
+    "tailwind",
+] }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }

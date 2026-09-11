@@ -119,6 +119,26 @@ pub async fn get_admin_session(cx: &Cx) -> Option<AuthUser> {
     None
 }
 
+/// Fetches and touches active guest session, refreshing client cookie and extending DB TTL.
+pub async fn get_guest_session(cx: &Cx) -> Option<AuthUser> {
+    if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
+        let hash_hex = token_hash_to_hex(&token_hash);
+        let api = get_api_client(cx);
+        if let Ok(Some(session)) = api.get_session(&hash_hex, Some("guest")).await {
+            // Sliding expiration: refresh client cookie in Topcoat
+            let _ = topcoat::session::refresh(cx).await;
+            return Some(AuthUser {
+                id: Some(session.user_id),
+                name: session.name,
+                email: session.email,
+                role: session.role,
+                namespace: session.namespace,
+            });
+        }
+    }
+    None
+}
+
 /// Route guard: requires active admin session.
 pub async fn require_admin_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError> {
     match get_admin_session(cx).await {

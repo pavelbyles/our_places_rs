@@ -1,9 +1,11 @@
 use crate::http_client::AuthenticatedClient;
 use crate::models::{
-    BookingResponse, BookingReviewEligibility, CreateSessionRequest, DynamicPricingQuote,
-    HostReplyRequest, ListingDetails, ListingResponse, LoginRequest, NewBookingRequest,
-    NewReviewRequest, PriceOverride, ReviewResponse, ReviewTokenInfoResponse, SessionResponse,
-    TransferBookingRequest, UpdateUserRequest, UpdatedBookingRequest, UserResponse,
+    BookingMessageResponse, BookingMessagesWrapper, BookingResponse, BookingReviewEligibility,
+    CreateBookingMessageRequest, CreateSessionRequest, DynamicPricingQuote, HostReplyRequest,
+    ListingDetails, ListingResponse, LoginRequest, MarkMessagesReadResponse, NewBookingRequest,
+    NewReviewRequest, NewUserRequest, PriceOverride, ReviewResponse, ReviewTokenInfoResponse,
+    SessionResponse, TransferBookingRequest, UpdateUserRequest, UpdatedBookingRequest,
+    UserResponse,
 };
 
 use anyhow::{bail, Context, Result};
@@ -492,6 +494,80 @@ pub async fn get_all_bookings(
         .context("Failed to parse bookings response")
 }
 
+pub async fn get_booking_messages(id: Uuid) -> Result<BookingMessagesWrapper> {
+    let api_url = booking_api_url();
+    let audience = booking_api_audience();
+    let url = format!("{}/api/v1/bookings/{}/messages", api_url, id);
+
+    let res = get_client()
+        .get(&url, &audience)
+        .await
+        .context("Failed to connect to booking service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!(
+            "Failed to fetch booking messages ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    res.json::<BookingMessagesWrapper>()
+        .await
+        .context("Failed to parse booking messages response")
+}
+
+pub async fn send_booking_message(
+    id: Uuid,
+    req: &CreateBookingMessageRequest,
+) -> Result<BookingMessageResponse> {
+    let api_url = booking_api_url();
+    let audience = booking_api_audience();
+    let url = format!("{}/api/v1/bookings/{}/messages", api_url, id);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to booking service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to send booking message ({}): {}", status, err_text);
+    }
+
+    res.json::<BookingMessageResponse>()
+        .await
+        .context("Failed to parse booking message response")
+}
+
+pub async fn mark_booking_messages_read(id: Uuid) -> Result<MarkMessagesReadResponse> {
+    let api_url = booking_api_url();
+    let audience = booking_api_audience();
+    let url = format!("{}/api/v1/bookings/{}/messages/read", api_url, id);
+
+    let res = get_client()
+        .patch(&url, &audience, &serde_json::json!({}))
+        .await
+        .context("Failed to connect to booking service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!(
+            "Failed to mark booking messages as read ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    res.json::<MarkMessagesReadResponse>()
+        .await
+        .context("Failed to parse mark booking messages read response")
+}
+
 // -----------------------------------------------------------------------------
 // Review API Clients
 // -----------------------------------------------------------------------------
@@ -654,6 +730,25 @@ pub async fn update_user(id: Uuid, req: &UpdateUserRequest) -> Result<UserRespon
     res.json::<UserResponse>()
         .await
         .context("Failed to parse updated user response")
+}
+
+pub async fn create_user(req: &NewUserRequest) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to create user ({}): {}", status, err_text);
+    }
+
+    res.json::<UserResponse>()
+        .await
+        .context("Failed to parse created user response")
 }
 
 // -----------------------------------------------------------------------------

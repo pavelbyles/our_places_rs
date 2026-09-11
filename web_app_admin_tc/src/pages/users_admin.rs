@@ -1,10 +1,10 @@
-use common::models::{UpdateUserRequest, UserResponse};
+use common::models::{NewUserRequest, UpdateUserRequest, UserResponse};
 use serde::{Deserialize, Serialize};
 use topcoat::{
     Result,
     context::Cx,
     router::{content::Json, page, parse_query_params, route},
-    view::view,
+    view::{View, view},
 };
 use uuid::Uuid;
 use web_app_common_tc::get_api_client;
@@ -13,6 +13,143 @@ use web_app_common_tc::get_api_client;
 pub struct UserFilterQuery {
     pub q: Option<String>,
     pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdminCreateUserPayload {
+    pub email: String,
+    pub password: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub phone_number: Option<String>,
+    pub is_active: Option<bool>,
+    pub roles: Option<Vec<String>>,
+    pub can_manage_bookings: Option<bool>,
+    pub can_manage_listings: Option<bool>,
+    pub can_configure_rates: Option<bool>,
+    pub can_manage_users: Option<bool>,
+    pub default_currency: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminCreateUserResponse {
+    pub success: bool,
+    pub message: Option<String>,
+    pub user_id: Option<Uuid>,
+}
+
+#[route(POST "/api/admin/users/create")]
+pub async fn admin_create_user_api(
+    cx: &Cx,
+    Json(payload): Json<AdminCreateUserPayload>,
+) -> Result<Json<AdminCreateUserResponse>> {
+    if let Err(err) = web_app_common_tc::auth::require_admin_role_auth(cx).await {
+        return Ok(Json(AdminCreateUserResponse {
+            success: false,
+            message: Some(format!("Forbidden: {:?}", err)),
+            user_id: None,
+        }));
+    }
+
+    let api = get_api_client(cx);
+
+    let roles = payload.roles.unwrap_or_default();
+    let is_booker = roles.iter().any(|r| r.to_lowercase() == "booker");
+    let is_host = roles.iter().any(|r| r.to_lowercase() == "host");
+    let is_admin = roles.iter().any(|r| r.to_lowercase() == "admin");
+
+    let perms = GranularPermissions {
+        can_manage_listings: payload.can_manage_listings.unwrap_or(false),
+        can_manage_bookings: payload.can_manage_bookings.unwrap_or(false),
+        can_configure_rates: payload.can_configure_rates.unwrap_or(false),
+        can_manage_users: payload.can_manage_users.unwrap_or(false),
+    };
+
+    if let Err(err) = RoleCapabilityProfile::build(is_host, is_admin, is_booker, perms) {
+        return Ok(Json(AdminCreateUserResponse {
+            success: false,
+            message: Some(err.to_string()),
+            user_id: None,
+        }));
+    }
+
+    let mut attrs = serde_json::Map::new();
+    if is_admin || is_host {
+        if let Some(cmb) = payload.can_manage_bookings {
+            attrs.insert(
+                "can_manage_bookings".to_string(),
+                serde_json::Value::Bool(cmb),
+            );
+        }
+        if let Some(cml) = payload.can_manage_listings {
+            attrs.insert(
+                "can_manage_listings".to_string(),
+                serde_json::Value::Bool(cml),
+            );
+        }
+    }
+    if is_admin {
+        if let Some(ccr) = payload.can_configure_rates {
+            attrs.insert(
+                "can_configure_rates".to_string(),
+                serde_json::Value::Bool(ccr),
+            );
+        }
+        if let Some(cmu) = payload.can_manage_users {
+            attrs.insert("can_manage_users".to_string(), serde_json::Value::Bool(cmu));
+        }
+    }
+
+    let booker_profile = if is_booker {
+        Some(common::models::NewBookerProfile {
+            emergency_contacts: None,
+            booking_preferences: None,
+            loyalty: None,
+        })
+    } else {
+        None
+    };
+
+    let host_profile = if is_host {
+        Some(common::models::NewHostProfile {
+            verified_status: Some("verified".to_string()),
+            payout_details: None,
+            description: None,
+        })
+    } else {
+        None
+    };
+
+    let req = NewUserRequest {
+        email: payload.email,
+        password: payload.password,
+        first_name: payload.first_name,
+        last_name: payload.last_name,
+        phone_number: payload.phone_number.filter(|p| !p.trim().is_empty()),
+        is_active: payload.is_active.unwrap_or(true),
+        is_verified: true,
+        attributes: Some(serde_json::Value::Object(attrs)),
+        roles: Some(roles),
+        booker_profile,
+        host_profile,
+        default_currency: payload.default_currency.or_else(|| Some("USD".to_string())),
+    };
+
+    match api.create_user(&req).await {
+        Ok(user) => Ok(Json(AdminCreateUserResponse {
+            success: true,
+            message: Some("User account created successfully.".to_string()),
+            user_id: Some(user.id),
+        })),
+        Err(err) => {
+            tracing::error!("Failed to create user via user_api: {:?}", err);
+            Ok(Json(AdminCreateUserResponse {
+                success: false,
+                message: Some(format!("Failed to create user: {}", err)),
+                user_id: None,
+            }))
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,38 +235,22 @@ pub async fn admin_update_user_api(
 }
 
 #[page("/admin/users")]
-pub async fn admin_users_page(cx: &Cx) -> Result {
+pub async fn admin_users_page(cx: &Cx) -> Result<impl View> {
     render_users_directory(cx).await
 }
 
 #[page("/users")]
-pub async fn users_alias_page(cx: &Cx) -> Result {
+pub async fn users_alias_page(cx: &Cx) -> Result<impl View> {
     render_users_directory(cx).await
 }
 
-async fn render_users_directory(cx: &Cx) -> Result {
-    match web_app_common_tc::auth::require_admin_role_auth(cx).await {
-        Ok(_) => {}
-        Err(web_app_common_tc::auth::AdminAuthError::Forbidden(_)) => {
-            return view! {
-                <div class="p-8 text-center">
-                    <div class="alert alert-error max-w-md mx-auto shadow-lg">
-                        <span>"Access Denied: Administrative privileges are required to manage users."</span>
-                    </div>
-                </div>
-                <script>
-                    r#"window.location.replace('/admin');"#
-                </script>
-            };
-        }
-        Err(_) => {
-            return view! {
-                <script>
-                    r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-                </script>
-            };
-        }
-    }
+async fn render_users_directory(cx: &Cx) -> Result<impl View> {
+    let auth_res = web_app_common_tc::auth::require_admin_role_auth(cx).await;
+    let is_forbidden = matches!(
+        auth_res,
+        Err(web_app_common_tc::auth::AdminAuthError::Forbidden(_))
+    );
+    let is_unauthed = auth_res.is_err() && !is_forbidden;
 
     let filter_query = parse_query_params::<UserFilterQuery>(cx).unwrap_or_default();
     let search_filter = filter_query
@@ -177,8 +298,23 @@ async fn render_users_directory(cx: &Cx) -> Result {
         .collect();
     let filtered_count = users.len();
 
-    view! {
-        <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
+    Ok(view! {
+        if is_forbidden {
+            <div class="p-8 text-center">
+                <div class="alert alert-error max-w-md mx-auto shadow-lg">
+                    <span>"Access Denied: Administrative privileges are required to manage users."</span>
+                </div>
+            </div>
+            <script>
+                r#"window.location.replace('/admin');"#
+            </script>
+        } else {
+            if is_unauthed {
+                <script>
+                    r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+                </script>
+            } else {
+                <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
             // Header
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-200 pb-4">
                 <div class="space-y-1">
@@ -972,7 +1108,9 @@ async fn render_users_directory(cx: &Cx) -> Result {
                 "#
             </script>
         </div>
+        }
     }
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1018,10 +1156,15 @@ pub enum PermissionTypeConstraintError {
         "Granular permissions are restricted: Booker/Guest accounts cannot hold administrative or host capabilities"
     )]
     BookerCannotHoldPrivileges,
+    #[error(
+        "Host permissions are restricted: Hosts/owners can only manage their listings and bookings"
+    )]
+    HostCannotHoldAdminPrivileges,
 }
 
 impl RoleCapabilityProfile {
-    /// Enforces at the Rust type level that granular permissions can ONLY be assigned if Host or Admin is set.
+    /// Enforces at the Rust type level that granular permissions can ONLY be assigned if Host or Admin is set,
+    /// and that Hosts/owners can ONLY hold can_manage_listings and can_manage_bookings permissions.
     pub fn build(
         is_host: bool,
         is_admin: bool,
@@ -1031,7 +1174,11 @@ impl RoleCapabilityProfile {
         if is_admin {
             Ok(Self::Privileged(PrivilegedScope::Admin(perms)))
         } else if is_host {
-            Ok(Self::Privileged(PrivilegedScope::Host(perms)))
+            if perms.can_configure_rates || perms.can_manage_users {
+                Err(PermissionTypeConstraintError::HostCannotHoldAdminPrivileges)
+            } else {
+                Ok(Self::Privileged(PrivilegedScope::Host(perms)))
+            }
         } else if is_booker {
             if perms.has_any_permission() {
                 Err(PermissionTypeConstraintError::BookerCannotHoldPrivileges)
@@ -1049,33 +1196,31 @@ impl RoleCapabilityProfile {
 }
 
 #[page("/admin/users/new")]
-pub async fn admin_new_user_page(cx: &Cx) -> Result {
-    match web_app_common_tc::auth::require_admin_role_auth(cx).await {
-        Ok(_) => {}
-        Err(web_app_common_tc::auth::AdminAuthError::Forbidden(_)) => {
-            return view! {
-                <div class="p-8 text-center">
-                    <div class="alert alert-error max-w-md mx-auto shadow-lg">
-                        <span>"Access Denied: Administrative privileges are required to configure user accounts."</span>
-                    </div>
+pub async fn admin_new_user_page(cx: &Cx) -> Result<impl View> {
+    let auth_res = web_app_common_tc::auth::require_admin_role_auth(cx).await;
+    let is_forbidden = matches!(
+        auth_res,
+        Err(web_app_common_tc::auth::AdminAuthError::Forbidden(_))
+    );
+    let is_unauthed = auth_res.is_err() && !is_forbidden;
+
+    Ok(view! {
+        if is_forbidden {
+            <div class="p-8 text-center">
+                <div class="alert alert-error max-w-md mx-auto shadow-lg">
+                    <span>"Access Denied: Administrative privileges are required to configure user accounts."</span>
                 </div>
-                <script>
-                    r#"window.location.replace('/admin');"#
-                </script>
-            };
-        }
-        Err(_) => {
-            return view! {
+            </div>
+            <script>
+                r#"window.location.replace('/admin');"#
+            </script>
+        } else {
+            if is_unauthed {
                 <script>
                     r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
                 </script>
-            };
-        }
-    }
-
-    view! {
-
-        <div class="max-w-4xl mx-auto py-8 px-4 space-y-8">
+            } else {
+                <div class="max-w-4xl mx-auto py-8 px-4 space-y-8">
             <div class="border-b border-base-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <span class="text-primary font-bold tracking-widest uppercase text-xs">"User Access Control"</span>
@@ -1091,7 +1236,9 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                 </a>
             </div>
 
-            <form action="/admin/users" method="POST" class="space-y-8">
+            <div id="create-user-feedback" class="alert text-xs py-2.5 px-4 rounded-xl font-semibold" style="display: none;"></div>
+
+            <form id="admin-create-user-form" class="space-y-8">
                 // 1. Personal & Contact Details
                 <div class="bg-base-100 dark:bg-base-200/90 p-6 md:p-8 rounded-3xl border-2 border-base-200 dark:border-base-100/30 shadow-md space-y-5">
                     <div class="flex items-center justify-between border-b border-base-200 pb-3">
@@ -1109,6 +1256,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                             <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"First Name"</label>
                             <input
                                 type="text"
+                                id="new-user-first-name"
                                 name="first_name"
                                 required=(true)
                                 placeholder="Jane"
@@ -1119,6 +1267,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                             <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Last Name"</label>
                             <input
                                 type="text"
+                                id="new-user-last-name"
                                 name="last_name"
                                 required=(true)
                                 placeholder="Doe"
@@ -1131,6 +1280,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                             <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Corporate or Guest Email"</label>
                             <input
                                 type="email"
+                                id="new-user-email"
                                 name="email"
                                 required=(true)
                                 placeholder="jane@ourplaces.com"
@@ -1141,6 +1291,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                             <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Mobile Phone (Optional)"</label>
                             <input
                                 type="tel"
+                                id="new-user-phone"
                                 name="phone"
                                 placeholder="+1 (876) 555-0199"
                                 class="input input-bordered border-2 border-base-300 dark:border-base-content/20 bg-base-100 dark:bg-base-300/40 text-base-content font-medium rounded-xl w-full px-4 py-2.5 shadow-xs focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
@@ -1151,6 +1302,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                         <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Initial Password / Temporary Key"</label>
                         <input
                             type="password"
+                            id="new-user-password"
                             name="password"
                             required=(true)
                             value="temporaryPass123!"
@@ -1172,13 +1324,12 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <label class="flex items-center gap-3 p-4 bg-base-200/60 hover:bg-base-200 border-2 border-base-300 dark:border-base-content/10 rounded-2xl cursor-pointer transition-all">
+                        <label id="role-host-label" class="flex items-center gap-3 p-4 bg-base-200/60 hover:bg-base-200 border-2 border-base-300 dark:border-base-content/10 rounded-2xl cursor-pointer transition-all">
                             <input
                                 type="checkbox"
                                 id="role-host"
                                 name="is_host"
                                 checked=(true)
-                                onchange="updatePermissionState()"
                                 class="checkbox checkbox-warning checkbox-md"
                             />
                             <div>
@@ -1186,12 +1337,11 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                                 <div class="text-[11px] text-base-content/60">"Can list and manage properties"</div>
                             </div>
                         </label>
-                        <label class="flex items-center gap-3 p-4 bg-base-200/60 hover:bg-base-200 border-2 border-base-300 dark:border-base-content/10 rounded-2xl cursor-pointer transition-all">
+                        <label id="role-admin-label" class="flex items-center gap-3 p-4 bg-base-200/60 hover:bg-base-200 border-2 border-base-300 dark:border-base-content/10 rounded-2xl cursor-pointer transition-all">
                             <input
                                 type="checkbox"
                                 id="role-admin"
                                 name="is_admin"
-                                onchange="updatePermissionState()"
                                 class="checkbox checkbox-error checkbox-md"
                             />
                             <div>
@@ -1199,13 +1349,12 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                                 <div class="text-[11px] text-base-content/60">"Full system management"</div>
                             </div>
                         </label>
-                        <label class="flex items-center gap-3 p-4 bg-base-200/60 hover:bg-base-200 border-2 border-base-300 dark:border-base-content/10 rounded-2xl cursor-pointer transition-all">
+                        <label id="role-booker-label" class="flex items-center gap-3 p-4 bg-base-200/60 hover:bg-base-200 border-2 border-base-300 dark:border-base-content/10 rounded-2xl cursor-pointer transition-all">
                             <input
                                 type="checkbox"
                                 id="role-booker"
                                 name="is_booker"
                                 checked=(true)
-                                onchange="updatePermissionState()"
                                 class="checkbox checkbox-primary checkbox-md"
                             />
                             <div>
@@ -1238,6 +1387,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                         <label class="flex items-center gap-3 p-3.5 bg-base-200/50 border border-base-300 rounded-2xl cursor-pointer">
                             <input
                                 type="checkbox"
+                                id="perm-manage-listings"
                                 name="can_manage_listings"
                                 checked=(true)
                                 class="granular-perm-checkbox checkbox checkbox-primary checkbox-sm"
@@ -1250,6 +1400,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                         <label class="flex items-center gap-3 p-3.5 bg-base-200/50 border border-base-300 rounded-2xl cursor-pointer">
                             <input
                                 type="checkbox"
+                                id="perm-manage-bookings"
                                 name="can_manage_bookings"
                                 checked=(true)
                                 class="granular-perm-checkbox checkbox checkbox-primary checkbox-sm"
@@ -1259,25 +1410,35 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                                 <div class="text-[11px] text-base-content/60">"Confirm date holds, approve refunds, and view occupancy schedules"</div>
                             </div>
                         </label>
-                        <label class="flex items-center gap-3 p-3.5 bg-base-200/50 border border-base-300 rounded-2xl cursor-pointer">
+                        <label id="perm-rates-label" class="flex items-center gap-3 p-3.5 bg-base-200/50 border border-base-300 rounded-2xl opacity-40 pointer-events-none cursor-not-allowed transition-all">
                             <input
                                 type="checkbox"
+                                id="perm-configure-rates"
                                 name="can_configure_rates"
+                                disabled=(true)
                                 class="granular-perm-checkbox checkbox checkbox-primary checkbox-sm"
                             />
-                            <div>
-                                <div class="text-xs font-bold text-base-content">"can_configure_rates"</div>
+                            <div class="grow">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-base-content">"can_configure_rates"</span>
+                                    <span id="perm-rates-badge" class="badge badge-ghost opacity-70 badge-xs font-bold">"Administrator Only"</span>
+                                </div>
                                 <div class="text-[11px] text-base-content/60">"Update statutory tax overrides and sync foreign exchange currency rates"</div>
                             </div>
                         </label>
-                        <label class="flex items-center gap-3 p-3.5 bg-base-200/50 border border-base-300 rounded-2xl cursor-pointer">
+                        <label id="perm-users-label" class="flex items-center gap-3 p-3.5 bg-base-200/50 border border-base-300 rounded-2xl opacity-40 pointer-events-none cursor-not-allowed transition-all">
                             <input
                                 type="checkbox"
+                                id="perm-manage-users"
                                 name="can_manage_users"
+                                disabled=(true)
                                 class="granular-perm-checkbox checkbox checkbox-primary checkbox-sm"
                             />
-                            <div>
-                                <div class="text-xs font-bold text-base-content">"can_manage_users"</div>
+                            <div class="grow">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-base-content">"can_manage_users"</span>
+                                    <span id="perm-users-badge" class="badge badge-ghost opacity-70 badge-xs font-bold">"Administrator Only"</span>
+                                </div>
                                 <div class="text-[11px] text-base-content/60">"Invite operators, promote shadow accounts, and modify permission roles"</div>
                             </div>
                         </label>
@@ -1287,7 +1448,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                 // Submit Bar
                 <div class="p-6 bg-base-100 dark:bg-base-200 rounded-3xl border-2 border-base-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" name="is_active" checked=(true) class="toggle toggle-primary toggle-md" />
+                        <input type="checkbox" id="new-user-active" name="is_active" checked=(true) class="toggle toggle-primary toggle-md" />
                         <div>
                             <div class="text-sm font-bold text-base-content">"Account Active"</div>
                             <div class="text-xs text-base-content/50">"User can immediately sign in with verified credentials"</div>
@@ -1295,8 +1456,9 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
                     </label>
                     <div class="flex items-center gap-3">
                         <a href="/admin/users" class="btn btn-ghost rounded-full px-6 font-semibold">"Cancel"</a>
-                        <button type="submit" class="btn btn-primary rounded-full px-8 font-bold tracking-wide shadow-lg">
-                            "Create User Account"
+                        <button type="submit" id="btn-create-user" class="btn btn-primary rounded-full px-8 font-bold tracking-wide shadow-lg flex items-center justify-center gap-2">
+                            <span id="btn-create-user-spinner" class="loading loading-spinner loading-xs hidden"></span>
+                            <span id="btn-create-user-text">"Create User Account"</span>
                         </button>
                     </div>
                 </div>
@@ -1304,46 +1466,382 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result {
 
             <script>
                 r#"
-                function updatePermissionState() {
-                    var hostCb = document.getElementById('role-host');
-                    var adminCb = document.getElementById('role-admin');
-                    var isHost = hostCb ? hostCb.checked : false;
-                    var isAdmin = adminCb ? adminCb.checked : false;
-                    var canSelect = isHost || isAdmin;
+                (function() {
+                    var prevAdmin = false;
 
-                    var container = document.getElementById('granular-permissions-container');
-                    var notice = document.getElementById('permissions-role-notice');
-                    var checkboxes = document.querySelectorAll('.granular-perm-checkbox');
+                    function updatePermissionState() {
+                        var hostCb = document.getElementById('role-host');
+                        var adminCb = document.getElementById('role-admin');
+                        var isHost = false;
+                        if (hostCb) {
+                            if (hostCb.checked) {
+                                isHost = true;
+                            }
+                        }
+                        var isAdmin = false;
+                        if (adminCb) {
+                            if (adminCb.checked) {
+                                isAdmin = true;
+                            }
+                        }
 
-                    if (canSelect) {
-                        if (container) {
-                            container.classList.remove('opacity-30', 'pointer-events-none');
+                        var container = document.getElementById('granular-permissions-container');
+                        var notice = document.getElementById('permissions-role-notice');
+                        var permListings = document.getElementById('perm-manage-listings');
+                        var permBookings = document.getElementById('perm-manage-bookings');
+                        var permRates = document.getElementById('perm-configure-rates');
+                        var permUsers = document.getElementById('perm-manage-users');
+                        var permRatesLabel = document.getElementById('perm-rates-label');
+                        var permUsersLabel = document.getElementById('perm-users-label');
+                        var permRatesBadge = document.getElementById('perm-rates-badge');
+                        var permUsersBadge = document.getElementById('perm-users-badge');
+
+                        if (isAdmin) {
+                            // Administrator role active: unlock rates and users
+                            if (container) {
+                                container.style.opacity = '1';
+                                container.style.pointerEvents = 'auto';
+                                container.classList.remove('opacity-30');
+                                container.classList.remove('pointer-events-none');
+                            }
+                            if (notice) {
+                                notice.classList.add('hidden');
+                            }
+                            if (permListings) {
+                                permListings.disabled = false;
+                                permListings.removeAttribute('disabled');
+                            }
+                            if (permBookings) {
+                                permBookings.disabled = false;
+                                permBookings.removeAttribute('disabled');
+                            }
+                            if (permRates) {
+                                permRates.disabled = false;
+                                permRates.removeAttribute('disabled');
+                                if (!prevAdmin) {
+                                    permRates.checked = true;
+                                }
+                            }
+                            if (permUsers) {
+                                permUsers.disabled = false;
+                                permUsers.removeAttribute('disabled');
+                                if (!prevAdmin) {
+                                    permUsers.checked = true;
+                                }
+                            }
+                            if (permRatesLabel) {
+                                permRatesLabel.style.opacity = '1';
+                                permRatesLabel.style.pointerEvents = 'auto';
+                                permRatesLabel.style.cursor = 'pointer';
+                                permRatesLabel.classList.remove('opacity-40');
+                                permRatesLabel.classList.remove('pointer-events-none');
+                                permRatesLabel.classList.remove('cursor-not-allowed');
+                                permRatesLabel.classList.add('cursor-pointer');
+                            }
+                            if (permUsersLabel) {
+                                permUsersLabel.style.opacity = '1';
+                                permUsersLabel.style.pointerEvents = 'auto';
+                                permUsersLabel.style.cursor = 'pointer';
+                                permUsersLabel.classList.remove('opacity-40');
+                                permUsersLabel.classList.remove('pointer-events-none');
+                                permUsersLabel.classList.remove('cursor-not-allowed');
+                                permUsersLabel.classList.add('cursor-pointer');
+                            }
+                            if (permRatesBadge) {
+                                permRatesBadge.className = 'badge badge-primary badge-xs font-bold';
+                                permRatesBadge.innerText = 'Granted (Admin)';
+                            }
+                            if (permUsersBadge) {
+                                permUsersBadge.className = 'badge badge-primary badge-xs font-bold';
+                                permUsersBadge.innerText = 'Granted (Admin)';
+                            }
+                        } else if (isHost) {
+                            // Host only: listings & bookings enabled, admin options (rates & users) strictly locked & disabled
+                            if (container) {
+                                container.style.opacity = '1';
+                                container.style.pointerEvents = 'auto';
+                                container.classList.remove('opacity-30');
+                                container.classList.remove('pointer-events-none');
+                            }
+                            if (notice) {
+                                notice.classList.add('hidden');
+                            }
+                            if (permListings) {
+                                permListings.disabled = false;
+                                permListings.removeAttribute('disabled');
+                            }
+                            if (permBookings) {
+                                permBookings.disabled = false;
+                                permBookings.removeAttribute('disabled');
+                            }
+                            if (permRates) {
+                                permRates.disabled = true;
+                                permRates.checked = false;
+                                permRates.setAttribute('disabled', 'disabled');
+                            }
+                            if (permUsers) {
+                                permUsers.disabled = true;
+                                permUsers.checked = false;
+                                permUsers.setAttribute('disabled', 'disabled');
+                            }
+                            if (permRatesLabel) {
+                                permRatesLabel.style.opacity = '0.4';
+                                permRatesLabel.style.pointerEvents = 'none';
+                                permRatesLabel.style.cursor = 'not-allowed';
+                                permRatesLabel.classList.add('opacity-40');
+                                permRatesLabel.classList.add('pointer-events-none');
+                                permRatesLabel.classList.add('cursor-not-allowed');
+                                permRatesLabel.classList.remove('cursor-pointer');
+                            }
+                            if (permUsersLabel) {
+                                permUsersLabel.style.opacity = '0.4';
+                                permUsersLabel.style.pointerEvents = 'none';
+                                permUsersLabel.style.cursor = 'not-allowed';
+                                permUsersLabel.classList.add('opacity-40');
+                                permUsersLabel.classList.add('pointer-events-none');
+                                permUsersLabel.classList.add('cursor-not-allowed');
+                                permUsersLabel.classList.remove('cursor-pointer');
+                            }
+                            if (permRatesBadge) {
+                                permRatesBadge.className = 'badge badge-ghost opacity-70 badge-xs font-bold';
+                                permRatesBadge.innerText = 'Administrator Only';
+                            }
+                            if (permUsersBadge) {
+                                permUsersBadge.className = 'badge badge-ghost opacity-70 badge-xs font-bold';
+                                permUsersBadge.innerText = 'Administrator Only';
+                            }
+                        } else {
+                            // Booker or no privileged role: disable everything
+                            if (container) {
+                                container.style.opacity = '0.3';
+                                container.style.pointerEvents = 'none';
+                                container.classList.add('opacity-30');
+                                container.classList.add('pointer-events-none');
+                            }
+                            if (notice) {
+                                notice.classList.remove('hidden');
+                            }
+                            var checkboxes = document.querySelectorAll('.granular-perm-checkbox');
+                            checkboxes.forEach(function(cb) {
+                                cb.disabled = true;
+                                cb.checked = false;
+                                cb.setAttribute('disabled', 'disabled');
+                            });
+                            if (permRatesLabel) {
+                                permRatesLabel.style.opacity = '0.4';
+                                permRatesLabel.style.pointerEvents = 'none';
+                                permRatesLabel.style.cursor = 'not-allowed';
+                                permRatesLabel.classList.add('opacity-40');
+                                permRatesLabel.classList.add('pointer-events-none');
+                                permRatesLabel.classList.add('cursor-not-allowed');
+                                permRatesLabel.classList.remove('cursor-pointer');
+                            }
+                            if (permUsersLabel) {
+                                permUsersLabel.style.opacity = '0.4';
+                                permUsersLabel.style.pointerEvents = 'none';
+                                permUsersLabel.style.cursor = 'not-allowed';
+                                permUsersLabel.classList.add('opacity-40');
+                                permUsersLabel.classList.add('pointer-events-none');
+                                permUsersLabel.classList.add('cursor-not-allowed');
+                                permUsersLabel.classList.remove('cursor-pointer');
+                            }
+                            if (permRatesBadge) {
+                                permRatesBadge.className = 'badge badge-ghost opacity-70 badge-xs font-bold';
+                                permRatesBadge.innerText = 'Administrator Only';
+                            }
+                            if (permUsersBadge) {
+                                permUsersBadge.className = 'badge badge-ghost opacity-70 badge-xs font-bold';
+                                permUsersBadge.innerText = 'Administrator Only';
+                            }
                         }
-                        if (notice) {
-                            notice.classList.add('hidden');
-                        }
-                        checkboxes.forEach(function(cb) {
-                            cb.disabled = false;
-                        });
-                    } else {
-                        if (container) {
-                            container.classList.add('opacity-30', 'pointer-events-none');
-                        }
-                        if (notice) {
-                            notice.classList.remove('hidden');
-                        }
-                        checkboxes.forEach(function(cb) {
-                            cb.disabled = true;
-                            cb.checked = false;
-                        });
+
+                        prevAdmin = isAdmin;
                     }
-                }
-                // Initialize on load
-                if (typeof document !== 'undefined') {
-                    document.addEventListener('DOMContentLoaded', updatePermissionState);
-                }
+
+                    window.updatePermissionState = updatePermissionState;
+
+                    var roleIds = ['role-host', 'role-admin', 'role-booker'];
+                    roleIds.forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) {
+                            el.addEventListener('change', updatePermissionState);
+                            el.addEventListener('click', updatePermissionState);
+                            el.addEventListener('input', updatePermissionState);
+                        }
+                        var labelEl = document.getElementById(id + '-label');
+                        if (labelEl) {
+                            labelEl.addEventListener('click', function() {
+                                setTimeout(updatePermissionState, 10);
+                            });
+                        }
+                    });
+
+                    updatePermissionState();
+
+                    var form = document.getElementById('admin-create-user-form');
+                    if (!form) return;
+
+                    form.onsubmit = function(e) {
+                        if (e) {
+                            try {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            } catch(err) {}
+                        }
+
+                        var fb = document.getElementById('create-user-feedback');
+                        if (fb) {
+                            fb.style.setProperty('display', 'none', 'important');
+                        }
+
+                        function showFeedback(msg, isSuccess) {
+                            if (fb) {
+                                var cls = isSuccess ? 'alert alert-success' : 'alert alert-error';
+                                fb.className = cls + ' text-xs py-2.5 px-4 rounded-xl font-semibold shadow-sm';
+                                fb.innerText = msg;
+                                fb.style.removeProperty('display');
+                            }
+                        }
+
+                        var fnEl = document.getElementById('new-user-first-name');
+                        var lnEl = document.getElementById('new-user-last-name');
+                        var emailEl = document.getElementById('new-user-email');
+                        var phoneEl = document.getElementById('new-user-phone');
+                        var passEl = document.getElementById('new-user-password');
+
+                        var firstName = '';
+                        if (fnEl) { if (fnEl.value) firstName = fnEl.value.trim(); }
+                        var lastName = '';
+                        if (lnEl) { if (lnEl.value) lastName = lnEl.value.trim(); }
+                        var email = '';
+                        if (emailEl) { if (emailEl.value) email = emailEl.value.trim(); }
+                        var phone = '';
+                        if (phoneEl) { if (phoneEl.value) phone = phoneEl.value.trim(); }
+                        var password = '';
+                        if (passEl) { if (passEl.value) password = passEl.value.trim(); }
+
+                        if (!firstName) {
+                            showFeedback('Please enter the user first name.', false);
+                            return false;
+                        }
+                        if (!lastName) {
+                            showFeedback('Please enter the user last name.', false);
+                            return false;
+                        }
+                        if (!email) {
+                            showFeedback('Please enter a valid email address.', false);
+                            return false;
+                        }
+                        if (email.indexOf('@') === -1) {
+                            showFeedback('Please enter a valid email address.', false);
+                            return false;
+                        }
+                        if (!password) {
+                            showFeedback('Please provide a password (minimum 8 characters).', false);
+                            return false;
+                        }
+                        if (!/^.{8,}$/.test(password)) {
+                            showFeedback('Password must be at least 8 characters long.', false);
+                            return false;
+                        }
+
+                        var hostEl = document.getElementById('role-host');
+                        var adminEl = document.getElementById('role-admin');
+                        var bookerEl = document.getElementById('role-booker');
+
+                        var roles = [];
+                        if (adminEl) { if (adminEl.checked) roles.push('admin'); }
+                        if (hostEl) { if (hostEl.checked) roles.push('host'); }
+                        if (bookerEl) { if (bookerEl.checked) roles.push('booker'); }
+                        if (roles.length === 0) {
+                            roles.push('booker');
+                        }
+
+                        var permListingsEl = document.getElementById('perm-manage-listings');
+                        var permBookingsEl = document.getElementById('perm-manage-bookings');
+                        var permRatesEl = document.getElementById('perm-configure-rates');
+                        var permUsersEl = document.getElementById('perm-manage-users');
+                        var activeEl = document.getElementById('new-user-active');
+
+                        var canListings = false;
+                        if (permListingsEl) { if (permListingsEl.checked) canListings = true; }
+                        var canBookings = false;
+                        if (permBookingsEl) { if (permBookingsEl.checked) canBookings = true; }
+                        var canRates = false;
+                        if (adminEl) {
+                            if (adminEl.checked) {
+                                if (permRatesEl) { if (permRatesEl.checked) canRates = true; }
+                            }
+                        }
+                        var canUsers = false;
+                        if (adminEl) {
+                            if (adminEl.checked) {
+                                if (permUsersEl) { if (permUsersEl.checked) canUsers = true; }
+                            }
+                        }
+                        var isActive = true;
+                        if (activeEl) { isActive = activeEl.checked; }
+
+                        var btn = document.getElementById('btn-create-user');
+                        var spinner = document.getElementById('btn-create-user-spinner');
+                        var btnText = document.getElementById('btn-create-user-text');
+
+                        if (btn) btn.disabled = true;
+                        if (spinner) spinner.classList.remove('hidden');
+                        if (btnText) btnText.innerText = 'Creating Account...';
+
+                        var payload = {
+                            first_name: firstName,
+                            last_name: lastName,
+                            email: email,
+                            phone_number: phone ? phone : null,
+                            password: password,
+                            roles: roles,
+                            can_manage_listings: canListings,
+                            can_manage_bookings: canBookings,
+                            can_configure_rates: canRates,
+                            can_manage_users: canUsers,
+                            is_active: isActive
+                        };
+
+                        fetch('/api/admin/users/create', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        })
+                        .then(function(res) {
+                            return res.json().then(function(data) {
+                                if (data.success) {
+                                    showFeedback('User account created successfully! Redirecting...', true);
+                                    setTimeout(function() {
+                                        window.location.href = '/admin/users';
+                                    }, 600);
+                                } else {
+                                    if (btn) btn.disabled = false;
+                                    if (spinner) spinner.classList.add('hidden');
+                                    if (btnText) btnText.innerText = 'Create User Account';
+                                    showFeedback(data.message ? data.message : 'Failed to create user.', false);
+                                }
+                            });
+                        })
+                        .catch(function(err) {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Create User Account';
+                            showFeedback('Network error while creating user account.', false);
+                        });
+
+                        return false;
+                    };
+                })();
                 "#
             </script>
         </div>
+        }
     }
+    })
 }

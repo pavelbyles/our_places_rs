@@ -1,8 +1,9 @@
 use chrono::NaiveDate;
 use common::models::{
-    BookingResponse, CreateSessionRequest, DynamicPricingQuote, ListingDetails, ListingResponse,
-    LoginRequest, NewBookingRequest, PriceOverride, ReviewResponse, SessionResponse,
-    UpdateUserRequest, UserResponse,
+    BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
+    CreateSessionRequest, DynamicPricingQuote, ListingDetails, ListingResponse, LoginRequest,
+    MarkMessagesReadResponse, NewBookingRequest, NewUserRequest, PriceOverride, ReviewResponse,
+    SessionResponse, UpdateUserRequest, UpdatedBookingRequest, UserResponse,
 };
 
 pub use common::app_client::ListingSearchParams;
@@ -68,6 +69,14 @@ impl TopcoatApiClient {
         common::app_client::search_listings(params).await
     }
 
+    /// Create a new listing
+    pub async fn create_listing(
+        &self,
+        req: &common::models::NewListingRequest,
+    ) -> anyhow::Result<common::models::ListingResponse> {
+        common::app_client::create_listing(req).await
+    }
+
     /// Get listing details by slug or UUID
     pub async fn get_listing_by_id(
         &self,
@@ -112,6 +121,37 @@ impl TopcoatApiClient {
         common::app_client::get_all_bookings(page, per_page).await
     }
 
+    /// Update a booking
+    pub async fn update_booking(
+        &self,
+        id: Uuid,
+        req: &UpdatedBookingRequest,
+    ) -> anyhow::Result<BookingResponse> {
+        common::app_client::update_booking(id, req).await
+    }
+
+    /// Get booking messages
+    pub async fn get_booking_messages(&self, id: Uuid) -> anyhow::Result<BookingMessagesWrapper> {
+        common::app_client::get_booking_messages(id).await
+    }
+
+    /// Send a booking message
+    pub async fn send_booking_message(
+        &self,
+        id: Uuid,
+        req: &CreateBookingMessageRequest,
+    ) -> anyhow::Result<BookingMessageResponse> {
+        common::app_client::send_booking_message(id, req).await
+    }
+
+    /// Mark booking messages as read
+    pub async fn mark_booking_messages_read(
+        &self,
+        id: Uuid,
+    ) -> anyhow::Result<MarkMessagesReadResponse> {
+        common::app_client::mark_booking_messages_read(id).await
+    }
+
     /// Get all registered users for admin
     pub async fn get_all_users(
         &self,
@@ -120,6 +160,11 @@ impl TopcoatApiClient {
         role: Option<String>,
     ) -> anyhow::Result<Vec<UserResponse>> {
         common::app_client::get_all_users(page, per_page, role).await
+    }
+
+    /// Create user account for admin
+    pub async fn create_user(&self, req: &NewUserRequest) -> anyhow::Result<UserResponse> {
+        common::app_client::create_user(req).await
     }
 
     /// Update user credentials and profile for admin

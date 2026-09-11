@@ -1,10 +1,14 @@
 use topcoat::{
     Result,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 #[component]
-pub async fn responsive_image(src: String, alt: String, class: Option<String>) -> Result {
+pub async fn responsive_image(
+    src: String,
+    alt: String,
+    class: Option<String>,
+) -> Result<impl View> {
     let css_class = class.unwrap_or_else(|| "object-cover w-full h-full".to_string());
 
     // Check if the image is a GCS asset URL that supports resolution variants
@@ -13,7 +17,7 @@ pub async fn responsive_image(src: String, alt: String, class: Option<String>) -
     let fallback_src = src.clone();
     let alt_text = alt.clone();
 
-    view! {
+    Ok(view! {
         if is_gcs_url {
             <picture>
                 <source
@@ -45,5 +49,5 @@ pub async fn responsive_image(src: String, alt: String, class: Option<String>) -
                 loading="lazy"
             />
         }
-    }
+    })
 }

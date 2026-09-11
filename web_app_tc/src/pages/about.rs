@@ -1,8 +1,14 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 
 #[page("/about")]
-pub async fn about_page(_cx: &Cx) -> Result {
-    view! {
+pub async fn about_page(cx: &Cx) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! {
         <div class="max-w-5xl mx-auto px-2 py-10 space-y-16">
             // Hero
             <div class="text-center max-w-3xl mx-auto space-y-4">
@@ -62,5 +68,5 @@ pub async fn about_page(_cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+    })
 }

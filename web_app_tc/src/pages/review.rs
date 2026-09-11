@@ -1,8 +1,14 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 
 #[page("/reviews/submit")]
-pub async fn review_submit_page(_cx: &Cx) -> Result {
-    view! {
+pub async fn review_submit_page(cx: &Cx) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! {
         <div class="max-w-2xl mx-auto px-4 py-10 space-y-8">
             <div class="card bg-base-100 shadow-xl border border-base-200 rounded-3xl overflow-hidden">
                 <div class="bg-primary text-primary-content p-8 text-center space-y-2">
@@ -11,7 +17,7 @@ pub async fn review_submit_page(_cx: &Cx) -> Result {
                 </div>
 
                 <div class="p-8 space-y-8">
-                    <form action="/reviews/success" method="GET" class="space-y-6">
+                    <form action="/reviews/success" method="POST" class="space-y-6">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-base-200/60 p-6 rounded-2xl border border-base-300">
                             // Cleanliness
                             <div class="space-y-2 text-center">
@@ -87,12 +93,13 @@ pub async fn review_submit_page(_cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+    })
 }
 
 #[page("/reviews/success")]
-pub async fn review_success_page(_cx: &Cx) -> Result {
-    view! {
+pub async fn review_success_page(cx: &Cx) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! {
         <div class="max-w-2xl mx-auto px-4 py-16 space-y-8 text-center">
             <div class="card bg-base-100 shadow-xl border border-base-200 p-8 md:p-12 rounded-3xl space-y-6">
                 <div class="w-16 h-16 bg-success/20 text-success rounded-full flex items-center justify-center mx-auto text-3xl font-bold">
@@ -110,5 +117,5 @@ pub async fn review_success_page(_cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+    })
 }

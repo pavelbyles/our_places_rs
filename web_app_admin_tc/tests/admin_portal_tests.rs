@@ -117,24 +117,67 @@ fn test_granular_permissions_type_constraint() {
         can_manage_users: false,
     };
 
-    // 1. Host with granular perms -> Allowed
+    // 1. Host with granular perms (listings and bookings only) -> Allowed
     let host_profile = RoleCapabilityProfile::build(true, false, false, active_perms.clone());
     assert!(host_profile.is_ok());
     assert!(host_profile.unwrap().is_privileged());
 
-    // 2. Admin with granular perms -> Allowed
-    let admin_profile = RoleCapabilityProfile::build(false, true, false, active_perms.clone());
+    // 2. Host with rate or user permissions -> Strictly rejected
+    let host_with_rates = RoleCapabilityProfile::build(
+        true,
+        false,
+        false,
+        GranularPermissions {
+            can_manage_listings: true,
+            can_manage_bookings: true,
+            can_configure_rates: true,
+            can_manage_users: false,
+        },
+    );
+    assert_eq!(
+        host_with_rates,
+        Err(PermissionTypeConstraintError::HostCannotHoldAdminPrivileges)
+    );
+
+    let host_with_users = RoleCapabilityProfile::build(
+        true,
+        false,
+        false,
+        GranularPermissions {
+            can_manage_listings: true,
+            can_manage_bookings: true,
+            can_configure_rates: false,
+            can_manage_users: true,
+        },
+    );
+    assert_eq!(
+        host_with_users,
+        Err(PermissionTypeConstraintError::HostCannotHoldAdminPrivileges)
+    );
+
+    // 3. Admin with all granular perms -> Allowed
+    let admin_profile = RoleCapabilityProfile::build(
+        false,
+        true,
+        false,
+        GranularPermissions {
+            can_manage_listings: true,
+            can_manage_bookings: true,
+            can_configure_rates: true,
+            can_manage_users: true,
+        },
+    );
     assert!(admin_profile.is_ok());
     assert!(admin_profile.unwrap().is_privileged());
 
-    // 3. Booker ONLY with granular perms -> Strictly rejected by Rust type system
+    // 4. Booker ONLY with granular perms -> Strictly rejected by Rust type system
     let booker_with_perms = RoleCapabilityProfile::build(false, false, true, active_perms.clone());
     assert_eq!(
         booker_with_perms,
         Err(PermissionTypeConstraintError::BookerCannotHoldPrivileges)
     );
 
-    // 4. Standard Booker with NO granular perms -> Allowed as unprivileged
+    // 5. Standard Booker with NO granular perms -> Allowed as unprivileged
     let standard_booker =
         RoleCapabilityProfile::build(false, false, true, GranularPermissions::default());
     assert!(standard_booker.is_ok());

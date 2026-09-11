@@ -1,15 +1,15 @@
 use topcoat::{
     Result,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 #[component]
-pub async fn currency_selector(current_currency: Option<String>) -> Result {
+pub async fn currency_selector(current_currency: Option<String>) -> Result<impl View> {
     let active = current_currency
         .unwrap_or_else(|| "USD".to_string())
         .to_uppercase();
 
-    view! {
+    Ok(view! {
         <div class="dropdown dropdown-end">
             <div tabindex="0" role="button" class="btn btn-ghost btn-sm font-semibold gap-1">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-base-content/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -33,5 +33,5 @@ pub async fn currency_selector(current_currency: Option<String>) -> Result {
                 }
             </ul>
         </div>
-    }
+    })
 }

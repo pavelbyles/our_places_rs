@@ -2,7 +2,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::{page, path_param},
-    view::view,
+    view::{View, view},
 };
 use uuid::Uuid;
 use web_app_common_tc::get_api_client;
@@ -10,44 +10,39 @@ use web_app_common_tc::get_api_client;
 path_param!(id);
 
 #[page("/admin/listings/{id}/pricing")]
-pub async fn admin_pricing_page(cx: &Cx) -> Result {
+pub async fn admin_pricing_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_pricing_content(cx, id.to_string()).await
 }
 
 #[page("/listings/{id}/pricing")]
-pub async fn listings_pricing_alias_page(cx: &Cx) -> Result {
+pub async fn listings_pricing_alias_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_pricing_content(cx, id.to_string()).await
 }
 
 #[page("/admin/listings/{id}/pricing/add")]
-pub async fn admin_pricing_add_handler(cx: &Cx) -> Result {
+pub async fn admin_pricing_add_handler(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_pricing_overrides_table_fragment(cx, id.to_string(), true).await
 }
 
 #[page("/listings/{id}/pricing/add")]
-pub async fn listings_pricing_add_alias_handler(cx: &Cx) -> Result {
+pub async fn listings_pricing_add_alias_handler(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_pricing_overrides_table_fragment(cx, id.to_string(), true).await
 }
 
 #[page("/admin/listings/{id}/pricing/remove")]
-pub async fn admin_pricing_remove_handler(cx: &Cx) -> Result {
+pub async fn admin_pricing_remove_handler(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_pricing_overrides_table_fragment(cx, id.to_string(), false).await
 }
 
-async fn render_pricing_content(cx: &Cx, id: String) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
-
+async fn render_pricing_content(cx: &Cx, id: String) -> Result<impl View> {
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
     let __cx = cx;
     let api = get_api_client(cx);
 
@@ -80,8 +75,27 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result {
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "1800".to_string());
 
-    view! {
-        <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
+    let overrides = if is_authed {
+        if let Some(ref d) = listing_details {
+            api.get_price_overrides(d.listing.id)
+                .await
+                .unwrap_or_default()
+        } else if let Ok(uuid) = Uuid::parse_str(&listing_slug) {
+            api.get_price_overrides(uuid).await.unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    Ok(view! {
+        if !is_authed {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        } else {
+            <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
             // Header
             <div class="border-b border-base-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div class="space-y-1">
@@ -163,45 +177,123 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result {
                         "Active Seasonal Intervals"
                     </h2>
 
-                    (render_pricing_table_inner(__cx, &listing_slug, false).await?)
+                    <div id="price-overrides-container" class="bg-base-100 dark:bg-base-200 rounded-2xl border border-base-200 dark:border-base-100/20 shadow-md overflow-hidden space-y-3">
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra w-full">
+                                <thead>
+                                    <tr class="text-xs text-base-content/60 uppercase tracking-wider">
+                                        <th>"Interval Period"</th>
+                                        <th>"Seasonal Rate"</th>
+                                        <th>"Min Stay"</th>
+                                        <th>"Status"</th>
+                                        <th class="text-right">"Action"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    if overrides.is_empty() {
+                                        <tr>
+                                            <td class="font-medium">
+                                                <div class="font-bold text-sm">"Dec 15, 2026 – Jan 05, 2027"</div>
+                                                <div class="text-xs text-base-content/50">"High Season Peak (Holiday / New Year)"</div>
+                                            </td>
+                                            <td class="font-bold text-amber-500">"USD 2,800/night"</td>
+                                            <td class="text-xs">"5 nights"</td>
+                                            <td><span class="badge badge-warning badge-xs font-semibold">"Active Peak"</span></td>
+                                            <td class="text-right">
+                                                <button
+                                                    hx-post=(format!("/admin/listings/{}/pricing/remove", listing_slug))
+                                                    hx-target="#price-overrides-container"
+                                                    hx-swap="outerHTML"
+                                                    class="btn btn-ghost btn-xs text-error font-bold"
+                                                >
+                                                    "Remove"
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="font-medium">
+                                                <div class="font-bold text-sm">"Jul 01, 2026 – Aug 31, 2026"</div>
+                                                <div class="text-xs text-base-content/50">"Summer Reggae Festival Season"</div>
+                                            </td>
+                                            <td class="font-bold text-amber-500">"USD 2,200/night"</td>
+                                            <td class="text-xs">"4 nights"</td>
+                                            <td><span class="badge badge-success badge-xs font-semibold">"Scheduled"</span></td>
+                                            <td class="text-right">
+                                                <button
+                                                    hx-post=(format!("/admin/listings/{}/pricing/remove", listing_slug))
+                                                    hx-target="#price-overrides-container"
+                                                    hx-swap="outerHTML"
+                                                    class="btn btn-ghost btn-xs text-error font-bold"
+                                                >
+                                                    "Remove"
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    } else {
+                                        for ovr in overrides {
+                                            <tr>
+                                                <td class="font-medium">
+                                                    <div class="font-bold text-sm">(ovr.start_date.to_string())" – "(ovr.end_date.to_string())</div>
+                                                </td>
+                                                <td class="font-bold text-amber-500">"USD "(format!("{:.0}", ovr.nightly_rate))"/night"</td>
+                                                <td class="text-xs">(ovr.min_nights)" nights"</td>
+                                                <td><span class="badge badge-warning badge-xs font-semibold">"Override"</span></td>
+                                                <td class="text-right">
+                                                    <button
+                                                        hx-post=(format!("/admin/listings/{}/pricing/remove", listing_slug))
+                                                        hx-target="#price-overrides-container"
+                                                        hx-swap="outerHTML"
+                                                        class="btn btn-ghost btn-xs text-error font-bold"
+                                                    >
+                                                        "Remove"
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    }
+        }
+    })
 }
 
-async fn render_pricing_overrides_table_fragment(__cx: &Cx, id: String, added_new: bool) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(__cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
-
+async fn render_pricing_overrides_table_fragment(
+    cx: &Cx,
+    id: String,
+    added_new: bool,
+) -> Result<impl View> {
     let id_str = if !id.trim().is_empty() {
         id
     } else {
         "kingston-skyline-luxury-penthouse".to_string()
     };
-    render_pricing_table_inner(__cx, &id_str, added_new).await
+    render_pricing_table_inner(cx, id_str, added_new).await
 }
 
-async fn render_pricing_table_inner(cx: &Cx, slug: &str, show_added_badge: bool) -> Result {
+async fn render_pricing_table_inner(
+    cx: &Cx,
+    slug: String,
+    show_added_badge: bool,
+) -> Result<impl View> {
     let __cx = cx;
     let api = get_api_client(cx);
-    let listing_details = api.get_listing_by_id(slug, None).await.ok();
+    let listing_details = api.get_listing_by_id(&slug, None).await.ok();
     let overrides = if let Some(ref d) = listing_details {
         api.get_price_overrides(d.listing.id)
             .await
             .unwrap_or_default()
-    } else if let Ok(uuid) = Uuid::parse_str(slug) {
+    } else if let Ok(uuid) = Uuid::parse_str(&slug) {
         api.get_price_overrides(uuid).await.unwrap_or_default()
     } else {
         Vec::new()
     };
 
-    view! {
+    Ok(view! {
         <div id="price-overrides-container" class="bg-base-100 dark:bg-base-200 rounded-2xl border border-base-200 dark:border-base-100/20 shadow-md overflow-hidden space-y-3">
             if show_added_badge {
                 <div class="bg-success/15 border-b border-success/30 px-4 py-2.5 flex items-center justify-between text-xs text-success-content dark:text-emerald-400 font-semibold animate-fade-in">
@@ -312,5 +404,5 @@ async fn render_pricing_table_inner(cx: &Cx, slug: &str, show_added_badge: bool)
                 </table>
             </div>
         </div>
-    }
+    })
 }

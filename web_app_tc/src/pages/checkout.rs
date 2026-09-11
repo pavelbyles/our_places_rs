@@ -4,7 +4,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::{page, path_param},
-    view::view,
+    view::{View, view},
 };
 use web_app_common_tc::{
     components::price_breakdown::price_breakdown, get_api_client, get_authenticated_guest,
@@ -14,7 +14,7 @@ path_param!(slug);
 path_param!(id);
 
 #[page("/checkout/{slug}")]
-pub async fn checkout_page(cx: &Cx) -> Result {
+pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
     let (slug_str, curr) = if let Some(s) = slug.strip_suffix("-jmd") {
         (s.to_string(), "JMD".to_string())
@@ -31,30 +31,30 @@ pub async fn checkout_page(cx: &Cx) -> Result {
 }
 
 #[page("/checkout-jmd/{id}")]
-pub async fn checkout_jmd_page(cx: &Cx) -> Result {
+pub async fn checkout_jmd_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_checkout(cx, id.to_string(), "JMD".to_string()).await
 }
 
 #[page("/checkout-eur/{id}")]
-pub async fn checkout_eur_page(cx: &Cx) -> Result {
+pub async fn checkout_eur_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_checkout(cx, id.to_string(), "EUR".to_string()).await
 }
 
 #[page("/checkout-gbp/{id}")]
-pub async fn checkout_gbp_page(cx: &Cx) -> Result {
+pub async fn checkout_gbp_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_checkout(cx, id.to_string(), "GBP".to_string()).await
 }
 
 #[page("/checkout-cad/{id}")]
-pub async fn checkout_cad_page(cx: &Cx) -> Result {
+pub async fn checkout_cad_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_checkout(cx, id.to_string(), "CAD".to_string()).await
 }
 
-async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Result {
+async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Result<impl View> {
     let __cx = cx;
     let api = get_api_client(cx);
     let details_opt = api.get_listing_by_id(&id, None).await.ok();
@@ -118,7 +118,7 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
         _ => dec!(1.00),
     };
 
-    view! {
+    Ok(view! {
         if let Some(details) = details_opt {
             let listing = details.listing;
             let slug = listing.slug.clone();
@@ -706,5 +706,5 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                 <a href="/listings" class="btn btn-primary">"Find a Place"</a>
             </div>
         }
-    }
+    })
 }

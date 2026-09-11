@@ -1,4 +1,5 @@
 pub mod booking;
+pub mod booking_message;
 pub mod connection;
 pub mod currency;
 pub mod error;

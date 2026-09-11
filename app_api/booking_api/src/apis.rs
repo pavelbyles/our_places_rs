@@ -12,6 +12,7 @@ use chrono::NaiveDate;
 use common::models::NewBookingRequest;
 use common::pricing::BookingCalculator;
 use db_core::booking as db_booking;
+use db_core::booking_message as db_booking_message;
 use db_core::listing as db_listing;
 use db_core::models::{
     BookingMetadata, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
@@ -571,6 +572,227 @@ async fn get_listing_bookings(
     ))
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/{id}/messages",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Messages retrieved", body = common::models::BookingMessagesWrapper),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Booking not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_booking_messages(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    claims: api_core::auth::Claims,
+) -> Result<impl Responder, ApiError> {
+    let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
+
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let is_guest = claims.sub == parties.guest_id;
+    let is_host = claims.sub == parties.host_id;
+
+    if !is_admin && !is_guest && !is_host {
+        return Err(ApiError::Unauthorized(
+            "Not authorized to access messages".to_string(),
+        ));
+    }
+
+    let msgs = db_booking_message::list_booking_messages(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let unread_count = msgs
+        .iter()
+        .filter(|m| m.read_at.is_none() && m.sender_id != claims.sub)
+        .count() as i64;
+
+    let response = common::models::BookingMessagesWrapper {
+        messages: msgs.into_iter().map(Into::into).collect(),
+        unread_count,
+    };
+
+    Ok(respond(
+        &req,
+        Payload::Item(response),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/bookings/{id}/messages",
+    tag = "bookings",
+    request_body = common::models::CreateBookingMessageRequest,
+    responses(
+        (status = 201, description = "Message created", body = common::models::BookingMessageResponse),
+        (status = 400, description = "Bad request"),
+        (status = 403, description = "Forbidden"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn send_booking_message(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    claims: api_core::auth::Claims,
+    body: web::Json<common::models::CreateBookingMessageRequest>,
+) -> Result<impl Responder, ApiError> {
+    body.validate().map_err(ApiError::ValidationError)?;
+    let text = body.into_inner().message_text;
+
+    // Check for null bytes / control chars
+    if text
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Message contains invalid characters".to_string(),
+            ),
+        ));
+    }
+
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError("Message cannot be empty".to_string()),
+        ));
+    }
+
+    let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    if parties.status == BookingStatus::Cancelled {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Cannot send message to a cancelled booking".to_string(),
+            ),
+        ));
+    }
+
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
+
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let is_guest = claims.sub == parties.guest_id;
+    let is_host = claims.sub == parties.host_id;
+
+    let role = if is_admin {
+        db_core::models::DbMessageSenderRole::Admin
+    } else if is_host {
+        db_core::models::DbMessageSenderRole::Host
+    } else if is_guest {
+        db_core::models::DbMessageSenderRole::Guest
+    } else {
+        return Err(ApiError::Unauthorized(
+            "Not authorized to send messages".to_string(),
+        ));
+    };
+
+    let display_name = if is_admin {
+        format!("{} (admin)", user.first_name)
+    } else {
+        user.first_name.clone()
+    };
+
+    let msg = db_booking_message::insert_booking_message(
+        pool.get_ref(),
+        Uuid::now_v7(),
+        *id,
+        claims.sub,
+        role,
+        &display_name,
+        trimmed,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    tokio::spawn(async move {
+        tracing::info!("Triggered email notification for message in booking {}", id);
+    });
+
+    Ok(respond(
+        &req,
+        Payload::Item::<common::models::BookingMessageResponse>(msg.into()),
+        |_| (),
+        actix_web::http::StatusCode::CREATED,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    patch,
+    path = "/api/v1/bookings/{id}/messages/read",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Messages marked as read", body = common::models::MarkMessagesReadResponse),
+        (status = 403, description = "Forbidden"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn mark_booking_messages_read(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    claims: api_core::auth::Claims,
+) -> Result<impl Responder, ApiError> {
+    let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
+
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let is_guest = claims.sub == parties.guest_id;
+    let is_host = claims.sub == parties.host_id;
+
+    if !is_admin && !is_guest && !is_host {
+        return Err(ApiError::Unauthorized(
+            "Not authorized to access messages".to_string(),
+        ));
+    }
+
+    let updated =
+        db_booking_message::mark_booking_messages_as_read(pool.get_ref(), *id, claims.sub)
+            .await
+            .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(common::models::MarkMessagesReadResponse {
+            updated_count: updated,
+        }),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -584,10 +806,13 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             update_booking,
             delete_booking,
             transfer_booking,
+            get_booking_messages,
+            send_booking_message,
+            mark_booking_messages_read,
             api_core::health::health_check,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse)
+            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse)
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -659,6 +884,24 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/{id}/transfer",
                 web::post()
                     .to(transfer_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/messages",
+                web::get()
+                    .to(get_booking_messages)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/messages",
+                web::post()
+                    .to(send_booking_message)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/messages/read",
+                web::patch()
+                    .to(mark_booking_messages_read)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );

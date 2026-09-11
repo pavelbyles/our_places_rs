@@ -1,6 +1,8 @@
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
+    cookie::RouterBuilderCookieExt,
     router::{Router, RouterBuilderDiscoverExt},
+    session::{RouterBuilderSessionExt, SessionConfig, cookie::CookieTokenStore},
 };
 
 mod layout;
@@ -16,7 +18,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_client = web_app_common_tc::TopcoatApiClient::from_env();
 
-    let mut builder = Router::builder().discover().app_context(api_client);
+    let session_config = SessionConfig::builder()
+        .token_store(CookieTokenStore::new().name("op_guest_session"))
+        .build();
+
+    let mut builder = Router::builder()
+        .discover()
+        .cookies()
+        .sessions(session_config)
+        .app_context(api_client);
 
     match AssetBundle::load() {
         Ok(bundle) => {

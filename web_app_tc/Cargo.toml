@@ -8,7 +8,7 @@ name = "web_app_tc"
 path = "src/main.rs"
 
 [dependencies]
-topcoat = { workspace = true, features = ["htmx", "tailwind"] }
+topcoat = { workspace = true, features = ["htmx", "tailwind", "session"] }
 web_app_common_tc = { workspace = true }
 common = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
@@ -22,9 +22,13 @@ uuid = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 anyhow = { workspace = true }
+jsonwebtoken = "9.3.0"
+reqwest = { workspace = true }
 
 [build-dependencies]
-topcoat = { version = "0.6.2", default-features = false, features = ["tailwind"] }
+topcoat = { version = "0.8.0", default-features = false, features = [
+    "tailwind",
+] }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }

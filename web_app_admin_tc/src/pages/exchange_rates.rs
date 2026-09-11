@@ -1,18 +1,23 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 
 #[page("/admin/exchange-rates")]
-pub async fn admin_exchange_rates_page(cx: &Cx) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
-        return view! {
+pub async fn admin_exchange_rates_page(cx: &Cx) -> Result<impl View> {
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
+
+    Ok(view! {
+        if !is_authed {
             <script>
                 r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
             </script>
-        };
-    }
-
-    view! {
-
-        <div class="space-y-8 py-6 max-w-5xl mx-auto px-4 md:px-6">
+        } else {
+            <div class="space-y-8 py-6 max-w-5xl mx-auto px-4 md:px-6">
             // Header
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-200 pb-4">
                 <div class="space-y-1">
@@ -148,5 +153,6 @@ pub async fn admin_exchange_rates_page(cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+        }
+    })
 }

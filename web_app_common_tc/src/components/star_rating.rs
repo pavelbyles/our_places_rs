@@ -1,16 +1,16 @@
 use topcoat::{
     Result,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 #[component]
-pub async fn star_rating(rating: Option<f64>, review_count: Option<i64>) -> Result {
+pub async fn star_rating(rating: Option<f64>, review_count: Option<i64>) -> Result<impl View> {
     let formatted_rating = rating.map(|r| format!("{:.1}", r));
     let count_text = review_count
         .map(|c| format!("({} reviews)", c))
         .unwrap_or_default();
 
-    view! {
+    Ok(view! {
         if let Some(r_str) = formatted_rating {
             <div class="flex items-center gap-1.5 font-medium text-sm">
                 <div class="badge badge-primary gap-1 font-bold">
@@ -28,5 +28,5 @@ pub async fn star_rating(rating: Option<f64>, review_count: Option<i64>) -> Resu
                 "New"
             </div>
         }
-    }
+    })
 }

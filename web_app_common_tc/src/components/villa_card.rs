@@ -1,6 +1,6 @@
 use topcoat::{
     Result,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -18,7 +18,7 @@ pub async fn villa_card(
     full_bathrooms: i32,
     rating: Option<f64>,
     review_count: Option<i64>,
-) -> Result {
+) -> Result<impl View> {
     let location_text = if let Some(ref c) = city {
         format!("{c}, {country}")
     } else {
@@ -33,7 +33,7 @@ pub async fn villa_card(
     let rating_val = rating.unwrap_or(4.95);
     let reviews_val = review_count.unwrap_or(112);
 
-    view! {
+    Ok(view! {
         <div class="card bg-base-100 shadow-lg border border-base-200/80 hover:shadow-2xl transition-all duration-300 rounded-2xl overflow-hidden group flex flex-col justify-between">
             <figure class="relative overflow-hidden aspect-[16/10] bg-base-200">
                 <img
@@ -81,5 +81,5 @@ pub async fn villa_card(
                 </div>
             </div>
         </div>
-    }
+    })
 }

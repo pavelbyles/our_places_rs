@@ -1,6 +1,6 @@
 use topcoat::{
     Result,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 /// Inline script that executes synchronously before DOM paint to prevent FOUC.
@@ -52,8 +52,8 @@ pub fn theme_toggle_script() -> &'static str {
 
 /// Theme Toggle UI Component visible on all pages with sleek Sun/Moon pill switch.
 #[component]
-pub async fn theme_toggle() -> Result {
-    view! {
+pub async fn theme_toggle() -> Result<impl View> {
+    Ok(view! {
         <button
             type="button"
             class="flex items-center gap-1 px-2.5 py-1 rounded-full border border-base-content/20 bg-base-100/70 hover:bg-base-200 hover:border-primary/40 transition-all shadow-sm cursor-pointer"
@@ -65,5 +65,5 @@ pub async fn theme_toggle() -> Result {
             <span class="text-[10px] text-base-content/40 font-bold">"|"</span>
             <span class="text-sm">"🌙"</span>
         </button>
-    }
+    })
 }

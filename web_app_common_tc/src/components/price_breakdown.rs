@@ -1,7 +1,7 @@
 use rust_decimal::Decimal;
 use topcoat::{
     Result,
-    view::{component, view},
+    view::{View, component, view},
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -14,7 +14,7 @@ pub async fn price_breakdown(
     tax_amount: Decimal,
     total_amount: Decimal,
     currency: String,
-) -> Result {
+) -> Result<impl View> {
     let curr = currency.clone();
     let nights_label = format!("{nights} night(s) × {curr} {effective_nightly_rate:.2}");
     let subtotal_str = format!("{curr} {subtotal:.2}");
@@ -22,7 +22,7 @@ pub async fn price_breakdown(
     let tax_str = format!("{curr} {tax_amount:.2}");
     let total_str = format!("{curr} {total_amount:.2}");
 
-    view! {
+    Ok(view! {
         <div class="card bg-base-200 border border-base-300 rounded-box p-4 space-y-3">
             <h3 class="font-bold text-sm text-base-content/80 uppercase tracking-wider">"Price Breakdown"</h3>
             <div class="space-y-1.5 text-sm">
@@ -56,5 +56,5 @@ pub async fn price_breakdown(
                 <span class="text-lg font-black" id="breakdown-total">(total_str)</span>
             </div>
         </div>
-    }
+    })
 }

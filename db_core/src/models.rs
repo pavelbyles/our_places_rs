@@ -526,3 +526,67 @@ pub struct Review {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, Copy, PartialEq, Eq, EnumString)]
+#[sqlx(type_name = "message_sender_role", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DbMessageSenderRole {
+    Guest,
+    Host,
+    Admin,
+}
+
+impl From<DbMessageSenderRole> for common::models::MessageSenderRole {
+    fn from(r: DbMessageSenderRole) -> Self {
+        match r {
+            DbMessageSenderRole::Guest => common::models::MessageSenderRole::Guest,
+            DbMessageSenderRole::Host => common::models::MessageSenderRole::Host,
+            DbMessageSenderRole::Admin => common::models::MessageSenderRole::Admin,
+        }
+    }
+}
+
+impl From<common::models::MessageSenderRole> for DbMessageSenderRole {
+    fn from(r: common::models::MessageSenderRole) -> Self {
+        match r {
+            common::models::MessageSenderRole::Guest => DbMessageSenderRole::Guest,
+            common::models::MessageSenderRole::Host => DbMessageSenderRole::Host,
+            common::models::MessageSenderRole::Admin => DbMessageSenderRole::Admin,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct DbBookingMessage {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub sender_id: Uuid,
+    pub sender_role: DbMessageSenderRole,
+    pub sender_name: String,
+    pub message_text: String,
+    pub read_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<DbBookingMessage> for common::models::BookingMessageResponse {
+    fn from(msg: DbBookingMessage) -> Self {
+        common::models::BookingMessageResponse {
+            id: msg.id,
+            booking_id: msg.booking_id,
+            sender_id: msg.sender_id,
+            sender_role: msg.sender_role.into(),
+            sender_name: msg.sender_name,
+            message_text: msg.message_text,
+            read_at: msg.read_at,
+            created_at: msg.created_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct BookingParties {
+    pub guest_id: Uuid,
+    pub host_id: Uuid,
+    pub status: BookingStatus,
+}

@@ -1,10 +1,15 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 use web_app_common_tc::{
     client::ListingSearchParams, components::villa_card::villa_card, get_api_client,
 };
 
 #[page("/listings")]
-pub async fn listings_page(cx: &Cx) -> Result {
+pub async fn listings_page(cx: &Cx) -> Result<impl View> {
     let api = get_api_client(cx);
     let listings = api
         .search_listings(ListingSearchParams {
@@ -14,7 +19,7 @@ pub async fn listings_page(cx: &Cx) -> Result {
         .await
         .unwrap_or_default();
 
-    view! {
+    Ok(view! {
         <div class="flex flex-col items-center w-full max-w-7xl mx-auto px-2 md:px-4 py-8 gap-10">
             // Header Title
             <div class="text-center space-y-2 max-w-xl">
@@ -91,11 +96,11 @@ pub async fn listings_page(cx: &Cx) -> Result {
                 }
             </div>
         </div>
-    }
+    })
 }
 
 #[page("/listings/filter")]
-pub async fn listings_filter(cx: &Cx) -> Result {
+pub async fn listings_filter(cx: &Cx) -> Result<impl View> {
     let api = get_api_client(cx);
     let listings = api
         .search_listings(ListingSearchParams {
@@ -105,7 +110,7 @@ pub async fn listings_filter(cx: &Cx) -> Result {
         .await
         .unwrap_or_default();
 
-    view! {
+    Ok(view! {
         <div id="listings-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full pb-16">
             if listings.is_empty() {
                 <div class="col-span-full text-center opacity-50 text-xl py-10">
@@ -130,5 +135,5 @@ pub async fn listings_filter(cx: &Cx) -> Result {
                 }
             }
         </div>
-    }
+    })
 }

@@ -1,10 +1,15 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 use web_app_common_tc::{
     client::ListingSearchParams, components::villa_card::villa_card, get_api_client,
 };
 
 #[page("/")]
-pub async fn home(cx: &Cx) -> Result {
+pub async fn home(cx: &Cx) -> Result<impl View> {
     let hero_bg = "https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=2000&q=85";
 
     // Dynamic relative dates (check-in defaults to tomorrow; past dates disallowed)
@@ -27,7 +32,7 @@ pub async fn home(cx: &Cx) -> Result {
         .await
         .unwrap_or_default();
 
-    view! {
+    Ok(view! {
         <div class="flex flex-col gap-16">
             // Hero Section with Clean Layered Background and Floating Search Capsule (Edge-to-Edge)
             <div class="relative w-full min-h-[540px] md:min-h-[600px] overflow-hidden flex flex-col justify-between items-center text-center px-4 py-12 md:py-16 shadow-2xl bg-slate-900">
@@ -195,14 +200,15 @@ pub async fn home(cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+    })
 }
 
 #[page("/htmx/welcome")]
-pub async fn htmx_welcome(_cx: &Cx) -> Result {
-    view! {
+pub async fn htmx_welcome(cx: &Cx) -> Result<impl topcoat::view::View> {
+    let _ = cx;
+    Ok(view! {
         <div class="alert alert-success shadow-lg text-sm font-semibold">
             <span>"Topcoat + HTMX Real-time Component Swapping Active"</span>
         </div>
-    }
+    })
 }

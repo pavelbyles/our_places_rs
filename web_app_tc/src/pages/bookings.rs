@@ -1,8 +1,60 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use common::models::{BookingResponse, UpdatedBookingRequest};
+use jsonwebtoken::{EncodingKey, Header, encode};
+use serde::{Deserialize, Serialize};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::{content::Json, error::RouterErrorExt, page, path_param, route},
+    view::{View, view},
+};
+use uuid::Uuid;
 use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
+#[derive(Serialize, Deserialize)]
+struct Claims {
+    sub: Uuid,
+    exp: usize,
+}
+
+fn generate_jwt_for_user(user_id: Uuid) -> String {
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
+    let claims = Claims {
+        sub: user_id,
+        exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .unwrap()
+}
+
+path_param!(id);
+
+#[route(PATCH "/api/bookings/{id}")]
+pub async fn update_booking_api(
+    cx: &Cx,
+    Json(payload): Json<UpdatedBookingRequest>,
+) -> Result<Json<BookingResponse>> {
+    let _user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let api = get_api_client(cx);
+    let resp = api
+        .update_booking(id, &payload)
+        .await
+        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+    Ok(Json(resp))
+}
+
 #[page("/bookings")]
-pub async fn bookings_page(cx: &Cx) -> Result {
+pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_redirect("/login?redirect=%2Fbookings")?;
     let api = get_api_client(cx);
     let bookings = api
         .get_all_bookings(Some(1), Some(50))
@@ -16,7 +68,7 @@ pub async fn bookings_page(cx: &Cx) -> Result {
         .await
         .unwrap_or_default();
 
-    view! {
+    Ok(view! {
         <div class="max-w-5xl mx-auto px-2 py-8 space-y-8">
             // Booking Success Notification Toast Banner
             <div id="booking-success-toast" class="alert alert-success shadow-lg rounded-2xl hidden flex items-center justify-between transition-all duration-500">
@@ -58,7 +110,11 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                 } else {
                     for b in bookings {
                         let booking_id = b.id.to_string();
-                        let booking_ref = b.confirmation_code.clone();
+                        let booking_ref = if !b.confirmation_code.is_empty() {
+                            b.confirmation_code.clone()
+                        } else {
+                            booking_id.clone()
+                        };
                         let matched_listing = listings.iter().find(|l| l.id == b.listing_id);
                         let villa_name = matched_listing
                             .map(|l| l.name.clone())
@@ -78,6 +134,20 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                         let image_url = matched_listing
                             .and_then(|l| l.primary_image_url.clone())
                             .unwrap_or_else(|| "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=600&q=80".to_string());
+
+                        let token = generate_jwt_for_user(user.id.unwrap_or_default());
+                        let url = format!("{}/api/v1/bookings/{}/messages", common::app_client::booking_api_url(), b.id);
+                        let client = reqwest::Client::new();
+                        let msgs_wrapper = if let Ok(res) = client.get(&url).header("Authorization", format!("Bearer {}", token)).send().await {
+                            if res.status().is_success() {
+                                res.json::<common::models::BookingMessagesWrapper>().await.ok()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                        let unread_count = msgs_wrapper.as_ref().map(|w| w.unread_count).unwrap_or(0);
 
                         let start_str = b.date_from.format("%b %d, %Y").to_string();
                         let end_str = b.date_to.format("%b %d, %Y").to_string();
@@ -183,6 +253,16 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                                             "Cancel Reservation"
                                         </button>
                                     }
+
+                                    <a
+                                        href=(format!("/bookings/{}/messages", booking_ref))
+                                        class="btn btn-outline btn-primary btn-sm font-bold mt-1 relative"
+                                    >
+                                        "💬 Message Host"
+                                        if unread_count > 0 {
+                                            <span class="badge badge-error badge-sm absolute -top-2 -right-2 font-bold">(unread_count)</span>
+                                        }
+                                    </a>
                                 </div>
                             </div>
                         </div>
@@ -244,7 +324,7 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                     if (modal) modal.close();
                     
                     if (activeCancelBookingId) {
-                        fetch('http://localhost:8081/api/v1/bookings/' + activeCancelBookingId, {
+                        fetch('/api/bookings/' + activeCancelBookingId, {
                             method: 'PATCH',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -252,7 +332,7 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                             },
                             body: JSON.stringify({ status: 'refunded' })
                         }).catch(function(err) {
-                            console.error('Failed to cancel booking via booking_api:', err);
+                            console.error('Failed to cancel booking via server-side route:', err);
                         });
 
                         var badge = document.getElementById('status-badge-' + activeCancelBookingId);
@@ -282,7 +362,7 @@ pub async fn bookings_page(cx: &Cx) -> Result {
                     console.error('Cancellation error:', e);
                 }
             }
-
+            
             (function() {
                 try {
                     // Clean up any legacy localStorage mock bookings
@@ -300,5 +380,5 @@ pub async fn bookings_page(cx: &Cx) -> Result {
             })();
             "#
         </script>
-    }
+    })
 }

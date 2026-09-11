@@ -1,5 +1,6 @@
 pub mod about;
 pub mod auth;
+pub mod booking_messages;
 pub mod bookings;
 pub mod checkout;
 pub mod home;

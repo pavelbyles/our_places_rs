@@ -617,6 +617,47 @@ pub struct RefreshSessionRequest {
     pub ttl_seconds: Option<i64>,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageSenderRole {
+    Guest,
+    Host,
+    Admin,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
+pub struct CreateBookingMessageRequest {
+    #[validate(length(
+        min = 1,
+        max = 2000,
+        message = "Message must be between 1 and 2000 characters"
+    ))]
+    pub message_text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct BookingMessageResponse {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub sender_id: Uuid,
+    pub sender_role: MessageSenderRole,
+    pub sender_name: String,
+    pub message_text: String,
+    pub read_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct BookingMessagesWrapper {
+    pub messages: Vec<BookingMessageResponse>,
+    pub unread_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct MarkMessagesReadResponse {
+    pub updated_count: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,6 +707,24 @@ mod tests {
             req3.calculate_overall_rating(),
             Decimal::from_str("3.25").unwrap()
         );
+    }
+
+    #[test]
+    fn test_booking_message_validation() {
+        let valid = CreateBookingMessageRequest {
+            message_text: "Hello, host!".to_string(),
+        };
+        assert!(valid.validate().is_ok());
+
+        let too_short = CreateBookingMessageRequest {
+            message_text: "".to_string(),
+        };
+        assert!(too_short.validate().is_err());
+
+        let too_long = CreateBookingMessageRequest {
+            message_text: "a".repeat(2001),
+        };
+        assert!(too_long.validate().is_err());
     }
 
     #[test]

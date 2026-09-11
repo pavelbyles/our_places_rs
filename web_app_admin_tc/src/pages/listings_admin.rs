@@ -1,46 +1,294 @@
+use common::models::{ListingResponse, NewListingRequest};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use topcoat::{
     Result,
     context::Cx,
-    router::{page, path_param},
-    view::view,
+    router::{
+        content::{Form, Json},
+        error::{SeeOther, see_other},
+        page, path_param, route,
+    },
+    view::{View, view},
 };
-use web_app_common_tc::{client::ListingSearchParams, get_api_client};
+use uuid::Uuid;
+use web_app_common_tc::{auth::require_admin_auth, client::ListingSearchParams, get_api_client};
 
 path_param!(id);
 path_param!(slug);
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCreateListingPayload {
+    pub user_id: Option<Uuid>,
+    pub name: String,
+    pub listing_structure: Option<String>,
+    pub description: Option<String>,
+    pub city: Option<String>,
+    pub country: Option<String>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub max_guests: Option<i32>,
+    pub bedrooms: Option<i32>,
+    pub beds: Option<i32>,
+    pub full_bathrooms: Option<i32>,
+    pub half_bathrooms: Option<i32>,
+    pub square_meters: Option<i32>,
+    pub base_currency: Option<String>,
+    pub price_per_night: Option<Decimal>,
+    pub minimum_stay: Option<i32>,
+    pub weekly_discount_percentage: Option<Decimal>,
+    pub monthly_discount_percentage: Option<Decimal>,
+    pub days_between_bookings: Option<i32>,
+    pub primary_image_url: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminCreateListingResponse {
+    pub success: bool,
+    pub message: Option<String>,
+    pub listing: Option<ListingResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminCreateListingFormPayload {
+    pub user_id: Option<String>,
+    pub name: Option<String>,
+    pub listing_structure: Option<String>,
+    pub description: Option<String>,
+    pub city: Option<String>,
+    pub country: Option<String>,
+    pub latitude: Option<String>,
+    pub longitude: Option<String>,
+    pub max_guests: Option<String>,
+    pub bedrooms: Option<String>,
+    pub beds: Option<String>,
+    pub full_bathrooms: Option<String>,
+    pub half_bathrooms: Option<String>,
+    pub square_meters: Option<String>,
+    pub base_currency: Option<String>,
+    pub price_per_night: Option<String>,
+    pub minimum_stay: Option<String>,
+    pub weekly_discount_percentage: Option<String>,
+    pub monthly_discount_percentage: Option<String>,
+    pub days_between_bookings: Option<String>,
+    pub primary_image_url: Option<String>,
+    pub is_active: Option<String>,
+}
+
+impl AdminCreateListingFormPayload {
+    pub fn into_payload(self) -> AdminCreateListingPayload {
+        AdminCreateListingPayload {
+            user_id: self
+                .user_id
+                .as_deref()
+                .and_then(|s| Uuid::parse_str(s.trim()).ok()),
+            name: self.name.unwrap_or_default(),
+            listing_structure: self.listing_structure,
+            description: self.description,
+            city: self.city,
+            country: self.country,
+            latitude: self
+                .latitude
+                .as_deref()
+                .and_then(|s| s.trim().parse::<f64>().ok()),
+            longitude: self
+                .longitude
+                .as_deref()
+                .and_then(|s| s.trim().parse::<f64>().ok()),
+            max_guests: self
+                .max_guests
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            bedrooms: self
+                .bedrooms
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            beds: self
+                .beds
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            full_bathrooms: self
+                .full_bathrooms
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            half_bathrooms: self
+                .half_bathrooms
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            square_meters: self
+                .square_meters
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            base_currency: self.base_currency,
+            price_per_night: self
+                .price_per_night
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok()),
+            minimum_stay: self
+                .minimum_stay
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            weekly_discount_percentage: self
+                .weekly_discount_percentage
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok()),
+            monthly_discount_percentage: self
+                .monthly_discount_percentage
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok()),
+            days_between_bookings: self
+                .days_between_bookings
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            primary_image_url: self.primary_image_url,
+            is_active: Some(
+                self.is_active
+                    .as_deref()
+                    .map(|v| v == "on" || v == "true")
+                    .unwrap_or(false),
+            ),
+        }
+    }
+}
+
+async fn execute_create_listing(
+    cx: &Cx,
+    payload: AdminCreateListingPayload,
+) -> std::result::Result<ListingResponse, String> {
+    let auth_user = require_admin_auth(cx)
+        .await
+        .map_err(|e| format!("Unauthorized: {:?}", e))?;
+
+    let api = get_api_client(cx);
+
+    let target_user_id = if let Some(uid) = payload.user_id {
+        uid
+    } else if auth_user.is_host() && let Some(uid) = auth_user.id {
+        uid
+    } else if let Ok(hosts) = api
+        .get_all_users(Some(1), Some(10), Some("host".to_string()))
+        .await
+        && let Some(first_host) = hosts.first()
+    {
+        first_host.id
+    } else if let Some(uid) = auth_user.id {
+        uid
+    } else {
+        return Err("No valid host user available to assign listing to.".to_string());
+    };
+
+    let name = payload.name.trim().to_string();
+    if name.is_empty() {
+        return Err("Listing name cannot be empty.".to_string());
+    }
+
+    let mut details_map = serde_json::Map::new();
+    if let Some(ref img) = payload.primary_image_url
+        && !img.trim().is_empty()
+    {
+        details_map.insert(
+            "primary_image_url".to_string(),
+            serde_json::Value::String(img.trim().to_string()),
+        );
+    }
+    if let Some(active) = payload.is_active {
+        details_map.insert("is_active".to_string(), serde_json::Value::Bool(active));
+    }
+
+    let new_req = NewListingRequest {
+        name,
+        user_id: target_user_id,
+        description: payload.description.filter(|d| !d.trim().is_empty()),
+        listing_structure: payload
+            .listing_structure
+            .unwrap_or_else(|| "Villa".to_string()),
+        country: payload.country.unwrap_or_else(|| "Jamaica".to_string()),
+        price_per_night: payload
+            .price_per_night
+            .or_else(|| Some(Decimal::from(1000))),
+        weekly_discount_percentage: payload.weekly_discount_percentage,
+        monthly_discount_percentage: payload.monthly_discount_percentage,
+        max_guests: payload.max_guests.unwrap_or(2).max(1),
+        bedrooms: payload.bedrooms.unwrap_or(1).max(0),
+        beds: payload.beds.unwrap_or(1).max(0),
+        full_bathrooms: payload.full_bathrooms.unwrap_or(1).max(0),
+        half_bathrooms: payload.half_bathrooms.unwrap_or(0).max(0),
+        square_meters: payload.square_meters,
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        listing_details: if details_map.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(details_map))
+        },
+        city: payload.city,
+        base_currency: payload.base_currency.unwrap_or_else(|| "USD".to_string()),
+        minimum_stay: payload.minimum_stay.unwrap_or(1).max(1),
+        days_between_bookings: payload.days_between_bookings.unwrap_or(0).max(0),
+    };
+
+    api.create_listing(&new_req)
+        .await
+        .map_err(|e| format!("Listing creation failed: {}", e))
+}
+
+#[route(POST "/api/admin/listings/create")]
+pub async fn admin_create_listing_api(
+    cx: &Cx,
+    Json(payload): Json<AdminCreateListingPayload>,
+) -> Result<Json<AdminCreateListingResponse>> {
+    match execute_create_listing(cx, payload).await {
+        Ok(listing) => Ok(Json(AdminCreateListingResponse {
+            success: true,
+            message: Some("Listing created successfully!".to_string()),
+            listing: Some(listing),
+        })),
+        Err(msg) => Ok(Json(AdminCreateListingResponse {
+            success: false,
+            message: Some(msg),
+            listing: None,
+        })),
+    }
+}
+
+#[route(POST "/admin/listings")]
+pub async fn admin_create_listing_form(
+    cx: &Cx,
+    Form(payload): Form<AdminCreateListingFormPayload>,
+) -> Result<SeeOther> {
+    let _ = execute_create_listing(cx, payload.into_payload()).await;
+    Ok(see_other("/admin/listings"))
+}
+
 #[page("/admin/listings")]
-pub async fn admin_listings_page(cx: &Cx) -> Result {
+pub async fn admin_listings_page(cx: &Cx) -> Result<impl View> {
     render_listings_content(cx).await
 }
 
 #[page("/listings")]
-pub async fn listings_alias_page(cx: &Cx) -> Result {
+pub async fn listings_alias_page(cx: &Cx) -> Result<impl View> {
     render_listings_content(cx).await
 }
 
 #[page("/admin/listings/{id}")]
-pub async fn admin_listing_detail_page(cx: &Cx) -> Result {
+pub async fn admin_listing_detail_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_edit_listing_content(cx, id.to_string()).await
 }
 
 #[page("/listings/{id}")]
-pub async fn listings_alias_detail_page(cx: &Cx) -> Result {
+pub async fn listings_alias_detail_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_edit_listing_content(cx, id.to_string()).await
 }
 
-async fn render_listings_content(cx: &Cx) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
-
+async fn render_listings_content(cx: &Cx) -> Result<impl View> {
     let __cx = cx;
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
     let api = get_api_client(cx);
 
     let listings = api
@@ -51,8 +299,13 @@ async fn render_listings_content(cx: &Cx) -> Result {
         .await
         .unwrap_or_default();
 
-    view! {
-        <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
+    Ok(view! {
+        if !is_authed {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        } else {
+            <div class="space-y-8 py-6 max-w-7xl mx-auto px-4 md:px-6">
             // Header
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-200 pb-4">
                 <div class="space-y-1">
@@ -190,11 +443,12 @@ async fn render_listings_content(cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+        }
+    })
 }
 
 #[page("/admin/listings/clone/{slug}")]
-pub async fn admin_clone_listing_page(cx: &Cx) -> Result {
+pub async fn admin_clone_listing_page(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
     let api = get_api_client(cx);
     let template = api
@@ -206,21 +460,23 @@ pub async fn admin_clone_listing_page(cx: &Cx) -> Result {
 }
 
 #[page("/admin/listings/new")]
-pub async fn admin_new_listing_page(cx: &Cx) -> Result {
+pub async fn admin_new_listing_page(cx: &Cx) -> Result<impl View> {
     render_new_or_cloned_listing(cx, None).await
 }
 
 async fn render_new_or_cloned_listing(
-    __cx: &Cx,
+    cx: &Cx,
     template: Option<common::models::ListingResponse>,
-) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(__cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
+) -> Result<impl View> {
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let hosts = api
+        .get_all_users(Some(1), Some(50), Some("host".to_string()))
+        .await
+        .unwrap_or_default();
 
     // Pre-populate fields from template if cloning
 
@@ -289,8 +545,13 @@ async fn render_new_or_cloned_listing(
         .and_then(|t| t.primary_image_url.clone())
         .unwrap_or_else(|| "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80".to_string());
 
-    view! {
-        <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
+    Ok(view! {
+        if !is_authed {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        } else {
+            <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
             <div class="border-b border-base-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <span class="text-primary font-bold tracking-widest uppercase text-xs">
@@ -337,7 +598,11 @@ async fn render_new_or_cloned_listing(
                 </div>
             </div>
 
-            <form action="/admin/listings" method="POST" class="space-y-8">
+            <div id="create-listing-feedback" class="hidden alert mb-6 rounded-2xl font-semibold shadow-md">
+                <span id="create-listing-feedback-msg"></span>
+            </div>
+
+            <form action="/admin/listings" method="POST" id="admin-create-listing-form" class="space-y-8">
                 // 1. Basic Details & Property Classification
                 <div class="bg-base-100 dark:bg-base-200/90 p-6 md:p-8 rounded-3xl border-2 border-base-200 dark:border-base-100/30 shadow-md space-y-5">
                     <div class="flex items-center justify-between border-b border-base-200 pb-3">
@@ -356,6 +621,7 @@ async fn render_new_or_cloned_listing(
                             <input
                                 type="text"
                                 name="name"
+                                id="new-listing-name"
                                 value=(initial_name)
                                 placeholder="e.g. Whispering Palms Oceanfront Sanctuary"
                                 required=(true)
@@ -366,6 +632,7 @@ async fn render_new_or_cloned_listing(
                             <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Structure / Type"</label>
                             <select
                                 name="listing_structure"
+                                id="new-listing-structure"
                                 class="select select-bordered border-2 border-base-300 dark:border-base-content/20 bg-base-100 dark:bg-base-300/40 text-base-content font-bold rounded-xl w-full shadow-xs"
                             >
                                 <option value="Villa" selected=(initial_structure == "Villa")>"Villa 🌴"</option>
@@ -376,6 +643,23 @@ async fn render_new_or_cloned_listing(
                             </select>
                         </div>
                     </div>
+
+                    if !hosts.is_empty() {
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Assigned Host / Property Owner"</label>
+                            <select
+                                name="user_id"
+                                id="new-listing-user-id"
+                                class="select select-bordered border-2 border-base-300 dark:border-base-content/20 bg-base-100 dark:bg-base-300/40 text-base-content font-bold rounded-xl w-full shadow-xs"
+                            >
+                                for host in &hosts {
+                                    <option value=(host.id.to_string())>
+                                        (format!("{} {} ({})", host.first_name, host.last_name, host.email))
+                                    </option>
+                                }
+                            </select>
+                        </div>
+                    }
 
                     <div>
                         <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Editorial Overview & Description"</label>
@@ -571,40 +855,162 @@ async fn render_new_or_cloned_listing(
                     </label>
                     <div class="flex items-center gap-3">
                         <a href="/admin/listings" class="btn btn-ghost rounded-full px-6 font-semibold">"Cancel"</a>
-                        <button type="submit" class="btn btn-primary rounded-full px-8 font-bold tracking-wide shadow-lg">
-                            if template.is_some() {
-                                "Create Duplicate Villa"
-                            } else {
-                                "Create Villa Listing"
-                            }
+                        <button
+                            type="submit"
+                            id="btn-create-listing"
+                            class="btn btn-primary rounded-full px-8 font-bold tracking-wide shadow-lg flex items-center gap-2"
+                        >
+                            <span id="btn-create-listing-spinner" class="loading loading-spinner loading-sm hidden"></span>
+                            <span id="btn-create-listing-text">
+                                if template.is_some() {
+                                    "Create Duplicate Villa"
+                                } else {
+                                    "Create Villa Listing"
+                                }
+                            </span>
                         </button>
                     </div>
                 </div>
             </form>
+
+            <script>
+                (r#"
+                (function() {
+                    function showFeedback(msg, isSuccess) {
+                        var fb = document.getElementById('create-listing-feedback');
+                        var txt = document.getElementById('create-listing-feedback-msg');
+                        if (!fb) return;
+                        fb.classList.remove('hidden', 'alert-success', 'alert-error');
+                        if (isSuccess) {
+                            fb.classList.add('alert-success');
+                        } else {
+                            fb.classList.add('alert-error');
+                        }
+                        if (txt) txt.innerText = msg;
+                        fb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+
+                    var form = document.getElementById('admin-create-listing-form');
+                    if (!form) return;
+
+                    form.onsubmit = function(e) {
+                        e.preventDefault();
+                        var f = e.target;
+                        var fd = new FormData(f);
+
+                        var rawName = fd.get('name');
+                        var name = rawName ? rawName.toString().trim() : '';
+                        if (!name) {
+                            showFeedback('Please enter the villa name.', false);
+                            return false;
+                        }
+
+                        var btn = document.getElementById('btn-create-listing');
+                        var spinner = document.getElementById('btn-create-listing-spinner');
+                        var btnText = document.getElementById('btn-create-listing-text');
+
+                        if (btn) btn.disabled = true;
+                        if (spinner) spinner.classList.remove('hidden');
+                        if (btnText) btnText.innerText = 'Creating Villa...';
+
+                        var rawLat = fd.get('latitude');
+                        var rawLon = fd.get('longitude');
+                        var rawGuests = fd.get('max_guests');
+                        var rawBedrooms = fd.get('bedrooms');
+                        var rawBeds = fd.get('beds');
+                        var rawFullBaths = fd.get('full_bathrooms');
+                        var rawHalfBaths = fd.get('half_bathrooms');
+                        var rawSqMeters = fd.get('square_meters');
+                        var rawPrice = fd.get('price_per_night');
+                        var rawMinStay = fd.get('minimum_stay');
+                        var rawWeekly = fd.get('weekly_discount_percentage');
+                        var rawMonthly = fd.get('monthly_discount_percentage');
+                        var rawDaysBetween = fd.get('days_between_bookings');
+                        var rawUserId = fd.get('user_id');
+                        var rawActive = fd.get('is_active');
+
+                        var payload = {
+                            name: name,
+                            listing_structure: fd.get('listing_structure'),
+                            description: fd.get('description'),
+                            city: fd.get('city'),
+                            country: fd.get('country'),
+                            latitude: rawLat ? parseFloat(rawLat.toString()) : null,
+                            longitude: rawLon ? parseFloat(rawLon.toString()) : null,
+                            max_guests: rawGuests ? parseInt(rawGuests.toString(), 10) : 2,
+                            bedrooms: rawBedrooms ? parseInt(rawBedrooms.toString(), 10) : 1,
+                            beds: rawBeds ? parseInt(rawBeds.toString(), 10) : 1,
+                            full_bathrooms: rawFullBaths ? parseInt(rawFullBaths.toString(), 10) : 1,
+                            half_bathrooms: rawHalfBaths ? parseInt(rawHalfBaths.toString(), 10) : 0,
+                            square_meters: rawSqMeters ? parseInt(rawSqMeters.toString(), 10) : null,
+                            base_currency: fd.get('base_currency'),
+                            price_per_night: rawPrice ? rawPrice.toString() : null,
+                            minimum_stay: rawMinStay ? parseInt(rawMinStay.toString(), 10) : 1,
+                            weekly_discount_percentage: rawWeekly ? rawWeekly.toString() : null,
+                            monthly_discount_percentage: rawMonthly ? rawMonthly.toString() : null,
+                            days_between_bookings: rawDaysBetween ? parseInt(rawDaysBetween.toString(), 10) : 0,
+                            primary_image_url: fd.get('primary_image_url'),
+                            is_active: rawActive === 'on' ? true : false,
+                            user_id: rawUserId ? rawUserId.toString() : null
+                        };
+
+                        fetch('/api/admin/listings/create', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        })
+                        .then(function(res) {
+                            return res.json().then(function(data) {
+                                if (data.success) {
+                                    showFeedback('Villa listing created successfully! Redirecting...', true);
+                                    setTimeout(function() {
+                                        window.location.href = '/admin/listings';
+                                    }, 600);
+                                } else {
+                                    if (btn) btn.disabled = false;
+                                    if (spinner) spinner.classList.add('hidden');
+                                    if (btnText) btnText.innerText = 'Create Villa Listing';
+                                    showFeedback(data.message ? data.message : 'Failed to create villa listing.', false);
+                                }
+                            });
+                        })
+                        .catch(function(err) {
+                            if (btn) btn.disabled = false;
+                            if (spinner) spinner.classList.add('hidden');
+                            if (btnText) btnText.innerText = 'Create Villa Listing';
+                            showFeedback('Network error while creating villa listing.', false);
+                        });
+
+                        return false;
+                    };
+                })();
+                "#)
+            </script>
         </div>
-    }
+        }
+    })
 }
 
 #[page("/admin/listings/{id}/edit")]
-pub async fn admin_edit_listing_page(cx: &Cx) -> Result {
+pub async fn admin_edit_listing_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_edit_listing_content(cx, id.to_string()).await
 }
 
 #[page("/listings/{id}/edit")]
-pub async fn listings_edit_alias_page(cx: &Cx) -> Result {
+pub async fn listings_edit_alias_page(cx: &Cx) -> Result<impl View> {
     let id: &str = path_param::<Id>(cx);
     render_edit_listing_content(cx, id.to_string()).await
 }
 
-async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
+async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
 
     let __cx = cx;
     let api = get_api_client(cx);
@@ -661,8 +1067,13 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {
     let lon = listing.and_then(|l| l.longitude).unwrap_or(-76.4520);
     let image_url = listing.and_then(|l| l.primary_image_url.clone()).unwrap_or_else(|| "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80".to_string());
 
-    view! {
-        <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
+    Ok(view! {
+        if !is_authed {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        } else {
+            <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
             // Studio Header with Hero Preview
             <div class="bg-base-100 dark:bg-base-200/90 rounded-3xl border-2 border-base-200 dark:border-base-100/30 p-6 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div class="flex items-center gap-4">
@@ -986,5 +1397,6 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result {
                 </div>
             </form>
         </div>
-    }
+        }
+    })
 }

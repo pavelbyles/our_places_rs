@@ -1,26 +1,26 @@
-use topcoat::{Result, context::Cx, router::page, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::page,
+    view::{View, view},
+};
 use web_app_common_tc::{client::ListingSearchParams, get_api_client};
 
 #[page("/admin")]
-pub async fn admin_alias_dashboard(cx: &Cx) -> Result {
+pub async fn admin_alias_dashboard(cx: &Cx) -> Result<impl View> {
     render_dashboard_content(cx).await
 }
 
 #[page("/")]
-pub async fn dashboard(cx: &Cx) -> Result {
+pub async fn dashboard(cx: &Cx) -> Result<impl View> {
     render_dashboard_content(cx).await
 }
 
-async fn render_dashboard_content(cx: &Cx) -> Result {
-    if let Err(_err) = web_app_common_tc::auth::require_admin_auth(cx).await {
-        return view! {
-            <script>
-                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
-            </script>
-        };
-    }
-
+async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
     let __cx = cx;
+    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
+        .await
+        .is_ok();
     let api = get_api_client(cx);
 
     let admin_user = web_app_common_tc::auth::get_admin_session(cx).await;
@@ -58,8 +58,13 @@ async fn render_dashboard_content(cx: &Cx) -> Result {
         .map(|b| b.total_price)
         .sum();
 
-    view! {
-        <div class="space-y-10 py-6 max-w-7xl mx-auto px-4 md:px-6">
+    Ok(view! {
+        if !is_authed {
+            <script>
+                r#"window.location.replace('/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search));"#
+            </script>
+        } else {
+            <div class="space-y-10 py-6 max-w-7xl mx-auto px-4 md:px-6">
             // Header with Title & Quick Action
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-base-200 pb-6">
                 <div class="space-y-1">
@@ -266,15 +271,17 @@ async fn render_dashboard_content(cx: &Cx) -> Result {
                 </div>
             </div>
         </div>
-    }
+        }
+    })
 }
 
 #[page("/admin/htmx/stats")]
-pub async fn admin_htmx_stats(_cx: &Cx) -> Result {
+pub async fn admin_htmx_stats(cx: &Cx) -> Result<impl View> {
+    let _ = cx;
     let now = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    view! {
+    Ok(view! {
         <div class="space-y-2 text-xs">
             <div class="flex justify-between py-1 border-b border-base-200/50">
                 <span class="text-base-content/60">"listing_api (8082)"</span>
@@ -296,5 +303,5 @@ pub async fn admin_htmx_stats(_cx: &Cx) -> Result {
                 <span>"✓ All Cloud Run scale-to-zero microservices operational."</span>
             </div>
         </div>
-    }
+    })
 }

@@ -1,13 +1,15 @@
-use topcoat::{Result, context::Cx, htmx::hx_request, router::layout, view::view};
+use topcoat::{
+    Result,
+    context::Cx,
+    router::layout,
+    view::{Child, View, view},
+};
 use web_app_common_tc::auth::auth_init_script;
 use web_app_common_tc::theme::{theme_init_script, theme_toggle, theme_toggle_script};
 
 #[layout("/")]
-pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
-    // If request was initiated by HTMX, swap the inner page fragment only
-    if hx_request(cx) {
-        return slot;
-    }
+pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
+    let is_hx_partial = topcoat::htmx::hx_request(cx) && !topcoat::htmx::hx_boosted(cx);
 
     let init_script = theme_init_script();
     let toggle_script = theme_toggle_script();
@@ -19,9 +21,12 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
         None => true,
     };
 
-    view! {
-        <!DOCTYPE html>
-        <html lang="en" data-theme="emerald">
+    Ok(view! {
+        if is_hx_partial {
+            (slot)
+        } else {
+            <!DOCTYPE html>
+            <html lang="en" data-theme="emerald">
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -83,7 +88,7 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                 <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
             </head>
 
-            <body class="min-h-screen bg-base-200/50 text-base-content antialiased">
+            <body class="min-h-screen bg-base-200/50 text-base-content antialiased" hx-boost="false">
                 <div class="drawer lg:drawer-open min-h-screen">
                     <input id="admin-drawer" type="checkbox" class="drawer-toggle" />
 
@@ -163,7 +168,7 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
 
                         // Main Content Body
                         <main class="flex-grow w-full p-4 md:p-8">
-                            (slot?)
+                            (slot)
                         </main>
 
                         // Admin Footer
@@ -291,5 +296,6 @@ pub async fn admin_layout(cx: &Cx, slot: Result) -> Result {
                 </div>
             </body>
         </html>
-    }
+        }
+    })
 }

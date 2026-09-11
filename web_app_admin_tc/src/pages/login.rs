@@ -4,7 +4,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::{content::Json, page, route},
-    view::view,
+    view::{View, view},
 };
 use web_app_common_tc::{auth::token_hash_to_hex, get_api_client};
 
@@ -109,7 +109,7 @@ pub async fn admin_login_api(
 }
 
 #[page("/logout")]
-pub async fn logout_page(cx: &Cx) -> Result {
+pub async fn logout_page(cx: &Cx) -> Result<impl View> {
     if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
         let hash_hex = token_hash_to_hex(&token_hash);
         let api = get_api_client(cx);
@@ -117,7 +117,7 @@ pub async fn logout_page(cx: &Cx) -> Result {
     }
     let _ = topcoat::session::stop(cx).await;
 
-    view! {
+    Ok(view! {
         <div class="min-h-[60vh] flex items-center justify-center">
             <div class="text-center space-y-4">
                 <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -133,14 +133,17 @@ pub async fn logout_page(cx: &Cx) -> Result {
             window.location.replace('/login');
             "#
         </script>
-    }
+    })
 }
 
 #[page("/login")]
-pub async fn login_page(cx: &Cx) -> Result {
-    // If user already has a valid active admin session, redirect straight to dashboard
-    if let Some(_user) = web_app_common_tc::auth::get_admin_session(cx).await {
-        return view! {
+pub async fn login_page(cx: &Cx) -> Result<impl View> {
+    let is_logged_in = web_app_common_tc::auth::get_admin_session(cx)
+        .await
+        .is_some();
+
+    Ok(view! {
+        if is_logged_in {
             <script>
                 r#"
                 var params = new URLSearchParams(window.location.search);
@@ -148,11 +151,8 @@ pub async fn login_page(cx: &Cx) -> Result {
                 window.location.replace(target);
                 "#
             </script>
-        };
-    }
-
-    view! {
-        <div class="min-h-[75vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        } else {
+            <div class="min-h-[75vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
             <div class="w-full max-w-md space-y-8 bg-base-100 dark:bg-base-200/90 backdrop-blur-xl p-8 rounded-3xl border border-base-200 dark:border-base-100/20 shadow-2xl">
                 <div class="text-center space-y-2">
                     <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 text-primary text-3xl mb-2">
@@ -416,11 +416,12 @@ pub async fn login_page(cx: &Cx) -> Result {
                             e.stopPropagation();
                         }
                         window.handleAdminLogin(e);
-                        return false;
-                    });
-                }
-            })();
-            "#
+                    return false;
+                });
+            }
+        })();
+        "#
         </script>
-    }
+        }
+    })
 }
