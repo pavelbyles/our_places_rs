@@ -29,7 +29,7 @@ Ensure dependencies are up to date and check for security vulnerabilities:
 cargo update
 cargo audit
 ```
-*(Note: Ignore RUSTSEC-2024-0436 and RUSTSEC-2023-0071 if unpatched upstream).*
+*(Note: `cargo audit` automatically abides by `.cargo/audit.toml` for known upstream advisories).*
 
 ### 4. Code Formatting
 Ensure all crates adhere to the standard format:

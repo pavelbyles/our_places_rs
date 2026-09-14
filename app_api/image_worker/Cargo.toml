@@ -18,11 +18,15 @@ db_core.workspace = true
 api_core.workspace = true
 common.workspace = true
 actix-web.workspace = true
-base64 = "0.22.1"
+base64 = "0.23.1"
 serde_json.workspace = true
 uuid.workspace = true
 sqlx.workspace = true
-image = "0.25.10"
+image = { version = "0.25.10", default-features = false, features = [
+    "jpeg",
+    "png",
+    "webp",
+] }
 webp = "0.3.1"
 google-cloud-storage = "1.9.0"
 tokio-stream = "0.1.18"
