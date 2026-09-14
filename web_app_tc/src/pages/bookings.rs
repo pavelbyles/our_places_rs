@@ -27,7 +27,7 @@ fn generate_jwt_for_user(user_id: Uuid) -> String {
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .unwrap()
+    .unwrap_or_default()
 }
 
 path_param!(id);

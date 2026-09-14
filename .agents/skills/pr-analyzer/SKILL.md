@@ -14,7 +14,7 @@ When invoked to analyze changes and create a PR, follow these steps systematical
    - Ensure the code passes all sanity checks before proceeding.
 
 2. **Run Security Audit**
-   - Execute the `cargo audit --ignore RUSTSEC-2024-0436 --ignore RUSTSEC-2023-0071` command in the terminal to check the Rust dependencies for any known CVEs (security vulnerabilities).
+   - Execute the `cargo audit` command in the terminal (which automatically abides by `.cargo/audit.toml`) to check the Rust dependencies for any known CVEs (security vulnerabilities).
    - Record the results of this audit for your final analysis.
 
 3. **Perform the 8-Point Analysis**
