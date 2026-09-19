@@ -41,4 +41,13 @@ docs/listing_api/oauth_config_util/*.json
 node_modules/
 **/node_modules/
 
+# Devenv & direnv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+.direnv
+.pre-commit-config.yaml
+
+
+
 
