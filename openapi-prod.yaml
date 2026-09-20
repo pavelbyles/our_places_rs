@@ -284,23 +284,6 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/users/health_check:
-    get:
-      summary: Health check
-      operationId: healthCheckUsers
-      tags:
-        - users
-      x-google-backend: user-backend
-      responses:
-        "200":
-          description: Service is alive
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PingResponse"
-        "500":
-          description: Internal server error
-
   /api/v1/sessions:
     post:
       summary: Create or register a session
@@ -553,23 +536,6 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/listings/health_check:
-    get:
-      summary: Health check
-      operationId: healthCheckListings
-      tags:
-        - listings
-      x-google-backend: listing-backend
-      responses:
-        "200":
-          description: Service is alive
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PingResponse"
-        "500":
-          description: Internal server error
-
   # ----------------------------------------------------------------------------
   # BOOKING API
   # ----------------------------------------------------------------------------
@@ -697,23 +663,6 @@ paths:
           description: Booking deleted
         "404":
           description: Booking not found
-        "500":
-          description: Internal server error
-
-  /api/v1/bookings/health_check:
-    get:
-      summary: Health check
-      operationId: healthCheckBookings
-      tags:
-        - bookings
-      x-google-backend: booking-backend
-      responses:
-        "200":
-          description: Service is alive
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PingResponse"
         "500":
           description: Internal server error
 

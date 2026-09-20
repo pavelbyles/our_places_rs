@@ -30,6 +30,10 @@ jsonwebtoken = "9.3.0"
 db_core.workspace = true
 common.workspace = true
 sqlx.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+once_cell = "1.20.2"
+parking_lot = "0.12.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

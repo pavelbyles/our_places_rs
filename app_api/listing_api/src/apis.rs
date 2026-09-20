@@ -495,7 +495,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
             crate::reviews::get_listing_reviews_handler,
-            api_core::health::health_check,
         ),
         components(
             schemas(
@@ -529,10 +528,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/listings")
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            )
             .route(
                 "",
                 web::get()

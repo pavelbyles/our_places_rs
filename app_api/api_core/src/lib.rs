@@ -1,7 +1,7 @@
+pub mod actuator;
 pub mod api_common;
 pub mod auth;
 pub mod error;
-pub mod health;
 pub mod models;
 pub mod pagination;
 pub mod response;
