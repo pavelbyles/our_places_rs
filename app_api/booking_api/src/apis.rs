@@ -809,10 +809,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_booking_messages,
             send_booking_message,
             mark_booking_messages_read,
-            api_core::health::health_check,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, api_core::health::PingResponse, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse)
+            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse)
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -828,10 +827,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/bookings")
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            )
             .route(
                 "/availability",
                 web::get()

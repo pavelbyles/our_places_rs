@@ -397,10 +397,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[openapi(
         paths(
             process_image,
-            api_core::health::health_check,
         ),
         components(
-            schemas(PubSubPayload, PubSubMessage, PubSubAttributes, api_core::health::PingResponse)
+            schemas(PubSubPayload, PubSubMessage, PubSubAttributes)
         ),
         tags(
             (name = "images", description = "Image processing endpoints")
@@ -415,16 +414,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     );
 
     cfg.service(
-        web::scope("/api/v1/internal/image")
-            .route(
-                "/process_image",
-                web::post()
-                    .to(process_image)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            ),
+        web::scope("/api/v1/internal/image").route(
+            "/process_image",
+            web::post()
+                .to(process_image)
+                .wrap(from_fn(content_negotiation_middleware)),
+        ),
     );
 }

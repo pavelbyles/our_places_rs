@@ -1332,13 +1332,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_session_handler,
             delete_session_handler,
             revoke_user_sessions_handler,
-            api_core::health::health_check,
         ),
         components(
             schemas(
                 NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest,
                 UserResponse, ListingResponse, BookingResponse, pagination::Pagination,
-                api_core::health::PingResponse, UserFilter, UsersWrapper, PasswordChangeRequest,
+                UserFilter, UsersWrapper, PasswordChangeRequest,
                 PasswordChangeConfirm, EmailChangeRequest, DeactivateRequest,
                 CreateSessionRequest, SessionResponse, SessionNamespaceQuery
             )
@@ -1457,10 +1456,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get()
                     .to(get_user_listings) // TODO: implement
                     .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
             )
             .route(
                 "/login",
