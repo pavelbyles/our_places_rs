@@ -69,6 +69,62 @@ Configured across all Actix-web microservices via `api_core::actuator::configure
 | `GET` | `/loggers/{name}` | Inspect the log level of a specific logger target |
 | `POST` | `/loggers/{name}` | Dynamically update the log level of a specific logger target |
 
+#### Dynamic Log Level Management & Secret Generation
+
+Loggers target either the root (`ROOT`), a monorepo crate (`booking_api`, `listing_api`, `user_api`, `db_core`, `api_core`), third-party libraries (`sqlx`, `actix_web`), or granular sub-modules (`booking_api::apis`, `db_core::booking`).
+
+Mutating log levels requires authentication via either **Method 1 (Pre-Shared Token)** or **Method 2 (Admin JWT)**:
+
+##### Method 1: Pre-Shared Token (`X-Actuator-Token`) — Recommended
+1. **Generate a Secret Token**:
+   ```bash
+   openssl rand -hex 32
+   ```
+2. **Configure Environment**:
+   Add to `.env` (or Cloud Run environment):
+   ```bash
+   ACTUATOR_SECRET="<your-generated-token>"
+   ```
+   *(Note: Defaults to `"secret"` in local development if omitted).*
+3. **Execute POST Request**:
+   ```bash
+   curl -X POST http://localhost:8081/loggers/booking_api::apis \
+     -H "X-Actuator-Token: <your-generated-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"configuredLevel": "TRACE"}'
+   ```
+
+##### Method 2: Admin JWT Bearer Token (`Authorization: Bearer <token>`)
+1. **Obtain / Generate an Admin JWT** (signed with `JWT_SECRET` from `.env`):
+   ```bash
+   python3 -c "
+   import jwt, time, os, uuid
+   secret = os.getenv('JWT_SECRET', 'secret')
+   payload = {'sub': str(uuid.uuid4()), 'role': 'admin', 'exp': int(time.time()) + 3600}
+   print(jwt.encode(payload, secret, algorithm='HS256'))
+   "
+   ```
+2. **Execute POST Request**:
+   ```bash
+   curl -X POST http://localhost:8081/loggers/booking_api::apis \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"configuredLevel": "TRACE"}'
+   ```
+
+##### Inspecting & Resetting Loggers
+- **Inspect current level**:
+  ```bash
+  curl -X GET http://localhost:8081/loggers/booking_api::apis
+  ```
+- **Reset to standard level**:
+  ```bash
+  curl -X POST http://localhost:8081/loggers/booking_api::apis \
+     -H "X-Actuator-Token: <your-generated-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"configuredLevel": "INFO"}'
+  ```
+
 ---
 
 ### 2. `app_api/booking_api` (Booking Engine & Messaging)
