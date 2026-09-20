@@ -24,6 +24,7 @@
     pkgs.ripgrep
     pkgs.pkg-config
     pkgs.openssl
+    pkgs.postgresql
   ];
 
   # Fast git pre-commit formatting check
@@ -100,6 +101,53 @@
       echo "Running AI skill benchmark assertions..."
       python3 .agents/evals/eval_runner.py "$@"
     '';
+
+    # Launch all API microservices and database
+    apis.exec = ''
+      echo "Starting database and API microservices (listing_api, booking_api, user_api)..."
+      devenv up db listing_api booking_api user_api "$@"
+    '';
+  };
+
+  # Process manager configuration (run via `devenv up` or `apis`)
+  processes = {
+    # Database watcher & log streamer (ensures Docker container is active and accepts connections)
+    db.exec = ''
+      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+        echo "Starting Docker container 'ourplaces_db'..."
+        docker start ourplaces_db 2>/dev/null || docker compose up -d db
+      fi
+      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+        sleep 1
+      done
+      echo "PostgreSQL is accepting connections on localhost:5432"
+      docker logs -f ourplaces_db
+    '';
+
+    # Listing API (Port 8082)
+    listing_api.exec = ''
+      cd app_api/listing_api && ./run_local.sh
+    '';
+
+    # Booking API (Port 8081)
+    booking_api.exec = ''
+      cd app_api/booking_api && ./run_local.sh
+    '';
+
+    # User API (Port 8083)
+    user_api.exec = ''
+      cd app_api/user_api && ./run_local.sh
+    '';
+
+    # Guest Portal Frontend (Topcoat SSR & HTMX)
+    web_app_tc.exec = ''
+      cd web_app_tc && topcoat dev
+    '';
+
+    # Admin Portal Frontend (Topcoat SSR & HTMX)
+    web_app_admin_tc.exec = ''
+      cd web_app_admin_tc && topcoat dev
+    '';
   };
 
   enterShell = ''
@@ -109,7 +157,9 @@
     echo "   - Node:     $(node --version)"
     echo "   - Python:   $(python3 --version)"
     echo "   - sqlx-cli: $(sqlx --version)"
-    echo "   - Workflows:"
+    echo "   - Workflows & Launchers:"
+    echo "       • apis           (launch DB + listing_api, booking_api, user_api)"
+    echo "       • devenv up      (launch full stack: DB + APIs + Frontends)"
     echo "       • db-migrate     • db-prepare     • check-all"
     echo "       • sanity-check   • test-ci-matrix • audit-booking"
     echo "       • security-audit • eval-skills"
