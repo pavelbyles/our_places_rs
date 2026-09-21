@@ -153,7 +153,7 @@
       start_svc "user_api" "app_api/user_api" "http://localhost:8083/health"
 
       echo "Waiting for API microservices to become ready..."
-      retries=180
+      retries=200
       elapsed=0
       until (is_ready "http://localhost:8081/health" && is_ready "http://localhost:8082/health" && is_ready "http://localhost:8083/health") || [ $retries -eq 0 ]; do
         sleep 1
@@ -210,13 +210,13 @@
       start_fe "web_app_admin_tc" "web_app_admin_tc" "3002" "http://localhost:3002"
 
       echo "Waiting for Topcoat frontends (:3000, :3002) to become ready..."
-      retries=180
+      retries=200
       elapsed=0
       until (is_ready "http://localhost:3000" && is_ready "http://localhost:3002") || [ $retries -eq 0 ]; do
         sleep 1
         retries=$((retries - 1))
         elapsed=$((elapsed + 1))
-        if [ $((elapsed % 10)) -eq 0 ]; then
+        if [ $((elapsed % 5)) -eq 0 ]; then
           echo "Waiting for Topcoat frontends to become ready... (''${elapsed}s elapsed)"
         fi
       done
