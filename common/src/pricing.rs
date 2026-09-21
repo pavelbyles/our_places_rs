@@ -185,11 +185,50 @@ impl BookingCalculator<Taxed> {
     }
 }
 
+/// Calculates host platform commission fee and net payout amount using Banker's rounding.
+/// Formula:
+/// fee_amount = (gross_amount * platform_fee_pct).round_dp(2)
+/// net_payout = max(0, gross_amount - fee_amount - tax_withheld)
+pub fn calculate_host_payout(
+    gross_amount: Decimal,
+    platform_fee_pct: Decimal,
+    tax_withheld: Decimal,
+) -> (Decimal, Decimal) {
+    let fee_amount = (gross_amount * platform_fee_pct).round_dp(2);
+    let net_payout = (gross_amount - fee_amount - tax_withheld).max(Decimal::ZERO);
+    (fee_amount, net_payout)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
     use uuid::Uuid;
+
+    #[test]
+    fn test_calculate_host_payout_precision() {
+        // Standard 3% commission on $1,250.50 gross, 0 tax
+        let (fee, net) =
+            calculate_host_payout(Decimal::new(125050, 2), Decimal::new(3, 2), Decimal::ZERO);
+        // 1250.50 * 0.03 = 37.515 => rounds to 37.52
+        assert_eq!(fee, Decimal::new(3752, 2));
+        assert_eq!(net, Decimal::new(121298, 2));
+
+        // Zero commission
+        let (fee_zero, net_zero) =
+            calculate_host_payout(Decimal::new(50000, 2), Decimal::ZERO, Decimal::ZERO);
+        assert_eq!(fee_zero, Decimal::ZERO);
+        assert_eq!(net_zero, Decimal::new(50000, 2));
+
+        // With tax withholding
+        let (fee_tax, net_tax) = calculate_host_payout(
+            Decimal::new(100000, 2),
+            Decimal::new(5, 2),    // 5% = 50.00
+            Decimal::new(1500, 2), // 15.00 tax withheld
+        );
+        assert_eq!(fee_tax, Decimal::new(5000, 2));
+        assert_eq!(net_tax, Decimal::new(93500, 2)); // 1000 - 50 - 15 = 935.00
+    }
 
     #[test]
     fn test_calculator_basic_stay() {

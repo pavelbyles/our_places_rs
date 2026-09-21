@@ -268,6 +268,7 @@ pub struct Listing {
     pub base_currency: String,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    pub commission_pct: Decimal,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -301,6 +302,7 @@ pub struct ListingWithOwner {
     pub listing_details: Json<serde_json::Value>,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    pub commission_pct: Decimal,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -336,6 +338,7 @@ pub struct NewListing {
     pub base_currency: String,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -374,6 +377,7 @@ pub struct UpdatedListing {
     pub base_currency: Option<String>,
     pub minimum_stay: Option<i32>,
     pub days_between_bookings: Option<i32>,
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]
@@ -589,4 +593,143 @@ pub struct BookingParties {
     pub guest_id: Uuid,
     pub host_id: Uuid,
     pub status: BookingStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, Copy, PartialEq, Eq, EnumString)]
+#[sqlx(type_name = "payout_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DbPayoutStatus {
+    Pending,
+    Processing,
+    Paid,
+    Cancelled,
+    Refunded,
+}
+
+impl From<DbPayoutStatus> for common::payout::PayoutStatus {
+    fn from(s: DbPayoutStatus) -> Self {
+        match s {
+            DbPayoutStatus::Pending => common::payout::PayoutStatus::Pending,
+            DbPayoutStatus::Processing => common::payout::PayoutStatus::Processing,
+            DbPayoutStatus::Paid => common::payout::PayoutStatus::Paid,
+            DbPayoutStatus::Cancelled => common::payout::PayoutStatus::Cancelled,
+            DbPayoutStatus::Refunded => common::payout::PayoutStatus::Refunded,
+        }
+    }
+}
+
+impl From<common::payout::PayoutStatus> for DbPayoutStatus {
+    fn from(s: common::payout::PayoutStatus) -> Self {
+        match s {
+            common::payout::PayoutStatus::Pending => DbPayoutStatus::Pending,
+            common::payout::PayoutStatus::Processing => DbPayoutStatus::Processing,
+            common::payout::PayoutStatus::Paid => DbPayoutStatus::Paid,
+            common::payout::PayoutStatus::Cancelled => DbPayoutStatus::Cancelled,
+            common::payout::PayoutStatus::Refunded => DbPayoutStatus::Refunded,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct HostPayoutLedger {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub listing_id: Uuid,
+    pub host_id: Uuid,
+    pub currency: String,
+    pub gross_amount: Decimal,
+    pub platform_fee_pct: Decimal,
+    pub platform_fee_amount: Decimal,
+    pub tax_withheld_amount: Decimal,
+    pub exchange_rate: Decimal,
+    pub net_payout_amount: Decimal,
+    pub status: DbPayoutStatus,
+    pub gateway_reference: Option<String>,
+    pub failure_reason: Option<String>,
+    pub payout_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct DbPayoutLedgerEntry {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub booking_confirmation_code: Option<String>,
+    pub listing_id: Uuid,
+    pub listing_name: Option<String>,
+    pub host_id: Uuid,
+    pub host_name: Option<String>,
+    pub check_in_date: Option<NaiveDate>,
+    pub check_out_date: Option<NaiveDate>,
+    pub currency: String,
+    pub gross_amount: Decimal,
+    pub platform_fee_pct: Decimal,
+    pub platform_fee_amount: Decimal,
+    pub tax_withheld_amount: Decimal,
+    pub exchange_rate: Decimal,
+    pub net_payout_amount: Decimal,
+    pub status: DbPayoutStatus,
+    pub gateway_reference: Option<String>,
+    pub failure_reason: Option<String>,
+    pub payout_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<DbPayoutLedgerEntry> for common::payout::PayoutLedgerEntry {
+    fn from(e: DbPayoutLedgerEntry) -> Self {
+        common::payout::PayoutLedgerEntry {
+            id: e.id,
+            booking_id: e.booking_id,
+            booking_confirmation_code: e.booking_confirmation_code,
+            listing_id: e.listing_id,
+            listing_name: e.listing_name,
+            host_id: e.host_id,
+            host_name: e.host_name,
+            check_in_date: e.check_in_date,
+            check_out_date: e.check_out_date,
+            currency: e.currency,
+            gross_amount: e.gross_amount,
+            platform_fee_pct: e.platform_fee_pct,
+            platform_fee_amount: e.platform_fee_amount,
+            tax_withheld_amount: e.tax_withheld_amount,
+            exchange_rate: e.exchange_rate,
+            net_payout_amount: e.net_payout_amount,
+            status: e.status.into(),
+            gateway_reference: e.gateway_reference,
+            failure_reason: e.failure_reason,
+            payout_date: e.payout_date,
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct DbPayoutSummary {
+    pub total_gross: Option<Decimal>,
+    pub total_platform_fee: Option<Decimal>,
+    pub total_tax_withheld: Option<Decimal>,
+    pub total_net: Option<Decimal>,
+    pub total_paid: Option<Decimal>,
+    pub total_pending: Option<Decimal>,
+    pub total_processing: Option<Decimal>,
+    pub count_entries: Option<i64>,
+}
+
+impl From<DbPayoutSummary> for common::payout::PayoutSummary {
+    fn from(s: DbPayoutSummary) -> Self {
+        common::payout::PayoutSummary {
+            total_gross: s.total_gross.unwrap_or(Decimal::ZERO),
+            total_platform_fee: s.total_platform_fee.unwrap_or(Decimal::ZERO),
+            total_tax_withheld: s.total_tax_withheld.unwrap_or(Decimal::ZERO),
+            total_net: s.total_net.unwrap_or(Decimal::ZERO),
+            total_paid: s.total_paid.unwrap_or(Decimal::ZERO),
+            total_pending: s.total_pending.unwrap_or(Decimal::ZERO),
+            total_processing: s.total_processing.unwrap_or(Decimal::ZERO),
+            count_entries: s.count_entries.unwrap_or(0),
+        }
+    }
 }

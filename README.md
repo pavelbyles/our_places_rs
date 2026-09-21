@@ -28,6 +28,69 @@ High-performance, full-stack short-term property rental platform for luxury vill
 
 ---
 
+## ✨ Platform Features
+
+### 👤 User Features
+
+#### 🏖️ Guest Experience ([`web_app_tc`](web_app_tc))
+- **Luxury Villa Catalog & Search**: Browse curated Jamaican luxury villas and apartments with real-time HTMX filtering by destination, guest capacity, and amenities.
+- **Rich Property Detail Pages**: View responsive multi-resolution photo galleries, location information, detailed amenity checklists, and host descriptions.
+- **Dynamic Pricing & Multi-Currency Quotes**: Instant rate computation supporting multiple guest checkout currencies (USD, JMD, EUR, GBP, CAD) with statutory tax breakdowns (Jamaican GCT 15%).
+- **Frictionless Checkout & Temporary Holds**: Reserve dates with an automatic 15-minute lock (`pending_payment`), preventing dates from being taken during checkout.
+- **Shadow User Guest Checkouts**: Guests can book immediately without prior account registration; temporary shadow accounts can be promoted post-checkout without losing booking state.
+- **Booking Management Hub**: Track upcoming, active, and past reservations, review booking confirmations, and request date changes or cancellations.
+- **Two-Way Direct Messaging**: Built-in messaging thread between guest and host linked directly to specific reservation codes.
+- **Verified Stay Reviews**: Submit post-stay reviews, ratings, and feedback via secure, single-use, 15-day invitation tokens issued upon stay completion.
+- **Self-Service Account & Security**: Guest registration, login, profile management, email verification, password reset flows, and account deactivation.
+
+#### 💼 Host & Administrator Experience ([`web_app_admin_tc`](web_app_admin_tc))
+- **Executive Operations Dashboard**: High-level KPI monitoring, real-time booking statistics, and operational health summaries.
+- **Property Catalog Management**: Create, edit, clone from existing templates, and manage villa listings, descriptions, and amenities.
+- **Seasonal Rates & Price Overrides**: Configure custom seasonal pricing rules, holiday surcharges, and promotional rate adjustments with automated priority resolution.
+- **Centralized Reservation Pipeline**: Inspect all bookings across properties, filter by reservation status (`pending_payment`, `confirmed`, `completed`, `cancelled`), and process modifications.
+- **Host Direct Messaging Center**: Unified messaging portal to manage guest communications, view booking context, and respond to inquiries with unread indicators.
+- **Host Financial Earnings & Payout Ledger**: Track gross booking earnings, platform commissions, statutory tax withholdings, currency conversions, and net payout amounts with downloadable CSV financial reports.
+- **User & Role Administration**: Directory to view users, register accounts, manage roles (guests, hosts, administrators), and revoke active sessions.
+- **Exchange Rate Management**: Monitor and synchronize foreign currency conversion rates against base listing prices.
+
+---
+
+### ⚙️ Technical Features
+
+#### 🏗️ Architecture & Performance
+- **Isomorphic Rust Monorepo**: Shared domain models, validation logic, and pricing math in [`common`](common) compiled across backend Actix-web services and Topcoat SSR frontends.
+- **GCP Cloud Run Scale-to-Zero**: Tailored for minimal resource profiles ($0.25\text{ vCPU}$, $256\text{MB RAM}$) with cold start targets $< 300\text{ms}$ (p50) and $< 1\text{s}$ (p95).
+- **Topcoat SSR + HTMX Frontend**: Ultra-fast server-side rendering with reactive micro-interactions, DaisyUI v5 components, and TailwindCSS v4 styling—eliminating heavy client-side JavaScript SPA bundles.
+
+#### 🧮 Financial Precision & "Tri-Currency" Engine
+- **Arbitrary-Precision Arithmetic**: Strict usage of `rust_decimal::Decimal` across all monetary amounts, commission percentages, and tax rates; zero floating-point (`f32`/`f64`) operations.
+- **Tri-Currency Conversion Flow**: Converts Base Currency (villa nightly rate) $\rightarrow$ Payment Currency (guest checkout) $\rightarrow$ Statutory Taxes & Net Totals.
+- **Statutory Tax Rule Engine**: Automated calculation of Jamaican General Consumption Tax (GCT 15%) and local tax withholdings.
+
+#### 🔒 Concurrency, Data Integrity & State Machines
+- **Zero Double-Booking Guarantee**: PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) during reservation creation ensure serialized availability checks without external distributed lock managers.
+- **Self-Expiring Hold Lifecycle**: 15-minute `pending_payment` holds automatically expire and release dates back to inventory via timestamp comparisons, eliminating mandatory cron cleanup workers.
+- **Immutable Status Audit Trail**: Every booking and payout status transition is immutably recorded in historical audit tables (`booking_status_history`, `host_payout_ledger`).
+- **Compile-Time Verified Queries**: SQLx queries validated at compile time against PostgreSQL schema for static type safety and query correctness in [`db_core`](db_core).
+
+#### 🖼️ Asynchronous Media Pipeline
+- **Direct-to-GCS V4 Signed Uploads**: Client uploads bypass backend application servers entirely via short-lived GCP V4 Signed URLs generated by [`listing_api`](app_api/listing_api), eliminating memory and network bottlenecks on Cloud Run.
+- **Event-Driven Pub/Sub Resizing**: GCS upload events trigger [`image_worker`](app_api/image_worker) to compress and generate multi-resolution WebP images (Mobile 640px, Tablet 1024px, Desktop 1920px).
+- **Responsive Delivery**: SSR templates serve standards-compliant HTML5 `<picture>` and `srcset` tags for adaptive browser bandwidth negotiation.
+
+#### 🛡️ Security, Identity & Verification
+- **Cryptographic Review Tokens**: Post-checkout reviews gated by single-use, 15-day time-bound verification tokens executed within atomic rating recalculation transactions.
+- **Authentication & Password Hardening**: JWT tokens validated via Actix request extractors in [`api_core`](app_api/api_core); passwords salted and hashed using `bcrypt` (work factor 12) via [`user_api`](app_api/user_api).
+- **Role-Based Access Control**: Separation of public, guest, host, and admin endpoints with granular route protection.
+- **Panic-Free Monadic Error Handling**: Strict adherence to `Result<T, E>` and `Option<T>` combinator pipelines (`.and_then()`, `.map()`, `?`) without `.unwrap()` or `.expect()` in production paths.
+
+#### 📊 Telemetry, Probes & Runtime Operations
+- **Full Actuator Suite**: Standardized `/health`, `/health/startup`, `/health/liveness`, and `/health/readiness` container probes via [`api_core`](app_api/api_core).
+- **Prometheus Scrape Endpoint**: Operational metrics (`/metrics`) tracking HTTP request rates, status distributions, and latency histograms.
+- **Dynamic Runtime Logging (`/loggers`)**: Dynamically inspect and adjust crate/module log levels (TRACE, DEBUG, INFO, WARN, ERROR) without restarting containers, secured by pre-shared token or Admin JWT.
+
+---
+
 ## 🔄 AI-Native SDLC & Agent Skills Reference
 
 The engineering workflow operates across 6 artifact-driven stages in an AI-Native Software Development Lifecycle (SDLC):

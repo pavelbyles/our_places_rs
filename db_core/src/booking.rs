@@ -253,6 +253,75 @@ pub async fn update_booking(
         crate::review::create_review_token(&mut tx, booking.id).await?;
     }
 
+    // Trigger host payout ledger generation if booking transitions to Confirmed
+    if let Some(BookingStatus::Confirmed) = updated_booking.status
+        && status_changed
+    {
+        let listing_info = sqlx::query!(
+            r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
+            booking.listing_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let host_currency = sqlx::query_scalar!(
+            r#"SELECT default_currency FROM "user" WHERE id = $1"#,
+            listing_info.user_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let exchange_rate = if listing_info.base_currency == host_currency {
+            rust_decimal::Decimal::ONE
+        } else {
+            sqlx::query_scalar!(
+                r#"SELECT rate FROM currency_exchange_rates 
+                   WHERE base_currency = $1 AND target_currency = $2 
+                   ORDER BY effective_at DESC, updated_at DESC LIMIT 1"#,
+                listing_info.base_currency,
+                host_currency
+            )
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(rust_decimal::Decimal::ONE)
+        };
+
+        let discounted_subtotal = booking.sub_total_price
+            - booking
+                .discount_value
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+        let gross_amount = (discounted_subtotal * exchange_rate).round_dp(2);
+        let platform_fee_pct = listing_info.commission_pct;
+        let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
+            gross_amount,
+            platform_fee_pct,
+            rust_decimal::Decimal::ZERO,
+        );
+
+        crate::payout_ledger::create_payout_ledger_entry(
+            &mut tx,
+            uuid::Uuid::now_v7(),
+            booking.id,
+            booking.listing_id,
+            listing_info.user_id,
+            &host_currency,
+            gross_amount,
+            platform_fee_pct,
+            platform_fee_amount,
+            rust_decimal::Decimal::ZERO,
+            exchange_rate,
+            net_payout_amount,
+        )
+        .await?;
+    }
+
+    // Auto-cancel pending host payout if booking transitions to Cancelled
+    if let Some(BookingStatus::Cancelled) = updated_booking.status
+        && status_changed
+    {
+        crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+    }
+
     tx.commit().await?;
 
     Ok(booking)
@@ -641,6 +710,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.1000)),
         };
         let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
             .await
@@ -668,6 +738,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.1000)),
         };
         let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
             .await

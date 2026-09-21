@@ -34,7 +34,18 @@
 
   # Project workflow commands mirroring .agents/ workflows
   scripts = {
-    # Database migrations & metadata
+    # Database start, migrations & metadata
+    db-start.exec = ''
+      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+        echo "Starting Docker container 'ourplaces_db'..."
+        docker start ourplaces_db 2>/dev/null || docker compose up -d db
+      fi
+      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+        sleep 1
+      done
+      echo "PostgreSQL is accepting connections on localhost:5432"
+    '';
+
     db-migrate.exec = ''
       echo "Running sqlx migrations from db_core/migrations..."
       sqlx migrate run --source db_core/migrations
@@ -107,6 +118,39 @@
       echo "Starting database and API microservices (listing_api, booking_api, user_api)..."
       devenv up db listing_api booking_api user_api "$@"
     '';
+
+    # Launch Topcoat frontends with topcoat dev
+    frontends.exec = ''
+      echo "Starting Topcoat frontends (web_app_tc on :3000, web_app_admin_tc on :3002)..."
+      devenv up web_app_tc web_app_admin_tc "$@"
+    '';
+
+    # Launch full application stack (DB + APIs + Topcoat frontends)
+    fullstack.exec = ''
+      echo "Starting full development stack (DB, APIs, Frontends)..."
+      devenv up "$@"
+    '';
+
+    # Playwright E2E Testing
+    playwright-install.exec = ''
+      echo "Installing Playwright browsers (chromium, firefox)..."
+      npx playwright install --with-deps chromium firefox
+    '';
+
+    test-e2e.exec = ''
+      echo "Running Playwright E2E test suites..."
+      npx playwright test "$@"
+    '';
+
+    test-e2e-guest.exec = ''
+      echo "Running Guest Portal Playwright E2E tests (Chromium & Firefox)..."
+      npx playwright test --project=guest-portal-chromium --project=guest-portal-firefox "$@"
+    '';
+
+    test-e2e-admin.exec = ''
+      echo "Running Admin Portal Playwright E2E tests (Chromium & Firefox)..."
+      npx playwright test --project=admin-portal-chromium --project=admin-portal-firefox "$@"
+    '';
   };
 
   # Process manager configuration (run via `devenv up` or `apis`)
@@ -159,7 +203,9 @@
     echo "   - sqlx-cli: $(sqlx --version)"
     echo "   - Workflows & Launchers:"
     echo "       • apis           (launch DB + listing_api, booking_api, user_api)"
-    echo "       • devenv up      (launch full stack: DB + APIs + Frontends)"
+    echo "       • frontends      (launch web_app_tc & web_app_admin_tc via topcoat dev)"
+    echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
+    echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
     echo "       • db-migrate     • db-prepare     • check-all"
     echo "       • sanity-check   • test-ci-matrix • audit-booking"
     echo "       • security-audit • eval-skills"

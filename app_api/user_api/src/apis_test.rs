@@ -409,7 +409,7 @@ async fn test_get_all_users_with_filters() {
     // Also verify POST without trailing slash works
     let post_without_slash = test::TestRequest::post()
         .uri("/api/v1/users")
-        .set_json(&json!({
+        .set_json(json!({
             "email": "admin_test_listing@example.com",
             "password": "password123",
             "first_name": "Admin",

@@ -107,6 +107,7 @@ async fn test_get_listing_by_id_success() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -203,6 +204,7 @@ async fn test_create_listing_validation_error() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: None,
     };
 
     let req = test::TestRequest::post()
@@ -246,6 +248,7 @@ async fn test_delete_listing() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -266,7 +269,7 @@ async fn test_delete_listing() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 204);
 
-    // Verify it's gone from GET
+    // Verify it's soft deleted
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();
@@ -296,6 +299,7 @@ async fn test_delete_listing() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -350,6 +354,7 @@ async fn test_delete_listing_hard_forbidden() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -453,6 +458,7 @@ async fn test_update_listing_multiple_times() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -542,6 +548,7 @@ async fn test_get_listings_with_filter() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -569,6 +576,7 @@ async fn test_get_listings_with_filter() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await

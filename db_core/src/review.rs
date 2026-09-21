@@ -609,7 +609,7 @@ mod tests {
 
         // 7. Verify aggregates
         let mut conn = pool.acquire().await.unwrap();
-        let summary = get_listing_rating_summary(&mut *conn, listing_id)
+        let summary = get_listing_rating_summary(&mut conn, listing_id)
             .await
             .unwrap();
         assert_eq!(summary.review_count, 1);

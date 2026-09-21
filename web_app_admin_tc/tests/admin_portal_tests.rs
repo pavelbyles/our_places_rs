@@ -38,7 +38,7 @@ fn test_admin_seasonal_override_interval_validation() {
 
 #[test]
 fn test_admin_role_authorization_and_shadow_user_audit() {
-    let roles = vec!["admin", "host", "booker"];
+    let roles = ["admin", "host", "booker"];
     assert!(roles.contains(&"admin"));
     assert!(roles.contains(&"host"));
     assert!(roles.contains(&"booker"));
@@ -85,7 +85,7 @@ fn test_listing_clone_and_field_coverage() {
     let cloned_name = format!("{} (Copy)", original_name);
     assert_eq!(cloned_name, "The Reef House (Copy)");
 
-    let structures = vec!["Apartment", "House", "Townhouse", "Studio", "Villa"];
+    let structures = ["Apartment", "House", "Townhouse", "Studio", "Villa"];
     assert!(structures.contains(&"Apartment"));
     assert!(structures.contains(&"House"));
     assert!(structures.contains(&"Townhouse"));
@@ -95,7 +95,7 @@ fn test_listing_clone_and_field_coverage() {
 
 #[test]
 fn test_admin_layout_navigation_sections() {
-    let navigation_sections = vec![
+    let navigation_sections = [
         "Overview",
         "Inventory & Properties",
         "Operations",
@@ -208,6 +208,7 @@ fn test_listing_23_fields_coordinate_and_price_boundaries() {
         listing_details: None,
         minimum_stay: 3,
         days_between_bookings: 1,
+        commission_pct: Some(dec!(0.1000)),
     };
 
     assert!(req.price_per_night.unwrap() > Decimal::ZERO);
@@ -219,11 +220,11 @@ fn test_listing_23_fields_coordinate_and_price_boundaries() {
     let lat = req.latitude.unwrap();
     let lon = req.longitude.unwrap();
     assert!(
-        lat >= 17.0 && lat <= 19.0,
+        (17.0..=19.0).contains(&lat),
         "Latitude must be within Jamaica bounds"
     );
     assert!(
-        lon >= -79.0 && lon <= -76.0,
+        (-79.0..=-76.0).contains(&lon),
         "Longitude must be within Jamaica bounds"
     );
 }
@@ -253,7 +254,7 @@ fn test_user_search_and_role_filter_matching() {
     let first_name = "Pavel";
     let last_name = "Byles";
     let email = "pavel@ourplaces.io";
-    let roles = vec!["admin".to_string(), "host".to_string()];
+    let roles = ["admin".to_string(), "host".to_string()];
 
     let q_lower = query.q.as_ref().unwrap().to_lowercase();
     let full_name = format!("{} {}", first_name, last_name).to_lowercase();
@@ -291,4 +292,40 @@ fn test_user_credentials_update_payload_mapping() {
     assert!(payload.can_manage_bookings.unwrap());
     assert!(payload.can_manage_listings.unwrap());
     assert_eq!(payload.default_currency.as_deref(), Some("JMD"));
+}
+
+#[test]
+fn test_payout_filter_query_deserialization_and_params() {
+    use web_app_admin_tc::PayoutFilterQuery;
+
+    let listing_id = Uuid::new_v4();
+    let query = PayoutFilterQuery {
+        listing_id: Some(listing_id.to_string()),
+        status: Some("pending".to_string()),
+        date_from: Some("2026-10-01".to_string()),
+        date_to: Some("2026-10-31".to_string()),
+        page: Some(2),
+    };
+
+    assert_eq!(
+        query.listing_id.as_deref(),
+        Some(listing_id.to_string().as_str())
+    );
+    assert_eq!(query.status.as_deref(), Some("pending"));
+    assert_eq!(query.page, Some(2));
+}
+
+#[test]
+fn test_host_payout_accounting_math_precision() {
+    // 5 nights @ $500.00/night = $2500.00 gross
+    let gross_amount = dec!(2500.00);
+    let commission_pct = dec!(0.1000); // 10.00%
+    let tax_withheld = dec!(0.00); // statutory zero host withholding
+
+    let (commission_amount, net_payout) =
+        common::pricing::calculate_host_payout(gross_amount, commission_pct, tax_withheld);
+
+    assert_eq!(commission_amount, dec!(250.0000));
+    assert_eq!(net_payout, dec!(2250.0000));
+    assert_eq!(gross_amount - commission_amount - tax_withheld, net_payout);
 }

@@ -258,6 +258,12 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
                                         "Configuration & Finance"
                                     </li>
                                     <li>
+                                        <a href="/admin/payouts" class="flex items-center gap-3 font-semibold rounded-xl active:bg-primary">
+                                            <span>"💰"</span>
+                                            <span>"Host Payouts & Ledger"</span>
+                                        </a>
+                                    </li>
+                                    <li>
                                         <a href="/admin/exchange-rates" class="flex items-center gap-3 font-semibold rounded-xl active:bg-primary">
                                             <span>"💱"</span>
                                             <span>"Exchange Rates & FX"</span>

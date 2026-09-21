@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::apis::BookingCalculator;
     use rust_decimal::Decimal;
@@ -252,5 +253,53 @@ mod tests {
         let parsed_empty: Pagination = serde_json::from_str(json_empty).unwrap();
         assert_eq!(parsed_empty.page, None);
         assert_eq!(parsed_empty.per_page, None);
+    }
+
+    #[test]
+    fn test_payout_status_deserialization() {
+        use common::payout::PayoutStatus;
+
+        assert_eq!(
+            serde_json::from_str::<PayoutStatus>(r#""pending""#).unwrap(),
+            PayoutStatus::Pending
+        );
+        assert_eq!(
+            serde_json::from_str::<PayoutStatus>(r#""processing""#).unwrap(),
+            PayoutStatus::Processing
+        );
+        assert_eq!(
+            serde_json::from_str::<PayoutStatus>(r#""paid""#).unwrap(),
+            PayoutStatus::Paid
+        );
+        assert_eq!(
+            serde_json::from_str::<PayoutStatus>(r#""cancelled""#).unwrap(),
+            PayoutStatus::Cancelled
+        );
+        assert_eq!(
+            serde_json::from_str::<PayoutStatus>(r#""refunded""#).unwrap(),
+            PayoutStatus::Refunded
+        );
+    }
+
+    #[test]
+    fn test_update_payout_status_request_serde() {
+        use common::payout::{PayoutStatus, UpdatePayoutStatusRequest};
+
+        let req = UpdatePayoutStatusRequest {
+            status: PayoutStatus::Paid,
+            gateway_reference: Some("GATEWAY_TX_987".to_string()),
+            failure_reason: None,
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""status":"paid""#));
+        assert!(json.contains(r#""gateway_reference":"GATEWAY_TX_987""#));
+
+        let deserialized: UpdatePayoutStatusRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.status, PayoutStatus::Paid);
+        assert_eq!(
+            deserialized.gateway_reference,
+            Some("GATEWAY_TX_987".to_string())
+        );
     }
 }

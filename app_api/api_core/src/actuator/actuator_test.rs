@@ -222,7 +222,7 @@ async fn test_post_loggers_invalid_level_rejected() {
     let req = test::TestRequest::post()
         .uri("/loggers/ROOT")
         .insert_header(("x-actuator-token", "super-secret-token"))
-        .set_json(&serde_json::json!({
+        .set_json(serde_json::json!({
             "configuredLevel": "INVALID_LEVEL"
         }))
         .to_request();

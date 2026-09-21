@@ -5,5 +5,17 @@
   "description": "Our Places Monorepo Workspace",
   "dependencies": {
     "daisyui": "^5.5.20"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:guest": "playwright test --project=guest-portal-chromium --project=guest-portal-firefox",
+    "test:e2e:admin": "playwright test --project=admin-portal-chromium --project=admin-portal-firefox",
+    "test:e2e:ui": "playwright test --ui",
+    "playwright:install": "playwright install chromium firefox"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0",
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.0"
   }
 }
