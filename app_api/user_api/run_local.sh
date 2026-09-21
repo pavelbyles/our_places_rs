@@ -36,4 +36,4 @@ ensure_db_running
 # Run User API service
 EA__SERVER__PORT="${EA__SERVER__PORT:-8083}" \
 EA__DATABASE__HOST="${EA__DATABASE__HOST:-localhost}" \
-cargo run
+exec cargo run

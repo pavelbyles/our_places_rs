@@ -25,6 +25,7 @@
     pkgs.pkg-config
     pkgs.openssl
     pkgs.postgresql
+    pkgs.psmisc
   ];
 
   # Fast git pre-commit formatting check
@@ -44,6 +45,12 @@
         sleep 1
       done
       echo "PostgreSQL is accepting connections on localhost:5432"
+    '';
+
+    db-stop.exec = ''
+      echo "Stopping Docker container 'ourplaces_db'..."
+      docker stop ourplaces_db 2>/dev/null || true
+      echo "✓ Database stopped."
     '';
 
     db-migrate.exec = ''
@@ -113,63 +120,11 @@
       python3 .agents/evals/eval_runner.py "$@"
     '';
 
-    # Launch all API microservices and database
+    # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
-      echo "Starting database and API microservices (listing_api, booking_api, user_api)..."
-      devenv up db listing_api booking_api user_api "$@"
-    '';
-
-    # Ensure database and API microservices are active (starts if stopped)
-    apis-start.exec = ''
-      set -e
       db-start
-
-      is_ready() {
-        curl -s -f "$1" >/dev/null 2>&1
-      }
-
-      need_compile=false
-      if ! is_ready "http://localhost:8081/health" || ! is_ready "http://localhost:8082/health" || ! is_ready "http://localhost:8083/health"; then
-        need_compile=true
-      fi
-
-      if [ "$need_compile" = true ]; then
-        echo "Pre-compiling API microservices (booking_api, listing_api, user_api)..."
-        cargo build -p booking_api -p listing_api -p user_api
-      fi
-
-      start_svc() {
-        local name="$1"
-        local dir="$2"
-        local url="$3"
-        if ! is_ready "$url"; then
-          echo "Starting $name in background..."
-          (cd "$dir" && ./run_local.sh > "/tmp/$name.log" 2>&1) &
-        fi
-      }
-
-      start_svc "booking_api" "app_api/booking_api" "http://localhost:8081/health"
-      start_svc "listing_api" "app_api/listing_api" "http://localhost:8082/health"
-      start_svc "user_api" "app_api/user_api" "http://localhost:8083/health"
-
-      echo "Waiting for API microservices to become ready..."
-      retries=200
-      elapsed=0
-      until (is_ready "http://localhost:8081/health" && is_ready "http://localhost:8082/health" && is_ready "http://localhost:8083/health") || [ $retries -eq 0 ]; do
-        sleep 1
-        retries=$((retries - 1))
-        elapsed=$((elapsed + 1))
-        if [ $((elapsed % 10)) -eq 0 ]; then
-          echo "Waiting for API microservices to become ready... (''${elapsed}s elapsed)"
-        fi
-      done
-
-      if [ $retries -eq 0 ]; then
-        echo "❌ Error: One or more backend APIs failed to start within 180s."
-        echo "Check /tmp/booking_api.log, /tmp/listing_api.log, /tmp/user_api.log"
-        exit 1
-      fi
-      echo "✓ All backend APIs are healthy and accepting connections."
+      echo "Starting API microservices (listing_api, booking_api, user_api)..."
+      devenv up listing_api booking_api user_api "$@"
     '';
 
     # Launch Topcoat frontends with topcoat dev
@@ -178,68 +133,11 @@
       devenv up web_app_tc web_app_admin_tc "$@"
     '';
 
-    # Ensure Topcoat frontends are active (starts if stopped)
-    frontends-start.exec = ''
-      set -e
-      is_ready() {
-        curl -s -f "$1" >/dev/null 2>&1
-      }
-
-      need_fe_compile=false
-      if ! is_ready "http://localhost:3000" || ! is_ready "http://localhost:3002"; then
-        need_fe_compile=true
-      fi
-
-      if [ "$need_fe_compile" = true ]; then
-        echo "Pre-compiling Topcoat frontends (web_app_tc, web_app_admin_tc)..."
-        cargo build -p web_app_tc -p web_app_admin_tc
-      fi
-
-      start_fe() {
-        local name="$1"
-        local dir="$2"
-        local port="$3"
-        local url="$4"
-        if ! is_ready "$url"; then
-          echo "Starting $name on port $port in background..."
-          (cd "$dir" && PORT="$port" topcoat dev > "/tmp/$name.log" 2>&1) &
-        fi
-      }
-
-      start_fe "web_app_tc" "web_app_tc" "3000" "http://localhost:3000"
-      start_fe "web_app_admin_tc" "web_app_admin_tc" "3002" "http://localhost:3002"
-
-      echo "Waiting for Topcoat frontends (:3000, :3002) to become ready..."
-      retries=200
-      elapsed=0
-      until (is_ready "http://localhost:3000" && is_ready "http://localhost:3002") || [ $retries -eq 0 ]; do
-        sleep 1
-        retries=$((retries - 1))
-        elapsed=$((elapsed + 1))
-        if [ $((elapsed % 5)) -eq 0 ]; then
-          echo "Waiting for Topcoat frontends to become ready... (''${elapsed}s elapsed)"
-        fi
-      done
-
-      if [ $retries -eq 0 ]; then
-        echo "❌ Error: One or more Topcoat frontends failed to start within 180s."
-        echo "Check /tmp/web_app_tc.log and /tmp/web_app_admin_tc.log"
-        exit 1
-      fi
-      echo "✓ All Topcoat frontends are healthy and accepting connections."
-    '';
-
-    # Ensure full stack (DB, APIs, Frontends) is active
-    stack-start.exec = ''
-      set -e
-      apis-start
-      frontends-start
-    '';
-
-    # Launch full application stack (DB + APIs + Topcoat frontends)
+    # Launch full application stack (APIs + Topcoat frontends, DB kept running continuously)
     fullstack.exec = ''
-      echo "Starting full development stack (DB, APIs, Frontends)..."
-      devenv up "$@"
+      db-start
+      echo "Starting full development stack (APIs, Frontends)..."
+      devenv up listing_api booking_api user_api web_app_tc web_app_admin_tc "$@"
     '';
 
     # Playwright E2E Testing
@@ -253,28 +151,24 @@
 
     test-e2e.exec = ''
       set -e
-      stack-start
       echo "Running Playwright E2E test suites..."
       npx playwright test --config=playwright/playwright.config.ts "$@"
     '';
 
     test-e2e-guest.exec = ''
       set -e
-      stack-start
       echo "Running Guest Portal Playwright E2E tests (Chromium & Firefox)..."
       npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=guest-portal-firefox "$@"
     '';
 
     test-e2e-admin.exec = ''
       set -e
-      stack-start
       echo "Running Admin Portal Playwright E2E tests (Chromium & Firefox)..."
       npx playwright test --config=playwright/playwright.config.ts --project=admin-portal-chromium --project=admin-portal-firefox "$@"
     '';
 
     test-e2e-ui.exec = ''
       set -e
-      stack-start
       echo "Opening Playwright Interactive UI Mode..."
       npx playwright test --config=playwright/playwright.config.ts --ui "$@"
     '';
@@ -328,13 +222,13 @@
     echo "   - Node:     $(node --version)"
     echo "   - Python:   $(python3 --version)"
     echo "   - sqlx-cli: $(sqlx --version)"
-    echo "   - Workflows & Launchers:"
+    echo "   - Workflows & Launchers (Foreground - Ctrl+C to stop):"
     echo "       • apis           (launch DB + listing_api, booking_api, user_api)"
-    echo "       • frontends      (launch web_app_tc & web_app_admin_tc via topcoat dev)"
+    echo "       • frontends      (launch web_app_tc & web_app_admin_tc)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
-    echo "       • db-migrate     • db-prepare     • check-all"
-    echo "       • sanity-check   • test-ci-matrix • audit-booking"
+    echo "       • db-start       • db-stop        • db-migrate     • db-prepare"
+    echo "       • check-all      • sanity-check   • test-ci-matrix • audit-booking"
     echo "       • security-audit • eval-skills"
   '';
 }

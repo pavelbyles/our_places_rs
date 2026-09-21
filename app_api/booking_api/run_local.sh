@@ -42,4 +42,4 @@ EA__SERVER__PORT="${EA__SERVER__PORT:-8081}" \
 EA__DATABASE__HOST="${EA__DATABASE__HOST:-localhost}" \
 GCS_RAW_BUCKET="${GCS_RAW_BUCKET:-our-places-gcs-img-raw-${SAFE_BRANCH}}" \
 GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS:-/home/pav/Downloads/our-places-dev-sa-listing-api.json}" \
-cargo run
+exec cargo run
