@@ -5,6 +5,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::{content::Json, page, parse_query_params, path_param, route},
+    runtime::shard,
     view::{View, view},
 };
 use uuid::Uuid;
@@ -89,27 +90,11 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
         .await
         .unwrap_or_default();
 
-    // Fetch ledger entries and summary
-    let ledger_resp =
-        api.get_host_payout_ledger(&filter)
-            .await
-            .unwrap_or(common::payout::PayoutLedgerResponse {
-                entries: Vec::new(),
-                total_count: 0,
-                page: page_num,
-                per_page,
-            });
-
+    // Fetch financial summary metrics
     let summary = api
         .get_host_payout_summary(&filter)
         .await
         .unwrap_or_default();
-
-    let total_pages = if ledger_resp.total_count == 0 {
-        1
-    } else {
-        ((ledger_resp.total_count as f64) / (per_page as f64)).ceil() as u32
-    };
 
     let selected_status_str = filter_query.status.clone().unwrap_or_default();
     let selected_listing_str = filter_query.listing_id.clone().unwrap_or_default();
@@ -136,6 +121,12 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
         format!("?{}", export_params.join("&"))
     };
     let export_csv_url = format!("/api/v1/hosts/ledger/export{}", export_query_str);
+
+    let filter_listing_id = filter_query.listing_id.clone();
+    let filter_status = filter_query.status.clone();
+    let filter_date_from = filter_query.date_from.clone();
+    let filter_date_to = filter_query.date_to.clone();
+    let page_num_f64 = page_num as f64;
 
     Ok(view! {
         if !is_authed {
@@ -316,167 +307,14 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
                     </form>
                 </div>
 
-                // Payout Ledger Table
-                <div class="card bg-base-100 dark:bg-base-200 rounded-2xl border border-base-300 dark:border-base-100/20 shadow-sm overflow-hidden">
-                    if ledger_resp.entries.is_empty() {
-                        <div class="p-12 text-center space-y-3">
-                            <div class="text-4xl">"📑"</div>
-                            <div class="text-lg font-serif font-bold text-base-content">
-                                "No Payout Ledger Records Found"
-                            </div>
-                            <p class="text-sm text-base-content/60 max-w-md mx-auto">
-                                "No host payout entries match the selected filters. Confirmed bookings will automatically create pending ledger entries."
-                            </p>
-                        </div>
-                    } else {
-                        <div class="overflow-x-auto">
-                            <table class="table table-zebra w-full text-xs">
-                                <thead>
-                                    <tr class="text-base-content/60 uppercase tracking-wider text-[11px] bg-base-200/50">
-                                        <th>"Booking / Host"</th>
-                                        <th>"Villa Listing"</th>
-                                        <th>"Stay Dates"</th>
-                                        <th class="text-right">"Gross Amount"</th>
-                                        <th class="text-right">"Platform Fee"</th>
-                                        <th class="text-right">"Net Payout"</th>
-                                        <th>"Status"</th>
-                                        <th>"Settlement"</th>
-                                        <th class="text-right">"Actions"</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    for entry in &ledger_resp.entries {
-                                        let entry_id = entry.id.to_string();
-                                        let status_badge_class = match entry.status {
-                                            PayoutStatus::Pending => "badge badge-warning badge-sm font-semibold",
-                                            PayoutStatus::Processing => "badge badge-info badge-sm font-semibold",
-                                            PayoutStatus::Paid => "badge badge-success badge-sm font-semibold",
-                                            PayoutStatus::Cancelled => "badge badge-error badge-sm font-semibold",
-                                            PayoutStatus::Refunded => "badge badge-secondary badge-sm font-semibold",
-                                        };
-                                        let stay_dates = match (entry.check_in_date, entry.check_out_date) {
-                                            (Some(ci), Some(co)) => format!("{} → {}", ci.format("%b %d"), co.format("%b %d, %Y")),
-                                            _ => "N/A".to_string(),
-                                        };
-                                        let booking_code = entry.booking_confirmation_code.clone().unwrap_or_else(|| {
-                                            format!("{:.8}...", entry.booking_id.to_string())
-                                        });
-                                        let listing_title = entry.listing_name.clone().unwrap_or_else(|| "Luxury Villa".to_string());
-                                        let host_display = entry.host_name.clone().unwrap_or_else(|| "Villa Host".to_string());
-                                        let fee_pct_display = format!("{:.1}%", entry.platform_fee_pct * Decimal::from(100));
-
-                                        <tr class="hover:bg-base-200/60 transition-colors">
-                                            // Booking / Host
-                                            <td>
-                                                <div class="font-bold text-sm font-mono text-base-content">
-                                                    (booking_code)
-                                                </div>
-                                                <div class="text-[11px] text-base-content/60">
-                                                    (host_display)
-                                                </div>
-                                            </td>
-
-                                            // Villa
-                                            <td>
-                                                <div class="font-medium text-sm text-base-content max-w-[200px] truncate">
-                                                    (listing_title)
-                                                </div>
-                                                <div class="text-[10px] text-base-content/50 font-mono">
-                                                    (format!("{:.8}...", entry.listing_id.to_string()))
-                                                </div>
-                                            </td>
-
-                                            // Stay Dates
-                                            <td class="font-mono text-[11px] text-base-content/80 whitespace-nowrap">
-                                                (stay_dates)
-                                            </td>
-
-                                            // Gross Amount
-                                            <td class="text-right font-mono font-bold text-sm text-base-content">
-                                                (format!("{:.2} {}", entry.gross_amount, entry.currency))
-                                            </td>
-
-                                            // Platform Fee
-                                            <td class="text-right font-mono text-base-content/70">
-                                                <div class="font-semibold text-secondary">
-                                                    (format!("-{:.2}", entry.platform_fee_amount))
-                                                </div>
-                                                <div class="text-[10px] text-base-content/50">
-                                                    (fee_pct_display)
-                                                </div>
-                                            </td>
-
-                                            // Net Payout
-                                            <td class="text-right font-mono font-bold text-sm text-success">
-                                                (format!("{:.2} {}", entry.net_payout_amount, entry.currency))
-                                            </td>
-
-                                            // Status
-                                            <td>
-                                                <span class=(status_badge_class)>
-                                                    (entry.status.to_string())
-                                                </span>
-                                                if let Some(ref ref_code) = entry.gateway_reference {
-                                                    <div class="text-[10px] font-mono text-base-content/50 truncate max-w-[120px]" title=(ref_code.clone())>
-                                                        (ref_code.clone())
-                                                    </div>
-                                                }
-                                            </td>
-
-                                            // Settlement Date
-                                            <td class="text-xs text-base-content/60 whitespace-nowrap">
-                                                (entry.payout_date.map(|dt| dt.format("%b %d, %Y").to_string()).unwrap_or_else(|| "Pending".to_string()))
-                                            </td>
-
-                                            // Action
-                                            <td class="text-right">
-                                                <button
-                                                    class="btn btn-ghost btn-xs text-primary font-bold hover:bg-primary/10 rounded-lg"
-                                                    data-id=(entry_id.clone())
-                                                    data-status=(entry.status.to_string())
-                                                    data-gateway=(entry.gateway_reference.clone().unwrap_or_default())
-                                                    onclick="openPayoutModal(this)"
-                                                >
-                                                    "Manage ▾"
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        // Pagination Footer
-                        if total_pages > 1 {
-                            <div class="flex items-center justify-between px-6 py-4 border-t border-base-200">
-                                <div class="text-xs text-base-content/60">
-                                    (format!("Showing page {} of {}", page_num, total_pages))
-                                </div>
-                                <div class="join">
-                                    if page_num > 1 {
-                                        <a
-                                            href=(format!("/admin/payouts?page={}", page_num - 1))
-                                            class="join-item btn btn-sm btn-outline rounded-l-xl"
-                                        >
-                                            "« Prev"
-                                        </a>
-                                    }
-                                    <button class="join-item btn btn-sm btn-active pointer-events-none">
-                                        (page_num.to_string())
-                                    </button>
-                                    if page_num < total_pages {
-                                        <a
-                                            href=(format!("/admin/payouts?page={}", page_num + 1))
-                                            class="join-item btn btn-sm btn-outline rounded-r-xl"
-                                        >
-                                            "Next »"
-                                        </a>
-                                    }
-                                </div>
-                            </div>
-                        }
-                    }
-                </div>
+                // Payout Ledger Table Shard
+                payouts_ledger_table(
+                    listing_id: $(filter_listing_id),
+                    status: $(filter_status),
+                    date_from: $(filter_date_from),
+                    date_to: $(filter_date_to),
+                    page_num: $(page_num_f64),
+                )
 
                 // Modal for Managing Payout Status
                 <dialog id="payout-status-modal" class="modal">
@@ -605,6 +443,235 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
                 </script>
             </div>
         }
+    })
+}
+
+#[shard]
+pub async fn payouts_ledger_table(
+    cx: &Cx,
+    listing_id: Option<String>,
+    status: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+    page_num: f64,
+) -> Result<impl View> {
+    let __cx = cx;
+    let api = get_api_client(cx);
+    let per_page = 50u32;
+    let page_u32 = if page_num >= 1.0 {
+        page_num as u32
+    } else {
+        1u32
+    };
+
+    let listing_uuid = listing_id.as_deref().and_then(|s| Uuid::parse_str(s).ok());
+
+    let status_enum = status
+        .as_deref()
+        .and_then(|s| match s.to_lowercase().as_str() {
+            "pending" => Some(PayoutStatus::Pending),
+            "processing" => Some(PayoutStatus::Processing),
+            "paid" => Some(PayoutStatus::Paid),
+            "cancelled" => Some(PayoutStatus::Cancelled),
+            "refunded" => Some(PayoutStatus::Refunded),
+            _ => None,
+        });
+
+    let date_from_parsed = date_from
+        .as_deref()
+        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
+    let date_to_parsed = date_to
+        .as_deref()
+        .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
+    let filter = PayoutFilter {
+        listing_id: listing_uuid,
+        host_id: None,
+        status: status_enum,
+        date_from: date_from_parsed,
+        date_to: date_to_parsed,
+        page: Some(page_u32),
+        per_page: Some(per_page),
+    };
+
+    let ledger_resp =
+        api.get_host_payout_ledger(&filter)
+            .await
+            .unwrap_or(common::payout::PayoutLedgerResponse {
+                entries: Vec::new(),
+                total_count: 0,
+                page: page_u32,
+                per_page,
+            });
+
+    let total_pages = if ledger_resp.total_count == 0 {
+        1u32
+    } else {
+        ((ledger_resp.total_count as f64) / (per_page as f64)).ceil() as u32
+    };
+
+    Ok(view! {
+        <div id="payouts-ledger-table-shard" class="card bg-base-100 dark:bg-base-200 rounded-2xl border border-base-300 dark:border-base-100/20 shadow-sm overflow-hidden">
+            if ledger_resp.entries.is_empty() {
+                <div class="p-12 text-center space-y-3">
+                    <div class="text-4xl">"📑"</div>
+                    <div class="text-lg font-serif font-bold text-base-content">
+                        "No Payout Ledger Records Found"
+                    </div>
+                    <p class="text-sm text-base-content/60 max-w-md mx-auto">
+                        "No host payout entries match the selected filters. Confirmed bookings will automatically create pending ledger entries."
+                    </p>
+                </div>
+            } else {
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra w-full text-xs">
+                        <thead>
+                            <tr class="text-base-content/60 uppercase tracking-wider text-[11px] bg-base-200/50">
+                                <th>"Booking / Host"</th>
+                                <th>"Villa Listing"</th>
+                                <th>"Stay Dates"</th>
+                                <th class="text-right">"Gross Amount"</th>
+                                <th class="text-right">"Platform Fee"</th>
+                                <th class="text-right">"Net Payout"</th>
+                                <th>"Status"</th>
+                                <th>"Settlement"</th>
+                                <th class="text-right">"Actions"</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            for entry in &ledger_resp.entries {
+                                let entry_id = entry.id.to_string();
+                                let status_badge_class = match entry.status {
+                                    PayoutStatus::Pending => "badge badge-warning badge-sm font-semibold",
+                                    PayoutStatus::Processing => "badge badge-info badge-sm font-semibold",
+                                    PayoutStatus::Paid => "badge badge-success badge-sm font-semibold",
+                                    PayoutStatus::Cancelled => "badge badge-error badge-sm font-semibold",
+                                    PayoutStatus::Refunded => "badge badge-secondary badge-sm font-semibold",
+                                };
+                                let stay_dates = match (entry.check_in_date, entry.check_out_date) {
+                                    (Some(ci), Some(co)) => format!("{} → {}", ci.format("%b %d"), co.format("%b %d, %Y")),
+                                    _ => "N/A".to_string(),
+                                };
+                                let booking_code = entry.booking_confirmation_code.clone().unwrap_or_else(|| {
+                                    format!("{:.8}...", entry.booking_id.to_string())
+                                });
+                                let listing_title = entry.listing_name.clone().unwrap_or_else(|| "Luxury Villa".to_string());
+                                let host_display = entry.host_name.clone().unwrap_or_else(|| "Villa Host".to_string());
+                                let fee_pct_display = format!("{:.1}%", entry.platform_fee_pct * Decimal::from(100));
+
+                                <tr id=(format!("payout-row-{}", entry.id)) class="hover:bg-base-200/60 transition-colors">
+                                    // Booking / Host
+                                    <td>
+                                        <div class="font-bold text-sm font-mono text-base-content">
+                                            (booking_code)
+                                        </div>
+                                        <div class="text-[11px] text-base-content/60">
+                                            (host_display)
+                                        </div>
+                                    </td>
+
+                                    // Villa
+                                    <td>
+                                        <div class="font-medium text-sm text-base-content max-w-[200px] truncate">
+                                            (listing_title)
+                                        </div>
+                                        <div class="text-[10px] text-base-content/50 font-mono">
+                                            (format!("{:.8}...", entry.listing_id.to_string()))
+                                        </div>
+                                    </td>
+
+                                    // Stay Dates
+                                    <td class="font-mono text-[11px] text-base-content/80 whitespace-nowrap">
+                                        (stay_dates)
+                                    </td>
+
+                                    // Gross Amount
+                                    <td class="text-right font-mono font-bold text-sm text-base-content">
+                                        (format!("{:.2} {}", entry.gross_amount, entry.currency))
+                                    </td>
+
+                                    // Platform Fee
+                                    <td class="text-right font-mono text-base-content/70">
+                                        <div class="font-semibold text-secondary">
+                                            (format!("-{:.2}", entry.platform_fee_amount))
+                                        </div>
+                                        <div class="text-[10px] text-base-content/50">
+                                            (fee_pct_display)
+                                        </div>
+                                    </td>
+
+                                    // Net Payout
+                                    <td class="text-right font-mono font-bold text-sm text-success">
+                                        (format!("{:.2} {}", entry.net_payout_amount, entry.currency))
+                                    </td>
+
+                                    // Status
+                                    <td>
+                                        <span class=(status_badge_class)>
+                                            (entry.status.to_string())
+                                        </span>
+                                        if let Some(ref ref_code) = entry.gateway_reference {
+                                            <div class="text-[10px] font-mono text-base-content/50 truncate max-w-[120px]" title=(ref_code.clone())>
+                                                (ref_code.clone())
+                                            </div>
+                                        }
+                                    </td>
+
+                                    // Settlement Date
+                                    <td class="text-xs text-base-content/60 whitespace-nowrap">
+                                        (entry.payout_date.map(|dt| dt.format("%b %d, %Y").to_string()).unwrap_or_else(|| "Pending".to_string()))
+                                    </td>
+
+                                    // Action
+                                    <td class="text-right">
+                                        <button
+                                            class="btn btn-ghost btn-xs text-primary font-bold hover:bg-primary/10 rounded-lg"
+                                            data-id=(entry_id.clone())
+                                            data-status=(entry.status.to_string())
+                                            data-gateway=(entry.gateway_reference.clone().unwrap_or_default())
+                                            onclick="openPayoutModal(this)"
+                                        >
+                                            "Manage ▾"
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                // Pagination Footer
+                if total_pages > 1 {
+                    <div class="flex items-center justify-between px-6 py-4 border-t border-base-200">
+                        <div class="text-xs text-base-content/60">
+                            (format!("Showing page {} of {}", page_u32, total_pages))
+                        </div>
+                        <div class="join">
+                            if page_u32 > 1 {
+                                <a
+                                    href=(format!("/admin/payouts?page={}", page_u32 - 1))
+                                    class="join-item btn btn-sm btn-outline rounded-l-xl"
+                                >
+                                    "« Prev"
+                                </a>
+                            }
+                            <button class="join-item btn btn-sm btn-active pointer-events-none">
+                                (page_u32.to_string())
+                            </button>
+                            if page_u32 < total_pages {
+                                <a
+                                    href=(format!("/admin/payouts?page={}", page_u32 + 1))
+                                    class="join-item btn btn-sm btn-outline rounded-r-xl"
+                                >
+                                    "Next »"
+                                </a>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
     })
 }
 

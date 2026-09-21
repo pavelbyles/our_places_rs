@@ -24,6 +24,7 @@ pub async fn guest_base_layout<'a>(
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>"Our Places - Luxury Jamaica Stays"</title>
                 <link href=(topcoat::tailwind::stylesheet!()) rel="stylesheet" type="text/css" />
+                topcoat::runtime::script()
                 <style>
                     r#"
                     .hero-luxury {

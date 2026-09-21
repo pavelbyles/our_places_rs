@@ -86,6 +86,7 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
                 <script>(toggle_script)</script>
                 <script>(auth_script)</script>
                 <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+                topcoat::runtime::script()
             </head>
 
             <body class="min-h-screen bg-base-200/50 text-base-content antialiased" hx-boost="false">

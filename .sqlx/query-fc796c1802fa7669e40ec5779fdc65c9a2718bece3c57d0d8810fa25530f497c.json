@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO host_payout_ledger (\n            id, booking_id, listing_id, host_id, currency, gross_amount,\n            platform_fee_pct, platform_fee_amount, tax_withheld_amount,\n            exchange_rate, net_payout_amount, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending'::payout_status)\n        ON CONFLICT (booking_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Bpchar",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fc796c1802fa7669e40ec5779fdc65c9a2718bece3c57d0d8810fa25530f497c"
+}

@@ -96,7 +96,7 @@ pub async fn send_booking_message_admin_htmx(
             </div>
         } else if let Some(msg) = msg {
             let time_str = msg.created_at.format("%b %d, %H:%M").to_string();
-            <div class="chat chat-end mb-4">
+            <div id=(format!("admin-msg-{}", msg.id)) class="chat chat-end mb-4">
                 <div class="chat-header text-xs opacity-70 mb-1">
                     (msg.sender_name) " · " (time_str)
                 </div>
@@ -243,7 +243,7 @@ pub async fn booking_messages_admin_page(cx: &Cx) -> Result<impl View> {
                             let align_class = if is_me { "chat chat-end mb-4" } else { "chat chat-start mb-4" };
                             let bubble_class = if is_me { "chat-bubble chat-bubble-primary text-sm shadow-sm whitespace-pre-wrap" } else { "chat-bubble chat-bubble-secondary text-sm shadow-sm whitespace-pre-wrap" };
                             let time_str = m.created_at.format("%b %d, %H:%M").to_string();
-                            <div class=(align_class)>
+                            <div id=(format!("admin-msg-{}", m.id)) class=(align_class)>
                                 <div class="chat-header text-xs opacity-70 mb-1">
                                     (m.sender_name) " · " (time_str)
                                 </div>
