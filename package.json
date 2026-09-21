@@ -4,7 +4,7 @@
   "private": true,
   "description": "Our Places Monorepo Workspace",
   "dependencies": {
-    "daisyui": "^5.5.20"
+    "daisyui": "^5.7.42"
   },
   "scripts": {
     "test:e2e": "playwright test --config=playwright/playwright.config.ts",
@@ -15,8 +15,8 @@
     "playwright:install": "playwright install chromium firefox"
   },
   "devDependencies": {
-    "@playwright/test": "^1.51.0",
-    "@types/node": "^22.13.0",
-    "typescript": "^5.8.0"
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
   }
 }
