@@ -10,11 +10,11 @@ description: Create GitHub pull requests, run sanity checks, and perform compreh
 When invoked to analyze changes and create a PR, follow these steps systematically:
 
 1. **Run the Sanity Check Workflow**
-   - View and execute the instructions in the workflow file: `workflows/sanity-check-workflow.md`.
+   - Execute `devenv shell sanity-check` (or view and execute the instructions in `workflows/sanity-check-workflow.md`).
    - Ensure the code passes all sanity checks before proceeding.
 
 2. **Run Security Audit**
-   - Execute the `cargo audit` command in the terminal (which automatically abides by `.cargo/audit.toml`) to check the Rust dependencies for any known CVEs (security vulnerabilities).
+   - Execute `devenv shell security-audit` (or `cargo audit` which automatically abides by `.cargo/audit.toml`) in the terminal to check the Rust dependencies for any known CVEs (security vulnerabilities).
    - Record the results of this audit for your final analysis.
 
 3. **Perform the 8-Point Analysis**

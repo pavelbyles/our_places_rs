@@ -39,7 +39,7 @@ graph TD
 
 ### 4. Run Local Verification Pipeline
 - Run project build, lints, and unit tests (e.g. `cargo test`, `cargo clippy`, `npm test`):
-  - In this workspace, run [`sanity-check-workflow.md`](file:///home/pav/code/our_places_rs-update-agent-md/.agents/workflows/sanity-check-workflow.md).
+  - In this workspace, run `devenv shell sanity-check` (or view [`sanity-check-workflow.md`](file:///home/pav/code/our_places_rs-update-agent-md/.agents/workflows/sanity-check-workflow.md)).
 - Ensure 0 errors and 0 warnings before pushing.
 
 ### 5. Commit, Push & Post Resolution Summary

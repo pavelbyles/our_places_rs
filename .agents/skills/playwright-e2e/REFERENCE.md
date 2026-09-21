@@ -13,7 +13,7 @@
 ## 2. Infrastructure Dependencies
 
 Playwright `globalSetup` in `playwright/e2e/setup/global-setup.ts` automatically verifies:
-- **Port 5432**: PostgreSQL container `ourplaces_db`. If down, launches `db-start`.
+- **Port 5432**: PostgreSQL container `ourplaces_db`. If down, launches `devenv shell db-start`.
 - **Database Seeding**: Inserts deterministic test entities (`playwright/e2e/setup/db-seed.ts`):
   - Admin user: `admin@ourplaces.io` / `admin_changeme_2026`
   - Active villa: `the-courtyard-studio-new-kingston` (Slug, USD $650, 4 guests)
@@ -40,7 +40,7 @@ Handled proactively by `stack-start` / `frontends-start`:
 
 - **Interactive HTML Report**:
   ```bash
-  npx playwright show-report playwright/playwright-report
+  devenv shell npx playwright show-report playwright/playwright-report
   ```
   Launches local web server showing test steps, network calls, and DOM snapshots.
 - **Headless Error Context**:
@@ -53,7 +53,7 @@ Handled proactively by `stack-start` / `frontends-start`:
 
 | Mode | Flag / Command | Behavior | When to Use |
 | :--- | :--- | :--- | :--- |
-| **Headless (Default)** | `test-e2e` | Runs in background without UI windows; produces console summary and test artifacts. | Default for CI/CD, agent executions, fast validation. |
-| **Interactive UI** | `test-e2e --ui` or `test-e2e-ui` | Opens the full Playwright interactive runner with time-travel debugger, DOM inspector, and locator tester. | When explicitly requested by the user for interactive debugging. |
-| **Headed** | `test-e2e --headed` | Spawns visible browser instances during test execution. | When visually observing real-time browser rendering. |
+| **Headless (Default)** | `devenv shell test-e2e` | Runs in background without UI windows; produces console summary and test artifacts. | Default for CI/CD, agent executions, fast validation. |
+| **Interactive UI** | `devenv shell test-e2e --ui` or `devenv shell test-e2e-ui` | Opens the full Playwright interactive runner with time-travel debugger, DOM inspector, and locator tester. | When explicitly requested by the user for interactive debugging. |
+| **Headed** | `devenv shell test-e2e --headed` | Spawns visible browser instances during test execution. | When visually observing real-time browser rendering. |
 
