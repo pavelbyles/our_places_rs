@@ -11,10 +11,10 @@ test.describe('Admin Portal - Executive Dashboard', () => {
     await expect(heading).toContainText('Executive Dashboard');
 
     // Check quick action links
-    const newVillaBtn = authenticatedAdminPage.locator('a[href="/admin/listings/new"]').first();
+    const newVillaBtn = authenticatedAdminPage.locator('main a[href="/admin/listings/new"], a.btn:has-text("New Villa")').first();
     await expect(newVillaBtn).toBeVisible();
 
-    const viewBookingsBtn = authenticatedAdminPage.locator('a[href="/admin/bookings"]').first();
+    const viewBookingsBtn = authenticatedAdminPage.locator('main a[href="/admin/bookings"], a.btn:has-text("Schedule")').first();
     await expect(viewBookingsBtn).toBeVisible();
   });
 

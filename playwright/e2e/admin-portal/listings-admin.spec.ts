@@ -10,7 +10,7 @@ test.describe('Admin Portal - Villa Listings Management', () => {
     await expect(heading).toContainText('Villa Listings Management');
 
     // Check action buttons
-    const createBtn = authenticatedAdminPage.locator('a[href*="/listings/new"]').first();
+    const createBtn = authenticatedAdminPage.locator('main a[href*="/listings/new"], a.btn:has-text("New Villa")').first();
     await expect(createBtn).toBeVisible();
   });
 

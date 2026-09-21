@@ -52,6 +52,19 @@ pub async fn listing_detail(cx: &Cx) -> Result<impl View> {
             let val_checkin = tomorrow.format("%Y-%m-%d").to_string();
             let val_checkout = default_checkout.format("%Y-%m-%d").to_string();
 
+            let max_guests = listing.max_guests.max(1);
+            let guest_options: Vec<(i32, String, bool)> = (1..=max_guests)
+                .map(|n| {
+                    let label = if n == 1 {
+                        "1 Guest".to_string()
+                    } else {
+                        format!("{} Guests", n)
+                    };
+                    let is_selected = n == max_guests.min(2);
+                    (n, label, is_selected)
+                })
+                .collect();
+
             <div class="max-w-7xl mx-auto px-2 md:px-4 py-6 space-y-8">
                 // Breadcrumbs & Title Bar
                 <div class="space-y-2">
@@ -292,10 +305,9 @@ pub async fn listing_detail(cx: &Cx) -> Result<impl View> {
                                         "Guests"
                                     </label>
                                     <select name="guests" class="select select-bordered select-sm w-full rounded-xl">
-                                        <option value="2">"2 Guests"</option>
-                                        <option value="4" selected=(true)>"4 Guests"</option>
-                                        <option value="6">"6 Guests"</option>
-                                        <option value="8">"8+ Guests"</option>
+                                        for (g_val, g_label, g_sel) in &guest_options {
+                                            <option value=(g_val.to_string()) selected=(*g_sel)>(g_label.clone())</option>
+                                        }
                                     </select>
                                 </div>
 

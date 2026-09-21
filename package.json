@@ -7,10 +7,11 @@
     "daisyui": "^5.5.20"
   },
   "scripts": {
-    "test:e2e": "playwright test",
-    "test:e2e:guest": "playwright test --project=guest-portal-chromium --project=guest-portal-firefox",
-    "test:e2e:admin": "playwright test --project=admin-portal-chromium --project=admin-portal-firefox",
-    "test:e2e:ui": "playwright test --ui",
+    "test:e2e": "playwright test --config=playwright/playwright.config.ts",
+    "test:e2e:guest": "playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=guest-portal-firefox",
+    "test:e2e:admin": "playwright test --config=playwright/playwright.config.ts --project=admin-portal-chromium --project=admin-portal-firefox",
+    "test:e2e:ui": "playwright test --config=playwright/playwright.config.ts --ui",
+    "playwright:show-report": "playwright show-report playwright/playwright-report",
     "playwright:install": "playwright install chromium firefox"
   },
   "devDependencies": {

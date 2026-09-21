@@ -27,6 +27,12 @@ test.describe('Guest Portal - Listing Detail & Dynamic Pricing', () => {
     const reserveBtn = page.locator(`a[href="/checkout/${targetVilla.slug}"]`).first();
     await expect(reserveBtn).toBeVisible();
     await expect(reserveBtn).toContainText('Reserve (15-Min Hold)');
+
+    // 5. Guest capacity dropdown with single-guest increments (1..=max_guests)
+    const guestSelect = page.locator('select[name="guests"]');
+    await expect(guestSelect).toBeVisible();
+    const guestOptions = await guestSelect.locator('option').allInnerTexts();
+    expect(guestOptions).toEqual(['1 Guest', '2 Guests', '3 Guests', '4 Guests']);
   });
 
   test('should recalculate dynamic price and statutory GCT on date selection', async ({ page }) => {
