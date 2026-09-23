@@ -33,10 +33,43 @@
     rustfmt.enable = true;
   };
 
+  # Native PostgreSQL 18 Service (matches CloudSQL PostgreSQL 18)
+  services.postgres = {
+    enable = true;
+    package = pkgs.postgresql_18;
+    listen_addresses = "127.0.0.1";
+    port = 5432;
+    initialDatabases = [
+      {
+        name = "our_places";
+        user = "postgres";
+        pass = "password";
+      }
+    ];
+  };
+
   # Project workflow commands mirroring .agents/ workflows
   scripts = {
-    # Database start, migrations & metadata
+    # Database start, stop, migrations & metadata (devenv-managed PostgreSQL 18)
     db-start.exec = ''
+      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+        echo "Starting devenv PostgreSQL 18 service..."
+        devenv up -d postgres
+      fi
+      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+        sleep 1
+      done
+      echo "✓ PostgreSQL is accepting connections on localhost:5432"
+    '';
+
+    db-stop.exec = ''
+      echo "Stopping devenv PostgreSQL 18 service..."
+      devenv processes stop postgres 2>/dev/null || true
+      echo "✓ Database stopped."
+    '';
+
+    # Docker fallback start/stop scripts
+    docker-db-start.exec = ''
       if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
         echo "Starting Docker container 'ourplaces_db'..."
         docker start ourplaces_db 2>/dev/null || docker compose up -d db
@@ -47,10 +80,15 @@
       echo "PostgreSQL is accepting connections on localhost:5432"
     '';
 
-    db-stop.exec = ''
+    docker-db-stop.exec = ''
       echo "Stopping Docker container 'ourplaces_db'..."
       docker stop ourplaces_db 2>/dev/null || true
       echo "✓ Database stopped."
+    '';
+
+    db-seed.exec = ''
+      echo "Seeding database with initial admin user..."
+      cargo run -p db_core --bin seed-db -- "$@"
     '';
 
     db-migrate.exec = ''
@@ -192,18 +230,6 @@
 
   # Process manager configuration (run via `devenv up` or `apis`)
   processes = {
-    # Database watcher & log streamer (ensures Docker container is active and accepts connections)
-    db.exec = ''
-      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
-        echo "Starting Docker container 'ourplaces_db'..."
-        docker start ourplaces_db 2>/dev/null || docker compose up -d db
-      fi
-      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
-        sleep 1
-      done
-      echo "PostgreSQL is accepting connections on localhost:5432"
-      docker logs -f ourplaces_db
-    '';
 
     # Listing API (Port 8082)
     listing_api.exec = ''
@@ -245,7 +271,8 @@
     echo "       • frontends      (launch web_app_tc & web_app_admin_tc)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
-    echo "       • db-start       • db-stop        • db-migrate     • db-prepare"
+    echo "       • db-start       • db-stop        • db-seed        • db-migrate     • db-prepare"
+    echo "       • docker-db-start• docker-db-stop"
     echo "       • check-all      • sanity-check   • test-ci-matrix • audit-booking"
     echo "       • security-audit • eval-skills"
   '';

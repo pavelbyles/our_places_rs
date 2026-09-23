@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tokio = { workspace = true, features = ["macros"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
@@ -30,3 +30,7 @@ rust_decimal_macros = { workspace = true }
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [
     "postgres",
 ] }
+
+[[bin]]
+name = "seed-db"
+path = "src/bin/seed_db.rs"

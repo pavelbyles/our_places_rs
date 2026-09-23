@@ -13,7 +13,7 @@
 ## 2. Infrastructure Dependencies
 
 Playwright `globalSetup` in `playwright/e2e/setup/global-setup.ts` automatically verifies:
-- **Port 5432**: PostgreSQL container `ourplaces_db`. If down, launches `devenv shell db-start`.
+- **Port 5432**: PostgreSQL 18 (devenv service or Docker). If down, launches `devenv shell db-start`.
 - **Database Seeding**: Inserts deterministic test entities (`playwright/e2e/setup/db-seed.ts`):
   - Admin user: `admin@ourplaces.io` / `admin_changeme_2026`
   - Active villa: `the-courtyard-studio-new-kingston` (Slug, USD $650, 4 guests)
