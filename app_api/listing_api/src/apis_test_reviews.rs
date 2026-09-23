@@ -34,6 +34,7 @@ async fn test_reviews_endpoints() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -200,6 +201,7 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
         base_currency: "USD".to_string(),
         minimum_stay: 1,
         days_between_bookings: 0,
+        commission_pct: Some(dec!(0.0000)),
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await

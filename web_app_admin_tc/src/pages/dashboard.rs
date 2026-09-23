@@ -2,6 +2,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::page,
+    runtime::{shard, signal},
     view::{View, view},
 };
 use web_app_common_tc::{client::ListingSearchParams, get_api_client};
@@ -214,45 +215,9 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                     </div>
                 </div>
 
-                // Right col: System Telemetry & Quick HTMX Actions
+                // Right col: System Telemetry Shard & Quick Nav
                 <div class="space-y-6">
-                    <div class="card bg-base-100 dark:bg-base-200 border border-base-200 dark:border-base-100/20 rounded-2xl shadow-md p-6 space-y-4">
-                        <div class="flex items-center justify-between border-b border-base-200 pb-3">
-                            <h3 class="font-serif font-bold text-base text-base-content">
-                                "System Telemetry"
-                            </h3>
-                            <span class="badge badge-primary badge-xs">"HTMX 4"</span>
-                        </div>
-                        <p class="text-xs text-base-content/70">
-                            "Live microservice status and Cloud Run cold-start budget monitoring."
-                        </p>
-                        <div id="admin-stats-container" class="space-y-2 text-xs">
-                            <div class="flex justify-between py-1 border-b border-base-200/50">
-                                <span class="text-base-content/60">"listing_api (8082)"</span>
-                                <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
-                            </div>
-                            <div class="flex justify-between py-1 border-b border-base-200/50">
-                                <span class="text-base-content/60">"booking_api (8081)"</span>
-                                <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
-                            </div>
-                            <div class="flex justify-between py-1 border-b border-base-200/50">
-                                <span class="text-base-content/60">"user_api (8083)"</span>
-                                <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
-                            </div>
-                            <div class="flex justify-between py-1">
-                                <span class="text-base-content/60">"PostgreSQL Locks"</span>
-                                <span class="text-emerald-500 font-bold">"FOR UPDATE Active"</span>
-                            </div>
-                        </div>
-                        <button
-                            class="btn btn-outline btn-primary btn-sm w-full rounded-xl font-bold tracking-wide"
-                            hx-get="/admin/htmx/stats"
-                            hx-target="#admin-stats-container"
-                            hx-swap="innerHTML"
-                        >
-                            "Refresh Telemetry (HTMX)"
-                        </button>
-                    </div>
+                    telemetry_stats()
 
                     // Quick Nav Shortcuts
                     <div class="card bg-base-100 dark:bg-base-200 border border-base-200 dark:border-base-100/20 rounded-2xl shadow-md p-6 space-y-3">
@@ -275,33 +240,57 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
     })
 }
 
-#[page("/admin/htmx/stats")]
-pub async fn admin_htmx_stats(cx: &Cx) -> Result<impl View> {
-    let _ = cx;
+#[shard]
+pub async fn telemetry_stats(cx: &Cx) -> Result<impl View> {
+    let __cx = cx;
+    let refresh = signal(cx, || 0.0);
+    let _ = refresh.get();
     let now = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
+
     Ok(view! {
-        <div class="space-y-2 text-xs">
-            <div class="flex justify-between py-1 border-b border-base-200/50">
-                <span class="text-base-content/60">"listing_api (8082)"</span>
-                <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
+        <div id="admin-telemetry-shard" class="card bg-base-100 dark:bg-base-200 border border-base-200 dark:border-base-100/20 rounded-2xl shadow-md p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-base-200 pb-3">
+                <h3 class="font-serif font-bold text-base text-base-content">
+                    "System Telemetry"
+                </h3>
+                <span class="badge badge-primary badge-xs">"Topcoat 0.8 Shard"</span>
             </div>
-            <div class="flex justify-between py-1 border-b border-base-200/50">
-                <span class="text-base-content/60">"booking_api (8081)"</span>
-                <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
+            <p class="text-xs text-base-content/70">
+                "Live microservice status and Cloud Run cold-start budget monitoring."
+            </p>
+            <div id="admin-stats-container" class="space-y-2 text-xs">
+                <div class="flex justify-between py-1 border-b border-base-200/50">
+                    <span class="text-base-content/60">"listing_api (8082)"</span>
+                    <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-base-200/50">
+                    <span class="text-base-content/60">"booking_api (8081)"</span>
+                    <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-base-200/50">
+                    <span class="text-base-content/60">"user_api (8083)"</span>
+                    <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
+                </div>
+                <div class="flex justify-between py-1 border-b border-base-200/50">
+                    <span class="text-base-content/60">"Telemetry Timestamp"</span>
+                    <span class="font-mono text-primary font-bold">(now)</span>
+                </div>
+                <div class="flex justify-between py-1">
+                    <span class="text-base-content/60">"PostgreSQL Locks"</span>
+                    <span class="text-emerald-500 font-bold">"FOR UPDATE Active"</span>
+                </div>
+                <div class="alert alert-success py-1.5 px-3 text-[11px] rounded-lg mt-2">
+                    <span>"✓ All Cloud Run scale-to-zero microservices operational."</span>
+                </div>
             </div>
-            <div class="flex justify-between py-1 border-b border-base-200/50">
-                <span class="text-base-content/60">"user_api (8083)"</span>
-                <span class="text-emerald-500 font-bold">"Online (HTTP 200)"</span>
-            </div>
-            <div class="flex justify-between py-1 border-b border-base-200/50">
-                <span class="text-base-content/60">"Telemetry Timestamp"</span>
-                <span class="font-mono text-primary font-bold">(now)</span>
-            </div>
-            <div class="alert alert-success py-1.5 px-3 text-[11px] rounded-lg mt-2">
-                <span>"✓ All Cloud Run scale-to-zero microservices operational."</span>
-            </div>
+            <button
+                class="btn btn-outline btn-primary btn-sm w-full rounded-xl font-bold tracking-wide"
+                @click=$(|_e| refresh.increment())
+            >
+                "Refresh Telemetry (Topcoat 0.8)"
+            </button>
         </div>
     })
 }

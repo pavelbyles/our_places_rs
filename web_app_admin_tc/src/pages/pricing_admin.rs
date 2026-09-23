@@ -2,6 +2,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::{page, path_param},
+    runtime::shard,
     view::{View, view},
 };
 use uuid::Uuid;
@@ -74,20 +75,6 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result<impl View> {
         .and_then(|d| d.listing.price_per_night)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "1800".to_string());
-
-    let overrides = if is_authed {
-        if let Some(ref d) = listing_details {
-            api.get_price_overrides(d.listing.id)
-                .await
-                .unwrap_or_default()
-        } else if let Ok(uuid) = Uuid::parse_str(&listing_slug) {
-            api.get_price_overrides(uuid).await.unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    } else {
-        Vec::new()
-    };
 
     Ok(view! {
         if !is_authed {
@@ -171,90 +158,19 @@ async fn render_pricing_content(cx: &Cx, id: String) -> Result<impl View> {
                     </form>
                 </div>
 
-                // Right 2 cols: Active Overrides Table
+                // Right 2 cols: Active Overrides Table Shard
                 <div class="lg:col-span-2 space-y-4">
-                    <h2 class="font-serif font-bold text-lg text-base-content">
-                        "Active Seasonal Intervals"
-                    </h2>
-
-                    <div id="price-overrides-container" class="bg-base-100 dark:bg-base-200 rounded-2xl border border-base-200 dark:border-base-100/20 shadow-md overflow-hidden space-y-3">
-                        <div class="overflow-x-auto">
-                            <table class="table table-zebra w-full">
-                                <thead>
-                                    <tr class="text-xs text-base-content/60 uppercase tracking-wider">
-                                        <th>"Interval Period"</th>
-                                        <th>"Seasonal Rate"</th>
-                                        <th>"Min Stay"</th>
-                                        <th>"Status"</th>
-                                        <th class="text-right">"Action"</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    if overrides.is_empty() {
-                                        <tr>
-                                            <td class="font-medium">
-                                                <div class="font-bold text-sm">"Dec 15, 2026 – Jan 05, 2027"</div>
-                                                <div class="text-xs text-base-content/50">"High Season Peak (Holiday / New Year)"</div>
-                                            </td>
-                                            <td class="font-bold text-amber-500">"USD 2,800/night"</td>
-                                            <td class="text-xs">"5 nights"</td>
-                                            <td><span class="badge badge-warning badge-xs font-semibold">"Active Peak"</span></td>
-                                            <td class="text-right">
-                                                <button
-                                                    hx-post=(format!("/admin/listings/{}/pricing/remove", listing_slug))
-                                                    hx-target="#price-overrides-container"
-                                                    hx-swap="outerHTML"
-                                                    class="btn btn-ghost btn-xs text-error font-bold"
-                                                >
-                                                    "Remove"
-                                                </button>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td class="font-medium">
-                                                <div class="font-bold text-sm">"Jul 01, 2026 – Aug 31, 2026"</div>
-                                                <div class="text-xs text-base-content/50">"Summer Reggae Festival Season"</div>
-                                            </td>
-                                            <td class="font-bold text-amber-500">"USD 2,200/night"</td>
-                                            <td class="text-xs">"4 nights"</td>
-                                            <td><span class="badge badge-success badge-xs font-semibold">"Scheduled"</span></td>
-                                            <td class="text-right">
-                                                <button
-                                                    hx-post=(format!("/admin/listings/{}/pricing/remove", listing_slug))
-                                                    hx-target="#price-overrides-container"
-                                                    hx-swap="outerHTML"
-                                                    class="btn btn-ghost btn-xs text-error font-bold"
-                                                >
-                                                    "Remove"
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    } else {
-                                        for ovr in overrides {
-                                            <tr>
-                                                <td class="font-medium">
-                                                    <div class="font-bold text-sm">(ovr.start_date.to_string())" – "(ovr.end_date.to_string())</div>
-                                                </td>
-                                                <td class="font-bold text-amber-500">"USD "(format!("{:.0}", ovr.nightly_rate))"/night"</td>
-                                                <td class="text-xs">(ovr.min_nights)" nights"</td>
-                                                <td><span class="badge badge-warning badge-xs font-semibold">"Override"</span></td>
-                                                <td class="text-right">
-                                                    <button
-                                                        hx-post=(format!("/admin/listings/{}/pricing/remove", listing_slug))
-                                                        hx-target="#price-overrides-container"
-                                                        hx-swap="outerHTML"
-                                                        class="btn btn-ghost btn-xs text-error font-bold"
-                                                    >
-                                                        "Remove"
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        }
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
+                    <div class="flex items-center justify-between">
+                        <h2 class="font-serif font-bold text-lg text-base-content">
+                            "Active Seasonal Intervals"
+                        </h2>
+                        <span class="badge badge-primary badge-xs font-bold">"Topcoat 0.8 Shard"</span>
                     </div>
+
+                    pricing_overrides_table(
+                        slug: $(listing_slug.clone()),
+                        show_added_badge: $(false),
+                    )
                 </div>
             </div>
         </div>
@@ -272,10 +188,17 @@ async fn render_pricing_overrides_table_fragment(
     } else {
         "kingston-skyline-luxury-penthouse".to_string()
     };
-    render_pricing_table_inner(cx, id_str, added_new).await
+    let __cx = cx;
+    Ok(view! {
+        pricing_overrides_table(
+            slug: $(id_str),
+            show_added_badge: $(added_new),
+        )
+    })
 }
 
-async fn render_pricing_table_inner(
+#[shard]
+pub async fn pricing_overrides_table(
     cx: &Cx,
     slug: String,
     show_added_badge: bool,
@@ -318,7 +241,7 @@ async fn render_pricing_table_inner(
                     </thead>
                     <tbody>
                         if show_added_badge {
-                            <tr class="bg-warning/10">
+                            <tr id="override-newly-applied" class="bg-warning/10">
                                 <td class="font-medium">
                                     <div class="font-bold text-sm">"Dec 15, 2026 – Jan 05, 2027"</div>
                                     <div class="text-xs text-amber-500 font-semibold">"★ Newly Applied Peak Interval"</div>
@@ -340,7 +263,7 @@ async fn render_pricing_table_inner(
                         }
 
                         if overrides.is_empty() && !show_added_badge {
-                            <tr>
+                            <tr id="override-holiday-peak">
                                 <td class="font-medium">
                                     <div class="font-bold text-sm">"Dec 15, 2026 – Jan 05, 2027"</div>
                                     <div class="text-xs text-base-content/50">"High Season Peak (Holiday / New Year)"</div>
@@ -359,7 +282,7 @@ async fn render_pricing_table_inner(
                                     </button>
                                 </td>
                             </tr>
-                            <tr>
+                            <tr id="override-summer-reggae">
                                 <td class="font-medium">
                                     <div class="font-bold text-sm">"Jul 01, 2026 – Aug 31, 2026"</div>
                                     <div class="text-xs text-base-content/50">"Summer Reggae Festival Season"</div>
@@ -380,7 +303,7 @@ async fn render_pricing_table_inner(
                             </tr>
                         } else {
                             for ovr in overrides {
-                                <tr>
+                                <tr id=(format!("override-{}", ovr.id))>
                                     <td class="font-medium">
                                         <div class="font-bold text-sm">(ovr.start_date.to_string())" – "(ovr.end_date.to_string())</div>
                                     </td>

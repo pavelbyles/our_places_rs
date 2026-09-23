@@ -44,16 +44,16 @@ where
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             weekly_discount_percentage, monthly_discount_percentage, added_at, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings
+            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct
         )
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, $27
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
         RETURNING 
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, 
             weekly_discount_percentage, monthly_discount_percentage, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings
+            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct
         "#,
         Uuid::now_v7(),                                  // $1
         new_listing.user_id,                             // $2
@@ -81,6 +81,7 @@ where
         new_listing.base_currency,                       // $24
         new_listing.minimum_stay,                        // $25
         new_listing.days_between_bookings,               // $26
+        new_listing.commission_pct,                      // $27
     )
     .fetch_one(executor)
     .await
@@ -119,7 +120,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct,
         "user".first_name || ' ' || "user".last_name as owner_name,
         primary_img.upload_url as primary_image_url
         FROM listing
@@ -212,7 +213,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -248,7 +249,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -314,7 +315,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -336,7 +337,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -396,7 +397,7 @@ pub async fn update_listing(
 
     let _current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -409,13 +410,13 @@ pub async fn update_listing(
             listing_id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings
+            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings, commission_pct
         )
         SELECT 
             id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings
+            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings, commission_pct
         FROM listing 
         WHERE id = $1
         "#,
@@ -451,9 +452,10 @@ pub async fn update_listing(
             city = COALESCE($19, city),
             base_currency = COALESCE($20, base_currency),
             minimum_stay = COALESCE($21, minimum_stay),
-            days_between_bookings = COALESCE($22, days_between_bookings)
+            days_between_bookings = COALESCE($22, days_between_bookings),
+            commission_pct = COALESCE($23, commission_pct)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct
         "#,
         id,
         updated_listing_data.name,
@@ -477,6 +479,7 @@ pub async fn update_listing(
         updated_listing_data.base_currency,
         updated_listing_data.minimum_stay,
         updated_listing_data.days_between_bookings,
+        updated_listing_data.commission_pct,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -858,7 +861,7 @@ where
 }
 
 #[cfg(test)]
-
+#[allow(clippy::explicit_auto_deref)]
 mod tests {
     use super::*;
     use crate::error::DbError;
@@ -946,6 +949,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
 
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -983,6 +987,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
 
         let result = create_listing(&mut *tx, &new_listing).await;
@@ -1020,6 +1025,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -1068,6 +1074,7 @@ mod tests {
                 base_currency: "USD".to_string(),
                 minimum_stay: 1,
                 days_between_bookings: 0,
+                commission_pct: Some(dec!(0.0000)),
             };
             let created = create_listing(&mut *tx, &listing).await.unwrap();
             created_ids.push(created.id);
@@ -1140,6 +1147,7 @@ mod tests {
                 base_currency: "USD".to_string(),
                 minimum_stay: 1,
                 days_between_bookings: 0,
+                commission_pct: Some(dec!(0.0000)),
             };
             create_listing(&mut *tx, &listing).await.unwrap();
         }
@@ -1202,6 +1210,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -1228,6 +1237,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -1254,6 +1264,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -1344,6 +1355,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 
@@ -1470,6 +1482,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &l1).await.unwrap();
 
@@ -1496,6 +1509,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &l2).await.unwrap();
 

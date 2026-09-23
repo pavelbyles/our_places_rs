@@ -222,6 +222,7 @@ async fn create_listing(
             base_currency: req_data.base_currency.clone(),
             minimum_stay: req_data.minimum_stay,
             days_between_bookings: req_data.days_between_bookings,
+            commission_pct: req_data.commission_pct,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -336,6 +337,7 @@ async fn update_listing(
         base_currency: req_data.base_currency,
         minimum_stay: req_data.minimum_stay,
         days_between_bookings: req_data.days_between_bookings,
+        commission_pct: req_data.commission_pct,
     };
 
     let updated_listing =
@@ -784,4 +786,5 @@ async fn delete_price_override(
 
 #[cfg(test)]
 #[path = "apis_test.rs"]
+#[allow(clippy::explicit_auto_deref)]
 mod tests;

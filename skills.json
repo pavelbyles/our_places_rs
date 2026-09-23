@@ -168,6 +168,13 @@
       "description": "Author structured agent skills following progressive disclosure and workspace standards.",
       "path": "skills/write-new-skill",
       "entrypoint": "skills/write-new-skill/skill.md"
+    },
+    {
+      "id": "playwright-e2e",
+      "name": "Playwright E2E Testing",
+      "description": "Run Playwright end-to-end tests across Topcoat guest and admin portals, inspect failure traces, and view HTML reports.",
+      "path": "skills/playwright-e2e",
+      "entrypoint": "skills/playwright-e2e/SKILL.md"
     }
   ]
 }

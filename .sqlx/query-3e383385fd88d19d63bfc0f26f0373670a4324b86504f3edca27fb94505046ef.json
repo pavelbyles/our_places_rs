@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE host_payout_ledger\n        SET status = 'cancelled'::payout_status,\n            updated_at = NOW()\n        WHERE booking_id = $1 AND status = 'pending'::payout_status\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3e383385fd88d19d63bfc0f26f0373670a4324b86504f3edca27fb94505046ef"
+}

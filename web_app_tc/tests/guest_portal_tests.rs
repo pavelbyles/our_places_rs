@@ -158,8 +158,8 @@ fn test_booking_messaging_role_alignment_and_cancelled_status() {
 
     // On Guest messaging page:
     // Guest messages are right-aligned (chat-end), host messages are left-aligned (chat-start)
-    assert_eq!(guest_msg.sender_role == MessageSenderRole::Guest, true);
-    assert_eq!(host_msg.sender_role == MessageSenderRole::Guest, false);
+    assert!(guest_msg.sender_role == MessageSenderRole::Guest);
+    assert_ne!(host_msg.sender_role, MessageSenderRole::Guest);
 
     // On Admin messaging page:
     // Host/Admin messages are right-aligned (chat-end), guest messages are left-aligned (chat-start)
@@ -167,8 +167,8 @@ fn test_booking_messaging_role_alignment_and_cancelled_status() {
         || host_msg.sender_role == MessageSenderRole::Host;
     let is_guest_admin = guest_msg.sender_role == MessageSenderRole::Admin
         || guest_msg.sender_role == MessageSenderRole::Host;
-    assert_eq!(is_host_admin, true);
-    assert_eq!(is_guest_admin, false);
+    assert!(is_host_admin);
+    assert!(!is_guest_admin);
 
     // Cancelled status check prevents messaging
     let cancelled_status = "cancelled";

@@ -25,6 +25,7 @@
     pkgs.pkg-config
     pkgs.openssl
     pkgs.postgresql
+    pkgs.psmisc
   ];
 
   # Fast git pre-commit formatting check
@@ -32,9 +33,65 @@
     rustfmt.enable = true;
   };
 
+  # Native PostgreSQL 18 Service (matches CloudSQL PostgreSQL 18)
+  services.postgres = {
+    enable = true;
+    package = pkgs.postgresql_18;
+    listen_addresses = "127.0.0.1";
+    port = 5432;
+    initialDatabases = [
+      {
+        name = "our_places";
+        user = "postgres";
+        pass = "password";
+      }
+    ];
+    initialScript = "ALTER USER postgres WITH SUPERUSER CREATEDB;";
+  };
+
   # Project workflow commands mirroring .agents/ workflows
   scripts = {
-    # Database migrations & metadata
+    # Database start, stop, migrations & metadata (devenv-managed PostgreSQL 18)
+    db-start.exec = ''
+      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+        echo "Starting devenv PostgreSQL 18 service..."
+        devenv up -d postgres
+      fi
+      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+        sleep 1
+      done
+      echo "✓ PostgreSQL is accepting connections on localhost:5432"
+    '';
+
+    db-stop.exec = ''
+      echo "Stopping devenv PostgreSQL 18 service..."
+      devenv processes stop postgres 2>/dev/null || true
+      echo "✓ Database stopped."
+    '';
+
+    # Docker fallback start/stop scripts
+    docker-db-start.exec = ''
+      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+        echo "Starting Docker container 'ourplaces_db'..."
+        docker start ourplaces_db 2>/dev/null || docker compose up -d db
+      fi
+      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+        sleep 1
+      done
+      echo "PostgreSQL is accepting connections on localhost:5432"
+    '';
+
+    docker-db-stop.exec = ''
+      echo "Stopping Docker container 'ourplaces_db'..."
+      docker stop ourplaces_db 2>/dev/null || true
+      echo "✓ Database stopped."
+    '';
+
+    db-seed.exec = ''
+      echo "Seeding database with initial admin user..."
+      cargo run -p db_core --bin seed-db -- "$@"
+    '';
+
     db-migrate.exec = ''
       echo "Running sqlx migrations from db_core/migrations..."
       sqlx migrate run --source db_core/migrations
@@ -80,7 +137,7 @@
     # Float-Ban & Booking Logic Audit (.agents/workflows/audit-booking-flow.md)
     audit-booking.exec = ''
       echo "Checking for illegal floating-point types (f32/f64) in pricing & booking..."
-      if rg --type rust "f32|f64" common/ app_api/booking_api/ db_core/; then
+      if rg --type rust "f32|f64" common/src/pricing.rs app_api/booking_api/; then
         echo "❌ Hard invariant violation: Found float usage in financial context!"
         exit 1
       else
@@ -102,27 +159,78 @@
       python3 .agents/evals/eval_runner.py "$@"
     '';
 
-    # Launch all API microservices and database
+    # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
-      echo "Starting database and API microservices (listing_api, booking_api, user_api)..."
-      devenv up db listing_api booking_api user_api "$@"
+      db-start
+      echo "Starting API microservices (listing_api, booking_api, user_api)..."
+      devenv up listing_api booking_api user_api "$@"
+    '';
+
+    # Ensure database and API microservices are active in background (detached)
+    apis-start.exec = ''
+      db-start
+      db-migrate
+      echo "Starting API microservices in background (listing_api, booking_api, user_api)..."
+      devenv up -d listing_api booking_api user_api "$@"
+    '';
+
+    # Stop API microservices
+    apis-stop.exec = ''
+      echo "Stopping API microservices..."
+      devenv processes stop listing_api || true
+      devenv processes stop booking_api || true
+      devenv processes stop user_api || true
+    '';
+
+    # Launch Topcoat frontends with topcoat dev
+    frontends.exec = ''
+      echo "Starting Topcoat frontends (web_app_tc on :3000, web_app_admin_tc on :3002)..."
+      devenv up web_app_tc web_app_admin_tc "$@"
+    '';
+
+    # Launch full application stack (APIs + Topcoat frontends, DB kept running continuously)
+    fullstack.exec = ''
+      db-start
+      echo "Starting full development stack (APIs, Frontends)..."
+      devenv up listing_api booking_api user_api web_app_tc web_app_admin_tc "$@"
+    '';
+
+    # Playwright E2E Testing
+    playwright-install.exec = ''
+      echo "Installing Playwright browsers (chromium, firefox)..."
+      npx playwright install --with-deps chromium firefox
+      for d in "$HOME"/.cache/ms-playwright/firefox-*; do
+        [ -d "$d" ] && touch "$d/DEPENDENCIES_VALIDATED"
+      done
+    '';
+
+    test-e2e.exec = ''
+      set -e
+      echo "Running Playwright E2E test suites..."
+      npx playwright test --config=playwright/playwright.config.ts "$@"
+    '';
+
+    test-e2e-guest.exec = ''
+      set -e
+      echo "Running Guest Portal Playwright E2E tests (Chromium & Firefox)..."
+      npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=guest-portal-firefox "$@"
+    '';
+
+    test-e2e-admin.exec = ''
+      set -e
+      echo "Running Admin Portal Playwright E2E tests (Chromium & Firefox)..."
+      npx playwright test --config=playwright/playwright.config.ts --project=admin-portal-chromium --project=admin-portal-firefox "$@"
+    '';
+
+    test-e2e-ui.exec = ''
+      set -e
+      echo "Opening Playwright Interactive UI Mode..."
+      npx playwright test --config=playwright/playwright.config.ts --ui "$@"
     '';
   };
 
   # Process manager configuration (run via `devenv up` or `apis`)
   processes = {
-    # Database watcher & log streamer (ensures Docker container is active and accepts connections)
-    db.exec = ''
-      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
-        echo "Starting Docker container 'ourplaces_db'..."
-        docker start ourplaces_db 2>/dev/null || docker compose up -d db
-      fi
-      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
-        sleep 1
-      done
-      echo "PostgreSQL is accepting connections on localhost:5432"
-      docker logs -f ourplaces_db
-    '';
 
     # Listing API (Port 8082)
     listing_api.exec = ''
@@ -141,12 +249,12 @@
 
     # Guest Portal Frontend (Topcoat SSR & HTMX)
     web_app_tc.exec = ''
-      cd web_app_tc && topcoat dev
+      cd web_app_tc && CARGO_TARGET_DIR=../target/guest topcoat dev
     '';
 
     # Admin Portal Frontend (Topcoat SSR & HTMX)
     web_app_admin_tc.exec = ''
-      cd web_app_admin_tc && topcoat dev
+      cd web_app_admin_tc && CARGO_TARGET_DIR=../target/admin topcoat dev
     '';
   };
 
@@ -157,11 +265,16 @@
     echo "   - Node:     $(node --version)"
     echo "   - Python:   $(python3 --version)"
     echo "   - sqlx-cli: $(sqlx --version)"
-    echo "   - Workflows & Launchers:"
+    echo "   - Workflows & Launchers (Foreground - Ctrl+C to stop):"
     echo "       • apis           (launch DB + listing_api, booking_api, user_api)"
-    echo "       • devenv up      (launch full stack: DB + APIs + Frontends)"
-    echo "       • db-migrate     • db-prepare     • check-all"
-    echo "       • sanity-check   • test-ci-matrix • audit-booking"
+    echo "       • apis-start     (launch DB + APIs in background / detached)"
+    echo "       • apis-stop      (stop background APIs)"
+    echo "       • frontends      (launch web_app_tc & web_app_admin_tc)"
+    echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
+    echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
+    echo "       • db-start       • db-stop        • db-seed        • db-migrate     • db-prepare"
+    echo "       • docker-db-start• docker-db-stop"
+    echo "       • check-all      • sanity-check   • test-ci-matrix • audit-booking"
     echo "       • security-audit • eval-skills"
   '';
 }

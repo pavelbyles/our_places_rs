@@ -5,6 +5,8 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
+pub use crate::payout::*;
+
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct NewBookerProfile {
     pub emergency_contacts: Option<serde_json::Value>,
@@ -354,6 +356,10 @@ pub struct NewListingRequest {
     #[schema(example = 0)]
     #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
     pub days_between_bookings: i32,
+
+    #[serde(default)]
+    #[schema(value_type = String, example = "0.1000")]
+    pub commission_pct: Option<Decimal>,
 }
 
 pub fn default_minimum_stay() -> i32 {
@@ -463,6 +469,10 @@ pub struct UpdatedListingRequest {
 
     #[serde(default)]
     pub is_active: Option<bool>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "0.1000")]
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]

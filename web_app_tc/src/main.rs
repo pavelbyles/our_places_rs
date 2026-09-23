@@ -2,6 +2,7 @@ use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
     cookie::RouterBuilderCookieExt,
     router::{Router, RouterBuilderDiscoverExt},
+    runtime::RouterBuilderRuntimeExt,
     session::{RouterBuilderSessionExt, SessionConfig, cookie::CookieTokenStore},
 };
 
@@ -23,6 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let mut builder = Router::builder()
+        .runtime()
         .discover()
         .cookies()
         .sessions(session_config)

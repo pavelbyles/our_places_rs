@@ -47,7 +47,11 @@ devenv.local.nix
 devenv.local.yaml
 .direnv
 .pre-commit-config.yaml
-
-
-
+# Playwright
+playwright/playwright-report/
+playwright/test-results/
+playwright/.auth/
+playwright-report/
+test-results/
+.auth/
 

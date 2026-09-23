@@ -219,6 +219,31 @@ impl TopcoatApiClient {
     pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
         common::app_client::login_user(req).await
     }
+
+    /// Retrieve host payout ledger entries
+    pub async fn get_host_payout_ledger(
+        &self,
+        filter: &common::payout::PayoutFilter,
+    ) -> anyhow::Result<common::payout::PayoutLedgerResponse> {
+        common::app_client::get_host_payout_ledger(filter).await
+    }
+
+    /// Retrieve host payout summary statistics
+    pub async fn get_host_payout_summary(
+        &self,
+        filter: &common::payout::PayoutFilter,
+    ) -> anyhow::Result<common::payout::PayoutSummary> {
+        common::app_client::get_host_payout_summary(filter).await
+    }
+
+    /// Update payout status (admin only)
+    pub async fn update_admin_payout_status(
+        &self,
+        id: Uuid,
+        req: &common::payout::UpdatePayoutStatusRequest,
+    ) -> anyhow::Result<common::payout::PayoutLedgerEntry> {
+        common::app_client::update_admin_payout_status(id, req).await
+    }
 }
 
 static DEFAULT_CLIENT: std::sync::OnceLock<TopcoatApiClient> = std::sync::OnceLock::new();

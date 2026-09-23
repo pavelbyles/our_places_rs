@@ -229,6 +229,7 @@ async fn execute_create_listing(
         base_currency: payload.base_currency.unwrap_or_else(|| "USD".to_string()),
         minimum_stay: payload.minimum_stay.unwrap_or(1).max(1),
         days_between_bookings: payload.days_between_bookings.unwrap_or(0).max(0),
+        commission_pct: None,
     };
 
     api.create_listing(&new_req)

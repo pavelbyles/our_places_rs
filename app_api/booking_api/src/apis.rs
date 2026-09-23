@@ -17,6 +17,7 @@ use db_core::listing as db_listing;
 use db_core::models::{
     BookingMetadata, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
 };
+use db_core::payout_ledger as db_payout_ledger;
 use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -793,6 +794,165 @@ async fn mark_booking_messages_read(
     ))
 }
 
+#[tracing::instrument(skip(pool))]
+async fn get_host_ledger_entries(
+    req: HttpRequest,
+    claims: api_core::auth::Claims,
+    pool: web::Data<PgPool>,
+    filter: web::Query<common::payout::PayoutFilter>,
+) -> Result<impl Responder, ApiError> {
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let target_host_id = if is_admin {
+        filter.host_id
+    } else {
+        Some(claims.sub)
+    };
+
+    let page = filter.page.unwrap_or(1);
+    let per_page = filter.per_page.unwrap_or(20);
+
+    let (entries, total_count) = db_payout_ledger::get_payout_ledger_entries(
+        pool.get_ref(),
+        target_host_id,
+        filter.listing_id,
+        filter.status.map(Into::into),
+        filter.date_from,
+        filter.date_to,
+        page,
+        per_page,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    let response = common::payout::PayoutLedgerResponse {
+        entries: entries.into_iter().map(Into::into).collect(),
+        total_count,
+        page,
+        per_page,
+    };
+
+    Ok(respond(
+        &req,
+        Payload::Item(response),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument(skip(pool))]
+async fn get_host_ledger_summary(
+    req: HttpRequest,
+    claims: api_core::auth::Claims,
+    pool: web::Data<PgPool>,
+    filter: web::Query<common::payout::PayoutFilter>,
+) -> Result<impl Responder, ApiError> {
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let target_host_id = if is_admin {
+        filter.host_id
+    } else {
+        Some(claims.sub)
+    };
+
+    let summary =
+        db_payout_ledger::get_payout_summary(pool.get_ref(), target_host_id, filter.listing_id)
+            .await
+            .map_err(ApiError::Database)?;
+
+    let common_summary: common::payout::PayoutSummary = summary.into();
+
+    Ok(respond(
+        &req,
+        Payload::Item(common_summary),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument(skip(pool))]
+async fn export_host_ledger_csv(
+    claims: api_core::auth::Claims,
+    pool: web::Data<PgPool>,
+    filter: web::Query<common::payout::PayoutFilter>,
+) -> Result<HttpResponse, ApiError> {
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let target_host_id = if is_admin {
+        filter.host_id
+    } else {
+        Some(claims.sub)
+    };
+
+    let (entries, _) = db_payout_ledger::get_payout_ledger_entries(
+        pool.get_ref(),
+        target_host_id,
+        filter.listing_id,
+        filter.status.map(Into::into),
+        filter.date_from,
+        filter.date_to,
+        1,
+        1000,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    let common_entries: Vec<common::payout::PayoutLedgerEntry> =
+        entries.into_iter().map(Into::into).collect();
+    let csv_content = common::csv::format_payout_ledger_csv(&common_entries);
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/csv")
+        .insert_header((
+            "Content-Disposition",
+            "attachment; filename=\"host_payout_ledger.csv\"",
+        ))
+        .body(csv_content))
+}
+
+#[tracing::instrument(skip(pool))]
+async fn update_admin_payout_status(
+    req: HttpRequest,
+    claims: api_core::auth::Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    body: web::Json<common::payout::UpdatePayoutStatusRequest>,
+) -> Result<impl Responder, ApiError> {
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    if !user.roles.contains(&db_core::models::UserRole::Admin) {
+        return Err(ApiError::Unauthorized("Admin role required".to_string()));
+    }
+
+    let ledger_id = path.into_inner();
+
+    let updated = db_payout_ledger::update_payout_status(
+        pool.get_ref(),
+        ledger_id,
+        body.status.into(),
+        body.gateway_reference.clone(),
+        body.failure_reason.clone(),
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    let common_entry: common::payout::PayoutLedgerEntry = updated.into();
+
+    Ok(respond(
+        &req,
+        Payload::Item(common_entry),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -899,6 +1059,32 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .to(mark_booking_messages_read)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/hosts/ledger")
+            .route(
+                "",
+                web::get()
+                    .to(get_host_ledger_entries)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/summary",
+                web::get()
+                    .to(get_host_ledger_summary)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route("/export", web::get().to(export_host_ledger_csv)),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/admin/ledger").route(
+            "/{id}/status",
+            web::patch()
+                .to(update_admin_payout_status)
+                .wrap(from_fn(content_negotiation_middleware)),
+        ),
     );
 }
 

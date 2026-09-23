@@ -8,7 +8,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 topcoat = { workspace = true, features = ["htmx", "tailwind", "session"] }
-topcoat-asset = { version = "0.6.2", features = ["bundler"] }
+topcoat-asset = { version = "0.8.1", features = ["bundler"] }
 
 common = { workspace = true }
 serde = { workspace = true }
@@ -24,7 +24,7 @@ thiserror = { workspace = true }
 
 
 [build-dependencies]
-topcoat = { version = "0.6.2", default-features = false, features = ["tailwind"] }
+topcoat = { version = "0.8.1", default-features = false, features = ["tailwind"] }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }

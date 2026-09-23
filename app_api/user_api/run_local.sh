@@ -16,9 +16,9 @@ ensure_db_running() {
   (
     flock -x 200
     if ! is_db_ready; then
-      echo "Database is not running. Starting Docker container 'ourplaces_db'..."
+      echo "Database is not running on localhost:5432. Starting database via db-start..."
       ROOT_DIR=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD/../..")
-      docker start ourplaces_db 2>/dev/null || (cd "$ROOT_DIR" && docker compose up -d db)
+      (cd "$ROOT_DIR" && (db-start 2>/dev/null || devenv shell db-start 2>/dev/null || docker start ourplaces_db 2>/dev/null || true))
     fi
   ) 200>"$lockfile"
 
@@ -36,4 +36,4 @@ ensure_db_running
 # Run User API service
 EA__SERVER__PORT="${EA__SERVER__PORT:-8083}" \
 EA__DATABASE__HOST="${EA__DATABASE__HOST:-localhost}" \
-cargo run
+exec cargo run

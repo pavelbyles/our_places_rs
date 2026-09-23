@@ -28,18 +28,81 @@ High-performance, full-stack short-term property rental platform for luxury vill
 
 ---
 
-## 🔄 AI-Native SDLC & Agent Skills Reference
+## ✨ Platform Features
+
+### 👤 User Features
+
+#### 🏖️ Guest Experience ([`web_app_tc`](web_app_tc))
+- **Luxury Villa Catalog & Search**: Browse curated Jamaican luxury villas and apartments with real-time HTMX filtering by destination, guest capacity, and amenities.
+- **Rich Property Detail Pages**: View responsive multi-resolution photo galleries, location information, detailed amenity checklists, and host descriptions.
+- **Dynamic Pricing & Multi-Currency Quotes**: Instant rate computation supporting multiple guest checkout currencies (USD, JMD, EUR, GBP, CAD) with statutory tax breakdowns (Jamaican GCT 15%).
+- **Frictionless Checkout & Temporary Holds**: Reserve dates with an automatic 15-minute lock (`pending_payment`), preventing dates from being taken during checkout.
+- **Shadow User Guest Checkouts**: Guests can book immediately without prior account registration; temporary shadow accounts can be promoted post-checkout without losing booking state.
+- **Booking Management Hub**: Track upcoming, active, and past reservations, review booking confirmations, and request date changes or cancellations.
+- **Two-Way Direct Messaging**: Built-in messaging thread between guest and host linked directly to specific reservation codes.
+- **Verified Stay Reviews**: Submit post-stay reviews, ratings, and feedback via secure, single-use, 15-day invitation tokens issued upon stay completion.
+- **Self-Service Account & Security**: Guest registration, login, profile management, email verification, password reset flows, and account deactivation.
+
+#### 💼 Host & Administrator Experience ([`web_app_admin_tc`](web_app_admin_tc))
+- **Executive Operations Dashboard**: High-level KPI monitoring, real-time booking statistics, and operational health summaries.
+- **Property Catalog Management**: Create, edit, clone from existing templates, and manage villa listings, descriptions, and amenities.
+- **Seasonal Rates & Price Overrides**: Configure custom seasonal pricing rules, holiday surcharges, and promotional rate adjustments with automated priority resolution.
+- **Centralized Reservation Pipeline**: Inspect all bookings across properties, filter by reservation status (`pending_payment`, `confirmed`, `completed`, `cancelled`), and process modifications.
+- **Host Direct Messaging Center**: Unified messaging portal to manage guest communications, view booking context, and respond to inquiries with unread indicators.
+- **Host Financial Earnings & Payout Ledger**: Track gross booking earnings, platform commissions, statutory tax withholdings, currency conversions, and net payout amounts with downloadable CSV financial reports.
+- **User & Role Administration**: Directory to view users, register accounts, manage roles (guests, hosts, administrators), and revoke active sessions.
+- **Exchange Rate Management**: Monitor and synchronize foreign currency conversion rates against base listing prices.
+
+---
+
+### ⚙️ Technical Features
+
+#### 🏗️ Architecture & Performance
+- **Isomorphic Rust Monorepo**: Shared domain models, validation logic, and pricing math in [`common`](common) compiled across backend Actix-web services and Topcoat SSR frontends.
+- **GCP Cloud Run Scale-to-Zero**: Tailored for minimal resource profiles ($0.25\text{ vCPU}$, $256\text{MB RAM}$) with cold start targets $< 300\text{ms}$ (p50) and $< 1\text{s}$ (p95).
+- **Topcoat SSR + HTMX Frontend**: Ultra-fast server-side rendering with reactive micro-interactions, DaisyUI v5 components, and TailwindCSS v4 styling—eliminating heavy client-side JavaScript SPA bundles.
+
+#### 🧮 Financial Precision & "Tri-Currency" Engine
+- **Arbitrary-Precision Arithmetic**: Strict usage of `rust_decimal::Decimal` across all monetary amounts, commission percentages, and tax rates; zero floating-point (`f32`/`f64`) operations.
+- **Tri-Currency Conversion Flow**: Converts Base Currency (villa nightly rate) $\rightarrow$ Payment Currency (guest checkout) $\rightarrow$ Statutory Taxes & Net Totals.
+- **Statutory Tax Rule Engine**: Automated calculation of Jamaican General Consumption Tax (GCT 15%) and local tax withholdings.
+
+#### 🔒 Concurrency, Data Integrity & State Machines
+- **Zero Double-Booking Guarantee**: PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) during reservation creation ensure serialized availability checks without external distributed lock managers.
+- **Self-Expiring Hold Lifecycle**: 15-minute `pending_payment` holds automatically expire and release dates back to inventory via timestamp comparisons, eliminating mandatory cron cleanup workers.
+- **Immutable Status Audit Trail**: Every booking and payout status transition is immutably recorded in historical audit tables (`booking_status_history`, `host_payout_ledger`).
+- **Compile-Time Verified Queries**: SQLx queries validated at compile time against PostgreSQL schema for static type safety and query correctness in [`db_core`](db_core).
+
+#### 🖼️ Asynchronous Media Pipeline
+- **Direct-to-GCS V4 Signed Uploads**: Client uploads bypass backend application servers entirely via short-lived GCP V4 Signed URLs generated by [`listing_api`](app_api/listing_api), eliminating memory and network bottlenecks on Cloud Run.
+- **Event-Driven Pub/Sub Resizing**: GCS upload events trigger [`image_worker`](app_api/image_worker) to compress and generate multi-resolution WebP images (Mobile 640px, Tablet 1024px, Desktop 1920px).
+- **Responsive Delivery**: SSR templates serve standards-compliant HTML5 `<picture>` and `srcset` tags for adaptive browser bandwidth negotiation.
+
+#### 🛡️ Security, Identity & Verification
+- **Cryptographic Review Tokens**: Post-checkout reviews gated by single-use, 15-day time-bound verification tokens executed within atomic rating recalculation transactions.
+- **Authentication & Password Hardening**: JWT tokens validated via Actix request extractors in [`api_core`](app_api/api_core); passwords salted and hashed using `bcrypt` (work factor 12) via [`user_api`](app_api/user_api).
+- **Role-Based Access Control**: Separation of public, guest, host, and admin endpoints with granular route protection.
+- **Panic-Free Monadic Error Handling**: Strict adherence to `Result<T, E>` and `Option<T>` combinator pipelines (`.and_then()`, `.map()`, `?`) without `.unwrap()` or `.expect()` in production paths.
+
+#### 📊 Telemetry, Probes & Runtime Operations
+- **Full Actuator Suite**: Standardized `/health`, `/health/startup`, `/health/liveness`, and `/health/readiness` container probes via [`api_core`](app_api/api_core).
+- **Prometheus Scrape Endpoint**: Operational metrics (`/metrics`) tracking HTTP request rates, status distributions, and latency histograms.
+- **Dynamic Runtime Logging (`/loggers`)**: Dynamically inspect and adjust crate/module log levels (TRACE, DEBUG, INFO, WARN, ERROR) without restarting containers, secured by pre-shared token or Admin JWT.
+
+---
+
+## 🔄 AI-Native SDLC, Agent Skills & Workflows Reference
 
 The engineering workflow operates across 6 artifact-driven stages in an AI-Native Software Development Lifecycle (SDLC):
 
-| SDLC Stage | Primary Artifact | Associated Skills | Execution Role & Trigger |
+| SDLC Stage | Primary Artifact | Associated Skills & Workflows | Execution Role & Trigger |
 | :--- | :--- | :--- | :--- |
-| **Stage 1: Plan** | `intent.md` | [`draft-intent`](.agents/skills/draft-intent/SKILL.md)<br>[`router`](.agents/skills/router/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/skill.md)<br>[`create-worktree`](.agents/skills/create-worktree/SKILL.md) | **Ideation & Scoping**: Brainstorm raw ideas, scope MVP boundaries, capture non-negotiable invariants, and isolate git worktrees. |
-| **Stage 2: Design** | `spec.md` | [`generate-spec`](.agents/skills/generate-spec/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/skill.md)<br>[`assumption-review`](.agents/skills/assumption-review/SKILL.md)<br>[`edge-case-analysis`](.agents/skills/edge-case-analysis/SKILL.md)<br>[`failure-scenario-analysis`](.agents/skills/failure-scenario-analysis/SKILL.md)<br>[`resilience-exploration`](.agents/skills/resilience-exploration/SKILL.md)<br>[`security-review`](.agents/skills/security-review/SKILL.md)<br>[`security-posture-assessment`](.agents/skills/security-posture-assessment/SKILL.md)<br>[`risk-assessment`](.agents/skills/risk-assessment/SKILL.md)<br>[`vulnerability-analysis`](.agents/skills/vulnerability-analysis/SKILL.md) | **Specification & Policy Review**: Compress requirements and technical design into a single session; stress-test edge cases, failure blast radiuses, OWASP threats, and lock data models. |
-| **Stage 3: Build** | `plan.md`<br>Source Code / Diff | [`rust-core`](.agents/skills/rust-core/SKILL.md)<br>[`monad-design`](.agents/skills/monad-design/SKILL.md)<br>[`topcoat`](.agents/skills/topcoat/SKILL.md)<br>[`daisyui`](.agents/skills/daisyui/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md)<br>[`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`write-new-skill`](.agents/skills/write-new-skill/skill.md)<br>[`handoff`](.agents/skills/handoff/skill.md) | **Implementation**: Execute code implementation starting from `plan.md`; enforce panic-free monadic Rust (`Option`/`Result`), tri-currency math, and SSR/UI components. |
-| **Stage 4: Test** | Test Runs<br>`evals_results.json` | [`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md)<br>`chrome-devtools`<br>`a11y-debugging` | **Verification & Evals**: Run local test suites and compile checks; execute synthetic benchmark eval suites against agent skills to prevent prompt regressions; audit browser accessibility. |
-| **Stage 5: Deploy** | `REVIEW.md`<br>Pull Request | [`pr-analyzer`](.agents/skills/pr-analyzer/SKILL.md)<br>[`pr-remediation`](.agents/skills/pr-remediation/SKILL.md) | **PR Review & Remediation**: Run 8-point automated code quality review, autonomously sweep and fix review comments/broken CI checks, and sync documentation post-ship. |
-| **Stage 6: Maintain** | Incident `intent.md` | [`auto-triage-incident`](.agents/skills/auto-triage-incident/SKILL.md) | **Closed-Loop Incident Triage**: Ingest telemetry/log anomalies and metric breaches, isolate root causes, and write an `intent.md` proto-spec to restart Stage 1. |
+| **Stage 1: Plan** | `intent.md` | [`/start-feature`](.agents/workflows/start-feature.md)<br>[`draft-intent`](.agents/skills/draft-intent/SKILL.md)<br>[`router`](.agents/skills/router/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/skill.md)<br>[`create-worktree`](.agents/skills/create-worktree/SKILL.md) | **Ideation & Scoping**: Kick off feature lifecycles with `/start-feature`, brainstorm raw ideas, scope MVP boundaries, capture non-negotiable invariants, and isolate git worktrees. |
+| **Stage 2: Design** | `spec.md` | [`/create-spec-from-hl-req`](.agents/workflows/create-spec-from-hl-req.md)<br>[`generate-spec`](.agents/skills/generate-spec/SKILL.md)<br>[`grill-me`](.agents/skills/grill-me/skill.md)<br>[`assumption-review`](.agents/skills/assumption-review/SKILL.md)<br>[`edge-case-analysis`](.agents/skills/edge-case-analysis/SKILL.md)<br>[`failure-scenario-analysis`](.agents/skills/failure-scenario-analysis/SKILL.md)<br>[`resilience-exploration`](.agents/skills/resilience-exploration/SKILL.md)<br>[`security-review`](.agents/skills/security-review/SKILL.md)<br>[`security-posture-assessment`](.agents/skills/security-posture-assessment/SKILL.md)<br>[`risk-assessment`](.agents/skills/risk-assessment/SKILL.md)<br>[`vulnerability-analysis`](.agents/skills/vulnerability-analysis/SKILL.md) | **Specification & Policy Review**: Compress requirements via `/create-spec-from-hl-req`; stress-test edge cases, failure blast radiuses, OWASP threats, and lock data models. |
+| **Stage 3: Build** | `plan.md`<br>Source Code / Diff | [`/plan-eng-review`](.agents/workflows/plan-eng-review.md)<br>[`rust-core`](.agents/skills/rust-core/SKILL.md)<br>[`monad-design`](.agents/skills/monad-design/SKILL.md)<br>[`topcoat`](.agents/skills/topcoat/SKILL.md)<br>[`daisyui`](.agents/skills/daisyui/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md)<br>[`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`write-new-skill`](.agents/skills/write-new-skill/skill.md)<br>[`handoff`](.agents/skills/handoff/skill.md) | **Implementation**: Review architecture via `/plan-eng-review` and execute code starting from `plan.md`; enforce panic-free monadic Rust (`Option`/`Result`), tri-currency math, and SSR/UI components. |
+| **Stage 4: Test** | Test Runs<br>`evals_results.json` | [`/sanity-check-workflow`](.agents/workflows/sanity-check-workflow.md)<br>[`/audit-booking-flow`](.agents/workflows/audit-booking-flow.md)<br>[`/cloudrun-perf-audit`](.agents/workflows/cloudrun-perf-audit.md)<br>[`/eval-skills`](.agents/workflows/eval-skills.md)<br>[`playwright-e2e`](.agents/skills/playwright-e2e/SKILL.md)<br>[`general-debug`](.agents/skills/general-debug/SKILL.md)<br>[`lint-hunter`](.agents/skills/lint-hunter/SKILL.md)<br>`chrome-devtools`<br>`a11y-debugging` | **Verification & Evals**: Run pre-CI verification via `/sanity-check-workflow`, financial audits via `/audit-booking-flow`, Cloud Run performance checks via `/cloudrun-perf-audit`, and synthetic benchmark evals via `/eval-skills`. |
+| **Stage 5: Deploy** | `REVIEW.md`<br>Pull Request | [`/ship-pr`](.agents/workflows/ship-pr.md)<br>[`/remediate-pr`](.agents/workflows/remediate-pr.md)<br>[`/document-release`](.agents/workflows/document-release.md)<br>[`pr-analyzer`](.agents/skills/pr-analyzer/SKILL.md)<br>[`pr-remediation`](.agents/skills/pr-remediation/SKILL.md) | **PR Review & Remediation**: Pre-merge readiness checks and PR creation via `/ship-pr` with 8-point automated code review via `pr-analyzer`; autonomously remediate CI checks via `/remediate-pr` and `pr-remediation`; sync documentation post-ship via `/document-release`. |
+| **Stage 6: Maintain** | Incident `intent.md` | [`/investigate`](.agents/workflows/investigate.md)<br>[`auto-triage-incident`](.agents/skills/auto-triage-incident/SKILL.md) | **Closed-Loop Incident Triage**: Ingest telemetry/log anomalies and metric breaches, isolate root causes via `/investigate`, and write an `intent.md` proto-spec via `auto-triage-incident` to restart Stage 1. |
 
 ---
 
