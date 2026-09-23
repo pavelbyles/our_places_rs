@@ -46,6 +46,7 @@
         pass = "password";
       }
     ];
+    initialScript = "ALTER USER postgres WITH SUPERUSER CREATEDB;";
   };
 
   # Project workflow commands mirroring .agents/ workflows
