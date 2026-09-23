@@ -10,7 +10,7 @@ Automatically inspect pull request review feedback and failing CI checks, apply 
 ## Remediation Workflow
 
 ```mermaid
-graph TD
+flowchart TD
     PR[Open PR with Comments / CI Failures] --> Fetch[1. Fetch Comments & CI Checks]
     Fetch --> Triage[2. Triage & Classify Feedback]
     Triage --> Fix[3. Implement Fixes on PR Branch]

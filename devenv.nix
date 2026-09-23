@@ -127,6 +127,22 @@
       devenv up listing_api booking_api user_api "$@"
     '';
 
+    # Ensure database and API microservices are active in background (detached)
+    apis-start.exec = ''
+      db-start
+      db-migrate
+      echo "Starting API microservices in background (listing_api, booking_api, user_api)..."
+      devenv up -d listing_api booking_api user_api "$@"
+    '';
+
+    # Stop API microservices
+    apis-stop.exec = ''
+      echo "Stopping API microservices..."
+      devenv processes stop listing_api || true
+      devenv processes stop booking_api || true
+      devenv processes stop user_api || true
+    '';
+
     # Launch Topcoat frontends with topcoat dev
     frontends.exec = ''
       echo "Starting Topcoat frontends (web_app_tc on :3000, web_app_admin_tc on :3002)..."
@@ -224,6 +240,8 @@
     echo "   - sqlx-cli: $(sqlx --version)"
     echo "   - Workflows & Launchers (Foreground - Ctrl+C to stop):"
     echo "       • apis           (launch DB + listing_api, booking_api, user_api)"
+    echo "       • apis-start     (launch DB + APIs in background / detached)"
+    echo "       • apis-stop      (stop background APIs)"
     echo "       • frontends      (launch web_app_tc & web_app_admin_tc)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"

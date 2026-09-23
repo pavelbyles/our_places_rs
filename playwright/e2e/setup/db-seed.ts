@@ -54,7 +54,7 @@ export async function seedTestData(): Promise<void> {
         listing_details
     ) VALUES (
         '018f3a5e-6b9c-7000-8000-000000000001',
-        '01a0bcbd-014d-7062-99b2-6a42d05b9ed7',
+        (SELECT id FROM "user" WHERE email = 'admin@ourplaces.io' LIMIT 1),
         'The Courtyard Studio',
         'Luxury courtyard studio nestled in New Kingston with lush private garden, dedicated chef, and infinity pool.',
         1,

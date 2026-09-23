@@ -45,7 +45,7 @@ async function ensureDatabaseRunning(): Promise<void> {
   console.log('PostgreSQL is not responding on localhost:5432. Starting via devenv script...');
   try {
     try {
-      execSync('db-start', { stdio: 'inherit' });
+      execSync('db-start', { stdio: 'pipe' });
     } catch {
       execSync('devenv shell db-start', { stdio: 'inherit' });
     }
@@ -58,6 +58,15 @@ async function ensureDatabaseRunning(): Promise<void> {
   while (Date.now() - start < 15000) {
     if (await isPortOpen(5432)) {
       console.log('✓ PostgreSQL is now ready on localhost:5432');
+      try {
+        try {
+          execSync('db-migrate', { stdio: 'pipe' });
+        } catch {
+          execSync('devenv shell db-migrate', { stdio: 'inherit' });
+        }
+      } catch (err) {
+        console.warn('Warning: db-migrate invocation failed:', err);
+      }
       return;
     }
     await new Promise((r) => setTimeout(r, 1000));
@@ -98,9 +107,13 @@ async function ensureBackendServicesRunning(): Promise<void> {
   console.log('Backend APIs are not responding. Starting via devenv apis-start script...');
   try {
     try {
-      execSync('apis-start', { stdio: 'inherit' });
+      execSync('apis-start', { stdio: 'pipe' });
     } catch {
-      execSync('devenv shell apis-start', { stdio: 'inherit' });
+      try {
+        execSync('devenv shell apis-start', { stdio: 'inherit' });
+      } catch {
+        execSync('devenv up -d listing_api booking_api user_api', { stdio: 'inherit' });
+      }
     }
   } catch (err) {
     console.warn('Failed to invoke apis-start script synchronously, polling for readiness...', err);
