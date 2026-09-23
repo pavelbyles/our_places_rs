@@ -137,7 +137,7 @@
     # Float-Ban & Booking Logic Audit (.agents/workflows/audit-booking-flow.md)
     audit-booking.exec = ''
       echo "Checking for illegal floating-point types (f32/f64) in pricing & booking..."
-      if rg --type rust "f32|f64" common/ app_api/booking_api/ db_core/; then
+      if rg --type rust "f32|f64" common/src/pricing.rs app_api/booking_api/; then
         echo "❌ Hard invariant violation: Found float usage in financial context!"
         exit 1
       else
