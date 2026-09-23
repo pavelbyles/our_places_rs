@@ -248,12 +248,12 @@
 
     # Guest Portal Frontend (Topcoat SSR & HTMX)
     web_app_tc.exec = ''
-      cd web_app_tc && topcoat dev
+      cd web_app_tc && CARGO_TARGET_DIR=../target/guest topcoat dev
     '';
 
     # Admin Portal Frontend (Topcoat SSR & HTMX)
     web_app_admin_tc.exec = ''
-      cd web_app_admin_tc && topcoat dev
+      cd web_app_admin_tc && CARGO_TARGET_DIR=../target/admin topcoat dev
     '';
   };
 

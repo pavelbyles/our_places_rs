@@ -37,8 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sessions(session_config)
         .app_context(api_client);
 
-    if let Ok(bundle) = AssetBundle::load() {
-        builder = builder.assets(bundle);
+    match AssetBundle::load() {
+        Ok(bundle) => {
+            builder = builder.assets(bundle);
+        }
+        Err(e) => {
+            tracing::error!("Failed to load assets: {}", e);
+        }
     }
     let router = builder.build();
 
