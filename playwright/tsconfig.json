@@ -12,7 +12,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["node"],
-    "typeRoots": ["../node_modules/@types"],
+    "typeRoots": ["./node_modules/@types", "../node_modules/@types"],
     "paths": {
       "@fixtures/*": ["./e2e/fixtures/*"],
       "@setup/*": ["./e2e/setup/*"]
