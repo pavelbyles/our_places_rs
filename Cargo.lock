@@ -297,6 +297,7 @@ version = "0.1.0"
 dependencies = [
  "actix-cors",
  "actix-web",
+ "base64 0.23.1",
  "chrono",
  "common",
  "config",
@@ -306,6 +307,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "once_cell",
  "parking_lot",
+ "reqwest",
  "rust_decimal",
  "serde",
  "serde-xml-rs",
@@ -1339,6 +1341,35 @@ name = "email_address"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
+
+[[package]]
+name = "email_worker"
+version = "0.1.0"
+dependencies = [
+ "actix-http",
+ "actix-web",
+ "anyhow",
+ "api_core",
+ "async-trait",
+ "base64 0.23.1",
+ "common",
+ "db_core",
+ "dotenvy",
+ "lettre",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "sqlx-db-tester",
+ "tokio",
+ "tracing",
+ "tracing-actix-web",
+ "tracing-log",
+ "tracing-subscriber",
+ "utoipa",
+ "utoipa-swagger-ui",
+ "uuid",
+]
 
 [[package]]
 name = "encoding_rs"
@@ -2658,15 +2689,26 @@ version = "0.11.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
 dependencies = [
+ "async-trait",
+ "base64 0.23.1",
  "email-encoding",
  "email_address",
  "fastrand",
+ "futures-io",
+ "futures-util",
  "hostname",
  "httpdate",
  "idna",
  "mime",
  "nom",
+ "percent-encoding",
  "quoted_printable",
+ "rustls",
+ "socket2",
+ "tokio",
+ "tokio-rustls",
+ "url",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]

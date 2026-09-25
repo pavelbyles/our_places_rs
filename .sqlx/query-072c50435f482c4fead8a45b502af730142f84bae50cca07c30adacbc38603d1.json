@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE email_outbox\n        SET status = 'sent'::email_status,\n            attempts = $2,\n            sent_at = NOW(),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "072c50435f482c4fead8a45b502af730142f84bae50cca07c30adacbc38603d1"
+}

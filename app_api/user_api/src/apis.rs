@@ -180,7 +180,7 @@ async fn create_user(
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
             is_verified: false,
-            verification_code: Some(otp),
+            verification_code: Some(otp.clone()),
             verification_code_expires_at: Some(Utc::now() + chrono::Duration::minutes(30)),
             attributes: req_data
                 .attributes
@@ -256,9 +256,29 @@ async fn create_user(
                     }
                 }
 
+                let outbox_res = db_core::email_outbox::insert_email_outbox_conn(
+                    &mut tx,
+                    &created_user.email,
+                    "Verify your Our Places account",
+                    common::email::EmailTemplate::UserVerificationOtp.as_str(),
+                    &serde_json::json!({
+                        "code": otp,
+                        "first_name": created_user.first_name,
+                    }),
+                    3,
+                )
+                .await;
+
                 tx.commit()
                     .await
                     .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
+                if let Ok(outbox) = outbox_res {
+                    let publisher = api_core::email_publisher::EmailPublisher::from_env();
+                    tokio::spawn(async move {
+                        let _ = publisher.publish_email_event(outbox.id).await;
+                    });
+                }
 
                 return Ok(respond(
                     &req,
@@ -479,6 +499,30 @@ async fn resend_verification(
 
     let user = updated
         .ok_or_else(|| ApiError::Unauthorized("User not found or already verified".to_string()))?;
+
+    let pool_clone = pool.get_ref().clone();
+    let email_clone = payload.email.clone();
+    let first_name = user.first_name.clone();
+    let otp_clone = otp.clone();
+
+    tokio::spawn(async move {
+        if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+            &pool_clone,
+            &email_clone,
+            "Your verification code",
+            common::email::EmailTemplate::UserVerificationOtp.as_str(),
+            &serde_json::json!({
+                "code": otp_clone,
+                "first_name": first_name,
+            }),
+            3,
+        )
+        .await
+        {
+            let publisher = api_core::email_publisher::EmailPublisher::from_env();
+            let _ = publisher.publish_email_event(outbox.id).await;
+        }
+    });
 
     Ok(respond(
         &req,
@@ -949,6 +993,31 @@ async fn request_password_change(
 
     let user = updated.ok_or(ApiError::Internal)?;
 
+    let pool_clone = pool.get_ref().clone();
+    let email_clone = payload.email.clone();
+    let first_name = user.first_name.clone();
+    let otp_clone = otp.clone();
+
+    tokio::spawn(async move {
+        if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+            &pool_clone,
+            &email_clone,
+            "Password change request",
+            common::email::EmailTemplate::PasswordResetOtp.as_str(),
+            &serde_json::json!({
+                "token": otp_clone,
+                "code": otp_clone,
+                "first_name": first_name,
+            }),
+            3,
+        )
+        .await
+        {
+            let publisher = api_core::email_publisher::EmailPublisher::from_env();
+            let _ = publisher.publish_email_event(outbox.id).await;
+        }
+    });
+
     Ok(respond(
         &req,
         Payload::Item(map_user_to_response(user)),
@@ -1218,7 +1287,7 @@ async fn get_session_handler(
     pool: web::Data<PgPool>,
     path: web::Path<String>,
     query: web::Query<SessionNamespaceQuery>,
-) -> Result<impl Responder, ApiError> {
+) -> Result<actix_web::HttpResponse, ApiError> {
     let token_hash = path.into_inner();
     let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
     let ns = query.namespace.as_deref();
@@ -1251,9 +1320,10 @@ async fn get_session_handler(
                 actix_web::http::StatusCode::OK,
             ))
         }
-        None => Err(ApiError::Database(db_core::error::DbError::Sqlx(
-            sqlx::Error::RowNotFound,
-        ))),
+        None => Ok(actix_web::HttpResponse::NotFound().json(serde_json::json!({
+            "code": "SESSION_NOT_FOUND",
+            "message": "Session not found or expired"
+        }))),
     }
 }
 

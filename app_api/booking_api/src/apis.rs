@@ -256,6 +256,34 @@ async fn create_booking(
         match db_booking::create_booking(pool.get_ref(), &new_booking).await {
             Ok(booking) => {
                 tracing::info!(booking_id = %booking.id, "Successfully created booking");
+
+                let pool_clone = pool.get_ref().clone();
+                let guest_id = booking.guest_id;
+                let conf_code = booking.confirmation_code.clone();
+                let total_price = format!("{} {}", booking.total_price, booking.currency);
+                let dates = format!("{} to {}", booking.date_from, booking.date_to);
+
+                tokio::spawn(async move {
+                    if let Ok(guest) = db_core::user::get_user_by_id(&pool_clone, guest_id).await
+                        && let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                            &pool_clone,
+                            &guest.email,
+                            "Your Booking Confirmation - Our Places",
+                            common::email::EmailTemplate::BookingConfirmation.as_str(),
+                            &serde_json::json!({
+                                "confirmation_code": conf_code,
+                                "dates": dates,
+                                "total_price": total_price,
+                            }),
+                            3,
+                        )
+                        .await
+                    {
+                        let publisher = api_core::email_publisher::EmailPublisher::from_env();
+                        let _ = publisher.publish_email_event(outbox.id).await;
+                    }
+                });
+
                 return Ok(respond(
                     &req,
                     Payload::Item(map_booking_to_response(booking)),
@@ -729,8 +757,39 @@ async fn send_booking_message(
     .await
     .map_err(ApiError::Database)?;
 
+    let recipient_user_id = if is_host {
+        parties.guest_id
+    } else {
+        parties.host_id
+    };
+    let pool_clone = pool.get_ref().clone();
+    let display_name_clone = display_name.clone();
+    let text_clone = trimmed.to_string();
+    let booking_id = *id;
+
     tokio::spawn(async move {
-        tracing::info!("Triggered email notification for message in booking {}", id);
+        tracing::info!(
+            "Triggered email notification for message in booking {}",
+            booking_id
+        );
+        if let Ok(recipient) = db_core::user::get_user_by_id(&pool_clone, recipient_user_id).await
+            && let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &recipient.email,
+                &format!("New message regarding booking {}", booking_id),
+                common::email::EmailTemplate::GuestHostMessageNotification.as_str(),
+                &serde_json::json!({
+                    "sender_name": display_name_clone,
+                    "message_text": text_clone,
+                    "booking_id": booking_id.to_string(),
+                }),
+                3,
+            )
+            .await
+        {
+            let publisher = api_core::email_publisher::EmailPublisher::from_env();
+            let _ = publisher.publish_email_event(outbox.id).await;
+        }
     });
 
     Ok(respond(
