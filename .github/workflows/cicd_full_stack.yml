@@ -8,6 +8,7 @@ env:
   SERVICE_PREFIX_TC: our-places-web-app-tc
   SERVICE_PREFIX_ADMIN_TC: our-places-web-app-admin-tc
   SERVICE_PREFIX_IMAGE_WORKER: our-places-image-worker
+  SERVICE_PREFIX_EMAIL_WORKER: our-places-email-worker
   CARGO_TERM_COLOR: always
   GCS_PUBLIC_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_PUBLIC_PREFIX }}
   GCS_RAW_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
@@ -27,6 +28,7 @@ on:
           - 'all'
           - 'backend'
           - 'image_worker'
+          - 'email_worker'
           - 'webapp_tc'
           - 'webapp_admin_tc'
 
@@ -45,6 +47,7 @@ jobs:
     outputs:
       backend: ${{ steps.eval.outputs.backend }}
       image_worker: ${{ steps.eval.outputs.image_worker }}
+      email_worker: ${{ steps.eval.outputs.email_worker }}
       webapp_tc: ${{ steps.eval.outputs.webapp_tc }}
       webapp_admin_tc: ${{ steps.eval.outputs.webapp_admin_tc }}
       docs_only: ${{ steps.eval.outputs.docs_only }}
@@ -78,6 +81,13 @@ jobs:
               - 'Cargo.*'
               - 'Dockerfile.image_worker'
               - '.github/workflows/cicd_full_stack.yml'
+            email_worker:
+              - 'app_api/email_worker/**'
+              - 'common/**'
+              - 'db_core/**'
+              - 'Cargo.*'
+              - 'Dockerfile.email_worker'
+              - '.github/workflows/cicd_full_stack.yml'
             webapp_tc:
               - 'web_app_tc/**'
               - 'web_app_common_tc/**'
@@ -104,18 +114,21 @@ jobs:
           if [ "$TARGET" = "all" ]; then
             echo "backend=true" >> $GITHUB_OUTPUT
             echo "image_worker=true" >> $GITHUB_OUTPUT
+            echo "email_worker=true" >> $GITHUB_OUTPUT
             echo "webapp_tc=true" >> $GITHUB_OUTPUT
             echo "webapp_admin_tc=true" >> $GITHUB_OUTPUT
             echo "docs_only=false" >> $GITHUB_OUTPUT
           elif [ "$TARGET" != "changed" ]; then
             echo "backend=${{ inputs.deploy_target == 'backend' || steps.filter.outputs.backend == 'true' }}" >> $GITHUB_OUTPUT
             echo "image_worker=${{ inputs.deploy_target == 'image_worker' || steps.filter.outputs.image_worker == 'true' }}" >> $GITHUB_OUTPUT
+            echo "email_worker=${{ inputs.deploy_target == 'email_worker' || steps.filter.outputs.email_worker == 'true' }}" >> $GITHUB_OUTPUT
             echo "webapp_tc=${{ inputs.deploy_target == 'webapp_tc' || steps.filter.outputs.webapp_tc == 'true' }}" >> $GITHUB_OUTPUT
             echo "webapp_admin_tc=${{ inputs.deploy_target == 'webapp_admin_tc' || steps.filter.outputs.webapp_admin_tc == 'true' }}" >> $GITHUB_OUTPUT
             echo "docs_only=false" >> $GITHUB_OUTPUT
           else
             echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
             echo "image_worker=${{ steps.filter.outputs.image_worker }}" >> $GITHUB_OUTPUT
+            echo "email_worker=${{ steps.filter.outputs.email_worker }}" >> $GITHUB_OUTPUT
             echo "webapp_tc=${{ steps.filter.outputs.webapp_tc }}" >> $GITHUB_OUTPUT
             echo "webapp_admin_tc=${{ steps.filter.outputs.webapp_admin_tc }}" >> $GITHUB_OUTPUT
             echo "docs_only=${{ steps.filter.outputs.docs_only }}" >> $GITHUB_OUTPUT
@@ -464,6 +477,153 @@ jobs:
           fi
 
   # =========================================================
+  # DEPLOY EMAIL WORKER
+  # =========================================================
+  deploy-email-worker:
+    name: Build & Deploy Email Worker
+    runs-on: ubuntu-latest
+    needs: [audit, lint-check, test-api, changes]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.email_worker == 'true')
+    env:
+      SA_EMAIL_WORKER: ${{ vars[format('INFRA_SA_EMAIL_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_HOST: ${{ vars[format('SMTP_HOST_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_USER: ${{ vars[format('SMTP_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_PASS: ${{ secrets[format('SMTP_PASS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SMTP_FROM: ${{ vars[format('SMTP_FROM_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v3"
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sanitize Branch Name
+        id: branch_name
+        shell: bash
+        run: |
+          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            SAFE_SCHEMA_name="public"
+          elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
+            SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
+          fi
+          echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
+          echo "SCHEMA_NAME=$SAFE_SCHEMA_name" >> $GITHUB_OUTPUT
+
+      - name: Ensure PubSub Topic and Subscription Permissions
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          TOPIC_NAME="our-places-email-notifications-$SUFFIX"
+          SA_EMAIL="${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          if ! gcloud pubsub topics describe $TOPIC_NAME >/dev/null 2>&1; then
+            echo "Creating PubSub topic $TOPIC_NAME..."
+            gcloud pubsub topics create $TOPIC_NAME
+          else
+            echo "PubSub topic $TOPIC_NAME already exists."
+          fi
+
+          echo "Granting pubsub.subscriber role to $SA_EMAIL on topic $TOPIC_NAME..."
+          gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/pubsub.subscriber" \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet || true
+
+          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
+          PUBSUB_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+          echo "Granting roles/iam.serviceAccountTokenCreator to $PUBSUB_SERVICE_AGENT on $SA_EMAIL..."
+          gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
+            --member="serviceAccount:$PUBSUB_SERVICE_AGENT" \
+            --role="roles/iam.serviceAccountTokenCreator" \
+            --quiet || true
+
+      - name: Build and push Docker image
+        run: |
+          docker buildx build \
+            --cache-from type=gha,scope=email-worker \
+            --cache-to type=gha,mode=max,scope=email-worker \
+            -f Dockerfile.email_worker \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_EMAIL_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            --push .
+
+      - name: Deploy to Cloud Run
+        id: deploy_email_worker
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ env.SERVICE_PREFIX_EMAIL_WORKER }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.SERVICE_PREFIX_EMAIL_WORKER }}:${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            LOG_FORMAT=json
+            RUST_LOG=info
+            EA__SERVER__HOST=0.0.0.0
+            EA__SERVER__PORT=8080
+            EA__DATABASE__CLOUD=true
+            EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
+            EA__DATABASE__USERNAME=${{ env.DB_USER }}
+            EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
+            EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
+            EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+            SMTP_HOST=${{ env.SMTP_HOST }}
+            SMTP_PORT=587
+            SMTP_USERNAME=${{ env.SMTP_USER }}
+            SMTP_PASSWORD=${{ env.SMTP_PASS }}
+            SMTP_FROM_EMAIL=${{ env.SMTP_FROM }}
+            SMTP_USER=${{ env.SMTP_USER }}
+            SMTP_PASS=${{ env.SMTP_PASS }}
+            SMTP_FROM=${{ env.SMTP_FROM }}
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+
+      - name: Grant Pub/Sub Service Account Invoker Permission
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SA_EMAIL="${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+
+          echo "Granting run.invoker to $SA_EMAIL for email-worker service..."
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_PREFIX_EMAIL_WORKER }}-$SUFFIX \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+
+      - name: Configure the Subscription (Push to Email Worker)
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          WORKER_URL=$(gcloud run services describe ${{ env.SERVICE_PREFIX_EMAIL_WORKER }}-$SUFFIX --region ${{ env.REGION }} --format 'value(status.url)')
+
+          echo "Configuring subscription for $WORKER_URL..."
+          if gcloud pubsub subscriptions describe our-places-email-worker-sub-$SUFFIX >/dev/null 2>&1; then
+            gcloud pubsub subscriptions update our-places-email-worker-sub-$SUFFIX \
+              --push-endpoint=$WORKER_URL/pubsub/email-events \
+              --push-auth-service-account=${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --ack-deadline=30
+          else
+            gcloud pubsub subscriptions create our-places-email-worker-sub-$SUFFIX \
+              --topic=our-places-email-notifications-$SUFFIX \
+              --push-endpoint=$WORKER_URL/pubsub/email-events \
+              --push-auth-service-account=${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+              --ack-deadline=30
+          fi
+
+  # =========================================================
   # DEPLOY API
   # =========================================================
   deploy-api:
@@ -578,6 +738,25 @@ jobs:
 
           kill $PID
 
+      - name: Ensure Email Pub/Sub Topic and Publisher IAM
+        run: |
+          SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          TOPIC_NAME="our-places-email-notifications-$SUFFIX"
+          if ! gcloud pubsub topics describe $TOPIC_NAME >/dev/null 2>&1; then
+            echo "Creating PubSub topic $TOPIC_NAME..."
+            gcloud pubsub topics create $TOPIC_NAME
+          else
+            echo "PubSub topic $TOPIC_NAME already exists."
+          fi
+          for SA in "${{ env.SA_BOOKING_API }}" "${{ env.SA_USER_API }}"; do
+            echo "Granting roles/pubsub.publisher to $SA on $TOPIC_NAME..."
+            gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
+              --member="serviceAccount:$SA@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+              --role="roles/pubsub.publisher" \
+              --project=${{ env.PROJECT_ID }} \
+              --quiet || true
+          done
+
       # Booking API
       - name: Build and Push Booking API
         run: |
@@ -608,6 +787,8 @@ jobs:
             EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
             EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+            EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # Listing API
@@ -668,12 +849,13 @@ jobs:
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
             EA__DATABASE__CLOUD=true
-            EA__DATABASE__CLOUD=true
             EA__DATABASE__INSTANCE_NAME=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}
             EA__DATABASE__USERNAME=${{ env.DB_USER }}
             EA__DATABASE__PASSWORD=${{ env.DB_PASS }}
             EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME}}
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
+            EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
 

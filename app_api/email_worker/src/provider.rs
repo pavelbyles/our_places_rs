@@ -99,9 +99,14 @@ impl LettreSmtpEmailProvider {
             .ok()
             .and_then(|p| p.parse().ok())
             .unwrap_or(587);
-        let smtp_user = std::env::var("SMTP_USERNAME").ok();
-        let smtp_password = std::env::var("SMTP_PASSWORD").ok();
+        let smtp_user = std::env::var("SMTP_USERNAME")
+            .or_else(|_| std::env::var("SMTP_USER"))
+            .ok();
+        let smtp_password = std::env::var("SMTP_PASSWORD")
+            .or_else(|_| std::env::var("SMTP_PASS"))
+            .ok();
         let from_email = std::env::var("SMTP_FROM_EMAIL")
+            .or_else(|_| std::env::var("SMTP_FROM"))
             .unwrap_or_else(|_| "no-reply@ourplaces.io".to_string());
 
         Self::new(smtp_host, smtp_port, smtp_user, smtp_password, from_email)
