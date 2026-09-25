@@ -162,16 +162,16 @@
     # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
       db-start
-      echo "Starting API microservices (listing_api, booking_api, user_api)..."
-      devenv up listing_api booking_api user_api "$@"
+      echo "Starting API microservices (listing_api, booking_api, user_api, email_worker)..."
+      devenv up listing_api booking_api user_api email_worker "$@"
     '';
 
     # Ensure database and API microservices are active in background (detached)
     apis-start.exec = ''
       db-start
       db-migrate
-      echo "Starting API microservices in background (listing_api, booking_api, user_api)..."
-      devenv up -d listing_api booking_api user_api "$@"
+      echo "Starting API microservices in background (listing_api, booking_api, user_api, email_worker)..."
+      devenv up -d listing_api booking_api user_api email_worker "$@"
     '';
 
     # Stop API microservices
@@ -180,6 +180,7 @@
       devenv processes stop listing_api || true
       devenv processes stop booking_api || true
       devenv processes stop user_api || true
+      devenv processes stop email_worker || true
     '';
 
     # Launch Topcoat frontends with topcoat dev
@@ -188,11 +189,18 @@
       devenv up web_app_tc web_app_admin_tc "$@"
     '';
 
+    # Stop Topcoat frontends
+    frontends-stop.exec = ''
+      echo "Stopping Topcoat frontends..."
+      devenv processes stop web_app_tc || true
+      devenv processes stop web_app_admin_tc || true
+    '';
+
     # Launch full application stack (APIs + Topcoat frontends, DB kept running continuously)
     fullstack.exec = ''
       db-start
       echo "Starting full development stack (APIs, Frontends)..."
-      devenv up listing_api booking_api user_api web_app_tc web_app_admin_tc "$@"
+      devenv up listing_api booking_api user_api email_worker web_app_tc web_app_admin_tc "$@"
     '';
 
     # Playwright E2E Testing
@@ -247,6 +255,11 @@
       cd app_api/user_api && ./run_local.sh
     '';
 
+    # Email Worker (Port 8080)
+    email_worker.exec = ''
+      cd app_api/email_worker && ./run_local.sh
+    '';
+
     # Guest Portal Frontend (Topcoat SSR & HTMX)
     web_app_tc.exec = ''
       cd web_app_tc && CARGO_TARGET_DIR=../target/guest topcoat dev
@@ -260,19 +273,28 @@
 
   enterShell = ''
     echo "🚀 Welcome to our_places_rs dev environment!"
-    echo "   - Rust:     $(rustc --version)"
-    echo "   - Cargo:    $(cargo --version)"
-    echo "   - Node:     $(node --version)"
-    echo "   - Python:   $(python3 --version)"
-    echo "   - sqlx-cli: $(sqlx --version)"
+    echo "   - Rust:       $(rustc --version)"
+    echo "   - Cargo:      $(cargo --version)"
+    echo "   - Node:       $(node --version)"
+    echo "   - Python:     $(python3 --version)"
+    echo "   - PostgreSQL: $(psql --version)"
+    echo "   - sqlx-cli:   $(sqlx --version)"
     echo "   - Workflows & Launchers (Foreground - Ctrl+C to stop):"
-    echo "       • apis           (launch DB + listing_api, booking_api, user_api)"
+    echo "       • apis           (launch DB + microservices):"
+    echo "           - email_worker:     :8080"
+    echo "           - booking_api:      :8081"
+    echo "           - listing_api:      :8082"
+    echo "           - user_api:         :8083"
     echo "       • apis-start     (launch DB + APIs in background / detached)"
     echo "       • apis-stop      (stop background APIs)"
-    echo "       • frontends      (launch web_app_tc & web_app_admin_tc)"
+    echo "       • frontends      (launch Topcoat frontends):"
+    echo "           - web_app_tc:       :3000 (guest)"
+    echo "           - web_app_admin_tc: :3002 (admin)"
+    echo "       • frontends-stop (stop Topcoat frontends)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
     echo "       • db-start       • db-stop        • db-seed        • db-migrate     • db-prepare"
+    echo "           - postgres:         :5432"
     echo "       • docker-db-start• docker-db-stop"
     echo "       • check-all      • sanity-check   • test-ci-matrix • audit-booking"
     echo "       • security-audit • eval-skills"
