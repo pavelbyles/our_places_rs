@@ -733,3 +733,52 @@ impl From<DbPayoutSummary> for common::payout::PayoutSummary {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, EnumString)]
+#[sqlx(type_name = "email_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DbEmailStatus {
+    Pending,
+    Processing,
+    Sent,
+    Failed,
+}
+
+impl From<DbEmailStatus> for common::email::EmailStatus {
+    fn from(s: DbEmailStatus) -> Self {
+        match s {
+            DbEmailStatus::Pending => common::email::EmailStatus::Pending,
+            DbEmailStatus::Processing => common::email::EmailStatus::Processing,
+            DbEmailStatus::Sent => common::email::EmailStatus::Sent,
+            DbEmailStatus::Failed => common::email::EmailStatus::Failed,
+        }
+    }
+}
+
+impl From<common::email::EmailStatus> for DbEmailStatus {
+    fn from(s: common::email::EmailStatus) -> Self {
+        match s {
+            common::email::EmailStatus::Pending => DbEmailStatus::Pending,
+            common::email::EmailStatus::Processing => DbEmailStatus::Processing,
+            common::email::EmailStatus::Sent => DbEmailStatus::Sent,
+            common::email::EmailStatus::Failed => DbEmailStatus::Failed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct EmailOutbox {
+    pub id: Uuid,
+    pub recipient_email: String,
+    pub subject: String,
+    pub template_id: String,
+    pub payload: serde_json::Value,
+    pub status: DbEmailStatus,
+    pub attempts: i32,
+    pub max_retries: i32,
+    pub last_error: Option<String>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

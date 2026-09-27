@@ -2,6 +2,7 @@ pub mod booking;
 pub mod booking_message;
 pub mod connection;
 pub mod currency;
+pub mod email_outbox;
 pub mod error;
 pub mod listing;
 pub mod models;

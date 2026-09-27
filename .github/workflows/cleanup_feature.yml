@@ -62,6 +62,7 @@ jobs:
             "listing-api-$SUFFIX"
             "user-api-$SUFFIX"
             "our-places-image-worker-$SUFFIX"
+            "our-places-email-worker-$SUFFIX"
             "our-places-web-app-tc-$SUFFIX"
             "our-places-web-app-admin-tc-$SUFFIX"
           )
@@ -87,9 +88,11 @@ jobs:
           SUFFIX="${{ steps.target.outputs.SERVICE_SUFFIX }}"
           echo "Attempting to delete PubSub subscription..."
           gcloud pubsub subscriptions delete our-places-image-worker-sub-$SUFFIX || echo "Subscription not found."
+          gcloud pubsub subscriptions delete our-places-email-worker-sub-$SUFFIX || echo "Email subscription not found."
 
           echo "Attempting to delete PubSub topic..."
           gcloud pubsub topics delete our-places-image-uploads-raw-$SUFFIX || echo "Topic not found."
+          gcloud pubsub topics delete our-places-email-notifications-$SUFFIX || echo "Email topic not found."
 
       - name: Delete Database Schema
         env:

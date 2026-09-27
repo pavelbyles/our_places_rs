@@ -2,6 +2,7 @@
 pub mod app_client;
 pub mod auth;
 pub mod csv;
+pub mod email;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gcs;
 pub mod geocode;

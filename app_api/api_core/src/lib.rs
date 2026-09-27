@@ -1,6 +1,7 @@
 pub mod actuator;
 pub mod api_common;
 pub mod auth;
+pub mod email_publisher;
 pub mod error;
 pub mod models;
 pub mod pagination;
