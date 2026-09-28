@@ -6,6 +6,7 @@ pub mod email_outbox;
 pub mod error;
 pub mod listing;
 pub mod models;
+pub mod notification_log;
 pub mod payout_ledger;
 pub mod review;
 pub mod sessions;

@@ -108,7 +108,8 @@ pub struct FeeItem {
     pub amount: Decimal,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Default)]
+#[serde(default)]
 pub struct BookingMetadataResponse {
     pub num_adults: u32,
     pub num_children: u32,
@@ -140,6 +141,8 @@ pub struct BookingResponse {
     pub metadata: BookingMetadataResponse,
     #[serde(default)]
     pub review_eligibility: Option<BookingReviewEligibility>,
+    #[serde(default)]
+    pub door_access_code: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -256,6 +259,7 @@ pub struct NewBookingRequest {
 pub struct UpdatedBookingRequest {
     pub status: Option<String>,
     pub metadata: Option<BookingMetadataResponse>,
+    pub door_access_code: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
@@ -818,5 +822,77 @@ mod tests {
         let response2: crate::models::BookingResponse =
             serde_json::from_str(json_without_eligibility).unwrap();
         assert!(response2.review_eligibility.is_none());
+        assert!(response2.door_access_code.is_none());
     }
+
+    #[test]
+    fn test_is_material_booking_change() {
+        use chrono::NaiveDate;
+        use rust_decimal::Decimal;
+
+        let d1 = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let d2 = NaiveDate::from_ymd_opt(2026, 11, 5).unwrap();
+        let d3 = NaiveDate::from_ymd_opt(2026, 11, 6).unwrap();
+
+        let price1 = Decimal::new(1000, 0);
+        let price2 = Decimal::new(1200, 0);
+
+        let base_terms = BookingMaterialTerms {
+            date_from: d1,
+            date_to: d2,
+            number_of_persons: 2,
+            total_price: price1,
+        };
+
+        // No change
+        assert!(!is_material_booking_change(&base_terms, &base_terms));
+
+        // Date changed
+        let date_changed = BookingMaterialTerms {
+            date_to: d3,
+            ..base_terms
+        };
+        assert!(is_material_booking_change(&base_terms, &date_changed));
+
+        // Party size changed
+        let guests_changed = BookingMaterialTerms {
+            number_of_persons: 3,
+            ..base_terms
+        };
+        assert!(is_material_booking_change(&base_terms, &guests_changed));
+
+        // Price changed
+        let price_changed = BookingMaterialTerms {
+            total_price: price2,
+            ..base_terms
+        };
+        assert!(is_material_booking_change(&base_terms, &price_changed));
+    }
+}
+
+/// Key material terms of a booking used to evaluate whether changes require transactional notification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BookingMaterialTerms {
+    pub date_from: chrono::NaiveDate,
+    pub date_to: chrono::NaiveDate,
+    pub number_of_persons: i32,
+    pub total_price: rust_decimal::Decimal,
+}
+
+impl BookingMaterialTerms {
+    pub fn is_materially_different(&self, other: &Self) -> bool {
+        self != other
+    }
+}
+
+/// Determines if a booking change is material (requiring transactional notification to both guest and host).
+/// Material changes include modifications to:
+/// - Dates (`date_from`, `date_to`)
+/// - Party size (number of guests / adults + children)
+/// - Total price
+pub fn is_material_booking_change(
+    old_terms: &BookingMaterialTerms,
+    new_terms: &BookingMaterialTerms,
+) -> bool {
+    old_terms.is_materially_different(new_terms)
 }

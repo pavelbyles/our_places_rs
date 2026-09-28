@@ -9,6 +9,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, Default)]
+#[serde(default)]
 pub struct BookingMetadata {
     pub num_adults: u32,
     pub num_children: u32,
@@ -124,7 +125,7 @@ pub enum UserStatus {
     Inactive,
 }
 
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct Booking {
     pub id: Uuid,
     pub confirmation_code: String,
@@ -149,6 +150,7 @@ pub struct Booking {
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
     pub metadata: Json<BookingMetadata>,
+    pub door_access_code: Option<String>,
 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -187,12 +189,14 @@ pub struct NewBooking {
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
     pub metadata: BookingMetadata,
+    pub door_access_code: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Validate)]
+#[derive(Debug, Deserialize, Serialize, Validate, Default, Clone)]
 pub struct UpdatedBooking {
     pub status: Option<BookingStatus>,
     pub metadata: Option<BookingMetadata>,
+    pub door_access_code: Option<String>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
@@ -217,10 +221,20 @@ pub struct BookingHistory {
     pub total_price: Decimal,
     pub cancellation_policy: CancellationPolicy,
     pub metadata: Json<BookingMetadata>,
+    pub door_access_code: Option<String>,
 
     pub changed_by_id: Option<Uuid>,
     pub change_reason: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
+pub struct BookingNotificationLog {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub notification_type: String,
+    pub recipient_user_id: Uuid,
+    pub sent_at: DateTime<Utc>,
 }
 
 #[derive(

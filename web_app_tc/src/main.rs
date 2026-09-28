@@ -14,6 +14,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
+    // Default to port 3000 for web_app_tc
+    if std::env::var("PORT").is_err() {
+        // SAFETY: Called single-threaded at process startup before async runtime work
+        unsafe {
+            std::env::set_var("PORT", "3000");
+        }
+    }
+
     // Link guest layout for Topcoat auto-discovery
     let _ = layout::guest_layout;
 

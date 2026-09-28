@@ -62,6 +62,7 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         "#,
         new_booking.guest_id,
@@ -87,14 +88,15 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, created_at, updated_at
+            total_price, cancellation_policy, metadata, door_access_code, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -115,6 +117,7 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
         new_booking.total_price,
         new_booking.cancellation_policy as CancellationPolicy,
         Json(&new_booking.metadata) as _,
+        new_booking.door_access_code.as_deref(),
         Utc::now(),
         Utc::now()
     )
@@ -146,6 +149,7 @@ where
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -174,6 +178,7 @@ where
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -212,17 +217,20 @@ pub async fn update_booking(
         UPDATE booking
         SET status = COALESCE($1, status), 
             metadata = COALESCE($2, metadata),
-            updated_at = $3
-        WHERE id = $4
+            door_access_code = COALESCE($3, door_access_code),
+            updated_at = $4
+        WHERE id = $5
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
         updated_booking.metadata.as_ref().map(Json) as _,
+        updated_booking.door_access_code.as_deref(),
         Utc::now(),
         id
     )
@@ -235,12 +243,14 @@ pub async fn update_booking(
         .map(|s| s != current.status)
         .unwrap_or(false);
     let metadata_changed = updated_booking.metadata.is_some();
+    let door_code_changed = updated_booking.door_access_code.is_some();
 
-    if status_changed || metadata_changed {
-        let reason = match (status_changed, metadata_changed) {
-            (true, true) => "Status and metadata updated",
-            (true, false) => "Status updated",
-            (false, true) => "Metadata updated",
+    if status_changed || metadata_changed || door_code_changed {
+        let reason = match (status_changed, metadata_changed, door_code_changed) {
+            (true, true, _) => "Status and metadata updated",
+            (true, false, false) => "Status updated",
+            (false, true, false) => "Metadata updated",
+            (false, false, true) => "Door access code updated",
             _ => "Booking updated",
         };
         record_booking_history(&mut tx, &booking, reason, None).await?;
@@ -363,6 +373,7 @@ pub async fn transfer_booking_guest(
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         "#,
         new_guest_id,
@@ -432,7 +443,8 @@ where
                         ELSE 'Eligible for review'
                     END
             ) as "review_eligibility!",
-            b.created_at, b.updated_at
+            b.created_at, b.updated_at,
+            b.door_access_code
         FROM booking b
         LEFT JOIN review r ON r.booking_id = b.id
         LEFT JOIN LATERAL (
@@ -474,6 +486,7 @@ where
             metadata: r.metadata,
             created_at: r.created_at,
             updated_at: r.updated_at,
+            door_access_code: r.door_access_code,
         };
 
         let eligibility = serde_json::from_value::<common::models::BookingReviewEligibility>(
@@ -512,6 +525,7 @@ where
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         FROM booking
         WHERE listing_id = $1
@@ -579,6 +593,7 @@ where
             discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>", 
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>", 
+            door_access_code,
             changed_by_id, change_reason, created_at
         FROM booking_history
         WHERE booking_id = $1
@@ -604,9 +619,9 @@ async fn record_booking_history(
             booking_id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, change_reason, changed_by_id
+            total_price, cancellation_policy, metadata, door_access_code, change_reason, changed_by_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         "#,
         booking.id,
         booking.confirmation_code,
@@ -626,6 +641,7 @@ async fn record_booking_history(
         booking.total_price,
         booking.cancellation_policy as CancellationPolicy,
         Json(&booking.metadata.0) as _,
+        booking.door_access_code.as_deref(),
         change_reason,
         changed_by_id
     )
@@ -788,6 +804,7 @@ mod tests {
                 num_adults: 2,
                 ..Default::default()
             },
+            door_access_code: None,
         };
 
         let b1 = create_booking(&pool, &new_booking1)
@@ -817,6 +834,7 @@ mod tests {
                 num_adults: 2,
                 ..Default::default()
             },
+            door_access_code: None,
         };
 
         let b2 = create_booking(&pool, &new_booking2)

@@ -10,7 +10,10 @@
   # JavaScript/Node.js Toolchain (node & npm for DaisyUI / Tailwind)
   languages.javascript = {
     enable = true;
-    npm.enable = true;
+    npm = {
+      enable = true;
+      install.enable = true;
+    };
   };
 
   # Python Toolchain (for .agents/evals/eval_runner.py)
@@ -205,6 +208,7 @@
 
     # Playwright E2E Testing
     playwright-install.exec = ''
+      [ -d "node_modules" ] || npm ci
       echo "Installing Playwright browsers (chromium, firefox)..."
       npx playwright install --with-deps chromium firefox
       for d in "$HOME"/.cache/ms-playwright/firefox-*; do
@@ -214,26 +218,44 @@
 
     test-e2e.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Running Playwright E2E test suites..."
       npx playwright test --config=playwright/playwright.config.ts "$@"
     '';
 
     test-e2e-guest.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Running Guest Portal Playwright E2E tests (Chromium & Firefox)..."
       npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=guest-portal-firefox "$@"
     '';
 
     test-e2e-admin.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Running Admin Portal Playwright E2E tests (Chromium & Firefox)..."
       npx playwright test --config=playwright/playwright.config.ts --project=admin-portal-chromium --project=admin-portal-firefox "$@"
     '';
 
     test-e2e-ui.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Opening Playwright Interactive UI Mode..."
       npx playwright test --config=playwright/playwright.config.ts --ui "$@"
+    '';
+
+    test-e2e-chromium.exec = ''
+      set -e
+      [ -d "node_modules" ] || npm ci
+      echo "Running Playwright E2E tests (Chromium only across Guest & Admin)..."
+      npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=admin-portal-chromium "$@"
+    '';
+
+    test-e2e-ui-chromium.exec = ''
+      set -e
+      [ -d "node_modules" ] || npm ci
+      echo "Opening Playwright Interactive UI Mode (Chromium only across Guest & Admin)..."
+      npx playwright test --config=playwright/playwright.config.ts --ui --project=guest-portal-chromium --project=admin-portal-chromium "$@"
     '';
   };
 
@@ -293,6 +315,7 @@
     echo "       • frontends-stop (stop Topcoat frontends)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
+    echo "       • test-e2e-ui-chromium (launch interactive UI for Chromium across Guest & Admin)"
     echo "       • db-start       • db-stop        • db-seed        • db-migrate     • db-prepare"
     echo "           - postgres:         :5432"
     echo "       • docker-db-start• docker-db-stop"

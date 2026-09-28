@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Booking Changed - Our Places Host</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background-color: #0f172a; padding: 24px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 0.5px;">Our Places Host Portal</h1>
+  </div>
+  <div style="border: 1px solid #e2e8f0; border-top: none; padding: 32px 24px; border-radius: 0 0 8px 8px; background-color: #ffffff;">
+    <h2 style="color: #0f172a; margin-top: 0;">Booking Details Updated</h2>
+    <p>A confirmed booking for <strong>{{listing_name}}</strong> by <strong>{{guest_name}}</strong> has been modified.</p>
+    
+    <div style="background-color: #f1f5f9; border-left: 4px solid #3b82f6; padding: 12px 16px; margin: 20px 0;">
+      <strong>Summary of Updates:</strong>
+      <p style="margin: 4px 0 0 0;">{{changes_summary}}</p>
+    </div>
+
+    <div style="background-color: #f8fafc; border-radius: 6px; padding: 16px; margin: 24px 0; border: 1px solid #e2e8f0;">
+      <p style="margin: 0 0 8px 0;"><strong>Confirmation Code:</strong> <span style="font-family: monospace; font-size: 16px; color: #0284c7;">{{confirmation_code}}</span></p>
+      <p style="margin: 0 0 8px 0;"><strong>Stay Dates:</strong> {{date_from}} to {{date_to}}</p>
+      <p style="margin: 0;"><strong>Adjusted Host Payout:</strong> {{currency}} {{total_payout}}</p>
+    </div>
+  </div>
+</body>
+</html>

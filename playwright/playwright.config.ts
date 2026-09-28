@@ -105,22 +105,22 @@ export default defineConfig({
   /* Run local Topcoat web servers if they aren't already running */
   webServer: [
     {
-      command: 'cd web_app_tc && topcoat dev',
+      command: 'cd web_app_tc && PORT=3000 CARGO_TARGET_DIR=../target/guest topcoat dev',
       cwd: rootDir,
       url: 'http://localhost:3000',
       reuseExistingServer: !process.env.CI,
-      stdout: 'ignore',
+      stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 120 * 1000,
+      timeout: 180 * 1000,
     },
     {
-      command: 'cd web_app_admin_tc && PORT=3002 topcoat dev',
+      command: 'cd web_app_admin_tc && PORT=3002 CARGO_TARGET_DIR=../target/admin topcoat dev',
       cwd: rootDir,
       url: 'http://localhost:3002',
       reuseExistingServer: !process.env.CI,
-      stdout: 'ignore',
+      stdout: 'pipe',
       stderr: 'pipe',
-      timeout: 120 * 1000,
+      timeout: 180 * 1000,
     },
   ],
 });

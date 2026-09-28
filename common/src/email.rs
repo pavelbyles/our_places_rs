@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::marker::PhantomData;
@@ -48,6 +49,15 @@ pub enum EmailTemplate {
     UserVerificationOtp,
     PasswordResetOtp,
     BookingConfirmation,
+    BookingConfirmationGuest,
+    BookingConfirmationHost,
+    BookingUpdatedGuest,
+    BookingUpdatedHost,
+    BookingCancelledGuest,
+    BookingCancelledHost,
+    PreArrivalGuideGuest,
+    HostUpcomingArrival,
+    PaymentHoldExpiryReminder,
     GuestHostMessageNotification,
 }
 
@@ -57,6 +67,15 @@ impl EmailTemplate {
             Self::UserVerificationOtp => "user_verification_otp",
             Self::PasswordResetOtp => "password_reset_otp",
             Self::BookingConfirmation => "booking_confirmation",
+            Self::BookingConfirmationGuest => "booking_confirmation_guest",
+            Self::BookingConfirmationHost => "booking_confirmation_host",
+            Self::BookingUpdatedGuest => "booking_updated_guest",
+            Self::BookingUpdatedHost => "booking_updated_host",
+            Self::BookingCancelledGuest => "booking_cancelled_guest",
+            Self::BookingCancelledHost => "booking_cancelled_host",
+            Self::PreArrivalGuideGuest => "pre_arrival_guide_guest",
+            Self::HostUpcomingArrival => "host_upcoming_arrival",
+            Self::PaymentHoldExpiryReminder => "payment_hold_expiry_reminder",
             Self::GuestHostMessageNotification => "guest_host_message_notification",
         }
     }
@@ -66,6 +85,144 @@ impl fmt::Display for EmailTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
+}
+
+impl std::str::FromStr for EmailTemplate {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "user_verification_otp" => Ok(Self::UserVerificationOtp),
+            "password_reset_otp" => Ok(Self::PasswordResetOtp),
+            "booking_confirmation" => Ok(Self::BookingConfirmation),
+            "booking_confirmation_guest" => Ok(Self::BookingConfirmationGuest),
+            "booking_confirmation_host" => Ok(Self::BookingConfirmationHost),
+            "booking_updated_guest" => Ok(Self::BookingUpdatedGuest),
+            "booking_updated_host" => Ok(Self::BookingUpdatedHost),
+            "booking_cancelled_guest" => Ok(Self::BookingCancelledGuest),
+            "booking_cancelled_host" => Ok(Self::BookingCancelledHost),
+            "pre_arrival_guide_guest" => Ok(Self::PreArrivalGuideGuest),
+            "host_upcoming_arrival" => Ok(Self::HostUpcomingArrival),
+            "payment_hold_expiry_reminder" => Ok(Self::PaymentHoldExpiryReminder),
+            "guest_host_message_notification" => Ok(Self::GuestHostMessageNotification),
+            other => Err(format!("Unknown email template: {}", other)),
+        }
+    }
+}
+
+// ============================================================================
+// Strongly-Typed Transactional Email Payloads (Zero-Float Guarantee)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingConfirmationGuestPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub total_price: Decimal,
+    pub currency: String,
+    pub guest_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingConfirmationHostPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub total_payout: Decimal,
+    pub currency: String,
+    pub guest_name: String,
+    pub host_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingUpdatedGuestPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub total_price: Decimal,
+    pub currency: String,
+    pub changes_summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingUpdatedHostPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub total_payout: Decimal,
+    pub currency: String,
+    pub guest_name: String,
+    pub changes_summary: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCancelledGuestPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub refund_amount: Decimal,
+    pub currency: String,
+    pub cancellation_policy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCancelledHostPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub guest_name: String,
+    pub payout_impact: Decimal,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreArrivalGuideGuestPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub address: String,
+    pub date_from: String,
+    pub date_to: String,
+    pub door_access_code: String,
+    pub wifi_ssid: Option<String>,
+    pub wifi_password: Option<String>,
+    pub check_in_instructions: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostUpcomingArrivalPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub guest_name: String,
+    pub number_of_persons: i32,
+    pub date_from: String,
+    pub date_to: String,
+    pub door_access_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PaymentHoldExpiryReminderPayload {
+    pub booking_id: Uuid,
+    pub confirmation_code: String,
+    pub listing_name: String,
+    pub expires_at: String,
+    pub total_price: Decimal,
+    pub currency: String,
+    pub checkout_url: String,
 }
 
 // ============================================================================
@@ -202,22 +359,81 @@ mod tests {
 
     #[test]
     fn test_email_template_display_and_as_str() {
-        assert_eq!(
-            EmailTemplate::UserVerificationOtp.as_str(),
-            "user_verification_otp"
-        );
-        assert_eq!(
-            EmailTemplate::PasswordResetOtp.as_str(),
-            "password_reset_otp"
-        );
-        assert_eq!(
-            EmailTemplate::BookingConfirmation.as_str(),
-            "booking_confirmation"
-        );
-        assert_eq!(
-            EmailTemplate::GuestHostMessageNotification.as_str(),
-            "guest_host_message_notification"
-        );
+        let expected = [
+            (EmailTemplate::UserVerificationOtp, "user_verification_otp"),
+            (EmailTemplate::PasswordResetOtp, "password_reset_otp"),
+            (EmailTemplate::BookingConfirmation, "booking_confirmation"),
+            (
+                EmailTemplate::BookingConfirmationGuest,
+                "booking_confirmation_guest",
+            ),
+            (
+                EmailTemplate::BookingConfirmationHost,
+                "booking_confirmation_host",
+            ),
+            (EmailTemplate::BookingUpdatedGuest, "booking_updated_guest"),
+            (EmailTemplate::BookingUpdatedHost, "booking_updated_host"),
+            (
+                EmailTemplate::BookingCancelledGuest,
+                "booking_cancelled_guest",
+            ),
+            (
+                EmailTemplate::BookingCancelledHost,
+                "booking_cancelled_host",
+            ),
+            (
+                EmailTemplate::PreArrivalGuideGuest,
+                "pre_arrival_guide_guest",
+            ),
+            (EmailTemplate::HostUpcomingArrival, "host_upcoming_arrival"),
+            (
+                EmailTemplate::PaymentHoldExpiryReminder,
+                "payment_hold_expiry_reminder",
+            ),
+            (
+                EmailTemplate::GuestHostMessageNotification,
+                "guest_host_message_notification",
+            ),
+        ];
+
+        for (variant, str_val) in expected {
+            assert_eq!(variant.as_str(), str_val);
+            assert_eq!(variant.to_string(), str_val);
+            assert_eq!(str_val.parse::<EmailTemplate>().unwrap(), variant);
+        }
+    }
+
+    #[test]
+    fn test_email_payloads_serde() {
+        let guest_confirm = BookingConfirmationGuestPayload {
+            booking_id: Uuid::new_v4(),
+            confirmation_code: "CONF123".into(),
+            listing_name: "Villa Ocean".into(),
+            date_from: "2026-11-01".into(),
+            date_to: "2026-11-05".into(),
+            total_price: Decimal::new(125050, 2),
+            currency: "USD".into(),
+            guest_name: "John Doe".into(),
+        };
+        let json = serde_json::to_string(&guest_confirm).unwrap();
+        let parsed: BookingConfirmationGuestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(guest_confirm, parsed);
+
+        let pre_arrival = PreArrivalGuideGuestPayload {
+            booking_id: Uuid::new_v4(),
+            confirmation_code: "CONF123".into(),
+            listing_name: "Villa Ocean".into(),
+            address: "123 Coastal Way, Port Antonio".into(),
+            date_from: "2026-11-01".into(),
+            date_to: "2026-11-05".into(),
+            door_access_code: "4829".into(),
+            wifi_ssid: Some("VillaGuest".into()),
+            wifi_password: Some("secret123".into()),
+            check_in_instructions: Some("Keypad is on the front gate".into()),
+        };
+        let json = serde_json::to_string(&pre_arrival).unwrap();
+        let parsed: PreArrivalGuideGuestPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(pre_arrival, parsed);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use actix_web::middleware::from_fn;
-use actix_web::{HttpRequest, HttpResponse, Responder, web};
+use actix_web::{FromRequest, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
 use api_core::response::{Payload, respond};
 use api_core::{
@@ -10,12 +10,14 @@ use api_core::{
 };
 use chrono::NaiveDate;
 use common::models::NewBookingRequest;
+use common::models::{BookingMaterialTerms, is_material_booking_change};
 use common::pricing::BookingCalculator;
 use db_core::booking as db_booking;
 use db_core::booking_message as db_booking_message;
 use db_core::listing as db_listing;
 use db_core::models::{
-    BookingMetadata, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
+    Booking, BookingMetadata, BookingStatus, CancellationPolicy, FeeItem, NewBooking,
+    UpdatedBooking,
 };
 use db_core::payout_ledger as db_payout_ledger;
 use rand::RngExt;
@@ -61,6 +63,7 @@ pub fn generate_confirmation_code() -> String {
 pub struct UpdatedBookingRequest {
     pub status: Option<BookingStatus>,
     pub metadata: Option<BookingMetadata>,
+    pub door_access_code: Option<String>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -251,6 +254,7 @@ async fn create_booking(
                 estimated_arrival_time: req_data.estimated_arrival_time.clone(),
                 is_business_trip: req_data.is_business_trip,
             },
+            door_access_code: None,
         };
 
         match db_booking::create_booking(pool.get_ref(), &new_booking).await {
@@ -436,7 +440,10 @@ async fn get_booking_by_id(
     tag = "bookings",
     request_body = UpdatedBookingRequest,
     responses(
-        (status = 200, description = "Booking updated", body = BookingResponse),
+        (status = 200, description = "Booking updated successfully", body = BookingResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - only hosts or admins may set door access code"),
         (status = 404, description = "Booking not found"),
         (status = 500, description = "Internal server error")
     )
@@ -449,14 +456,56 @@ async fn update_booking(
 ) -> Result<impl Responder, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
 
+    // If door_access_code is being modified, verify that caller is the host of the listing or an admin
+    if body.door_access_code.is_some() {
+        let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
+            .await
+            .map_err(ApiError::Database)?
+            .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )))?;
+
+        let mut dev_payload = actix_web::dev::Payload::None;
+        let claims = match api_core::auth::Claims::from_request(&req, &mut dev_payload).into_inner()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(ApiError::Unauthorized(
+                    "Authorization required to configure door access codes".into(),
+                ));
+            }
+        };
+
+        let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+            .await
+            .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
+
+        let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+        let is_host = claims.sub == parties.host_id;
+
+        if !is_admin && !is_host {
+            return Err(ApiError::Forbidden(
+                "Only hosts and administrators can configure property door access codes"
+                    .to_string(),
+            ));
+        }
+    }
+
+    let old_booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?;
+
     let updated_data = UpdatedBooking {
         status: body.status,
         metadata: body.metadata.clone(),
+        door_access_code: body.door_access_code.clone(),
     };
 
     let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data)
         .await
         .map_err(ApiError::Database)?;
+
+    dispatch_booking_status_notifications(pool.get_ref(), old_booking, booking.clone()).await;
 
     Ok(respond(
         &req,
@@ -1012,6 +1061,459 @@ async fn update_admin_payout_status(
     ))
 }
 
+async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, new_b: Booking) {
+    let pool_clone = pool.clone();
+
+    tokio::spawn(async move {
+        let publisher = api_core::email_publisher::EmailPublisher::from_env();
+
+        let listing = match db_listing::get_listing_by_id(&pool_clone, new_b.listing_id).await {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+        let guest = match db_core::user::get_user_by_id(&pool_clone, new_b.guest_id).await {
+            Ok(u) => u,
+            Err(_) => return,
+        };
+        let host = match db_core::user::get_user_by_id(&pool_clone, listing.listing.user_id).await {
+            Ok(u) => u,
+            Err(_) => return,
+        };
+
+        // 1. Confirmation: status changed to Confirmed
+        if old_b.status != BookingStatus::Confirmed && new_b.status == BookingStatus::Confirmed {
+            // Guest confirmation
+            let guest_payload = common::email::BookingConfirmationGuestPayload {
+                booking_id: new_b.id,
+                confirmation_code: new_b.confirmation_code.clone(),
+                listing_name: listing.listing.name.clone(),
+                date_from: new_b.date_from.to_string(),
+                date_to: new_b.date_to.to_string(),
+                total_price: new_b.total_price,
+                currency: new_b.currency.clone(),
+                guest_name: format!("{} {}", guest.first_name, guest.last_name),
+            };
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &guest.email,
+                &format!(
+                    "Booking Confirmed - {} (Code: {})",
+                    listing.listing.name, new_b.confirmation_code
+                ),
+                common::email::EmailTemplate::BookingConfirmationGuest.as_str(),
+                &serde_json::to_value(&guest_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+            }
+
+            // Host confirmation
+            let host_payload = common::email::BookingConfirmationHostPayload {
+                booking_id: new_b.id,
+                confirmation_code: new_b.confirmation_code.clone(),
+                listing_name: listing.listing.name.clone(),
+                date_from: new_b.date_from.to_string(),
+                date_to: new_b.date_to.to_string(),
+                total_payout: new_b.sub_total_price,
+                currency: new_b.currency.clone(),
+                guest_name: format!("{} {}", guest.first_name, guest.last_name),
+                host_name: format!("{} {}", host.first_name, host.last_name),
+            };
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &host.email,
+                &format!(
+                    "New Booking Confirmed - {} (Code: {})",
+                    listing.listing.name, new_b.confirmation_code
+                ),
+                common::email::EmailTemplate::BookingConfirmationHost.as_str(),
+                &serde_json::to_value(&host_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+            }
+        }
+        // 2. Cancellation: status changed to Cancelled
+        else if old_b.status != BookingStatus::Cancelled
+            && new_b.status == BookingStatus::Cancelled
+        {
+            let refund_amount = new_b.total_price;
+            let guest_payload = common::email::BookingCancelledGuestPayload {
+                booking_id: new_b.id,
+                confirmation_code: new_b.confirmation_code.clone(),
+                listing_name: listing.listing.name.clone(),
+                date_from: new_b.date_from.to_string(),
+                date_to: new_b.date_to.to_string(),
+                refund_amount,
+                currency: new_b.currency.clone(),
+                cancellation_policy: format!("{:?}", new_b.cancellation_policy),
+            };
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &guest.email,
+                &format!(
+                    "Booking Cancelled - {} (Code: {})",
+                    listing.listing.name, new_b.confirmation_code
+                ),
+                common::email::EmailTemplate::BookingCancelledGuest.as_str(),
+                &serde_json::to_value(&guest_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+            }
+
+            let host_payload = common::email::BookingCancelledHostPayload {
+                booking_id: new_b.id,
+                confirmation_code: new_b.confirmation_code.clone(),
+                listing_name: listing.listing.name.clone(),
+                date_from: new_b.date_from.to_string(),
+                date_to: new_b.date_to.to_string(),
+                guest_name: format!("{} {}", guest.first_name, guest.last_name),
+                payout_impact: new_b.sub_total_price,
+                currency: new_b.currency.clone(),
+            };
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &host.email,
+                &format!(
+                    "Booking Cancelled - {} (Code: {})",
+                    listing.listing.name, new_b.confirmation_code
+                ),
+                common::email::EmailTemplate::BookingCancelledHost.as_str(),
+                &serde_json::to_value(&host_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+            }
+        }
+        // 3. Material Update on Confirmed booking
+        else if new_b.status == BookingStatus::Confirmed {
+            let old_persons = (old_b.metadata.num_adults
+                + old_b.metadata.num_children
+                + old_b.metadata.num_infants) as i32;
+            let new_persons = (new_b.metadata.num_adults
+                + new_b.metadata.num_children
+                + new_b.metadata.num_infants) as i32;
+
+            let old_terms = BookingMaterialTerms {
+                date_from: old_b.date_from,
+                date_to: old_b.date_to,
+                number_of_persons: old_persons,
+                total_price: old_b.total_price,
+            };
+            let new_terms = BookingMaterialTerms {
+                date_from: new_b.date_from,
+                date_to: new_b.date_to,
+                number_of_persons: new_persons,
+                total_price: new_b.total_price,
+            };
+
+            if is_material_booking_change(&old_terms, &new_terms) {
+                let mut changes = Vec::new();
+                if old_b.date_from != new_b.date_from || old_b.date_to != new_b.date_to {
+                    changes.push(format!(
+                        "Dates changed from {} - {} to {} - {}",
+                        old_b.date_from, old_b.date_to, new_b.date_from, new_b.date_to
+                    ));
+                }
+                if old_persons != new_persons {
+                    changes.push(format!(
+                        "Guest count changed from {} to {}",
+                        old_persons, new_persons
+                    ));
+                }
+                if old_b.total_price != new_b.total_price {
+                    changes.push(format!(
+                        "Total price changed from {} to {}",
+                        old_b.total_price, new_b.total_price
+                    ));
+                }
+                let changes_summary = changes.join(", ");
+
+                let guest_payload = common::email::BookingUpdatedGuestPayload {
+                    booking_id: new_b.id,
+                    confirmation_code: new_b.confirmation_code.clone(),
+                    listing_name: listing.listing.name.clone(),
+                    date_from: new_b.date_from.to_string(),
+                    date_to: new_b.date_to.to_string(),
+                    total_price: new_b.total_price,
+                    currency: new_b.currency.clone(),
+                    changes_summary: changes_summary.clone(),
+                };
+                if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                    &pool_clone,
+                    &guest.email,
+                    &format!(
+                        "Booking Updated - {} (Code: {})",
+                        listing.listing.name, new_b.confirmation_code
+                    ),
+                    common::email::EmailTemplate::BookingUpdatedGuest.as_str(),
+                    &serde_json::to_value(&guest_payload).unwrap_or_default(),
+                    3,
+                )
+                .await
+                {
+                    let _ = publisher.publish_email_event(outbox.id).await;
+                }
+
+                let host_payload = common::email::BookingUpdatedHostPayload {
+                    booking_id: new_b.id,
+                    confirmation_code: new_b.confirmation_code.clone(),
+                    listing_name: listing.listing.name.clone(),
+                    date_from: new_b.date_from.to_string(),
+                    date_to: new_b.date_to.to_string(),
+                    total_payout: new_b.sub_total_price,
+                    currency: new_b.currency.clone(),
+                    guest_name: format!("{} {}", guest.first_name, guest.last_name),
+                    changes_summary,
+                };
+                if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                    &pool_clone,
+                    &host.email,
+                    &format!(
+                        "Booking Updated - {} (Code: {})",
+                        listing.listing.name, new_b.confirmation_code
+                    ),
+                    common::email::EmailTemplate::BookingUpdatedHost.as_str(),
+                    &serde_json::to_value(&host_payload).unwrap_or_default(),
+                    3,
+                )
+                .await
+                {
+                    let _ = publisher.publish_email_event(outbox.id).await;
+                }
+            }
+        }
+    });
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CronSweepResponse {
+    pub status: String,
+    pub pre_arrival_processed: usize,
+    pub hold_reminders_processed: usize,
+}
+
+#[tracing::instrument(skip(req, pool))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/internal/cron/process-scheduled-notifications",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Scheduled notification sweep completed", body = CronSweepResponse),
+        (status = 401, description = "Unauthorized - invalid or missing cron secret"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn process_scheduled_notifications(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ApiError> {
+    let configured_secret =
+        std::env::var("CRON_SECRET").unwrap_or_else(|_| "dev-cron-secret".to_string());
+    let provided_secret = req
+        .headers()
+        .get("x-cron-secret")
+        .and_then(|v| v.to_str().ok());
+
+    if provided_secret != Some(&configured_secret) {
+        tracing::warn!("Unauthorized attempt to trigger scheduled notifications cron");
+        return Err(ApiError::Unauthorized(
+            "Invalid or missing cron secret".into(),
+        ));
+    }
+
+    let publisher = api_core::email_publisher::EmailPublisher::from_env();
+    let mut pre_arrival_count = 0;
+    let mut hold_reminders_count = 0;
+
+    // Sweep 48h Pre-Arrival Candidates
+    let pre_arrival_candidates =
+        db_core::notification_log::get_48h_pre_arrival_candidates(pool.get_ref())
+            .await
+            .map_err(ApiError::Database)?;
+
+    for candidate in pre_arrival_candidates {
+        let claimed_guest = db_core::notification_log::claim_and_log_notification(
+            pool.get_ref(),
+            candidate.booking_id,
+            "pre_arrival_guide_guest",
+            candidate.guest_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+
+        if claimed_guest {
+            let wifi_ssid = candidate
+                .listing_details
+                .0
+                .get("wifi_ssid")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            let wifi_password = candidate
+                .listing_details
+                .0
+                .get("wifi_password")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            let check_in_instructions = candidate
+                .listing_details
+                .0
+                .get("check_in_instructions")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+            let address = candidate
+                .listing_details
+                .0
+                .get("address")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| {
+                    candidate
+                        .listing_city
+                        .clone()
+                        .unwrap_or_else(|| "Jamaica".to_string())
+                });
+            let door_code = candidate
+                .door_access_code
+                .clone()
+                .unwrap_or_else(|| "Pending Host Setup".to_string());
+
+            let guest_payload = common::email::PreArrivalGuideGuestPayload {
+                booking_id: candidate.booking_id,
+                confirmation_code: candidate.confirmation_code.clone(),
+                listing_name: candidate.listing_name.clone(),
+                address,
+                date_from: candidate.date_from.to_string(),
+                date_to: candidate.date_to.to_string(),
+                door_access_code: door_code,
+                wifi_ssid,
+                wifi_password,
+                check_in_instructions,
+            };
+
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                pool.get_ref(),
+                &candidate.guest_email,
+                &format!(
+                    "Pre-Arrival Guide for Your Stay at {}",
+                    candidate.listing_name
+                ),
+                common::email::EmailTemplate::PreArrivalGuideGuest.as_str(),
+                &serde_json::to_value(&guest_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+                pre_arrival_count += 1;
+            }
+        }
+
+        let claimed_host = db_core::notification_log::claim_and_log_notification(
+            pool.get_ref(),
+            candidate.booking_id,
+            "host_upcoming_arrival",
+            candidate.host_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+
+        if claimed_host {
+            let host_payload = common::email::HostUpcomingArrivalPayload {
+                booking_id: candidate.booking_id,
+                confirmation_code: candidate.confirmation_code.clone(),
+                listing_name: candidate.listing_name.clone(),
+                guest_name: format!(
+                    "{} {}",
+                    candidate.guest_first_name, candidate.guest_last_name
+                ),
+                number_of_persons: candidate.number_of_persons,
+                date_from: candidate.date_from.to_string(),
+                date_to: candidate.date_to.to_string(),
+                door_access_code: candidate.door_access_code,
+            };
+
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                pool.get_ref(),
+                &candidate.host_email,
+                &format!("Guest Arrival in 48 Hours: {}", candidate.listing_name),
+                common::email::EmailTemplate::HostUpcomingArrival.as_str(),
+                &serde_json::to_value(&host_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+                pre_arrival_count += 1;
+            }
+        }
+    }
+
+    // Sweep Expiring 2-Hour Holds
+    let hold_candidates = db_core::notification_log::get_expiring_hold_candidates(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?;
+
+    for candidate in hold_candidates {
+        let claimed_hold = db_core::notification_log::claim_and_log_notification(
+            pool.get_ref(),
+            candidate.booking_id,
+            "payment_hold_expiry_reminder",
+            candidate.guest_id,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+
+        if claimed_hold {
+            let expires_at = candidate.created_at + chrono::Duration::hours(2);
+            let hold_payload = common::email::PaymentHoldExpiryReminderPayload {
+                booking_id: candidate.booking_id,
+                confirmation_code: candidate.confirmation_code.clone(),
+                listing_name: candidate.listing_name.clone(),
+                expires_at: expires_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                total_price: candidate.total_price,
+                currency: candidate.currency.clone(),
+                checkout_url: format!(
+                    "https://ourplaces.co/checkout/{}",
+                    candidate.confirmation_code
+                ),
+            };
+
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                pool.get_ref(),
+                &candidate.guest_email,
+                &format!(
+                    "Reminder: Your Reservation Hold for {} is Expiring Soon",
+                    candidate.listing_name
+                ),
+                common::email::EmailTemplate::PaymentHoldExpiryReminder.as_str(),
+                &serde_json::to_value(&hold_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+                hold_reminders_count += 1;
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(CronSweepResponse {
+        status: "success".to_string(),
+        pre_arrival_processed: pre_arrival_count,
+        hold_reminders_processed: hold_reminders_count,
+    }))
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -1028,9 +1530,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_booking_messages,
             send_booking_message,
             mark_booking_messages_read,
+            process_scheduled_notifications,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse)
+            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse, CronSweepResponse)
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -1145,6 +1648,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 .wrap(from_fn(content_negotiation_middleware)),
         ),
     );
+
+    cfg.service(web::scope("/api/v1/internal/cron").route(
+        "/process-scheduled-notifications",
+        web::post().to(process_scheduled_notifications),
+    ));
 }
 
 #[cfg(test)]

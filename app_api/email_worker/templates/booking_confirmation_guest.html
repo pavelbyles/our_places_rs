@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Booking Confirmed - Our Places</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background-color: #0f172a; padding: 24px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 0.5px;">Our Places</h1>
+  </div>
+  <div style="border: 1px solid #e2e8f0; border-top: none; padding: 32px 24px; border-radius: 0 0 8px 8px; background-color: #ffffff;">
+    <h2 style="color: #0f172a; margin-top: 0;">Your Reservation is Confirmed!</h2>
+    <p>Dear {{guest_name}},</p>
+    <p>We're thrilled to confirm your stay at <strong>{{listing_name}}</strong>.</p>
+    
+    <div style="background-color: #f8fafc; border-radius: 6px; padding: 16px; margin: 24px 0; border: 1px solid #e2e8f0;">
+      <p style="margin: 0 0 8px 0;"><strong>Confirmation Code:</strong> <span style="font-family: monospace; font-size: 16px; color: #0284c7;">{{confirmation_code}}</span></p>
+      <p style="margin: 0 0 8px 0;"><strong>Check-in:</strong> {{date_from}}</p>
+      <p style="margin: 0 0 8px 0;"><strong>Check-out:</strong> {{date_to}}</p>
+      <p style="margin: 0;"><strong>Total Paid:</strong> {{currency}} {{total_price}}</p>
+    </div>
+
+    <p style="color: #64748b; font-size: 14px;">Your digital pre-arrival guide containing WiFi credentials and property access details will be sent 48 hours prior to check-in.</p>
+    <p>Thank you for choosing Our Places for your stay in Jamaica.</p>
+  </div>
+</body>
+</html>
