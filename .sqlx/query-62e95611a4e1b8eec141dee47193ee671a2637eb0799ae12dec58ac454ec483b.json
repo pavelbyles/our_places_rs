@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE booking\n        SET status = COALESCE($1, status), \n            metadata = COALESCE($2, metadata),\n            updated_at = $3\n        WHERE id = $4\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            created_at, updated_at\n        ",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            created_at, updated_at\n        FROM booking\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -118,32 +118,22 @@
       },
       {
         "ordinal": 18,
+        "name": "door_access_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        {
-          "Custom": {
-            "name": "booking_status",
-            "kind": {
-              "Enum": [
-                "pending",
-                "confirmed",
-                "cancelled",
-                "completed"
-              ]
-            }
-          }
-        },
-        "Jsonb",
-        "Timestamptz",
         "Uuid"
       ]
     },
@@ -166,9 +156,10 @@
       false,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "541f62eefce0b8c4db736534ccae38fb3760fe037dfc762e0d5431e70b9ef34d"
+  "hash": "62e95611a4e1b8eec141dee47193ee671a2637eb0799ae12dec58ac454ec483b"
 }

@@ -553,7 +553,7 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
     } else {
         all_listings
             .into_iter()
-            .filter(|l| host_user_id.map_or(false, |uid| l.user_id == uid))
+            .filter(|l| host_user_id == Some(l.user_id))
             .collect()
     };
     let host_a_listing_ids: HashSet<Uuid> = host_a_listings.iter().map(|l| l.id).collect();
