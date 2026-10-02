@@ -158,6 +158,9 @@ mod tests {
 
     #[test]
     fn test_from_env_resolves_emulator_url() {
+        unsafe {
+            std::env::set_var("PUBSUB_EMULATOR_HOST", "127.0.0.1:8085");
+        }
         let publisher = EmailPublisher::from_env();
         assert!(
             publisher.topic_url.contains("127.0.0.1:8085"),
