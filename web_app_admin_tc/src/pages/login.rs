@@ -43,11 +43,20 @@ pub async fn admin_login_api(
             match topcoat::session::start(cx).await {
                 Ok(session) => {
                     let hash_hex = token_hash_to_hex(&session.token_hash);
-                    let primary_role = user_resp
-                        .roles
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| "admin".to_string());
+                    let primary_role = if user_resp.roles.iter().any(|r| {
+                        let lr = r.to_lowercase();
+                        lr == "admin" || lr == "superadmin"
+                    }) {
+                        "admin".to_string()
+                    } else if user_resp.roles.iter().any(|r| r.to_lowercase() == "host") {
+                        "host".to_string()
+                    } else {
+                        user_resp
+                            .roles
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "host".to_string())
+                    };
                     let full_name = format!("{} {}", user_resp.first_name, user_resp.last_name)
                         .trim()
                         .to_string();
@@ -374,9 +383,20 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
                                         fullName = userObj.email || 'Administrator';
                                     }
 
-                                    var primaryRole = 'admin';
-                                    if (userObj.roles) {
-                                        if (userObj.roles.length) {
+                                    var primaryRole = 'host';
+                                    if (userObj.roles && userObj.roles.length) {
+                                        var hasAdmin = userObj.roles.some(function(r) {
+                                            var lr = (r || '').toLowerCase();
+                                            return lr === 'admin' || lr === 'superadmin';
+                                        });
+                                        var hasHost = userObj.roles.some(function(r) {
+                                            return (r || '').toLowerCase() === 'host';
+                                        });
+                                        if (hasAdmin) {
+                                            primaryRole = 'admin';
+                                        } else if (hasHost) {
+                                            primaryRole = 'host';
+                                        } else {
                                             primaryRole = userObj.roles[0];
                                         }
                                     }

@@ -32,6 +32,7 @@ impl EmailPublisher {
     /// or constructs the standard Google Cloud Pub/Sub v1 REST endpoint:
     /// `https://pubsub.googleapis.com/v1/projects/{project_id}/topics/{topic_id}:publish`.
     pub fn new(topic_id: &str) -> Self {
+        dotenvy::dotenv().ok();
         let gcp_project =
             std::env::var("GCP_PROJECT_ID").unwrap_or_else(|_| "our-places-dev".to_string());
         let topic_url = if let Ok(emulator_host) = std::env::var("PUBSUB_EMULATOR_HOST") {
@@ -153,5 +154,15 @@ mod tests {
         let publisher = EmailPublisher::disabled();
         let res = publisher.publish_email_event(Uuid::new_v4()).await;
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_from_env_resolves_emulator_url() {
+        let publisher = EmailPublisher::from_env();
+        assert!(
+            publisher.topic_url.contains("127.0.0.1:8085"),
+            "Expected topic_url to use PUBSUB_EMULATOR_HOST, got: {}",
+            publisher.topic_url
+        );
     }
 }

@@ -99,6 +99,9 @@ pub struct ListingResponse {
     pub listing_details: Option<serde_json::Value>,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "0.1000")]
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]

@@ -42,6 +42,7 @@ pub struct AdminCreateListingPayload {
     pub days_between_bookings: Option<i32>,
     pub primary_image_url: Option<String>,
     pub is_active: Option<bool>,
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,6 +76,7 @@ pub struct AdminCreateListingFormPayload {
     pub days_between_bookings: Option<String>,
     pub primary_image_url: Option<String>,
     pub is_active: Option<String>,
+    pub commission_pct: Option<String>,
 }
 
 impl AdminCreateListingFormPayload {
@@ -149,6 +151,17 @@ impl AdminCreateListingFormPayload {
                     .map(|v| v == "on" || v == "true")
                     .unwrap_or(false),
             ),
+            commission_pct: self
+                .commission_pct
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok())
+                .map(|pct| {
+                    if pct > Decimal::ONE {
+                        (pct / Decimal::from(100)).round_dp(4)
+                    } else {
+                        pct
+                    }
+                }),
         }
     }
 }
@@ -229,7 +242,16 @@ async fn execute_create_listing(
         base_currency: payload.base_currency.unwrap_or_else(|| "USD".to_string()),
         minimum_stay: payload.minimum_stay.unwrap_or(1).max(1),
         days_between_bookings: payload.days_between_bookings.unwrap_or(0).max(0),
-        commission_pct: None,
+        commission_pct: payload
+            .commission_pct
+            .map(|pct| {
+                if pct > Decimal::ONE {
+                    (pct / Decimal::from(100)).round_dp(4)
+                } else {
+                    pct
+                }
+            })
+            .or_else(|| Some(Decimal::new(1000, 4))),
     };
 
     api.create_listing(&new_req)
@@ -522,6 +544,11 @@ async fn render_new_or_cloned_listing(
         .and_then(|t| t.monthly_discount_percentage)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "20".to_string());
+    let initial_commission = template
+        .as_ref()
+        .and_then(|t| t.commission_pct)
+        .map(|p| format!("{:.1}", p * Decimal::from(100)))
+        .unwrap_or_else(|| "10.0".to_string());
     let initial_guests = template.as_ref().map(|t| t.max_guests).unwrap_or(10);
     let initial_bedrooms = template.as_ref().map(|t| t.bedrooms).unwrap_or(5);
     let initial_beds = template.as_ref().map(|t| t.beds).unwrap_or(6);
@@ -791,7 +818,7 @@ async fn render_new_or_cloned_listing(
                         <span class="badge badge-warning badge-sm font-bold">"Financial Yield"</span>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Base Rate / Night"</label>
                             <div class="join w-full">
@@ -807,6 +834,10 @@ async fn render_new_or_cloned_listing(
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Min Stay (Nights)"</label>
                             <input type="number" name="minimum_stay" value=(initial_min_stay) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Platform Comm %"</label>
+                            <input type="number" name="commission_pct" value=(initial_commission) min="0" max="100" step="0.1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Weekly Disc %"</label>
@@ -928,6 +959,7 @@ async fn render_new_or_cloned_listing(
                         var rawMinStay = fd.get('minimum_stay');
                         var rawWeekly = fd.get('weekly_discount_percentage');
                         var rawMonthly = fd.get('monthly_discount_percentage');
+                        var rawCommission = fd.get('commission_pct');
                         var rawDaysBetween = fd.get('days_between_bookings');
                         var rawUserId = fd.get('user_id');
                         var rawActive = fd.get('is_active');
@@ -951,6 +983,7 @@ async fn render_new_or_cloned_listing(
                             minimum_stay: rawMinStay ? parseInt(rawMinStay.toString(), 10) : 1,
                             weekly_discount_percentage: rawWeekly ? rawWeekly.toString() : null,
                             monthly_discount_percentage: rawMonthly ? rawMonthly.toString() : null,
+                            commission_pct: rawCommission ? (parseFloat(rawCommission.toString()) / 100).toFixed(4) : "0.1000",
                             days_between_bookings: rawDaysBetween ? parseInt(rawDaysBetween.toString(), 10) : 0,
                             primary_image_url: fd.get('primary_image_url'),
                             is_active: rawActive === 'on' ? true : false,
@@ -1057,6 +1090,10 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
         .and_then(|l| l.monthly_discount_percentage)
         .map(|p| format!("{:.0}", p))
         .unwrap_or_else(|| "20".to_string());
+    let initial_commission = listing
+        .and_then(|l| l.commission_pct)
+        .map(|p| format!("{:.1}", p * Decimal::from(100)))
+        .unwrap_or_else(|| "10.0".to_string());
     let guests = listing.map(|l| l.max_guests).unwrap_or(10);
     let bedrooms = listing.map(|l| l.bedrooms).unwrap_or(5);
     let beds = listing.map(|l| l.beds).unwrap_or(6);
@@ -1287,7 +1324,7 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                         <span class="badge badge-warning badge-sm font-bold">"Financial Yield"</span>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Base Rate / Night"</label>
                             <div class="join w-full">
@@ -1303,6 +1340,10 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Min Stay (Nights)"</label>
                             <input type="number" name="minimum_stay" value=(min_stay) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Platform Comm %"</label>
+                            <input type="number" name="commission_pct" value=(initial_commission) min="0" max="100" step="0.1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Weekly Disc %"</label>

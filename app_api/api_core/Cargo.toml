@@ -26,6 +26,7 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 jsonwebtoken = "9.3.0"
+dotenvy = { workspace = true }
 
 db_core.workspace = true
 common.workspace = true

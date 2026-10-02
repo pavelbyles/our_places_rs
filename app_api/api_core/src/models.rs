@@ -45,6 +45,7 @@ pub fn map_listing_to_response(
         listing_details: Some(listing.listing_details.0),
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
+        commission_pct: Some(listing.commission_pct),
     }
 }
 
@@ -107,6 +108,7 @@ pub fn map_listing_with_owner_to_response(
         listing_details: Some(listing.listing_details.0),
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
+        commission_pct: Some(listing.commission_pct),
     }
 }
 

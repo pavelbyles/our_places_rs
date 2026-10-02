@@ -16,6 +16,8 @@ mod apis;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+
     // Initialize tracing
     api_core::tracing_utils::init_subscriber();
 

@@ -124,6 +124,8 @@ impl DatabaseSettings {
 
 // This is a cleaned-up version of YOUR original function.
 pub fn get_settings() -> Result<Settings, ConfigError> {
+    dotenvy::dotenv().ok();
+
     const DEFAULT_CONFIG_FILE: &str = "config/Default.toml";
     const ENV_CONFIG_PREFIX: &str = "config/";
     const RUN_ENV_VAR: &str = "RUN_ENV";

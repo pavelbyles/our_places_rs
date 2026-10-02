@@ -55,9 +55,30 @@ impl EmailProvider for MockEmailProvider {
         }
 
         info!(
-            "[MOCK EMAIL DISPATCH] To: {}, Subject: {}",
-            recipient, subject
+            "\n╔══════════════════════════════════════════════════════════════════════════════╗\n║ [MOCK EMAIL DISPATCH]                                                        ║\n╠══════════════════════════════════════════════════════════════════════════════╣\n║ To:      {}\n║ Subject: {}\n╠────────────────────────────────── Body ──────────────────────────────────────╣\n{}\n╚══════════════════════════════════════════════════════════════════════════════╝",
+            recipient, subject, body
         );
+
+        // Also save rendered HTML to /tmp/our_places_emails/ for easy visual inspection in a browser
+        if let Err(e) = std::fs::create_dir_all("/tmp/our_places_emails") {
+            tracing::warn!("Failed to create /tmp/our_places_emails directory: {}", e);
+        } else {
+            let sanitized_subject: String = subject
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                .collect();
+            let filename = format!(
+                "/tmp/our_places_emails/{}_{}.html",
+                chrono::Utc::now().format("%Y%m%d_%H%M%S"),
+                sanitized_subject
+            );
+            if let Err(e) = std::fs::write(&filename, body) {
+                tracing::warn!("Failed to write mock email to {}: {}", filename, e);
+            } else {
+                info!("Saved mock email HTML preview to: {}", filename);
+            }
+        }
+
         self.sent_emails.lock().await.push((
             recipient.to_string(),
             subject.to_string(),
@@ -135,8 +156,18 @@ impl EmailProvider for LettreSmtpEmailProvider {
             .map_err(|e| format!("Failed to build email message: {}", e))?;
 
         let mut transport_builder =
-            AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&self.smtp_host)
-                .port(self.smtp_port);
+            if self.smtp_host == "localhost" || self.smtp_host == "127.0.0.1" {
+                AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&self.smtp_host)
+                    .port(self.smtp_port)
+            } else if self.smtp_port == 465 {
+                AsyncSmtpTransport::<Tokio1Executor>::relay(&self.smtp_host)
+                    .map_err(|e| format!("Failed to create SMTPS relay transport: {}", e))?
+                    .port(self.smtp_port)
+            } else {
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&self.smtp_host)
+                    .map_err(|e| format!("Failed to create STARTTLS relay transport: {}", e))?
+                    .port(self.smtp_port)
+            };
 
         if let (Some(user), Some(pass)) = (&self.smtp_user, &self.smtp_password) {
             transport_builder =
