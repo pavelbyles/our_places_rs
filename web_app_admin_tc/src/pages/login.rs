@@ -202,6 +202,8 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
                             <input
                                 type="email"
                                 id="admin-login-email"
+                                name="email"
+                                autocomplete="username"
                                 required=(true)
                                 placeholder="user@email.com"
                                 onkeydown="if(event.key==='Enter'){event.preventDefault();if(window.handleAdminLogin)window.handleAdminLogin(event);}"
@@ -221,6 +223,8 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
                             <input
                                 type="password"
                                 id="admin-login-password"
+                                name="password"
+                                autocomplete="current-password"
                                 required=(true)
                                 placeholder="••••••••"
                                 onkeydown="if(event.key==='Enter'){event.preventDefault();if(window.handleAdminLogin)window.handleAdminLogin(event);}"
@@ -384,20 +388,22 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
                                     }
 
                                     var primaryRole = 'host';
-                                    if (userObj.roles && userObj.roles.length) {
-                                        var hasAdmin = userObj.roles.some(function(r) {
-                                            var lr = (r || '').toLowerCase();
-                                            return lr === 'admin' || lr === 'superadmin';
-                                        });
-                                        var hasHost = userObj.roles.some(function(r) {
-                                            return (r || '').toLowerCase() === 'host';
-                                        });
-                                        if (hasAdmin) {
-                                            primaryRole = 'admin';
-                                        } else if (hasHost) {
-                                            primaryRole = 'host';
-                                        } else {
-                                            primaryRole = userObj.roles[0];
+                                    if (userObj.roles) {
+                                        if (userObj.roles.length) {
+                                            var hasAdmin = userObj.roles.some(function(r) {
+                                                var lr = (r || '').toLowerCase();
+                                                return lr === 'admin' || lr === 'superadmin';
+                                            });
+                                            var hasHost = userObj.roles.some(function(r) {
+                                                return (r || '').toLowerCase() === 'host';
+                                            });
+                                            if (hasAdmin) {
+                                                primaryRole = 'admin';
+                                            } else if (hasHost) {
+                                                primaryRole = 'host';
+                                            } else {
+                                                primaryRole = userObj.roles[0];
+                                            }
                                         }
                                     }
 

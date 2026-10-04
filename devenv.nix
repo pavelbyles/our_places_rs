@@ -248,8 +248,9 @@
 
     # Launch full application stack (APIs + Topcoat frontends, DB kept running continuously)
     fullstack.exec = ''
+      echo "Starting full development stack (APIs, Frontends, Pub/Sub emulator, database)..."
       db-start
-      echo "Starting full development stack (APIs, Frontends)..."
+      pubsub-start
       devenv up listing_api booking_api user_api email_worker web_app_tc web_app_admin_tc "$@"
     '';
 
