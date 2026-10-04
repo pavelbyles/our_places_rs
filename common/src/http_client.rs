@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
+use reqwest::header::AUTHORIZATION;
 
 use std::process::Command;
 use std::sync::Arc;
@@ -42,10 +42,10 @@ impl TokenProvider for GoogleMetadataTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
         let mut cache = self.cache.lock().await;
 
-        if let Some(cached) = &*cache {
-            if cached.expires_at > Instant::now() {
-                return Ok(cached.token.clone());
-            }
+        if let Some(cached) = &*cache
+            && cached.expires_at > Instant::now()
+        {
+            return Ok(cached.token.clone());
         }
 
         let client = Client::new();
@@ -111,10 +111,10 @@ impl TokenProvider for LocalGcloudTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
         let mut cache = self.cache.lock().await;
 
-        if let Some(cached) = &*cache {
-            if cached.expires_at > Instant::now() {
-                return Ok(cached.token.clone());
-            }
+        if let Some(cached) = &*cache
+            && cached.expires_at > Instant::now()
+        {
+            return Ok(cached.token.clone());
         }
 
         let audience = audience.to_string();

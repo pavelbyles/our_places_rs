@@ -308,10 +308,7 @@ where
 {
     let mut conn = executor.acquire().await?;
 
-    let is_uuid = uuid::Uuid::parse_str(id_or_slug).is_ok();
-
-    let listing = if is_uuid {
-        let id_uuid = uuid::Uuid::parse_str(id_or_slug).unwrap();
+    let listing = if let Ok(id_uuid) = uuid::Uuid::parse_str(id_or_slug) {
         sqlx::query_as!(
             Listing,
             r#"

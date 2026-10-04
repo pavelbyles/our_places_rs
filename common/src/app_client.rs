@@ -8,7 +8,7 @@ use crate::models::{
     UserResponse,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use reqwest::Response;
 use std::env;
