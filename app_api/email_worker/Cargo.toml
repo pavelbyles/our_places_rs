@@ -19,12 +19,12 @@ api_core.workspace = true
 common.workspace = true
 chrono.workspace = true
 actix-web.workspace = true
-base64 = "0.23.1"
+base64 = { workspace = true }
 serde_json.workspace = true
 uuid.workspace = true
 sqlx.workspace = true
 dotenvy = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
 rustls = { version = "0.23", features = ["ring"] }
 
