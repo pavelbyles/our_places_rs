@@ -59,23 +59,24 @@ impl EmailProvider for MockEmailProvider {
             recipient, subject, body
         );
 
-        // Also save rendered HTML to /tmp/our_places_emails/ for easy visual inspection in a browser
-        if let Err(e) = std::fs::create_dir_all("/tmp/our_places_emails") {
-            tracing::warn!("Failed to create /tmp/our_places_emails directory: {}", e);
+        // Also save rendered HTML to temporary directory for easy visual inspection in a browser
+        let email_dir = std::env::temp_dir().join("our_places_emails");
+        if let Err(e) = std::fs::create_dir_all(&email_dir) {
+            tracing::warn!("Failed to create email preview directory: {}", e);
         } else {
             let sanitized_subject: String = subject
                 .chars()
                 .map(|c| if c.is_alphanumeric() { c } else { '_' })
                 .collect();
-            let filename = format!(
-                "/tmp/our_places_emails/{}_{}.html",
+            let file_path = email_dir.join(format!(
+                "{}_{}.html",
                 chrono::Utc::now().format("%Y%m%d_%H%M%S"),
                 sanitized_subject
-            );
-            if let Err(e) = std::fs::write(&filename, body) {
-                tracing::warn!("Failed to write mock email to {}: {}", filename, e);
+            ));
+            if let Err(e) = std::fs::write(&file_path, body) {
+                tracing::warn!("Failed to write mock email to {:?}: {}", file_path, e);
             } else {
-                info!("Saved mock email HTML preview to: {}", filename);
+                info!("Saved mock email HTML preview to: {:?}", file_path);
             }
         }
 
