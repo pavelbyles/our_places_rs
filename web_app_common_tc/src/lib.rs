@@ -2,10 +2,12 @@ pub mod api_client;
 pub mod auth;
 pub mod client;
 pub mod components;
+pub mod error;
 pub mod layout;
 pub mod theme;
 
 pub use client::{TopcoatApiClient, get_api_client};
+pub use error::{AppError, app_error};
 
 pub use auth::{
     AdminAuthError, AuthUser, auth_init_script, get_admin_session, get_authenticated_admin,

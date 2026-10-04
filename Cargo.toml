@@ -20,7 +20,7 @@ actix-web = "4.13.0"
 api_core = { path = "app_api/api_core" }
 common = { path = "common" }
 db_core = { path = "db_core" }
-topcoat = { version = "0.8.1", features = ["htmx", "tailwind", "session"] }
+topcoat = { version = "0.10.0", features = ["htmx", "tailwind", "session"] }
 
 web_app_common_tc = { path = "web_app_common_tc" }
 anyhow = "1.0.102"
@@ -39,7 +39,7 @@ metrics-exporter-prometheus = { version = "0.18.3", default-features = false }
 jsonwebtoken = "9.3.0"
 rand = "0.10.3"
 google-cloud-storage = "1.20.0"
-topcoat-asset = { version = "0.8.1", features = ["bundler"] }
+topcoat-asset = { version = "0.10.0", features = ["bundler"] }
 async-trait = "0.1.89"
 bcrypt = "0.19.0"
 base64 = "0.23.1"

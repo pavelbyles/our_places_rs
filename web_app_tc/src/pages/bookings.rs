@@ -39,14 +39,14 @@ pub async fn update_booking_api(
 ) -> Result<Json<BookingResponse>> {
     let _user = web_app_common_tc::auth::get_guest_session(cx)
         .await
-        .ok_or_else(|| anyhow::anyhow!("Unauthorized"))?;
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
     let api = get_api_client(cx);
     let resp = api
         .update_booking(id, &payload)
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
     Ok(Json(resp))
 }
 

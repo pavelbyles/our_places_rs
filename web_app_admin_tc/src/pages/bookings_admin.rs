@@ -1044,7 +1044,7 @@ pub async fn update_booking_admin_api(
 ) -> Result<Json<BookingResponse>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -1059,18 +1059,22 @@ pub async fn update_booking_admin_api(
         .json(&payload)
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
         let status = res.status();
         let err_text = res.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Failed to update booking ({}): {}", status, err_text).into());
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to update booking ({}): {}",
+            status, err_text
+        ))
+        .into());
     }
 
     let resp = res
         .json::<BookingResponse>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
 
@@ -1078,7 +1082,7 @@ pub async fn update_booking_admin_api(
 pub async fn get_booking_messages_admin_api(cx: &Cx) -> Result<Json<BookingMessagesWrapper>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -1092,16 +1096,20 @@ pub async fn get_booking_messages_admin_api(cx: &Cx) -> Result<Json<BookingMessa
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to fetch messages: {}", res.status()).into());
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to fetch messages: {}",
+            res.status()
+        ))
+        .into());
     }
 
     let resp = res
         .json::<BookingMessagesWrapper>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
 
@@ -1112,7 +1120,7 @@ pub async fn send_booking_message_admin_api(
 ) -> Result<Json<BookingMessageResponse>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -1127,16 +1135,20 @@ pub async fn send_booking_message_admin_api(
         .json(&payload)
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to send message: {}", res.status()).into());
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to send message: {}",
+            res.status()
+        ))
+        .into());
     }
 
     let resp = res
         .json::<BookingMessageResponse>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
 
@@ -1144,7 +1156,7 @@ pub async fn send_booking_message_admin_api(
 pub async fn mark_messages_read_admin_api(cx: &Cx) -> Result<Json<MarkMessagesReadResponse>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -1158,15 +1170,17 @@ pub async fn mark_messages_read_admin_api(cx: &Cx) -> Result<Json<MarkMessagesRe
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to mark read: {}", res.status()).into());
+        return Err(
+            web_app_common_tc::app_error(format!("Failed to mark read: {}", res.status())).into(),
+        );
     }
 
     let resp = res
         .json::<MarkMessagesReadResponse>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
