@@ -135,6 +135,13 @@
       "entrypoint": "skills/rust-core/SKILL.md"
     },
     {
+      "id": "sonarqube-guard",
+      "name": "SonarQube & DeepSource Hygiene Guard",
+      "description": "Enforce SonarQube, SonarCloud, and DeepSource static analysis standards across Rust code, email templates, and database migrations.",
+      "path": "skills/sonarqube-guard",
+      "entrypoint": "skills/sonarqube-guard/SKILL.md"
+    },
+    {
       "id": "security-posture-assessment",
       "name": "security-posture-assessment",
       "description": "Assess overall security maturity, organizational controls, compliance readiness, and platform hardening.",

@@ -150,6 +150,23 @@
           "reason": "Must execute verification/sanity checks before pushing fix"
         }
       ]
+    },
+    {
+      "skill_id": "sonarqube-guard",
+      "name": "Static Analysis & Doc Coverage Guard Test",
+      "prompt": "Define a public Rust enum `NotificationChannel` with variants `Email`, `Sms`, and `Push`, and a public struct `NotificationConfig` with fields `channel` and `api_key_env`. Ensure the code adheres to SonarQube and DeepSource quality standards.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "///",
+          "reason": "Must provide doc comments on all public types, fields, and variants (RS-D1001)"
+        },
+        {
+          "type": "not_contains",
+          "value": ".unwrap()",
+          "reason": "Production code paths must never use .unwrap()"
+        }
+      ]
     }
   ]
 }

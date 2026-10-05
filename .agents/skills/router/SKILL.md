@@ -44,6 +44,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 ### Stage 4: Test
 * "compiler error", "borrow checker", "lifetime issue", "E0..." $\rightarrow$ `lint-hunter`
 * "runtime panic", "logic bug", "test failing", "debug helper" $\rightarrow$ `general-debug`
+* "sonarqube", "sonarcloud", "deepsource", "static analysis", "doc coverage", "hygiene" $\rightarrow$ `sonarqube-guard`
 * "eval skills", "skill benchmark regression", "eval suite" $\rightarrow$ `/eval-skills`
 
 ### Stage 5: Deploy

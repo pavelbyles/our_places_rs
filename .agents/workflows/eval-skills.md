@@ -1,5 +1,5 @@
 ---
-description: Stage 4 AI-Native SDLC compliance check — execute synthetic benchmark test prompts against agent skills (rust-core, monad-design, grill-me, auto-triage-incident) to verify behavioral compliance and prevent regressions after edits.
+description: Stage 4 AI-Native SDLC compliance check — execute synthetic benchmark test prompts against agent skills (rust-core, monad-design, grill-me, auto-triage-incident, sonarqube-guard) to verify behavioral compliance and prevent regressions after edits.
 ---
 
 # /eval-skills — Synthetic Skill & Rule Benchmark Evaluation
@@ -9,7 +9,7 @@ Regression-test agent skills, `AGENTS.md`, and system rules against a standardiz
 
 ## When to Use
 Run `/eval-skills` whenever:
-- Modifying or adding files in `.agents/skills/` (e.g. `rust-core`, `monad-design`, `grill-me`, `auto-triage-incident`).
+- Modifying or adding files in `.agents/skills/` (e.g. `rust-core`, `monad-design`, `grill-me`, `auto-triage-incident`, `sonarqube-guard`).
 - Updating `AGENTS.md` or `.agents/rules/`.
 - Preparing a PR that updates AI workflow configurations.
 
@@ -85,6 +85,18 @@ Test that the agent properly structures runtime errors into actionable `intent.m
     - [ ] Correctly classifies incident severity as **P0 - Critical**.
     - [ ] Generates a structured `docs/intent/intent-<id>.md` schema.
     - [ ] Includes problem evidence, root cause hypothesis, domain guardrail checks, and a failing test reproduction plan.
+
+---
+
+### 5. `sonarqube-guard` Benchmark Suite
+Test that the agent generates Rust code and configurations meeting SonarQube, SonarCloud, and DeepSource quality gate requirements.
+
+* **Benchmark 5.1: Static Analysis & Doc Coverage Guard**
+  * **Test Prompt**: *"Define a public Rust enum `NotificationChannel` with variants `Email`, `Sms`, and `Push`, and a public struct `NotificationConfig` with fields `channel` and `api_key_env`. Ensure the code adheres to SonarQube and DeepSource quality standards."*
+  * **Hard Assertions**:
+    - [ ] Provides `///` doc comments on the enum AND every enum variant.
+    - [ ] Provides `///` doc comments on the struct AND every struct field.
+    - [ ] Zero `.unwrap()` / `.expect()` in production code paths.
 
 ---
 
