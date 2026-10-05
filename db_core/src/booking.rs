@@ -192,6 +192,7 @@ where
 }
 
 /// Updates a booking's status.
+// skipcq: RS-R1000
 #[tracing::instrument(skip(pool))]
 pub async fn update_booking(
     pool: &PgPool,

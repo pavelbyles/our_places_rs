@@ -4,42 +4,75 @@ use rust_decimal::Decimal;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
+/// Candidate record for 24-hour pre-arrival guide and check-in notification.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PreArrivalCandidate {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable confirmation code.
     pub confirmation_code: String,
+    /// Booking check-in date.
     pub date_from: NaiveDate,
+    /// Booking check-out date.
     pub date_to: NaiveDate,
+    /// Smart door access code if available.
     pub door_access_code: Option<String>,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Guest email address.
     pub guest_email: String,
+    /// Guest first name.
     pub guest_first_name: String,
+    /// Guest last name.
     pub guest_last_name: String,
+    /// Guest phone number.
     pub guest_phone: Option<String>,
+    /// Host user identifier.
     pub host_id: Uuid,
+    /// Host email address.
     pub host_email: String,
+    /// Host first name.
     pub host_first_name: String,
+    /// Host last name.
     pub host_last_name: String,
+    /// Host phone number.
     pub host_phone: Option<String>,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Property listing name.
     pub listing_name: String,
+    /// City or locality of the listing.
     pub listing_city: Option<String>,
+    /// Structured listing metadata including house rules, directions, and guide.
     pub listing_details: sqlx::types::Json<serde_json::Value>,
+    /// Number of guests in the booking.
     pub number_of_persons: i32,
+    /// Estimated time of arrival if specified.
     pub estimated_arrival_time: Option<String>,
 }
 
+/// Candidate record for 15-minute expiring payment reservation holds.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ExpiringHoldCandidate {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable confirmation code.
     pub confirmation_code: String,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Guest email address.
     pub guest_email: String,
+    /// Guest first name.
     pub guest_first_name: String,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Property listing name.
     pub listing_name: String,
+    /// Currency of the reservation hold.
     pub currency: String,
+    /// Total checkout hold amount.
     pub total_price: Decimal,
+    /// Timestamp when the reservation hold was created.
     pub created_at: DateTime<Utc>,
 }
 

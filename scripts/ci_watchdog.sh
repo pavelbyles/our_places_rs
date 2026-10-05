@@ -57,7 +57,7 @@ check_once() {
   FAIL_SUMMARY=""
 
   if [[ -n "$RUN_ID" ]]; then
-    if [[ "$RUN_STATUS" == "in_progress" || "$RUN_STATUS" == "queued" ]]; then
+    if [[ "$RUN_STATUS" != "completed" ]]; then
       echo "⏳ GHA Run $RUN_ID is $RUN_STATUS ($RUN_TITLE)"
       return 2
     fi

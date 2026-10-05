@@ -66,101 +66,173 @@ pub struct UpdateUserRequest {
     pub roles: Option<Vec<String>>,
     pub booker_profile: Option<NewBookerProfile>,
     pub host_profile: Option<NewHostProfile>,
+    /// User's preferred default display currency.
     pub default_currency: Option<String>,
 }
 
+/// DTO representing a property listing in API responses.
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingResponse {
+    /// Unique listing identifier.
     pub id: Uuid,
+    /// Owner user identifier.
     pub user_id: Uuid,
+    /// Listing display title.
     pub name: String,
+    /// Detailed description of the property.
     pub description: Option<String>,
-    pub listing_structure: String, // Simplified from enum for common compatibility if needed, or move enum here
+    /// Architectural structure type (e.g. villa, apartment).
+    pub listing_structure: String,
+    /// Country where property is located.
     pub country: String,
+    /// Standard base price per night.
     pub price_per_night: Option<Decimal>,
+    /// Discount percentage for stays >= 7 nights.
     pub weekly_discount_percentage: Option<Decimal>,
+    /// Discount percentage for stays >= 28 nights.
     pub monthly_discount_percentage: Option<Decimal>,
+    /// Whether the listing is active and bookable.
     pub is_active: bool,
+    /// Timestamp when listing was added.
     pub added_at: DateTime<Utc>,
+    /// Display name of the owner/host.
     pub owner_name: Option<String>,
+    /// Primary hero image URL.
     pub primary_image_url: Option<String>,
+    /// Maximum allowed guest count.
     pub max_guests: i32,
+    /// Number of bedrooms.
     pub bedrooms: i32,
+    /// Number of beds.
     pub beds: i32,
+    /// Number of full bathrooms.
     pub full_bathrooms: i32,
+    /// Number of half bathrooms (powder rooms).
     pub half_bathrooms: i32,
+    /// Property size in square meters.
     pub square_meters: Option<i32>,
+    /// Geographic latitude.
     pub latitude: Option<f64>,
+    /// Geographic longitude.
     pub longitude: Option<f64>,
+    /// Aggregated overall star rating.
     pub overall_rating: Option<f64>,
+    /// City or locality.
     pub city: Option<String>,
+    /// Base pricing currency code (e.g. USD).
     pub base_currency: String,
+    /// SEO-friendly URL slug.
     pub slug: String,
+    /// Structured listing metadata including amenities and house rules.
     pub listing_details: Option<serde_json::Value>,
+    /// Minimum required stay in nights.
     pub minimum_stay: i32,
+    /// Buffer days required between consecutive bookings.
     pub days_between_bookings: i32,
+    /// Platform commission percentage.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "0.1000")]
     pub commission_pct: Option<Decimal>,
 }
 
+/// Itemized fee line item in booking price breakdowns.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct FeeItem {
+    /// Descriptive name of the fee.
     pub name: String,
+    /// Monetary amount of the fee.
     #[serde(with = "rust_decimal::serde::float")]
     pub amount: Decimal,
 }
 
+/// Structured guest count and arrival metadata for bookings.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Default)]
 #[serde(default)]
 pub struct BookingMetadataResponse {
+    /// Number of adults.
     pub num_adults: u32,
+    /// Number of children.
     pub num_children: u32,
+    /// Number of infants.
     pub num_infants: u32,
+    /// Number of pets.
     pub num_pets: u32,
+    /// Optional guest message to host.
     pub message_to_host: Option<String>,
+    /// Estimated arrival time.
     pub estimated_arrival_time: Option<String>,
+    /// Whether this reservation is for business travel.
     pub is_business_trip: bool,
 }
 
+/// DTO representing a booking reservation in API responses.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct BookingResponse {
+    /// Unique booking identifier.
     pub id: Uuid,
+    /// Confirmation code.
     pub confirmation_code: String,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Current status string.
     pub status: String,
+    /// Check-in start date.
     pub date_from: NaiveDate,
+    /// Check-out departure date.
     pub date_to: NaiveDate,
+    /// Payment currency.
     pub currency: String,
+    /// Nightly rate.
     pub daily_rate: Decimal,
+    /// Number of guests.
     pub number_of_persons: i32,
+    /// Duration in days.
     pub total_days: i32,
+    /// Subtotal price.
     pub sub_total_price: Decimal,
+    /// Applied discount amount if any.
     pub discount_value: Option<Decimal>,
+    /// Applied tax amount if any.
     pub tax_value: Option<Decimal>,
+    /// Total price.
     pub total_price: Decimal,
+    /// Cancellation policy name.
     pub cancellation_policy: String,
+    /// Additional arrival metadata.
     pub metadata: BookingMetadataResponse,
+    /// Review submission eligibility if completed.
     #[serde(default)]
     pub review_eligibility: Option<BookingReviewEligibility>,
+    /// Smart door access code if available.
     #[serde(default)]
     pub door_access_code: Option<String>,
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
+    /// Last update timestamp.
     pub updated_at: DateTime<Utc>,
 }
 
+/// Image asset metadata attached to a listing.
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingImageResponse {
+    /// Image asset identifier.
     pub id: Uuid,
+    /// Public image URL.
     pub url: String,
 }
 
+/// Detailed listing view incorporating images and host information.
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct ListingDetails {
+    /// Listing core fields.
     pub listing: ListingResponse,
+    /// Attached photo gallery images.
     pub images: Vec<ListingImageResponse>,
+    /// Owner host display name.
     pub host_name: Option<String>,
+    /// Aggregated reviews and ratings summary.
     pub rating_summary: Option<ListingRatingSummary>,
 }
 
@@ -248,25 +320,35 @@ pub struct NewBookingRequest {
     pub num_infants: u32,
     pub num_pets: u32,
 
-    // Host communication and logistics
+    /// Optional guest message to host.
     pub message_to_host: Option<String>,
+    /// Estimated time of arrival.
     pub estimated_arrival_time: Option<String>,
+    /// Whether this booking is for business purposes.
     pub is_business_trip: bool,
 
+    /// Selected checkout currency.
     pub currency: String,
 
+    /// Name of agreed cancellation policy.
     pub agreed_cancellation_policy: String,
 }
 
+/// Request payload to update an existing booking reservation.
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema, Default)]
 pub struct UpdatedBookingRequest {
+    /// New lifecycle status if updating.
     pub status: Option<String>,
+    /// Updated arrival or guest metadata.
     pub metadata: Option<BookingMetadataResponse>,
+    /// Smart lock door access code.
     pub door_access_code: Option<String>,
 }
 
+/// Request payload to transfer a reservation to a promoted user account.
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
 pub struct TransferBookingRequest {
+    /// Recipient user identifier.
     #[schema(value_type = String, format = "uuid")]
     pub guest_id: Uuid,
 }
@@ -876,13 +958,18 @@ mod tests {
 /// Key material terms of a booking used to evaluate whether changes require transactional notification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BookingMaterialTerms {
+    /// Booking arrival date.
     pub date_from: chrono::NaiveDate,
+    /// Booking departure date.
     pub date_to: chrono::NaiveDate,
+    /// Number of guests.
     pub number_of_persons: i32,
+    /// Total price.
     pub total_price: rust_decimal::Decimal,
 }
 
 impl BookingMaterialTerms {
+    /// Returns true if this instance differs in dates, party size, or total price from another.
     pub fn is_materially_different(&self, other: &Self) -> bool {
         self != other
     }

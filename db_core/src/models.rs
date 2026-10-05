@@ -8,15 +8,23 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
+/// Metadata associated with a booking reservation.
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, Default)]
 #[serde(default)]
 pub struct BookingMetadata {
+    /// Number of adults.
     pub num_adults: u32,
+    /// Number of children.
     pub num_children: u32,
+    /// Number of infants.
     pub num_infants: u32,
+    /// Number of pets.
     pub num_pets: u32,
+    /// Optional guest message to host.
     pub message_to_host: Option<String>,
+    /// Estimated arrival time string.
     pub estimated_arrival_time: Option<String>,
+    /// Whether the booking is for business travel.
     pub is_business_trip: bool,
 }
 
@@ -125,115 +133,197 @@ pub enum UserStatus {
     Inactive,
 }
 
+/// Database entity representing a property reservation hold or booking.
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct Booking {
+    /// Unique booking identifier.
     pub id: Uuid,
+    /// Confirmation code.
     pub confirmation_code: String,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Current booking lifecycle status.
     pub status: BookingStatus,
 
+    /// Check-in start date.
     pub date_from: NaiveDate,
+    /// Check-out departure date.
     pub date_to: NaiveDate,
 
+    /// Checkout currency.
     pub currency: String,
+    /// Daily nightly rate in base currency.
     pub daily_rate: Decimal,
+    /// Total number of guest persons.
     pub number_of_persons: i32,
+    /// Total duration of the stay in days.
     pub total_days: i32,
 
+    /// Subtotal pricing before taxes and discounts.
     pub sub_total_price: Decimal,
+    /// Applied discount amount if any.
     pub discount_value: Option<Decimal>,
+    /// Statutory tax amount if applicable.
     pub tax_value: Option<Decimal>,
 
+    /// Breakdown of individual fees.
     pub fee_breakdown: Json<Vec<FeeItem>>,
 
+    /// Final total price.
     pub total_price: Decimal,
+    /// Cancellation policy applied to this booking.
     pub cancellation_policy: CancellationPolicy,
+    /// Additional guest preferences and arrival metadata.
     pub metadata: Json<BookingMetadata>,
+    /// Smart lock door access code for confirmed stays.
     pub door_access_code: Option<String>,
 
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
+    /// Last update timestamp.
     pub updated_at: DateTime<Utc>,
 }
 
+/// Booking model paired with review submission eligibility.
 pub struct BookingWithEligibility {
+    /// Associated booking record.
     pub booking: Booking,
+    /// Review eligibility status.
     pub review_eligibility: Option<common::models::BookingReviewEligibility>,
 }
 
+/// Lifecycle status for reservations and bookings.
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum BookingStatus {
+    /// Initial payment pending state (15-minute hold).
     Pending,
+    /// Payment confirmed and reservation secured.
     Confirmed,
+    /// Reservation cancelled.
     Cancelled,
+    /// Reservation completed post-stay.
     Completed,
 }
 
+/// Parameters for creating a new booking hold.
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewBooking {
+    /// Human-readable confirmation code.
     pub confirmation_code: String,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Check-in date.
     pub date_from: NaiveDate,
+    /// Check-out date.
     pub date_to: NaiveDate,
+    /// Payment currency.
     pub currency: String,
+    /// Daily nightly rate.
     pub daily_rate: Decimal,
+    /// Total persons.
     pub number_of_persons: i32,
+    /// Total stay days.
     pub total_days: i32,
+    /// Subtotal price.
     pub sub_total_price: Decimal,
+    /// Discount amount.
     pub discount_value: Option<Decimal>,
+    /// Tax amount.
     pub tax_value: Option<Decimal>,
+    /// Itemized fee breakdown.
     pub fee_breakdown: Vec<FeeItem>,
+    /// Total price.
     pub total_price: Decimal,
+    /// Cancellation policy.
     pub cancellation_policy: CancellationPolicy,
+    /// Guest preferences and arrival details.
     pub metadata: BookingMetadata,
+    /// Optional smart door access code.
     pub door_access_code: Option<String>,
 }
 
+/// Parameters for mutating an existing booking.
 #[derive(Debug, Deserialize, Serialize, Validate, Default, Clone)]
 pub struct UpdatedBooking {
+    /// Updated status if changing.
     pub status: Option<BookingStatus>,
+    /// Updated arrival and guest metadata.
     pub metadata: Option<BookingMetadata>,
+    /// Updated smart door access code.
     pub door_access_code: Option<String>,
 }
 
+/// Immutable audit log entry capturing booking status transitions.
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct BookingHistory {
+    /// Unique audit log entry identifier.
     pub id: Uuid,
+    /// Booking identifier.
     pub booking_id: Uuid,
 
+    /// Confirmation code at the time of change.
     pub confirmation_code: String,
+    /// Guest identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Recorded booking status.
     pub status: BookingStatus,
+    /// Check-in date.
     pub date_from: NaiveDate,
+    /// Check-out date.
     pub date_to: NaiveDate,
+    /// Currency.
     pub currency: String,
+    /// Daily rate.
     pub daily_rate: Decimal,
+    /// Number of persons.
     pub number_of_persons: i32,
+    /// Duration in days.
     pub total_days: i32,
+    /// Subtotal price.
     pub sub_total_price: Decimal,
+    /// Discount amount.
     pub discount_value: Option<Decimal>,
+    /// Tax amount.
     pub tax_value: Option<Decimal>,
+    /// Itemized fees.
     pub fee_breakdown: Json<Vec<FeeItem>>,
+    /// Total price.
     pub total_price: Decimal,
+    /// Cancellation policy.
     pub cancellation_policy: CancellationPolicy,
+    /// Associated booking metadata.
     pub metadata: Json<BookingMetadata>,
+    /// Smart door access code.
     pub door_access_code: Option<String>,
 
+    /// User who performed the change.
     pub changed_by_id: Option<Uuid>,
+    /// Reason provided for the change.
     pub change_reason: Option<String>,
+    /// Timestamp of transition.
     pub created_at: DateTime<Utc>,
 }
 
+/// Deduplication and audit record for transactional emails and notifications sent per booking.
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct BookingNotificationLog {
+    /// Unique log identifier.
     pub id: Uuid,
+    /// Associated booking identifier.
     pub booking_id: Uuid,
+    /// Notification type discriminator.
     pub notification_type: String,
+    /// Recipient user identifier.
     pub recipient_user_id: Uuid,
+    /// Dispatch timestamp.
     pub sent_at: DateTime<Utc>,
 }
 
