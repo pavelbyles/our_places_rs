@@ -1317,8 +1317,9 @@ pub async fn process_scheduled_notifications(
     req: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, ApiError> {
+    static CRON_SECRET_ENV: &str = "CRON_SECRET";
     let configured_secret =
-        std::env::var("CRON_SECRET").unwrap_or_else(|_| "dev-cron-secret".to_string());
+        std::env::var(CRON_SECRET_ENV).unwrap_or_else(|_| "dev-cron-secret".to_string());
     let provided_secret = req
         .headers()
         .get("x-cron-secret")

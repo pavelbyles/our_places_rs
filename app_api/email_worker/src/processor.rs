@@ -8,8 +8,9 @@ use uuid::Uuid;
 /// Loads an external HTML template from disk using configured or standard search paths,
 /// falling back to compile-time embedded copies if the file is unavailable.
 pub fn load_template(filename: &str) -> String {
+    static EMAIL_TEMPLATES_DIR_ENV: &str = "EMAIL_TEMPLATES_DIR";
     let candidate_dirs = [
-        std::env::var("EMAIL_TEMPLATES_DIR").ok(),
+        std::env::var(EMAIL_TEMPLATES_DIR_ENV).ok(),
         Some("/app/templates".to_string()),
         Some("templates".to_string()),
         Some("app_api/email_worker/templates".to_string()),

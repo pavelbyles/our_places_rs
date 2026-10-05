@@ -116,19 +116,28 @@ impl LettreSmtpEmailProvider {
     }
 
     pub fn from_env() -> Self {
-        let smtp_host = std::env::var("SMTP_HOST").unwrap_or_else(|_| "localhost".to_string());
-        let smtp_port = std::env::var("SMTP_PORT")
+        static SMTP_HOST_ENV: &str = "SMTP_HOST";
+        static SMTP_PORT_ENV: &str = "SMTP_PORT";
+        static SMTP_USERNAME_ENV: &str = "SMTP_USERNAME";
+        static SMTP_USER_ENV: &str = "SMTP_USER";
+        static SMTP_PASSWORD_ENV: &str = "SMTP_PASSWORD";
+        static SMTP_PASS_ENV: &str = "SMTP_PASS";
+        static SMTP_FROM_EMAIL_ENV: &str = "SMTP_FROM_EMAIL";
+        static SMTP_FROM_ENV: &str = "SMTP_FROM";
+
+        let smtp_host = std::env::var(SMTP_HOST_ENV).unwrap_or_else(|_| "localhost".to_string());
+        let smtp_port = std::env::var(SMTP_PORT_ENV)
             .ok()
             .and_then(|p| p.parse().ok())
             .unwrap_or(587);
-        let smtp_user = std::env::var("SMTP_USERNAME")
-            .or_else(|_| std::env::var("SMTP_USER"))
+        let smtp_user = std::env::var(SMTP_USERNAME_ENV)
+            .or_else(|_| std::env::var(SMTP_USER_ENV))
             .ok();
-        let smtp_password = std::env::var("SMTP_PASSWORD")
-            .or_else(|_| std::env::var("SMTP_PASS"))
+        let smtp_password = std::env::var(SMTP_PASSWORD_ENV)
+            .or_else(|_| std::env::var(SMTP_PASS_ENV))
             .ok();
-        let from_email = std::env::var("SMTP_FROM_EMAIL")
-            .or_else(|_| std::env::var("SMTP_FROM"))
+        let from_email = std::env::var(SMTP_FROM_EMAIL_ENV)
+            .or_else(|_| std::env::var(SMTP_FROM_ENV))
             .unwrap_or_else(|_| "no-reply@ourplaces.io".to_string());
 
         Self::new(smtp_host, smtp_port, smtp_user, smtp_password, from_email)

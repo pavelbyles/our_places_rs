@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 async fn setup_test_db() -> TestPg {
     dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL")
+    static DATABASE_URL_ENV: &str = "DATABASE_URL";
+    let db_url = env::var(DATABASE_URL_ENV)
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
     TestPg::new(db_url, Path::new("../../db_core/migrations"))
 }

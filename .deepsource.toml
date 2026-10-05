@@ -1,5 +1,17 @@
 version = 1
 
+test_patterns = [
+  "**/tests/**",
+  "**/tests.rs",
+  "**/test_*.rs"
+]
+
+exclude_patterns = [
+  "db_core/migrations/**",
+  "target/**",
+  "node_modules/**"
+]
+
 [[analyzers]]
 name = "rust"
 enabled = true

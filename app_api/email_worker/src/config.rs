@@ -13,16 +13,21 @@ impl Default for WorkerConfig {
 
 impl WorkerConfig {
     pub fn from_env() -> Self {
-        let pubsub_secret_token = std::env::var("PUBSUB_SECRET_TOKEN").ok();
-        let max_retries = std::env::var("MAX_EMAIL_RETRIES")
+        static PUBSUB_SECRET_TOKEN_ENV: &str = "PUBSUB_SECRET_TOKEN";
+        static MAX_EMAIL_RETRIES_ENV: &str = "MAX_EMAIL_RETRIES";
+        static USE_MOCK_EMAIL_PROVIDER_ENV: &str = "USE_MOCK_EMAIL_PROVIDER";
+        static SMTP_HOST_ENV: &str = "SMTP_HOST";
+
+        let pubsub_secret_token = std::env::var(PUBSUB_SECRET_TOKEN_ENV).ok();
+        let max_retries = std::env::var(MAX_EMAIL_RETRIES_ENV)
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(3);
-        let use_mock_provider = std::env::var("USE_MOCK_EMAIL_PROVIDER")
+        let use_mock_provider = std::env::var(USE_MOCK_EMAIL_PROVIDER_ENV)
             .map(|v| v == "true" || v == "1")
             .unwrap_or_else(|_| {
                 // By default in development or test, mock provider is enabled if no SMTP_HOST is provided
-                std::env::var("SMTP_HOST").is_err()
+                std::env::var(SMTP_HOST_ENV).is_err()
             });
 
         Self {
