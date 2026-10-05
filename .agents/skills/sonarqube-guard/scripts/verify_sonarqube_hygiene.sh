@@ -5,13 +5,16 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
+MODE_WORKING="working"
+INDENT_SED='s/^/      /'
+
 MODE="staged"
 if [[ "${1:-}" == "--all" ]]; then
   MODE="all"
 elif [[ "${1:-}" == "--staged" ]]; then
   MODE="staged"
 elif [[ -z "$(git diff --cached --name-only 2>/dev/null)" ]]; then
-  MODE="working"
+  MODE="$MODE_WORKING"
 fi
 
 echo "==> Running SonarQube & DeepSource Hygiene Audit [Mode: $MODE]..."
@@ -32,14 +35,14 @@ if [[ "$MODE" == "all" ]]; then
   TMP_MATCHES=$(git grep -n -E '"/tmp(/[^"]*)?"' -- '*.rs' ':!*/tests/*' ':!*/tests.rs' ':!*test*.rs' 2>/dev/null || true)
 else
   DIFF_CMD="git diff --cached -U0 -- '*.rs'"
-  [[ "$MODE" == "working" ]] && DIFF_CMD="git diff -U0 -- '*.rs'"
+  [[ "$MODE" == "$MODE_WORKING" ]] && DIFF_CMD="git diff -U0 -- '*.rs'"
   TMP_MATCHES=$(eval "$DIFF_CMD" 2>/dev/null | grep '^+[^+]' | grep -E '"/tmp(/[^"]*)?"' || true)
 fi
 
 if [[ -n "$TMP_MATCHES" ]]; then
   echo "FAIL"
   echo "    Found hardcoded /tmp path (DeepSource RS-S1003). Use std::env::temp_dir() instead:"
-  echo "$TMP_MATCHES" | sed 's/^/      /'
+  echo "$TMP_MATCHES" | sed "$INDENT_SED"
   ERRORS_FOUND=$((ERRORS_FOUND + 1))
 else
   echo "PASS"
@@ -51,14 +54,14 @@ if [[ "$MODE" == "all" ]]; then
   ENV_LITERALS=$(git grep -n -E '(std::)?env::var\("[^"]+"\)' -- '*.rs' ':!*/tests/*' ':!*/tests.rs' ':!*test*.rs' ':!*build.rs' 2>/dev/null || true)
 else
   DIFF_CMD="git diff --cached -U0 -- '*.rs'"
-  [[ "$MODE" == "working" ]] && DIFF_CMD="git diff -U0 -- '*.rs'"
+  [[ "$MODE" == "$MODE_WORKING" ]] && DIFF_CMD="git diff -U0 -- '*.rs'"
   ENV_LITERALS=$(eval "$DIFF_CMD" 2>/dev/null | grep '^+[^+]' | grep -E '(std::)?env::var\("[^"]+"\)' || true)
 fi
 
 if [[ -n "$ENV_LITERALS" ]]; then
   echo "FAIL"
   echo "    Found string literal in env::var (DeepSource RS-W1015). Use static CONST_ENV: &str = \"...\":"
-  echo "$ENV_LITERALS" | sed 's/^/      /'
+  echo "$ENV_LITERALS" | sed "$INDENT_SED"
   ERRORS_FOUND=$((ERRORS_FOUND + 1))
 else
   echo "PASS"
@@ -86,7 +89,7 @@ done < <(find app_api/email_worker/templates -name "*.html" 2>/dev/null || true)
 if [[ -n "$TEMPLATE_FAILURES" ]]; then
   echo "FAIL"
   echo "    HTML template standards violation (SonarCloud S5254/S5148):"
-  echo "$TEMPLATE_FAILURES" | sed 's/^/      /'
+  echo "$TEMPLATE_FAILURES" | sed "$INDENT_SED"
   ERRORS_FOUND=$((ERRORS_FOUND + 1))
 else
   echo "PASS"
@@ -108,7 +111,7 @@ fi
 if [[ -n "$CONFIG_FAILURES" ]]; then
   echo "FAIL"
   echo "    Static analysis configuration missing migration exclusions:"
-  echo "$CONFIG_FAILURES" | sed 's/^/      /'
+  echo "$CONFIG_FAILURES" | sed "$INDENT_SED"
   ERRORS_FOUND=$((ERRORS_FOUND + 1))
 else
   echo "PASS"
@@ -142,12 +145,12 @@ if [[ "$MODE" == "all" ]]; then
   fi
 else
   DIFF_CMD="git diff --cached -U0 -- '*.rs'"
-  [[ "$MODE" == "working" ]] && DIFF_CMD="git diff -U0 -- '*.rs'"
+  [[ "$MODE" == "$MODE_WORKING" ]] && DIFF_CMD="git diff -U0 -- '*.rs'"
   UNWRAP_MATCHES=$(eval "$DIFF_CMD" 2>/dev/null | grep '^+[^+]' | grep -E '\.(unwrap|expect)\(' | grep -v 'unwrap_or' | grep -v 'unwrap_err' || true)
   if [[ -n "$UNWRAP_MATCHES" ]]; then
     echo "FAIL"
     echo "    Found .unwrap() or .expect() in changed production code (AGENTS.md / DeepSource RS-W1072):"
-    echo "$UNWRAP_MATCHES" | sed 's/^/      /'
+    echo "$UNWRAP_MATCHES" | sed "$INDENT_SED"
     ERRORS_FOUND=$((ERRORS_FOUND + 1))
   else
     echo "PASS"
