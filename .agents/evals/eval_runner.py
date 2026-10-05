@@ -166,6 +166,27 @@ cargo test --workspace
 git push origin feat/42-fix-branch
 gh pr comment 42 --body "Resolved unwrap violation by mapping DB connection error to AppError::DbError."
 ```
+""",
+        "sonarqube-guard:Static Analysis & Doc Coverage Guard Test": """
+/// Notification dispatch channels supported by the notification pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NotificationChannel {
+    /// Transactional email dispatch.
+    Email,
+    /// SMS message dispatch.
+    Sms,
+    /// Mobile push notification dispatch.
+    Push,
+}
+
+/// Strongly-typed configuration for notification services.
+#[derive(Debug, Clone)]
+pub struct NotificationConfig {
+    /// Target channel for notifications.
+    pub channel: NotificationChannel,
+    /// Environment variable key name for API credentials.
+    pub api_key_env: String,
+}
 """
     }
 

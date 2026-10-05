@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            created_at, updated_at\n        FROM booking\n        WHERE listing_id = $1\n        ORDER BY date_from DESC, created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        INSERT INTO booking (\n            id, confirmation_code, guest_id, listing_id, status,\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown,\n            total_price, cancellation_policy, metadata, door_access_code, created_at, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -118,11 +118,16 @@
       },
       {
         "ordinal": 18,
+        "name": "door_access_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -130,8 +135,49 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Int8",
-        "Int8"
+        "Varchar",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "booking_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        },
+        "Date",
+        "Date",
+        "Bpchar",
+        "Numeric",
+        "Int4",
+        "Int4",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Jsonb",
+        "Numeric",
+        {
+          "Custom": {
+            "name": "cancellation_policy",
+            "kind": {
+              "Enum": [
+                "flexible",
+                "moderate",
+                "strict"
+              ]
+            }
+          }
+        },
+        "Jsonb",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -153,9 +199,10 @@
       false,
       false,
       false,
+      true,
       false,
       false
     ]
   },
-  "hash": "921b9769a8bd193c4ea9d6a83fd48f6fbb133f706d658a07cb710e99ab18176f"
+  "hash": "30ebe672861a66b0858bebd264141e2789b9b543c65d27df34bf6d7e3040930f"
 }

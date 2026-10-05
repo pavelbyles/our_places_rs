@@ -620,7 +620,7 @@ pub async fn payouts_ledger_table(
 
                                     // Settlement Date
                                     <td class="text-xs text-base-content/60 whitespace-nowrap">
-                                        (entry.payout_date.map(|dt| dt.format("%b %d, %Y").to_string()).unwrap_or_else(|| "Pending".to_string()))
+                                        (entry.payout_date.map_or_else(|| "Pending".to_string(), |dt| dt.format("%b %d, %Y").to_string()))
                                     </td>
 
                                     // Action
@@ -682,11 +682,11 @@ pub async fn update_payout_status_api(
 ) -> Result<Json<PayoutLedgerEntry>> {
     web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
     let api = get_api_client(cx);
     let resp = api
         .update_admin_payout_status(id, &payload)
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
     Ok(Json(resp))
 }

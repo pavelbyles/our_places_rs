@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            b.id AS booking_id,\n            b.confirmation_code,\n            g.id AS guest_id,\n            g.email AS guest_email,\n            g.first_name AS guest_first_name,\n            l.id AS listing_id,\n            l.name AS listing_name,\n            b.currency,\n            b.total_price,\n            b.created_at\n        FROM booking b\n        JOIN \"user\" g ON b.guest_id = g.id\n        JOIN listing l ON b.listing_id = l.id\n        WHERE b.status = 'pending'\n          AND b.created_at >= NOW() - INTERVAL '105 minutes'\n          AND b.created_at <= NOW() - INTERVAL '75 minutes'\n          AND NOT EXISTS (\n              SELECT 1 FROM booking_notification_log \n              WHERE booking_id = b.id AND notification_type = 'payment_hold_reminder'\n          )\n        ORDER BY b.created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "guest_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bb62c24046c1c54fa27479d678487d63548901d26e60092d1344e7e9e0661b96"
+}

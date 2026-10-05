@@ -3,7 +3,7 @@ use serde::Serialize;
 
 pub use common::models::{BookingMetadataResponse, BookingResponse};
 
-// Helper to map DB Listing to API Response
+/// Helper to map database listing model to API response DTO.
 pub fn map_listing_to_response(
     listing: db_core::models::Listing,
 ) -> common::models::ListingResponse {
@@ -45,6 +45,7 @@ pub fn map_listing_to_response(
         listing_details: Some(listing.listing_details.0),
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
+        commission_pct: Some(listing.commission_pct),
     }
 }
 
@@ -66,6 +67,7 @@ pub fn map_listing_details_to_response(
     }
 }
 
+/// Helper to map database listing with owner details to API response DTO.
 pub fn map_listing_with_owner_to_response(
     listing: db_core::models::ListingWithOwner,
 ) -> common::models::ListingResponse {
@@ -107,23 +109,27 @@ pub fn map_listing_with_owner_to_response(
         listing_details: Some(listing.listing_details.0),
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
+        commission_pct: Some(listing.commission_pct),
     }
 }
 
-// Wrapper for XML collections
+/// XML collection wrapper for listings responses.
 #[derive(Serialize)]
 #[serde(rename = "listings")]
 pub struct ListingsWrapper<T> {
+    /// Inner list of serialized listing records.
     pub listing: Vec<T>,
 }
 
-// Wrapper for XML collections
+/// XML collection wrapper for bookings responses.
 #[derive(Serialize)]
 #[serde(rename = "bookings")]
 pub struct BookingsWrapper<T> {
+    /// Inner list of serialized booking records.
     pub booking: Vec<T>,
 }
 
+/// Helper to map database booking model to API response DTO.
 pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
     BookingResponse {
         id: booking.id,
@@ -152,6 +158,7 @@ pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
             is_business_trip: booking.metadata.is_business_trip,
         },
         review_eligibility: None,
+        door_access_code: booking.door_access_code,
         created_at: booking.created_at,
         updated_at: booking.updated_at,
     }

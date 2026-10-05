@@ -45,7 +45,7 @@ pub async fn send_booking_message_htmx(
 ) -> Result<impl View> {
     let user = web_app_common_tc::auth::get_guest_session(cx)
         .await
-        .ok_or_else(|| anyhow::anyhow!("Unauthorized"))?;
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
     let code: &str = path_param::<Code>(cx);
     let api = get_api_client(cx);
     let bookings = api
@@ -55,7 +55,7 @@ pub async fn send_booking_message_htmx(
     let booking = bookings
         .into_iter()
         .find(|b| b.confirmation_code.eq_ignore_ascii_case(code) || b.id.to_string() == code)
-        .ok_or_else(|| anyhow::anyhow!("Booking not found"))?;
+        .ok_or_else(|| web_app_common_tc::app_error("Booking not found"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -74,7 +74,7 @@ pub async fn send_booking_message_htmx(
         .json(&req_payload)
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     let (err_text, msg) = if !res.status().is_success() {
         let err = if res.status() == reqwest::StatusCode::BAD_REQUEST {
@@ -87,7 +87,7 @@ pub async fn send_booking_message_htmx(
         let msg = res
             .json::<BookingMessageResponse>()
             .await
-            .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+            .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
         (None, Some(msg))
     };
 

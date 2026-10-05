@@ -122,8 +122,10 @@ impl DatabaseSettings {
 // Load settings
 // ... (structs and impls remain the same) ...
 
-// This is a cleaned-up version of YOUR original function.
+/// Resolves and loads application configuration settings based on the runtime environment.
 pub fn get_settings() -> Result<Settings, ConfigError> {
+    dotenvy::dotenv().ok();
+
     const DEFAULT_CONFIG_FILE: &str = "config/Default.toml";
     const ENV_CONFIG_PREFIX: &str = "config/";
     const RUN_ENV_VAR: &str = "RUN_ENV";

@@ -10,11 +10,20 @@
   # JavaScript/Node.js Toolchain (node & npm for DaisyUI / Tailwind)
   languages.javascript = {
     enable = true;
-    npm.enable = true;
+    npm = {
+      enable = true;
+      install.enable = true;
+    };
   };
 
   # Python Toolchain (for .agents/evals/eval_runner.py)
   languages.python.enable = true;
+
+  # Java Toolchain (OpenJDK 21 required for local Google Cloud Pub/Sub emulator)
+  languages.java = {
+    enable = true;
+    jdk.package = pkgs.openjdk21;
+  };
 
   # Native dependencies & developer CLI utilities
   packages = [
@@ -26,6 +35,7 @@
     pkgs.openssl
     pkgs.postgresql
     pkgs.psmisc
+    (pkgs.google-cloud-sdk.withExtraComponents [ pkgs.google-cloud-sdk.components.pubsub-emulator ])
   ];
 
   # Fast git pre-commit formatting check
@@ -159,9 +169,47 @@
       python3 .agents/evals/eval_runner.py "$@"
     '';
 
+    # GCP Pub/Sub Emulator start, stop & topic/subscription provisioning
+    pubsub-start.exec = ''
+      if ! (echo > /dev/tcp/127.0.0.1/8085) >/dev/null 2>&1; then
+        echo "Starting Pub/Sub emulator on 127.0.0.1:8085..."
+        mkdir -p /tmp/pubsub_emulator
+        nohup gcloud beta emulators pubsub start --host-port=127.0.0.1:8085 --data-dir=/tmp/pubsub_emulator > /tmp/pubsub_emulator.log 2>&1 &
+        echo $! > /tmp/pubsub_emulator.pid
+      fi
+      retries=15
+      until (echo > /dev/tcp/127.0.0.1/8085) >/dev/null 2>&1 || [ $retries -eq 0 ]; do
+        sleep 1
+        retries=$((retries - 1))
+      done
+      if (echo > /dev/tcp/127.0.0.1/8085) >/dev/null 2>&1; then
+        echo "✓ Pub/Sub emulator is listening on 127.0.0.1:8085"
+        echo "Ensuring topic and push subscription exist..."
+        curl -s -X PUT http://127.0.0.1:8085/v1/projects/our-places-dev/topics/email-notifications-topic >/dev/null 2>&1 || true
+        curl -s -X PUT http://127.0.0.1:8085/v1/projects/our-places-dev/subscriptions/email-worker-sub \
+          -H "Content-Type: application/json" \
+          -d '{"topic":"projects/our-places-dev/topics/email-notifications-topic","pushConfig":{"pushEndpoint":"http://127.0.0.1:8080/pubsub/email-events"}}' >/dev/null 2>&1 || true
+        echo "✓ Pub/Sub topic [email-notifications-topic] and push subscription [email-worker-sub -> :8080] ready."
+      else
+        echo "❌ Failed to start Pub/Sub emulator. Check /tmp/pubsub_emulator.log"
+      fi
+    '';
+
+    pubsub-stop.exec = ''
+      echo "Stopping Pub/Sub emulator..."
+      if [ -f /tmp/pubsub_emulator.pid ]; then
+        PID=$(cat /tmp/pubsub_emulator.pid)
+        kill $PID 2>/dev/null || true
+        rm -f /tmp/pubsub_emulator.pid
+      fi
+      pkill -f "cloud-pubsub-emulator.*8085" 2>/dev/null || true
+      echo "✓ Pub/Sub emulator stopped."
+    '';
+
     # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
       db-start
+      pubsub-start
       echo "Starting API microservices (listing_api, booking_api, user_api, email_worker)..."
       devenv up listing_api booking_api user_api email_worker "$@"
     '';
@@ -170,6 +218,7 @@
     apis-start.exec = ''
       db-start
       db-migrate
+      pubsub-start
       echo "Starting API microservices in background (listing_api, booking_api, user_api, email_worker)..."
       devenv up -d listing_api booking_api user_api email_worker "$@"
     '';
@@ -181,6 +230,7 @@
       devenv processes stop booking_api || true
       devenv processes stop user_api || true
       devenv processes stop email_worker || true
+      pubsub-stop
     '';
 
     # Launch Topcoat frontends with topcoat dev
@@ -198,13 +248,15 @@
 
     # Launch full application stack (APIs + Topcoat frontends, DB kept running continuously)
     fullstack.exec = ''
+      echo "Starting full development stack (APIs, Frontends, Pub/Sub emulator, database)..."
       db-start
-      echo "Starting full development stack (APIs, Frontends)..."
+      pubsub-start
       devenv up listing_api booking_api user_api email_worker web_app_tc web_app_admin_tc "$@"
     '';
 
     # Playwright E2E Testing
     playwright-install.exec = ''
+      [ -d "node_modules" ] || npm ci
       echo "Installing Playwright browsers (chromium, firefox)..."
       npx playwright install --with-deps chromium firefox
       for d in "$HOME"/.cache/ms-playwright/firefox-*; do
@@ -214,26 +266,44 @@
 
     test-e2e.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Running Playwright E2E test suites..."
       npx playwright test --config=playwright/playwright.config.ts "$@"
     '';
 
     test-e2e-guest.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Running Guest Portal Playwright E2E tests (Chromium & Firefox)..."
       npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=guest-portal-firefox "$@"
     '';
 
     test-e2e-admin.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Running Admin Portal Playwright E2E tests (Chromium & Firefox)..."
       npx playwright test --config=playwright/playwright.config.ts --project=admin-portal-chromium --project=admin-portal-firefox "$@"
     '';
 
     test-e2e-ui.exec = ''
       set -e
+      [ -d "node_modules" ] || npm ci
       echo "Opening Playwright Interactive UI Mode..."
       npx playwright test --config=playwright/playwright.config.ts --ui "$@"
+    '';
+
+    test-e2e-chromium.exec = ''
+      set -e
+      [ -d "node_modules" ] || npm ci
+      echo "Running Playwright E2E tests (Chromium only across Guest & Admin)..."
+      npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=admin-portal-chromium "$@"
+    '';
+
+    test-e2e-ui-chromium.exec = ''
+      set -e
+      [ -d "node_modules" ] || npm ci
+      echo "Opening Playwright Interactive UI Mode (Chromium only across Guest & Admin)..."
+      npx playwright test --config=playwright/playwright.config.ts --ui --project=guest-portal-chromium --project=admin-portal-chromium "$@"
     '';
   };
 
@@ -260,6 +330,7 @@
       cd app_api/email_worker && ./run_local.sh
     '';
 
+
     # Guest Portal Frontend (Topcoat SSR & HTMX)
     web_app_tc.exec = ''
       cd web_app_tc && CARGO_TARGET_DIR=../target/guest topcoat dev
@@ -277,22 +348,27 @@
     echo "   - Cargo:      $(cargo --version)"
     echo "   - Node:       $(node --version)"
     echo "   - Python:     $(python3 --version)"
+    echo "   - Java:       $(java -version 2>&1 | head -n 1)"
     echo "   - PostgreSQL: $(psql --version)"
     echo "   - sqlx-cli:   $(sqlx --version)"
     echo "   - Workflows & Launchers (Foreground - Ctrl+C to stop):"
-    echo "       • apis           (launch DB + microservices):"
+    echo "       • apis           (launch DB + Pub/Sub + microservices):"
     echo "           - email_worker:     :8080"
     echo "           - booking_api:      :8081"
     echo "           - listing_api:      :8082"
     echo "           - user_api:         :8083"
-    echo "       • apis-start     (launch DB + APIs in background / detached)"
-    echo "       • apis-stop      (stop background APIs)"
+    echo "           - pubsub_emulator:  :8085"
+    echo "       • apis-start     (launch DB + Pub/Sub + APIs in background / detached)"
+    echo "       • apis-stop      (stop background APIs & Pub/Sub)"
+    echo "       • pubsub-start   (start Pub/Sub emulator + init topic & push subscription)"
+    echo "       • pubsub-stop    (stop Pub/Sub emulator)"
     echo "       • frontends      (launch Topcoat frontends):"
     echo "           - web_app_tc:       :3000 (guest)"
     echo "           - web_app_admin_tc: :3002 (admin)"
     echo "       • frontends-stop (stop Topcoat frontends)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
+    echo "       • test-e2e-ui-chromium (launch interactive UI for Chromium across Guest & Admin)"
     echo "       • db-start       • db-stop        • db-seed        • db-migrate     • db-prepare"
     echo "           - postgres:         :5432"
     echo "       • docker-db-start• docker-db-stop"

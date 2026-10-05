@@ -323,6 +323,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                                                 data-total=(total_str.clone())
                                                 data-status=(status_display.to_string())
                                                 data-location=(villa_location.clone())
+                                                data-door-code=(b.door_access_code.clone().unwrap_or_default())
                                                 onclick="openAdminBookingDetailsFromBtn(this)"
                                             >
                                                 "Details"
@@ -370,6 +371,37 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                             <div class="font-bold text-sm text-base-content" id="detail-stay-dates">"Dates"</div>
                             <div class="text-base-content/70" id="detail-stay-nights">"Nights"</div>
                         </div>
+                    </div>
+
+                    // Keyless Access & Door Code Section
+                    <div class="bg-base-200/50 p-4 rounded-2xl space-y-3 text-xs">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-base-content/50 font-bold uppercase block text-[10px]">"Keyless Access & Arrival Guide"</span>
+                                <h4 class="font-bold text-sm text-base-content">"Door Access Code"</h4>
+                            </div>
+                            <span id="detail-door-code-badge" class="badge badge-neutral badge-xs font-semibold">"Not Set"</span>
+                        </div>
+                        <p class="text-xs text-base-content/70">
+                            "Configured statically by host or admin. Included automatically in the 48-Hour Pre-Arrival Guide sent to the guest."
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <input
+                                type="text"
+                                id="detail-door-code-input"
+                                placeholder="e.g. 4829 or #KEY123"
+                                class="input input-bordered input-sm flex-1 font-mono font-bold rounded-xl"
+                            />
+                            <button
+                                type="button"
+                                id="btn-save-door-code"
+                                onclick="saveAdminDoorCode()"
+                                class="btn btn-primary btn-sm rounded-xl font-bold"
+                            >
+                                "Save Code"
+                            </button>
+                        </div>
+                        <div id="door-code-status-msg" class="text-[11px] text-success hidden font-semibold"></div>
                     </div>
 
                     // Financial & Statutory Tax Breakdown
@@ -499,6 +531,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                 var activeAdminCancelRow = null;
                 var activeAdminCancelRef = null;
                 var activeAdminCancelBookingId = null;
+                var activeDetailBookingId = null;
 
                 function approveAdminBookingDirect(bookingId) {
                     try {
@@ -781,6 +814,26 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                             sbEl.className = (status === 'Confirmed' ? 'badge badge-success font-bold text-xs' : (status === 'Pending' || status === 'Pending Hold' ? 'badge badge-warning font-bold text-xs' : 'badge badge-error font-bold text-xs'));
                         }
 
+                        activeDetailBookingId = b_id;
+                        var doorCode = btn.getAttribute('data-door-code') || '';
+                        var dcInput = document.getElementById('detail-door-code-input');
+                        var dcBadge = document.getElementById('detail-door-code-badge');
+                        if (dcInput) dcInput.value = doorCode;
+                        if (dcBadge) {
+                            if (doorCode) {
+                                dcBadge.innerText = 'Configured (' + doorCode + ')';
+                                dcBadge.className = 'badge badge-success badge-xs font-bold';
+                            } else {
+                                dcBadge.innerText = 'Not Set';
+                                dcBadge.className = 'badge badge-warning badge-xs font-semibold';
+                            }
+                        }
+                        var statusMsg = document.getElementById('door-code-status-msg');
+                        if (statusMsg) {
+                            statusMsg.className = 'text-[11px] text-success hidden font-semibold';
+                            statusMsg.innerText = '';
+                        }
+
                         var msgLink = document.getElementById('admin-msg-link');
                         if (msgLink) {
                             if (ref || b_id) {
@@ -896,6 +949,77 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                     }
                 }
 
+                function saveAdminDoorCode() {
+                    try {
+                        var bookingId = activeDetailBookingId;
+                        if (!bookingId) return;
+
+                        var input = document.getElementById('detail-door-code-input');
+                        var btn = document.getElementById('btn-save-door-code');
+                        var badge = document.getElementById('detail-door-code-badge');
+                        var msg = document.getElementById('door-code-status-msg');
+                        var newCode = input ? input.value.trim() : '';
+
+                        if (btn) {
+                            btn.disabled = true;
+                            btn.innerText = 'Saving...';
+                        }
+
+                        fetch('/api/bookings/' + bookingId, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({ door_access_code: newCode })
+                        })
+                        .then(function(res) {
+                            if (!res.ok) {
+                                return res.text().then(function(t) {
+                                    throw new Error(t || ('Server error (' + res.status + ')'));
+                                });
+                            }
+                            return res.json();
+                        })
+                        .then(function(data) {
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerText = 'Save Code';
+                            }
+                            if (badge) {
+                                if (newCode) {
+                                    badge.innerText = 'Configured (' + newCode + ')';
+                                    badge.className = 'badge badge-success badge-xs font-bold';
+                                } else {
+                                    badge.innerText = 'Not Set';
+                                    badge.className = 'badge badge-warning badge-xs font-semibold';
+                                }
+                            }
+                            var triggerBtn = document.querySelector('button[data-id="' + bookingId + '"]');
+                            if (triggerBtn) {
+                                triggerBtn.setAttribute('data-door-code', newCode);
+                            }
+                            if (msg) {
+                                msg.innerText = '✓ Door access code updated successfully.';
+                                msg.className = 'text-[11px] text-success font-semibold';
+                                setTimeout(function() {
+                                    msg.className = 'text-[11px] text-success hidden font-semibold';
+                                }, 3000);
+                            }
+                        })
+                        .catch(function(err) {
+                            console.error('Failed to update door access code:', err);
+                            alert('Failed to save door access code: ' + err.message);
+                            if (btn) {
+                                btn.disabled = false;
+                                btn.innerText = 'Save Code';
+                            }
+                        });
+                    } catch(e) {
+                        console.error('Error in saveAdminDoorCode:', e);
+                    }
+                }
+
                 window.approveAdminBookingDirect = approveAdminBookingDirect;
                 window.rejectAdminBookingDirect = rejectAdminBookingDirect;
                 window.approveAdminBooking = approveAdminBooking;
@@ -905,6 +1029,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                 window.extendAdminHold = extendAdminHold;
                 window.openAdminInvoiceDialog = openAdminInvoiceDialog;
                 window.exportBookingsCsv = exportBookingsCsv;
+                window.saveAdminDoorCode = saveAdminDoorCode;
                 "#
             </script>
         </div>
@@ -917,14 +1042,39 @@ pub async fn update_booking_admin_api(
     cx: &Cx,
     Json(payload): Json<UpdatedBookingRequest>,
 ) -> Result<Json<BookingResponse>> {
-    web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
-    let api = get_api_client(cx);
-    let resp = api
-        .update_booking(id, &payload)
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let url = format!(
+        "{}/api/v1/bookings/{}",
+        common::app_client::booking_api_url(),
+        id
+    );
+    let client = reqwest::Client::new();
+    let res = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&payload)
+        .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to update booking ({}): {}",
+            status, err_text
+        ))
+        .into());
+    }
+
+    let resp = res
+        .json::<BookingResponse>()
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
 
@@ -932,7 +1082,7 @@ pub async fn update_booking_admin_api(
 pub async fn get_booking_messages_admin_api(cx: &Cx) -> Result<Json<BookingMessagesWrapper>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -946,16 +1096,20 @@ pub async fn get_booking_messages_admin_api(cx: &Cx) -> Result<Json<BookingMessa
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to fetch messages: {}", res.status()).into());
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to fetch messages: {}",
+            res.status()
+        ))
+        .into());
     }
 
     let resp = res
         .json::<BookingMessagesWrapper>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
 
@@ -966,7 +1120,7 @@ pub async fn send_booking_message_admin_api(
 ) -> Result<Json<BookingMessageResponse>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -981,16 +1135,20 @@ pub async fn send_booking_message_admin_api(
         .json(&payload)
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to send message: {}", res.status()).into());
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to send message: {}",
+            res.status()
+        ))
+        .into());
     }
 
     let resp = res
         .json::<BookingMessageResponse>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }
 
@@ -998,7 +1156,7 @@ pub async fn send_booking_message_admin_api(
 pub async fn mark_messages_read_admin_api(cx: &Cx) -> Result<Json<MarkMessagesReadResponse>> {
     let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
     let id_str: &str = path_param::<Id>(cx);
-    let id = Uuid::parse_str(id_str).map_err(|_| anyhow::anyhow!("Invalid UUID"))?;
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
 
     let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let url = format!(
@@ -1012,15 +1170,17 @@ pub async fn mark_messages_read_admin_api(cx: &Cx) -> Result<Json<MarkMessagesRe
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
 
     if !res.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to mark read: {}", res.status()).into());
+        return Err(
+            web_app_common_tc::app_error(format!("Failed to mark read: {}", res.status())).into(),
+        );
     }
 
     let resp = res
         .json::<MarkMessagesReadResponse>()
         .await
-        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))?;
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
 }

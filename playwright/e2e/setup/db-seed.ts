@@ -27,6 +27,25 @@ export async function seedTestData(): Promise<void> {
         roles = '{admin,host}',
         is_active = true;
 
+    -- 1b. Ensure test guest user exists
+    INSERT INTO "user" (
+        id, email, password_hash, first_name, last_name, roles, is_active, is_verified, default_currency, created_at, updated_at
+    ) VALUES (
+        '01a0bcbd-014d-7062-99b2-6a42d05b9ee8',
+        'guest.tester@example.com',
+        '$2b$12$H09UlIMmYBCR3TpiZ44.SOkrYELsOkplVxMYH6Aup52FbrMF5VGCW',
+        'Jordan',
+        'Tester',
+        '{booker}',
+        true,
+        true,
+        'USD',
+        NOW(),
+        NOW()
+    ) ON CONFLICT (email) DO UPDATE SET
+        roles = '{booker}',
+        is_active = true;
+
     -- 2. Ensure test villa listing exists
     INSERT INTO listing (
         id,
@@ -126,14 +145,66 @@ export async function seedTestData(): Promise<void> {
         '018f3a5e-6b9c-7000-8000-000000000002',
         false
     ) ON CONFLICT (id) DO UPDATE SET status = 'Processed';
+
+    -- 4. Ensure deterministic test booking exists for E2E tests
+    INSERT INTO booking (
+        id,
+        confirmation_code,
+        guest_id,
+        listing_id,
+        status,
+        date_from,
+        date_to,
+        currency,
+        daily_rate,
+        number_of_persons,
+        total_days,
+        sub_total_price,
+        discount_value,
+        tax_value,
+        fee_breakdown,
+        total_price,
+        cancellation_policy,
+        metadata,
+        door_access_code,
+        created_at,
+        updated_at
+    ) VALUES (
+        '018f3a5e-6b9c-7000-8000-000000000010',
+        'OP-E2E-7788',
+        '01a0bcbd-014d-7062-99b2-6a42d05b9ee8',
+        '018f3a5e-6b9c-7000-8000-000000000001',
+        'confirmed',
+        CURRENT_DATE + INTERVAL '2 days',
+        CURRENT_DATE + INTERVAL '5 days',
+        'USD',
+        650.00,
+        2,
+        3,
+        1950.00,
+        0.00,
+        292.50,
+        '[]'::jsonb,
+        2242.50,
+        'flexible',
+        '{"num_adults": 2, "num_children": 0, "num_infants": 0, "num_pets": 0, "is_business_trip": false}'::jsonb,
+        NULL,
+        NOW(),
+        NOW()
+    ) ON CONFLICT (id) DO UPDATE SET
+        status = 'confirmed',
+        metadata = EXCLUDED.metadata;
   `;
 
   try {
-    execSync(`psql "${dbUrl}" -c "${seedSql.replace(/"/g, '\\"')}"`, {
-      stdio: 'pipe',
+    execSync(`psql "${dbUrl}"`, {
+      input: seedSql,
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-    console.log('✓ Seeded test villa listing: the-courtyard-studio-new-kingston');
-  } catch (err) {
-    console.warn('⚠ Note: DB seed command could not be completed directly:', (err as Error).message);
+    console.log('✓ Seeded test villa listing & deterministic booking: the-courtyard-studio-new-kingston');
+  } catch (err: unknown) {
+    const error = err as { message?: string; stderr?: Buffer };
+    const stderrMsg = error.stderr ? error.stderr.toString() : '';
+    console.warn('⚠ Note: DB seed command could not be completed directly:', error.message, stderrMsg);
   }
 }

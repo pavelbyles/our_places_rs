@@ -26,13 +26,13 @@ dotenvy = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-jsonwebtoken = "9.3.0"
+jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 
 
 [build-dependencies]
-topcoat = { version = "0.8.1", default-features = false, features = [
+topcoat = { version = "0.10.0", default-features = false, features = [
     "tailwind",
 ] }
 

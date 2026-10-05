@@ -32,9 +32,15 @@ impl EmailPublisher {
     /// or constructs the standard Google Cloud Pub/Sub v1 REST endpoint:
     /// `https://pubsub.googleapis.com/v1/projects/{project_id}/topics/{topic_id}:publish`.
     pub fn new(topic_id: &str) -> Self {
+        static GCP_PROJECT_ID_ENV: &str = "GCP_PROJECT_ID";
+        static PUBSUB_EMULATOR_HOST_ENV: &str = "PUBSUB_EMULATOR_HOST";
+        static DISABLE_PUBSUB_PUBLISH_ENV: &str = "DISABLE_PUBSUB_PUBLISH";
+        static PUBSUB_AUTH_TOKEN_ENV: &str = "PUBSUB_AUTH_TOKEN";
+
+        dotenvy::dotenv().ok();
         let gcp_project =
-            std::env::var("GCP_PROJECT_ID").unwrap_or_else(|_| "our-places-dev".to_string());
-        let topic_url = if let Ok(emulator_host) = std::env::var("PUBSUB_EMULATOR_HOST") {
+            std::env::var(GCP_PROJECT_ID_ENV).unwrap_or_else(|_| "our-places-dev".to_string());
+        let topic_url = if let Ok(emulator_host) = std::env::var(PUBSUB_EMULATOR_HOST_ENV) {
             format!(
                 "http://{}/v1/projects/{}/topics/{}:publish",
                 emulator_host, gcp_project, topic_id
@@ -45,7 +51,7 @@ impl EmailPublisher {
                 gcp_project, topic_id
             )
         };
-        let disabled = std::env::var("DISABLE_PUBSUB_PUBLISH")
+        let disabled = std::env::var(DISABLE_PUBSUB_PUBLISH_ENV)
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
@@ -55,7 +61,7 @@ impl EmailPublisher {
                 .build()
                 .unwrap_or_else(|_| Client::new()),
             topic_url,
-            auth_token: std::env::var("PUBSUB_AUTH_TOKEN").ok(),
+            auth_token: std::env::var(PUBSUB_AUTH_TOKEN_ENV).ok(),
             disabled,
         }
     }
@@ -65,8 +71,11 @@ impl EmailPublisher {
     /// Checks `EMAIL_PUBSUB_TOPIC_ID` first, falling back to `PUBSUB_TOPIC_ID`,
     /// and defaults to `"email-notifications-topic"` if neither is specified.
     pub fn from_env() -> Self {
-        let topic_id = std::env::var("EMAIL_PUBSUB_TOPIC_ID")
-            .or_else(|_| std::env::var("PUBSUB_TOPIC_ID"))
+        static EMAIL_PUBSUB_TOPIC_ID_ENV: &str = "EMAIL_PUBSUB_TOPIC_ID";
+        static PUBSUB_TOPIC_ID_ENV: &str = "PUBSUB_TOPIC_ID";
+
+        let topic_id = std::env::var(EMAIL_PUBSUB_TOPIC_ID_ENV)
+            .or_else(|_| std::env::var(PUBSUB_TOPIC_ID_ENV))
             .unwrap_or_else(|_| "email-notifications-topic".to_string());
         Self::new(&topic_id)
     }
@@ -153,5 +162,19 @@ mod tests {
         let publisher = EmailPublisher::disabled();
         let res = publisher.publish_email_event(Uuid::new_v4()).await;
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_from_env_resolves_emulator_url() {
+        static PUBSUB_EMULATOR_HOST_ENV: &str = "PUBSUB_EMULATOR_HOST";
+        unsafe {
+            std::env::set_var(PUBSUB_EMULATOR_HOST_ENV, "127.0.0.1:8085");
+        }
+        let publisher = EmailPublisher::from_env();
+        assert!(
+            publisher.topic_url.contains("127.0.0.1:8085"),
+            "Expected topic_url to use PUBSUB_EMULATOR_HOST, got: {}",
+            publisher.topic_url
+        );
     }
 }

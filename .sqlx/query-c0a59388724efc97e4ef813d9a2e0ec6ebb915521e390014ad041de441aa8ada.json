@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, booking_id, confirmation_code, guest_id, listing_id, \n            status as \"status: BookingStatus\", date_from, date_to, currency, \n            daily_rate, number_of_persons, total_days, sub_total_price, \n            discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\", \n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\", \n            changed_by_id, change_reason, created_at\n        FROM booking_history\n        WHERE booking_id = $1\n        ORDER BY created_at ASC\n        ",
+  "query": "\n        UPDATE booking\n        SET guest_id = $1,\n            updated_at = $2\n        WHERE id = $3 AND status = 'pending'\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -10,26 +10,21 @@
       },
       {
         "ordinal": 1,
-        "name": "booking_id",
-        "type_info": "Uuid"
-      },
-      {
-        "ordinal": 2,
         "name": "confirmation_code",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "guest_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "listing_id",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "status: BookingStatus",
         "type_info": {
           "Custom": {
@@ -46,62 +41,62 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "date_from",
         "type_info": "Date"
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "date_to",
         "type_info": "Date"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "currency",
         "type_info": "Bpchar"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "daily_rate",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "number_of_persons",
         "type_info": "Int4"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "total_days",
         "type_info": "Int4"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "sub_total_price",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "discount_value",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "tax_value",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 15,
+        "ordinal": 14,
         "name": "fee_breakdown: Json<Vec<FeeItem>>",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 16,
+        "ordinal": 15,
         "name": "total_price",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 17,
+        "ordinal": 16,
         "name": "cancellation_policy: CancellationPolicy",
         "type_info": {
           "Custom": {
@@ -117,28 +112,30 @@
         }
       },
       {
-        "ordinal": 18,
+        "ordinal": 17,
         "name": "metadata: Json<crate::models::BookingMetadata>",
         "type_info": "Jsonb"
       },
       {
-        "ordinal": 19,
-        "name": "changed_by_id",
-        "type_info": "Uuid"
-      },
-      {
-        "ordinal": 20,
-        "name": "change_reason",
+        "ordinal": 18,
+        "name": "door_access_code",
         "type_info": "Text"
       },
       {
-        "ordinal": 21,
+        "ordinal": 19,
         "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Timestamptz",
         "Uuid"
       ]
     },
@@ -155,7 +152,6 @@
       false,
       false,
       false,
-      false,
       true,
       true,
       false,
@@ -163,9 +159,9 @@
       false,
       false,
       true,
-      true,
+      false,
       false
     ]
   },
-  "hash": "87b09537267ef4c07bedd9044410a1fddc1680896f6b091985516da0cda67b58"
+  "hash": "c0a59388724efc97e4ef813d9a2e0ec6ebb915521e390014ad041de441aa8ada"
 }

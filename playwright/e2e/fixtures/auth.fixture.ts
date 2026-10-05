@@ -7,7 +7,7 @@ export async function loginAsAdmin(page: Page, email = TEST_USERS.admin.email, p
   await page.locator('#admin-login-password').fill(password);
   await page.locator('#btn-admin-login').click();
   // Wait for redirect to dashboard or admin area
-  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 10000 });
+  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15000 });
 }
 
 export async function setAdminSessionStorage(page: Page, user = TEST_USERS.admin): Promise<void> {

@@ -22,11 +22,11 @@ uuid = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 anyhow = { workspace = true }
-jsonwebtoken = "9.3.0"
+jsonwebtoken = { workspace = true }
 reqwest = { workspace = true }
 
 [build-dependencies]
-topcoat = { version = "0.8.1", default-features = false, features = [
+topcoat = { version = "0.10.0", default-features = false, features = [
     "tailwind",
 ] }
 

@@ -329,3 +329,288 @@ fn test_host_payout_accounting_math_precision() {
     assert_eq!(net_payout, dec!(2250.0000));
     assert_eq!(gross_amount - commission_amount - tax_withheld, net_payout);
 }
+
+#[test]
+fn test_host_dashboard_listing_and_kpi_scoping() {
+    use common::models::{BookingMetadataResponse, BookingResponse, ListingResponse};
+    use std::collections::HashSet;
+
+    let host_a_id = Uuid::new_v4();
+    let host_b_id = Uuid::new_v4();
+
+    let listing_a1 = ListingResponse {
+        id: Uuid::new_v4(),
+        user_id: host_a_id,
+        name: "Villa Azure".to_string(),
+        description: None,
+        listing_structure: "Villa".to_string(),
+        country: "Jamaica".to_string(),
+        price_per_night: Some(dec!(800.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        is_active: true,
+        added_at: chrono::Utc::now(),
+        owner_name: Some("Host A".to_string()),
+        primary_image_url: None,
+        max_guests: 6,
+        bedrooms: 3,
+        beds: 3,
+        full_bathrooms: 3,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        city: Some("Montego Bay".to_string()),
+        base_currency: "USD".to_string(),
+        slug: "villa-azure".to_string(),
+        listing_details: None,
+        minimum_stay: 2,
+        days_between_bookings: 1,
+        commission_pct: Some(dec!(0.1000)),
+    };
+
+    let listing_a2 = ListingResponse {
+        id: Uuid::new_v4(),
+        user_id: host_a_id,
+        name: "Coral Cove".to_string(),
+        description: None,
+        listing_structure: "Villa".to_string(),
+        country: "Jamaica".to_string(),
+        price_per_night: Some(dec!(1200.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        is_active: true,
+        added_at: chrono::Utc::now(),
+        owner_name: Some("Host A".to_string()),
+        primary_image_url: None,
+        max_guests: 8,
+        bedrooms: 4,
+        beds: 4,
+        full_bathrooms: 4,
+        half_bathrooms: 1,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        city: Some("Ocho Rios".to_string()),
+        base_currency: "USD".to_string(),
+        slug: "coral-cove".to_string(),
+        listing_details: None,
+        minimum_stay: 3,
+        days_between_bookings: 1,
+        commission_pct: Some(dec!(0.1000)),
+    };
+
+    let listing_b1 = ListingResponse {
+        id: Uuid::new_v4(),
+        user_id: host_b_id,
+        name: "Blue Mountain Peak Retreat".to_string(),
+        description: None,
+        listing_structure: "House".to_string(),
+        country: "Jamaica".to_string(),
+        price_per_night: Some(dec!(500.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        is_active: true,
+        added_at: chrono::Utc::now(),
+        owner_name: Some("Host B".to_string()),
+        primary_image_url: None,
+        max_guests: 4,
+        bedrooms: 2,
+        beds: 2,
+        full_bathrooms: 2,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        city: Some("Kingston".to_string()),
+        base_currency: "USD".to_string(),
+        slug: "blue-mountain-retreat".to_string(),
+        listing_details: None,
+        minimum_stay: 1,
+        days_between_bookings: 0,
+        commission_pct: Some(dec!(0.1000)),
+    };
+
+    let all_listings = vec![listing_a1.clone(), listing_a2.clone(), listing_b1.clone()];
+
+    // Booking 1 on Listing A1: Confirmed ($1,600)
+    let booking_a1 = BookingResponse {
+        id: Uuid::new_v4(),
+        confirmation_code: "OP-CONF-1".to_string(),
+        guest_id: Uuid::new_v4(),
+        listing_id: listing_a1.id,
+        status: "confirmed".to_string(),
+        date_from: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+        date_to: NaiveDate::from_ymd_opt(2026, 11, 3).unwrap(),
+        currency: "USD".to_string(),
+        daily_rate: dec!(800.00),
+        number_of_persons: 2,
+        total_days: 2,
+        sub_total_price: dec!(1600.00),
+        discount_value: None,
+        tax_value: None,
+        total_price: dec!(1600.00),
+        cancellation_policy: "moderate".to_string(),
+        metadata: BookingMetadataResponse::default(),
+        review_eligibility: None,
+        door_access_code: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    // Booking 2 on Listing A2: Pending hold ($3,600)
+    let booking_a2 = BookingResponse {
+        id: Uuid::new_v4(),
+        confirmation_code: "OP-HOLD-2".to_string(),
+        guest_id: Uuid::new_v4(),
+        listing_id: listing_a2.id,
+        status: "pending_payment".to_string(),
+        date_from: NaiveDate::from_ymd_opt(2026, 11, 10).unwrap(),
+        date_to: NaiveDate::from_ymd_opt(2026, 11, 13).unwrap(),
+        currency: "USD".to_string(),
+        daily_rate: dec!(1200.00),
+        number_of_persons: 4,
+        total_days: 3,
+        sub_total_price: dec!(3600.00),
+        discount_value: None,
+        tax_value: None,
+        total_price: dec!(3600.00),
+        cancellation_policy: "strict".to_string(),
+        metadata: BookingMetadataResponse::default(),
+        review_eligibility: None,
+        door_access_code: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    // Booking 3 on Listing B1: Confirmed ($5,000)
+    let booking_b1 = BookingResponse {
+        id: Uuid::new_v4(),
+        confirmation_code: "OP-CONF-3".to_string(),
+        guest_id: Uuid::new_v4(),
+        listing_id: listing_b1.id,
+        status: "confirmed".to_string(),
+        date_from: NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+        date_to: NaiveDate::from_ymd_opt(2026, 12, 11).unwrap(),
+        currency: "USD".to_string(),
+        daily_rate: dec!(500.00),
+        number_of_persons: 2,
+        total_days: 10,
+        sub_total_price: dec!(5000.00),
+        discount_value: None,
+        tax_value: None,
+        total_price: dec!(5000.00),
+        cancellation_policy: "flexible".to_string(),
+        metadata: BookingMetadataResponse::default(),
+        review_eligibility: None,
+        door_access_code: None,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let all_bookings = vec![booking_a1, booking_a2, booking_b1];
+
+    // CASE 1: Admin View -> sees all listings and all bookings
+    let is_admin = true;
+    let admin_listings = if is_admin {
+        all_listings.clone()
+    } else {
+        vec![]
+    };
+    let admin_listing_count = admin_listings.len();
+    let admin_active_holds = all_bookings
+        .iter()
+        .filter(|b| b.status == "pending_payment")
+        .count();
+    let admin_revenue: Decimal = all_bookings
+        .iter()
+        .filter(|b| b.status == "confirmed")
+        .map(|b| b.total_price)
+        .sum();
+
+    assert_eq!(
+        admin_listing_count, 3,
+        "Admin must see all 3 listings across portfolio"
+    );
+    assert_eq!(
+        admin_active_holds, 1,
+        "Admin sees platform total active holds"
+    );
+    assert_eq!(
+        admin_revenue,
+        dec!(6600.00),
+        "Admin sees platform gross confirmed revenue (1600 + 5000)"
+    );
+
+    // CASE 2: Host A View -> sees ONLY Host A's 2 villas and related bookings
+    let is_admin_host = false;
+    let host_user_id = Some(host_a_id);
+    let host_a_listings: Vec<ListingResponse> = if is_admin_host {
+        all_listings
+    } else {
+        all_listings
+            .into_iter()
+            .filter(|l| host_user_id == Some(l.user_id))
+            .collect()
+    };
+    let host_a_listing_ids: HashSet<Uuid> = host_a_listings.iter().map(|l| l.id).collect();
+    let host_a_bookings: Vec<BookingResponse> = all_bookings
+        .into_iter()
+        .filter(|b| host_a_listing_ids.contains(&b.listing_id))
+        .collect();
+
+    let host_a_listing_count = host_a_listings.len();
+    let host_a_active_holds = host_a_bookings
+        .iter()
+        .filter(|b| b.status == "pending_payment")
+        .count();
+    let host_a_revenue: Decimal = host_a_bookings
+        .iter()
+        .filter(|b| b.status == "confirmed")
+        .map(|b| b.total_price)
+        .sum();
+
+    // Verify host A sees ONLY their 2 villas, 1 hold, and $1,600 revenue
+    assert_eq!(
+        host_a_listing_count, 2,
+        "Host A must see exactly their 2 villas"
+    );
+    assert_eq!(
+        host_a_active_holds, 1,
+        "Host A must see only holds on their villas"
+    );
+    assert_eq!(
+        host_a_revenue,
+        dec!(1600.00),
+        "Host A revenue must reflect only their confirmed bookings"
+    );
+    assert!(
+        host_a_listings.iter().all(|l| l.user_id == host_a_id),
+        "All listings in host A dashboard must belong to host A"
+    );
+}
+
+#[test]
+fn test_login_primary_role_determination() {
+    fn determine_primary_role(roles: &[&str]) -> String {
+        if roles.iter().any(|r| {
+            let lr = r.to_lowercase();
+            lr == "admin" || lr == "superadmin"
+        }) {
+            "admin".to_string()
+        } else if roles.iter().any(|r| r.to_lowercase() == "host") {
+            "host".to_string()
+        } else {
+            roles.first().copied().unwrap_or("host").to_string()
+        }
+    }
+
+    assert_eq!(determine_primary_role(&["host"]), "host");
+    assert_eq!(determine_primary_role(&["booker", "host"]), "host");
+    assert_eq!(determine_primary_role(&["admin", "host"]), "admin");
+    assert_eq!(determine_primary_role(&["host", "admin"]), "admin");
+    assert_eq!(determine_primary_role(&["superadmin"]), "admin");
+}

@@ -180,6 +180,7 @@ mod tests {
                 estimated_arrival_time: Some("15:00".to_string()),
                 is_business_trip: false,
             }),
+            door_access_code: Some("1234".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -187,6 +188,7 @@ mod tests {
         let res = map_booking_to_response(booking);
         assert_eq!(res.confirmation_code, "CONF-TEST123");
         assert_eq!(res.status, "Confirmed");
+        assert_eq!(res.door_access_code.as_deref(), Some("1234"));
         assert_eq!(res.total_price, Decimal::new(1100, 0));
         assert_eq!(res.metadata.num_adults, 2);
         assert_eq!(
@@ -231,6 +233,7 @@ mod tests {
                 total_price: Decimal::new(800, 0),
                 cancellation_policy: CancellationPolicy::Flexible,
                 metadata: Json(BookingMetadata::default()),
+                door_access_code: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
@@ -301,5 +304,32 @@ mod tests {
             deserialized.gateway_reference,
             Some("GATEWAY_TX_987".to_string())
         );
+    }
+
+    #[test]
+    fn test_updated_booking_request_with_door_code() {
+        use crate::apis::UpdatedBookingRequest;
+
+        let json_data = r#"{"door_access_code":"8899"}"#;
+        let parsed: UpdatedBookingRequest = serde_json::from_str(json_data).unwrap();
+        assert_eq!(parsed.door_access_code.as_deref(), Some("8899"));
+        assert!(parsed.status.is_none());
+        assert!(parsed.metadata.is_none());
+    }
+
+    #[test]
+    fn test_cron_sweep_response_serde() {
+        use crate::apis::CronSweepResponse;
+
+        let resp = CronSweepResponse {
+            status: "success".to_string(),
+            pre_arrival_processed: 5,
+            hold_reminders_processed: 2,
+        };
+
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains(r#""status":"success""#));
+        assert!(json.contains(r#""pre_arrival_processed":5"#));
+        assert!(json.contains(r#""hold_reminders_processed":2"#));
     }
 }

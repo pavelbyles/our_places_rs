@@ -18,7 +18,7 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
     let admin_session = web_app_common_tc::auth::get_admin_session(cx).await;
     let is_admin_ssr = match &admin_session {
         Some(user) => user.is_admin(),
-        None => true,
+        None => false,
     };
 
     Ok(view! {

@@ -38,9 +38,11 @@ Since the database is important, always update sqlx files after database changes
 1. **Railway-Oriented Programming (ROP)**: Model domain transformations as pure pipeline steps over `Result<T, E>` and `Option<T>`.
 2. **Monadic Chaining**: Prefer `.and_then()`, `.map()`, `.map_err()`, `.or_else()`, `.transpose()`, and `?` over nested imperative `if let` or `match` blocks.
 3. **Monadic Contexts**: Encapsulate side effects and validation steps within monadic types rather than throwing panic errors or using sentinel values.
+4. **Static Analysis Hygiene**: Abide by `sonarqube-guard` standards: document all public items/fields/variants (`///`), declare static constants for `env::var` keys, use `std::env::temp_dir()`, and maintain zero-unwrap error handling.
 </monadic_guidelines>
 
 <resources>
 - **Philosophy & Patterns**: Read `references/idiomatic_rust.md` for guidance on error handling, monadic combinators, iterators, and project structure.
+- **Static Analysis Hygiene**: Read `.agents/skills/sonarqube-guard/SKILL.md` for SonarQube, SonarCloud, and DeepSource compliance rules.
 - **Tools**: Use `cargo clippy --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings` to check for idiomatic Rust code.
 </resources>
