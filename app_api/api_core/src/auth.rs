@@ -64,5 +64,5 @@ pub fn generate_test_jwt(user_id: Uuid) -> String {
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .unwrap()
+    .unwrap_or_default()
 }
