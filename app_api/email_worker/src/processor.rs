@@ -68,6 +68,7 @@ pub fn load_template(filename: &str) -> String {
     }
 }
 
+/// Renders transactional email HTML templates with dynamic variable interpolation.
 pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> String {
     let get_val = |key: &str| -> String {
         payload
@@ -76,7 +77,7 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 serde_json::Value::String(s) => s.clone(),
                 serde_json::Value::Number(n) => n.to_string(),
                 serde_json::Value::Bool(b) => b.to_string(),
-                serde_json::Value::Null => String::new(),
+                serde_json::Value::Null => String::default(),
                 other => other.to_string(),
             })
             .unwrap_or_default()
@@ -257,6 +258,7 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
     }
 }
 
+/// Processes an individual outbox email event with idempotency, exponential backoff, and delivery status tracking.
 #[instrument(skip(pool, provider))]
 pub async fn process_email_event(
     pool: &PgPool,

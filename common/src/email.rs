@@ -4,6 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use uuid::Uuid;
 
+/// Status of an outbox email notification record during delivery lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailStatus {
@@ -38,11 +39,13 @@ impl std::str::FromStr for EmailStatus {
     }
 }
 
+/// Cloud Pub/Sub event emitted to notify background workers of a newly created outbox email.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmailNotificationEvent {
     pub email_id: Uuid,
 }
 
+/// Identifiers for transactional email templates supported by the notification pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailTemplate {
@@ -62,6 +65,7 @@ pub enum EmailTemplate {
 }
 
 impl EmailTemplate {
+    /// Returns the static template identifier string matching filesystem HTML template filenames.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::UserVerificationOtp => "user_verification_otp",
@@ -114,6 +118,7 @@ impl std::str::FromStr for EmailTemplate {
 // Strongly-Typed Transactional Email Payloads (Zero-Float Guarantee)
 // ============================================================================
 
+/// Strongly-typed email payload for guest booking confirmation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingConfirmationGuestPayload {
     pub booking_id: Uuid,
@@ -126,6 +131,7 @@ pub struct BookingConfirmationGuestPayload {
     pub guest_name: String,
 }
 
+/// Strongly-typed email payload for host booking confirmation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingConfirmationHostPayload {
     pub booking_id: Uuid,
@@ -139,6 +145,7 @@ pub struct BookingConfirmationHostPayload {
     pub host_name: String,
 }
 
+/// Strongly-typed email payload for guest booking modifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingUpdatedGuestPayload {
     pub booking_id: Uuid,
@@ -151,6 +158,7 @@ pub struct BookingUpdatedGuestPayload {
     pub changes_summary: String,
 }
 
+/// Strongly-typed email payload for host booking modifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingUpdatedHostPayload {
     pub booking_id: Uuid,
@@ -164,6 +172,7 @@ pub struct BookingUpdatedHostPayload {
     pub changes_summary: String,
 }
 
+/// Strongly-typed email payload for guest booking cancellation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingCancelledGuestPayload {
     pub booking_id: Uuid,
@@ -176,6 +185,7 @@ pub struct BookingCancelledGuestPayload {
     pub cancellation_policy: String,
 }
 
+/// Strongly-typed email payload for host booking cancellation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingCancelledHostPayload {
     pub booking_id: Uuid,
@@ -188,6 +198,7 @@ pub struct BookingCancelledHostPayload {
     pub currency: String,
 }
 
+/// Strongly-typed email payload for guest pre-arrival access guide.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PreArrivalGuideGuestPayload {
     pub booking_id: Uuid,
@@ -202,6 +213,7 @@ pub struct PreArrivalGuideGuestPayload {
     pub check_in_instructions: Option<String>,
 }
 
+/// Strongly-typed email payload for upcoming guest arrival notification to host.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostUpcomingArrivalPayload {
     pub booking_id: Uuid,
@@ -214,6 +226,7 @@ pub struct HostUpcomingArrivalPayload {
     pub door_access_code: Option<String>,
 }
 
+/// Strongly-typed email payload for pending hold expiration reminder.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PaymentHoldExpiryReminderPayload {
     pub booking_id: Uuid,
@@ -229,18 +242,23 @@ pub struct PaymentHoldExpiryReminderPayload {
 // Type State Pattern for Compile-Time Guaranteed Email State Transitions
 // ============================================================================
 
+/// Marker type indicating an email record is pending initial delivery attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingState;
 
+/// Marker type indicating an email record is actively being processed by a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcessingState;
 
+/// Marker type indicating an email record has successfully completed delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SentState;
 
+/// Marker type indicating an email record has permanently failed delivery after retries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FailedState;
 
+/// Strongly-typed outbox email entity enforcing compile-time valid state machine transitions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmailRecord<State> {
     pub id: Uuid,
@@ -255,6 +273,7 @@ pub struct EmailRecord<State> {
 }
 
 impl EmailRecord<PendingState> {
+    /// Constructs a new pending email record with initial zero retry count.
     pub fn new(
         id: Uuid,
         recipient_email: String,

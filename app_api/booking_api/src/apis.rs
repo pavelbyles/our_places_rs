@@ -59,6 +59,7 @@ pub fn generate_confirmation_code() -> String {
         .collect()
 }
 
+/// Request payload for updating booking details, status, or door access code.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdatedBookingRequest {
     pub status: Option<BookingStatus>,
@@ -1313,6 +1314,7 @@ pub struct CronSweepResponse {
         (status = 500, description = "Internal server error")
     )
 )]
+/// Scheduled cron task endpoint that sweeps pending arrivals and upcoming bookings for automated transactional notifications.
 pub async fn process_scheduled_notifications(
     req: HttpRequest,
     pool: web::Data<PgPool>,
