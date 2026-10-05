@@ -122,7 +122,7 @@ impl DatabaseSettings {
 // Load settings
 // ... (structs and impls remain the same) ...
 
-// This is a cleaned-up version of YOUR original function.
+/// Resolves and loads application configuration settings based on the runtime environment.
 pub fn get_settings() -> Result<Settings, ConfigError> {
     dotenvy::dotenv().ok();
 

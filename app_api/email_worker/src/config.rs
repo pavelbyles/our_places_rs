@@ -12,6 +12,7 @@ impl Default for WorkerConfig {
 }
 
 impl WorkerConfig {
+    /// Loads worker configuration parameters from environment variables with safe defaults.
     pub fn from_env() -> Self {
         static PUBSUB_SECRET_TOKEN_ENV: &str = "PUBSUB_SECRET_TOKEN";
         static MAX_EMAIL_RETRIES_ENV: &str = "MAX_EMAIL_RETRIES";

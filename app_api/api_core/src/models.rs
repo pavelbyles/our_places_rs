@@ -117,6 +117,7 @@ pub fn map_listing_with_owner_to_response(
 #[derive(Serialize)]
 #[serde(rename = "listings")]
 pub struct ListingsWrapper<T> {
+    /// Inner list of serialized listing records.
     pub listing: Vec<T>,
 }
 
@@ -124,6 +125,7 @@ pub struct ListingsWrapper<T> {
 #[derive(Serialize)]
 #[serde(rename = "bookings")]
 pub struct BookingsWrapper<T> {
+    /// Inner list of serialized booking records.
     pub booking: Vec<T>,
 }
 

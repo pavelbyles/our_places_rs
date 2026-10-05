@@ -115,6 +115,7 @@ impl LettreSmtpEmailProvider {
         }
     }
 
+    /// Constructs an SMTP email provider instance from configured environment variables.
     pub fn from_env() -> Self {
         static SMTP_HOST_ENV: &str = "SMTP_HOST";
         static SMTP_PORT_ENV: &str = "SMTP_PORT";

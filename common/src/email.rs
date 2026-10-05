@@ -8,9 +8,13 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailStatus {
+    /// Email is enqueued in the outbox table awaiting worker dispatch.
     Pending,
+    /// Email is currently being dispatched by a worker process.
     Processing,
+    /// Email has been successfully accepted by the SMTP provider.
     Sent,
+    /// Email delivery failed after exhausting all configured retry attempts.
     Failed,
 }
 
@@ -42,6 +46,7 @@ impl std::str::FromStr for EmailStatus {
 /// Cloud Pub/Sub event emitted to notify background workers of a newly created outbox email.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmailNotificationEvent {
+    /// Primary key identifier of the outbox record to be processed.
     pub email_id: Uuid,
 }
 
@@ -49,18 +54,31 @@ pub struct EmailNotificationEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailTemplate {
+    /// One-time password verification email for new user registration.
     UserVerificationOtp,
+    /// One-time password code for account password reset.
     PasswordResetOtp,
+    /// Generic booking confirmation notification.
     BookingConfirmation,
+    /// Comprehensive booking confirmation notification delivered to the guest.
     BookingConfirmationGuest,
+    /// Booking notification and payout details delivered to the host.
     BookingConfirmationHost,
+    /// Notification delivered to the guest when booking dates or details are updated.
     BookingUpdatedGuest,
+    /// Notification delivered to the host when guest modifies booking dates or party size.
     BookingUpdatedHost,
+    /// Notification and refund details delivered to guest upon booking cancellation.
     BookingCancelledGuest,
+    /// Notification delivered to host upon guest or administrative cancellation.
     BookingCancelledHost,
+    /// Pre-arrival instructions including door access PIN and WiFi credentials for guest.
     PreArrivalGuideGuest,
+    /// Reminder delivered to host before guest check-in date.
     HostUpcomingArrival,
+    /// Reminder notification before an unconfirmed pending booking hold expires.
     PaymentHoldExpiryReminder,
+    /// In-app chat notification delivered when a counterparty sends a new message.
     GuestHostMessageNotification,
 }
 
@@ -121,120 +139,195 @@ impl std::str::FromStr for EmailTemplate {
 /// Strongly-typed email payload for guest booking confirmation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingConfirmationGuestPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Total price charged.
     pub total_price: Decimal,
+    /// Currency code.
     pub currency: String,
+    /// Full name of primary guest.
     pub guest_name: String,
 }
 
 /// Strongly-typed email payload for host booking confirmation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingConfirmationHostPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Total payout to host after platform commissions.
     pub total_payout: Decimal,
+    /// Currency code.
     pub currency: String,
+    /// Full name of primary guest.
     pub guest_name: String,
+    /// Full name of property host.
     pub host_name: String,
 }
 
 /// Strongly-typed email payload for guest booking modifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingUpdatedGuestPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Updated total price.
     pub total_price: Decimal,
+    /// Currency code.
     pub currency: String,
+    /// Summary of changes applied.
     pub changes_summary: String,
 }
 
 /// Strongly-typed email payload for host booking modifications.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingUpdatedHostPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Updated total payout to host.
     pub total_payout: Decimal,
+    /// Currency code.
     pub currency: String,
+    /// Full name of primary guest.
     pub guest_name: String,
+    /// Summary of changes applied.
     pub changes_summary: String,
 }
 
 /// Strongly-typed email payload for guest booking cancellation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingCancelledGuestPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Amount refunded to guest.
     pub refund_amount: Decimal,
+    /// Currency code.
     pub currency: String,
+    /// Applied cancellation policy identifier.
     pub cancellation_policy: String,
 }
 
 /// Strongly-typed email payload for host booking cancellation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookingCancelledHostPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Full name of primary guest.
     pub guest_name: String,
+    /// Net financial payout impact on host.
     pub payout_impact: Decimal,
+    /// Currency code.
     pub currency: String,
 }
 
 /// Strongly-typed email payload for guest pre-arrival access guide.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PreArrivalGuideGuestPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Property physical street address.
     pub address: String,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Door lock pin or keycode.
     pub door_access_code: String,
+    /// Local WiFi network SSID.
     pub wifi_ssid: Option<String>,
+    /// Local WiFi password.
     pub wifi_password: Option<String>,
+    /// Specific check-in guidance from host.
     pub check_in_instructions: Option<String>,
 }
 
 /// Strongly-typed email payload for upcoming guest arrival notification to host.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HostUpcomingArrivalPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of booked property.
     pub listing_name: String,
+    /// Full name of arriving guest.
     pub guest_name: String,
+    /// Number of guests in traveling party.
     pub number_of_persons: i32,
+    /// Check-in date.
     pub date_from: String,
+    /// Check-out date.
     pub date_to: String,
+    /// Issued door access code if available.
     pub door_access_code: Option<String>,
 }
 
 /// Strongly-typed email payload for pending hold expiration reminder.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PaymentHoldExpiryReminderPayload {
+    /// Unique booking identifier.
     pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
     pub confirmation_code: String,
+    /// Name of held property.
     pub listing_name: String,
+    /// Timestamp when reservation hold expires.
     pub expires_at: String,
+    /// Total reservation price.
     pub total_price: Decimal,
+    /// Currency code.
     pub currency: String,
+    /// Direct URL to complete checkout.
     pub checkout_url: String,
 }
 
@@ -261,13 +354,21 @@ pub struct FailedState;
 /// Strongly-typed outbox email entity enforcing compile-time valid state machine transitions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmailRecord<State> {
+    /// Unique outbox email record identifier.
     pub id: Uuid,
+    /// Target email recipient.
     pub recipient_email: String,
+    /// Subject header line.
     pub subject: String,
+    /// Template identifier.
     pub template_id: String,
+    /// Template interpolation payload.
     pub payload: serde_json::Value,
+    /// Number of delivery attempts made.
     pub attempts: i32,
+    /// Maximum permitted retry attempts.
     pub max_retries: i32,
+    /// Last delivery error message if any attempt failed.
     pub last_error: Option<String>,
     _state: PhantomData<State>,
 }

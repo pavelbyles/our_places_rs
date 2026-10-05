@@ -62,8 +62,11 @@ pub fn generate_confirmation_code() -> String {
 /// Request payload for updating booking details, status, or door access code.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdatedBookingRequest {
+    /// Optional updated booking status.
     pub status: Option<BookingStatus>,
+    /// Optional updated booking metadata.
     pub metadata: Option<BookingMetadata>,
+    /// Optional physical door lock pin code.
     pub door_access_code: Option<String>,
 }
 
@@ -1296,10 +1299,14 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
     });
 }
 
+/// Summary response returned by the scheduled notification sweep cron job.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CronSweepResponse {
+    /// Status description of the sweep execution.
     pub status: String,
+    /// Number of pre-arrival guide notifications dispatched.
     pub pre_arrival_processed: usize,
+    /// Number of payment hold expiry reminders dispatched.
     pub hold_reminders_processed: usize,
 }
 
@@ -1517,6 +1524,7 @@ pub async fn process_scheduled_notifications(
     }))
 }
 
+/// Configures Actix-web HTTP routes and OpenAPI specifications for the Booking service.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
