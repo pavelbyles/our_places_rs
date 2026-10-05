@@ -53,7 +53,7 @@ jobs:
       docs_only: ${{ steps.eval.outputs.docs_only }}
     steps:
       - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -258,10 +258,12 @@ jobs:
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -395,18 +397,22 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -508,18 +514,22 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -668,18 +678,22 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SAFE_SCHEMA_name=$(echo "${{ github.ref_name }}" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SAFE_SCHEMA_name=$(echo "$REF_NAME" | tr '/' '_' | tr '-' '_' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_]//g')
+          if [[ "$REF_NAME" == "main" ]]; then
             SAFE_SCHEMA_name="public"
           elif [[ $SAFE_SCHEMA_name =~ ^[0-9] ]]; then
             SAFE_SCHEMA_name="_$SAFE_SCHEMA_name"
@@ -689,18 +703,22 @@ jobs:
 
       - name: Get Project Number & Construct URLs
         id: construct_urls
+        env:
+          PROJECT_ID: ${{ env.PROJECT_ID }}
+          SERVICE_SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          REGION: ${{ env.REGION }}
         run: |
-          PROJECT_NUMBER=$(gcloud projects describe ${{ env.PROJECT_ID }} --format="value(projectNumber)")
-          SERVICE_SUFFIX=${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          REGION=${{ env.REGION }}
+          PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 
           echo "listing_url=https://listing-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
           echo "booking_url=https://booking-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
           echo "user_url=https://user-api-$SERVICE_SUFFIX-$PROJECT_NUMBER.$REGION.run.app" >> $GITHUB_OUTPUT
 
       - name: Set Build Arguments
+        env:
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
             echo "BUILD_OUTPUT=release" >> $GITHUB_ENV
           else
@@ -900,23 +918,30 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SERVICE_PREFIX_TC: ${{ env.SERVICE_PREFIX_TC }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SERVICE_NAME="${{ env.SERVICE_PREFIX_TC }}-$SAFE_BRANCH_slug"
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SERVICE_NAME="${SERVICE_PREFIX_TC}-$SAFE_BRANCH_slug"
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SERVICE_NAME=$SERVICE_NAME" >> $GITHUB_OUTPUT
 
       - name: Set Release Flag
+        env:
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
@@ -1063,23 +1088,30 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        env:
+          REGION: ${{ env.REGION }}
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Sanitize Branch Name
         id: branch_name
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SERVICE_PREFIX_ADMIN_TC: ${{ env.SERVICE_PREFIX_ADMIN_TC }}
         run: |
-          SAFE_BRANCH_slug=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
-          SERVICE_NAME_ADMIN="${{ env.SERVICE_PREFIX_ADMIN_TC }}-$SAFE_BRANCH_slug"
+          SAFE_BRANCH_slug=$(echo "$REF_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+          SERVICE_NAME_ADMIN="${SERVICE_PREFIX_ADMIN_TC}-$SAFE_BRANCH_slug"
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SERVICE_NAME_ADMIN=$SERVICE_NAME_ADMIN" >> $GITHUB_OUTPUT
 
       - name: Set Release Flag
+        env:
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             echo "RELEASE_FLAG=--release" >> $GITHUB_ENV
           else
             echo "RELEASE_FLAG=" >> $GITHUB_ENV
