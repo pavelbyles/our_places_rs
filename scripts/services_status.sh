@@ -2,7 +2,7 @@
 # scripts/services_status.sh — Inspect and report health and port status of Our Places development services
 set -uo pipefail
 
-# Default flags
+# Default configuration
 WATCH_MODE=false
 WATCH_INTERVAL=2
 JSON_OUTPUT=false
@@ -144,10 +144,19 @@ is_port_open() {
   return 1
 }
 
+get_http_code() {
+  local url="$1"
+  local raw_code
+  raw_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 --max-time 3 "$url" 2>/dev/null || true)
+  local clean_code
+  clean_code=$(echo "$raw_code" | tr -dc '0-9' | tail -c 3)
+  echo "${clean_code:-000}"
+}
+
 run_check() {
   collect_pids
 
-  # Define services: Category | Service Name | Port | Type (db, pubsub, api, frontend)
+  # Define core services: Category | Service Name | Port | Type (db, pubsub, api, frontend)
   local services=(
     "Database|PostgreSQL|5432|db"
     "Pub/Sub|Pub/Sub Emulator|8085|pubsub"
@@ -205,17 +214,21 @@ run_check() {
 
         pubsub)
           local code
-          code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 1 --max-time 2 "http://127.0.0.1:${port}/" 2>/dev/null || echo "000")
+          code=$(get_http_code "http://127.0.0.1:${port}/")
           if [[ "$code" == "200" ]]; then
             status="UP"
             local topics
-            topics=$(curl -s --connect-timeout 1 --max-time 2 "http://127.0.0.1:${port}/v1/projects/our-places-dev/topics" 2>/dev/null | grep -o 'projects/our-places-dev/topics/[^"]*' | wc -l || echo "0")
+            topics=$(curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:${port}/v1/projects/our-places-dev/topics" 2>/dev/null | grep -o 'projects/our-places-dev/topics/[^"]*' | wc -l || echo "0")
             if [[ "$topics" -gt 0 ]]; then
               details="Emulator active ($topics topic$([[ $topics -ne 1 ]] && echo "s"))"
             else
               details="Emulator active (HTTP 200 OK)"
             fi
             count_up=$((count_up + 1))
+          elif [[ "$code" == "000" ]]; then
+            status="DEGRADED"
+            details="Port open, no HTTP response"
+            count_degraded=$((count_degraded + 1))
           else
             status="DEGRADED"
             details="HTTP $code"
@@ -224,12 +237,12 @@ run_check() {
           ;;
 
         api)
-          local resp code
-          resp=$(curl -s --connect-timeout 1 --max-time 2 "http://127.0.0.1:${port}/health" 2>/dev/null || echo "")
-          code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 1 --max-time 2 "http://127.0.0.1:${port}/health" 2>/dev/null || echo "000")
+          local code
+          code=$(get_http_code "http://127.0.0.1:${port}/health")
           if [[ "$code" == "200" ]]; then
             status="UP"
-            local db_status db_lat
+            local resp db_status db_lat
+            resp=$(curl -s --connect-timeout 2 --max-time 3 "http://127.0.0.1:${port}/health" 2>/dev/null || echo "")
             db_status=$(echo "$resp" | jq -r '.components.db.status // empty' 2>/dev/null || echo "")
             db_lat=$(echo "$resp" | jq -r '.components.db.details.latency_ms // empty' 2>/dev/null || echo "")
             if [[ -n "$db_lat" ]]; then
@@ -244,6 +257,10 @@ run_check() {
             status="DEGRADED"
             details="Degraded (HTTP 503)"
             count_degraded=$((count_degraded + 1))
+          elif [[ "$code" == "000" ]]; then
+            status="DEGRADED"
+            details="Port open, no HTTP response"
+            count_degraded=$((count_degraded + 1))
           else
             status="DEGRADED"
             details="HTTP $code"
@@ -253,11 +270,15 @@ run_check() {
 
         frontend)
           local code
-          code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 1 --max-time 2 "http://127.0.0.1:${port}/" 2>/dev/null || echo "000")
+          code=$(get_http_code "http://127.0.0.1:${port}/")
           if [[ "$code" == "200" || "$code" == "302" || "$code" == "301" ]]; then
             status="UP"
             details="Serving (HTTP $code OK)"
             count_up=$((count_up + 1))
+          elif [[ "$code" == "000" ]]; then
+            status="DEGRADED"
+            details="Port open, no HTTP response"
+            count_degraded=$((count_degraded + 1))
           else
             status="DEGRADED"
             details="HTTP $code"

@@ -35,6 +35,8 @@
     pkgs.openssl
     pkgs.postgresql
     pkgs.psmisc
+    pkgs.curl
+    pkgs.jq
     (pkgs.google-cloud-sdk.withExtraComponents [ pkgs.google-cloud-sdk.components.pubsub-emulator ])
   ];
 
@@ -254,6 +256,11 @@
       devenv up listing_api booking_api user_api email_worker web_app_tc web_app_admin_tc "$@"
     '';
 
+    # Services status inspection
+    services-status.exec = ''
+      scripts/services_status.sh "$@"
+    '';
+
     # Playwright E2E Testing
     playwright-install.exec = ''
       [ -d "node_modules" ] || npm ci
@@ -367,6 +374,7 @@
     echo "           - web_app_admin_tc: :3002 (admin)"
     echo "       • frontends-stop (stop Topcoat frontends)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
+    echo "       • services-status(inspect status of APIs, Frontends, Database, and Pub/Sub)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"
     echo "       • test-e2e-ui-chromium (launch interactive UI for Chromium across Guest & Admin)"
     echo "       • db-start       • db-stop        • db-seed        • db-migrate     • db-prepare"
