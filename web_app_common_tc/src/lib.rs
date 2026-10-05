@@ -1,9 +1,16 @@
+/// API client wrappers and request helpers.
 pub mod api_client;
+/// Authentication and session extraction for guest and admin portals.
 pub mod auth;
+/// Topcoat API client implementation.
 pub mod client;
+/// Shared Topcoat UI components.
 pub mod components;
+/// Topcoat error types and conversions.
 pub mod error;
+/// Shared HTML layout wrappers.
 pub mod layout;
+/// Theme definitions and color constants.
 pub mod theme;
 
 pub use client::{TopcoatApiClient, get_api_client};

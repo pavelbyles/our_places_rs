@@ -620,7 +620,7 @@ pub async fn payouts_ledger_table(
 
                                     // Settlement Date
                                     <td class="text-xs text-base-content/60 whitespace-nowrap">
-                                        (entry.payout_date.map(|dt| dt.format("%b %d, %Y").to_string()).unwrap_or_else(|| "Pending".to_string()))
+                                        (entry.payout_date.map_or_else(|| "Pending".to_string(), |dt| dt.format("%b %d, %Y").to_string()))
                                     </td>
 
                                     // Action

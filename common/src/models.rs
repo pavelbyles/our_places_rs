@@ -51,20 +51,32 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Request payload for updating user account details.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
+    /// Updated email address.
     pub email: Option<String>,
+    /// Updated password plaintext.
     pub password: Option<String>,
+    /// Updated first name.
     pub first_name: Option<String>,
+    /// Updated last name.
     pub last_name: Option<String>,
+    /// Updated contact phone number.
     pub phone_number: Option<String>,
+    /// Updated active account status.
     #[serde(default)]
     pub is_active: Option<bool>,
+    /// Updated email verification status.
     #[serde(default)]
     pub is_verified: Option<bool>,
+    /// Dynamic user attributes JSON.
     pub attributes: Option<serde_json::Value>,
+    /// Assigned role names.
     pub roles: Option<Vec<String>>,
+    /// Updated booker profile information.
     pub booker_profile: Option<NewBookerProfile>,
+    /// Updated host profile information.
     pub host_profile: Option<NewHostProfile>,
     /// User's preferred default display currency.
     pub default_currency: Option<String>,
@@ -307,17 +319,26 @@ pub struct ImagePresignResponse {
     pub upload_url: String, // The GCS v4 Signed URL
 }
 
+/// Parameters required to create a new reservation checkout hold.
 #[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
 pub struct NewBookingRequest {
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
 
+    /// Check-in start date.
     pub check_in: NaiveDate,
+    /// Check-out departure date.
     pub check_out: NaiveDate,
 
+    /// Number of adults.
     pub num_adults: u32,
+    /// Number of children.
     pub num_children: u32,
+    /// Number of infants.
     pub num_infants: u32,
+    /// Number of pets.
     pub num_pets: u32,
 
     /// Optional guest message to host.

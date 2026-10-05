@@ -9,7 +9,10 @@ test_patterns = [
 exclude_patterns = [
   "db_core/migrations/**",
   "target/**",
-  "node_modules/**"
+  "node_modules/**",
+  "web_app_tc/**",
+  "web_app_admin_tc/**",
+  "web_app_common_tc/**"
 ]
 
 [[analyzers]]

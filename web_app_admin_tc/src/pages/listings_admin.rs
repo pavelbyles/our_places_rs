@@ -418,7 +418,7 @@ async fn render_listings_content(cx: &Cx) -> Result<impl View> {
                                         (item.city.clone().unwrap_or_else(|| "Jamaica".to_string()))", "(item.country.clone())
                                     </td>
                                     <td class="font-semibold text-sm">
-                                        (item.base_currency.clone())" "(item.price_per_night.map(|p| format!("{:.0}", p)).unwrap_or_else(|| "0".to_string()))
+                                        (item.base_currency.clone())" "(item.price_per_night.map_or_else(|| "0".to_string(), |p| format!("{:.0}", p)))
                                     </td>
                                     <td class="text-xs text-base-content/70">
                                         (item.max_guests)"G · "(item.bedrooms)"B · "(item.full_bathrooms)"Ba"

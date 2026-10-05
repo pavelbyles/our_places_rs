@@ -24,6 +24,7 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+/// Convenience constructor to create an `AppError` from any displayable error message.
 pub fn app_error(msg: impl fmt::Display) -> AppError {
     AppError(msg.to_string())
 }
