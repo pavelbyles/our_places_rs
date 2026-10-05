@@ -1,22 +1,22 @@
 [package]
 name = "common"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-serde = { version = "1.0.219", features = ["derive"] }
-uuid = { version = "1.8", features = ["serde", "v7", "js"] }
-chrono = { version = "0.4.42", features = ["serde"] }
-rust_decimal = { version = "1.35.0", features = ["serde-with-float"] }
-utoipa = { version = "5.4.0", features = ["uuid", "chrono", "decimal"] }
-reqwest = { version = "0.13.1", features = ["json"] }
+serde = { workspace = true }
+uuid = { workspace = true, features = ["js"] }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+utoipa = { version = "6.0.0", features = ["uuid", "chrono", "decimal"] }
+reqwest = { workspace = true }
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 validator = { workspace = true }
 serde_json = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-google-cloud-storage = "1.8.0"
+google-cloud-storage = { workspace = true }
 google-cloud-auth = "1.6.0"

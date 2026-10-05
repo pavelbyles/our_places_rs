@@ -1,7 +1,7 @@
 # App API Development Context
 
 ## Overview
-The `app_api` directory contains the backend microservices built with **Axum**.
+The `app_api` directory contains the backend microservices built with **Actix-web**.
 
 ## Services
 1.  **listing_api**: Manages property listings (CRUD).

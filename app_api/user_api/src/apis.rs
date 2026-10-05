@@ -25,13 +25,13 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
-pub use common::models::NewUserRequest;
-pub use common::models::UpdateUserRequest;
+pub use common::models::{
+    CreateSessionRequest, LoginRequest, NewUserRequest, SessionResponse, UpdateUserRequest,
+};
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct SessionNamespaceQuery {
+    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -40,9 +40,47 @@ pub struct VerifyRequest {
     pub code: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct ResendVerificationRequest {
+    #[validate(email)]
+    pub email: String,
+}
+
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserFilter {
     pub search: Option<String>,
+    pub is_deleted: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordChangeRequest {
+    #[validate(email)]
+    pub email: String,
+    pub current_password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct PasswordChangeConfirm {
+    #[validate(email)]
+    pub email: String,
+    pub code: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct EmailChangeRequest {
+    #[validate(email)]
+    pub email: String,
+    pub current_password: String,
+    #[validate(email)]
+    pub new_email: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct DeactivateRequest {
+    #[validate(email)]
+    pub email: String,
+    pub current_password: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -59,6 +97,8 @@ pub struct UserResponse {
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
     pub roles: Vec<String>,
+    pub default_currency: String,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -81,6 +121,8 @@ fn map_user_to_response(user: User) -> UserResponse {
         updated_at: user.updated_at,
         attributes: user.attributes,
         roles: user.roles.into_iter().map(|r| r.to_string()).collect(),
+        default_currency: user.default_currency,
+        deleted_at: user.deleted_at,
     }
 }
 
@@ -114,8 +156,12 @@ async fn create_user(
             .await
             .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
 
-        let password_hash = bcrypt::hash(&req_data.password, bcrypt::DEFAULT_COST)
-            .map_err(|_| ApiError::Internal)?;
+        let password = req_data.password.clone();
+        let password_hash =
+            tokio::task::spawn_blocking(move || bcrypt::hash(&password, bcrypt::DEFAULT_COST))
+                .await
+                .map_err(|_| ApiError::Internal)?
+                .map_err(|_| ApiError::Internal)?;
 
         let otp: String = Alphanumeric
             .sample_string(&mut rand::rng(), 6)
@@ -134,7 +180,7 @@ async fn create_user(
             phone_number: req_data.phone_number.clone(),
             is_active: req_data.is_active,
             is_verified: false,
-            verification_code: Some(otp),
+            verification_code: Some(otp.clone()),
             verification_code_expires_at: Some(Utc::now() + chrono::Duration::minutes(30)),
             attributes: req_data
                 .attributes
@@ -146,6 +192,10 @@ async fn create_user(
                     .filter_map(|r| UserRole::from_str(&r).ok())
                     .collect()
             }),
+            default_currency: req_data
+                .default_currency
+                .clone()
+                .unwrap_or_else(|| "USD".to_string()),
         };
 
         match db_core::user::create_user(&mut *tx, &user).await {
@@ -206,9 +256,29 @@ async fn create_user(
                     }
                 }
 
+                let outbox_res = db_core::email_outbox::insert_email_outbox_conn(
+                    &mut tx,
+                    &created_user.email,
+                    "Verify your Our Places account",
+                    common::email::EmailTemplate::UserVerificationOtp.as_str(),
+                    &serde_json::json!({
+                        "code": otp,
+                        "first_name": created_user.first_name,
+                    }),
+                    3,
+                )
+                .await;
+
                 tx.commit()
                     .await
                     .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
+                if let Ok(outbox) = outbox_res {
+                    let publisher = api_core::email_publisher::EmailPublisher::from_env();
+                    tokio::spawn(async move {
+                        let _ = publisher.publish_email_event(outbox.id).await;
+                    });
+                }
 
                 return Ok(respond(
                     &req,
@@ -289,11 +359,27 @@ async fn login(
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     // Verify password
-    let valid = bcrypt::verify(&credentials.password, &user.password_hash)
+    let password = credentials.password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
         .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     if !valid {
         return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    if !user.is_active {
+        return Err(ApiError::Unauthorized(
+            "Account has been deactivated".to_string(),
+        ));
+    }
+
+    if user.deleted_at.is_some() {
+        return Err(ApiError::Unauthorized(
+            "Account has been deleted".to_string(),
+        ));
     }
 
     if !user.is_verified {
@@ -331,13 +417,25 @@ async fn verify_user(
     // Fetch user
     let user = db_core::user::get_user_by_email(pool.get_ref(), &credentials.email)
         .await
-        .map_err(|_| ApiError::Unauthorized("Invalid user or code".to_string()))?;
+        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
 
-    if let Some(code) = &user.verification_code
-        && code == &credentials.code
-        && let Some(expiry) = user.verification_code_expires_at
-        && expiry > Utc::now()
-    {
+    let trimmed_code = credentials.code.trim();
+
+    if let Some(code) = &user.verification_code {
+        if !code.trim().eq_ignore_ascii_case(trimmed_code) {
+            return Err(ApiError::Unauthorized(
+                "Invalid verification code".to_string(),
+            ));
+        }
+
+        if let Some(expiry) = user.verification_code_expires_at
+            && expiry <= Utc::now()
+        {
+            return Err(ApiError::Unauthorized(
+                "Verification code has expired".to_string(),
+            ));
+        }
+
         // Success!
         let updated = db_core::user::complete_user_verification(pool.get_ref(), user.id)
             .await
@@ -351,7 +449,87 @@ async fn verify_user(
         ));
     }
 
-    Err(ApiError::ValidationError(validator::ValidationErrors::new())) // Generic error for bad code
+    Err(ApiError::Unauthorized(
+        "No verification code found for user".to_string(),
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/resend-verification",
+    tag = "auth",
+    request_body = ResendVerificationRequest,
+    responses(
+        (status = 200, description = "Resend verification successful", body = UserResponse),
+        (status = 401, description = "User not found or already verified"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn resend_verification(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    resend_req: web::Json<ResendVerificationRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = resend_req.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("User not found or already verified".to_string()))?;
+
+    if user.is_verified {
+        return Err(ApiError::Unauthorized(
+            "User not found or already verified".to_string(),
+        ));
+    }
+
+    let otp: String = Alphanumeric
+        .sample_string(&mut rand::rng(), 6)
+        .to_uppercase();
+
+    tracing::info!("RESEND VERIFICATION CODE FOR {}: {}", payload.email, otp);
+
+    let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
+
+    let updated =
+        db_core::user::regenerate_verification_code(pool.get_ref(), &payload.email, &otp, expiry)
+            .await
+            .map_err(ApiError::Database)?;
+
+    let user = updated
+        .ok_or_else(|| ApiError::Unauthorized("User not found or already verified".to_string()))?;
+
+    let pool_clone = pool.get_ref().clone();
+    let email_clone = payload.email.clone();
+    let first_name = user.first_name.clone();
+    let otp_clone = otp.clone();
+
+    tokio::spawn(async move {
+        if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+            &pool_clone,
+            &email_clone,
+            "Your verification code",
+            common::email::EmailTemplate::UserVerificationOtp.as_str(),
+            &serde_json::json!({
+                "code": otp_clone,
+                "first_name": first_name,
+            }),
+            3,
+        )
+        .await
+        {
+            let publisher = api_core::email_publisher::EmailPublisher::from_env();
+            let _ = publisher.publish_email_event(outbox.id).await;
+        }
+    });
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(user)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
 }
 
 #[tracing::instrument]
@@ -380,9 +558,34 @@ async fn update_user(
 
     let id = path.into_inner();
 
+    // --- Admin Guard Middleware Logic ---
+    // Fetch the target user to check their roles. If they are an admin, deny the update.
+    let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    if target_user.roles.contains(&UserRole::Admin) {
+        let is_modifying_roles = req_data.roles.is_some();
+        let is_modifying_active = req_data.is_active.is_some();
+        let is_modifying_verified = req_data.is_verified.is_some();
+
+        if is_modifying_roles || is_modifying_active || is_modifying_verified {
+            return Err(ApiError::Forbidden(
+                "Cannot modify roles or active status of the system admin".to_string(),
+            ));
+        }
+    }
+    // ------------------------------------
+
     let password_hash = if let Some(ref password) = req_data.password {
         if !password.is_empty() {
-            Some(bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|_| ApiError::Internal)?)
+            let pwd = password.clone();
+            Some(
+                tokio::task::spawn_blocking(move || bcrypt::hash(&pwd, bcrypt::DEFAULT_COST))
+                    .await
+                    .map_err(|_| ApiError::Internal)?
+                    .map_err(|_| ApiError::Internal)?,
+            )
         } else {
             None
         }
@@ -409,6 +612,7 @@ async fn update_user(
                     .filter_map(|r| UserRole::from_str(&r).ok())
                     .collect()
             }),
+            default_currency: req_data.default_currency.clone(),
         };
 
         match db_core::user::update_user(pool.get_ref(), id, &updated).await {
@@ -473,7 +677,7 @@ async fn update_user(
     path = "/api/v1/users/user/{email}",
     tag = "users",
     params(
-        ("email" = String, Path, description = "User email"),
+        ("email" = String, Path, description = "User email or UUID"),
     ),
     responses(
         (status = 200, description = "User found", body = UserResponse),
@@ -484,11 +688,14 @@ async fn update_user(
 async fn get_user(
     req: HttpRequest,
     pool: web::Data<PgPool>,
-    email: web::Path<String>,
+    email_or_id: web::Path<String>,
 ) -> Result<impl Responder, ApiError> {
-    let user = db_core::user::get_user_by_email(pool.get_ref(), &email)
-        .await
-        .map_err(ApiError::Database)?;
+    let val = email_or_id.into_inner();
+    let user = match Uuid::parse_str(&val) {
+        Ok(uuid) => db_core::user::get_user_by_id(pool.get_ref(), uuid).await,
+        Err(_) => db_core::user::get_user_by_email(pool.get_ref(), &val).await,
+    }
+    .map_err(ApiError::Database)?;
 
     Ok(respond(
         &req,
@@ -562,8 +769,14 @@ async fn get_user_bookings(
         .await
         .map_err(ApiError::Database)?;
 
-    let response: Vec<BookingResponse> =
-        bookings.into_iter().map(map_booking_to_response).collect();
+    let response: Vec<BookingResponse> = bookings
+        .into_iter()
+        .map(|b| {
+            let mut resp = map_booking_to_response(b.booking);
+            resp.review_eligibility = b.review_eligibility;
+            resp
+        })
+        .collect();
 
     Ok(respond(
         &req,
@@ -596,9 +809,15 @@ async fn get_all_users(
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
 
-    let users = db_core::user::get_all_users(pool.get_ref(), page, per_page, filter.search.clone())
-        .await
-        .map_err(ApiError::Database)?;
+    let users = db_core::user::get_all_users(
+        pool.get_ref(),
+        page,
+        per_page,
+        filter.search.clone(),
+        filter.is_deleted,
+    )
+    .await
+    .map_err(ApiError::Database)?;
 
     let response: Vec<UserResponse> = users.into_iter().map(map_user_to_response).collect();
 
@@ -610,6 +829,559 @@ async fn get_all_users(
     ))
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/users/user/{id}",
+    tag = "users",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    responses(
+        (status = 200, description = "User soft deleted", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn soft_delete_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let id = path.into_inner();
+    let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    if target_user.roles.contains(&UserRole::Admin) {
+        return Err(ApiError::Unauthorized(
+            "Cannot delete admin users".to_string(),
+        ));
+    }
+
+    let deleted = db_core::user::soft_delete_user(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(deleted)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/user/{id}/restore",
+    tag = "users",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    responses(
+        (status = 200, description = "User restored", body = UserResponse),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn restore_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let id = path.into_inner();
+    let restored = db_core::user::restore_user(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(restored)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/users/user/{id}/hard",
+    tag = "users",
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    responses(
+        (status = 204, description = "User hard deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn hard_delete_user(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let id = path.into_inner();
+    let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    if target_user.roles.contains(&UserRole::Admin) {
+        return Err(ApiError::Unauthorized(
+            "Cannot hard delete admin users".to_string(),
+        ));
+    }
+
+    db_core::user::hard_delete_user(pool.get_ref(), id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(actix_web::HttpResponse::NoContent().finish())
+}
+
+// --- Profile Endpoints ---
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/password/request",
+    tag = "users",
+    request_body = PasswordChangeRequest,
+    responses(
+        (status = 200, description = "Password change requested", body = UserResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn request_password_change(
+    req: actix_web::HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<PasswordChangeRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    let current_password = payload.current_password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&current_password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    let otp: String = Alphanumeric
+        .sample_string(&mut rand::rng(), 6)
+        .to_uppercase();
+
+    tracing::info!("PASSWORD CHANGE CODE FOR {}: {}", payload.email, otp);
+
+    let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
+
+    // Reuse regenerate_verification_code, it just sets the code and expiry
+    let updated =
+        db_core::user::regenerate_verification_code(pool.get_ref(), &payload.email, &otp, expiry)
+            .await
+            .map_err(ApiError::Database)?;
+
+    let user = updated.ok_or(ApiError::Internal)?;
+
+    let pool_clone = pool.get_ref().clone();
+    let email_clone = payload.email.clone();
+    let first_name = user.first_name.clone();
+    let otp_clone = otp.clone();
+
+    tokio::spawn(async move {
+        if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+            &pool_clone,
+            &email_clone,
+            "Password change request",
+            common::email::EmailTemplate::PasswordResetOtp.as_str(),
+            &serde_json::json!({
+                "token": otp_clone,
+                "code": otp_clone,
+                "first_name": first_name,
+            }),
+            3,
+        )
+        .await
+        {
+            let publisher = api_core::email_publisher::EmailPublisher::from_env();
+            let _ = publisher.publish_email_event(outbox.id).await;
+        }
+    });
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(user)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/password/confirm",
+    tag = "users",
+    request_body = PasswordChangeConfirm,
+    responses(
+        (status = 200, description = "Password updated", body = UserResponse),
+        (status = 400, description = "Validation error / Invalid code"),
+        (status = 401, description = "Invalid credentials / Expired code"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn confirm_password_change(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<PasswordChangeConfirm>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    if let Some(code) = &user.verification_code
+        && code == &payload.code
+        && let Some(expiry) = user.verification_code_expires_at
+        && expiry > Utc::now()
+    {
+        let new_password = payload.new_password.clone();
+        let new_hash =
+            tokio::task::spawn_blocking(move || bcrypt::hash(&new_password, bcrypt::DEFAULT_COST))
+                .await
+                .map_err(|_| ApiError::Internal)?
+                .map_err(|_| ApiError::Internal)?;
+
+        let updated = db_core::user::update_user_password(pool.get_ref(), user.id, new_hash)
+            .await
+            .map_err(ApiError::Database)?;
+
+        return Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(updated)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        ));
+    }
+
+    Err(ApiError::Unauthorized(
+        "Invalid or expired verification code".to_string(),
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/email",
+    tag = "users",
+    request_body = EmailChangeRequest,
+    responses(
+        (status = 200, description = "Email updated", body = UserResponse),
+        (status = 400, description = "Validation error / Email taken"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn change_email(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<EmailChangeRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    let current_password = payload.current_password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&current_password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    let otp: String = Alphanumeric
+        .sample_string(&mut rand::rng(), 6)
+        .to_uppercase();
+
+    tracing::info!(
+        "VERIFICATION CODE FOR NEW EMAIL {}: {}",
+        payload.new_email,
+        otp
+    );
+
+    let expiry = chrono::Utc::now() + chrono::Duration::minutes(30);
+
+    match db_core::user::update_user_email(pool.get_ref(), user.id, payload.new_email, otp, expiry)
+        .await
+    {
+        Ok(updated) => Ok(respond(
+            &req,
+            Payload::Item(map_user_to_response(updated)),
+            |_: Vec<UserResponse>| (),
+            actix_web::http::StatusCode::OK,
+        )),
+        Err(e) => {
+            if let db_core::error::DbError::Sqlx(ref sqlx_error) = e
+                && let Some(db_error) = sqlx_error.as_database_error()
+                && db_error.code().as_deref() == Some("23505")
+            {
+                let mut map = std::collections::HashMap::new();
+                map.insert(
+                    std::borrow::Cow::from("new_email"),
+                    validator::ValidationErrorsKind::Field(vec![
+                        validator::ValidationError::new("unique")
+                            .with_message("Email already taken".into()),
+                    ]),
+                );
+                return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
+            }
+            Err(ApiError::Database(e))
+        }
+    }
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/profile/deactivate",
+    tag = "users",
+    request_body = DeactivateRequest,
+    responses(
+        (status = 200, description = "Account deactivated", body = UserResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn deactivate_account(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<DeactivateRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let user = db_core::user::get_user_by_email(pool.get_ref(), &payload.email)
+        .await
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    let current_password = payload.current_password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || bcrypt::verify(&current_password, &hash))
+        .await
+        .map_err(|_| ApiError::Internal)?
+        .map_err(|_| ApiError::Unauthorized("Invalid credentials".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::Unauthorized("Invalid credentials".to_string()));
+    }
+
+    if user.roles.contains(&UserRole::Admin) {
+        return Err(ApiError::Forbidden(
+            "Cannot deactivate system admin".to_string(),
+        ));
+    }
+
+    let updated = db_core::user::deactivate_user(pool.get_ref(), user.id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(updated)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/sessions",
+    tag = "sessions",
+    request_body = CreateSessionRequest,
+    responses(
+        (status = 201, description = "Session created", body = SessionResponse),
+        (status = 400, description = "Bad request"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn create_session_handler(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    body: web::Json<CreateSessionRequest>,
+) -> Result<impl Responder, ApiError> {
+    let req_data = body.into_inner();
+    let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
+    let now = Utc::now();
+    let expires_at = now.timestamp() + req_data.ttl_seconds;
+
+    let session_resp = SessionResponse {
+        token_hash: req_data.token_hash.clone(),
+        user_id: req_data.user_id,
+        email: req_data.email.clone(),
+        name: req_data.name.clone(),
+        role: req_data.role.clone(),
+        namespace: req_data.namespace.clone(),
+        created_at: now,
+        last_accessed_at: now,
+        expires_at,
+    };
+
+    let state_bytes = serde_json::to_vec(&session_resp).map_err(|_| ApiError::Internal)?;
+
+    sessions_db
+        .save_session(
+            &req_data.token_hash,
+            Some(req_data.user_id),
+            Some(&req_data.email),
+            &req_data.namespace,
+            &state_bytes,
+            req_data.ttl_seconds,
+        )
+        .await
+        .map_err(|_| ApiError::Internal)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(session_resp),
+        |_: Vec<SessionResponse>| (),
+        actix_web::http::StatusCode::CREATED,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/sessions/{token_hash}",
+    tag = "sessions",
+    params(
+        ("token_hash" = String, Path, description = "Session token SHA-256 hash"),
+        SessionNamespaceQuery
+    ),
+    responses(
+        (status = 200, description = "Session found", body = SessionResponse),
+        (status = 404, description = "Session not found or expired"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_session_handler(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<String>,
+    query: web::Query<SessionNamespaceQuery>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    let token_hash = path.into_inner();
+    let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
+    let ns = query.namespace.as_deref();
+
+    // Touch and extend session by 30 days (2,592,000s) on active access
+    let record = sessions_db
+        .load_and_touch(&token_hash, ns, Some(2592000))
+        .await
+        .map_err(|_| ApiError::Internal)?;
+
+    match record {
+        Some(r) => {
+            let session: SessionResponse =
+                serde_json::from_slice(&r.state).unwrap_or_else(|_| SessionResponse {
+                    token_hash: r.id,
+                    user_id: r.user_id.unwrap_or_default(),
+                    email: r.email.unwrap_or_default(),
+                    name: String::new(),
+                    role: "guest".to_string(),
+                    namespace: r.namespace,
+                    created_at: r.created_at,
+                    last_accessed_at: r.last_accessed_at,
+                    expires_at: r.ttl,
+                });
+
+            Ok(respond(
+                &req,
+                Payload::Item(session),
+                |_: Vec<SessionResponse>| (),
+                actix_web::http::StatusCode::OK,
+            ))
+        }
+        None => Ok(actix_web::HttpResponse::NotFound().json(serde_json::json!({
+            "code": "SESSION_NOT_FOUND",
+            "message": "Session not found or expired"
+        }))),
+    }
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/sessions/{token_hash}",
+    tag = "sessions",
+    params(
+        ("token_hash" = String, Path, description = "Session token SHA-256 hash")
+    ),
+    responses(
+        (status = 204, description = "Session deleted"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn delete_session_handler(
+    pool: web::Data<PgPool>,
+    path: web::Path<String>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    let token_hash = path.into_inner();
+    let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
+    sessions_db
+        .delete(&token_hash)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+    Ok(actix_web::HttpResponse::NoContent().finish())
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/users/{user_id}/sessions",
+    tag = "sessions",
+    params(
+        ("user_id" = Uuid, Path, description = "User UUID"),
+        SessionNamespaceQuery
+    ),
+    responses(
+        (status = 204, description = "User sessions revoked"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn revoke_user_sessions_handler(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    query: web::Query<SessionNamespaceQuery>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    let user_id = path.into_inner();
+    let sessions_db = db_core::sessions::SessionsDb::new(pool.get_ref().clone());
+    let ns = query.namespace.as_deref();
+    sessions_db
+        .delete_user_sessions(user_id, ns)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+    Ok(actix_web::HttpResponse::NoContent().finish())
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -617,16 +1389,32 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_all_users,
             create_user,
             update_user,
+            resend_verification,
+            verify_user,
             get_user,
             get_user_bookings,
             get_user_listings,
-            api_core::health::health_check,
+            request_password_change,
+            confirm_password_change,
+            change_email,
+            deactivate_account,
+            create_session_handler,
+            get_session_handler,
+            delete_session_handler,
+            revoke_user_sessions_handler,
         ),
         components(
-            schemas(NewUserRequest, UpdateUserRequest, UserResponse, ListingResponse, BookingResponse, pagination::Pagination, api_core::health::PingResponse, UserFilter, UsersWrapper)
+            schemas(
+                NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest,
+                UserResponse, ListingResponse, BookingResponse, pagination::Pagination,
+                UserFilter, UsersWrapper, PasswordChangeRequest,
+                PasswordChangeConfirm, EmailChangeRequest, DeactivateRequest,
+                CreateSessionRequest, SessionResponse, SessionNamespaceQuery
+            )
         ),
         tags(
-            (name = "users", description = "User management endpoints")
+            (name = "users", description = "User management endpoints"),
+            (name = "sessions", description = "Session authentication & state endpoints")
         ),
     )]
     struct ApiDoc;
@@ -638,58 +1426,148 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     );
 
     cfg.service(
+        web::scope("/api/v1/sessions")
+            .route(
+                "",
+                web::post()
+                    .to(create_session_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{token_hash}",
+                web::get()
+                    .to(get_session_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{token_hash}",
+                web::delete()
+                    .to(delete_session_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            ),
+    );
+
+    cfg.service(
         web::scope("/api/v1/users")
+            .route(
+                "",
+                web::get()
+                    .to(get_all_users)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
             .route(
                 "/",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_all_users),
+                    .to(get_all_users)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "",
+                web::post()
+                    .to(create_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(create_user),
+                    .to(create_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_user),
+                    .to(get_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}",
                 web::patch()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(update_user),
+                    .to(update_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}",
+                web::delete()
+                    .to(soft_delete_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}/sessions",
+                web::delete()
+                    .to(revoke_user_sessions_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/sessions",
+                web::delete()
+                    .to(revoke_user_sessions_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}/restore",
+                web::post()
+                    .to(restore_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/user/{id}/hard",
+                web::delete()
+                    .to(hard_delete_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}/bookings",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_user_bookings),
+                    .to(get_user_bookings)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}/listings",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_user_listings), // TODO: implement
-            )
-            .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
+                    .to(get_user_listings) // TODO: implement
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/login",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(login),
+                    .to(login)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/verify",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(verify_user),
+                    .to(verify_user)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/resend-verification",
+                web::post()
+                    .to(resend_verification)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/password/request",
+                web::post()
+                    .to(request_password_change)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/password/confirm",
+                web::post()
+                    .to(confirm_password_change)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/email",
+                web::post()
+                    .to(change_email)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/profile/deactivate",
+                web::post()
+                    .to(deactivate_account)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
 }

@@ -1,0 +1,255 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@source "../../../web_app_tc/src";
+@source "../../../web_app_admin_tc/src";
+@source "../../src";
+@source "../**/*.rs";
+
+@plugin "daisyui/theme" {
+    name: "emerald";
+    default: true;
+    prefersdark: false;
+    color-scheme: "light";
+}
+
+@plugin "daisyui/theme" {
+    name: "night";
+    default: false;
+    prefersdark: true;
+    color-scheme: "dark";
+}
+
+@custom-variant dark (&:where([data-theme="night"], [data-theme="night"] *, .dark, .dark *));
+
+/* Dedicated Luxury Styling Tokens & Helpers */
+.hero-luxury {
+    position: relative;
+    width: 100%;
+    min-height: 600px;
+    border-radius: 0; /* Full-bleed edge-to-edge, no rounded corners */
+    overflow: hidden;
+    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    text-align: center;
+    padding: 5rem 1.5rem 4rem 1.5rem;
+}
+
+.hero-luxury-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(0, 0, 0, 0.85) 100%);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.search-capsule {
+    position: relative;
+    z-index: 20;
+    width: 100%;
+    max-width: 64rem;
+    background: rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 9999px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+    padding: 0.75rem 1.25rem;
+    color: #ffffff;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+[data-theme="night"] .search-capsule,
+.dark .search-capsule {
+    background: rgba(15, 23, 42, 0.65);
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    color: #f8fafc;
+}
+
+.frosted-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 0.75rem);
+    left: 0;
+    min-width: 16rem;
+    background: rgba(15, 23, 42, 0.94);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 1.25rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    padding: 0.5rem;
+    z-index: 50;
+}
+
+.frosted-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.75rem;
+    color: #f8fafc;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.frosted-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fbbf24;
+}
+
+.search-date-input {
+    color-scheme: dark;
+    width: 100%;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 0.2rem 0;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.search-date-input::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+.search-date-input::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+}
+
+.search-field {
+    flex: 1;
+    text-align: left;
+    padding: 0 1.25rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="night"] .search-field,
+.dark .search-field {
+    border-right-color: rgba(255, 255, 255, 0.15);
+}
+
+.search-field-last {
+    flex: 1;
+    text-align: left;
+    padding: 0 1.25rem;
+    border-right: none;
+}
+
+.search-label {
+    display: block;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 0.2rem;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.search-input {
+    width: 100%;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #ffffff !important;
+    cursor: pointer;
+    padding: 0.2rem 0;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.search-input::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.search-input option {
+    background-color: #0f172a;
+    color: #f8fafc;
+}
+
+.search-select-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.search-select-wrapper::after {
+    content: "▾";
+    position: absolute;
+    right: 0;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+    pointer-events: none;
+}
+
+.btn-discover {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #0f172a;
+    font-weight: 700;
+    border-radius: 9999px;
+    padding: 0.85rem 1.85rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.45);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+}
+
+.btn-discover:hover {
+    background-color: #d97706;
+    box-shadow: 0 6px 20px rgba(217, 119, 6, 0.5);
+    transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+    .search-capsule {
+        border-radius: 1.5rem;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1.25rem;
+        gap: 1rem;
+    }
+    .search-field {
+        border-right: none;
+        border-bottom: 1px solid rgba(203, 213, 225, 0.6);
+        padding: 0 0 0.75rem 0;
+    }
+    [data-theme="night"] .search-field,
+    .dark .search-field {
+        border-bottom-color: rgba(51, 65, 85, 0.6);
+    }
+    .search-field-last {
+        padding: 0;
+    }
+    .btn-discover {
+        width: 100%;
+    }
+}

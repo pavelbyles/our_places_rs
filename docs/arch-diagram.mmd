@@ -1,0 +1,39 @@
+---
+config:
+  layout: elk
+id: d2671ee2-7f53-46a6-80ca-ea8fb0760acb
+---
+flowchart TB
+ subgraph s1["WebAssembly Frontend - Leptos"]
+        WA["web_app - Guest Portal"]
+        WAA["web_app_admin - Admin Dashboard"]
+        WAC["web_app_common - Shared UI & API Client"]
+  end
+ subgraph s2["Shared Isomorphic Crates"]
+        COM["common - Isomorphic Pricing & Ref Data"]
+        DBC["db_core - SQLx PostgreSQL Entities & Migrations"]
+  end
+ subgraph s3["Actix-web API Services"]
+        LA["listing_api - Listings & Geocoding"]
+        BA["booking_api - Booking State Machine"]
+        UA["user_api - Auth & Profiles"]
+        IW["image_worker - Background Image Processor"]
+  end
+ subgraph s4["Google Cloud Platform"]
+        PG[("PostgreSQL Database")]
+        GCS[("Google Cloud Storage")]
+        PS["GCP Pub/Sub Event Bus"]
+  end
+    WA --> WAC
+    WAA --> WAC
+    WA -.-> COM
+    WAA -.-> COM
+    LA --> COM & DBC
+    BA --> COM & DBC
+    UA --> COM & DBC
+    IW --> DBC
+    DBC --> PG
+    LA -- V4 Signed URL --> GCS
+    GCS -- Upload Notification --> PS
+    PS -- Push Event --> IW
+    IW -- Optimized WebP Assets --> GCS

@@ -6,99 +6,17 @@ use api_core::models::{
 };
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
-use common::models::{ListingQueryParams, ListingResponse};
+use common::models::{ListingQueryParams, ListingResponse, UpdatedListingRequest};
 use db_core::listing as db_listing;
 use db_core::models::{NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::PgPool;
 use std::str::FromStr;
-use utoipa::{IntoParams, OpenApi, ToSchema};
+use utoipa::{IntoParams, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct UpdatedListingRequest {
-    #[serde(default)]
-    #[validate(length(min = 1, message = "Name cannot be empty"))]
-    pub name: Option<String>,
-
-    #[serde(default)]
-    #[validate(length(
-        max = 2000,
-        message = "Description cannot be longer than 2000 characters"
-    ))]
-    pub description: Option<String>,
-
-    #[serde(default)]
-    #[schema(value_type = Option<String>, example = "Villa")]
-    pub listing_structure: Option<StructureType>,
-
-    #[serde(default)]
-    #[validate(length(min = 1, message = "Country cannot be empty"))]
-    pub country: Option<String>,
-
-    #[serde(default)]
-    #[schema(value_type = Option<String>, example = "150.00")]
-    pub price_per_night: Option<Decimal>,
-
-    #[serde(default)]
-    pub is_active: Option<bool>,
-
-    #[serde(default)]
-    pub weekly_discount_percentage: Option<Decimal>,
-
-    #[serde(default)]
-    pub monthly_discount_percentage: Option<Decimal>,
-
-    #[serde(default)]
-    #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
-    pub max_guests: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
-    pub bedrooms: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Beds cannot be negative"))]
-    pub beds: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
-    pub full_bathrooms: Option<i32>,
-
-    #[serde(default)]
-    #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
-    pub half_bathrooms: Option<i32>,
-
-    #[serde(default)]
-    pub square_meters: Option<i32>,
-
-    #[serde(default)]
-    pub latitude: Option<f64>,
-
-    #[serde(default)]
-    pub longitude: Option<f64>,
-
-    #[serde(default)]
-    #[schema(value_type = Object)]
-    pub listing_details: Option<serde_json::Value>,
-
-    #[serde(default)]
-    #[schema(value_type = String, example = "Kingston")]
-    pub city: Option<String>,
-
-    #[serde(default)]
-    #[schema(example = 1)]
-    #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
-    pub minimum_stay: Option<i32>,
-
-    #[serde(default)]
-    #[schema(example = 0)]
-    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
-    pub days_between_bookings: Option<i32>,
-}
 
 /// Gives first 10 listings if no page or per_page is provided
 #[tracing::instrument(err)]
@@ -151,6 +69,7 @@ pub async fn get_listings(
         structure_type: structure_types,
         owner: query.owner.clone(),
         resolution: query.resolution.clone(),
+        currency: query.currency.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -159,10 +78,26 @@ pub async fn get_listings(
             tracing::error!("Database query failed: {:?}", e);
             ApiError::Database(e)
         })?;
-    let response: Vec<ListingResponse> = listings
+    let mut response: Vec<ListingResponse> = listings
         .into_iter()
         .map(map_listing_with_owner_to_response)
         .collect();
+
+    if let Some(target_currency) = &query.currency {
+        let rates = db_core::currency::get_exchange_rates_cache(
+            pool.get_ref(),
+            response.iter().map(|l| &l.base_currency),
+            target_currency,
+        )
+        .await;
+
+        for listing in &mut response {
+            if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
+                listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
+                listing.base_currency = final_curr.clone();
+            }
+        }
+    }
 
     Ok(respond(
         &req,
@@ -170,6 +105,11 @@ pub async fn get_listings(
         |items| ListingsWrapper { listing: items },
         actix_web::http::StatusCode::OK,
     ))
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CurrencyQuery {
+    pub currency: Option<String>,
 }
 
 #[tracing::instrument]
@@ -189,16 +129,34 @@ async fn get_listing_by_id(
     req: HttpRequest,
     path: web::Path<String>,
     pool: web::Data<PgPool>,
+    query: web::Query<CurrencyQuery>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id_or_slug = path.into_inner();
     let listing_details =
         db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
+    let mut response = api_core::models::map_listing_details_to_response(listing_details);
+
+    #[allow(clippy::collapsible_if)]
+    if let Some(target_currency) = &query.currency {
+        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+            pool.get_ref(),
+            &response.listing.base_currency,
+            target_currency,
+        )
+        .await
+        {
+            response.listing.price_per_night = response
+                .listing
+                .price_per_night
+                .map(|p| (p * rate).round_dp(2));
+            response.listing.base_currency = final_curr;
+        }
+    }
+
     Ok(respond(
         &req,
-        Payload::Item(api_core::models::map_listing_details_to_response(
-            listing_details,
-        )),
+        Payload::Item(response),
         |_: Vec<common::models::ListingDetails>| (),
         actix_web::http::StatusCode::OK,
     ))
@@ -264,6 +222,7 @@ async fn create_listing(
             base_currency: req_data.base_currency.clone(),
             minimum_stay: req_data.minimum_stay,
             days_between_bookings: req_data.days_between_bookings,
+            commission_pct: req_data.commission_pct,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -331,7 +290,30 @@ async fn update_listing(
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
 
-    let structure_id = req_data.listing_structure.map(|s| s.id());
+    let structure_id = if let Some(ref structure_str) = req_data.listing_structure {
+        let st = StructureType::from_str(structure_str).map_err(|_| {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add(
+                "listing_structure",
+                validator::ValidationError::new("invalid_structure_type")
+                    .with_message("Invalid structure type provided.".into()),
+            );
+            ApiError::ValidationError(errors)
+        })?;
+        Some(st.id())
+    } else {
+        None
+    };
+
+    let city = if req_data.city.is_some() {
+        req_data.city
+    } else if let (Some(lat), Some(lon)) = (req_data.latitude, req_data.longitude) {
+        common::geocode::reverse_geocode(lat, lon)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
 
     let updated_data = UpdatedListing {
         name: req_data.name,
@@ -351,10 +333,11 @@ async fn update_listing(
         latitude: req_data.latitude,
         longitude: req_data.longitude,
         listing_details: req_data.listing_details,
-        city: req_data.city,
-        base_currency: None, // Frontend isn't sending option to update base currency yet, except maybe in full update.
+        city,
+        base_currency: req_data.base_currency,
         minimum_stay: req_data.minimum_stay,
         days_between_bookings: req_data.days_between_bookings,
+        commission_pct: req_data.commission_pct,
     };
 
     let updated_listing =
@@ -510,7 +493,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             update_listing,
             delete_listing,
             presign_batch,
-            api_core::health::health_check,
+            crate::reviews::get_review_token_info,
+            crate::reviews::submit_review,
+            crate::reviews::submit_host_reply,
+            crate::reviews::get_listing_reviews_handler,
         ),
         components(
             schemas(
@@ -522,11 +508,16 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,
                 common::models::ImagePresignResponse,
-                common::models::PendingImageMetadata
+                common::models::PendingImageMetadata,
+                common::models::ReviewTokenInfoResponse,
+                common::models::NewReviewRequest,
+                common::models::HostReplyRequest,
+                common::models::ReviewResponse
             )
         ),
         tags(
-            (name = "listings", description = "Listing management endpoints")
+            (name = "listings", description = "Listing management endpoints"),
+            (name = "reviews", description = "Review and rating endpoints")
         ),
     )]
     struct ApiDoc;
@@ -540,48 +531,260 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/listings")
             .route(
-                "/health_check",
-                web::get().to(api_core::health::health_check),
-            )
-            .route(
                 "",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_listings),
+                    .to(get_listings)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(create_listing),
+                    .to(create_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}",
                 web::get()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(get_listing_by_id),
+                    .to(get_listing_by_id)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}",
                 web::patch()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(update_listing),
+                    .to(update_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}",
                 web::delete()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(delete_listing),
+                    .to(delete_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}/images/presign",
                 web::post()
-                    .wrap(from_fn(content_negotiation_middleware))
-                    .to(presign_batch),
+                    .to(presign_batch)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/reviews",
+                web::get()
+                    .to(crate::reviews::get_listing_reviews_handler)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides",
+                web::get()
+                    .to(get_price_overrides)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides",
+                web::post()
+                    .to(create_price_override)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides/{override_id}",
+                web::put()
+                    .to(update_price_override)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/price-overrides/{override_id}",
+                web::delete()
+                    .to(delete_price_override)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
+
+    crate::reviews::configure_routes(cfg);
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    post,
+    path = "/api/v1/listings/{id}/price-overrides",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    request_body = common::models::CreatePriceOverrideRequest,
+    responses(
+        (status = 201, description = "Price override created", body = common::models::PriceOverride),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn create_price_override(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    req_body: web::Json<common::models::CreatePriceOverrideRequest>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let override_req = req_body.into_inner();
+
+    if override_req.end_date <= override_req.start_date {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "End date must be strictly after start date".to_string(),
+            ),
+        ));
+    }
+    if override_req.nightly_rate <= Decimal::ZERO {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Nightly rate must be greater than zero".to_string(),
+            ),
+        ));
+    }
+    if override_req.min_nights < 1 {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Minimum nights must be at least 1".to_string(),
+            ),
+        ));
+    }
+
+    let created_override =
+        db_listing::create_price_override(pool.get_ref(), listing_id, &override_req)
+            .await
+            .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(created_override),
+        |_: Vec<common::models::PriceOverride>| (),
+        actix_web::http::StatusCode::CREATED,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/price-overrides",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    responses(
+        (status = 200, description = "List of price overrides", body = Vec<common::models::PriceOverride>),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_price_overrides(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let overrides = db_listing::get_price_overrides_by_listing(pool.get_ref(), listing_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Collection(overrides),
+        |_: Vec<common::models::PriceOverride>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    put,
+    path = "/api/v1/listings/{id}/price-overrides/{override_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("override_id" = String, Path, description = "Price Override UUID")
+    ),
+    request_body = common::models::UpdatePriceOverrideRequest,
+    responses(
+        (status = 200, description = "Price override updated", body = common::models::PriceOverride),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn update_price_override(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+    req_body: web::Json<common::models::UpdatePriceOverrideRequest>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, override_id) = path.into_inner();
+    let override_req = req_body.into_inner();
+
+    if let (Some(start), Some(end)) = (override_req.start_date, override_req.end_date)
+        && end <= start
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "End date must be strictly after start date".to_string(),
+            ),
+        ));
+    }
+    if let Some(rate) = override_req.nightly_rate
+        && rate <= Decimal::ZERO
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Nightly rate must be greater than zero".to_string(),
+            ),
+        ));
+    }
+    if let Some(min_nights) = override_req.min_nights
+        && min_nights < 1
+    {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Minimum nights must be at least 1".to_string(),
+            ),
+        ));
+    }
+
+    let updated_override =
+        db_listing::update_price_override(pool.get_ref(), override_id, listing_id, &override_req)
+            .await
+            .map_err(ApiError::Database)?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(updated_override),
+        |_: Vec<common::models::PriceOverride>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/listings/{id}/price-overrides/{override_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("override_id" = String, Path, description = "Price Override UUID")
+    ),
+    responses(
+        (status = 204, description = "Price override deleted"),
+        (status = 404, description = "Price override not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn delete_price_override(
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, override_id) = path.into_inner();
+    db_listing::delete_price_override(pool.get_ref(), override_id, listing_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(HttpResponse::NoContent().finish())
 }
 
 #[cfg(test)]
 #[path = "apis_test.rs"]
+#[allow(clippy::explicit_auto_deref)]
 mod tests;

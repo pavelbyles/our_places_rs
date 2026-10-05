@@ -39,6 +39,6 @@ module "db" {
 }
 
 module "accounts" {
-  source = "./modules/accounts"
+  source  = "./modules/accounts"
   project = var.base_project_id
 }

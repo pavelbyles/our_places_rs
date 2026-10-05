@@ -5,7 +5,7 @@
 
 ## Workspace Structure
 - **web_app/**: Leptos-based frontend (Wasm).
-- **app_api/**: Backend services (Axum).
+- **app_api/**: Backend services (Actix-web).
     - `booking_api`: Handles reservations.
     - `listing_api`: Manages property listings.
     - `user_api`: User authentication and management.

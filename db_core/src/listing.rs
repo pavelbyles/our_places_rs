@@ -44,16 +44,16 @@ where
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             weekly_discount_percentage, monthly_discount_percentage, added_at, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings
+            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct
         )
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, COALESCE($27, 0.0000)
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
         RETURNING 
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, 
             weekly_discount_percentage, monthly_discount_percentage, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings
+            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct
         "#,
         Uuid::now_v7(),                                  // $1
         new_listing.user_id,                             // $2
@@ -81,6 +81,7 @@ where
         new_listing.base_currency,                       // $24
         new_listing.minimum_stay,                        // $25
         new_listing.days_between_bookings,               // $26
+        new_listing.commission_pct,                      // $27
     )
     .fetch_one(executor)
     .await
@@ -119,7 +120,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.full_bathrooms, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct,
         "user".first_name || ' ' || "user".last_name as owner_name,
         primary_img.upload_url as primary_image_url
         FROM listing
@@ -137,7 +138,7 @@ where
         r#"::image_resolution
             LIMIT 1
         ) AS primary_img ON true
-        WHERE listing.deleted_at IS NULL
+        WHERE listing.deleted_at IS NULL AND "user".is_active = TRUE
         "#,
     );
 
@@ -178,8 +179,15 @@ where
         }
 
         if let Some(owner) = f.owner {
-            query_builder.push(" AND \"user\".email ILIKE ");
-            query_builder.push_bind(format!("%{}%", owner));
+            let trimmed = owner.trim();
+            if trimmed.contains('@') {
+                query_builder.push(" AND LOWER(\"user\".email) = LOWER(");
+                query_builder.push_bind(trimmed.to_string());
+                query_builder.push(")");
+            } else {
+                query_builder.push(" AND \"user\".email ILIKE ");
+                query_builder.push_bind(format!("%{}%", trimmed));
+            }
         }
     }
 
@@ -205,7 +213,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -241,7 +249,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -252,7 +260,8 @@ where
               AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
             LIMIT 1
         ) AS primary_img ON true
-        WHERE listing.id = $1 AND listing.deleted_at IS NULL
+        INNER JOIN "user" ON listing.user_id = "user".id
+        WHERE listing.id = $1 AND listing.deleted_at IS NULL AND "user".is_active = TRUE
         "#,
         id
     )
@@ -272,7 +281,20 @@ where
     .fetch_all(&mut *conn)
     .await?;
 
-    Ok(crate::models::ListingDetails { listing, images })
+    let owner_name: Option<String> =
+        sqlx::query_scalar::<_, String>(r#"SELECT first_name FROM "user" WHERE id = $1"#)
+            .bind(listing.user_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+
+    let rating_summary = crate::review::get_listing_rating_summary(&mut conn, id).await?;
+
+    Ok(crate::models::ListingDetails {
+        listing,
+        images,
+        owner_name,
+        rating_summary: Some(rating_summary),
+    })
 }
 
 /// Retrieves a single listing from the database by its UUID or Slug.
@@ -286,14 +308,11 @@ where
 {
     let mut conn = executor.acquire().await?;
 
-    let is_uuid = uuid::Uuid::parse_str(id_or_slug).is_ok();
-
-    let listing = if is_uuid {
-        let id_uuid = uuid::Uuid::parse_str(id_or_slug).unwrap();
+    let listing = if let Ok(id_uuid) = uuid::Uuid::parse_str(id_or_slug) {
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -304,7 +323,8 @@ where
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
                 LIMIT 1
             ) AS primary_img ON true
-            WHERE listing.id = $1 AND listing.deleted_at IS NULL
+            INNER JOIN "user" ON listing.user_id = "user".id
+            WHERE listing.id = $1 AND listing.deleted_at IS NULL AND "user".is_active = TRUE
             "#,
             id_uuid
         )
@@ -314,7 +334,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -325,7 +345,8 @@ where
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
                 LIMIT 1
             ) AS primary_img ON true
-            WHERE listing.slug = $1 AND listing.deleted_at IS NULL
+            INNER JOIN "user" ON listing.user_id = "user".id
+            WHERE listing.slug = $1 AND listing.deleted_at IS NULL AND "user".is_active = TRUE
             "#,
             id_or_slug
         )
@@ -346,7 +367,20 @@ where
     .fetch_all(&mut *conn)
     .await?;
 
-    Ok(crate::models::ListingDetails { listing, images })
+    let owner_name: Option<String> =
+        sqlx::query_scalar::<_, String>(r#"SELECT first_name FROM "user" WHERE id = $1"#)
+            .bind(listing.user_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+
+    let rating_summary = crate::review::get_listing_rating_summary(&mut conn, listing.id).await?;
+
+    Ok(crate::models::ListingDetails {
+        listing,
+        images,
+        owner_name,
+        rating_summary: Some(rating_summary),
+    })
 }
 
 /// Updates a listing in the database.
@@ -360,7 +394,7 @@ pub async fn update_listing(
 
     let _current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -373,13 +407,13 @@ pub async fn update_listing(
             listing_id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings
+            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings, commission_pct
         )
         SELECT 
             id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings
+            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings, commission_pct
         FROM listing 
         WHERE id = $1
         "#,
@@ -415,9 +449,10 @@ pub async fn update_listing(
             city = COALESCE($19, city),
             base_currency = COALESCE($20, base_currency),
             minimum_stay = COALESCE($21, minimum_stay),
-            days_between_bookings = COALESCE($22, days_between_bookings)
+            days_between_bookings = COALESCE($22, days_between_bookings),
+            commission_pct = COALESCE($23, commission_pct)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct
         "#,
         id,
         updated_listing_data.name,
@@ -441,6 +476,7 @@ pub async fn update_listing(
         updated_listing_data.base_currency,
         updated_listing_data.minimum_stay,
         updated_listing_data.days_between_bookings,
+        updated_listing_data.commission_pct,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -630,7 +666,199 @@ where
     Ok(())
 }
 
+/// Creates a new price override for a listing.
+#[tracing::instrument(skip(executor))]
+pub async fn create_price_override<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    req: &common::models::CreatePriceOverrideRequest,
+) -> Result<common::models::PriceOverride>
+where
+    E: PgExecutor<'e>,
+{
+    let record = sqlx::query_as::<_, crate::models::PriceOverride>(
+        r#"
+        INSERT INTO listing_price_overrides (
+            id, listing_id, start_date, end_date, nightly_rate, min_nights
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, listing_id, start_date, end_date, nightly_rate, min_nights, created_at, updated_at
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(listing_id)
+    .bind(req.start_date)
+    .bind(req.end_date)
+    .bind(req.nightly_rate)
+    .bind(req.min_nights)
+    .fetch_one(executor)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23P01") => {
+            crate::error::DbError::ValidationError(
+                "Overlapping price override date range exists for this listing".to_string(),
+            )
+        }
+        other => crate::error::DbError::Sqlx(other),
+    })?;
+
+    Ok(record.into())
+}
+
+/// Retrieves all price overrides for a listing sorted by start_date ascending.
+#[tracing::instrument(skip(executor))]
+pub async fn get_price_overrides_by_listing<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+) -> Result<Vec<common::models::PriceOverride>>
+where
+    E: PgExecutor<'e>,
+{
+    let records = sqlx::query_as::<_, crate::models::PriceOverride>(
+        r#"
+        SELECT id, listing_id, start_date, end_date, nightly_rate, min_nights, created_at, updated_at
+        FROM listing_price_overrides
+        WHERE listing_id = $1
+        ORDER BY start_date ASC
+        "#,
+    )
+    .bind(listing_id)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(records.into_iter().map(Into::into).collect())
+}
+
+/// Retrieves active price overrides for a stay window [check_in, check_out).
+#[tracing::instrument(skip(executor))]
+pub async fn get_active_overrides_for_dates<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    check_in: chrono::NaiveDate,
+    check_out: chrono::NaiveDate,
+) -> Result<Vec<common::models::PriceOverride>>
+where
+    E: PgExecutor<'e>,
+{
+    let records = sqlx::query_as::<_, crate::models::PriceOverride>(
+        r#"
+        SELECT id, listing_id, start_date, end_date, nightly_rate, min_nights, created_at, updated_at
+        FROM listing_price_overrides
+        WHERE listing_id = $1
+          AND start_date < $3
+          AND end_date > $2
+        ORDER BY start_date ASC
+        "#,
+    )
+    .bind(listing_id)
+    .bind(check_in)
+    .bind(check_out)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(records.into_iter().map(Into::into).collect())
+}
+
+/// Retrieves a single price override by ID.
+#[tracing::instrument(skip(executor))]
+pub async fn get_price_override_by_id<'e, E>(
+    executor: E,
+    override_id: Uuid,
+    listing_id: Uuid,
+) -> Result<common::models::PriceOverride>
+where
+    E: PgExecutor<'e>,
+{
+    let record = sqlx::query_as::<_, crate::models::PriceOverride>(
+        r#"
+        SELECT id, listing_id, start_date, end_date, nightly_rate, min_nights, created_at, updated_at
+        FROM listing_price_overrides
+        WHERE id = $1 AND listing_id = $2
+        "#,
+    )
+    .bind(override_id)
+    .bind(listing_id)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(record.into())
+}
+
+/// Updates an existing price override.
+#[tracing::instrument(skip(executor))]
+pub async fn update_price_override<'e, E>(
+    executor: E,
+    override_id: Uuid,
+    listing_id: Uuid,
+    req: &common::models::UpdatePriceOverrideRequest,
+) -> Result<common::models::PriceOverride>
+where
+    E: PgExecutor<'e>,
+{
+    let record = sqlx::query_as::<_, crate::models::PriceOverride>(
+        r#"
+        UPDATE listing_price_overrides
+        SET start_date = COALESCE($3, start_date),
+            end_date = COALESCE($4, end_date),
+            nightly_rate = COALESCE($5, nightly_rate),
+            min_nights = COALESCE($6, min_nights),
+            updated_at = NOW()
+        WHERE id = $1 AND listing_id = $2
+        RETURNING id, listing_id, start_date, end_date, nightly_rate, min_nights, created_at, updated_at
+        "#,
+    )
+    .bind(override_id)
+    .bind(listing_id)
+    .bind(req.start_date)
+    .bind(req.end_date)
+    .bind(req.nightly_rate)
+    .bind(req.min_nights)
+    .fetch_one(executor)
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23P01") => {
+            crate::error::DbError::ValidationError(
+                "Overlapping price override date range exists for this listing".to_string(),
+            )
+        }
+        other => crate::error::DbError::Sqlx(other),
+    })?;
+
+    Ok(record.into())
+}
+
+/// Deletes a price override.
+#[tracing::instrument(skip(executor))]
+pub async fn delete_price_override<'e, E>(
+    executor: E,
+    override_id: Uuid,
+    listing_id: Uuid,
+) -> Result<()>
+where
+    E: PgExecutor<'e>,
+{
+    let result = sqlx::query(
+        r#"
+        DELETE FROM listing_price_overrides
+        WHERE id = $1 AND listing_id = $2
+        "#,
+    )
+    .bind(override_id)
+    .bind(listing_id)
+    .execute(executor)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(crate::error::DbError::ValidationError(
+            "Price override not found".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
+#[allow(clippy::explicit_auto_deref)]
 mod tests {
     use super::*;
     use crate::error::DbError;
@@ -669,6 +897,7 @@ mod tests {
             verification_code_expires_at: None,
             attributes: serde_json::json!({}),
             roles: None,
+            default_currency: "USD".to_string(),
         };
         create_user(&mut *conn, &new_user)
             .await
@@ -717,6 +946,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
 
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -754,6 +984,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
 
         let result = create_listing(&mut *tx, &new_listing).await;
@@ -791,6 +1022,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -839,6 +1071,7 @@ mod tests {
                 base_currency: "USD".to_string(),
                 minimum_stay: 1,
                 days_between_bookings: 0,
+                commission_pct: Some(dec!(0.0000)),
             };
             let created = create_listing(&mut *tx, &listing).await.unwrap();
             created_ids.push(created.id);
@@ -911,6 +1144,7 @@ mod tests {
                 base_currency: "USD".to_string(),
                 minimum_stay: 1,
                 days_between_bookings: 0,
+                commission_pct: Some(dec!(0.0000)),
             };
             create_listing(&mut *tx, &listing).await.unwrap();
         }
@@ -973,6 +1207,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -999,6 +1234,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -1025,6 +1261,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -1037,6 +1274,7 @@ mod tests {
             structure_type: vec![],
             owner: None,
             resolution: None,
+            currency: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -1057,6 +1295,7 @@ mod tests {
             structure_type: vec![],
             owner: None,
             resolution: None,
+            currency: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -1075,6 +1314,7 @@ mod tests {
             structure_type: vec!["Villa".to_string()],
             owner: None,
             resolution: None,
+            currency: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
@@ -1112,6 +1352,7 @@ mod tests {
             base_currency: "USD".to_string(),
             minimum_stay: 1,
             days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
         };
         let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 
@@ -1136,5 +1377,167 @@ mod tests {
             Ok(_) => println!("Successfully updated image"),
             Err(e) => panic!("Database error occurred: {:?}", e),
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_listings_owner_exact_email_filtering() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        // Create User 1: host_1@example.com
+        let id1 = Uuid::now_v7();
+        let email1 = format!("host_{}@example.com", id1);
+        let u1 = crate::user::create_user(
+            &mut *tx,
+            &crate::models::NewUser {
+                id: id1,
+                email: email1.clone(),
+                password_hash: "hash123".to_string(),
+                first_name: "Host".to_string(),
+                last_name: "One".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: None,
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::user::create_host_profile(
+            &mut *tx,
+            u1.id,
+            &crate::models::NewHostProfile {
+                verified_status: Some("verified".to_string()),
+                payout_details: None,
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create User 2: other_host_1@example.com
+        let id2 = Uuid::now_v7();
+        let email2 = format!("other_{}", email1);
+        let u2 = crate::user::create_user(
+            &mut *tx,
+            &crate::models::NewUser {
+                id: id2,
+                email: email2.clone(),
+                password_hash: "hash123".to_string(),
+                first_name: "Host".to_string(),
+                last_name: "Two".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: None,
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        crate::user::create_host_profile(
+            &mut *tx,
+            u2.id,
+            &crate::models::NewHostProfile {
+                verified_status: Some("verified".to_string()),
+                payout_details: None,
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // Create Listing for User 1
+        let l1 = NewListing {
+            name: "Host 1 Listing".to_string(),
+            user_id: u1.id,
+            description: None,
+            listing_structure_id: 1,
+            country: "JM".to_string(),
+            price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
+        };
+        create_listing(&mut *tx, &l1).await.unwrap();
+
+        // Create Listing for User 2
+        let l2 = NewListing {
+            name: "Host 2 Listing".to_string(),
+            user_id: u2.id,
+            description: None,
+            listing_structure_id: 1,
+            country: "JM".to_string(),
+            price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
+        };
+        create_listing(&mut *tx, &l2).await.unwrap();
+
+        // Query with exact email for User 1
+        let filter1 = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: Some(u1.email.clone()),
+            resolution: None,
+            currency: None,
+        };
+        let results1 = get_listings(&mut *tx, 1, 10, Some(filter1)).await.unwrap();
+        assert_eq!(results1.len(), 1);
+        assert_eq!(results1[0].name, "Host 1 Listing");
+
+        // Query with exact email for User 2
+        let filter2 = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: Some(u2.email.clone()),
+            resolution: None,
+            currency: None,
+        };
+        let results2 = get_listings(&mut *tx, 1, 10, Some(filter2)).await.unwrap();
+        assert_eq!(results2.len(), 1);
+        assert_eq!(results2[0].name, "Host 2 Listing");
     }
 }

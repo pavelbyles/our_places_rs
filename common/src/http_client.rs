@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
+use reqwest::header::AUTHORIZATION;
 
 use std::process::Command;
 use std::sync::Arc;
@@ -42,10 +42,10 @@ impl TokenProvider for GoogleMetadataTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
         let mut cache = self.cache.lock().await;
 
-        if let Some(cached) = &*cache {
-            if cached.expires_at > Instant::now() {
-                return Ok(cached.token.clone());
-            }
+        if let Some(cached) = &*cache
+            && cached.expires_at > Instant::now()
+        {
+            return Ok(cached.token.clone());
         }
 
         let client = Client::new();
@@ -111,10 +111,10 @@ impl TokenProvider for LocalGcloudTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
         let mut cache = self.cache.lock().await;
 
-        if let Some(cached) = &*cache {
-            if cached.expires_at > Instant::now() {
-                return Ok(cached.token.clone());
-            }
+        if let Some(cached) = &*cache
+            && cached.expires_at > Instant::now()
+        {
+            return Ok(cached.token.clone());
         }
 
         let audience = audience.to_string();
@@ -223,10 +223,10 @@ impl AuthenticatedClient {
     /// Creates a GET request builder with OIDC Authorization and API Key.
     pub async fn get_request(&self, url: &str, audience: &str) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .get(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token));
+        let mut builder = self.client.get(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
         Ok(self.add_api_key(builder))
     }
 
@@ -247,11 +247,11 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .post(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json);
+        let mut builder = self.client.post(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let builder = builder.json(json);
         Ok(self.add_api_key(builder))
     }
 
@@ -277,11 +277,11 @@ impl AuthenticatedClient {
         json: &T,
     ) -> Result<reqwest::RequestBuilder> {
         let token = self.token_provider.get_token(audience).await?;
-        let builder = self
-            .client
-            .patch(url)
-            .header(AUTHORIZATION, format!("Bearer {}", token))
-            .json(json);
+        let mut builder = self.client.patch(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let builder = builder.json(json);
         Ok(self.add_api_key(builder))
     }
 
@@ -297,5 +297,58 @@ impl AuthenticatedClient {
             .send()
             .await
             .context("Failed to send PATCH request")
+    }
+
+    /// Creates a DELETE request builder with OIDC Authorization and API Key.
+    pub async fn delete_request(
+        &self,
+        url: &str,
+        audience: &str,
+    ) -> Result<reqwest::RequestBuilder> {
+        let token = self.token_provider.get_token(audience).await?;
+        let mut builder = self.client.delete(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        Ok(self.add_api_key(builder))
+    }
+
+    /// Sends a DELETE request with OIDC Authorization.
+    pub async fn delete(&self, url: &str, audience: &str) -> Result<reqwest::Response> {
+        self.delete_request(url, audience)
+            .await?
+            .send()
+            .await
+            .context("Failed to send DELETE request")
+    }
+
+    /// Creates a PUT request builder with OIDC Authorization and API Key.
+    pub async fn put_request<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        audience: &str,
+        json: &T,
+    ) -> Result<reqwest::RequestBuilder> {
+        let token = self.token_provider.get_token(audience).await?;
+        let mut builder = self.client.put(url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        let builder = builder.json(json);
+        Ok(self.add_api_key(builder))
+    }
+
+    /// Sends a PUT request with OIDC Authorization.
+    pub async fn put<T: serde::Serialize + ?Sized>(
+        &self,
+        url: &str,
+        audience: &str,
+        json: &T,
+    ) -> Result<reqwest::Response> {
+        self.put_request(url, audience, json)
+            .await?
+            .send()
+            .await
+            .context("Failed to send PUT request")
     }
 }

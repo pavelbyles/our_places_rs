@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO booking_notification_log (booking_id, notification_type, recipient_user_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (booking_id, notification_type, recipient_user_id) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b571c008bad21f68f2c34d2c313d4b2459d13777d2a5a781df221321f5145222"
+}

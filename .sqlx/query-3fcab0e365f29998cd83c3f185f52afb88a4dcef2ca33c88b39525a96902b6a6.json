@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            AVG(overall_rating) as \"avg_overall: rust_decimal::Decimal\", \n            COUNT(*) as \"review_count!\"\n        FROM review\n        WHERE listing_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "avg_overall: rust_decimal::Decimal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "review_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "3fcab0e365f29998cd83c3f185f52afb88a4dcef2ca33c88b39525a96902b6a6"
+}

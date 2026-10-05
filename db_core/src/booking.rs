@@ -1,8 +1,11 @@
 use crate::error::Result;
+#[allow(unused_imports)]
 use crate::models::{
     Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
 };
+#[allow(unused_imports)]
 use chrono::Utc;
+#[allow(unused_imports)]
 use sqlx::types::Json;
 
 use sqlx::{PgExecutor, PgPool};
@@ -23,24 +26,59 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
 
     let overlapping = sqlx::query!(
         r#"
-        SELECT id FROM booking 
+        SELECT id, guest_id, status as "status: BookingStatus" FROM booking 
         WHERE listing_id = $1 
           AND status IN ('pending', 'confirmed') 
           AND date_from < $3 
           AND date_to > $2
-        LIMIT 1
         "#,
         new_booking.listing_id,
         new_booking.date_from,
         new_booking.date_to
     )
-    .fetch_optional(&mut *tx)
+    .fetch_all(&mut *tx)
     .await?;
 
-    if overlapping.is_some() {
+    let has_conflict = overlapping.iter().any(|b| {
+        b.status == BookingStatus::Confirmed
+            || (b.status == BookingStatus::Pending && b.guest_id != new_booking.guest_id)
+    });
+
+    if has_conflict {
         return Err(crate::error::DbError::ValidationError(
             "Listing is not available for the selected dates".to_string(),
         ));
+    }
+
+    // Cancel any existing pending holds for this guest across all listings
+    let existing_guest_holds = sqlx::query_as!(
+        Booking,
+        r#"
+        UPDATE booking
+        SET status = 'cancelled', updated_at = $2
+        WHERE guest_id = $1 AND status = 'pending'
+        RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
+            created_at, updated_at
+        "#,
+        new_booking.guest_id,
+        Utc::now()
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    for cancelled in existing_guest_holds {
+        record_booking_history(
+            &mut tx,
+            &cancelled,
+            "Cancelled previous pending hold due to new booking placement",
+            Some(new_booking.guest_id),
+        )
+        .await?;
     }
 
     let booking = sqlx::query_as!(
@@ -50,14 +88,15 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, created_at, updated_at
+            total_price, cancellation_policy, metadata, door_access_code, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -78,6 +117,7 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
         new_booking.total_price,
         new_booking.cancellation_policy as CancellationPolicy,
         Json(&new_booking.metadata) as _,
+        new_booking.door_access_code.as_deref(),
         Utc::now(),
         Utc::now()
     )
@@ -109,6 +149,7 @@ where
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -137,6 +178,7 @@ where
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -151,6 +193,7 @@ where
 
 /// Updates a booking's status.
 #[tracing::instrument(skip(pool))]
+// skipcq: RS-R1000
 pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
@@ -175,17 +218,20 @@ pub async fn update_booking(
         UPDATE booking
         SET status = COALESCE($1, status), 
             metadata = COALESCE($2, metadata),
-            updated_at = $3
-        WHERE id = $4
+            door_access_code = COALESCE($3, door_access_code),
+            updated_at = $4
+        WHERE id = $5
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
         updated_booking.metadata.as_ref().map(Json) as _,
+        updated_booking.door_access_code.as_deref(),
         Utc::now(),
         id
     )
@@ -198,15 +244,93 @@ pub async fn update_booking(
         .map(|s| s != current.status)
         .unwrap_or(false);
     let metadata_changed = updated_booking.metadata.is_some();
+    let door_code_changed = updated_booking.door_access_code.is_some();
 
-    if status_changed || metadata_changed {
-        let reason = match (status_changed, metadata_changed) {
-            (true, true) => "Status and metadata updated",
-            (true, false) => "Status updated",
-            (false, true) => "Metadata updated",
+    if status_changed || metadata_changed || door_code_changed {
+        let reason = match (status_changed, metadata_changed, door_code_changed) {
+            (true, true, _) => "Status and metadata updated",
+            (true, false, false) => "Status updated",
+            (false, true, false) => "Metadata updated",
+            (false, false, true) => "Door access code updated",
             _ => "Booking updated",
         };
         record_booking_history(&mut tx, &booking, reason, None).await?;
+    }
+
+    // Trigger review token generation if booking transitions to Completed
+    if let Some(BookingStatus::Completed) = updated_booking.status
+        && status_changed
+    {
+        crate::review::create_review_token(&mut tx, booking.id).await?;
+    }
+
+    // Trigger host payout ledger generation if booking transitions to Confirmed
+    if let Some(BookingStatus::Confirmed) = updated_booking.status
+        && status_changed
+    {
+        let listing_info = sqlx::query!(
+            r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
+            booking.listing_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let host_currency = sqlx::query_scalar!(
+            r#"SELECT default_currency FROM "user" WHERE id = $1"#,
+            listing_info.user_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let exchange_rate = if listing_info.base_currency == host_currency {
+            rust_decimal::Decimal::ONE
+        } else {
+            sqlx::query_scalar!(
+                r#"SELECT rate FROM currency_exchange_rates 
+                   WHERE base_currency = $1 AND target_currency = $2 
+                   ORDER BY effective_at DESC, updated_at DESC LIMIT 1"#,
+                listing_info.base_currency,
+                host_currency
+            )
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(rust_decimal::Decimal::ONE)
+        };
+
+        let discounted_subtotal = booking.sub_total_price
+            - booking
+                .discount_value
+                .unwrap_or(rust_decimal::Decimal::ZERO);
+        let gross_amount = (discounted_subtotal * exchange_rate).round_dp(2);
+        let platform_fee_pct = listing_info.commission_pct;
+        let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
+            gross_amount,
+            platform_fee_pct,
+            rust_decimal::Decimal::ZERO,
+        );
+
+        crate::payout_ledger::create_payout_ledger_entry(
+            &mut tx,
+            uuid::Uuid::now_v7(),
+            booking.id,
+            booking.listing_id,
+            listing_info.user_id,
+            &host_currency,
+            gross_amount,
+            platform_fee_pct,
+            platform_fee_amount,
+            rust_decimal::Decimal::ZERO,
+            exchange_rate,
+            net_payout_amount,
+        )
+        .await?;
+    }
+
+    // Auto-cancel pending host payout if booking transitions to Cancelled
+    if let Some(BookingStatus::Cancelled) = updated_booking.status
+        && status_changed
+    {
+        crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
     }
 
     tx.commit().await?;
@@ -229,11 +353,162 @@ pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Transfers a pending booking placeholder to a newly authenticated user.
+#[tracing::instrument(skip(pool))]
+pub async fn transfer_booking_guest(
+    pool: &PgPool,
+    booking_id: Uuid,
+    new_guest_id: Uuid,
+) -> Result<Booking> {
+    let mut tx = pool.begin().await?;
+
+    let booking = sqlx::query_as!(
+        Booking,
+        r#"
+        UPDATE booking
+        SET guest_id = $1,
+            updated_at = $2
+        WHERE id = $3 AND status = 'pending'
+        RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
+            created_at, updated_at
+        "#,
+        new_guest_id,
+        Utc::now(),
+        booking_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    record_booking_history(
+        &mut tx,
+        &booking,
+        "Transferred booking from guest placeholder to authenticated user",
+        Some(new_guest_id),
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(booking)
+}
+
 /// Retrieves bookings for a specific user, sorted by date_from ASC.
 #[tracing::instrument(skip(executor))]
 pub async fn get_bookings_by_user_id<'e, E>(
     executor: E,
     guest_id: Uuid,
+    page: u32,
+    per_page: u32,
+) -> Result<Vec<crate::models::BookingWithEligibility>>
+where
+    E: PgExecutor<'e>,
+{
+    let limit = per_page as i64;
+    let offset = ((page.max(1) - 1) * per_page) as i64;
+
+    let records = sqlx::query!(
+        r#"
+        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as "status: BookingStatus", 
+            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,
+            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            b.total_price, b.cancellation_policy as "cancellation_policy: CancellationPolicy", 
+            b.metadata as "metadata: Json<crate::models::BookingMetadata>",
+            json_build_object(
+                'booking_id', b.id,
+                'is_eligible', 
+                    CASE 
+                        WHEN b.status = 'cancelled' THEN false
+                        WHEN r.id IS NOT NULL THEN false
+                        WHEN CURRENT_DATE < b.date_to THEN false
+                        WHEN CURRENT_DATE > (b.date_to + 15) THEN false
+                        ELSE true
+                    END,
+                'token', rt.token,
+                'has_reviewed', CASE WHEN r.id IS NOT NULL THEN true ELSE false END,
+                'days_remaining', 
+                    CASE 
+                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 0
+                        ELSE (b.date_to + 15) - CURRENT_DATE
+                    END,
+                'status_message', 
+                    CASE 
+                        WHEN b.status = 'cancelled' THEN 'Cancelled bookings are not eligible for review'
+                        WHEN r.id IS NOT NULL THEN 'You have already submitted a review for this stay'
+                        WHEN CURRENT_DATE < b.date_to THEN 'Reviews can only be submitted after your stay has ended'
+                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 'The 15-day review period for this stay has expired'
+                        ELSE 'Eligible for review'
+                    END
+            ) as "review_eligibility!",
+            b.created_at, b.updated_at,
+            b.door_access_code
+        FROM booking b
+        LEFT JOIN review r ON r.booking_id = b.id
+        LEFT JOIN LATERAL (
+            SELECT token FROM review_token 
+            WHERE booking_id = b.id AND used_at IS NULL AND expires_at > NOW() 
+            ORDER BY created_at DESC LIMIT 1
+        ) rt ON true
+        WHERE b.guest_id = $1
+        ORDER BY b.date_from ASC
+        LIMIT $2 OFFSET $3
+        "#,
+        guest_id,
+        limit,
+        offset
+    )
+    .fetch_all(executor)
+    .await?;
+
+    let mut bookings = Vec::with_capacity(records.len());
+    for r in records {
+        let booking = Booking {
+            id: r.id,
+            confirmation_code: r.confirmation_code,
+            guest_id: r.guest_id,
+            listing_id: r.listing_id,
+            status: r.status,
+            date_from: r.date_from,
+            date_to: r.date_to,
+            currency: r.currency,
+            daily_rate: r.daily_rate,
+            number_of_persons: r.number_of_persons,
+            total_days: r.total_days,
+            sub_total_price: r.sub_total_price,
+            discount_value: r.discount_value,
+            tax_value: r.tax_value,
+            fee_breakdown: r.fee_breakdown,
+            total_price: r.total_price,
+            cancellation_policy: r.cancellation_policy,
+            metadata: r.metadata,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            door_access_code: r.door_access_code,
+        };
+
+        let eligibility = serde_json::from_value::<common::models::BookingReviewEligibility>(
+            r.review_eligibility,
+        )
+        .ok();
+
+        bookings.push(crate::models::BookingWithEligibility {
+            booking,
+            review_eligibility: eligibility,
+        });
+    }
+
+    Ok(bookings)
+}
+
+/// Retrieves bookings for a specific listing, sorted by date_from DESC, created_at DESC.
+#[tracing::instrument(skip(executor))]
+pub async fn get_bookings_by_listing_id<'e, E>(
+    executor: E,
+    listing_id: Uuid,
     page: u32,
     per_page: u32,
 ) -> Result<Vec<Booking>>
@@ -251,13 +526,14 @@ where
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
             created_at, updated_at
         FROM booking
-        WHERE guest_id = $1
-        ORDER BY date_from ASC
+        WHERE listing_id = $1
+        ORDER BY date_from DESC, created_at DESC
         LIMIT $2 OFFSET $3
         "#,
-        guest_id,
+        listing_id,
         limit,
         offset
     )
@@ -300,28 +576,6 @@ where
     Ok(overlapping.count == Some(0))
 }
 
-/// Deletes pending bookings that are older than the specified minutes.
-#[tracing::instrument(skip(executor))]
-pub async fn cleanup_stale_bookings<'e, E>(executor: E, timeout_minutes: i64) -> Result<u64>
-where
-    E: PgExecutor<'e>,
-{
-    let threshold = Utc::now() - chrono::Duration::minutes(timeout_minutes);
-
-    let result = sqlx::query!(
-        r#"
-        DELETE FROM booking
-        WHERE status = 'pending'
-          AND created_at < $1
-        "#,
-        threshold
-    )
-    .execute(executor)
-    .await?;
-
-    Ok(result.rows_affected())
-}
-
 /// Retrieves the history of a specific booking.
 #[tracing::instrument(skip(executor))]
 pub async fn get_booking_history<'e, E>(
@@ -340,6 +594,7 @@ where
             discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>", 
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>", 
+            door_access_code,
             changed_by_id, change_reason, created_at
         FROM booking_history
         WHERE booking_id = $1
@@ -365,9 +620,9 @@ async fn record_booking_history(
             booking_id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, change_reason, changed_by_id
+            total_price, cancellation_policy, metadata, door_access_code, change_reason, changed_by_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         "#,
         booking.id,
         booking.confirmation_code,
@@ -387,6 +642,7 @@ async fn record_booking_history(
         booking.total_price,
         booking.cancellation_policy as CancellationPolicy,
         Json(&booking.metadata.0) as _,
+        booking.door_access_code.as_deref(),
         change_reason,
         changed_by_id
     )
@@ -394,4 +650,215 @@ async fn record_booking_history(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use rust_decimal_macros::dec;
+    use sqlx_db_tester::TestPg;
+    use std::env;
+    use std::path::Path;
+
+    async fn setup_test_db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        TestPg::new(db_url, Path::new("migrations"))
+    }
+
+    #[tokio::test]
+    async fn test_guest_pending_hold_cancellation_on_new_booking() {
+        let test_db = setup_test_db().await;
+        let pool = test_db.get_pool().await;
+        let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+        // Create host user with host profile
+        let host_id = Uuid::now_v7();
+        let host_user = crate::models::NewUser {
+            id: host_id,
+            email: format!("host_{}@example.com", host_id),
+            password_hash: "hash".to_string(),
+            first_name: "Host".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Host]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &host_user)
+            .await
+            .unwrap();
+
+        let profile = crate::models::NewHostProfile {
+            description: Some("Host".to_string()),
+            verified_status: Some("pending".to_string()),
+            payout_details: None,
+        };
+        crate::user::create_host_profile(&mut *tx, host_id, &profile)
+            .await
+            .unwrap();
+
+        let nl1 = crate::models::NewListing {
+            name: format!("Villa 1 {}", Uuid::now_v7()),
+            user_id: host_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(200.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.1000)),
+        };
+        let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
+            .await
+            .unwrap();
+
+        let nl2 = crate::models::NewListing {
+            name: format!("Villa 2 {}", Uuid::now_v7()),
+            user_id: host_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(300.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.1000)),
+        };
+        let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
+            .await
+            .unwrap();
+
+        let guest_id = Uuid::now_v7();
+        let guest_user = crate::models::NewUser {
+            id: guest_id,
+            email: format!("guest_{}@example.com", guest_id),
+            password_hash: "hash".to_string(),
+            first_name: "Guest".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &guest_user)
+            .await
+            .unwrap();
+
+        tx.commit().await.unwrap();
+
+        // Guest places Booking 1 on Villa 1
+        let code1 = format!("C{}", Uuid::now_v7().simple())[..10].to_uppercase();
+        let new_booking1 = NewBooking {
+            confirmation_code: code1,
+            guest_id,
+            listing_id: listing1.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(800.00),
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: vec![],
+            total_price: dec!(800.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+        };
+
+        let b1 = create_booking(&pool, &new_booking1)
+            .await
+            .expect("Failed to create booking 1");
+        assert_eq!(b1.status, BookingStatus::Pending);
+
+        // Guest places Booking 2 on Villa 2
+        let code2 = format!("D{}", Uuid::now_v7().simple())[..10].to_uppercase();
+        let new_booking2 = NewBooking {
+            confirmation_code: code2,
+            guest_id,
+            listing_id: listing2.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 11, 10).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 11, 15).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(300.00),
+            number_of_persons: 2,
+            total_days: 5,
+            sub_total_price: dec!(1500.00),
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: vec![],
+            total_price: dec!(1500.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+        };
+
+        let b2 = create_booking(&pool, &new_booking2)
+            .await
+            .expect("Failed to create booking 2");
+        assert_eq!(b2.status, BookingStatus::Pending);
+
+        // Verify Booking 1 on Villa 1 was automatically CANCELLED
+        let b1_updated = get_booking_by_id(&pool, b1.id).await.unwrap();
+        assert_eq!(b1_updated.status, BookingStatus::Cancelled);
+
+        // Test get_bookings_by_listing_id for listing1
+        let listing1_bookings = get_bookings_by_listing_id(&pool, listing1.id, 1, 10)
+            .await
+            .expect("Failed to fetch bookings for listing1");
+        assert_eq!(listing1_bookings.len(), 1);
+        assert_eq!(listing1_bookings[0].id, b1.id);
+
+        // Test get_bookings_by_listing_id for listing2
+        let listing2_bookings = get_bookings_by_listing_id(&pool, listing2.id, 1, 10)
+            .await
+            .expect("Failed to fetch bookings for listing2");
+        assert_eq!(listing2_bookings.len(), 1);
+        assert_eq!(listing2_bookings[0].id, b2.id);
+    }
 }

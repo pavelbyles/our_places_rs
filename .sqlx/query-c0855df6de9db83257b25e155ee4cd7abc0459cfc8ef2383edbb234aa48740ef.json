@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO booking_message (id, booking_id, sender_id, sender_role, sender_name, message_text)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING id, booking_id, sender_id, sender_role AS \"sender_role: DbMessageSenderRole\", sender_name, message_text, read_at, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_role: DbMessageSenderRole",
+        "type_info": {
+          "Custom": {
+            "name": "message_sender_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sender_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "message_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "read_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "message_sender_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c0855df6de9db83257b25e155ee4cd7abc0459cfc8ef2383edbb234aa48740ef"
+}

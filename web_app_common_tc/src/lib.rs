@@ -1,0 +1,30 @@
+/// API client wrappers and request helpers.
+pub mod api_client;
+/// Authentication and session extraction for guest and admin portals.
+pub mod auth;
+/// Topcoat API client implementation.
+pub mod client;
+/// Shared Topcoat UI components.
+pub mod components;
+/// Topcoat error types and conversions.
+pub mod error;
+/// Shared HTML layout wrappers.
+pub mod layout;
+/// Theme definitions and color constants.
+pub mod theme;
+
+pub use client::{TopcoatApiClient, get_api_client};
+pub use error::{AppError, app_error};
+
+pub use auth::{
+    AdminAuthError, AuthUser, auth_init_script, get_admin_session, get_authenticated_admin,
+    get_authenticated_guest, require_admin_auth, token_hash_to_hex,
+};
+
+pub use components::currency_selector::currency_selector;
+pub use components::price_breakdown::price_breakdown;
+pub use components::responsive_image::responsive_image;
+pub use components::star_rating::star_rating;
+pub use components::villa_card::villa_card;
+pub use layout::guest_base_layout;
+pub use theme::{theme_init_script, theme_toggle, theme_toggle_script};

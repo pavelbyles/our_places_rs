@@ -1,0 +1,2 @@
+ALTER TABLE "user" ADD COLUMN default_currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+ALTER TABLE user_history ADD COLUMN default_currency VARCHAR(3) NOT NULL DEFAULT 'USD';

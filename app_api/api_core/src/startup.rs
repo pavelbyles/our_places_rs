@@ -20,15 +20,21 @@ pub fn run<F>(
 where
     F: FnOnce(&mut web::ServiceConfig) + Clone + Send + 'static,
 {
+    let prometheus_handle = crate::actuator::init_metrics_recorder();
     let db_pool = web::Data::new(db_pool);
     let settings = web::Data::new(settings);
+    let metrics_handle = web::Data::new(prometheus_handle);
+
     let server = HttpServer::new(move || {
         App::new()
             .wrap(Cors::permissive())
+            .wrap(crate::actuator::ActuatorMetricsMiddleware)
             .wrap(TracingLogger::<crate::tracing_utils::CustomRootSpanBuilder>::new())
-            .configure(config_fn.clone())
             .app_data(db_pool.clone())
             .app_data(settings.clone())
+            .app_data(metrics_handle.clone())
+            .configure(crate::actuator::configure_actuator)
+            .configure(config_fn.clone())
     })
     .listen(listener)?
     .run();

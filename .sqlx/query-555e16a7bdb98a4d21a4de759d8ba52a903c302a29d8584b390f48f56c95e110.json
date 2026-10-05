@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, booking_id, sender_id, sender_role AS \"sender_role: DbMessageSenderRole\", sender_name, message_text, read_at, created_at\n        FROM booking_message\n        WHERE booking_id = $1\n        ORDER BY created_at ASC\n        LIMIT 200\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "sender_role: DbMessageSenderRole",
+        "type_info": {
+          "Custom": {
+            "name": "message_sender_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sender_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "message_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "read_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "555e16a7bdb98a4d21a4de759d8ba52a903c302a29d8584b390f48f56c95e110"
+}

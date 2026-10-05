@@ -1,8 +1,14 @@
+#[cfg(not(target_arch = "wasm32"))]
+pub mod app_client;
 pub mod auth;
+pub mod csv;
+pub mod email;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gcs;
 pub mod geocode;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http_client;
 pub mod models;
+pub mod payout;
+pub mod pricing;
 pub mod reference;

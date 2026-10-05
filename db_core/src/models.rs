@@ -8,14 +8,23 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+/// Metadata associated with a booking reservation.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, Default)]
+#[serde(default)]
 pub struct BookingMetadata {
+    /// Number of adults.
     pub num_adults: u32,
+    /// Number of children.
     pub num_children: u32,
+    /// Number of infants.
     pub num_infants: u32,
+    /// Number of pets.
     pub num_pets: u32,
+    /// Optional guest message to host.
     pub message_to_host: Option<String>,
+    /// Estimated arrival time string.
     pub estimated_arrival_time: Option<String>,
+    /// Whether the booking is for business travel.
     pub is_business_trip: bool,
 }
 
@@ -37,6 +46,8 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
     pub attributes: serde_json::Value,
     pub roles: Vec<UserRole>,
+    pub default_currency: String,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -73,6 +84,7 @@ pub struct NewUser {
     pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: serde_json::Value,
     pub roles: Option<Vec<UserRole>>,
+    pub default_currency: String,
 }
 
 pub use common::models::{NewBookerProfile, NewHostProfile};
@@ -90,6 +102,7 @@ pub struct UpdatedUser {
     pub verification_code_expires_at: Option<DateTime<Utc>>,
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<UserRole>>,
+    pub default_currency: Option<String>,
 }
 
 #[derive(
@@ -120,113 +133,213 @@ pub enum UserStatus {
     Inactive,
 }
 
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+/// Database entity representing a property reservation hold or booking.
+#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct Booking {
+    /// Unique booking identifier.
     pub id: Uuid,
+    /// Confirmation code.
     pub confirmation_code: String,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Current booking lifecycle status.
     pub status: BookingStatus,
 
+    /// Check-in start date.
     pub date_from: NaiveDate,
+    /// Check-out departure date.
     pub date_to: NaiveDate,
 
+    /// Checkout currency.
     pub currency: String,
+    /// Daily nightly rate in base currency.
     pub daily_rate: Decimal,
+    /// Total number of guest persons.
     pub number_of_persons: i32,
+    /// Total duration of the stay in days.
     pub total_days: i32,
 
+    /// Subtotal pricing before taxes and discounts.
     pub sub_total_price: Decimal,
+    /// Applied discount amount if any.
     pub discount_value: Option<Decimal>,
+    /// Statutory tax amount if applicable.
     pub tax_value: Option<Decimal>,
 
+    /// Breakdown of individual fees.
     pub fee_breakdown: Json<Vec<FeeItem>>,
 
+    /// Final total price.
     pub total_price: Decimal,
+    /// Cancellation policy applied to this booking.
     pub cancellation_policy: CancellationPolicy,
+    /// Additional guest preferences and arrival metadata.
     pub metadata: Json<BookingMetadata>,
+    /// Smart lock door access code for confirmed stays.
+    pub door_access_code: Option<String>,
 
+    /// Creation timestamp.
     pub created_at: DateTime<Utc>,
+    /// Last update timestamp.
     pub updated_at: DateTime<Utc>,
 }
 
+/// Booking model paired with review submission eligibility.
+pub struct BookingWithEligibility {
+    /// Associated booking record.
+    pub booking: Booking,
+    /// Review eligibility status.
+    pub review_eligibility: Option<common::models::BookingReviewEligibility>,
+}
+
+/// Lifecycle status for reservations and bookings.
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum BookingStatus {
+    /// Initial payment pending state (15-minute hold).
     Pending,
+    /// Payment confirmed and reservation secured.
     Confirmed,
+    /// Reservation cancelled.
     Cancelled,
+    /// Reservation completed post-stay.
     Completed,
 }
 
+/// Parameters for creating a new booking hold.
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewBooking {
+    /// Human-readable confirmation code.
     pub confirmation_code: String,
+    /// Guest user identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Check-in date.
     pub date_from: NaiveDate,
+    /// Check-out date.
     pub date_to: NaiveDate,
+    /// Payment currency.
     pub currency: String,
+    /// Daily nightly rate.
     pub daily_rate: Decimal,
+    /// Total persons.
     pub number_of_persons: i32,
+    /// Total stay days.
     pub total_days: i32,
+    /// Subtotal price.
     pub sub_total_price: Decimal,
+    /// Discount amount.
     pub discount_value: Option<Decimal>,
+    /// Tax amount.
     pub tax_value: Option<Decimal>,
+    /// Itemized fee breakdown.
     pub fee_breakdown: Vec<FeeItem>,
+    /// Total price.
     pub total_price: Decimal,
+    /// Cancellation policy.
     pub cancellation_policy: CancellationPolicy,
+    /// Guest preferences and arrival details.
     pub metadata: BookingMetadata,
+    /// Optional smart door access code.
+    pub door_access_code: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Validate)]
+/// Parameters for mutating an existing booking.
+#[derive(Debug, Deserialize, Serialize, Validate, Default, Clone)]
 pub struct UpdatedBooking {
+    /// Updated status if changing.
     pub status: Option<BookingStatus>,
+    /// Updated arrival and guest metadata.
     pub metadata: Option<BookingMetadata>,
+    /// Updated smart door access code.
+    pub door_access_code: Option<String>,
 }
 
+/// Immutable audit log entry capturing booking status transitions.
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct BookingHistory {
+    /// Unique audit log entry identifier.
     pub id: Uuid,
+    /// Booking identifier.
     pub booking_id: Uuid,
 
+    /// Confirmation code at the time of change.
     pub confirmation_code: String,
+    /// Guest identifier.
     pub guest_id: Uuid,
+    /// Property listing identifier.
     pub listing_id: Uuid,
+    /// Recorded booking status.
     pub status: BookingStatus,
+    /// Check-in date.
     pub date_from: NaiveDate,
+    /// Check-out date.
     pub date_to: NaiveDate,
+    /// Currency.
     pub currency: String,
+    /// Daily rate.
     pub daily_rate: Decimal,
+    /// Number of persons.
     pub number_of_persons: i32,
+    /// Duration in days.
     pub total_days: i32,
+    /// Subtotal price.
     pub sub_total_price: Decimal,
+    /// Discount amount.
     pub discount_value: Option<Decimal>,
+    /// Tax amount.
     pub tax_value: Option<Decimal>,
+    /// Itemized fees.
     pub fee_breakdown: Json<Vec<FeeItem>>,
+    /// Total price.
     pub total_price: Decimal,
+    /// Cancellation policy.
     pub cancellation_policy: CancellationPolicy,
+    /// Associated booking metadata.
     pub metadata: Json<BookingMetadata>,
+    /// Smart door access code.
+    pub door_access_code: Option<String>,
 
+    /// User who performed the change.
     pub changed_by_id: Option<Uuid>,
+    /// Reason provided for the change.
     pub change_reason: Option<String>,
+    /// Timestamp of transition.
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
+/// Deduplication and audit record for transactional emails and notifications sent per booking.
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
+pub struct BookingNotificationLog {
+    /// Unique log identifier.
+    pub id: Uuid,
+    /// Associated booking identifier.
+    pub booking_id: Uuid,
+    /// Notification type discriminator.
+    pub notification_type: String,
+    /// Recipient user identifier.
+    pub recipient_user_id: Uuid,
+    /// Dispatch timestamp.
+    pub sent_at: DateTime<Utc>,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
+)]
 #[sqlx(type_name = "cancellation_policy", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum CancellationPolicy {
     Flexible,
     Moderate,
     Strict,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
-pub struct FeeItem {
-    pub name: String,
-    #[serde(with = "rust_decimal::serde::float")]
-    pub amount: Decimal,
-}
+pub use common::models::FeeItem;
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct Listing {
@@ -259,6 +372,7 @@ pub struct Listing {
     pub base_currency: String,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    pub commission_pct: Decimal,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -279,7 +393,10 @@ pub struct ListingWithOwner {
     pub monthly_discount_percentage: Option<Decimal>,
     pub max_guests: i32,
     pub bedrooms: i32,
+    pub beds: i32,
     pub full_bathrooms: i32,
+    pub half_bathrooms: i32,
+    pub square_meters: Option<i32>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub overall_rating: Option<f64>,
@@ -289,6 +406,7 @@ pub struct ListingWithOwner {
     pub listing_details: Json<serde_json::Value>,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    pub commission_pct: Decimal,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -324,6 +442,7 @@ pub struct NewListing {
     pub base_currency: String,
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -362,6 +481,7 @@ pub struct UpdatedListing {
     pub base_currency: Option<String>,
     pub minimum_stay: Option<i32>,
     pub days_between_bookings: Option<i32>,
+    pub commission_pct: Option<Decimal>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]
@@ -437,4 +557,332 @@ pub struct ListingImage {
 pub struct ListingDetails {
     pub listing: Listing,
     pub images: Vec<ListingImage>,
+    pub owner_name: Option<String>,
+    pub rating_summary: Option<common::models::ListingRatingSummary>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct PriceOverride {
+    pub id: Uuid,
+    pub listing_id: Uuid,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub nightly_rate: Decimal,
+    pub min_nights: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<PriceOverride> for common::models::PriceOverride {
+    fn from(p: PriceOverride) -> Self {
+        common::models::PriceOverride {
+            id: p.id,
+            listing_id: p.listing_id,
+            start_date: p.start_date,
+            end_date: p.end_date,
+            nightly_rate: p.nightly_rate,
+            min_nights: p.min_nights,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        }
+    }
+}
+
+impl From<common::models::PriceOverride> for PriceOverride {
+    fn from(p: common::models::PriceOverride) -> Self {
+        PriceOverride {
+            id: p.id,
+            listing_id: p.listing_id,
+            start_date: p.start_date,
+            end_date: p.end_date,
+            nightly_rate: p.nightly_rate,
+            min_nights: p.min_nights,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct ReviewToken {
+    pub id: Uuid,
+    pub token: String,
+    pub booking_id: Uuid,
+    pub guest_id: Uuid,
+    pub listing_id: Uuid,
+    pub valid_from: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct Review {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub listing_id: Uuid,
+    pub guest_id: Uuid,
+    pub cleanliness_rating: i32,
+    pub accuracy_rating: i32,
+    pub location_rating: i32,
+    pub value_rating: i32,
+    pub overall_rating: Decimal,
+    pub public_review_text: Option<String>,
+    pub private_host_feedback: Option<String>,
+    pub host_reply_text: Option<String>,
+    pub host_replied_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, Copy, PartialEq, Eq, EnumString)]
+#[sqlx(type_name = "message_sender_role", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DbMessageSenderRole {
+    Guest,
+    Host,
+    Admin,
+}
+
+impl From<DbMessageSenderRole> for common::models::MessageSenderRole {
+    fn from(r: DbMessageSenderRole) -> Self {
+        match r {
+            DbMessageSenderRole::Guest => common::models::MessageSenderRole::Guest,
+            DbMessageSenderRole::Host => common::models::MessageSenderRole::Host,
+            DbMessageSenderRole::Admin => common::models::MessageSenderRole::Admin,
+        }
+    }
+}
+
+impl From<common::models::MessageSenderRole> for DbMessageSenderRole {
+    fn from(r: common::models::MessageSenderRole) -> Self {
+        match r {
+            common::models::MessageSenderRole::Guest => DbMessageSenderRole::Guest,
+            common::models::MessageSenderRole::Host => DbMessageSenderRole::Host,
+            common::models::MessageSenderRole::Admin => DbMessageSenderRole::Admin,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct DbBookingMessage {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub sender_id: Uuid,
+    pub sender_role: DbMessageSenderRole,
+    pub sender_name: String,
+    pub message_text: String,
+    pub read_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<DbBookingMessage> for common::models::BookingMessageResponse {
+    fn from(msg: DbBookingMessage) -> Self {
+        common::models::BookingMessageResponse {
+            id: msg.id,
+            booking_id: msg.booking_id,
+            sender_id: msg.sender_id,
+            sender_role: msg.sender_role.into(),
+            sender_name: msg.sender_name,
+            message_text: msg.message_text,
+            read_at: msg.read_at,
+            created_at: msg.created_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct BookingParties {
+    pub guest_id: Uuid,
+    pub host_id: Uuid,
+    pub status: BookingStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, Copy, PartialEq, Eq, EnumString)]
+#[sqlx(type_name = "payout_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DbPayoutStatus {
+    Pending,
+    Processing,
+    Paid,
+    Cancelled,
+    Refunded,
+}
+
+impl From<DbPayoutStatus> for common::payout::PayoutStatus {
+    fn from(s: DbPayoutStatus) -> Self {
+        match s {
+            DbPayoutStatus::Pending => common::payout::PayoutStatus::Pending,
+            DbPayoutStatus::Processing => common::payout::PayoutStatus::Processing,
+            DbPayoutStatus::Paid => common::payout::PayoutStatus::Paid,
+            DbPayoutStatus::Cancelled => common::payout::PayoutStatus::Cancelled,
+            DbPayoutStatus::Refunded => common::payout::PayoutStatus::Refunded,
+        }
+    }
+}
+
+impl From<common::payout::PayoutStatus> for DbPayoutStatus {
+    fn from(s: common::payout::PayoutStatus) -> Self {
+        match s {
+            common::payout::PayoutStatus::Pending => DbPayoutStatus::Pending,
+            common::payout::PayoutStatus::Processing => DbPayoutStatus::Processing,
+            common::payout::PayoutStatus::Paid => DbPayoutStatus::Paid,
+            common::payout::PayoutStatus::Cancelled => DbPayoutStatus::Cancelled,
+            common::payout::PayoutStatus::Refunded => DbPayoutStatus::Refunded,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct HostPayoutLedger {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub listing_id: Uuid,
+    pub host_id: Uuid,
+    pub currency: String,
+    pub gross_amount: Decimal,
+    pub platform_fee_pct: Decimal,
+    pub platform_fee_amount: Decimal,
+    pub tax_withheld_amount: Decimal,
+    pub exchange_rate: Decimal,
+    pub net_payout_amount: Decimal,
+    pub status: DbPayoutStatus,
+    pub gateway_reference: Option<String>,
+    pub failure_reason: Option<String>,
+    pub payout_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct DbPayoutLedgerEntry {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub booking_confirmation_code: Option<String>,
+    pub listing_id: Uuid,
+    pub listing_name: Option<String>,
+    pub host_id: Uuid,
+    pub host_name: Option<String>,
+    pub check_in_date: Option<NaiveDate>,
+    pub check_out_date: Option<NaiveDate>,
+    pub currency: String,
+    pub gross_amount: Decimal,
+    pub platform_fee_pct: Decimal,
+    pub platform_fee_amount: Decimal,
+    pub tax_withheld_amount: Decimal,
+    pub exchange_rate: Decimal,
+    pub net_payout_amount: Decimal,
+    pub status: DbPayoutStatus,
+    pub gateway_reference: Option<String>,
+    pub failure_reason: Option<String>,
+    pub payout_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<DbPayoutLedgerEntry> for common::payout::PayoutLedgerEntry {
+    fn from(e: DbPayoutLedgerEntry) -> Self {
+        common::payout::PayoutLedgerEntry {
+            id: e.id,
+            booking_id: e.booking_id,
+            booking_confirmation_code: e.booking_confirmation_code,
+            listing_id: e.listing_id,
+            listing_name: e.listing_name,
+            host_id: e.host_id,
+            host_name: e.host_name,
+            check_in_date: e.check_in_date,
+            check_out_date: e.check_out_date,
+            currency: e.currency,
+            gross_amount: e.gross_amount,
+            platform_fee_pct: e.platform_fee_pct,
+            platform_fee_amount: e.platform_fee_amount,
+            tax_withheld_amount: e.tax_withheld_amount,
+            exchange_rate: e.exchange_rate,
+            net_payout_amount: e.net_payout_amount,
+            status: e.status.into(),
+            gateway_reference: e.gateway_reference,
+            failure_reason: e.failure_reason,
+            payout_date: e.payout_date,
+            created_at: e.created_at,
+            updated_at: e.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct DbPayoutSummary {
+    pub total_gross: Option<Decimal>,
+    pub total_platform_fee: Option<Decimal>,
+    pub total_tax_withheld: Option<Decimal>,
+    pub total_net: Option<Decimal>,
+    pub total_paid: Option<Decimal>,
+    pub total_pending: Option<Decimal>,
+    pub total_processing: Option<Decimal>,
+    pub count_entries: Option<i64>,
+}
+
+impl From<DbPayoutSummary> for common::payout::PayoutSummary {
+    fn from(s: DbPayoutSummary) -> Self {
+        common::payout::PayoutSummary {
+            total_gross: s.total_gross.unwrap_or(Decimal::ZERO),
+            total_platform_fee: s.total_platform_fee.unwrap_or(Decimal::ZERO),
+            total_tax_withheld: s.total_tax_withheld.unwrap_or(Decimal::ZERO),
+            total_net: s.total_net.unwrap_or(Decimal::ZERO),
+            total_paid: s.total_paid.unwrap_or(Decimal::ZERO),
+            total_pending: s.total_pending.unwrap_or(Decimal::ZERO),
+            total_processing: s.total_processing.unwrap_or(Decimal::ZERO),
+            count_entries: s.count_entries.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, EnumString)]
+#[sqlx(type_name = "email_status", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum DbEmailStatus {
+    Pending,
+    Processing,
+    Sent,
+    Failed,
+}
+
+impl From<DbEmailStatus> for common::email::EmailStatus {
+    fn from(s: DbEmailStatus) -> Self {
+        match s {
+            DbEmailStatus::Pending => common::email::EmailStatus::Pending,
+            DbEmailStatus::Processing => common::email::EmailStatus::Processing,
+            DbEmailStatus::Sent => common::email::EmailStatus::Sent,
+            DbEmailStatus::Failed => common::email::EmailStatus::Failed,
+        }
+    }
+}
+
+impl From<common::email::EmailStatus> for DbEmailStatus {
+    fn from(s: common::email::EmailStatus) -> Self {
+        match s {
+            common::email::EmailStatus::Pending => DbEmailStatus::Pending,
+            common::email::EmailStatus::Processing => DbEmailStatus::Processing,
+            common::email::EmailStatus::Sent => DbEmailStatus::Sent,
+            common::email::EmailStatus::Failed => DbEmailStatus::Failed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct EmailOutbox {
+    pub id: Uuid,
+    pub recipient_email: String,
+    pub subject: String,
+    pub template_id: String,
+    pub payload: serde_json::Value,
+    pub status: DbEmailStatus,
+    pub attempts: i32,
+    pub max_retries: i32,
+    pub last_error: Option<String>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE listing\n        SET overall_rating = $1, review_count = $2\n        WHERE id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Numeric",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad4259d14a62a4b4a90e6e6b2c4560ad9f2dbf21936dc0de184c72bfbfd29815"
+}
