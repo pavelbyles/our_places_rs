@@ -55,6 +55,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 ### Stage 6: Maintain
 * "triage alert", "production incident", "log anomaly", "metric breach" $\rightarrow$ `auto-triage-incident`
 * "investigate root cause", "systematic debugging on live issue" $\rightarrow$ `/investigate`
+* "retro", "retrospective", "session retro", "agent environment improvement", "workflow retro" $\rightarrow$ `retro`
 
 ---
 

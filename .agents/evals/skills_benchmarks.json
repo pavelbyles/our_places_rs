@@ -167,6 +167,28 @@
           "reason": "Production code paths must never use .unwrap()"
         }
       ]
+    },
+    {
+      "skill_id": "retro",
+      "name": "Session Retrospective Environment Optimization Test",
+      "prompt": "Run a retrospective on our recent coding session where cargo check failed due to a missing sqlx query prepare step and we spent 4 tool calls finding common/src/reference.rs.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "Navigation",
+          "reason": "Must categorize file discovery friction under Navigation"
+        },
+        {
+          "type": "contains",
+          "value": "Automated Checks",
+          "reason": "Must categorize missing sqlx prepare under Automated Checks & Guardrails"
+        },
+        {
+          "type": "contains",
+          "value": "AGENTS.md",
+          "reason": "Must propose actionable steering file or guardrail updates"
+        }
+      ]
     }
   ]
 }
