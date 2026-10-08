@@ -74,6 +74,29 @@
 
 - **Monadic Error Mapping**: Use `.map_err(MyError::from)` or `thiserror` `#[from]` for seamless monadic error propagation across layer boundaries.
 
+### Function Signatures & Borrowed Types (Avoid `&String` / `&Vec`)
+
+- **Take Slices over Borrowed Containers**: Prefer `&str` over `&String`, and `&[T]` over `&Vec<T>`. Accepting `&String` or `&Vec<T>` restricts callers to heap-allocated types and forces unnecessary allocations.
+  - _Bad_:
+    ```rust
+    fn greet(name: &String) { println!("Hello, {name}"); }
+    fn sum(items: &Vec<i32>) -> i32 { items.iter().sum() }
+    ```
+  - _Good_:
+    ```rust
+    fn greet(name: &str) { println!("Hello, {name}"); }
+    fn sum(items: &[i32]) -> i32 { items.iter().sum() }
+    ```
+- **Deref Coercion**: Types like `String`, `Vec<T>`, `PathBuf`, and `OsString` coerce via `Deref` to `&str`, `&[T]`, `&Path`, and `&OsStr`.
+- **Flexible Generic Parameters**: For struct setters and builders, accept `impl Into<String>` or `impl AsRef<str>` to minimize caller allocation friction:
+  ```rust
+  pub fn with_name(mut self, name: impl Into<String>) -> Self {
+      self.name = name.into();
+      self
+  }
+  ```
+- **Clippy Detection**: Rely on `clippy::ptr_arg` (`warn` / `deny`) to automatically catch `&String`, `&Vec`, and `&PathBuf` argument anti-patterns.
+
 ## Project Strictness
 
 - **Async/Await**: Use `tokio` as the default runtime.
