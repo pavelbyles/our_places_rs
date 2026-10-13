@@ -69,7 +69,7 @@ CONFIDENCE: ~30% — missing: directionality (import vs export vs two-way), conf
 ### Step 2: Codebase Pre-Check
 Before formulating the question, run quick tool checks (`grep_search`, `view_file`):
 - Does this domain already have an entity, migration, or endpoint?
-- Do project guidelines (e.g., `AGENTS.md`, `CLAUDE.md`) or existing code impose architectural constraints, performance budgets, or strict domain types?
+- Do project guidelines (e.g., `GEMINI.md`, `AGENTS.md`, `CLAUDE.md`) or existing code impose architectural constraints, performance budgets, or strict domain types?
 
 Incorporate what you discover into your guess:
 ```markdown
@@ -122,7 +122,7 @@ Yes / no / refine?
 The user must give an explicit confirmation ("yes", "approved").
 - "Sounds good", "whatever you think", or silence are **NOT** approvals. If received, ask: *"Is there anything you would refine, or do you want to lock this down?"*
 - Once confirmed:
-  1. Record or offer to save intent to `docs/intent/<topic>.md` (or hand off to `generate-spec`).
+  1. Record or offer to save intent to `docs/intent/intent-<slug>.md` (or hand off to `generate-spec`).
   2. **STOP YOUR TURN IMMEDIATELY**. Do not start writing code or running tools in the same turn without explicit direction.
 
 ---
