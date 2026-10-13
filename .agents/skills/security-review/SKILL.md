@@ -15,7 +15,7 @@ Assume weaknesses and untrusted boundaries exist until proven otherwise. Scrutin
 ## 5-Step Review Workflow
 
 ```mermaid
-graph LR
+flowchart LR
     Scope[1. Scope & Invariants] --> Attack[2. Map Attack Surface]
     Attack --> OWASP[3. OWASP & Threat Audit]
     OWASP --> Assess[4. Assess Risk & Exploitability]

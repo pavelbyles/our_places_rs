@@ -9,7 +9,7 @@ Deep operational reference for conducting agent session retrospectives and optim
 When evaluating friction points identified during a session, classify each candidate before formulating recommendations:
 
 ```mermaid
-graph TD
+flowchart TD
     Finding[Identified Friction / Error] --> Mechanical{Is it a fixed mechanical pattern?}
     Mechanical -->|Yes| DetCheck[Build Deterministic Check: Linter / Pre-Commit Hook / CI Step]
     Mechanical -->|No| Judgment{Is it a genuine style/architectural judgment call?}

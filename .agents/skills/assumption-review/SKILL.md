@@ -10,7 +10,7 @@ Identify, interrogate, and challenge implicit assumptions before committing to a
 ## Challenge Workflow
 
 ```mermaid
-graph LR
+flowchart LR
     Surface[1. Surface Implicit Assumptions] --> Categorize[2. Categorize Domains]
     Categorize --> StressTest[3. Socratic Stress-Test]
     StressTest --> Validate[4. Determine Validation Methods]

@@ -10,7 +10,7 @@ Analyze how distributed microservices, databases, and third-party integrations b
 ## Analysis Workflow
 
 ```mermaid
-graph LR
+flowchart LR
     Component[1. Select Component] --> Inject[2. Model Failure Modes]
     Inject --> Trace[3. Trace Error Propagation]
     Trace --> Blast[4. Measure Blast Radius]

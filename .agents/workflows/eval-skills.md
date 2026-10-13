@@ -20,7 +20,7 @@ Run `/eval-skills` whenever:
 The benchmark prompts are defined in [.agents/evals/skills_benchmarks.json](file:///home/pav/code/our_places_rs-update-agent-md/.agents/evals/skills_benchmarks.json).
 
 ```mermaid
-graph TD
+flowchart TD
     Trigger[Skill / Rule Edit] --> Select[1. Select Target Skill Benchmark]
     Select --> RunPrompt[2. Execute Synthetic Prompt]
     RunPrompt --> Evaluate[3. Evaluate Non-Negotiable Invariants]

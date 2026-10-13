@@ -10,7 +10,7 @@ Evaluate system behavior under adverse conditions, service degradation, network 
 ## Resilience Review Workflow
 
 ```mermaid
-graph LR
+flowchart LR
     Stress[1. Inject Disruption Scenarios] --> Degrade[2. Trace Degradation Modes]
     Degrade --> Protect[3. Audit Self-Healing Controls]
     Protect --> Verify[4. Verify Data Integrity]
