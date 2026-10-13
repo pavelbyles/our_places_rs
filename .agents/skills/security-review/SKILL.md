@@ -1,34 +1,15 @@
 ---
 name: security-review
-description: Audit architectures and code implementations for security vulnerabilities, attack surfaces, and threat models.
+aliases:
+  - security-and-hardening
+  - vulnerability-analysis
+description: Audit architectures and code implementations for security vulnerabilities, attack surfaces, and threat models. Consolidated into security-and-hardening.
 ---
 
 # Security Review
 
-Evaluate system architectures, API endpoints, and code changes for security vulnerabilities, attack vectors, and policy compliance.
+> **Note**: This skill has been consolidated into the comprehensive **[security-and-hardening](../security-and-hardening/SKILL.md)** skill.
 
-## Review Perspective
-Assume weaknesses and untrusted boundaries exist until proven otherwise. Scrutinize input validation, authentication, authorization, cryptography, and secrets management.
-
----
-
-## 5-Step Review Workflow
-
-```mermaid
-flowchart LR
-    Scope[1. Scope & Invariants] --> Attack[2. Map Attack Surface]
-    Attack --> OWASP[3. OWASP & Threat Audit]
-    OWASP --> Assess[4. Assess Risk & Exploitability]
-    Assess --> Report[5. Document Findings & Fixes]
-```
-
-1. **Scope & Invariants**: Inspect architecture docs, API contracts, and PR diffs. Identify trust boundaries and statutory compliance rules.
-2. **Map Attack Surface**: Trace external input entrypoints, database queries, auth extractors, and third-party integrations.
-3. **OWASP & Threat Audit**: Check for injection, broken auth, SSRF, IDOR, sensitive data exposure, and CSRF.
-4. **Assess Risk**: Classify findings by severity (Critical, High, Medium, Low) and exploitability.
-5. **Document Findings**: Output concrete findings with code snippets and remediation fixes.
-
----
-
-## Detailed Checklists & Templates
-* For OWASP Top 10 evaluation rubrics and standard findings report templates, see **[REFERENCE.md](REFERENCE.md)**.
+Please refer directly to:
+- **[Security and Hardening Protocol](../security-and-hardening/SKILL.md)**: 5-step audit, threat modeling (STRIDE), Three-Tier boundaries, and reachability triage.
+- **[Security Checklist & Reference Guide](../security-and-hardening/REFERENCE.md)**: OWASP Top 10 rubric, CVSS SLA tiers, pre-commit grep checks, and findings template.

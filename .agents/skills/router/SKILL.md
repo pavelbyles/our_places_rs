@@ -24,14 +24,14 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 ### Stage 2: Design
 * "write spec", "generate spec", "feature specification" $\rightarrow$ `generate-spec`
 * "grill me", "interview on design", "stress-test plan", "decision tree" $\rightarrow$ `grill-me`
-* "security audit", "OWASP review", "threat model", "vulnerabilities" $\rightarrow$ `security-review`
+* "security audit", "OWASP review", "threat model", "vulnerabilities", "hardening" $\rightarrow$ `security-and-hardening`
 * "edge case", "boundary condition", "extreme input", "type limit" $\rightarrow$ `edge-case-analysis`
 * "failure scenario", "outage blast radius", "dependency failure" $\rightarrow$ `failure-scenario-analysis`
 * "challenge assumptions", "unstated assumptions", "what if wrong" $\rightarrow$ `assumption-review`
 * "system resilience", "fault tolerance", "recovery under disruption" $\rightarrow$ `resilience-exploration`
 * "risk assessment", "risk matrix", "likelihood and impact" $\rightarrow$ `risk-assessment`
 * "security posture", "compliance readiness", "maturity rating" $\rightarrow$ `security-posture-assessment`
-* "vulnerability triage", "CVSS scoring", "scanner findings" $\rightarrow$ `vulnerability-analysis`
+* "vulnerability triage", "CVSS scoring", "scanner findings" $\rightarrow$ `security-and-hardening` (or `vulnerability-analysis`)
 
 ### Stage 3: Build
 * "implement Rust", "pricing logic", "database entity", "sqlx", "actix handler" $\rightarrow$ `rust-core`
