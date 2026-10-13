@@ -41,6 +41,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 * "daisyui", "tailwind styling", "modal", "card", "navbar", "drawer" $\rightarrow$ `daisyui`
 * "verify docs", "official documentation", "source driven", "framework patterns", "docs.rs" $\rightarrow$ `source-driven-development`
 * "vertical slice", "incremental implementation", "step-by-step build", "break down implementation", "slice feature" $\rightarrow$ `incremental-implementation`
+* "simplify code", "reduce complexity", "clean up code", "chesterton's fence", "refactor for clarity" $\rightarrow$ `code-simplification`
 * "author skill", "write skill", "create new skill" $\rightarrow$ `write-new-skill`
 * "handoff session", "compact context", "summarize state for next agent" $\rightarrow$ `handoff`
 
