@@ -137,7 +137,7 @@ An automated, tamper-resistant statutory tax invoicing and receipt generation en
 - [x] **Tax Treatment Resolution**: Accommodation subtotal and Cleaning fee are both subject to 15% Jamaican GCT; Damage Deposit is an exempt, refundable escrow hold.
 - [x] **Invoice Numbering Convention**: Deterministic booking-code format: `INV-YYYY-{confirmation_code}` (e.g., `INV-2026-HMEJYC3P9B`).
 - [x] **Rendering Architecture**: Print-optimized semantic HTML (`@media print` paged CSS) for $<10\text{ms}$ rendering under Cloud Run memory limits without headless browser dependencies, supporting native browser "Save as PDF".
-- [x] **TRN & Merchant of Record**: Platform entity `Our Places Luxury Villas Ltd` acts as centralized Merchant of Record. Configurable supplier TRN via environment variable `TAJ_SUPPLIER_TRN` (defaulting to staging/test TRN `123-456-789`).
+- [x] **TRN & Merchant of Record**: Platform entity `Our Places Luxury Villas Ltd` acts as centralized Merchant of Record. Mandatory `TAJ_SUPPLIER_TRN` must be configured in `.env` / typed settings across all environments; generation fails fast if absent (test fixtures and local development explicitly provide `TAJ_SUPPLIER_TRN=123-456-789` in their local configuration/`.env.example`).
 - [x] **Corporate Guest TRN (B2B)**: Business travelers (`is_business_trip = true`) can optionally supply `business_company_name` and `business_tax_id` in booking metadata to be itemized on the statutory invoice for input tax deduction.
 - [x] **Email Outbox Integration**: `email_worker` will render an inline itemized GCT receipt summary table inside `booking_confirmation_guest` and provide a primary action button linking to `/bookings/{id}/receipt`.
 
