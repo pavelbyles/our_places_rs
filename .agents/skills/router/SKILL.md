@@ -20,6 +20,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 ### Stage 1: Plan
 * "draft intent", "proto-spec", "new feature idea", "scope requirements" $\rightarrow$ `draft-intent`
 * "create worktree", "new branch for issue", "isolate worktree" $\rightarrow$ `create-worktree`
+* "constraints", "quality bar", "quality gates", "CONSTRAINTS.md", "enforce standards" $\rightarrow$ `constraint-driven-development`
 
 ### Stage 2: Design
 * "write spec", "generate spec", "feature specification" $\rightarrow$ `generate-spec`
