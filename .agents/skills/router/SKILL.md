@@ -44,8 +44,12 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 * "handoff session", "compact context", "summarize state for next agent" $\rightarrow$ `handoff`
 
 ### Stage 4: Test
+* "TDD", "test-driven", "red-green-refactor", "write tests first", "prove-it" $\rightarrow$ `test-driven-development`
 * "compiler error", "borrow checker", "lifetime issue", "E0..." $\rightarrow$ `lint-hunter`
 * "runtime panic", "logic bug", "test failing", "debug helper" $\rightarrow$ `general-debug`
+* "playwright", "e2e tests", "browser test", "portal test" $\rightarrow$ `playwright-e2e`
+* "booking audit", "financial audit", "row lock audit" $\rightarrow$ `/audit-booking-flow`
+* "cold start audit", "Cloud Run performance", "latency budget" $\rightarrow$ `/cloudrun-perf-audit`
 * "sonarqube", "sonarcloud", "deepsource", "static analysis", "doc coverage", "hygiene" $\rightarrow$ `sonarqube-guard`
 * "eval skills", "skill benchmark regression", "eval suite" $\rightarrow$ `/eval-skills`
 
@@ -63,7 +67,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 
 ## Anti-Patterns & Negative Triggers
 
-* **DO NOT** activate `pr-analyzer` or `security-review` for simple syntax checks or code explanations.
+* **DO NOT** activate `pr-analyzer` or `security-and-hardening` for simple syntax checks or code explanations.
 * **DO NOT** activate `draft-intent` if a feature branch and formal `spec.md` already exist (proceed to `generate-spec` or `rust-core`).
 * **DO NOT** activate `auto-triage-incident` for local compiler warnings (use `lint-hunter`).
 
