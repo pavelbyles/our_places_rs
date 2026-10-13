@@ -22,21 +22,22 @@ Solving this automates the generation of immutable, TAJ-compliant tax invoices a
 ---
 
 ## 2. Proposed Outcome (The Vision)
-An automated, tamper-resistant statutory tax invoicing and receipt generation engine:
-1. **Automated Tax Invoice Generation**: Confirmation of a reservation (`BookingStatus::Confirmed`) automatically generates an immutable `tax_invoice` record tied to the booking and its corresponding `booking_history` snapshot.
-2. **Strict Jamaican Statutory Itemization**: Clear, accurate separation of charges:
+An automated, tamper-resistant statutory tax invoicing and receipt generation engine utilizing the **Dual Document Model**:
+1. **Immediate Payment Receipt (`BookingStatus::Confirmed`)**: Confirmation of a reservation generates an immutable **Booking & Payment Receipt** (`REC-YYYY-{code}`) confirming captured funds, itemized charges, and GCT collected at payment.
+2. **Final Statutory Tax Invoice (`BookingStatus::Completed`)**: Post-stay completion generates the definitive, locked **Statutory Tax Invoice** (`INV-YYYY-{code}`) reflecting finalized stay numbers, post-checkout deposit releases, and final tax remittance records.
+3. **Strict Jamaican Statutory Itemization**: Clear, accurate separation of charges:
    - Accommodation Nightly Subtotal (net of stay discounts).
    - Statutory 15% Jamaican GCT (`common::reference::SupportedCountry::LIST`).
    - Cleaning Fee (statutorily taxable service at 15% GCT).
    - Refundable Damage Deposit (statutorily non-taxable escrow hold).
    - Platform Guest Service Fee (with transparent tax categorization).
-3. **Dual-Format Rendering (Printable HTML & Lightweight PDF)**:
+4. **Dual-Format Rendering (Printable HTML & Lightweight PDF)**:
    - High-performance, print-optimized semantic HTML template (`@media print` paged styles) rendering in $<50\text{ms}$ under Cloud Run's 256MB memory budget without headless browser bloat.
    - Serverless download/export capability for guests and administrators.
-4. **Immutable Audit Association**: Invoices are cryptographically identified, sequentially or deterministically numbered (e.g. `INV-2026-HMEJYC3P9B`), and permanently referenced in `booking_history`. Subsequent cancellations or refunds generate explicit Credit Notes (`CN-YYYY-...`) rather than overwriting original invoices.
-5. **Portal Integration**:
-   - Guests can view, download, or print official receipts in `web_app_tc` under `/bookings/{id}`.
-   - Admins can inspect, verify, and reprint tax invoices in `web_app_admin_tc` under `/admin/bookings`.
+5. **Immutable Audit Association**: Receipts and invoices are cryptographically identified, sequentially or deterministically numbered (e.g. `REC-2026-HMEJYC3P9B` / `INV-2026-HMEJYC3P9B`), and permanently referenced in `booking_history`. If a booking is cancelled prior to completion, a Refund Receipt (`REF-YYYY-...`) is issued without generating an unneeded final tax invoice.
+6. **Portal Integration**:
+   - Guests can view, download, or print receipts and tax invoices in `web_app_tc` under `/bookings/{id}`.
+   - Admins can inspect, verify, and reprint documents in `web_app_admin_tc` under `/admin/bookings`.
 
 ---
 
@@ -44,9 +45,11 @@ An automated, tamper-resistant statutory tax invoicing and receipt generation en
 
 ### In Scope (MVP)
 - **Data Persistence (`db_core`)**:
-  - PostgreSQL table `tax_invoice` recording:
+  - PostgreSQL ENUM `tax_document_type`: `'payment_receipt'`, `'tax_invoice'`, `'credit_note'`.
+  - PostgreSQL table `tax_document` (aliased as `tax_invoice`):
     - Primary key `id UUID PRIMARY KEY DEFAULT uuidv7()`.
-    - `invoice_number VARCHAR(32) NOT NULL UNIQUE`.
+    - `document_type tax_document_type NOT NULL`.
+    - `document_number VARCHAR(32) NOT NULL UNIQUE` (`REC-YYYY-...` or `INV-YYYY-...`).
     - `booking_id UUID NOT NULL REFERENCES booking(id) ON DELETE RESTRICT`.
     - `booking_history_id UUID REFERENCES booking_history(id)`.
     - `recipient_id UUID NOT NULL REFERENCES "user"(id)`.
@@ -64,20 +67,26 @@ An automated, tamper-resistant statutory tax invoicing and receipt generation en
     - `non_taxable_amount DECIMAL(12, 2) NOT NULL` (e.g. Damage Deposit).
     - `total_amount DECIMAL(12, 2) NOT NULL`.
     - `itemized_lines JSONB NOT NULL DEFAULT '[]'::jsonb`.
-  - Database indexes on `booking_id`, `invoice_number`, `recipient_id`, and `issue_date`.
+  - Database indexes on `booking_id`, `document_number`, `recipient_id`, `document_type`, and `issue_date`.
+  - Unique constraint on `(booking_id, document_type)` ensuring exactly one receipt on confirmation and one invoice on completion.
 - **Domain Logic & Math (`common`)**:
-  - Shared domain models: `TaxInvoice`, `InvoiceLineItem`, `InvoiceTaxCategory`, `TaxReceiptSummary`.
+  - Shared domain models: `TaxDocument`, `TaxDocumentType`, `InvoiceLineItem`, `InvoiceTaxCategory`, `TaxReceiptSummary`.
   - Expansion of `BookingMetadata` / `BookingMetadataResponse` to optionally capture `business_company_name` and `business_tax_id` when `is_business_trip = true`.
   - Expansion of `BookingCalculator` in `common/src/pricing.rs` to support itemized tax calculations (15% GCT applied to accommodation subtotal and cleaning fee, excluding damage deposit) using pure `rust_decimal::Decimal`.
 - **API Endpoints (`app_api/booking_api`)**:
-  - `POST /api/v1/bookings/{id}/invoice/generate`: Internal/transactional generator called upon booking confirmation.
-  - `GET /api/v1/bookings/{id}/invoice`: Returns JSON invoice DTO with itemized lines.
-  - `GET /api/v1/bookings/{id}/invoice/render`: Returns print-ready, semantic HTML formatted for PDF printing/saving.
+  - Internal generators:
+    - Receipt generator invoked synchronously on `BookingStatus::Confirmed`.
+    - Tax invoice generator invoked synchronously on `BookingStatus::Completed`.
+  - `GET /api/v1/bookings/{id}/receipt`: Returns JSON / HTML payment receipt.
+  - `GET /api/v1/bookings/{id}/invoice`: Returns JSON / HTML statutory tax invoice (available upon completion).
+  - `GET /api/v1/bookings/{id}/documents`: Returns list of all generated tax documents for the reservation.
+  - `GET /api/v1/bookings/{id}/documents/{doc_id}/render`: Returns print-ready, semantic HTML formatted for browser PDF printing.
 - **Transactional Notifications (`app_api/email_worker`)**:
-  - Enhance `booking_confirmation_guest` template to display an itemized GCT price breakdown and a primary call-to-action button linking directly to `/bookings/{id}/receipt`.
+  - Enhance `booking_confirmation_guest` template to display itemized GCT payment breakdown and link to `/bookings/{id}/receipt`.
+  - In post-stay check-out email notification, include direct link to download the final `/bookings/{id}/invoice`.
 - **Frontend Portals (`web_app_tc` & `web_app_admin_tc`)**:
-  - Guest Portal: "View Tax Receipt" button on booking detail page rendering full itemized modal or standalone print view (`/bookings/{id}/receipt`).
-  - Admin Portal: Upgraded "Statutory Tax Receipt / Invoice" modal in `/admin/bookings` populated dynamically from backend invoice API.
+  - Guest Portal: "View Payment Receipt" available at booking confirmation; "Download Official Tax Invoice" becomes available upon completion.
+  - Admin Portal: Upgraded documents tab under `/admin/bookings` viewing both receipts and final statutory invoices with print triggers.
 
 ### Out of Scope / Non-Goals
 - Real-time automated API sync or live electronic filing with TAJ's revenue portal (manual/CSV reporting handles batch filings).
