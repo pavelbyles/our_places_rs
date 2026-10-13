@@ -187,6 +187,25 @@ pub struct NotificationConfig {
     /// Environment variable key name for API credentials.
     pub api_key_env: String,
 }
+""",
+        "retro:Session Retrospective Environment Optimization Test": """
+# Session Retrospective Report
+
+## 1. Summary of Session Friction
+- File discovery for static tax rates required 4 tool search calls.
+- `cargo check` failed due to missing SQLx offline query metadata update (`sqlx-data.json`).
+
+## 2. Actionable Environment Improvements
+
+### 1. Navigation Pointer for Statutory Tax Reference Data
+- **Category**: Navigation
+- **Enforcement**: Steering file update in `AGENTS.md`
+- **Actionable Fix**: Add navigation pointer linking `common/src/reference.rs`.
+
+### 2. Guardrail for SQLx Offline Metadata Verification
+- **Category**: Automated Checks & Guardrails
+- **Enforcement**: Deterministic pre-commit hook / CI check
+- **Actionable Fix**: Run `cargo sqlx prepare --check` before commit.
 """
     }
 

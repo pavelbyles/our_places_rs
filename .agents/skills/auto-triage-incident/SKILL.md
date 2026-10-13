@@ -10,7 +10,7 @@ Transform runtime telemetry, bug reports, and metric anomalies into structured, 
 ## Triage Workflow
 
 ```mermaid
-graph TD
+flowchart TD
     Alert[Incident / Log / Alert / Bug Report] --> Ingest[1. Ingest & Classify Severity]
     Ingest --> Discover[2. Discover Project Context & Trace Paths]
     Discover --> Guardrails[3. Evaluate Project Guardrails & Invariants]

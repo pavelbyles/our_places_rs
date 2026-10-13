@@ -10,7 +10,7 @@ Discover boundary conditions, concurrent race windows, numerical anomalies, and 
 ## Discovery Workflow
 
 ```mermaid
-graph LR
+flowchart LR
     Input[1. Identify Inputs & State] --> Boundary[2. Probe Boundary Limits]
     Boundary --> Concurrency[3. Simulate Concurrency Races]
     Concurrency --> Catalog[4. Catalog & Prescribe Tests]
