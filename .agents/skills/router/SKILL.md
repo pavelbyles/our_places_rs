@@ -21,6 +21,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 * "draft intent", "proto-spec", "new feature idea", "scope requirements" $\rightarrow$ `draft-intent`
 * "create worktree", "new branch for issue", "isolate worktree" $\rightarrow$ `create-worktree`
 * "constraints", "quality bar", "quality gates", "CONSTRAINTS.md", "enforce standards" $\rightarrow$ `constraint-driven-development`
+* "task breakdown", "planning tasks", "break down spec", "implementation plan", "tasks/plan.md" $\rightarrow$ `planning-and-task-breakdown`
 
 ### Stage 2: Design
 * "write spec", "generate spec", "feature specification" $\rightarrow$ `generate-spec`
@@ -35,6 +36,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 * "vulnerability triage", "CVSS scoring", "scanner findings" $\rightarrow$ `security-and-hardening` (or `vulnerability-analysis`)
 
 ### Stage 3: Build
+* "build", "build auto", "autonomous build", "run plan", "execute tasks" $\rightarrow$ `/build` (workflow)
 * "implement Rust", "pricing logic", "database entity", "sqlx", "actix handler" $\rightarrow$ `rust-core`
 * "monad", "railway-oriented", "Result pipeline", "combinator chain" $\rightarrow$ `monad-design`
 * "topcoat", "SSR template", "view! macro", "path_param!", "HTMX swap" $\rightarrow$ `topcoat`
