@@ -419,6 +419,8 @@ async fn test_xml_serialization_of_vec() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: None,
+        cleaning_fee: None,
+        damage_deposit: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };

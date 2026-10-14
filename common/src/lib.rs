@@ -12,3 +12,4 @@ pub mod models;
 pub mod payout;
 pub mod pricing;
 pub mod reference;
+pub mod tax_document;

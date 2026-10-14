@@ -8,7 +8,7 @@
 
 ## Tasks
 
-- [ ] **Task 0: Shared Contracts, Schema Migration, and FeeItem Serde**
+- [x] **Task 0: Shared Contracts, Schema Migration, and FeeItem Serde**
   - **Scope:** S (4 files)
   - **Description:** Create the single feature migration adding `cancellation_policy` enum values (`firm`, `limited`), listing fee columns, booking financial snapshot columns, and the `tax_document` table. Implement string-serialized Decimal serde for `FeeItem` with backward-compatible deserialization and define `tax_document` DTOs.
   - **Files Touched:**
@@ -17,10 +17,10 @@
     - `common/src/tax_document.rs`
     - `common/src/models.rs`
   - **Acceptance Criteria:**
-    - [ ] Migration applies cleanly against the database schema (`sqlx migrate run`).
-    - [ ] `FeeItem.amount` serializes as a JSON string and deserializes from both strings and legacy numbers.
-    - [ ] `document_number` generator correctly formats `REC-YYYY-{code}[-R{n}]`, `INV-YYYY-{code}`, and `REF-YYYY-{code}`.
-    - [ ] `pg_cron` reservation hold cleanup query remains valid with new nullable history columns.
+    - [x] Migration applies cleanly against the database schema (`sqlx migrate run`).
+    - [x] `FeeItem.amount` serializes as a JSON string and deserializes from both strings and legacy numbers.
+    - [x] `document_number` generator correctly formats `REC-YYYY-{code}[-R{n}]`, `INV-YYYY-{code}`, and `REF-YYYY-{code}`.
+    - [x] `pg_cron` reservation hold cleanup query remains valid with new nullable history columns.
   - **Verification Command:** `sqlx migrate run && SQLX_OFFLINE=false cargo check --workspace && cargo test -p common -- fee_item document_number`
   - **Dependencies:** None
 

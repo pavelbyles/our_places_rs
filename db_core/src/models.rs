@@ -337,6 +337,73 @@ pub enum CancellationPolicy {
     Flexible,
     Moderate,
     Strict,
+    Firm,
+    Limited,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, Eq, EnumString,
+)]
+#[sqlx(type_name = "tax_document_type", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum TaxDocumentType {
+    PaymentReceipt,
+    TaxInvoice,
+    RefundReceipt,
+}
+
+impl From<common::tax_document::TaxDocumentType> for TaxDocumentType {
+    fn from(t: common::tax_document::TaxDocumentType) -> Self {
+        match t {
+            common::tax_document::TaxDocumentType::PaymentReceipt => {
+                TaxDocumentType::PaymentReceipt
+            }
+            common::tax_document::TaxDocumentType::TaxInvoice => TaxDocumentType::TaxInvoice,
+            common::tax_document::TaxDocumentType::RefundReceipt => TaxDocumentType::RefundReceipt,
+        }
+    }
+}
+
+impl From<TaxDocumentType> for common::tax_document::TaxDocumentType {
+    fn from(t: TaxDocumentType) -> Self {
+        match t {
+            TaxDocumentType::PaymentReceipt => {
+                common::tax_document::TaxDocumentType::PaymentReceipt
+            }
+            TaxDocumentType::TaxInvoice => common::tax_document::TaxDocumentType::TaxInvoice,
+            TaxDocumentType::RefundReceipt => common::tax_document::TaxDocumentType::RefundReceipt,
+        }
+    }
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, Eq, EnumString,
+)]
+#[sqlx(type_name = "tax_document_status", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum TaxDocumentStatus {
+    Issued,
+    Superseded,
+}
+
+impl From<common::tax_document::TaxDocumentStatus> for TaxDocumentStatus {
+    fn from(s: common::tax_document::TaxDocumentStatus) -> Self {
+        match s {
+            common::tax_document::TaxDocumentStatus::Issued => TaxDocumentStatus::Issued,
+            common::tax_document::TaxDocumentStatus::Superseded => TaxDocumentStatus::Superseded,
+        }
+    }
+}
+
+impl From<TaxDocumentStatus> for common::tax_document::TaxDocumentStatus {
+    fn from(s: TaxDocumentStatus) -> Self {
+        match s {
+            TaxDocumentStatus::Issued => common::tax_document::TaxDocumentStatus::Issued,
+            TaxDocumentStatus::Superseded => common::tax_document::TaxDocumentStatus::Superseded,
+        }
+    }
 }
 
 pub use common::models::FeeItem;

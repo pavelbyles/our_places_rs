@@ -54,7 +54,7 @@ features = ["toml"]
 
 [workspace.dependencies.rust_decimal]
 version = "1.42.0"
-features = ["serde", "serde-with-float"]
+features = ["serde", "serde-with-float", "serde-with-str"]
 
 [workspace.dependencies.serde]
 version = "1.0.228"

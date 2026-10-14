@@ -145,6 +145,12 @@ pub struct ListingResponse {
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "0.1000")]
     pub commission_pct: Option<Decimal>,
+    /// Optional cleaning fee (base currency).
+    #[serde(default)]
+    pub cleaning_fee: Option<Decimal>,
+    /// Optional refundable damage deposit (base currency).
+    #[serde(default)]
+    pub damage_deposit: Option<Decimal>,
 }
 
 /// Itemized fee line item in booking price breakdowns.
@@ -152,8 +158,9 @@ pub struct ListingResponse {
 pub struct FeeItem {
     /// Descriptive name of the fee.
     pub name: String,
-    /// Monetary amount of the fee.
-    #[serde(with = "rust_decimal::serde::float")]
+    /// Monetary amount of the fee. Serialized as a JSON string; deserializes from string or number.
+    #[serde(serialize_with = "rust_decimal::serde::str::serialize")]
+    #[schema(value_type = String, example = "15.00")]
     pub amount: Decimal,
 }
 
@@ -175,6 +182,12 @@ pub struct BookingMetadataResponse {
     pub estimated_arrival_time: Option<String>,
     /// Whether this reservation is for business travel.
     pub is_business_trip: bool,
+    /// Optional business company name for B2B tax invoicing.
+    #[serde(default)]
+    pub business_company_name: Option<String>,
+    /// Optional business tax registration ID for B2B tax invoicing.
+    #[serde(default)]
+    pub business_tax_id: Option<String>,
 }
 
 /// DTO representing a booking reservation in API responses.
@@ -220,6 +233,21 @@ pub struct BookingResponse {
     /// Smart door access code if available.
     #[serde(default)]
     pub door_access_code: Option<String>,
+    /// Host cleaning fee.
+    #[serde(default)]
+    pub cleaning_fee: Option<Decimal>,
+    /// Security / damage deposit held.
+    #[serde(default)]
+    pub damage_deposit: Option<Decimal>,
+    /// Platform fee.
+    #[serde(default)]
+    pub platform_fee: Option<Decimal>,
+    /// Applied statutory tax rate (e.g. 0.1500).
+    #[serde(default)]
+    pub tax_rate: Option<Decimal>,
+    /// Base to payment exchange rate.
+    #[serde(default)]
+    pub exchange_rate: Option<Decimal>,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
@@ -364,6 +392,10 @@ pub struct UpdatedBookingRequest {
     pub metadata: Option<BookingMetadataResponse>,
     /// Smart lock door access code.
     pub door_access_code: Option<String>,
+    /// Check-in start date if requesting a date change.
+    pub date_from: Option<NaiveDate>,
+    /// Check-out departure date if requesting a date change.
+    pub date_to: Option<NaiveDate>,
 }
 
 /// Request payload to transfer a reservation to a promoted user account.
@@ -973,6 +1005,30 @@ mod tests {
             ..base_terms
         };
         assert!(is_material_booking_change(&base_terms, &price_changed));
+    }
+
+    #[test]
+    fn test_fee_item_serde_string_and_number_compatibility() {
+        let item = FeeItem {
+            name: "Cleaning Fee".into(),
+            amount: Decimal::new(5000, 2), // 50.00
+        };
+
+        // 1. Serializes to string
+        let json = serde_json::to_string(&item).expect("serialization should succeed");
+        assert!(json.contains(r#""amount":"50.00""#));
+
+        // 2. Deserializes from string format
+        let from_str: FeeItem =
+            serde_json::from_str(&json).expect("deserialization from str should succeed");
+        assert_eq!(from_str, item);
+
+        // 3. Deserializes from legacy number format
+        let legacy_json = r#"{"name":"Cleaning Fee","amount":50.00}"#;
+        let from_legacy: FeeItem =
+            serde_json::from_str(legacy_json).expect("deserialization from number should succeed");
+        assert_eq!(from_legacy.name, "Cleaning Fee");
+        assert_eq!(from_legacy.amount, Decimal::new(5000, 2));
     }
 }
 

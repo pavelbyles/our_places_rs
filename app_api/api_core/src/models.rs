@@ -46,6 +46,8 @@ pub fn map_listing_to_response(
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
         commission_pct: Some(listing.commission_pct),
+        cleaning_fee: None,
+        damage_deposit: None,
     }
 }
 
@@ -110,6 +112,8 @@ pub fn map_listing_with_owner_to_response(
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
         commission_pct: Some(listing.commission_pct),
+        cleaning_fee: None,
+        damage_deposit: None,
     }
 }
 
@@ -156,9 +160,16 @@ pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
             message_to_host: booking.metadata.message_to_host.clone(),
             estimated_arrival_time: booking.metadata.estimated_arrival_time.clone(),
             is_business_trip: booking.metadata.is_business_trip,
+            business_company_name: None,
+            business_tax_id: None,
         },
         review_eligibility: None,
         door_access_code: booking.door_access_code,
+        cleaning_fee: None,
+        damage_deposit: None,
+        platform_fee: None,
+        tax_rate: None,
+        exchange_rate: None,
         created_at: booking.created_at,
         updated_at: booking.updated_at,
     }

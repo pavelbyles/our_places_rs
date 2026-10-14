@@ -40,7 +40,9 @@
               "Enum": [
                 "flexible",
                 "moderate",
-                "strict"
+                "strict",
+                "firm",
+                "limited"
               ]
             }
           }

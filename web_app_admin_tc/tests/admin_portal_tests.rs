@@ -368,6 +368,8 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         minimum_stay: 2,
         days_between_bookings: 1,
         commission_pct: Some(dec!(0.1000)),
+        cleaning_fee: None,
+        damage_deposit: None,
     };
 
     let listing_a2 = ListingResponse {
@@ -400,6 +402,8 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         minimum_stay: 3,
         days_between_bookings: 1,
         commission_pct: Some(dec!(0.1000)),
+        cleaning_fee: None,
+        damage_deposit: None,
     };
 
     let listing_b1 = ListingResponse {
@@ -432,6 +436,8 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.1000)),
+        cleaning_fee: None,
+        damage_deposit: None,
     };
 
     let all_listings = vec![listing_a1.clone(), listing_a2.clone(), listing_b1.clone()];
@@ -457,6 +463,11 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         metadata: BookingMetadataResponse::default(),
         review_eligibility: None,
         door_access_code: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        platform_fee: None,
+        tax_rate: None,
+        exchange_rate: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -482,6 +493,11 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         metadata: BookingMetadataResponse::default(),
         review_eligibility: None,
         door_access_code: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        platform_fee: None,
+        tax_rate: None,
+        exchange_rate: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -507,6 +523,11 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         metadata: BookingMetadataResponse::default(),
         review_eligibility: None,
         door_access_code: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        platform_fee: None,
+        tax_rate: None,
+        exchange_rate: None,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
