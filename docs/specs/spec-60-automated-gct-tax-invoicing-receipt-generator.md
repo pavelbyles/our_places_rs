@@ -3,7 +3,7 @@
 > Supersedes rev. 1. Driven by the evaluation of 2026-10-13. Intent: [intent-60](../intent/intent-60-automated-gct-tax-invoicing-receipt-generator.md).
 
 ## Overview
-Introduces host-configurable cleaning fees and damage deposits, a single country-resolved GCT rate (default JM), policy-driven partial refunds (Firm/Strict typestate), date changes on confirmed bookings, automatic stay completion via Cloud Scheduler, and a **Dual Document Model** of immutable tax documents:
+Introduces host-configurable cleaning fees and damage deposits, a single country-resolved GCT rate (default JM), policy-driven partial refunds (typestate across 5 policies: Flexible, Moderate, Strict, Firm, Limited), date changes on confirmed bookings, automatic stay completion via Cloud Scheduler, and a **Dual Document Model** of immutable tax documents:
 
 | Trigger | Document | Number |
 | :--- | :--- | :--- |
@@ -67,26 +67,35 @@ total_price       = taxable_base + tax_value + platform_fee + damage_deposit
 > Seed data only contains USD/JMD/GBP pairs. EUR and CAD (advertised on the home page) will return `FX_RATE_UNAVAILABLE` until rates are added.
 
 ### 1.4. Cancellation Refund Policies (typestate)
-`cancellation_policy` gains `firm`. Days out = `check_in − cancellation_date`, with both dates in `America/Jamaica`. Lower bounds are inclusive.
+`cancellation_policy` gains `firm` and `limited`. Timing is evaluated relative to `check_in` in `America/Jamaica` (lower bounds inclusive). Hours since booking is evaluated from `booked_at`.
 
-| Days out | Firm | Strict |
-| :--- | :--- | :--- |
-| ≥ 30 | 100% | 100% if cancelled ≤ 48h after booking **and** booked ≥ 14 days before check-in; otherwise 50% *(open question)* |
-| 14–29 | 100% | 50% (same grace rule applies) |
-| 7–13 | 50% | 50% |
-| < 7 | 0% | 0% |
+| Policy | 100% Accommodation Refund Window | 50% Accommodation Refund Window | 0% Refund (100% Host Payout) |
+| :--- | :--- | :--- | :--- |
+| **Flexible** | ≥ 24 hours before check-in | — | < 24 hours before check-in |
+| **Moderate** | ≥ 5 days before check-in | 5 days → 24 hours before check-in | < 24 hours before check-in |
+| **Strict** | Within 48h of booking (if booked ≥ 14 days out) | ≥ 7 days before check-in (outside 48h grace) | < 7 days before check-in |
+| **Firm** | ≥ 30 days before check-in (or within 48h if booked ≥ 14d out) | 7 to 30 days before check-in | < 7 days before check-in |
+| **Limited** | ≥ 14 days before check-in | 7 to 14 days before check-in | < 7 days before check-in |
 
 ```rust
 // common/src/cancellation.rs [NEW]
-pub struct Firm;
+pub struct Flexible;
+pub struct Moderate;
 pub struct Strict;
+pub struct Firm;
+pub struct Limited;
 
 /// Policy-specific refund schedule, resolved at compile time.
 pub trait RefundSchedule {
     fn accommodation_refund_pct(t: &CancellationTiming) -> Decimal;
 }
 
-pub struct CancellationTiming { pub days_out: i64, pub hours_since_booking: i64, pub booked_days_ahead: i64 }
+pub struct CancellationTiming {
+    pub days_before_check_in: i64,
+    pub hours_before_check_in: i64,
+    pub hours_since_booking: i64,
+    pub days_booked_ahead: i64,
+}
 
 // Typestate: Pending (amounts loaded) → Timed (timing evaluated) → Quoted (immutable result)
 pub struct Pending; pub struct Timed; pub struct Quoted;
@@ -110,17 +119,18 @@ impl<P: RefundSchedule> RefundCalculator<P, Timed> {
 pub fn quote_refund(policy: CancellationPolicy, amounts: RefundableAmounts, ...) -> Result<RefundQuote, CancellationError>
 ```
 
-**Refund components (recommended defaults, open question in intent):**
+**Refund component breakdown (watertight mathematical rules):**
 ```
-accommodation_refund = round(accommodation_net × pct)
-cleaning_refund      = cleaning_fee            // service never rendered
-tax_refund           = round((accommodation_refund + cleaning_refund) × tax_rate)
-platform_fee_refund  = pct == 100% ? platform_fee : 0
-deposit_refund       = damage_deposit
-refund_total         = Σ above
-retained_total       = total_price − refund_total   // host + platform share, incl. retained GCT
+accommodation_refund = round(accommodation_net × policy_pct)
+cleaning_refund      = cleaning_fee                   // service never rendered, always 100% refunded
+deposit_refund       = damage_deposit                 // escrow hold released, always 100% refunded
+tax_refund           = round((accommodation_refund + cleaning_refund) × tax_rate)  // pro-rata on refunded taxable base
+platform_fee_refund  = policy_pct == 1.00 ? platform_fee : 0                      // refunded only on 100% full refund
+refund_total         = accommodation_refund + cleaning_refund + deposit_refund + tax_refund + platform_fee_refund
+retained_total       = total_price − refund_total     // host payout + platform retained
 ```
-`Flexible` and `Moderate` keep their current behavior (100%) until the open question is resolved, via a `FullRefund` schedule impl.
+When `policy_pct == 1.00` (full refund), `refund_total == total_price` and `retained_total == 0.00`.
+When `policy_pct < 1.00`, the cleaning fee and damage deposit are still refunded in full, accommodation is refunded at `policy_pct`, GCT is refunded proportionally, and the platform fee is retained.
 
 ### 1.5. Date Changes
 - Allowed when `status = confirmed` and `new_check_in > today (America/Jamaica)`. Changes on any other status ⇒ 409 `BOOKING_NOT_MODIFIABLE`.
@@ -151,6 +161,7 @@ retained_total       = total_price − refund_total   // host + platform share, 
 ```sql
 -- Cancellation policy (ADD VALUE is safe in-tx on PG ≥ 12 as long as it is not used in this migration)
 ALTER TYPE cancellation_policy ADD VALUE IF NOT EXISTS 'firm';
+ALTER TYPE cancellation_policy ADD VALUE IF NOT EXISTS 'limited';
 
 -- Listing fees (base currency). 0 = not offered.
 ALTER TABLE listing
@@ -409,7 +420,7 @@ Verify with `terraform fmt -check` and `terraform validate`.
 - [ ] Hosts can enable cleaning fee and damage deposit; disabled ⇒ 0.
 - [ ] The reconciliation invariant holds and is property-tested.
 - [ ] REC/INV/REF documents are issued from `db_core::booking::update_booking` hooks; date changes produce superseding revisions.
-- [ ] Firm/Strict refunds use the typestate calculator, and the cancellation email shows the correct refund.
+- [ ] All 5 refund policies (Flexible, Moderate, Strict, Firm, Limited) use the typestate calculator with partial refund component rules, and the cancellation email shows the correct refund.
 - [ ] Cloud Scheduler Terraform job completes stays daily via the PATCH cron endpoint.
 - [ ] JMD equivalents are recorded with explicit FX failure handling.
 - [ ] APIs are JSON-only; documents render via the `web_app_common_tc` SSR component.

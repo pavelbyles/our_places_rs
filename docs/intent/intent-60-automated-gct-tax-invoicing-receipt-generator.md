@@ -29,7 +29,7 @@ Consequences: Tax Administration Jamaica (TAJ) audit exposure, corporate guests 
    - **Payment Receipt** (`REC-YYYY-{code}`) on `Confirmed`; re-issued as a revision (`-R2`, `-R3`…) when dates change.
    - **Statutory Tax Invoice** (`INV-YYYY-{code}`) on `Completed`.
    - **Refund Receipt** (`REF-YYYY-{code}`) on cancellation, computed from the booking's cancellation policy.
-5. **Policy-driven partial refunds**: **Firm** and **Strict** cancellation policies, modelled with a typestate refund calculator.
+5. **Policy-driven partial refunds**: **Flexible**, **Moderate**, **Strict**, **Firm**, and **Limited** cancellation policies, modelled with a typestate refund calculator.
 6. **Automatic stay completion**: A Cloud Scheduler job (Terraform) calls an internal booking_api endpoint that transitions eligible stays to `Completed` via the standard update path.
 7. **Cross-currency support**: Documents snapshot both the base→payment rate and the payment→JMD rate so JMD statutory equivalents are always recorded.
 8. **Clean layering**: APIs return JSON only. HTML is rendered exclusively by Topcoat SSR frontends.
@@ -43,7 +43,7 @@ Consequences: Tax Administration Jamaica (TAJ) audit exposure, corporate guests 
 - **Listing fees**: `listing.cleaning_fee`, `listing.damage_deposit` (+ `listing_history`); listing_api create/update/read; admin listing form toggles + amounts; guest quote shows fees.
 - **Booking financial columns**: `cleaning_fee`, `damage_deposit`, `platform_fee`, `tax_rate`, `exchange_rate` on `booking` (+ `booking_history`), satisfying the reconciliation invariant.
 - **Tax documents**: `tax_document` table supporting `payment_receipt`, `tax_invoice`, `refund_receipt` with revisions/superseding. Generated in `db_core::booking::update_booking` (payout-ledger pattern).
-- **Cancellation policies**: add `firm` to `cancellation_policy`; implement Firm and Strict refund schedules (see §5); a refund quote endpoint; refund receipt; corrected cancellation email amounts.
+- **Cancellation policies**: add `firm` and `limited` to `cancellation_policy`; implement all 5 refund schedules (Flexible, Moderate, Strict, Firm, Limited); partial refund component rules (accommodation at policy %, cleaning & deposit 100%, GCT pro-rata, platform fee only on 100% refund); a refund quote endpoint; refund receipt; corrected cancellation email amounts.
 - **Date changes**: PATCH supports `date_from`/`date_to` on confirmed bookings with availability lock, re-pricing, and a revised receipt.
 - **Stay completion**: `PATCH /api/v1/internal/cron/complete-stays` (cron-secret protected) + Terraform `google_cloud_scheduler_job`.
 - **FX**: payment→JMD rate lookup (direct pair, else inverse); fail fast if unavailable.
@@ -73,14 +73,23 @@ Consequences: Tax Administration Jamaica (TAJ) audit exposure, corporate guests 
 - **Reconciliation invariant**:
   `total_price = (sub_total_price − discount_value) + cleaning_fee + tax_value + platform_fee + damage_deposit`
   `tax_value = round_bankers((sub_total_price − discount_value + cleaning_fee) × tax_rate, 2)`
-- **Refund schedules** (days = check-in date − cancellation date, America/Jamaica):
+- **Refund schedules (5 policies)**: Days out = check-in date − cancellation date (`America/Jamaica`, lower bounds inclusive). Grace period = hours between booking and cancellation.
 
-| Timing | Firm | Strict |
-| :--- | :--- | :--- |
-| ≥ 30 days out | 100% | 100% only within 48h of booking *and* booked ≥ 14 days out; else 50% |
-| 30 → 14 days out | 100% | 50% |
-| 14 → 7 days out | 50% | 50% |
-| < 7 days out | 0% | 0% |
+| Policy | 100% Accommodation Refund Window | 50% Accommodation Refund Window | 0% Refund (100% Host Payout) |
+| :--- | :--- | :--- | :--- |
+| **Flexible** | Up to 24 hours before check-in | — | < 24 hours before check-in |
+| **Moderate** | Up to 5 days before check-in | 5 days → 24 hours before check-in | < 24 hours before check-in |
+| **Strict** | Within 48h of booking (if booked ≥ 14 days out) | Up to 7 days before check-in (outside 48h grace) | < 7 days before check-in |
+| **Firm** | ≥ 30 days before check-in (or within 48h if booked ≥ 14d out) | 7 to 30 days before check-in | < 7 days before check-in |
+| **Limited** | ≥ 14 days before check-in | 7 to 14 days before check-in | < 7 days before check-in |
+
+- **Partial Refund Component Rules**:
+  - **Accommodation**: Refunded at policy percentage (`policy_pct` $\in \{1.00, 0.50, 0.00\}$).
+  - **Cleaning fee**: Always 100% refunded in full on cancellation (service not rendered).
+  - **Damage deposit**: Always 100% refunded in full on cancellation (escrow hold released).
+  - **GCT tax**: Refunded pro-rata on refunded taxable services: `round((accommodation_refund + cleaning_fee) × tax_rate, 2)`.
+  - **Platform fee**: Refunded ONLY on full (100%) refunds. If partial or 0%, platform fee is retained (`0.00` refund).
+  - **Retained Total**: `total_price − refund_total` (retained host payout + retained platform fee).
 
 - **Zero panics**, monadic error propagation, `#[instrument]` on async fns.
 - **Row-level locking** (`SELECT … FOR UPDATE`) for date changes and stay completion.
@@ -93,7 +102,7 @@ Consequences: Tax Administration Jamaica (TAJ) audit exposure, corporate guests 
 
 ## 6. Success Metrics & Acceptance Signals
 - Property test: for any booking, document line items sum to document totals, and the receipt total equals `booking.total_price`.
-- Refund calculator tests cover every boundary in §5 for both policies.
+- Refund calculator tests cover every boundary in §5 for all 5 policies (Flexible, Moderate, Strict, Firm, Limited).
 - Stays whose check-out has passed are `Completed` with an `INV-…` within 24h, without manual action.
 - `cargo test --workspace`, `cargo clippy -D warnings`, `cargo sqlx prepare --check` all green.
 
@@ -105,8 +114,7 @@ Consequences: Tax Administration Jamaica (TAJ) audit exposure, corporate guests 
 - [x] **Invoice numbering**: `{REC|INV|REF}-YYYY-{confirmation_code}[-R{n}]`.
 - [x] **Merchant of record**: Our Places Luxury Villas Ltd; mandatory `TAJ_SUPPLIER_TRN`.
 - [x] **Completion trigger**: Cloud Scheduler → internal cron endpoint → `update_booking` (fires all Completed hooks).
-- [ ] **Flexible / Moderate policies**: Keep with current (100%) refund behavior, map to Firm, or remove?
-- [ ] **Strict ≥ 30 days outside the 48h grace window**: Confirm 50%.
-- [ ] **Refund components**: Recommended: damage deposit and cleaning fee always 100% refunded; policy % applies to accommodation; GCT refunded pro rata on refunded taxable amount; platform fee refunded only on 100% refunds.
-- [ ] **Day boundaries**: Recommended: inclusive lower bound (exactly 30 days out ⇒ "≥ 30" bucket), America/Jamaica timezone.
-- [ ] **Accountant confirmation**: GCT rate for villa accommodation, GCT on retained cancellation amounts, and whether a payment receipt must itself be a tax invoice.
+- [x] **Flexible / Moderate / Strict / Firm / Limited policies**: All 5 policies finalized with explicit timing windows and refund percentages.
+- [x] **Refund components**: Accommodation refunded at policy %; cleaning fee and damage deposit always 100% refunded; GCT refunded pro-rata on refunded taxable amount; platform fee refunded only on 100% full refunds.
+- [x] **Day boundaries**: Lower bound inclusive, `America/Jamaica` timezone.
+- [x] **Accountant confirmation**: GCT rate defaults to statutory 15% (JM); tax base is net accommodation + cleaning fee; deposit held in escrow (non-taxable).

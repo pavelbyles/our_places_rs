@@ -3,7 +3,7 @@
 ## Metadata
 - **Spec**: [spec-60 rev. 2](../specs/spec-60-automated-gct-tax-invoicing-receipt-generator.md)
 - **Branch**: `feat/60-automated-gct-tax-invoicing-receipt-generator` (Base: `main`)
-- **Status**: Draft (pending open questions in intent §7)
+- **Status**: Locked (open questions resolved)
 - **Blast radius**: ~30 files across 9 crates + `infra`. Exceeds the 5-file threshold, so it is split into 8 slices.
 
 ---
@@ -113,7 +113,7 @@ S0 Contracts ─► S1 Tax source ─► S2 Listing fees + reconciled pricing �
 ### S0 — Shared contracts (S)
 - **Files**:
   - `db_core/migrations/20261013000000_gct_tax_documents.sql` [NEW]
-  - `db_core/src/models.rs` (`CancellationPolicy::Firm`, `TaxDocumentType/Status` sqlx types)
+  - `db_core/src/models.rs` (`CancellationPolicy::Firm`, `CancellationPolicy::Limited`, `TaxDocumentType/Status` sqlx types)
   - `common/src/tax_document.rs` [NEW] (DTOs, `document_number`)
   - `common/src/models.rs` (`FeeItem` string serde, new optional fields)
 - **Accept**:
@@ -169,16 +169,17 @@ S0 Contracts ─► S1 Tax source ─► S2 Listing fees + reconciled pricing �
   - Startup fails without TRN.
 - **Verify**: `cargo test -p db_core tax_document && cargo test -p booking_api documents && cargo test -p web_app_tc`
 
-### S4 — Firm/Strict refund policies (M)
+### S4 — 5-policy refund schedules & partial refund component rules (M)
 - **Files**:
-  - `common/src/cancellation.rs` [NEW]
+  - `common/src/cancellation.rs` [NEW] (Flexible, Moderate, Strict, Firm, Limited typestate)
   - `db_core/src/booking.rs` (Cancelled hook → REF)
   - `booking_api` (`cancellation-quote` endpoint, cancel email uses REF)
   - `web_app_tc` cancel modal (HTMX quote)
   - `booking_cancelled_guest` template
-  - Checkout policy selector includes Firm
+  - Checkout / listing policy selectors include Firm and Limited
 - **Accept**:
-  - Boundary table tests pass for both policies.
+  - Boundary table tests pass for all 5 policies (Flexible, Moderate, Strict, Firm, Limited).
+  - Partial refund component invariant holds: accommodation at policy %, cleaning & deposit 100%, GCT pro-rata on refunded taxable base, platform fee only on 100% full refund.
   - `refund_total + retained_total = total_price`.
   - REF issued on cancel; no INV afterwards.
   - Email refund equals the REF amount.
@@ -245,7 +246,7 @@ S0 Contracts ─► S1 Tax source ─► S2 Listing fees + reconciled pricing �
 | REC issued once, totals match | Integration | S3 | P0 |
 | FX direct/inverse/missing | Integration | S3 | P0 |
 | Document auth matrix | Integration | S3 | P0 |
-| Firm/Strict boundaries | Unit | S4 | P0 |
+| 5 policies boundaries & partial refund math | Unit | S4 | P0 |
 | REF on cancel, email amount | Integration | S4 | P0 |
 | Date change revision + overlap 409 | Integration | S5 | P0 |
 | Concurrent date change | Integration | S5 | P1 |
@@ -264,4 +265,4 @@ S0 Contracts ─► S1 Tax source ─► S2 Listing fees + reconciled pricing �
 | Security | 8 | Auth matrix, server-side pricing, mandatory secrets. The cron secret in TF state is a known follow-up (OIDC). |
 | Performance | 9 | Bounded batches, single-query reads, no new heavy deps. |
 
-**Blocking before S4/S5 start**: resolve intent §7 open questions (Flexible/Moderate mapping, Strict ≥30-day rule, refund components, day boundaries). S0–S3 can proceed now.
+**Execution readiness**: All intent §7 open questions are resolved (all 5 cancellation policies, timeline windows, and partial refund component breakdown locked). S0–S7 can proceed in sequence without blockers.
