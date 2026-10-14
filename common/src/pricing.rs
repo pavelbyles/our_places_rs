@@ -81,6 +81,7 @@ pub struct BookingCalculator<State> {
     pub sub_total_price: Decimal,
     pub discount_value: Option<Decimal>,
     pub discounted_subtotal: Decimal,
+    pub tax_rate: Decimal,
     pub tax_value: Option<Decimal>,
     pub fee_breakdown: Vec<FeeItem>,
     pub total_price: Decimal,
@@ -96,6 +97,7 @@ impl BookingCalculator<BaseRate> {
             sub_total_price,
             discount_value: None,
             discounted_subtotal: sub_total_price,
+            tax_rate: Decimal::ZERO,
             tax_value: None,
             fee_breakdown: Vec::new(),
             total_price: Decimal::ZERO,
@@ -114,6 +116,7 @@ impl BookingCalculator<BaseRate> {
             sub_total_price,
             discount_value: None,
             discounted_subtotal: sub_total_price,
+            tax_rate: Decimal::ZERO,
             tax_value: None,
             fee_breakdown: Vec::new(),
             total_price: Decimal::ZERO,
@@ -142,6 +145,7 @@ impl BookingCalculator<BaseRate> {
             sub_total_price: self.sub_total_price,
             discount_value: self.discount_value,
             discounted_subtotal: self.discounted_subtotal,
+            tax_rate: self.tax_rate,
             tax_value: self.tax_value,
             fee_breakdown: self.fee_breakdown,
             total_price: self.total_price,
@@ -151,8 +155,9 @@ impl BookingCalculator<BaseRate> {
 }
 
 impl BookingCalculator<Discounted> {
-    pub fn apply_taxes(mut self) -> BookingCalculator<Taxed> {
-        let tax_value_decimal = self.discounted_subtotal * Decimal::new(10, 2);
+    pub fn apply_taxes(mut self, tax_rate: Decimal) -> BookingCalculator<Taxed> {
+        let tax_value_decimal = (self.discounted_subtotal * tax_rate).round_dp(2);
+        self.tax_rate = tax_rate;
         self.tax_value = Some(tax_value_decimal);
 
         BookingCalculator {
@@ -161,6 +166,7 @@ impl BookingCalculator<Discounted> {
             sub_total_price: self.sub_total_price,
             discount_value: self.discount_value,
             discounted_subtotal: self.discounted_subtotal,
+            tax_rate: self.tax_rate,
             tax_value: self.tax_value,
             fee_breakdown: self.fee_breakdown,
             total_price: self.total_price,
@@ -171,7 +177,7 @@ impl BookingCalculator<Discounted> {
 
 impl BookingCalculator<Taxed> {
     pub fn finalize(mut self) -> Self {
-        let platform_fee = self.discounted_subtotal * Decimal::new(5, 2);
+        let platform_fee = (self.discounted_subtotal * Decimal::new(5, 2)).round_dp(2);
         self.fee_breakdown.push(FeeItem {
             name: "Platform Fee".to_string(),
             amount: platform_fee,
@@ -235,16 +241,17 @@ mod tests {
         let daily_rate = Decimal::new(100, 0); // $100
         let calc = BookingCalculator::new(daily_rate, 3)
             .apply_discounts(None, None)
-            .apply_taxes()
+            .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
         assert_eq!(calc.sub_total_price, Decimal::new(300, 0));
         assert_eq!(calc.discount_value, None);
         assert_eq!(calc.discounted_subtotal, Decimal::new(300, 0));
-        assert_eq!(calc.tax_value, Some(Decimal::new(3000, 2))); // 10% = 30.00
+        assert_eq!(calc.tax_rate, Decimal::new(15, 2));
+        assert_eq!(calc.tax_value, Some(Decimal::new(4500, 2))); // 15% = 45.00
         assert_eq!(calc.fee_breakdown.len(), 1);
         assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(1500, 2)); // 5% platform fee = 15.00
-        assert_eq!(calc.total_price, Decimal::new(34500, 2)); // 300 + 30 + 15 = 345.00
+        assert_eq!(calc.total_price, Decimal::new(36000, 2)); // 300 + 45 + 15 = 360.00
     }
 
     #[test]
@@ -252,12 +259,15 @@ mod tests {
         let daily_rate = Decimal::new(100, 0);
         let calc = BookingCalculator::new(daily_rate, 7)
             .apply_discounts(Some(Decimal::new(20, 0)), Some(Decimal::new(10, 0)))
-            .apply_taxes()
+            .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
         assert_eq!(calc.sub_total_price, Decimal::new(700, 0));
         assert_eq!(calc.discount_value, Some(Decimal::new(70, 0)));
         assert_eq!(calc.discounted_subtotal, Decimal::new(630, 0));
+        assert_eq!(calc.tax_value, Some(Decimal::new(9450, 2))); // 15% of 630 = 94.50
+        assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(3150, 2)); // 5% of 630 = 31.50
+        assert_eq!(calc.total_price, Decimal::new(75600, 2)); // 630 + 94.50 + 31.50 = 756.00
     }
 
     #[test]
@@ -265,12 +275,15 @@ mod tests {
         let daily_rate = Decimal::new(100, 0);
         let calc = BookingCalculator::new(daily_rate, 30)
             .apply_discounts(Some(Decimal::new(25, 0)), Some(Decimal::new(10, 0)))
-            .apply_taxes()
+            .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
         assert_eq!(calc.sub_total_price, Decimal::new(3000, 0));
         assert_eq!(calc.discount_value, Some(Decimal::new(750, 0)));
         assert_eq!(calc.discounted_subtotal, Decimal::new(2250, 0));
+        assert_eq!(calc.tax_value, Some(Decimal::new(33750, 2))); // 15% of 2250 = 337.50
+        assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(11250, 2)); // 5% of 2250 = 112.50
+        assert_eq!(calc.total_price, Decimal::new(270000, 2)); // 2250 + 337.50 + 112.50 = 2700.00
     }
 
     #[test]
@@ -278,7 +291,7 @@ mod tests {
         let daily_rate = Decimal::new(100, 0);
         let calc = BookingCalculator::new(daily_rate, -2)
             .apply_discounts(None, None)
-            .apply_taxes()
+            .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
         assert_eq!(calc.sub_total_price, Decimal::ZERO);
@@ -414,13 +427,13 @@ mod tests {
             quote.subtotal,
         )
         .apply_discounts(None, None)
-        .apply_taxes()
+        .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
         assert_eq!(calc.sub_total_price, Decimal::new(900, 0)); // 3 * $300 = $900
-        assert_eq!(calc.tax_value, Some(Decimal::new(9000, 2))); // 10% = $90.00
+        assert_eq!(calc.tax_value, Some(Decimal::new(13500, 2))); // 15% = $135.00
         assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(4500, 2)); // 5% = $45.00
-        assert_eq!(calc.total_price, Decimal::new(103500, 2)); // 900 + 90 + 45 = $1035.00
+        assert_eq!(calc.total_price, Decimal::new(108000, 2)); // 900 + 135 + 45 = $1080.00
     }
 
     #[test]
@@ -449,14 +462,14 @@ mod tests {
             quote.subtotal,
         )
         .apply_discounts(None, None)
-        .apply_taxes()
+        .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
         // Subtotal: 100 + 100 + 250 + 250 = 700
         assert_eq!(calc.sub_total_price, Decimal::new(700, 0));
-        assert_eq!(calc.tax_value, Some(Decimal::new(7000, 2))); // $70.00
+        assert_eq!(calc.tax_value, Some(Decimal::new(10500, 2))); // 15% of 700 = $105.00
         assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(3500, 2)); // $35.00
-        assert_eq!(calc.total_price, Decimal::new(80500, 2)); // $805.00
+        assert_eq!(calc.total_price, Decimal::new(84000, 2)); // 700 + 105 + 35 = $840.00
     }
 
     #[test]
@@ -496,11 +509,13 @@ mod tests {
             quote.subtotal,
         )
         .apply_discounts(None, None)
-        .apply_taxes()
+        .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
         // 2 nights @ $200 * 1.50 = $300 per night => Subtotal $600
         assert_eq!(calc.sub_total_price, Decimal::new(600, 0));
-        assert_eq!(calc.total_price, Decimal::new(69000, 2)); // 600 + 60 + 30 = $690.00
+        assert_eq!(calc.tax_value, Some(Decimal::new(9000, 2))); // 15% of 600 = $90.00
+        assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(3000, 2)); // 5% of 600 = $30.00
+        assert_eq!(calc.total_price, Decimal::new(72000, 2)); // 600 + 90 + 30 = $720.00
     }
 }

@@ -209,6 +209,9 @@ async fn create_booking(
     )
     .map_err(map_pricing_error)?;
 
+    let tax_rate =
+        common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
+
     let calculator = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
         total_days,
@@ -218,8 +221,15 @@ async fn create_booking(
         listing_details.listing.monthly_discount_percentage,
         listing_details.listing.weekly_discount_percentage,
     )
-    .apply_taxes()
+    .apply_taxes(tax_rate)
     .finalize();
+
+    let platform_fee = calculator
+        .fee_breakdown
+        .iter()
+        .find(|f| f.name == "Platform Fee")
+        .map(|f| f.amount)
+        .unwrap_or(Decimal::ZERO);
 
     let confirmation_code = generate_confirmation_code();
     let policy = req_data
@@ -259,6 +269,11 @@ async fn create_booking(
                 is_business_trip: req_data.is_business_trip,
             },
             door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee,
+            tax_rate: calculator.tax_rate,
+            exchange_rate: conversion_rate,
         };
 
         match db_booking::create_booking(pool.get_ref(), &new_booking).await {

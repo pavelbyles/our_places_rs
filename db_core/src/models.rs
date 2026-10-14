@@ -180,6 +180,17 @@ pub struct Booking {
     /// Smart lock door access code for confirmed stays.
     pub door_access_code: Option<String>,
 
+    /// Host cleaning fee.
+    pub cleaning_fee: Decimal,
+    /// Security / damage deposit held.
+    pub damage_deposit: Decimal,
+    /// Platform fee.
+    pub platform_fee: Decimal,
+    /// Applied statutory tax rate (e.g. 0.1500).
+    pub tax_rate: Decimal,
+    /// Base to payment exchange rate.
+    pub exchange_rate: Decimal,
+
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
@@ -246,6 +257,16 @@ pub struct NewBooking {
     pub metadata: BookingMetadata,
     /// Optional smart door access code.
     pub door_access_code: Option<String>,
+    /// Host cleaning fee.
+    pub cleaning_fee: Decimal,
+    /// Security / damage deposit held.
+    pub damage_deposit: Decimal,
+    /// Platform fee.
+    pub platform_fee: Decimal,
+    /// Applied statutory tax rate (e.g. 0.1500).
+    pub tax_rate: Decimal,
+    /// Base to payment exchange rate.
+    pub exchange_rate: Decimal,
 }
 
 /// Parameters for mutating an existing booking.

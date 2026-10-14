@@ -19,9 +19,9 @@ mod tests {
         assert_eq!(discounted.discount_value.unwrap(), Decimal::new(100, 0));
         assert_eq!(discounted.discounted_subtotal, Decimal::new(900, 0));
 
-        // Discounted -> Taxed (10% tax)
-        let taxed = discounted.apply_taxes();
-        assert_eq!(taxed.tax_value.unwrap(), Decimal::new(90, 0));
+        // Discounted -> Taxed (15% tax)
+        let taxed = discounted.apply_taxes(Decimal::new(15, 2));
+        assert_eq!(taxed.tax_value.unwrap(), Decimal::new(135, 0));
 
         // Taxed -> Final
         let final_calc = taxed.finalize();
@@ -29,8 +29,8 @@ mod tests {
         assert_eq!(final_calc.fee_breakdown.len(), 1);
         assert_eq!(final_calc.fee_breakdown[0].amount, Decimal::new(45, 0));
 
-        // Total price = 900 (subtotal) + 90 (tax) + 45 (fee) = 1035
-        assert_eq!(final_calc.total_price, Decimal::new(1035, 0));
+        // Total price = 900 (subtotal) + 135 (tax) + 45 (fee) = 1080
+        assert_eq!(final_calc.total_price, Decimal::new(1080, 0));
     }
 
     #[test]
@@ -62,13 +62,13 @@ mod tests {
 
         let calc = BookingCalculator::with_subtotal(quote.effective_daily_rate, 5, quote.subtotal)
             .apply_discounts(None, None)
-            .apply_taxes()
+            .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
         assert_eq!(calc.sub_total_price, Decimal::new(1450, 0));
-        assert_eq!(calc.tax_value, Some(Decimal::new(14500, 2))); // $145.00
+        assert_eq!(calc.tax_value, Some(Decimal::new(21750, 2))); // $217.50 (15% of 1450)
         assert_eq!(calc.fee_breakdown[0].amount, Decimal::new(7250, 2)); // $72.50
-        assert_eq!(calc.total_price, Decimal::new(166750, 2)); // 1450 + 145 + 72.50 = 1667.50
+        assert_eq!(calc.total_price, Decimal::new(174000, 2)); // 1450 + 217.50 + 72.50 = 1740.00
     }
 
     #[test]
@@ -181,6 +181,11 @@ mod tests {
                 is_business_trip: false,
             }),
             door_access_code: Some("1234".to_string()),
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::new(45, 0),
+            tax_rate: Decimal::new(15, 2),
+            exchange_rate: Decimal::ONE,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -189,6 +194,9 @@ mod tests {
         assert_eq!(res.confirmation_code, "CONF-TEST123");
         assert_eq!(res.status, "Confirmed");
         assert_eq!(res.door_access_code.as_deref(), Some("1234"));
+        assert_eq!(res.tax_rate, Some(Decimal::new(15, 2)));
+        assert_eq!(res.exchange_rate, Some(Decimal::ONE));
+        assert_eq!(res.platform_fee, Some(Decimal::new(45, 0)));
         assert_eq!(res.total_price, Decimal::new(1100, 0));
         assert_eq!(res.metadata.num_adults, 2);
         assert_eq!(
@@ -234,6 +242,11 @@ mod tests {
                 cancellation_policy: CancellationPolicy::Flexible,
                 metadata: Json(BookingMetadata::default()),
                 door_access_code: None,
+                cleaning_fee: Decimal::ZERO,
+                damage_deposit: Decimal::ZERO,
+                platform_fee: Decimal::ZERO,
+                tax_rate: Decimal::new(15, 2),
+                exchange_rate: Decimal::ONE,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
@@ -331,5 +344,35 @@ mod tests {
         assert!(json.contains(r#""status":"success""#));
         assert!(json.contains(r#""pre_arrival_processed":5"#));
         assert!(json.contains(r#""hold_reminders_processed":2"#));
+    }
+
+    #[test]
+    fn test_statutory_tax_resolution_for_jamaican_and_fallback_countries() {
+        use common::reference::SupportedCountry;
+
+        let jm_rate = Decimal::new(15, 2);
+
+        // Jamaican listings calculate 15% GCT
+        assert_eq!(SupportedCountry::tax_rate_for("Jamaica"), jm_rate);
+        assert_eq!(SupportedCountry::tax_rate_for("JM"), jm_rate);
+        assert_eq!(SupportedCountry::tax_rate_for("jm"), jm_rate);
+
+        // Unknown country code defaults safely to 15% (JM)
+        assert_eq!(SupportedCountry::tax_rate_for("UnknownLand"), jm_rate);
+        assert_eq!(SupportedCountry::tax_rate_for(""), jm_rate);
+
+        // Verify end-to-end BookingCalculator with resolved tax
+        let daily_rate = Decimal::new(200, 0);
+        let tax_rate = SupportedCountry::tax_rate_for("Jamaica");
+        let calc = BookingCalculator::new(daily_rate, 5)
+            .apply_discounts(None, None)
+            .apply_taxes(tax_rate)
+            .finalize();
+
+        // 5 nights @ $200 = $1,000. GCT 15% = $150. Platform fee 5% = $50. Total = $1,200.
+        assert_eq!(calc.sub_total_price, Decimal::new(1000, 0));
+        assert_eq!(calc.tax_rate, jm_rate);
+        assert_eq!(calc.tax_value, Some(Decimal::new(15000, 2)));
+        assert_eq!(calc.total_price, Decimal::new(120000, 2));
     }
 }

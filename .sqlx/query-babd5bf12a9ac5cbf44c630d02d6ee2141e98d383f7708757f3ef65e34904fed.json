@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            created_at, updated_at\n        FROM booking\n        WHERE listing_id = $1\n        ORDER BY date_from DESC, created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        FROM booking\n        WHERE listing_id = $1\n        ORDER BY date_from DESC, created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
   "describe": {
     "columns": [
       {
@@ -125,11 +125,36 @@
       },
       {
         "ordinal": 19,
+        "name": "cleaning_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 20,
+        "name": "damage_deposit",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 21,
+        "name": "platform_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 22,
+        "name": "tax_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 23,
+        "name": "exchange_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 24,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 20,
+        "ordinal": 25,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -162,8 +187,13 @@
       false,
       true,
       false,
+      false,
+      false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "eda523544eba91a7e3f8c9b2f3bc4001314274c0b31a863f73a5bfeca0aff776"
+  "hash": "babd5bf12a9ac5cbf44c630d02d6ee2141e98d383f7708757f3ef65e34904fed"
 }

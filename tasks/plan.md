@@ -24,7 +24,7 @@
   - **Verification Command:** `sqlx migrate run && SQLX_OFFLINE=false cargo check --workspace && cargo test -p common -- fee_item document_number`
   - **Dependencies:** None
 
-- [ ] **Task 1: Single Statutory Tax Source with JM Default**
+- [x] **Task 1: Single Statutory Tax Source with JM Default**
   - **Scope:** S (4 files)
   - **Description:** Replace the hardcoded 10% tax rate in `BookingCalculator::apply_taxes` with the country-resolved statutory rate from `SupportedCountry::tax_rate_for` (defaulting to JM 15%). Pass this rate in `create_booking` and listing quotes, persisting `booking.tax_rate` and `booking.exchange_rate`.
   - **Files Touched:**
@@ -33,10 +33,10 @@
     - `app_api/booking_api/src/apis.rs`
     - `app_api/listing_api/src/apis.rs`
   - **Acceptance Criteria:**
-    - [ ] Quotes and bookings for Jamaican listings calculate GCT at statutory 15%.
-    - [ ] Listings with unrecognized country code default safely to 15% (JM) with a warning log.
-    - [ ] `booking.tax_rate` and `booking.exchange_rate` are snapshotted in the database on insert.
-    - [ ] Unit pricing tests pass with updated 15% expectations.
+    - [x] Quotes and bookings for Jamaican listings calculate GCT at statutory 15%.
+    - [x] Listings with unrecognized country code default safely to 15% (JM) with a warning log.
+    - [x] `booking.tax_rate` and `booking.exchange_rate` are snapshotted in the database on insert.
+    - [x] Unit pricing tests pass with updated 15% expectations.
   - **Verification Command:** `cargo test -p common pricing && cargo test -p booking_api`
   - **Dependencies:** Task 0
 

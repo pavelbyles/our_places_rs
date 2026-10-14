@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            created_at, updated_at\n        FROM booking\n        WHERE id = $1\n        ",
+  "query": "\n        UPDATE booking\n        SET status = 'cancelled', updated_at = $2\n        WHERE guest_id = $1 AND status = 'pending'\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -125,18 +125,44 @@
       },
       {
         "ordinal": 19,
+        "name": "cleaning_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 20,
+        "name": "damage_deposit",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 21,
+        "name": "platform_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 22,
+        "name": "tax_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 23,
+        "name": "exchange_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 24,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 20,
+        "ordinal": 25,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -160,8 +186,13 @@
       false,
       true,
       false,
+      false,
+      false,
+      false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "62e95611a4e1b8eec141dee47193ee671a2637eb0799ae12dec58ac454ec483b"
+  "hash": "4b57f53040f4376f55c207808594d38a3dd9266b708ae5cab2d83a39e507c31d"
 }

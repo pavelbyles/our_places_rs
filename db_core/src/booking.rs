@@ -63,6 +63,7 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         new_booking.guest_id,
@@ -88,15 +89,18 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, door_access_code, created_at, updated_at
+            total_price, cancellation_policy, metadata, door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -118,6 +122,11 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
         new_booking.cancellation_policy as CancellationPolicy,
         Json(&new_booking.metadata) as _,
         new_booking.door_access_code.as_deref(),
+        new_booking.cleaning_fee,
+        new_booking.damage_deposit,
+        new_booking.platform_fee,
+        new_booking.tax_rate,
+        new_booking.exchange_rate,
         Utc::now(),
         Utc::now()
     )
@@ -150,6 +159,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -179,6 +189,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -227,6 +238,7 @@ pub async fn update_booking(
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
@@ -375,6 +387,7 @@ pub async fn transfer_booking_guest(
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         new_guest_id,
@@ -445,7 +458,8 @@ where
                     END
             ) as "review_eligibility!",
             b.created_at, b.updated_at,
-            b.door_access_code
+            b.door_access_code,
+            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate
         FROM booking b
         LEFT JOIN review r ON r.booking_id = b.id
         LEFT JOIN LATERAL (
@@ -485,9 +499,14 @@ where
             total_price: r.total_price,
             cancellation_policy: r.cancellation_policy,
             metadata: r.metadata,
+            door_access_code: r.door_access_code,
+            cleaning_fee: r.cleaning_fee,
+            damage_deposit: r.damage_deposit,
+            platform_fee: r.platform_fee,
+            tax_rate: r.tax_rate,
+            exchange_rate: r.exchange_rate,
             created_at: r.created_at,
             updated_at: r.updated_at,
-            door_access_code: r.door_access_code,
         };
 
         let eligibility = serde_json::from_value::<common::models::BookingReviewEligibility>(
@@ -527,6 +546,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         FROM booking
         WHERE listing_id = $1
@@ -620,9 +640,11 @@ async fn record_booking_history(
             booking_id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, door_access_code, change_reason, changed_by_id
+            total_price, cancellation_policy, metadata, door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            change_reason, changed_by_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
         "#,
         booking.id,
         booking.confirmation_code,
@@ -643,6 +665,11 @@ async fn record_booking_history(
         booking.cancellation_policy as CancellationPolicy,
         Json(&booking.metadata.0) as _,
         booking.door_access_code.as_deref(),
+        booking.cleaning_fee,
+        booking.damage_deposit,
+        booking.platform_fee,
+        booking.tax_rate,
+        booking.exchange_rate,
         change_reason,
         changed_by_id
     )
@@ -656,6 +683,7 @@ async fn record_booking_history(
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use sqlx_db_tester::TestPg;
     use std::env;
@@ -806,6 +834,11 @@ mod tests {
                 ..Default::default()
             },
             door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::ZERO,
+            tax_rate: dec!(0.1000),
+            exchange_rate: Decimal::ONE,
         };
 
         let b1 = create_booking(&pool, &new_booking1)
@@ -836,6 +869,11 @@ mod tests {
                 ..Default::default()
             },
             door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::ZERO,
+            tax_rate: dec!(0.1000),
+            exchange_rate: Decimal::ONE,
         };
 
         let b2 = create_booking(&pool, &new_booking2)
