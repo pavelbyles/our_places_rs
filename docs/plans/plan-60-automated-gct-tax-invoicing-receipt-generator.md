@@ -1,338 +1,267 @@
-# Engineering Plan #60: Automated GCT Tax Invoicing & Receipt Generator
+# Engineering Plan #60: Automated GCT Tax Invoicing & Receipt Generator (rev. 2)
 
 ## Metadata
-- **Feature/Issue**: #60 Automated GCT Tax Invoicing & Receipt Generator
+- **Spec**: [spec-60 rev. 2](../specs/spec-60-automated-gct-tax-invoicing-receipt-generator.md)
 - **Branch**: `feat/60-automated-gct-tax-invoicing-receipt-generator` (Base: `main`)
-- **Status**: Locked (Approved for Execution)
-- **Target Crates**: `common`, `db_core`, `app_api/booking_api`, `app_api/email_worker`, `web_app_tc`, `web_app_admin_tc`
-- **Blast Radius**: 9 files modified/created across database migrations, shared domain models, pricing math, API handlers, HTML renderers, email templates, and frontend portals.
+- **Status**: Draft (pending open questions in intent §7)
+- **Blast radius**: ~30 files across 9 crates + `infra`. Exceeds the 5-file threshold, so it is split into 8 slices.
 
 ---
 
-## 1. Architecture Review & Component Boundaries
+## 1. Data Flows
 
-### 1.1. ASCII Data Flow Diagram
+### 1.1. Checkout → Confirmation
 ```
-+---------------------------------------------------------------------------------------------------+
-| 1. CHECKOUT & PAYMENT TIME (BookingStatus::Confirmed)                                             |
-|                                                                                                   |
-|  Guest Client                                                                                     |
-|      |                                                                                            |
-|      | POST /api/v1/bookings (checkout with agreed cancellation policy & optional corporate TRN)  |
-|      v                                                                                            |
-|  Actix Service (app_api/booking_api)                                                              |
-|      |                                                                                            |
-|      | 1. Execute booking availability check & row lock (SELECT ... FOR UPDATE)                   |
-|      | 2. Compute dynamic price & statutory 15% GCT breakdown via common::pricing                 |
-|      | 3. In same DB transaction:                                                                 |
-|      |    a. INSERT INTO booking (status: 'confirmed')                                           |
-|      |    b. Record snapshot in booking_history (changed_by_id, change_reason)                    |
-|      |    c. INSERT INTO tax_document:                                                            |
-|      |       - document_type: 'payment_receipt'                                                   |
-|      |       - document_number: 'REC-YYYY-{confirmation_code}'                                    |
-|      |       - line items: Accommodation, 15% GCT, Cleaning Fee, Damage Deposit hold              |
-|      | 4. Commit DB Transaction                                                                   |
-|      | 5. Enqueue email_outbox record for guest confirmation                                      |
-|      v                                                                                            |
-|  GCP Pub/Sub ---> email_worker (Delivers email with inline GCT summary & link to /bookings/{id}/receipt)
-+---------------------------------------------------------------------------------------------------+
-
-+---------------------------------------------------------------------------------------------------+
-| 2. POST-STAY COMPLETION (BookingStatus::Completed)                                                |
-|                                                                                                   |
-|  Booking Engine / Host Admin                                                                      |
-|      |                                                                                            |
-|      | PATCH /api/v1/bookings/{id} (status: completed)                                            |
-|      v                                                                                            |
-|  Actix Service (app_api/booking_api)                                                              |
-|      |                                                                                            |
-|      | 1. Verify stay checkout date has passed and booking is currently 'confirmed'               |
-|      | 2. Transition status: 'confirmed' -> 'completed'                                           |
-|      | 3. In same DB transaction:                                                                 |
-|      |    a. UPDATE booking SET status = 'completed'                                              |
-|      |    b. Record snapshot in booking_history                                                   |
-|      |    c. INSERT INTO tax_document:                                                            |
-|      |       - document_type: 'tax_invoice'                                                       |
-|      |       - document_number: 'INV-YYYY-{confirmation_code}'                                    |
-|      |       - final settled figures, damage deposit released or reconciled                       |
-|      | 4. Commit DB Transaction                                                                   |
-|      v                                                                                            |
-|  Guest Portal (/bookings/{id}/invoice) & Admin Portal (/admin/documents) unlock formal tax invoice
-+---------------------------------------------------------------------------------------------------+
-
-+---------------------------------------------------------------------------------------------------+
-| 3. PRE-COMPLETION CANCELLATION (BookingStatus::Cancelled)                                         |
-|                                                                                                   |
-|  Guest / Host / Admin                                                                             |
-|      |                                                                                            |
-|      | POST /api/v1/bookings/{id}/cancel (or PATCH status: cancelled)                             |
-|      v                                                                                            |
-|  Actix Service (app_api/booking_api)                                                              |
-|      |                                                                                            |
-|      | 1. Transition booking to 'cancelled' within DB transaction                                 |
-|      | 2. INSERT INTO tax_document (document_type: 'refund_receipt', number: 'REF-YYYY-{code}')     |
-|      | 3. NOTE: Zero 'tax_invoice' (INV-...) is created; Payment receipt is linked to refund.     |
-+---------------------------------------------------------------------------------------------------+
+Guest ─POST /api/v1/bookings─► booking_api
+   1. Resolve listing, tax_rate_for(listing.country) (default JM), base→payment FX
+   2. BookingCalculator: BaseRate → Discounted → with_fees → apply_taxes(rate) → finalize
+   3. db_core::create_booking (listing FOR UPDATE, availability check)
+        INSERT booking (status: 'pending', 15-min hold) + booking_history
+   ◄─ 201 BookingResponse
+             │  (payment)                        (pg_cron: unpaid > 15 min ⇒ 'cancelled', no documents)
+             ▼
+PATCH /api/v1/bookings/{id} {status: confirmed} ─► db_core::update_booking (one TX)
+   booking FOR UPDATE → UPDATE status → booking_history
+   ├─ hook: host_payout_ledger (existing)
+   └─ hook: tax_document REC-YYYY-{code}  (payment→JMD FX snapshot)
+   COMMIT → notification dispatch → booking_confirmation_guest (GCT table + receipt link)
 ```
 
-### 1.2. State Machine Diagram (Tax Document Lifecycle)
+### 1.2. Date Change (confirmed only)
 ```
-                                 [Booking Checkout]
-                                          |
-                                          v
-                              [BookingStatus::Confirmed]
-                                          |
-                        +-----------------+-----------------+
-                        | Synchronous DB Transaction        |
-                        | Generates Payment Receipt         |
-                        | (REC-YYYY-{code})                 |
-                        +-----------------+-----------------+
-                                          |
-                   +----------------------+----------------------+
-                   |                                             |
-        (Stay Concluded Successfully)               (Booking Cancelled Pre-Stay)
-                   |                                             |
-                   v                                             v
-       [BookingStatus::Completed]                   [BookingStatus::Cancelled]
-                   |                                             |
-   +---------------+---------------+              +--------------+---------------+
-   | Generates Final Tax Invoice   |              | Generates Refund Receipt     |
-   | (INV-YYYY-{code})             |              | (REF-YYYY-{code})            |
-   | Locked for TAJ Audit Records  |              | No Tax Invoice Ever Created  |
-   +---------------+---------------+              +------------------------------+
-                   |
-     (Post-Stay Dispute Reversal)
-                   |
-                   v
-       +-----------+-----------+
-       | Generates Credit Note |
-       | (CN-YYYY-{code})      |
-       +-----------------------+
+PATCH /api/v1/bookings/{id} {date_from, date_to}
+   booking_api: re-quote (same calculator) → BookingPricingSnapshot
+   db_core::update_booking (one TX):
+      listing FOR UPDATE + booking FOR UPDATE → availability (excl. self) ─✗─► 409 DATE_UNAVAILABLE
+      UPDATE dates + financial columns → booking_history
+      supersede active REC → issue REC-…-R{n} (amount_previously_paid, balance_due)
+   COMMIT → booking_updated_guest (revised receipt link)
 ```
 
-### 1.3. Component Boundaries & Interfaces
-- `db_core`:
-  - Responsible strictly for data persistence, SQL migrations, database index maintenance, and compile-time verified SQLx query bindings.
-  - Zero HTTP or presentation knowledge.
-- `common`:
-  - Isomorphic domain crate containing pure `rust_decimal::Decimal` calculation routines, DTO serialization (`serde`), OpenAPI schemas (`utoipa`), and static reference data.
-  - Compiles into both backend microservices and frontend SSR/HTMX apps.
-- `app_api/booking_api`:
-  - Actix HTTP microservice orchestrating reservation lifecycle transactions, authorization guards (`claims.sub`), and semantic HTML `@media print` rendering.
-- `app_api/email_worker`:
-  - Background asynchronous consumer dispatching transactional emails with itemized payment breakdowns and portal links.
-- `web_app_tc` & `web_app_admin_tc`:
-  - Topcoat SSR user interfaces providing guest receipt/invoice viewing and admin financial audit workflows.
+### 1.3. Cancellation
+```
+GET  /bookings/{id}/cancellation-quote ─► quote_refund(policy, amounts, now)  (read-only, shown in modal)
+PATCH /bookings/{id} {status: cancelled} ─► update_booking TX:
+      quote_refund → issue REF-YYYY-{code} (refund_pct, refund lines, retained_amount)
+   COMMIT → booking_cancelled_guest (refund from REF document)
+```
 
-### 1.4. Error Handling & Railway-Oriented Flow
-All domain operations return pure monadic types (`Result<T, AppError>`). Never unwrap:
-```rust
-pub async fn get_tax_document_html(
-    pool: &PgPool,
-    booking_id: Uuid,
-    doc_type: TaxDocumentType,
-    user_claims: &Claims,
-    settings: &TaxSettings,
-) -> Result<String, AppError> {
-    db_core::booking::get_booking_by_id(pool, booking_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Booking not found".into()))
-        .and_then(|booking| authorize_document_access(&booking, user_claims))
-        .and_then(|booking| async move {
-            db_core::tax_invoice::get_document_by_booking_and_type(pool, booking.id, doc_type)
-                .await?
-                .ok_or_else(|| AppError::NotFound(format!("{} not yet issued", doc_type.display_title())))
-        })
-        .map(|doc| invoice_renderer::render_document_html(&doc, settings))
-}
+### 1.4. Completion
+```
+Cloud Scheduler (12:00 America/Jamaica) ─PATCH /api/v1/internal/cron/complete-stays (x-cron-secret)─►
+   SELECT confirmed WHERE date_to <= today_jm LIMIT 500
+   for each id: update_booking(Completed)  ── TX: review token (existing) + INV-YYYY-{code}
+   dispatch booking_completed_guest (invoice link)
+   ◄─ { completed, failed }
+```
+
+### 1.5. Document State Machine
+```
+REC r1 (issued) ──date change──► REC r1 (superseded) + REC r2 (issued) ──► … r{n}
+      │
+      ├──► completed ──► INV (issued)          [terminal]
+      └──► cancelled ──► REF (issued)          [terminal; no INV ever]
+Invariant: ≤ 1 issued document per (booking, type)  — partial unique index
 ```
 
 ---
 
-## 2. Edge Case Analysis
-
-| Edge Case Scenario | Impact | Mitigation Strategy |
-| :--- | :--- | :--- |
-| **Missing `TAJ_SUPPLIER_TRN`** | Non-compliant tax invoices issued. | Startup validation failure in `settings.rs`. Service fails fast rather than serving unconfigured tax endpoints. Test/dev configs supply explicit `123-456-789`. |
-| **Concurrent Double-Confirmation** | Duplicate receipts generated for same booking. | PostgreSQL `UNIQUE(booking_id, document_type)` constraint and transaction-level row locking (`SELECT ... FOR UPDATE`) guarantee single document generation. |
-| **Tri-Currency Sub-Cent Rounding Drift** | 1-cent mismatch between itemized lines and invoice total. | Banker's rounding (`round_dp(2)`) applied consistently to `(taxable_base * 0.15)`. Total amount computed strictly as $\text{taxable\_base} + \text{gct\_amount} + \text{damage\_deposit} + \text{fee}$. |
-| **Pre-Stay Cancellation** | Unnecessary invoice voids or credit notes. | Dual Document Model guarantees `tax_invoice` is never created. A clean `refund_receipt` is issued, preserving clean accounting records. |
-| **Corporate B2B Guest with Empty TRN** | Malformed recipient tax section on document. | Option fields (`business_company_name: Option<String>`, `business_tax_id: Option<String>`). If absent, document renders clean personal traveler header. |
-| **Special Characters in Guest / Villa Name** | XSS or broken HTML render during print. | Fast HTML entity escaping on all interpolated text (`&`, `<`, `>`, `"`, `'`). Zero raw unescaped string injection. |
-| **Cloud Run Memory Spikes under Load** | Container crashes under 256MB limit. | Zero Chromium/Puppeteer processes. String templates are formatted in-memory using pre-sized stack buffers ($<10\text{ms}$ execution, $<64\text{MB}$ memory footprint). |
-
----
-
-## 3. Security Review & OWASP Mitigations
-
-- **Broken Access Control (A01 - IDOR)**:
-  - Every document route enforces:
-    `claims.sub == booking.guest_id || claims.sub == listing.host_id || claims.roles.contains(&UserRole::Admin)`.
-  - Non-authorized callers receive `404 Not Found` (preventing ID enumeration).
-- **Cross-Site Scripting (A03 - Injection)**:
-  - All user-supplied inputs interpolated into the HTML template pass through `v_htmlescape` before formatting.
-- **SQL Injection (A03)**:
-  - 100% compile-time verified `sqlx::query!` and `sqlx::query_as!` parameterized queries.
-- **Data Tampering & Immutability (A08)**:
-  - Zero `UPDATE` or `DELETE` endpoints for `tax_document`. Once inserted with status `issued`, records are cryptographically permanent.
-- **PII & Secrets Hygiene**:
-  - TRNs and guest tax IDs excluded from unauthenticated endpoints.
-  - Conforms to `CONSTRAINTS.md` rule `RS-W1015` (no raw string literals in `env::var`).
+## 2. Edge Cases
+| Case | Handling |
+| :--- | :--- |
+| Listing country not in `SupportedCountry::LIST` | Falls back to JM rate. Logged at `warn`. |
+| Fees disabled | `0.00`. Lines omitted from documents (not shown as zero). |
+| Payment→JMD rate missing | 422 `FX_RATE_UNAVAILABLE`; transaction rolled back, so the booking isn't confirmed without a receipt. |
+| Duplicate confirm PATCH | `status_changed = false` ⇒ hook skipped. Partial unique index as a backstop. |
+| Date change overlaps another booking | 409, no state change. |
+| Date change to past / on non-confirmed booking | 409 `BOOKING_NOT_MODIFIABLE`. |
+| Cancel at or after check-in | `CancellationError::AfterCheckIn` ⇒ 409. |
+| Cron overlap / retry | Per-booking `FOR UPDATE` + status re-check ⇒ idempotent. |
+| Legacy bookings (pre-feature) | `tax_rate` backfilled to 0.10, fees 0, platform fee extracted from `fee_breakdown`. Documents are only issued on future transitions. |
+| Legacy `fee_breakdown` numeric JSON | Default `Decimal` deserializer accepts numbers. Tested. |
+| pg_cron hold-expiry inserts into `booking_history` | New history columns nullable. Tested. |
 
 ---
 
-## 4. Comprehensive Test Matrix
+## 3. On Vertical Slicing with DB → common → API → UI
 
-| Scenario / Test Case | Layer | Priority | Automated Verification Command |
-| :--- | :--- | :---: | :--- |
-| **Statutory 15% GCT precision** | Unit (`common`) | P0 | `cargo test -p common -- test_statutory_gct_tax_calculation_precision` |
-| **Zero-float Banker's rounding** | Unit (`common`) | P0 | `cargo test -p common -- test_zero_float_bankers_rounding` |
-| **Tri-currency JMD tax conversion** | Unit (`common`) | P0 | `cargo test -p common -- test_tri_currency_jmd_tax_conversion` |
-| **Deterministic document codes** | Unit (`common`) | P0 | `cargo test -p common -- test_deterministic_document_number_formatting` |
-| **HTML entity escaping (Anti-XSS)** | Unit (`booking_api`) | P0 | `cargo test -p booking_api -- test_html_entity_escaping` |
-| **Payment receipt created on Confirmed** | Integration (`db_core`) | P0 | `cargo test -p db_core -- test_payment_receipt_generated_on_confirmation` |
-| **Tax invoice created on Completed** | Integration (`db_core`) | P0 | `cargo test -p db_core -- test_tax_invoice_generated_on_completion` |
-| **Refund receipt created on Cancellation** | Integration (`db_core`) | P1 | `cargo test -p db_core -- test_refund_receipt_on_early_cancellation` |
-| **Tenant isolation access guard** | Integration (`booking_api`)| P0 | `cargo test -p booking_api -- test_tenant_isolation_and_authorization` |
-| **Strict TRN config enforcement** | Integration (`booking_api`)| P1 | `cargo test -p booking_api -- test_strict_taj_trn_env_validation` |
-| **Printable HTML render endpoint** | Integration (`booking_api`)| P0 | `cargo test -p booking_api -- test_html_render_endpoint` |
-| **Guest portal receipt & invoice flow**| E2E (`playwright`) | P1 | `npx playwright test playwright/e2e/guest-portal/tax-receipt.spec.ts` |
-| **Admin portal documents audit table**| E2E (`playwright`) | P1 | `npx playwright test playwright/e2e/admin-portal/tax-documents.spec.ts` |
-| **Offline SQLx metadata freshness** | Fast loop | P0 | `cargo sqlx prepare --workspace --check` |
-| **Zero Clippy warnings** | Fast loop | P0 | `cargo clippy --workspace --all-targets -- -D warnings` |
+**Problem**: Almost every capability crosses all four layers, and AGENTS.md asks for **one migration per branch**, which pushes toward a big schema-first task.
 
----
+**Approach: contract-first, then capability slices.**
+1. **Slice 0 lands only the shared contracts**: the feature migration (purely additive, all defaults), the DTO/enum types, and the `FeeItem` serde change. It's thin, has no behavior, and is verifiable with `sqlx migrate run` + `cargo check` + serde tests. It freezes the interfaces the parallel slices depend on.
+2. **Every later slice is one user-visible capability that cuts through all layers**: the queries it needs → domain logic → endpoint → UI → tests, and it's shippable/demoable on its own. Each layer's change within a slice is small because the contract already exists.
+3. **Tracer-bullet ordering**: the riskiest end-to-end path (receipt on confirm, slice 3) goes first after the pricing foundations, so integration problems surface early.
+4. **Parallelism**: after slice 2, slices 4, 5 and 6 only share the document writer from slice 3, so they can run in parallel worktrees.
 
-## 5. Vertical Implementation Task Breakdown
+> If schema discovery changes during a slice, amend the **unmerged** feature migration and re-run `sqlx migrate revert && sqlx migrate run` locally. The migration is immutable only once applied on `main`.
 
 ```
-        Task 1: db_core Schema & Persistence (XS)
-                          │
-                          ▼
-        Task 2: common Domain Models & Pricing Math (S)
-                          │
-                          ▼
-        Task 3: booking_api Service & HTML Print Renderer (M)
-                          │
-                          ▼
-        Task 4: booking_api Lifecycle Triggers & Endpoints (M)
-                          │
-                          ▼
-        Task 5: email_worker Confirmation & Check-Out Alerts (S)
-                          │
-                          ▼
-        Task 6: web_app_tc Guest Receipt & Invoice View (S)
-                          │
-                          ▼
-        Task 7: web_app_admin_tc Admin Audit Documents (S)
-                          │
-                          ▼
-        Task 8: End-to-End Test Suite & Verification (M)
+S0 Contracts ─► S1 Tax source ─► S2 Listing fees + reconciled pricing ─► S3 Receipt on confirm (tracer)
+                                                                              │
+                                                  ┌───────────────────────────┼───────────────────────┐
+                                                  ▼                           ▼                       ▼
+                                          S4 Refund policies          S5 Date changes          S6 Completion + Terraform
+                                                  └───────────────────────────┼───────────────────────┘
+                                                                              ▼
+                                                                    S7 Admin panel + E2E
 ```
-
-### Task 1: `db_core` Schema & Persistence (Size: XS)
-- **Files**:
-  - `db_core/migrations/20261013000000_create_tax_document_table.sql` [NEW]
-  - `db_core/src/tax_invoice.rs` [NEW]
-  - `db_core/src/lib.rs`
-- **Scope**:
-  - Create `tax_document_type` and `tax_document_status` enums.
-  - Create `tax_document` table with indexes and unique constraint on `(booking_id, document_type)`.
-  - Implement SQLx queries: `insert_tax_document`, `get_document_by_booking_and_type`, `list_documents_for_booking`, `list_all_documents_admin`.
-- **Verification**: `cargo test -p db_core`
-
-### Task 2: `common` Domain Models & Pricing Math (Size: S)
-- **Files**:
-  - `common/src/tax_invoice.rs` [NEW]
-  - `common/src/pricing.rs`
-  - `common/src/models.rs`
-  - `common/src/lib.rs`
-- **Scope**:
-  - Add `TaxDocumentType`, `InvoiceTaxCategory`, `InvoiceLineItem`, and `TaxDocumentResponse` DTOs.
-  - Update `BookingMetadata` to optionally capture `business_company_name` and `business_tax_id`.
-  - Add `calculate_statutory_gct_breakdown(discounted_subtotal, cleaning_fee, damage_deposit, platform_fee)` in `pricing.rs`.
-- **Verification**: `cargo test -p common`
-
-### Task 3: `booking_api` Configuration & HTML Print Renderer (Size: M)
-- **Files**:
-  - `app_api/booking_api/src/settings.rs`
-  - `app_api/booking_api/src/invoice_renderer.rs` [NEW]
-  - `app_api/booking_api/src/lib.rs`
-- **Scope**:
-  - Add `TaxSettings` struct in `settings.rs` adhering to `RS-W1015`.
-  - Implement `invoice_renderer::render_document_html` generating semantic HTML with `@media print` CSS rules, zero external assets, and strict entity escaping.
-- **Verification**: `cargo test -p booking_api -- test_html_render`
-
-### Task 4: `booking_api` Lifecycle Hooks & REST Endpoints (Size: M)
-- **Files**:
-  - `app_api/booking_api/src/apis.rs`
-  - `app_api/booking_api/src/apis_test.rs`
-- **Scope**:
-  - Add synchronous `tax_document` insertion in booking confirmation handler (`BookingStatus::Confirmed`) for Payment Receipt (`REC-...`).
-  - Add synchronous `tax_document` insertion in booking update/completion handler (`BookingStatus::Completed`) for Statutory Tax Invoice (`INV-...`).
-  - Add cancellation hook for Refund Receipt (`REF-...`).
-  - Implement routes:
-    - `GET /api/v1/bookings/{id}/receipt` (JSON)
-    - `GET /api/v1/bookings/{id}/receipt/render` (HTML)
-    - `GET /api/v1/bookings/{id}/invoice` (JSON)
-    - `GET /api/v1/bookings/{id}/invoice/render` (HTML)
-    - `GET /api/v1/bookings/{id}/documents` (JSON array)
-    - `GET /api/v1/admin/documents` (Admin paginated)
-- **Verification**: `cargo test -p booking_api`
-
-### Task 5: `email_worker` Transactional Notification Templates (Size: S)
-- **Files**:
-  - `common/src/email.rs`
-  - `app_api/email_worker/src/email_templates.rs`
-- **Scope**:
-  - Inject itemized GCT payment summary table and `[View Payment Receipt]` button into `booking_confirmation_guest`.
-  - Update post-stay completed email template with `[Download Official Tax Invoice]` button.
-- **Verification**: `cargo test -p email_worker && cargo test -p common`
-
-### Task 6: `web_app_tc` Guest Receipt & Invoice View (Size: S)
-- **Files**:
-  - `web_app_tc/src/pages/bookings.rs`
-  - `web_app_tc/src/pages/receipt.rs` [NEW]
-  - `web_app_tc/src/lib.rs`
-- **Scope**:
-  - Add "View Payment Receipt" button to booking detail cards.
-  - Add "Download Tax Invoice" button when status is `Completed`.
-  - Implement `/bookings/{id}/receipt` and `/bookings/{id}/invoice` printable views.
-- **Verification**: `cargo test -p web_app_tc`
-
-### Task 7: `web_app_admin_tc` Admin Audit Documents (Size: S)
-- **Files**:
-  - `web_app_admin_tc/src/pages/bookings_admin.rs`
-- **Scope**:
-  - Enhance booking detail modal to display all generated tax documents dynamically from `/api/v1/bookings/{id}/documents`.
-  - Add print trigger button invoking the render endpoint.
-- **Verification**: `cargo test -p web_app_admin_tc`
-
-### Task 8: End-to-End Test Suite & Verification (Size: M)
-- **Files**:
-  - `playwright/e2e/guest-portal/tax-receipt.spec.ts` [NEW]
-  - `playwright/e2e/admin-portal/tax-documents.spec.ts` [NEW]
-- **Scope**:
-  - End-to-end guest checkout verification: confirmation generates receipt, completion unlocks tax invoice.
-  - Admin audit verification: modal loads documents dynamically and triggers print.
-  - Execute full workspace sanity checks:
-    - `cargo test --workspace`
-    - `cargo clippy --workspace --all-targets -- -D warnings`
-    - `cargo sqlx prepare --workspace --check`
-- **Verification**: `npm run test:e2e` & `cargo test --workspace`
 
 ---
 
-## 6. Review Verdict & Quality Gate
+## 4. Slices
 
-| Dimension | Rating (0-10) | Evaluation Notes |
+### S0 — Shared contracts (S)
+- **Files**:
+  - `db_core/migrations/20261013000000_gct_tax_documents.sql` [NEW]
+  - `db_core/src/models.rs` (`CancellationPolicy::Firm`, `TaxDocumentType/Status` sqlx types)
+  - `common/src/tax_document.rs` [NEW] (DTOs, `document_number`)
+  - `common/src/models.rs` (`FeeItem` string serde, new optional fields)
+- **Accept**:
+  - Migration applies on a seeded DB.
+  - Legacy and new `FeeItem` JSON both deserialize.
+  - `document_number` tests pass.
+  - pg_cron insert SQL still valid.
+- **Verify**: `sqlx migrate run && SQLX_OFFLINE=false cargo check --workspace && cargo test -p common -- fee_item document_number`
+
+### S1 — Single tax source, JM default (S)
+- **Files**:
+  - `common/src/reference.rs`
+  - `common/src/pricing.rs` (`apply_taxes(rate)`)
+  - `app_api/booking_api/src/apis.rs` (create_booking passes rate, snapshots `tax_rate`/`exchange_rate`)
+  - Listing quote handler
+- **Accept**:
+  - Quote and booking show 15% for JM; unknown country ⇒ 15%.
+  - `booking.tax_rate` persisted.
+  - Existing pricing tests updated from 10% → 15%.
+- **Verify**: `cargo test -p common pricing && cargo test -p booking_api`
+
+### S2 — Listing fees + reconciled pricing (M)
+- **Files**:
+  - `db_core/src/listing.rs`
+  - `api_core/src/models.rs`
+  - listing_api handlers
+  - `common/src/pricing.rs` (`with_fees`, `platform_fee`, invariant)
+  - `web_app_admin_tc/src/pages/listings_admin.rs` (toggles)
+  - `web_app_common_tc/src/components/price_breakdown.rs`
+- **Accept**:
+  - Host can enable and set fees; off ⇒ 0.
+  - Quote, booking and breakdown show the fees.
+  - Property test for the reconciliation invariant passes.
+  - Negative fee ⇒ 400.
+- **Verify**: `cargo test -p common -- reconciliation && cargo test -p listing_api && cargo test -p web_app_admin_tc`
+
+### S3 — Payment receipt on confirm (tracer bullet) (M)
+- **Files**:
+  - `db_core/src/exchange_rate.rs`
+  - `db_core/src/tax_document.rs` [NEW]
+  - `db_core/src/booking.rs` (Confirmed hook, `SupplierInfo` param)
+  - `booking_api` settings (`TaxSettings`, `cron_secret`) + document endpoints
+  - `web_app_common_tc/.../tax_document_view.rs` [NEW]
+  - `web_app_tc` document page + booking detail list
+  - B2B checkout fields
+  - `booking_confirmation_guest` template
+- **Accept**:
+  - Confirm issues exactly one REC whose total equals `booking.total_price`.
+  - JMD equivalents correct; EUR ⇒ 422 with rollback.
+  - Auth matrix enforced.
+  - Printable SSR page.
+  - Email links to the receipt.
+  - Startup fails without TRN.
+- **Verify**: `cargo test -p db_core tax_document && cargo test -p booking_api documents && cargo test -p web_app_tc`
+
+### S4 — Firm/Strict refund policies (M)
+- **Files**:
+  - `common/src/cancellation.rs` [NEW]
+  - `db_core/src/booking.rs` (Cancelled hook → REF)
+  - `booking_api` (`cancellation-quote` endpoint, cancel email uses REF)
+  - `web_app_tc` cancel modal (HTMX quote)
+  - `booking_cancelled_guest` template
+  - Checkout policy selector includes Firm
+- **Accept**:
+  - Boundary table tests pass for both policies.
+  - `refund_total + retained_total = total_price`.
+  - REF issued on cancel; no INV afterwards.
+  - Email refund equals the REF amount.
+- **Verify**: `cargo test -p common cancellation && cargo test -p booking_api cancel`
+
+### S5 — Date changes (M)
+- **Files**:
+  - `db_core/src/booking.rs` (`UpdatedBooking` dates/pricing, locks, availability, REC revision)
+  - `common/src/models.rs` (`UpdateBookingRequest`)
+  - `booking_api` PATCH re-quote
+  - `web_app_tc` date-change form
+  - `booking_updated_guest` template
+- **Accept**:
+  - Change ⇒ REC-R2 issued, R1 superseded, `balance_due` correct.
+  - Overlap ⇒ 409, nothing written.
+  - Non-confirmed ⇒ 409.
+  - Concurrent change vs. new booking: one wins.
+- **Verify**: `cargo test -p db_core date_change && cargo test -p booking_api date_change`
+
+### S6 — Automatic completion + invoice + Terraform (M)
+- **Files**:
+  - `booking_api` (`complete-stays` PATCH, dispatch `booking_completed_guest`)
+  - `db_core/src/booking.rs` (Completed hook → INV, transition guard)
+  - `common/src/email.rs` (`BookingCompletedGuest`)
+  - `email_worker` template
+  - `web_app_tc` invoice link
+  - `infra/modules/scheduler/main.tf`
+- **Accept**:
+  - Eligible bookings completed; second run reports `completed = 0`.
+  - INV total = `total_price − damage_deposit`.
+  - Review token still issued.
+  - Wrong secret ⇒ 401.
+  - Completion email sent.
+  - Terraform validates.
+- **Verify**: `cargo test -p booking_api complete_stays && cargo test -p email_worker && (cd infra && terraform fmt -check && terraform validate)`
+
+### S7 — Admin documents panel + E2E hardening (S)
+- **Files**:
+  - `web_app_admin_tc/src/pages/bookings_admin.rs` (HTMX documents panel; remove the `openAdminInvoiceDialog` mock)
+  - `playwright/e2e/guest-portal/tax-documents.spec.ts` [NEW]
+  - `playwright/e2e/admin-portal/listing-fees-and-documents.spec.ts` [NEW]
+  - `playwright/e2e/setup/db-seed.ts` (string fee amounts)
+  - `openapi*.yaml`
+- **Accept**:
+  - Admin sees REC/INV/REF per booking.
+  - Spec §5.3 E2E flows pass.
+  - Full sanity suite green.
+- **Verify**:
+  - `cargo test --workspace`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo sqlx prepare --workspace --check`
+  - `npx playwright test`
+
+---
+
+## 5. Test Matrix
+| Scenario | Layer | Slice | P |
+| :--- | :--- | :---: | :---: |
+| Legacy/new FeeItem JSON | Unit | S0 | P0 |
+| Migration on seeded DB + pg_cron insert | Integration | S0 | P0 |
+| JM default rate | Unit | S1 | P0 |
+| Reconciliation property test | Unit | S2 | P0 |
+| Fee validation | Integration | S2 | P1 |
+| REC issued once, totals match | Integration | S3 | P0 |
+| FX direct/inverse/missing | Integration | S3 | P0 |
+| Document auth matrix | Integration | S3 | P0 |
+| Firm/Strict boundaries | Unit | S4 | P0 |
+| REF on cancel, email amount | Integration | S4 | P0 |
+| Date change revision + overlap 409 | Integration | S5 | P0 |
+| Concurrent date change | Integration | S5 | P1 |
+| complete-stays idempotency + auth | Integration | S6 | P0 |
+| Terraform validate | Infra | S6 | P1 |
+| Guest/admin E2E | E2E | S7 | P1 |
+
+---
+
+## 6. Review Verdict
+| Dimension | Score | Notes |
 | :--- | :---: | :--- |
-| **Architecture Clarity** | 10/10 | Dual Document Model crisply separates immediate payment receipt (`REC-...`) from post-stay tax invoice (`INV-...`), eliminating invoice churn and credit note overhead. |
-| **Error Handling Completeness** | 10/10 | Monadic Railway-Oriented Programming throughout; zero panics (`.unwrap()`/`.expect()`); fast-fail on missing TRN. |
-| **Test Coverage Plan** | 10/10 | Granular coverage across unit math precision, multi-currency conversions, DB unique constraints, tenant access control, and Playwright E2E. |
-| **Security Posture** | 10/10 | Strict tenant isolation guards, full HTML entity escaping preventing XSS, compile-time SQL verification, and PII protection. |
-| **Performance & Scale-to-Zero** | 10/10 | $<10\text{ms}$ HTML render, zero headless browsers, $<64\text{MB}$ memory footprint, single-query $O(1)$ JSONB retrieval. |
+| Architecture clarity | 8 | Hooks follow the payout-ledger pattern; JSON-only APIs. The `update_booking` signature grows (`SupplierInfo`, pricing). Watch its complexity. |
+| Error handling | 8 | Explicit codes (`FX_RATE_UNAVAILABLE`, `DATE_UNAVAILABLE`, `BOOKING_NOT_MODIFIABLE`). Cron isolates per-booking failures. |
+| Test coverage | 8 | Boundary-driven refund tests, reconciliation property test, idempotency tests. |
+| Security | 8 | Auth matrix, server-side pricing, mandatory secrets. The cron secret in TF state is a known follow-up (OIDC). |
+| Performance | 9 | Bounded batches, single-query reads, no new heavy deps. |
 
-**Overall Gate Score**: **10 / 10 (PASSED)**.
-
-The engineering plan is locked and ready for implementation.
+**Blocking before S4/S5 start**: resolve intent §7 open questions (Flexible/Moderate mapping, Strict ≥30-day rule, refund components, day boundaries). S0–S3 can proceed now.

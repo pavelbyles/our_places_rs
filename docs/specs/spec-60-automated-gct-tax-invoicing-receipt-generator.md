@@ -1,469 +1,418 @@
-# Spec 60: Automated GCT Tax Invoicing & Receipt Generator
+# Spec 60: Automated GCT Tax Invoicing & Receipt Generator (rev. 2)
+
+> Supersedes rev. 1. Driven by the evaluation of 2026-10-13. Intent: [intent-60](../intent/intent-60-automated-gct-tax-invoicing-receipt-generator.md).
 
 ## Overview
-This feature introduces an automated, statutory-compliant tax invoicing and receipt generation module for the Our Places platform implementing the **Dual Document Model**:
-1. **At `BookingStatus::Confirmed` (Payment Time)**: An immutable **Booking & Payment Receipt** (`REC-YYYY-{code}`) is generated immediately to serve as verifiable proof of card payment, itemizing the accommodation subtotal, cleaning fee, damage deposit escrow hold, and statutory 15% Jamaican General Consumption Tax (GCT) collected at transaction time.
-2. **At `BookingStatus::Completed` (Check-out Time)**: A definitive, locked **Statutory Tax Invoice** (`INV-YYYY-{code}`) is generated post-stay to reflect the final settled transaction, account for any stay modifications or deposit claims/releases, and establish the permanent tax compliance record for Tax Administration Jamaica (TAJ).
+Introduces host-configurable cleaning fees and damage deposits, a single country-resolved GCT rate (default JM), policy-driven partial refunds (Firm/Strict typestate), date changes on confirmed bookings, automatic stay completion via Cloud Scheduler, and a **Dual Document Model** of immutable tax documents:
 
-If a booking is cancelled prior to stay completion, a **Refund Receipt** (`REF-YYYY-{code}`) is generated instead of a tax invoice, eliminating unnecessary invoice churn, cancellation credits, and confusion.
+| Trigger | Document | Number |
+| :--- | :--- | :--- |
+| `pending → confirmed` | Payment Receipt | `REC-YYYY-{code}` |
+| Date change on confirmed booking | Revised Payment Receipt (supersedes previous) | `REC-YYYY-{code}-R{n}` |
+| `confirmed → completed` | Statutory Tax Invoice | `INV-YYYY-{code}` |
+| `confirmed → cancelled` | Refund Receipt | `REF-YYYY-{code}` |
 
-All documents are rendered via print-optimized, semantic HTML (`@media print`) executing in $<10\text{ms}$ under Cloud Run's 256MB memory budget without external headless browser dependencies. Guests and administrators can view, print, or download compliant documents across both portals (`web_app_tc` and `web_app_admin_tc`), while `email_worker` dispatches itemized payment receipts in booking confirmations and invoice links upon stay completion.
+APIs return **JSON only**. All HTML is rendered by Topcoat SSR (`web_app_common_tc` component, consumed by `web_app_tc` and `web_app_admin_tc`).
 
 ---
 
-## 1. Domain Decisions & Business Rules
+## 1. Domain Rules
 
-### 1.1. Dual Document Lifecycle
+### 1.1. Tax Rate Resolution (single source of truth)
+```rust
+// common/src/reference.rs
+pub const DEFAULT_TAX_COUNTRY: &str = "JM";
+
+impl SupportedCountry {
+    /// Resolves the statutory rate for an ISO2 code, falling back to JM.
+    pub fn tax_rate_for(iso2: &str) -> Decimal { /* find(iso2).or_else(find(JM)).map(rate) */ }
+}
 ```
-+---------------------------------------------------------------------------------------------------+
-|                                      BOOKING LIFECYCLE                                            |
-|                                                                                                   |
-|  [Guest Checkout] ----> [BookingStatus::Confirmed] --------------------> [BookingStatus::Completed]
-|                                  |                                                 |              |
-|                                  v                                                 v              |
-|                      +------------------------+                        +----------------------+   |
-|                      | Booking Payment Receipt|                        | Statutory Tax Invoice|   |
-|                      |  REC-2026-HMEJYC3P9B   |                        |  INV-2026-HMEJYC3P9B |   |
-|                      +------------------------+                        +----------------------+   |
-|                                  |                                                                |
-|                                  | (If Cancelled Pre-Stay)                                        |
-|                                  v                                                                |
-|                      +------------------------+                                                   |
-|                      |     Refund Receipt     |                                                   |
-|                      |  REF-2026-HMEJYC3P9B   |                                                   |
-|                      +------------------------+                                                   |
-+---------------------------------------------------------------------------------------------------+
+- `BookingCalculator<Discounted>::apply_taxes(self, tax_rate: Decimal)` replaces the hardcoded `Decimal::new(10, 2)`.
+- Callers pass `SupportedCountry::tax_rate_for(&listing.country)`. The listing quote (`/listings/{id}/quote`), `create_booking`, and date-change re-pricing all go through the same calculator.
+- `booking.tax_rate` snapshots the rate used.
+
+### 1.2. Pricing & Reconciliation Invariant
+All amounts are in the **payment currency** and rounded to 2dp with banker's rounding.
+
+```
+accommodation_net = sub_total_price − discount_value
+taxable_base      = accommodation_net + cleaning_fee
+tax_value         = round(taxable_base × tax_rate)
+platform_fee      = round(accommodation_net × 0.05)          // existing rule, untaxed
+total_price       = taxable_base + tax_value + platform_fee + damage_deposit
 ```
 
-- **Phase 1 — Payment Receipt (`Confirmed`)**:
-  - Generated synchronously in the confirmation transaction.
-  - Number format: `REC-YYYY-{confirmation_code}`.
-  - Document Title: *"Booking & Payment Receipt"*.
-  - Purpose: Proof of card transaction for guest expenses and instant reassurance.
-- **Phase 2 — Statutory Tax Invoice (`Completed`)**:
-  - Generated when booking transitions to `Completed` (post-stay checkout).
-  - Number format: `INV-YYYY-{confirmation_code}`.
-  - Document Title: *"Statutory Tax Invoice"*.
-  - Purpose: Final compliance document for TAJ audit reconciliation and corporate B2B tax filings.
-- **Cancellation Prior to Completion**:
-  - Generates a `Refund Receipt` (`REF-YYYY-{confirmation_code}`).
-  - No `INV-...` tax invoice is ever created, avoiding invoice voids or credit notes.
+| Document | `total_amount` | Must equal |
+| :--- | :--- | :--- |
+| Payment Receipt | `total_price` (incl. deposit held) | `booking.total_price` |
+| Tax Invoice | `taxable_base + tax_value + platform_fee` (supply only) | `booking.total_price − damage_deposit` |
+| Refund Receipt | `refund_total` | `Σ refund lines` (§1.4) |
 
-### 1.2. Statutory Tax Base & Decimal Precision
-- **Statutory Rate**: 15% Jamaican GCT loaded from static reference data (`common::reference::SupportedCountry::LIST`).
-- **Taxable Line Items**:
-  - Accommodation Nightly Subtotal (`discounted_subtotal` = $\sum \text{nightly rates} - \text{stay discounts}$).
-  - Cleaning Fee (statutorily classified as a taxable hospitality service under Jamaican GCT legislation).
-- **Non-Taxable Escrow Items**:
-  - Damage Deposit (classified as a temporary refundable security hold, exempt from GCT).
-- **Tax Calculation Formula**:
-  $$\text{taxable\_base} = \text{discounted\_subtotal} + \text{cleaning\_fee}$$
-  $$\text{gct\_amount} = (\text{taxable\_base} \times 0.1500).\text{round\_dp}(2)$$
-  $$\text{total\_document\_amount} = \text{taxable\_base} + \text{gct\_amount} + \text{damage\_deposit} + \text{platform\_fee}$$
-- **Zero-Float Policy**: All rates, subtotals, taxes, and totals strictly use `rust_decimal::Decimal`. Floating point types (`f32`/`f64`) are strictly prohibited per `CONSTRAINTS.md`.
+- Damage deposit appears on receipts as a non-taxable "Security deposit (held)" line. On the invoice it's a memo line, "Security deposit — released in full", excluded from `total_amount`. Deposit claims are out of scope.
+- `BookingCalculator` gains `with_fees(cleaning_fee, damage_deposit)` (on `Discounted`). `finalize()` computes `platform_fee` and `total_price` per the formula above, so the typestate order becomes `BaseRate → Discounted → (fees) → Taxed → finalize`.
+- Listing fees are stored in the listing's `base_currency` and converted at the same `exchange_rate` as the nightly rate.
 
-### 1.3. Tri-Currency Flow & Exchange Rate Snapshots
-- Documents are denominated in the **Guest Payment Currency** (e.g. JMD, USD, GBP, EUR, CAD) selected at checkout.
-- If the listing's base currency differs from the payment currency, the active exchange rate from `currency_exchange_rates` is permanently snapshotted in `tax_document.exchange_rate`.
-- For foreign currency transactions, the Jamaican Dollar (JMD) statutory equivalent total and GCT amount are permanently stored to satisfy TAJ audit requirements.
+### 1.3. Exchange Rates
+- `booking.exchange_rate`: base→payment rate used at pricing (already applied in `create_booking`; now snapshotted).
+- `tax_document.jmd_exchange_rate`: payment→JMD rate at issue time.
+- Lookup `db_core::exchange_rate::get_rate(base, target, at)`:
+  1. `base == target` ⇒ `1`.
+  2. Direct pair, latest `effective_at <= at`.
+  3. Inverse pair ⇒ `1 / rate`, rounded to 6dp.
+  4. Otherwise `Err(FxRateUnavailable)` ⇒ HTTP 422 `{ "code": "FX_RATE_UNAVAILABLE" }`. Never silently default.
+- `jmd_tax_amount = round(tax_value × jmd_exchange_rate)` and `jmd_total_amount = round(total_amount × jmd_exchange_rate)`.
 
-### 1.4. Merchant of Record & TRN Attribution
-- **Platform Entity**: "Our Places Luxury Villas Ltd" acts as the centralized Merchant of Record.
-- **Supplier Identification**: Document headers prominently display the platform's registered name, address, and 9-digit Taxpayer Registration Number (`TAJ_SUPPLIER_TRN`).
-- **Configuration Enforcement**: `TAJ_SUPPLIER_TRN` is a mandatory configuration property loaded through typed application settings (`settings.rs`) conforming to rule `RS-W1015`. If unset, document generation fails fast.
-- **B2B Guest Deductibility**: Corporate guests traveling on business (`is_business_trip = true` in `BookingMetadata`) may optionally provide their `business_company_name` and `business_tax_id` (Guest TRN) to claim input tax credits with TAJ.
+> [!WARNING]
+> Seed data only contains USD/JMD/GBP pairs. EUR and CAD (advertised on the home page) will return `FX_RATE_UNAVAILABLE` until rates are added.
+
+### 1.4. Cancellation Refund Policies (typestate)
+`cancellation_policy` gains `firm`. Days out = `check_in − cancellation_date`, with both dates in `America/Jamaica`. Lower bounds are inclusive.
+
+| Days out | Firm | Strict |
+| :--- | :--- | :--- |
+| ≥ 30 | 100% | 100% if cancelled ≤ 48h after booking **and** booked ≥ 14 days before check-in; otherwise 50% *(open question)* |
+| 14–29 | 100% | 50% (same grace rule applies) |
+| 7–13 | 50% | 50% |
+| < 7 | 0% | 0% |
+
+```rust
+// common/src/cancellation.rs [NEW]
+pub struct Firm;
+pub struct Strict;
+
+/// Policy-specific refund schedule, resolved at compile time.
+pub trait RefundSchedule {
+    fn accommodation_refund_pct(t: &CancellationTiming) -> Decimal;
+}
+
+pub struct CancellationTiming { pub days_out: i64, pub hours_since_booking: i64, pub booked_days_ahead: i64 }
+
+// Typestate: Pending (amounts loaded) → Timed (timing evaluated) → Quoted (immutable result)
+pub struct Pending; pub struct Timed; pub struct Quoted;
+
+pub struct RefundCalculator<P: RefundSchedule, S> {
+    amounts: RefundableAmounts,      // snapshot from booking columns
+    timing: Option<CancellationTiming>,
+    _p: PhantomData<(P, S)>,
+}
+
+impl<P: RefundSchedule> RefundCalculator<P, Pending> {
+    pub fn new(amounts: RefundableAmounts) -> Self;
+    pub fn at(self, booked_at: DateTime<Utc>, check_in: NaiveDate, cancelled_at: DateTime<Utc>)
+        -> Result<RefundCalculator<P, Timed>, CancellationError>; // Err if cancelled_at ≥ check_in
+}
+impl<P: RefundSchedule> RefundCalculator<P, Timed> {
+    pub fn quote(self) -> RefundQuote;
+}
+
+// Runtime dispatch from the persisted enum:
+pub fn quote_refund(policy: CancellationPolicy, amounts: RefundableAmounts, ...) -> Result<RefundQuote, CancellationError>
+```
+
+**Refund components (recommended defaults, open question in intent):**
+```
+accommodation_refund = round(accommodation_net × pct)
+cleaning_refund      = cleaning_fee            // service never rendered
+tax_refund           = round((accommodation_refund + cleaning_refund) × tax_rate)
+platform_fee_refund  = pct == 100% ? platform_fee : 0
+deposit_refund       = damage_deposit
+refund_total         = Σ above
+retained_total       = total_price − refund_total   // host + platform share, incl. retained GCT
+```
+`Flexible` and `Moderate` keep their current behavior (100%) until the open question is resolved, via a `FullRefund` schedule impl.
+
+### 1.5. Date Changes
+- Allowed when `status = confirmed` and `new_check_in > today (America/Jamaica)`. Changes on any other status ⇒ 409 `BOOKING_NOT_MODIFIABLE`.
+- `booking_api` re-prices via the same quote pipeline (overrides, discounts, fees, tax, FX). `db_core` then:
+  1. Locks the listing row and the booking row (`FOR UPDATE`), the same as `create_booking`.
+  2. Re-checks availability, excluding this booking ⇒ 409 `DATE_UNAVAILABLE`.
+  3. Updates dates and all financial columns, and records `booking_history`.
+  4. Supersedes the active receipt and issues `REC-…-R{n}` with `amount_previously_paid` and `balance_due` (positive = guest owes, negative = refundable).
+- No change fee in MVP. Money movement for `balance_due` is manual (out of scope).
+
+### 1.6. Stay Completion
+- `PATCH /api/v1/internal/cron/complete-stays` (header `x-cron-secret`), triggered daily at 12:00 America/Jamaica.
+- Selects `id FROM booking WHERE status = 'confirmed' AND date_to <= (NOW() AT TIME ZONE 'America/Jamaica')::date LIMIT 500`, then calls `db_core::booking::update_booking(id, status: Completed)` for each. That fires the existing review-token hook plus the new invoice hook, followed by the standard notification dispatch.
+- Idempotent: `update_booking` re-reads status under `FOR UPDATE` and skips anything not `confirmed`. Per-booking failures are logged (`tracing::error!`) and counted, and don't abort the batch. Response: `{ "completed": n, "failed": m }`.
+
+### 1.7. Merchant of Record & B2B
+- Supplier: `TaxSettings { taj_supplier_trn, supplier_name, supplier_address }`, mandatory, no defaults (fail at startup).
+- `CRON_SECRET` moves into typed settings, and the `"dev-cron-secret"` fallback is removed (the current `unwrap_or_else` violates the no-fallback rule).
+- `BookingMetadata` gains `business_company_name: Option<String>` and `business_tax_id: Option<String>`, each with a max of 255/32 chars. These are printed on documents when present.
 
 ---
 
 ## 2. Technical Specification
 
-### 2.1. `db_core` (Schema & Persistence)
+### 2.1. `db_core` — Single Feature Migration
+`db_core/migrations/20261013000000_gct_tax_documents.sql` (one migration for the branch, per AGENTS.md §6):
 
-#### Migration: `db_core/migrations/20261013000000_create_tax_document_table.sql`
 ```sql
-CREATE TYPE tax_document_type AS ENUM ('payment_receipt', 'tax_invoice', 'credit_note', 'refund_receipt');
-CREATE TYPE tax_document_status AS ENUM ('issued', 'credited', 'voided');
+-- Cancellation policy (ADD VALUE is safe in-tx on PG ≥ 12 as long as it is not used in this migration)
+ALTER TYPE cancellation_policy ADD VALUE IF NOT EXISTS 'firm';
 
-CREATE TABLE IF NOT EXISTS tax_document (
-    id UUID PRIMARY KEY DEFAULT uuidv7(),
-    document_type tax_document_type NOT NULL,
-    document_number VARCHAR(32) NOT NULL UNIQUE,
-    booking_id UUID NOT NULL REFERENCES booking(id) ON DELETE RESTRICT,
-    booking_history_id UUID REFERENCES booking_history(id),
-    recipient_id UUID NOT NULL REFERENCES "user"(id),
-    listing_id UUID NOT NULL REFERENCES listing(id),
-    
-    -- Status & Dates
-    status tax_document_status NOT NULL DEFAULT 'issued',
-    issue_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
-    -- Supplier (Merchant of Record) Snapshot
-    supplier_name VARCHAR(255) NOT NULL,
-    supplier_address TEXT NOT NULL,
-    supplier_trn VARCHAR(32) NOT NULL,
-    
-    -- Recipient Snapshot
-    recipient_name VARCHAR(255) NOT NULL,
-    recipient_email VARCHAR(255) NOT NULL,
-    recipient_company_name VARCHAR(255),
-    recipient_trn VARCHAR(32),
-    
-    -- Financials & Currency Snapshot
-    currency CHAR(3) NOT NULL,
-    exchange_rate DECIMAL(12, 6) NOT NULL DEFAULT 1.000000,
-    
-    -- Itemized Monetary Totals
-    accommodation_subtotal DECIMAL(12, 2) NOT NULL,
-    cleaning_fee DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    taxable_amount DECIMAL(12, 2) NOT NULL,
-    gct_rate DECIMAL(5, 4) NOT NULL DEFAULT 0.1500,
-    gct_amount DECIMAL(12, 2) NOT NULL,
-    damage_deposit DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    platform_fee DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-    total_amount DECIMAL(12, 2) NOT NULL,
-    
-    -- JMD Equivalent (for TAJ compliance on foreign currency bookings)
-    jmd_gct_amount DECIMAL(12, 2) NOT NULL,
-    jmd_total_amount DECIMAL(12, 2) NOT NULL,
-    
-    -- Line Item Detail Snapshot
-    itemized_lines JSONB NOT NULL DEFAULT '[]'::jsonb,
-    
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
-    -- Ensure exactly one payment receipt and one final tax invoice per booking
-    CONSTRAINT uq_booking_document_type UNIQUE (booking_id, document_type)
+-- Listing fees (base currency). 0 = not offered.
+ALTER TABLE listing
+  ADD COLUMN cleaning_fee   NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (cleaning_fee >= 0),
+  ADD COLUMN damage_deposit NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (damage_deposit >= 0);
+ALTER TABLE listing_history
+  ADD COLUMN cleaning_fee   NUMERIC(12,2),
+  ADD COLUMN damage_deposit NUMERIC(12,2);
+
+-- Booking financial snapshot. Existing rows: tax_rate backfilled to the 10% actually charged.
+ALTER TABLE booking
+  ADD COLUMN cleaning_fee   NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN damage_deposit NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN platform_fee   NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN tax_rate       NUMERIC(5,4)  NOT NULL DEFAULT 0.1000,
+  ADD COLUMN exchange_rate  NUMERIC(15,6) NOT NULL DEFAULT 1;
+UPDATE booking SET platform_fee = COALESCE(
+  (SELECT SUM((f->>'amount')::numeric) FROM jsonb_array_elements(fee_breakdown) f
+    WHERE f->>'name' = 'Platform Fee'), 0);
+ALTER TABLE booking ALTER COLUMN tax_rate DROP DEFAULT;  -- new rows must supply it
+
+-- booking_history: nullable so existing pg_cron INSERTs (explicit column lists) keep working
+ALTER TABLE booking_history
+  ADD COLUMN cleaning_fee NUMERIC(10,2), ADD COLUMN damage_deposit NUMERIC(10,2),
+  ADD COLUMN platform_fee NUMERIC(10,2), ADD COLUMN tax_rate NUMERIC(5,4),
+  ADD COLUMN exchange_rate NUMERIC(15,6);
+
+-- Tax documents
+CREATE TYPE tax_document_type   AS ENUM ('payment_receipt', 'tax_invoice', 'refund_receipt');
+CREATE TYPE tax_document_status AS ENUM ('issued', 'superseded');
+
+CREATE TABLE tax_document (
+  id                     UUID PRIMARY KEY DEFAULT uuidv7(),
+  document_type          tax_document_type   NOT NULL,
+  document_number        VARCHAR(40)         NOT NULL UNIQUE,
+  revision               INTEGER             NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  status                 tax_document_status NOT NULL DEFAULT 'issued',
+  supersedes_id          UUID REFERENCES tax_document(id),
+  booking_id             UUID NOT NULL REFERENCES booking(id) ON DELETE RESTRICT,
+  booking_history_id     UUID REFERENCES booking_history(id),
+  recipient_id           UUID NOT NULL REFERENCES "user"(id),
+  listing_id             UUID NOT NULL REFERENCES listing(id),
+  issue_date             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  supplier_name          VARCHAR(255) NOT NULL,
+  supplier_address       TEXT         NOT NULL,
+  supplier_trn           VARCHAR(32)  NOT NULL,
+  recipient_name         VARCHAR(255) NOT NULL,
+  recipient_email        VARCHAR(255) NOT NULL,
+  recipient_company_name VARCHAR(255),
+  recipient_trn          VARCHAR(32),
+  currency               CHAR(3)       NOT NULL,
+  exchange_rate          NUMERIC(15,6) NOT NULL,   -- base → payment
+  jmd_exchange_rate      NUMERIC(15,6) NOT NULL,   -- payment → JMD
+  accommodation_net      NUMERIC(12,2) NOT NULL,
+  cleaning_fee           NUMERIC(12,2) NOT NULL,
+  taxable_amount         NUMERIC(12,2) NOT NULL,
+  tax_rate               NUMERIC(5,4)  NOT NULL,
+  tax_amount             NUMERIC(12,2) NOT NULL,
+  platform_fee           NUMERIC(12,2) NOT NULL,
+  damage_deposit         NUMERIC(12,2) NOT NULL,
+  total_amount           NUMERIC(12,2) NOT NULL,
+  amount_previously_paid NUMERIC(12,2),            -- revised receipts only
+  balance_due            NUMERIC(12,2),            -- revised receipts only (+ owed / − refundable)
+  refund_pct             NUMERIC(5,4),             -- refund receipts only
+  retained_amount        NUMERIC(12,2),            -- refund receipts only
+  jmd_tax_amount         NUMERIC(14,2) NOT NULL,
+  jmd_total_amount       NUMERIC(14,2) NOT NULL,
+  line_items             JSONB NOT NULL DEFAULT '[]'::jsonb,  -- string-serialized decimals
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (booking_id, document_type, revision)
 );
-
--- Performance Indexes
-CREATE INDEX idx_tax_document_booking_id ON tax_document(booking_id);
-CREATE INDEX idx_tax_document_recipient_id ON tax_document(recipient_id);
-CREATE INDEX idx_tax_document_listing_id ON tax_document(listing_id);
-CREATE INDEX idx_tax_document_issue_date ON tax_document(issue_date);
-CREATE INDEX idx_tax_document_type ON tax_document(document_type);
+-- Exactly one active document per type per booking
+CREATE UNIQUE INDEX uq_tax_document_active ON tax_document (booking_id, document_type) WHERE status = 'issued';
+CREATE INDEX idx_tax_document_booking   ON tax_document (booking_id);
+CREATE INDEX idx_tax_document_recipient ON tax_document (recipient_id);
 ```
 
-#### SQLx Model & Queries: `db_core/src/tax_invoice.rs` [NEW]
-- `TaxDocumentRow` struct deriving `sqlx::FromRow`.
-- `insert_tax_document(pool, doc: &NewTaxDocument) -> Result<TaxDocumentRow, sqlx::Error>`.
-- `get_document_by_booking_and_type(pool, booking_id: Uuid, doc_type: TaxDocumentType) -> Result<Option<TaxDocumentRow>, sqlx::Error>`.
-- `get_document_by_number(pool, document_number: &str) -> Result<Option<TaxDocumentRow>, sqlx::Error>`.
-- `list_documents_for_booking(pool, booking_id: Uuid) -> Result<Vec<TaxDocumentRow>, sqlx::Error>`.
-- `list_documents_for_user(pool, user_id: Uuid, limit: i64, offset: i64) -> Result<Vec<TaxDocumentRow>, sqlx::Error>`.
-- `list_documents_for_host(pool, host_id: Uuid, limit: i64, offset: i64) -> Result<Vec<TaxDocumentRow>, sqlx::Error>`.
-- `list_all_documents_admin(pool, limit: i64, offset: i64) -> Result<Vec<TaxDocumentRow>, sqlx::Error>`.
+**Queries** (`db_core/src/tax_document.rs` [NEW], all `sqlx::query!`/`query_as!`):
+- `insert_tax_document(tx, &NewTaxDocument)`
+- `supersede_active(tx, booking_id, doc_type) -> Option<TaxDocumentRow>` (`UPDATE … SET status='superseded' WHERE status='issued' RETURNING *`)
+- `list_for_booking(pool, booking_id)`
+- `get_by_number(pool, booking_id, number)`
 
----
+**Exchange rates** (`db_core/src/exchange_rate.rs`): `get_rate(executor, base, target, at)` per §1.3.
 
-### 2.2. `common` (Isomorphic Types & Pricing Math)
+**Hooks**: these go in `db_core::booking::update_booking`, inside the existing transaction, following the payout-ledger block at [booking.rs#L267](file:///home/pav/code/our_places_rs-feat-60-automated-gct-tax-invoicing-receipt-generator/db_core/src/booking.rs#L267-L276).
 
-#### Domain Models: `common/src/tax_invoice.rs` [NEW]
+| Transition (status_changed) | Hook |
+| :--- | :--- |
+| `→ Confirmed` | `tax_document::issue_payment_receipt(&mut tx, &booking, &supplier)` |
+| dates changed while `Confirmed` | `supersede_active(PaymentReceipt)` then `issue_payment_receipt` (revision n+1) |
+| `→ Completed` (only from `Confirmed`) | `issue_tax_invoice` |
+| `→ Cancelled` (from `Confirmed`) | `issue_refund_receipt` using `common::cancellation::quote_refund` |
+
+- `update_booking` gains a `supplier: &SupplierInfo` parameter, because db_core must not read env vars.
+- `UpdatedBooking` gains `date_from`, `date_to`, and `pricing: Option<BookingPricingSnapshot>`.
+- Invalid transitions (e.g. `Cancelled → Completed`) ⇒ `Err(InvalidTransition)`.
+
+### 2.2. `common`
+| File | Change |
+| :--- | :--- |
+| `reference.rs` | `DEFAULT_TAX_COUNTRY`, `tax_rate_for()` |
+| `pricing.rs` | `apply_taxes(tax_rate)`, `with_fees(cleaning, deposit)`, `platform_fee` field, reconciliation per §1.2 |
+| `cancellation.rs` [NEW] | §1.4 typestate, `RefundQuote`, `CancellationError` (thiserror) |
+| `tax_document.rs` [NEW] | `TaxDocumentType`, `TaxDocumentStatus`, `InvoiceTaxCategory { Gct, Exempt }`, `InvoiceLineItem`, `TaxDocumentResponse`, `document_number(type, year, code, revision)` |
+| `models.rs` | `FeeItem.amount` string serde; listing DTOs gain `cleaning_fee`, `damage_deposit`; `BookingResponse` gains fee/tax/fx fields; `BookingMetadataResponse` gains B2B fields; `UpdateBookingRequest` gains `date_from`, `date_to` |
+| `email.rs` | `EmailTemplate::BookingCompletedGuest` + `BookingCompletedGuestPayload`; confirmation payload gains GCT breakdown and `receipt_url` |
+
+**FeeItem serialization (no floats in JSONB):**
 ```rust
-use chrono::{DateTime, NaiveDate, Utc};
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
-use uuid::Uuid;
-
-/// Type of tax compliance document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TaxDocumentType {
-    /// Initial payment confirmation receipt issued at checkout.
-    PaymentReceipt,
-    /// Definitive statutory tax invoice issued upon stay completion.
-    TaxInvoice,
-    /// Post-completion adjustment or refund credit note.
-    CreditNote,
-    /// Pre-completion cancellation refund receipt.
-    RefundReceipt,
-}
-
-impl TaxDocumentType {
-    /// Returns the standardized code prefix for document numbering.
-    pub fn prefix(&self) -> &'static str {
-        match self {
-            Self::PaymentReceipt => "REC",
-            Self::TaxInvoice => "INV",
-            Self::CreditNote => "CN",
-            Self::RefundReceipt => "REF",
-        }
-    }
-
-    /// User-facing document title.
-    pub fn display_title(&self) -> &'static str {
-        match self {
-            Self::PaymentReceipt => "Booking & Payment Receipt",
-            Self::TaxInvoice => "Statutory Tax Invoice",
-            Self::CreditNote => "Tax Credit Note",
-            Self::RefundReceipt => "Refund Receipt",
-        }
-    }
-}
-
-/// Category of tax applied to an individual line item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum InvoiceTaxCategory {
-    /// Standard Jamaican 15% General Consumption Tax.
-    Gct15,
-    /// Statutorily exempt supply or security escrow hold.
-    Exempt,
-    /// Zero-rated transaction.
-    ZeroRated,
-}
-
-/// An itemized line entry within a statutory tax document.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct InvoiceLineItem {
-    pub description: String,
-    pub quantity: i32,
-    pub unit_price: Decimal,
-    pub net_amount: Decimal,
-    pub tax_category: InvoiceTaxCategory,
-    pub tax_amount: Decimal,
-    pub total_amount: Decimal,
-}
-
-/// Structured response DTO representing a tax receipt or invoice.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct TaxDocumentResponse {
-    pub id: Uuid,
-    pub document_type: TaxDocumentType,
-    pub document_number: String,
-    pub document_title: String,
-    pub booking_id: Uuid,
-    pub confirmation_code: String,
-    pub status: String,
-    pub issue_date: DateTime<Utc>,
-    
-    // Supplier
-    pub supplier_name: String,
-    pub supplier_address: String,
-    pub supplier_trn: String,
-    
-    // Recipient
-    pub recipient_name: String,
-    pub recipient_email: String,
-    pub recipient_company_name: Option<String>,
-    pub recipient_trn: Option<String>,
-    
-    // Villa Details
-    pub listing_id: Uuid,
-    pub listing_title: String,
-    pub check_in: NaiveDate,
-    pub check_out: NaiveDate,
-    pub total_nights: i32,
-    
-    // Financials
-    pub currency: String,
-    pub exchange_rate: Decimal,
-    pub accommodation_subtotal: Decimal,
-    pub cleaning_fee: Decimal,
-    pub taxable_amount: Decimal,
-    pub gct_rate: Decimal,
-    pub gct_amount: Decimal,
-    pub damage_deposit: Decimal,
-    pub platform_fee: Decimal,
-    pub total_amount: Decimal,
-    pub jmd_gct_amount: Decimal,
-    pub jmd_total_amount: Decimal,
-    
-    // Line items
-    pub line_items: Vec<InvoiceLineItem>,
+pub struct FeeItem {
+    pub name: String,
+    /// Serialized as a JSON string. Deserializes from string *or* legacy number.
+    #[serde(serialize_with = "rust_decimal::serde::str::serialize")]
+    pub amount: Decimal,
 }
 ```
+- Deserialization uses `Decimal`'s default `Deserialize`, which accepts both strings and numbers, so existing JSONB rows still load.
+- `InvoiceLineItem` money fields use `#[serde(with = "rust_decimal::serde::str")]`.
+- Both shapes need tests. API consumers of `fee_breakdown[].amount` change from number to string, so update the OpenAPI specs and `playwright/e2e/setup/db-seed.ts`.
 
-#### Metadata Expansion: `common/src/models.rs`
-Update `BookingMetadata` and `BookingMetadataResponse`:
-```rust
-pub struct BookingMetadataResponse {
-    // Existing fields...
-    pub is_business_trip: bool,
-    /// Optional corporate registered business name for tax invoicing.
-    pub business_company_name: Option<String>,
-    /// Optional corporate Taxpayer Registration Number (TRN) for tax deduction.
-    pub business_tax_id: Option<String>,
-}
-```
+### 2.3. `app_api/listing_api`
+- Create/update payloads and responses carry `cleaning_fee` / `damage_deposit` (`Option<Decimal>`). Validation: `0 ≤ x ≤ 1,000,000` and 2dp, else 400 `INVALID_FEE`.
+- `db_core/src/listing.rs`: add both columns to the insert, update (`COALESCE`), and every listing `SELECT` (~6 queries) plus the `listing_history` snapshot. Update `api_core/src/models.rs` mappers.
+- Quote endpoint returns `cleaning_fee`, `damage_deposit`, `platform_fee`, `tax_rate`, `tax_value`, `total_price`.
 
-#### Pricing Math Expansion: `common/src/pricing.rs`
-Add `calculate_statutory_gct_breakdown`:
-```rust
-/// Computes itemized Jamaican GCT (15%) for accommodation and ancillary fees.
-pub fn calculate_statutory_gct_breakdown(
-    discounted_subtotal: Decimal,
-    cleaning_fee: Decimal,
-    damage_deposit: Decimal,
-    platform_fee: Decimal,
-) -> (Decimal, Decimal, Decimal) {
-    let taxable_amount = discounted_subtotal + cleaning_fee;
-    let gct_rate = Decimal::from_parts(15, 0, 0, false, 2); // 0.15
-    let gct_amount = (taxable_amount * gct_rate).round_dp(2);
-    let total_amount = taxable_amount + gct_amount + damage_deposit + platform_fee;
-    (taxable_amount, gct_amount, total_amount)
-}
-```
-
----
-
-### 2.3. `app_api/booking_api` (Backend Handlers & Rendering)
-
-#### Configuration: `app_api/booking_api/src/settings.rs`
-Add strongly-typed supplier settings adhering to `RS-W1015`:
-```rust
-#[derive(Debug, Deserialize, Clone)]
-pub struct TaxSettings {
-    pub taj_supplier_trn: String,
-    pub supplier_name: String,
-    pub supplier_address: String,
-}
-```
-
-#### Endpoints: `app_api/booking_api/src/apis.rs`
-| Method | Route | Auth / Role | Description |
+### 2.4. `app_api/booking_api`
+| Method | Route | Auth | Response |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/bookings/{id}/receipt` | Guest (owner), Host, Admin | Returns JSON `TaxDocumentResponse` for the Payment Receipt. |
-| `GET` | `/api/v1/bookings/{id}/receipt/render` | Guest (owner), Host, Admin | Returns print-optimized HTML (`text/html`) for Payment Receipt. |
-| `GET` | `/api/v1/bookings/{id}/invoice` | Guest (owner), Host, Admin | Returns JSON `TaxDocumentResponse` for the Statutory Tax Invoice (404 if booking not completed yet). |
-| `GET` | `/api/v1/bookings/{id}/invoice/render` | Guest (owner), Host, Admin | Returns print-optimized HTML (`text/html`) for Statutory Tax Invoice. |
-| `GET` | `/api/v1/bookings/{id}/documents` | Guest (owner), Host, Admin | Returns array of all available tax documents for the booking. |
-| `GET` | `/api/v1/admin/documents` | Admin only | Returns paginated list of all platform tax documents. |
+| `PATCH` | `/api/v1/bookings/{id}` | guest owner, admin | `BookingResponse` (now accepts `date_from`/`date_to`) |
+| `GET` | `/api/v1/bookings/{id}/cancellation-quote` | guest owner, host, admin | `RefundQuote` (not persisted) |
+| `GET` | `/api/v1/bookings/{id}/documents` | guest owner, host, admin | `Vec<TaxDocumentResponse>` (incl. superseded, flagged) |
+| `GET` | `/api/v1/bookings/{id}/documents/{number}` | guest owner, host, admin | `TaxDocumentResponse` |
+| `PATCH` | `/api/v1/internal/cron/complete-stays` | `x-cron-secret` | `{ completed, failed }` |
 
-#### Internal Trigger Integration:
-1. **On Booking Confirmation (`BookingStatus::Confirmed`)**:
-   - Inside confirmation transaction: Synchronously insert `tax_document` with `document_type = PaymentReceipt` and number `REC-YYYY-{code}`.
-2. **On Booking Completion (`BookingStatus::Completed`)**:
-   - Inside completion state transition: Synchronously insert `tax_document` with `document_type = TaxInvoice` and number `INV-YYYY-{code}`.
-3. **On Booking Cancellation (`BookingStatus::Cancelled`)**:
-   - If cancelled before completion: Synchronously insert `tax_document` with `document_type = RefundReceipt` (`REF-YYYY-{code}`).
-   - If cancelled after completion: Synchronously insert `tax_document` with `document_type = CreditNote` (`CN-YYYY-{code}`).
+- `settings.rs`: `TaxSettings`, `cron_secret`. Both mandatory.
+- Notification dispatch:
+  - **Cancel**: `refund_amount` comes from the issued `REF` document, not `total_price`.
+  - **Date change**: the `booking_updated_guest` payload gains a `receipt_url`.
+  - **Completed**: send `booking_completed_guest` with an `invoice_url`.
+  - The cron endpoint reuses the same dispatch function.
+- Document number in links; unauthorized ⇒ 404.
 
-#### Print-Optimized HTML Rendering Engine: `app_api/booking_api/src/invoice_renderer.rs` [NEW]
-- Generates clean, accessible semantic HTML with inline CSS.
-- Supports both `PaymentReceipt` and `TaxInvoice` modes with appropriate legal headings, watermarks, and labels.
-- Implements CSS `@media print` rules:
-  - `@page { size: A4; margin: 15mm; }`
-  - Zero web fonts or external scripts (native typography stack: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`).
-  - Browser "Print / Save PDF" button with `window.print()` that automatically hides during print execution (`@media print { .no-print { display: none !important; } }`).
-  - Escapes all recipient inputs to eliminate HTML/script injection.
+### 2.5. `app_api/email_worker`
+- `booking_confirmation_guest`: itemized table (accommodation, cleaning, GCT @ rate, platform fee, deposit held, total), "View Payment Receipt" → `{BASE_URL}/bookings/{id}/documents/{number}`.
+- `booking_cancelled_guest`: refund %, refund total, retained total.
+- `booking_updated_guest`: "View Revised Receipt" link and balance due/refundable.
+- `booking_completed_guest` [NEW]: thank-you text, "Download Tax Invoice" link, deposit-released note.
 
----
+### 2.6. Frontends (Topcoat SSR)
+- `web_app_common_tc/src/components/tax_document_view.rs` [NEW]:
+  - `view!` component rendering a `TaxDocumentResponse` with title, supplier/TRN, recipient/B2B, a line-item table, totals, the JMD equivalents, a "Superseded" watermark, and a revised-receipt balance block.
+  - Print styles via `@media print` (A4, hides `.no-print`).
+  - All text goes through `view!` escaping. No raw HTML.
+- `web_app_tc`:
+  - `/bookings/{id}` lists documents.
+  - `/bookings/{id}/documents/{number}` is a printable page.
+  - The cancel modal fetches `cancellation-quote` (HTMX) and shows the refund before confirming.
+  - A date-change form shows a re-quote and the balance due.
+  - Checkout captures optional B2B fields when "business trip" is checked.
+  - The listing detail breakdown shows cleaning fee and deposit.
+- `web_app_admin_tc`:
+  - The listing create/edit form gets "Charge cleaning fee" and "Require damage deposit" toggles with amounts (off ⇒ 0).
+  - The booking modal gets a documents panel (HTMX fragment) that replaces the client-side `openAdminInvoiceDialog` mock.
 
-### 2.4. `app_api/email_worker` (Transactional Email Integration)
+### 2.7. `infra` — Terraform
+Add to `infra/modules/scheduler/main.tf`:
+```hcl
+resource "google_cloud_scheduler_job" "complete_stays" {
+  name             = "${var.env_prefix}-complete-stays"
+  description      = "Daily transition of confirmed bookings past check-out to completed (issues tax invoices)"
+  project          = var.project_id
+  region           = var.region
+  schedule         = "0 12 * * *"
+  time_zone        = "America/Jamaica"
+  attempt_deadline = "320s"
 
-#### Updated Templates:
-1. **`booking_confirmation_guest`**:
-   - Injects an itemized financial summary table (Accommodation subtotal, Cleaning fee, Statutory 15% GCT, Damage deposit, Total paid).
-   - Injects a call-to-action button: `[View Payment Receipt]` pointing to `{BASE_URL}/bookings/{id}/receipt`.
-2. **`booking_completed_guest`** (Post-Stay Notification):
-   - Injects a call-to-action button: `[Download Official Tax Invoice]` pointing to `{BASE_URL}/bookings/{id}/invoice`.
+  retry_config { retry_count = 3 }
 
----
+  http_target {
+    http_method = "PATCH"
+    uri         = "${var.booking_api_url}/api/v1/internal/cron/complete-stays"
+    headers = {
+      "Content-Type"  = "application/json"
+      "x-cron-secret" = var.cron_secret
+    }
+  }
 
-### 2.5. Frontend Portals (`web_app_tc` & `web_app_admin_tc`)
+  depends_on = [google_project_service.cloud_scheduler_api]
+}
+```
+Verify with `terraform fmt -check` and `terraform validate`.
 
-#### Guest Portal (`web_app_tc`):
-- `/bookings/{id}/receipt`: Dedicated printable Payment Receipt page.
-- `/bookings/{id}/invoice`: Dedicated printable Tax Invoice page (active once completed).
-- Booking detail page `/bookings/{id}`:
-  - Displays "View Payment Receipt" badge upon confirmation.
-  - Automatically activates "Download Statutory Tax Invoice" badge upon stay completion.
-
-#### Admin Portal (`web_app_admin_tc`):
-- `/admin/bookings` detail modal updated with a "Tax Documents" panel listing all generated documents (Receipt, Invoice, Refund, Credit Note).
-- Admin navigation menu updated with an "Invoices & Receipts" audit page linking to `/admin/documents`.
-
----
-
-## 3. Performance Considerations & Scalability Check
-
-### 3.1. Big-O Complexity & Query Efficiency
-- **Lookup Cost**: $O(1)$ indexed retrieval via `tax_document.booking_id` and `tax_document.document_number`.
-- **Zero N+1 Queries**: All line items are stored as structured JSONB within the `tax_document` row. Fetching a document executes exactly **1 database query** with zero downstream foreign key joins.
-- **Admin Pagination**: Admin queries strictly enforce `LIMIT` and `OFFSET` (capped at max 100 items per page) with compound index scanning on `issue_date DESC`.
-
-### 3.2. Cloud Run Scale-to-Zero Constraints
-- **Latency Budget**: $<10\text{ms}$ HTML render time; $<30\text{ms}$ database write inside confirmation and completion transactions. Well within the $<300\text{ms}$ (p50) cold start target.
-- **Memory Footprint**: Pure Rust string formatting using pre-allocated `String` buffers (`String::with_capacity(4096)`). Zero headless browser processes (Chromium/Puppeteer), maintaining container memory consumption under 64MB of the 256MB threshold.
-- **Zero Blocking Async I/O**: String formatting and template substitution are pure CPU operations completed in microseconds without blocking Tokio worker threads.
-
----
-
-## 4. Threat Modeling & Security Mitigations (OWASP Top 10)
-
-| Threat / Risk | OWASP Category | Architectural Mitigation |
-| :--- | :--- | :--- |
-| **Insecure Direct Object Reference (IDOR)** | Broken Access Control (A01) | Handlers check `claims.sub`: Only the booking guest, the property host, or platform administrators can view an invoice or receipt. Unauthorized access returns `404 Not Found` (to prevent ID enumeration). |
-| **Cross-Site Scripting (XSS)** | Injection (A03) | All user-controlled strings (guest name, company name, address, notes) rendered in HTML invoices are strictly entity-escaped using a fast escaping utility (`&` $\rightarrow$ `&amp;`, `<` $\rightarrow$ `&lt;`, `>` $\rightarrow$ `&gt;`, `"` $\rightarrow$ `&quot;`, `'` $\rightarrow$ `&#x27;`). |
-| **SQL Injection** | Injection (A03) | 100% compile-time verified parameterized queries using `sqlx::query!` and `sqlx::query_as!`. Zero raw SQL string interpolation. |
-| **Tampering & Document Mutation** | Cryptographic & Integrity Failures (A08) | `tax_document` table has no `UPDATE` or `DELETE` API endpoints. Once created with status `'issued'`, records cannot be altered. |
-| **PII & TRN Data Exposure** | Identification & Auth Failures (A07) | TRNs and financial data are excluded from unauthenticated endpoints. Sensitive TRN fields are logged only at `DEBUG` or `TRACE` levels and redacted in `INFO`/`WARN` logs. |
-| **Document Number Collision / Race Condition** | Concurrency Vulnerabilities | `UNIQUE(booking_id, document_type)` and `UNIQUE(document_number)` database constraints guarantee that concurrent requests cannot produce duplicate documents for the same booking. |
+> [!NOTE]
+> This keeps the module's existing `x-cron-secret` pattern. The secret ends up in Terraform state. Moving both jobs to `oidc_token` (Cloud Run invoker service account) is a recommended follow-up.
 
 ---
 
-## 5. Comprehensive Test Plan
+## 3. Performance Considerations
+- Document reads: a single indexed query, with line items in JSONB (no N+1).
+- `complete-stays`: a bounded batch (500) of short per-booking transactions, so no long-held locks. Daily volume for 5 villas is trivial.
+- Date change: two row locks plus one availability query, the same cost profile as `create_booking`.
+- There's no HTML rendering in the APIs. SSR rendering uses existing Topcoat paths. No new heavy dependencies, so the cold-start budget is unaffected.
 
-### 5.1. Unit Tests (`common`)
-1. `test_statutory_gct_tax_calculation_precision`:
-   - Validates that accommodation subtotal ($1,000.00) + cleaning fee ($150.00) yields exactly $172.50 GCT (15%).
-   - Verifies that damage deposit ($500.00) is excluded from the tax base.
-2. `test_zero_float_bankers_rounding`:
-   - Tests fractional sub-cent calculations across odd night rates (e.g. $133.33/night × 3 nights) to ensure zero cent-rounding drift.
-3. `test_tri_currency_jmd_tax_conversion`:
-   - Validates that USD bookings converted to JMD record the exact statutory JMD GCT equivalent at the snapshotted exchange rate.
-4. `test_deterministic_document_number_formatting`:
-   - Asserts generated receipt code matches regex `^REC-\d{4}-[A-Z0-9]{10,12}$`.
-   - Asserts generated invoice code matches regex `^INV-\d{4}-[A-Z0-9]{10,12}$`.
-5. `test_html_entity_escaping`:
-   - Verifies that malicious company names like `<script>alert(1)</script>` or `" onfocus="alert('xss')"` are sanitized to `&lt;script&gt;alert(1)&lt;/script&gt;`.
+---
 
-### 5.2. Integration & Database Tests (`db_core` & `app_api/booking_api`)
-1. `test_payment_receipt_generated_on_confirmation`:
-   - Transition booking to `confirmed`.
-   - Verify `tax_document` with `PaymentReceipt` is synchronously created.
-   - Verify `GET /api/v1/bookings/{id}/receipt` returns `200 OK`.
-   - Verify `GET /api/v1/bookings/{id}/invoice` returns `404 Not Found` (stay not yet completed).
-2. `test_tax_invoice_generated_on_completion`:
-   - Transition confirmed booking to `completed`.
-   - Verify `tax_document` with `TaxInvoice` is synchronously created.
-   - Verify `GET /api/v1/bookings/{id}/invoice` returns `200 OK`.
-3. `test_refund_receipt_on_early_cancellation`:
-   - Cancel confirmed booking prior to completion.
-   - Verify `tax_document` with `RefundReceipt` is generated.
-   - Verify no `TaxInvoice` is ever created.
-4. `test_tenant_isolation_and_authorization`:
-   - Asserts guest $A$ receives `404` when requesting guest $B$'s receipt or invoice URL.
-   - Asserts listing host receives `200 OK`.
-   - Asserts platform admin receives `200 OK`.
-   - Asserts unauthenticated caller receives `401 Unauthorized`.
-5. `test_strict_taj_trn_env_validation`:
-   - Asserts `TaxSettings` returns a configuration validation error if `TAJ_SUPPLIER_TRN` is empty or missing.
-6. `test_html_render_endpoint`:
-   - Asserts `GET /api/v1/bookings/{id}/receipt/render` returns `Content-Type: text/html; charset=utf-8` containing correct itemized numbers and `@media print` styles.
+## 4. Security Mitigations
+| Risk | Mitigation |
+| :--- | :--- |
+| IDOR on documents, quotes, date changes | Guest owner, listing host (`listing.user_id`), or admin. Otherwise 404. Date changes are guest owner or admin only. |
+| Cron endpoint abuse | Constant-time comparison of `x-cron-secret`, mandatory setting (no fallback), endpoint idempotent. |
+| XSS in documents | No API HTML. Topcoat `view!` escaping. B2B fields length-limited and trimmed. |
+| Fee tampering | Fees come only from the listing row at pricing time. Client-supplied amounts are ignored. Validation 0–1,000,000. |
+| Price manipulation via date change | Server-side re-pricing under row locks. Client dates only. |
+| Document tampering | No update/delete endpoints. The only mutation is `issued → superseded` inside the hook transaction. |
+| SQL injection | `sqlx::query!` everywhere. |
+| PII | TRNs never logged above DEBUG. |
 
-### 5.3. End-to-End Tests (`playwright`)
-1. `guest-portal/tax-receipt-and-invoice.spec.ts`:
-   - Guest logs in and navigates to confirmed booking `/bookings/{id}`.
-   - Clicks "View Payment Receipt" and verifies itemized breakdown.
-   - After booking status is transitioned to `completed`, verifies "Download Statutory Tax Invoice" button appears and functions.
-2. `admin-portal/tax-documents.spec.ts`:
-   - Admin logs into `/admin/bookings`.
-   - Opens booking details and clicks "Tax Documents".
-   - Verifies both Payment Receipt and Tax Invoice appear and are viewable/printable.
-   - Navigates to `/admin/documents` and verifies all records appear in the paginated audit table.
+---
+
+## 5. Test Plan
+
+### 5.1. Unit (`common`)
+- `tax_rate_for` returns JM for `"JM"`, unknown codes, and empty strings.
+- `BookingCalculator` reconciliation: a property test (random rates/nights/fees) asserts the §1.2 invariant, and that the receipt line items sum to `total_price`.
+- Fees off ⇒ `cleaning_fee = damage_deposit = 0` and the total matches the pre-feature formula with JM rate.
+- `RefundCalculator<Firm>` / `<Strict>`: table-driven over days-out boundaries 0, 6, 7, 13, 14, 29, 30, 31; Strict grace at 47h/49h × booked 13/14 days ahead; `cancelled_at ≥ check_in` ⇒ Err.
+- Refund components sum to `refund_total`, and `refund_total + retained_total = total_price`.
+- `FeeItem` serializes the amount as a string, and deserializes legacy number and new string JSON.
+- `document_number` formats: `REC-2026-HMEJYC3P9B`, `REC-2026-HMEJYC3P9B-R2`, `INV-…`, `REF-…`.
+
+### 5.2. Integration (`db_core`, `listing_api`, `booking_api`)
+- The migration applies to a DB containing pre-feature bookings, and the platform fee backfills correctly. The existing pg_cron hold-expiry SQL still inserts into `booking_history`.
+- Listing create/update/read round-trips `cleaning_fee`/`damage_deposit`, and a negative value is rejected with 400.
+- `→ Confirmed` issues exactly one `REC`, and a second identical PATCH doesn't duplicate it.
+- A date change issues `REC-R2` and supersedes R1, with `balance_due` correct. An overlapping date ⇒ 409 `DATE_UNAVAILABLE`, with no document issued.
+- `→ Cancelled` under Firm 10 days out issues a `REF` with 50% accommodation, and the email payload refund matches.
+- `complete-stays`: completes eligible bookings and skips future/cancelled ones. Running it twice gives `completed = 0` the second time. A wrong secret gives 401.
+- `→ Completed` issues an `INV` with `total_amount = total_price − damage_deposit`, plus the review token (existing hook still fires).
+- FX: USD booking ⇒ JMD amounts use rate 160. GBP→JMD direct. JMD→GBP inverse. EUR ⇒ 422.
+- Authorization matrix for documents, quotes, and date-change endpoints (guest A/B, host, admin, anonymous).
+- Typed settings fail without `TAJ_SUPPLIER_TRN` or `CRON_SECRET`.
+
+### 5.3. E2E (Playwright)
+- **Guest:** book → confirm → open receipt (print button visible, totals match) → change dates → revised receipt → cancel with quote shown → refund receipt.
+- **Admin:** enable cleaning fee and deposit on a listing → guest quote reflects them → booking modal documents panel lists `REC`/`INV`.
+- **Completion:** seed a past-checkout confirmed booking → call the cron endpoint → guest sees "Download Tax Invoice".
+
+### 5.4. Infra
+- `terraform fmt -check && terraform validate` in `infra/`.
 
 ---
 
 ## 6. Acceptance Criteria
-- [ ] Database migration `20261013000000_create_tax_document_table.sql` created and verified with compile-time SQLx offline metadata.
-- [ ] Shared DTOs (`TaxDocumentResponse`, `TaxDocumentType`, `InvoiceLineItem`, `InvoiceTaxCategory`) and pure decimal math implemented in `common`.
-- [ ] `BookingMetadata` updated to accept optional corporate B2B company name and guest TRN.
-- [ ] Synchronous receipt generation hook integrated into `BookingStatus::Confirmed`.
-- [ ] Synchronous statutory invoice generation hook integrated into `BookingStatus::Completed`.
-- [ ] REST API endpoints for JSON retrieval and print-optimized HTML rendering implemented and documented in OpenAPI schema.
-- [ ] Guest portal (`web_app_tc`) and admin portal (`web_app_admin_tc`) updated to view and print both receipts and invoices.
-- [ ] Transactional email templates updated in `email_worker`.
-- [ ] 100% test pass rate across `cargo test --workspace` with zero Clippy warnings (`-D warnings`).
-- [ ] Zero floating-point types (`f32`/`f64`) and zero panics (`unwrap`/`expect`) across all production paths.
+- [ ] One tax calculator, using the country-resolved rate (default JM), drives quotes, bookings, date changes, and documents.
+- [ ] Hosts can enable cleaning fee and damage deposit; disabled ⇒ 0.
+- [ ] The reconciliation invariant holds and is property-tested.
+- [ ] REC/INV/REF documents are issued from `db_core::booking::update_booking` hooks; date changes produce superseding revisions.
+- [ ] Firm/Strict refunds use the typestate calculator, and the cancellation email shows the correct refund.
+- [ ] Cloud Scheduler Terraform job completes stays daily via the PATCH cron endpoint.
+- [ ] JMD equivalents are recorded with explicit FX failure handling.
+- [ ] APIs are JSON-only; documents render via the `web_app_common_tc` SSR component.
+- [ ] No floats in JSONB (`FeeItem`, `line_items`).
+- [ ] The `booking_completed_guest` email exists; there are no credit notes and no `/admin/documents` page.
+- [ ] `cargo test --workspace`, `clippy -D warnings`, and `sqlx prepare --check` are green; no new `unwrap`/`expect` in production paths.
