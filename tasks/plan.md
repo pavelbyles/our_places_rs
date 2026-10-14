@@ -40,7 +40,7 @@
   - **Verification Command:** `cargo test -p common pricing && cargo test -p booking_api`
   - **Dependencies:** Task 0
 
-- [ ] **Task 2A: Listing Fee Backend & Reconciled Pricing Invariant**
+- [x] **Task 2A: Listing Fee Backend & Reconciled Pricing Invariant**
   - **Scope:** M (4 files)
   - **Description:** Add host-configurable `cleaning_fee` and `damage_deposit` to `listing` persistence and listing API endpoints. Update `BookingCalculator` with `with_fees(cleaning, deposit)` and enforce the financial reconciliation invariant: `total_price = taxable_base + tax_value + platform_fee + damage_deposit`.
   - **Files Touched:**
@@ -49,9 +49,9 @@
     - `app_api/listing_api/src/apis.rs`
     - `common/src/pricing.rs`
   - **Acceptance Criteria:**
-    - [ ] Listing create and update endpoints accept optional `cleaning_fee` and `damage_deposit` (validating `0 <= fee <= 1,000,000` with 2 decimal places).
-    - [ ] Listings with fees disabled default to `0.00`.
-    - [ ] Property-based tests verify `total_price == (accommodation_net + cleaning) + tax + platform_fee + damage_deposit` across edge values.
+    - [x] Listing create and update endpoints accept optional `cleaning_fee` and `damage_deposit` (validating `0 <= fee <= 1,000,000` with 2 decimal places).
+    - [x] Listings with fees disabled default to `0.00`.
+    - [x] Property-based tests verify `total_price == (accommodation_net + cleaning) + tax + platform_fee + damage_deposit` across edge values.
   - **Verification Command:** `cargo test -p common -- reconciliation && cargo test -p listing_api`
   - **Dependencies:** Task 1
 

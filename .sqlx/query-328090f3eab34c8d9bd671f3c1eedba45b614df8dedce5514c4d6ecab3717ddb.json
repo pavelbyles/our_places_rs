@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct FROM listing WHERE id = $1 FOR UPDATE",
+  "query": "\n        UPDATE listing\n        SET\n            name = COALESCE($2, name),\n            description = COALESCE($3, description),\n            listing_structure_id = COALESCE($4, listing_structure_id),\n            country = COALESCE($5, country),\n            price_per_night = COALESCE($6, price_per_night),\n            is_active = COALESCE($7, is_active),\n            weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),\n            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage),\n            max_guests = COALESCE($10, max_guests),\n            bedrooms = COALESCE($11, bedrooms),\n            beds = COALESCE($12, beds),\n            full_bathrooms = COALESCE($13, full_bathrooms),\n            half_bathrooms = COALESCE($14, half_bathrooms),\n            square_meters = COALESCE($15, square_meters),\n            latitude = COALESCE($16, latitude),\n            longitude = COALESCE($17, longitude),\n            listing_details = COALESCE($18, listing_details),\n            city = COALESCE($19, city),\n            base_currency = COALESCE($20, base_currency),\n            minimum_stay = COALESCE($21, minimum_stay),\n            days_between_bookings = COALESCE($22, days_between_bookings),\n            commission_pct = COALESCE($23, commission_pct),\n            cleaning_fee = COALESCE($24, cleaning_fee),\n            damage_deposit = COALESCE($25, damage_deposit)\n        WHERE id = $1\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit\n        ",
   "describe": {
     "columns": [
       {
@@ -152,11 +152,45 @@
         "ordinal": 29,
         "name": "commission_pct",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 30,
+        "name": "cleaning_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 31,
+        "name": "damage_deposit",
+        "type_info": "Numeric"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Numeric",
+        "Bool",
+        "Numeric",
+        "Numeric",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Float8",
+        "Float8",
+        "Jsonb",
+        "Text",
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Numeric",
+        "Numeric",
+        "Numeric"
       ]
     },
     "nullable": [
@@ -189,8 +223,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "efb9bde3af810d1f9c2a24298adde91f17a8bb92ef0027ab86a9e01e5d0d4510"
+  "hash": "328090f3eab34c8d9bd671f3c1eedba45b614df8dedce5514c4d6ecab3717ddb"
 }

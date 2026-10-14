@@ -212,6 +212,18 @@ async fn create_booking(
     let tax_rate =
         common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
 
+    let cleaning_fee = if conversion_rate != Decimal::ONE {
+        (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
+    } else {
+        listing_details.listing.cleaning_fee
+    };
+
+    let damage_deposit = if conversion_rate != Decimal::ONE {
+        (listing_details.listing.damage_deposit * conversion_rate).round_dp(2)
+    } else {
+        listing_details.listing.damage_deposit
+    };
+
     let calculator = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
         total_days,
@@ -221,6 +233,7 @@ async fn create_booking(
         listing_details.listing.monthly_discount_percentage,
         listing_details.listing.weekly_discount_percentage,
     )
+    .with_fees(Some(cleaning_fee), Some(damage_deposit))
     .apply_taxes(tax_rate)
     .finalize();
 
@@ -269,8 +282,8 @@ async fn create_booking(
                 is_business_trip: req_data.is_business_trip,
             },
             door_access_code: None,
-            cleaning_fee: Decimal::ZERO,
-            damage_deposit: Decimal::ZERO,
+            cleaning_fee: calculator.cleaning_fee,
+            damage_deposit: calculator.damage_deposit,
             platform_fee,
             tax_rate: calculator.tax_rate,
             exchange_rate: conversion_rate,

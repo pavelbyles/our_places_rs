@@ -753,6 +753,7 @@ dependencies = [
  "chrono",
  "google-cloud-auth",
  "google-cloud-storage",
+ "rand 0.10.3",
  "reqwest",
  "rust_decimal",
  "serde",

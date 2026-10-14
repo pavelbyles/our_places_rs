@@ -461,6 +461,8 @@ pub struct Listing {
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
     pub commission_pct: Decimal,
+    pub cleaning_fee: Decimal,
+    pub damage_deposit: Decimal,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -495,6 +497,8 @@ pub struct ListingWithOwner {
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
     pub commission_pct: Decimal,
+    pub cleaning_fee: Decimal,
+    pub damage_deposit: Decimal,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -531,9 +535,11 @@ pub struct NewListing {
     pub minimum_stay: i32,
     pub days_between_bookings: i32,
     pub commission_pct: Option<Decimal>,
+    pub cleaning_fee: Option<Decimal>,
+    pub damage_deposit: Option<Decimal>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Validate)]
+#[derive(Debug, Deserialize, Serialize, Validate, Default)]
 pub struct UpdatedListing {
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: Option<String>,
@@ -570,6 +576,8 @@ pub struct UpdatedListing {
     pub minimum_stay: Option<i32>,
     pub days_between_bookings: Option<i32>,
     pub commission_pct: Option<Decimal>,
+    pub cleaning_fee: Option<Decimal>,
+    pub damage_deposit: Option<Decimal>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

@@ -46,8 +46,8 @@ pub fn map_listing_to_response(
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
         commission_pct: Some(listing.commission_pct),
-        cleaning_fee: None,
-        damage_deposit: None,
+        cleaning_fee: Some(listing.cleaning_fee),
+        damage_deposit: Some(listing.damage_deposit),
     }
 }
 
@@ -112,8 +112,8 @@ pub fn map_listing_with_owner_to_response(
         minimum_stay: listing.minimum_stay,
         days_between_bookings: listing.days_between_bookings,
         commission_pct: Some(listing.commission_pct),
-        cleaning_fee: None,
-        damage_deposit: None,
+        cleaning_fee: Some(listing.cleaning_fee),
+        damage_deposit: Some(listing.damage_deposit),
     }
 }
 

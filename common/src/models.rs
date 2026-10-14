@@ -502,6 +502,27 @@ pub struct NewListingRequest {
     #[serde(default)]
     #[schema(value_type = String, example = "0.1000")]
     pub commission_pct: Option<Decimal>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "50.00")]
+    #[validate(custom(function = "validate_fee"))]
+    pub cleaning_fee: Option<Decimal>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "200.00")]
+    #[validate(custom(function = "validate_fee"))]
+    pub damage_deposit: Option<Decimal>,
+}
+
+/// Validates that a fee is between 0 and 1,000,000 and has at most 2 decimal places.
+pub fn validate_fee(fee: &Decimal) -> Result<(), validator::ValidationError> {
+    if *fee < Decimal::ZERO || *fee > Decimal::from(1_000_000) || fee.scale() > 2 {
+        let mut err = validator::ValidationError::new("invalid_fee");
+        err.message =
+            Some("Fee must be between 0 and 1,000,000 with at most 2 decimal places".into());
+        return Err(err);
+    }
+    Ok(())
 }
 
 pub fn default_minimum_stay() -> i32 {
@@ -615,6 +636,16 @@ pub struct UpdatedListingRequest {
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "0.1000")]
     pub commission_pct: Option<Decimal>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "50.00")]
+    #[validate(custom(function = "validate_fee"))]
+    pub cleaning_fee: Option<Decimal>,
+
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "200.00")]
+    #[validate(custom(function = "validate_fee"))]
+    pub damage_deposit: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -1029,6 +1060,20 @@ mod tests {
             serde_json::from_str(legacy_json).expect("deserialization from number should succeed");
         assert_eq!(from_legacy.name, "Cleaning Fee");
         assert_eq!(from_legacy.amount, Decimal::new(5000, 2));
+    }
+
+    #[test]
+    fn test_validate_fee() {
+        assert!(validate_fee(&Decimal::ZERO).is_ok());
+        assert!(validate_fee(&Decimal::new(5000, 2)).is_ok()); // 50.00
+        assert!(validate_fee(&Decimal::from(1_000_000)).is_ok());
+
+        // Negative
+        assert!(validate_fee(&Decimal::new(-1, 0)).is_err());
+        // > 1,000,000
+        assert!(validate_fee(&Decimal::from(1_000_001)).is_err());
+        // More than 2 decimal places
+        assert!(validate_fee(&Decimal::new(50001, 3)).is_err()); // 50.001
     }
 }
 

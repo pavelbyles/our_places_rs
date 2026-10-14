@@ -20,3 +20,7 @@ tokio = { workspace = true, features = ["sync"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 google-cloud-storage = { workspace = true }
 google-cloud-auth = "1.6.0"
+
+[dev-dependencies]
+rand = { workspace = true }
+

@@ -756,6 +756,8 @@ mod tests {
             minimum_stay: 1,
             days_between_bookings: 0,
             commission_pct: Some(dec!(0.1000)),
+            cleaning_fee: None,
+            damage_deposit: None,
         };
         let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
             .await
@@ -784,6 +786,8 @@ mod tests {
             minimum_stay: 1,
             days_between_bookings: 0,
             commission_pct: Some(dec!(0.1000)),
+            cleaning_fee: None,
+            damage_deposit: None,
         };
         let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
             .await

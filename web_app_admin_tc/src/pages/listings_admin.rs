@@ -43,6 +43,8 @@ pub struct AdminCreateListingPayload {
     pub primary_image_url: Option<String>,
     pub is_active: Option<bool>,
     pub commission_pct: Option<Decimal>,
+    pub cleaning_fee: Option<Decimal>,
+    pub damage_deposit: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,6 +79,8 @@ pub struct AdminCreateListingFormPayload {
     pub primary_image_url: Option<String>,
     pub is_active: Option<String>,
     pub commission_pct: Option<String>,
+    pub cleaning_fee: Option<String>,
+    pub damage_deposit: Option<String>,
 }
 
 impl AdminCreateListingFormPayload {
@@ -162,6 +166,14 @@ impl AdminCreateListingFormPayload {
                         pct
                     }
                 }),
+            cleaning_fee: self
+                .cleaning_fee
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok()),
+            damage_deposit: self
+                .damage_deposit
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok()),
         }
     }
 }
@@ -252,6 +264,8 @@ async fn execute_create_listing(
                 }
             })
             .or_else(|| Some(Decimal::new(1000, 4))),
+        cleaning_fee: payload.cleaning_fee,
+        damage_deposit: payload.damage_deposit,
     };
 
     api.create_listing(&new_req)

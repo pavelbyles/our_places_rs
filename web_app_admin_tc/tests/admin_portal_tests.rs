@@ -209,6 +209,8 @@ fn test_listing_23_fields_coordinate_and_price_boundaries() {
         minimum_stay: 3,
         days_between_bookings: 1,
         commission_pct: Some(dec!(0.1000)),
+        cleaning_fee: None,
+        damage_deposit: None,
     };
 
     assert!(req.price_per_night.unwrap() > Decimal::ZERO);
