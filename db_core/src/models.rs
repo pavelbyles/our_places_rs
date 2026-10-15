@@ -366,6 +366,30 @@ pub enum CancellationPolicy {
     Limited,
 }
 
+impl From<common::cancellation::CancellationPolicy> for CancellationPolicy {
+    fn from(p: common::cancellation::CancellationPolicy) -> Self {
+        match p {
+            common::cancellation::CancellationPolicy::Flexible => CancellationPolicy::Flexible,
+            common::cancellation::CancellationPolicy::Moderate => CancellationPolicy::Moderate,
+            common::cancellation::CancellationPolicy::Strict => CancellationPolicy::Strict,
+            common::cancellation::CancellationPolicy::Firm => CancellationPolicy::Firm,
+            common::cancellation::CancellationPolicy::Limited => CancellationPolicy::Limited,
+        }
+    }
+}
+
+impl From<CancellationPolicy> for common::cancellation::CancellationPolicy {
+    fn from(p: CancellationPolicy) -> Self {
+        match p {
+            CancellationPolicy::Flexible => common::cancellation::CancellationPolicy::Flexible,
+            CancellationPolicy::Moderate => common::cancellation::CancellationPolicy::Moderate,
+            CancellationPolicy::Strict => common::cancellation::CancellationPolicy::Strict,
+            CancellationPolicy::Firm => common::cancellation::CancellationPolicy::Firm,
+            CancellationPolicy::Limited => common::cancellation::CancellationPolicy::Limited,
+        }
+    }
+}
+
 #[derive(
     Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, Eq, EnumString,
 )]

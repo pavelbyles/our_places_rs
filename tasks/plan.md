@@ -101,19 +101,19 @@
   - **Verification Command:** `cargo test -p web_app_tc && cargo test -p email_worker`
   - **Dependencies:** Task 3A
 
-- [ ] **Task 4A: 5-Policy Typestate Refund Calculator**
+- [x] **Task 4A: 5-Policy Typestate Refund Calculator**
   - **Scope:** S (2 files)
   - **Description:** Implement `common::cancellation` with compile-time typestate `RefundCalculator` enforcing the exact schedules for all 5 policies: Flexible, Moderate, Strict, Firm, and Limited. Implement the watertight partial refund component formulas (accommodation at policy %, cleaning & deposit 100%, GCT pro-rata, platform fee only on 100% full refund).
   - **Files Touched:**
     - `common/src/cancellation.rs`
     - `common/tests/cancellation_tests.rs`
   - **Acceptance Criteria:**
-    - [ ] Flexible: >=24h 100% accommodation refund; <24h 0% (100% host payout).
-    - [ ] Moderate: >=5d 100%; 5d to 24h 50%; <24h 0%.
-    - [ ] Strict: <=48h from booking (if booked >=14d out) 100%; >=7d 50%; <7d 0%.
-    - [ ] Firm: >=30d (or <=48h if booked >=14d out) 100%; 7d to 30d 50%; <7d 0%.
-    - [ ] Limited: >=14d 100%; 7d to 14d 50%; <7d 0%.
-    - [ ] Component invariant: `refund_total + retained_total == total_price` holds for all percentages.
+    - [x] Flexible: >=24h 100% accommodation refund; <24h 0% (100% host payout).
+    - [x] Moderate: >=5d 100%; 5d to 24h 50%; <24h 0%.
+    - [x] Strict: <=48h from booking (if booked >=14d out) 100%; >=7d 50%; <7d 0%.
+    - [x] Firm: >=30d (or <=48h if booked >=14d out) 100%; 7d to 30d 50%; <7d 0%.
+    - [x] Limited: >=14d 100%; 7d to 14d 50%; <7d 0%.
+    - [x] Component invariant: `refund_total + retained_total == total_price` holds for all percentages.
   - **Verification Command:** `cargo test -p common --test cancellation_tests`
   - **Dependencies:** Task 0
 

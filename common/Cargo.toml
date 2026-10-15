@@ -23,4 +23,5 @@ google-cloud-auth = "1.6.0"
 
 [dev-dependencies]
 rand = { workspace = true }
+rust_decimal_macros = { workspace = true }
 
