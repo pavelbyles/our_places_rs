@@ -68,7 +68,7 @@
   - **Verification Command:** `cargo test -p web_app_admin_tc && cargo test -p web_app_common_tc`
   - **Dependencies:** Task 2A
 
-- [ ] **Task 3A: Tax Document Engine & Payment Receipt Hook**
+- [x] **Task 3A: Tax Document Engine & Payment Receipt Hook**
   - **Scope:** M (5 files)
   - **Description:** Implement `db_core::tax_document` queries, JMD FX rate lookup with direct/inverse resolution, and the transaction hook in `update_booking` that generates a `payment_receipt` (`REC-YYYY-{code}`) upon transitioning to `Confirmed`. Wire typed `TaxSettings` and expose JSON document API endpoints in `booking_api`.
   - **Files Touched:**
@@ -78,11 +78,11 @@
     - `app_api/booking_api/src/settings.rs`
     - `app_api/booking_api/src/apis.rs`
   - **Acceptance Criteria:**
-    - [ ] Transitioning booking to `Confirmed` issues exactly one `tax_document` with type `payment_receipt`.
-    - [ ] Document `total_amount` matches `booking.total_price` and snapshots `jmd_total_amount`.
-    - [ ] Missing FX rates return HTTP 422 `FX_RATE_UNAVAILABLE` and abort the transaction.
-    - [ ] Application fails to start if `TAJ_SUPPLIER_TRN` is missing from environment.
-    - [ ] `GET /api/v1/bookings/{id}/documents` returns issued documents with authorization guards.
+    - [x] Transitioning booking to `Confirmed` issues exactly one `tax_document` with type `payment_receipt`.
+    - [x] Document `total_amount` matches `booking.total_price` and snapshots `jmd_total_amount`.
+    - [x] Missing FX rates return HTTP 422 `FX_RATE_UNAVAILABLE` and abort the transaction.
+    - [x] Application fails to start if `TAJ_SUPPLIER_TRN` is missing from environment.
+    - [x] `GET /api/v1/bookings/{id}/documents` returns issued documents with authorization guards.
   - **Verification Command:** `cargo test -p db_core tax_document && cargo test -p booking_api documents`
   - **Dependencies:** Task 2B
 

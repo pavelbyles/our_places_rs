@@ -38,6 +38,9 @@ impl ResponseError for ApiError {
         match self {
             ApiError::Database(DbError::Sqlx(sqlx::Error::RowNotFound)) => StatusCode::NOT_FOUND,
             ApiError::Database(DbError::ValidationError(_)) => StatusCode::BAD_REQUEST,
+            ApiError::Database(DbError::FxRateUnavailable { .. }) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             // Validation errors are always 400 Bad Request
             ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
             // All other database errors are likely internal server errors.
@@ -56,6 +59,12 @@ impl ResponseError for ApiError {
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Database(DbError::FxRateUnavailable { base, target }) => {
+                HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                    "code": "FX_RATE_UNAVAILABLE",
+                    "message": format!("Foreign exchange rate unavailable for currency pair: {} -> {}", base, target)
+                }))
             }
             ApiError::Unauthorized(msg) => {
                 HttpResponse::Unauthorized().json(serde_json::json!({ "error": msg }))

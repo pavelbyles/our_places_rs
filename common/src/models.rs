@@ -375,6 +375,12 @@ pub struct NewBookingRequest {
     pub estimated_arrival_time: Option<String>,
     /// Whether this booking is for business purposes.
     pub is_business_trip: bool,
+    /// Optional corporate company name for B2B tax compliance.
+    #[serde(default)]
+    pub business_company_name: Option<String>,
+    /// Optional corporate Taxpayer Registration Number (TRN) for B2B compliance.
+    #[serde(default)]
+    pub business_tax_id: Option<String>,
 
     /// Selected checkout currency.
     pub currency: String,

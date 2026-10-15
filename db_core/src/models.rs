@@ -26,6 +26,10 @@ pub struct BookingMetadata {
     pub estimated_arrival_time: Option<String>,
     /// Whether the booking is for business travel.
     pub is_business_trip: bool,
+    /// Optional corporate company name for B2B tax compliance.
+    pub business_company_name: Option<String>,
+    /// Optional corporate Taxpayer Registration Number (TRN) for B2B compliance.
+    pub business_tax_id: Option<String>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -423,6 +427,142 @@ impl From<TaxDocumentStatus> for common::tax_document::TaxDocumentStatus {
         match s {
             TaxDocumentStatus::Issued => common::tax_document::TaxDocumentStatus::Issued,
             TaxDocumentStatus::Superseded => common::tax_document::TaxDocumentStatus::Superseded,
+        }
+    }
+}
+
+/// Information identifying the Merchant of Record supplier issuing compliance documents.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupplierInfo {
+    pub supplier_name: String,
+    pub supplier_address: String,
+    pub supplier_trn: String,
+}
+
+/// DTO for inserting a new statutory tax document into the database.
+#[derive(Debug, Clone)]
+pub struct NewTaxDocument {
+    pub document_type: TaxDocumentType,
+    pub document_number: String,
+    pub revision: i32,
+    pub status: TaxDocumentStatus,
+    pub supersedes_id: Option<Uuid>,
+    pub booking_id: Uuid,
+    pub booking_history_id: Option<Uuid>,
+    pub recipient_id: Uuid,
+    pub listing_id: Uuid,
+    pub issue_date: DateTime<Utc>,
+    pub supplier_name: String,
+    pub supplier_address: String,
+    pub supplier_trn: String,
+    pub recipient_name: String,
+    pub recipient_email: String,
+    pub recipient_company_name: Option<String>,
+    pub recipient_trn: Option<String>,
+    pub currency: String,
+    pub exchange_rate: Decimal,
+    pub jmd_exchange_rate: Decimal,
+    pub accommodation_net: Decimal,
+    pub cleaning_fee: Decimal,
+    pub taxable_amount: Decimal,
+    pub tax_rate: Decimal,
+    pub tax_amount: Decimal,
+    pub platform_fee: Decimal,
+    pub damage_deposit: Decimal,
+    pub total_amount: Decimal,
+    pub amount_previously_paid: Option<Decimal>,
+    pub balance_due: Option<Decimal>,
+    pub refund_pct: Option<Decimal>,
+    pub retained_amount: Option<Decimal>,
+    pub jmd_tax_amount: Decimal,
+    pub jmd_total_amount: Decimal,
+    pub line_items: serde_json::Value,
+}
+
+/// Row entity representation of a compliance tax document in PostgreSQL.
+#[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
+pub struct TaxDocumentRow {
+    pub id: Uuid,
+    pub document_type: TaxDocumentType,
+    pub document_number: String,
+    pub revision: i32,
+    pub status: TaxDocumentStatus,
+    pub supersedes_id: Option<Uuid>,
+    pub booking_id: Uuid,
+    pub booking_history_id: Option<Uuid>,
+    pub recipient_id: Uuid,
+    pub listing_id: Uuid,
+    pub issue_date: DateTime<Utc>,
+    pub supplier_name: String,
+    pub supplier_address: String,
+    pub supplier_trn: String,
+    pub recipient_name: String,
+    pub recipient_email: String,
+    pub recipient_company_name: Option<String>,
+    pub recipient_trn: Option<String>,
+    pub currency: String,
+    pub exchange_rate: Decimal,
+    pub jmd_exchange_rate: Decimal,
+    pub accommodation_net: Decimal,
+    pub cleaning_fee: Decimal,
+    pub taxable_amount: Decimal,
+    pub tax_rate: Decimal,
+    pub tax_amount: Decimal,
+    pub platform_fee: Decimal,
+    pub damage_deposit: Decimal,
+    pub total_amount: Decimal,
+    pub amount_previously_paid: Option<Decimal>,
+    pub balance_due: Option<Decimal>,
+    pub refund_pct: Option<Decimal>,
+    pub retained_amount: Option<Decimal>,
+    pub jmd_tax_amount: Decimal,
+    pub jmd_total_amount: Decimal,
+    pub line_items: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<TaxDocumentRow> for common::tax_document::TaxDocumentResponse {
+    fn from(r: TaxDocumentRow) -> Self {
+        let line_items: Vec<common::tax_document::InvoiceLineItem> =
+            serde_json::from_value(r.line_items).unwrap_or_default();
+        Self {
+            id: r.id,
+            document_type: r.document_type.into(),
+            document_number: r.document_number,
+            revision: r.revision,
+            status: r.status.into(),
+            supersedes_id: r.supersedes_id,
+            booking_id: r.booking_id,
+            booking_history_id: r.booking_history_id,
+            recipient_id: r.recipient_id,
+            listing_id: r.listing_id,
+            issue_date: r.issue_date,
+            supplier_name: r.supplier_name,
+            supplier_address: r.supplier_address,
+            supplier_trn: r.supplier_trn,
+            recipient_name: r.recipient_name,
+            recipient_email: r.recipient_email,
+            recipient_company_name: r.recipient_company_name,
+            recipient_trn: r.recipient_trn,
+            currency: r.currency,
+            exchange_rate: r.exchange_rate,
+            jmd_exchange_rate: r.jmd_exchange_rate,
+            accommodation_net: r.accommodation_net,
+            cleaning_fee: r.cleaning_fee,
+            taxable_amount: r.taxable_amount,
+            tax_rate: r.tax_rate,
+            tax_amount: r.tax_amount,
+            platform_fee: r.platform_fee,
+            damage_deposit: r.damage_deposit,
+            total_amount: r.total_amount,
+            amount_previously_paid: r.amount_previously_paid,
+            balance_due: r.balance_due,
+            refund_pct: r.refund_pct,
+            retained_amount: r.retained_amount,
+            jmd_tax_amount: r.jmd_tax_amount,
+            jmd_total_amount: r.jmd_total_amount,
+            line_items,
+            created_at: r.created_at,
         }
     }
 }

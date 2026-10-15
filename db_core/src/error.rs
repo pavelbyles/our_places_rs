@@ -6,6 +6,8 @@ pub enum DbError {
     Sqlx(#[from] sqlx::Error),
     #[error("Validation error: {0}")]
     ValidationError(String),
+    #[error("Foreign exchange rate unavailable for currency pair: {base} -> {target}")]
+    FxRateUnavailable { base: String, target: String },
 }
 
 // A custom `Result` type that defaults to using our `DbError`.

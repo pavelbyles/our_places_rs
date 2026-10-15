@@ -136,3 +136,76 @@ pub fn get_settings() -> Result<Settings, ConfigError> {
 
     settings.try_deserialize()
 }
+
+/// Tax compliance settings identifying the Merchant of Record.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaxSettings {
+    pub taj_supplier_trn: String,
+    pub supplier_name: String,
+    pub supplier_address: String,
+}
+
+impl TaxSettings {
+    /// Loads and validates statutory tax settings from environment variables.
+    /// Fails fast if `TAJ_SUPPLIER_TRN` is missing or empty.
+    pub fn from_env() -> Result<Self, String> {
+        let trn = std::env::var("TAJ_SUPPLIER_TRN")
+            .map_err(|_| "TAJ_SUPPLIER_TRN is required for statutory tax invoicing".to_string())?;
+        if trn.trim().is_empty() {
+            return Err("TAJ_SUPPLIER_TRN is required for statutory tax invoicing".to_string());
+        }
+        let supplier_name = std::env::var("TAJ_SUPPLIER_NAME")
+            .unwrap_or_else(|_| "Our Places Jamaica Limited".to_string());
+        let supplier_address = std::env::var("TAJ_SUPPLIER_ADDRESS")
+            .unwrap_or_else(|_| "Main Street, Ocho Rios, St. Ann, Jamaica".to_string());
+        Ok(Self {
+            taj_supplier_trn: trn,
+            supplier_name,
+            supplier_address,
+        })
+    }
+
+    /// Converts into `db_core::models::SupplierInfo`.
+    pub fn to_supplier_info(&self) -> db_core::models::SupplierInfo {
+        db_core::models::SupplierInfo {
+            supplier_name: self.supplier_name.clone(),
+            supplier_address: self.supplier_address.clone(),
+            supplier_trn: self.taj_supplier_trn.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tax_settings_missing_trn_fails() {
+        unsafe {
+            std::env::remove_var("TAJ_SUPPLIER_TRN");
+        }
+        let err = TaxSettings::from_env().unwrap_err();
+        assert!(err.contains("TAJ_SUPPLIER_TRN is required"));
+    }
+
+    #[test]
+    fn test_tax_settings_empty_trn_fails() {
+        unsafe {
+            std::env::set_var("TAJ_SUPPLIER_TRN", "   ");
+        }
+        let err = TaxSettings::from_env().unwrap_err();
+        assert!(err.contains("TAJ_SUPPLIER_TRN is required"));
+    }
+
+    #[test]
+    fn test_tax_settings_valid_trn_succeeds() {
+        unsafe {
+            std::env::set_var("TAJ_SUPPLIER_TRN", "123-456-789");
+        }
+        let settings = TaxSettings::from_env().unwrap();
+        assert_eq!(settings.taj_supplier_trn, "123-456-789");
+        assert_eq!(settings.supplier_name, "Our Places Jamaica Limited");
+        let supplier = settings.to_supplier_info();
+        assert_eq!(supplier.supplier_trn, "123-456-789");
+    }
+}

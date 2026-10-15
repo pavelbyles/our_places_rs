@@ -1,3 +1,4 @@
+use crate::settings::TaxSettings;
 use actix_web::middleware::from_fn;
 use actix_web::{FromRequest, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
@@ -280,6 +281,8 @@ async fn create_booking(
                 message_to_host: req_data.message_to_host.clone(),
                 estimated_arrival_time: req_data.estimated_arrival_time.clone(),
                 is_business_trip: req_data.is_business_trip,
+                business_company_name: req_data.business_company_name.clone(),
+                business_tax_id: req_data.business_tax_id.clone(),
             },
             door_access_code: None,
             cleaning_fee: calculator.cleaning_fee,
@@ -483,6 +486,7 @@ async fn get_booking_by_id(
 async fn update_booking(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    tax_settings: Option<web::Data<TaxSettings>>,
     id: web::Path<Uuid>,
     body: web::Json<UpdatedBookingRequest>,
 ) -> Result<impl Responder, ApiError> {
@@ -533,7 +537,17 @@ async fn update_booking(
         door_access_code: body.door_access_code.clone(),
     };
 
-    let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data)
+    let supplier = tax_settings
+        .as_ref()
+        .map(|s| s.to_supplier_info())
+        .or_else(|| TaxSettings::from_env().ok().map(|s| s.to_supplier_info()))
+        .unwrap_or_else(|| db_core::models::SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, St. Ann, Jamaica".to_string(),
+            supplier_trn: "000-000-000".to_string(),
+        });
+
+    let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data, &supplier)
         .await
         .map_err(ApiError::Database)?;
 
@@ -1552,6 +1566,110 @@ pub async fn process_scheduled_notifications(
     }))
 }
 
+/// Helper function enforcing that only booking guest, listing host, or administrator can view tax documents.
+/// Non-authenticated callers or unauthorized users receive 404 (do not leak existence).
+async fn check_booking_authorization(
+    req: &HttpRequest,
+    pool: &PgPool,
+    booking_id: Uuid,
+) -> Result<(), ApiError> {
+    let parties = db_booking_message::get_booking_parties(pool, booking_id)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let mut dev_payload = actix_web::dev::Payload::None;
+    let claims = match api_core::auth::Claims::from_request(req, &mut dev_payload).into_inner() {
+        Ok(c) => c,
+        Err(_) => {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    };
+
+    let user = match db_core::user::get_user_by_id(pool, claims.sub).await {
+        Ok(u) => u,
+        Err(_) => {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    };
+
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let is_guest = claims.sub == parties.guest_id;
+    let is_host = claims.sub == parties.host_id;
+
+    if !is_admin && !is_guest && !is_host {
+        return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )));
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/{id}/documents",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "List of statutory tax documents for booking", body = Vec<common::tax_document::TaxDocumentResponse>),
+        (status = 404, description = "Booking not found or caller unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_booking_documents(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    check_booking_authorization(&req, pool.get_ref(), *id).await?;
+
+    let docs = db_core::tax_document::list_for_booking(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let response: Vec<common::tax_document::TaxDocumentResponse> =
+        docs.into_iter().map(|d| d.into()).collect();
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/{id}/documents/{number}",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Statutory tax document found", body = common::tax_document::TaxDocumentResponse),
+        (status = 404, description = "Document not found or caller unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_booking_document_by_number(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, String)>,
+) -> Result<impl Responder, ApiError> {
+    let (booking_id, document_number) = path.into_inner();
+    check_booking_authorization(&req, pool.get_ref(), booking_id).await?;
+
+    let doc = db_core::tax_document::get_by_number(pool.get_ref(), booking_id, &document_number)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let response: common::tax_document::TaxDocumentResponse = doc.into();
+    Ok(HttpResponse::Ok().json(response))
+}
+
 /// Configures Actix-web HTTP routes and OpenAPI specifications for the Booking service.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
@@ -1570,9 +1688,31 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             send_booking_message,
             mark_booking_messages_read,
             process_scheduled_notifications,
+            get_booking_documents,
+            get_booking_document_by_number,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse, CronSweepResponse)
+            schemas(
+                NewBookingRequest,
+                UpdatedBookingRequest,
+                common::models::TransferBookingRequest,
+                AvailabilityResponse,
+                BookingResponse,
+                pagination::Pagination,
+                FeeItem,
+                BookingStatus,
+                CancellationPolicy,
+                common::models::BookingMessageResponse,
+                common::models::BookingMessagesWrapper,
+                common::models::CreateBookingMessageRequest,
+                common::models::MarkMessagesReadResponse,
+                CronSweepResponse,
+                common::tax_document::TaxDocumentResponse,
+                common::tax_document::TaxDocumentType,
+                common::tax_document::TaxDocumentStatus,
+                common::tax_document::InvoiceLineItem,
+                common::tax_document::InvoiceTaxCategory,
+            )
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -1640,6 +1780,18 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/{id}/transfer",
                 web::post()
                     .to(transfer_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/documents",
+                web::get()
+                    .to(get_booking_documents)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/documents/{number}",
+                web::get()
+                    .to(get_booking_document_by_number)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(

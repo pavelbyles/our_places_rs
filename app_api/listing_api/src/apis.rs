@@ -260,6 +260,7 @@ async fn create_listing(
                             continue;
                         }
                     }
+                    _ => {}
                 }
                 return Err(ApiError::Database(e));
             }

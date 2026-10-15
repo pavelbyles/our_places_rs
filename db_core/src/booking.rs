@@ -1,7 +1,8 @@
 use crate::error::Result;
 #[allow(unused_imports)]
 use crate::models::{
-    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
+    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, SupplierInfo,
+    UpdatedBooking,
 };
 #[allow(unused_imports)]
 use chrono::Utc;
@@ -209,6 +210,7 @@ pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
     updated_booking: &UpdatedBooking,
+    supplier: &SupplierInfo,
 ) -> Result<Booking> {
     // Check existence first or let standard update fail if not found?
     // Listing API uses transaction and SELECT FOR UPDATE, then COALESCE.
@@ -258,7 +260,7 @@ pub async fn update_booking(
     let metadata_changed = updated_booking.metadata.is_some();
     let door_code_changed = updated_booking.door_access_code.is_some();
 
-    if status_changed || metadata_changed || door_code_changed {
+    let history_id = if status_changed || metadata_changed || door_code_changed {
         let reason = match (status_changed, metadata_changed, door_code_changed) {
             (true, true, _) => "Status and metadata updated",
             (true, false, false) => "Status updated",
@@ -266,8 +268,10 @@ pub async fn update_booking(
             (false, false, true) => "Door access code updated",
             _ => "Booking updated",
         };
-        record_booking_history(&mut tx, &booking, reason, None).await?;
-    }
+        Some(record_booking_history(&mut tx, &booking, reason, None).await?)
+    } else {
+        None
+    };
 
     // Trigger review token generation if booking transitions to Completed
     if let Some(BookingStatus::Completed) = updated_booking.status
@@ -276,10 +280,12 @@ pub async fn update_booking(
         crate::review::create_review_token(&mut tx, booking.id).await?;
     }
 
-    // Trigger host payout ledger generation if booking transitions to Confirmed
+    // Trigger payment receipt issuance and host payout ledger generation if booking transitions to Confirmed
     if let Some(BookingStatus::Confirmed) = updated_booking.status
         && status_changed
     {
+        crate::tax_document::issue_payment_receipt(&mut tx, &booking, supplier, history_id).await?;
+
         let listing_info = sqlx::query!(
             r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
             booking.listing_id
@@ -633,8 +639,8 @@ async fn record_booking_history(
     booking: &Booking,
     change_reason: &str,
     changed_by_id: Option<Uuid>,
-) -> Result<()> {
-    sqlx::query!(
+) -> Result<Uuid> {
+    let history_id = sqlx::query_scalar!(
         r#"
         INSERT INTO booking_history (
             booking_id, confirmation_code, guest_id, listing_id, status,
@@ -645,6 +651,7 @@ async fn record_booking_history(
             change_reason, changed_by_id
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+        RETURNING id
         "#,
         booking.id,
         booking.confirmation_code,
@@ -673,10 +680,10 @@ async fn record_booking_history(
         change_reason,
         changed_by_id
     )
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
 
-    Ok(())
+    Ok(history_id)
 }
 
 #[cfg(test)]
@@ -902,5 +909,208 @@ mod tests {
             .expect("Failed to fetch bookings for listing2");
         assert_eq!(listing2_bookings.len(), 1);
         assert_eq!(listing2_bookings[0].id, b2.id);
+    }
+
+    #[tokio::test]
+    async fn test_update_booking_confirmed_issues_payment_receipt() {
+        let test_db = setup_test_db().await;
+        let pool = test_db.get_pool().await;
+
+        let host_id = Uuid::now_v7();
+        let guest_id = Uuid::now_v7();
+
+        let mut tx = pool.begin().await.unwrap();
+
+        let host_user = crate::models::NewUser {
+            id: host_id,
+            email: format!("host_{}@example.com", host_id),
+            password_hash: "hash".to_string(),
+            first_name: "TaxHost".to_string(),
+            last_name: "Owner".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Host]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &host_user)
+            .await
+            .unwrap();
+
+        let profile = crate::models::NewHostProfile {
+            description: Some("Host".to_string()),
+            verified_status: Some("pending".to_string()),
+            payout_details: None,
+        };
+        crate::user::create_host_profile(&mut *tx, host_id, &profile)
+            .await
+            .unwrap();
+
+        let guest_user = crate::models::NewUser {
+            id: guest_id,
+            email: format!("guest_{}@example.com", guest_id),
+            password_hash: "hash".to_string(),
+            first_name: "TaxGuest".to_string(),
+            last_name: "Booker".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &guest_user)
+            .await
+            .unwrap();
+
+        let listing = crate::listing::create_listing(
+            &mut *tx,
+            &crate::models::NewListing {
+                name: format!("Receipt Test Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "JM".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: Some(dec!(50.00)),
+                damage_deposit: Some(dec!(100.00)),
+            },
+        )
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+            VALUES ('USD', 'JMD', 160.000000, NOW())
+            ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING
+            "#
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.commit().await.unwrap();
+
+        let code = format!("R{}", Uuid::now_v7().simple())[..10].to_uppercase();
+        let new_booking = NewBooking {
+            confirmation_code: code.clone(),
+            guest_id,
+            listing_id: listing.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 12, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(800.00),
+            discount_value: None,
+            tax_value: Some(dec!(127.50)),
+            fee_breakdown: vec![],
+            total_price: dec!(1077.50),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                business_company_name: Some("Global Corp".to_string()),
+                business_tax_id: Some("999-888-777".to_string()),
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(40.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+        };
+
+        let booking = create_booking(&pool, &new_booking).await.unwrap();
+        assert_eq!(booking.status, BookingStatus::Pending);
+
+        let supplier = SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+
+        // Transition from Pending to Confirmed
+        let updated = UpdatedBooking {
+            status: Some(BookingStatus::Confirmed),
+            ..Default::default()
+        };
+
+        let confirmed_booking = update_booking(&pool, booking.id, &updated, &supplier)
+            .await
+            .expect("Failed to confirm booking");
+        assert_eq!(confirmed_booking.status, BookingStatus::Confirmed);
+
+        // Verify that exactly one payment receipt document was created
+        let docs = crate::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .expect("Failed to list tax documents");
+        assert_eq!(docs.len(), 1);
+        let doc = &docs[0];
+        assert_eq!(
+            doc.document_type,
+            crate::models::TaxDocumentType::PaymentReceipt
+        );
+        assert_eq!(doc.total_amount, dec!(1077.50));
+        assert_eq!(doc.jmd_total_amount, dec!(172400.00)); // 1077.50 * 160
+        assert_eq!(doc.recipient_company_name.as_deref(), Some("Global Corp"));
+        assert_eq!(doc.recipient_trn.as_deref(), Some("999-888-777"));
+        assert_eq!(doc.document_number, format!("REC-2026-{}", code));
+
+        // Cleanup created data to preserve pagination baseline for other tests
+        let _ = sqlx::query!("DELETE FROM tax_document WHERE booking_id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM host_payout_ledger WHERE booking_id = $1",
+            booking.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!(
+            "DELETE FROM booking_history WHERE booking_id = $1",
+            booking.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!("DELETE FROM booking WHERE id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM listing WHERE id = $1", listing.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM host_profiles WHERE user_id = $1", host_id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM \"user\" WHERE id = $1 OR id = $2",
+            host_id,
+            guest_id
+        )
+        .execute(&pool)
+        .await;
     }
 }

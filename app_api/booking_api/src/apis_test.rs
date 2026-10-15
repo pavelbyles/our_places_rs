@@ -179,6 +179,8 @@ mod tests {
                 message_to_host: Some("Looking forward to the stay!".to_string()),
                 estimated_arrival_time: Some("15:00".to_string()),
                 is_business_trip: false,
+                business_company_name: None,
+                business_tax_id: None,
             }),
             door_access_code: Some("1234".to_string()),
             cleaning_fee: Decimal::ZERO,
@@ -374,5 +376,332 @@ mod tests {
         assert_eq!(calc.tax_rate, jm_rate);
         assert_eq!(calc.tax_value, Some(Decimal::new(15000, 2)));
         assert_eq!(calc.total_price, Decimal::new(120000, 2));
+    }
+
+    #[tokio::test]
+    async fn test_get_booking_documents_and_authorization() {
+        use actix_web::{App, test, web};
+        use chrono::NaiveDate;
+        use rust_decimal_macros::dec;
+        use sqlx::types::Json;
+        use sqlx_db_tester::TestPg;
+        use std::env;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let host_id = Uuid::now_v7();
+        let guest_id = Uuid::now_v7();
+        let admin_id = Uuid::now_v7();
+        let stranger_id = Uuid::now_v7();
+
+        let mut tx = pool.begin().await.unwrap();
+
+        // 1. Create host
+        let host_user = db_core::models::NewUser {
+            id: host_id,
+            email: format!("host_{}@example.com", host_id),
+            password_hash: "hash".to_string(),
+            first_name: "Host".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Host]),
+            default_currency: "USD".to_string(),
+        };
+        db_core::user::create_user(&mut *tx, &host_user)
+            .await
+            .unwrap();
+
+        let profile = db_core::models::NewHostProfile {
+            description: Some("Host".to_string()),
+            verified_status: Some("pending".to_string()),
+            payout_details: None,
+        };
+        db_core::user::create_host_profile(&mut *tx, host_id, &profile)
+            .await
+            .unwrap();
+
+        // 2. Create guest
+        let guest_user = db_core::models::NewUser {
+            id: guest_id,
+            email: format!("guest_{}@example.com", guest_id),
+            password_hash: "hash".to_string(),
+            first_name: "Guest".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        db_core::user::create_user(&mut *tx, &guest_user)
+            .await
+            .unwrap();
+
+        // 3. Create admin
+        let admin_user = db_core::models::NewUser {
+            id: admin_id,
+            email: format!("admin_{}@example.com", admin_id),
+            password_hash: "hash".to_string(),
+            first_name: "Admin".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Admin]),
+            default_currency: "USD".to_string(),
+        };
+        db_core::user::create_user(&mut *tx, &admin_user)
+            .await
+            .unwrap();
+
+        // 4. Create stranger
+        let stranger_user = db_core::models::NewUser {
+            id: stranger_id,
+            email: format!("stranger_{}@example.com", stranger_id),
+            password_hash: "hash".to_string(),
+            first_name: "Stranger".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        db_core::user::create_user(&mut *tx, &stranger_user)
+            .await
+            .unwrap();
+
+        // 5. Create listing
+        let listing = db_core::listing::create_listing(
+            &mut *tx,
+            &db_core::models::NewListing {
+                name: format!("Doc Test Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "JM".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: Some(dec!(50.00)),
+                damage_deposit: Some(dec!(100.00)),
+            },
+        )
+        .await
+        .unwrap();
+
+        // 6. Ensure USD -> JMD exchange rate
+        sqlx::query!(
+            r#"
+            INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+            VALUES ('USD', 'JMD', 160.000000, NOW())
+            ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING
+            "#
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        // 7. Create confirmed booking
+        let booking_id = Uuid::now_v7();
+        let code = format!("D{}", Uuid::now_v7().simple())[..10].to_uppercase();
+        let booking = sqlx::query_as!(
+            db_core::models::Booking,
+            r#"
+            INSERT INTO booking (
+                id, confirmation_code, guest_id, listing_id, status,
+                date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+                sub_total_price, discount_value, tax_value, fee_breakdown,
+                total_price, cancellation_policy, metadata, door_access_code,
+                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                created_at, updated_at
+            )
+            VALUES (
+                $1, $2, $3, $4, 'confirmed'::booking_status,
+                $5, $6, 'USD', 200.00, 2, 3,
+                600.00, 0.00, 97.50, '[]'::jsonb,
+                827.50, 'flexible'::cancellation_policy, $7, NULL,
+                50.00, 100.00, 30.00, 0.1500, 1.000000,
+                NOW(), NOW()
+            )
+            RETURNING
+                id, confirmation_code, guest_id, listing_id, status as "status: db_core::models::BookingStatus",
+                date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+                sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<db_core::models::FeeItem>>",
+                total_price, cancellation_policy as "cancellation_policy: db_core::models::CancellationPolicy",
+                metadata as "metadata: Json<db_core::models::BookingMetadata>",
+                door_access_code,
+                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                created_at, updated_at
+            "#,
+            booking_id,
+            code,
+            guest_id,
+            listing.id,
+            NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 12, 4).unwrap(),
+            Json(db_core::models::BookingMetadata {
+                num_adults: 2,
+                business_company_name: Some("Test Client".to_string()),
+                business_tax_id: Some("TRN-111".to_string()),
+                ..Default::default()
+            }) as _
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+        let supplier = db_core::models::SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+
+        // 8. Issue payment receipt
+        let doc = db_core::tax_document::issue_payment_receipt(&mut tx, &booking, &supplier, None)
+            .await
+            .unwrap();
+
+        tx.commit().await.unwrap();
+
+        // Initialize actix test service
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        let guest_jwt = api_core::auth::generate_test_jwt(guest_id);
+        let host_jwt = api_core::auth::generate_test_jwt(host_id);
+        let admin_jwt = api_core::auth::generate_test_jwt(admin_id);
+        let stranger_jwt = api_core::auth::generate_test_jwt(stranger_id);
+
+        // A. Guest requests documents -> 200 OK
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/bookings/{}/documents", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        let body: Vec<common::tax_document::TaxDocumentResponse> = test::read_body_json(resp).await;
+        assert_eq!(body.len(), 1);
+        assert_eq!(body[0].document_number, doc.document_number);
+        assert_eq!(body[0].total_amount, dec!(827.50));
+
+        // B. Host requests documents -> 200 OK
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/bookings/{}/documents", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // C. Admin requests documents -> 200 OK
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/bookings/{}/documents", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // D. Stranger requests documents -> 404 Not Found (auth guard)
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/bookings/{}/documents", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", stranger_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+
+        // E. No auth header -> 404 Not Found
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/bookings/{}/documents", booking.id))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+
+        // F. Guest requests single document by number -> 200 OK
+        let req = test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/{}/documents/{}",
+                booking.id, doc.document_number
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let single_doc: common::tax_document::TaxDocumentResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(single_doc.document_number, doc.document_number);
+
+        // G. Non-existent document number -> 404 Not Found
+        let req = test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/{}/documents/NONEXISTENT",
+                booking.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+
+        // Clean up
+        let _ = sqlx::query!("DELETE FROM tax_document WHERE booking_id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM booking WHERE id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM listing WHERE id = $1", listing.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM host_profiles WHERE user_id = $1", host_id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM \"user\" WHERE id = $1 OR id = $2 OR id = $3 OR id = $4",
+            host_id,
+            guest_id,
+            admin_id,
+            stranger_id
+        )
+        .execute(&pool)
+        .await;
     }
 }
