@@ -181,3 +181,81 @@ fn test_session_models_and_namespace_isolation() {
         serde_json::from_str(&resp_json).expect("Deserialization should succeed");
     assert_eq!(resp_deserialized.namespace, "guest");
 }
+
+#[tokio::test]
+async fn test_price_breakdown_itemized_non_zero_fees() {
+    use topcoat::context::Cx;
+    use topcoat::view::{ViewExt, view};
+    use web_app_common_tc::components::price_breakdown::price_breakdown;
+
+    let __cx = &Cx::default();
+    let v = view! {
+        price_breakdown(
+            nights: 5,
+            effective_nightly_rate: dec!(500.00),
+            subtotal: dec!(2500.00),
+            discount_amount: None,
+            cleaning_fee: Some(dec!(150.00)),
+            damage_deposit: Some(dec!(500.00)),
+            tax_amount: dec!(397.50),
+            total_amount: dec!(3547.50),
+            currency: "USD".to_string(),
+        )
+    };
+
+    let handle = v.first().await.expect("resolving view should succeed");
+    let html = handle.render(__cx);
+
+    assert!(
+        html.contains("Cleaning Fee"),
+        "Should contain Cleaning Fee label"
+    );
+    assert!(
+        html.contains("USD 150.00"),
+        "Should contain Cleaning Fee amount"
+    );
+    assert!(
+        html.contains("Refundable Damage Deposit"),
+        "Should contain Damage Deposit label"
+    );
+    assert!(
+        html.contains("USD 500.00"),
+        "Should contain Damage Deposit amount"
+    );
+    assert!(html.contains("USD 3547.50"), "Should contain total amount");
+}
+
+#[tokio::test]
+async fn test_price_breakdown_zero_fees_omitted() {
+    use topcoat::context::Cx;
+    use topcoat::view::{ViewExt, view};
+    use web_app_common_tc::components::price_breakdown::price_breakdown;
+
+    let __cx = &Cx::default();
+    let v = view! {
+        price_breakdown(
+            nights: 5,
+            effective_nightly_rate: dec!(500.00),
+            subtotal: dec!(2500.00),
+            discount_amount: None,
+            cleaning_fee: Some(dec!(0.00)),
+            damage_deposit: None,
+            tax_amount: dec!(375.00),
+            total_amount: dec!(2875.00),
+            currency: "USD".to_string(),
+        )
+    };
+
+    let handle = v.first().await.expect("resolving view should succeed");
+    let html = handle.render(__cx);
+
+    assert!(
+        !html.contains("Cleaning Fee"),
+        "Zero cleaning fee must be omitted"
+    );
+    assert!(
+        !html.contains("Refundable Damage Deposit"),
+        "None damage deposit must be omitted"
+    );
+    assert!(html.contains("USD 2875.00"), "Should contain total amount");
+}

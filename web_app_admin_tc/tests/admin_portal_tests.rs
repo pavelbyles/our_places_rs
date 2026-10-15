@@ -637,3 +637,81 @@ fn test_login_primary_role_determination() {
     assert_eq!(determine_primary_role(&["host", "admin"]), "admin");
     assert_eq!(determine_primary_role(&["superadmin"]), "admin");
 }
+
+#[test]
+fn test_admin_create_listing_form_fee_toggles_enabled() {
+    use web_app_admin_tc::pages::listings_admin::AdminCreateListingFormPayload;
+
+    let form = AdminCreateListingFormPayload {
+        user_id: None,
+        name: Some("Villa Serenity".to_string()),
+        listing_structure: Some("Villa".to_string()),
+        description: Some("Luxury villa".to_string()),
+        city: Some("Ocho Rios".to_string()),
+        country: Some("Jamaica".to_string()),
+        latitude: None,
+        longitude: None,
+        max_guests: Some("6".to_string()),
+        bedrooms: Some("3".to_string()),
+        beds: Some("4".to_string()),
+        full_bathrooms: Some("3".to_string()),
+        half_bathrooms: Some("1".to_string()),
+        square_meters: Some("350".to_string()),
+        base_currency: Some("USD".to_string()),
+        price_per_night: Some("750.00".to_string()),
+        minimum_stay: Some("3".to_string()),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        days_between_bookings: None,
+        primary_image_url: None,
+        is_active: Some("on".to_string()),
+        commission_pct: Some("10.0".to_string()),
+        cleaning_fee_enabled: Some("on".to_string()),
+        cleaning_fee: Some("150.00".to_string()),
+        damage_deposit_enabled: Some("on".to_string()),
+        damage_deposit: Some("500.00".to_string()),
+    };
+
+    let payload = form.into_payload();
+    assert_eq!(payload.cleaning_fee, Some(dec!(150.00)));
+    assert_eq!(payload.damage_deposit, Some(dec!(500.00)));
+}
+
+#[test]
+fn test_admin_create_listing_form_fee_toggles_disabled() {
+    use web_app_admin_tc::pages::listings_admin::AdminCreateListingFormPayload;
+
+    let form = AdminCreateListingFormPayload {
+        user_id: None,
+        name: Some("Villa Serenity".to_string()),
+        listing_structure: Some("Villa".to_string()),
+        description: Some("Luxury villa".to_string()),
+        city: Some("Ocho Rios".to_string()),
+        country: Some("Jamaica".to_string()),
+        latitude: None,
+        longitude: None,
+        max_guests: Some("6".to_string()),
+        bedrooms: Some("3".to_string()),
+        beds: Some("4".to_string()),
+        full_bathrooms: Some("3".to_string()),
+        half_bathrooms: Some("1".to_string()),
+        square_meters: Some("350".to_string()),
+        base_currency: Some("USD".to_string()),
+        price_per_night: Some("750.00".to_string()),
+        minimum_stay: Some("3".to_string()),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        days_between_bookings: None,
+        primary_image_url: None,
+        is_active: Some("on".to_string()),
+        commission_pct: Some("10.0".to_string()),
+        cleaning_fee_enabled: None,
+        cleaning_fee: Some("150.00".to_string()),
+        damage_deposit_enabled: Some("off".to_string()),
+        damage_deposit: Some("500.00".to_string()),
+    };
+
+    let payload = form.into_payload();
+    assert_eq!(payload.cleaning_fee, Some(Decimal::ZERO));
+    assert_eq!(payload.damage_deposit, Some(Decimal::ZERO));
+}

@@ -393,7 +393,16 @@ pub async fn update_listing(
     updated_listing_data: &UpdatedListing,
 ) -> Result<Listing> {
     let mut tx = pool.begin().await?;
+    let updated = update_listing_with_conn(&mut tx, id, updated_listing_data).await?;
+    tx.commit().await?;
+    Ok(updated)
+}
 
+pub async fn update_listing_with_conn(
+    tx: &mut sqlx::PgConnection,
+    id: Uuid,
+    updated_listing_data: &UpdatedListing,
+) -> Result<Listing> {
     let _current = sqlx::query_as!(
         Listing,
         r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit FROM listing WHERE id = $1 FOR UPDATE"#,
@@ -486,8 +495,6 @@ pub async fn update_listing(
     )
     .fetch_one(&mut *tx)
     .await?;
-
-    tx.commit().await?;
 
     Ok(updated)
 }
@@ -1575,8 +1582,9 @@ mod tests {
         let mut tx = conn.begin().await.expect("Failed to begin transaction");
 
         let user_id = create_test_user_with_host_profile(&mut *tx).await;
+        let suffix = Uuid::now_v7();
         let new_listing = NewListing {
-            name: "Fee Test Villa".to_string(),
+            name: format!("Fee Test Villa {}", suffix),
             user_id,
             description: Some("Villa with fees".to_string()),
             listing_structure_id: 5,
@@ -1608,7 +1616,7 @@ mod tests {
 
         // Defaulting test (None defaults to 0.00)
         let no_fees_listing = NewListing {
-            name: "No Fees Villa".to_string(),
+            name: format!("No Fees Villa {}", suffix),
             user_id,
             description: None,
             listing_structure_id: 1,
@@ -1637,21 +1645,12 @@ mod tests {
         assert_eq!(created_no_fees.cleaning_fee, dec!(0.00));
         assert_eq!(created_no_fees.damage_deposit, dec!(0.00));
 
-        tx.commit().await.unwrap();
-
-        // Test update listing fees with PgPool
-        dotenvy::dotenv().ok();
-        let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://postgres:password@localhost:5432/our_places".to_string()
-        });
-        let pool = sqlx::PgPool::connect(&database_url).await.unwrap();
-
         let update_data = UpdatedListing {
             cleaning_fee: Some(dec!(120.00)),
             damage_deposit: Some(dec!(500.00)),
             ..Default::default()
         };
-        let updated = update_listing(&pool, created.id, &update_data)
+        let updated = update_listing_with_conn(&mut tx, created.id, &update_data)
             .await
             .unwrap();
         assert_eq!(updated.cleaning_fee, dec!(120.00));

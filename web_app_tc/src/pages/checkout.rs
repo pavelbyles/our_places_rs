@@ -126,8 +126,11 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
             let converted_nightly_rate = base_price_usd * fx_rate;
             let nights = 5;
             let subtotal = converted_nightly_rate * Decimal::from(nights);
-            let tax = subtotal * dec!(0.15);
-            let total = subtotal + tax;
+            let cleaning_fee = listing.cleaning_fee.map(|f| f * fx_rate);
+            let damage_deposit = listing.damage_deposit.map(|d| d * fx_rate);
+            let taxable_base = subtotal + cleaning_fee.unwrap_or(Decimal::ZERO);
+            let tax = taxable_base * dec!(0.15);
+            let total = taxable_base + tax + damage_deposit.unwrap_or(Decimal::ZERO);
 
             <div class="max-w-5xl mx-auto px-2 md:px-4 py-8 space-y-8">
                 // Reservation Hold Banner with 15-Min Timer
@@ -405,6 +408,8 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                 effective_nightly_rate: converted_nightly_rate,
                                 subtotal: subtotal,
                                 discount_amount: None,
+                                cleaning_fee: cleaning_fee,
+                                damage_deposit: damage_deposit,
                                 tax_amount: tax,
                                 total_amount: total,
                                 currency: target_curr,

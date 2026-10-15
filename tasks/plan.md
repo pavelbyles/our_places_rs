@@ -55,16 +55,16 @@
   - **Verification Command:** `cargo test -p common -- reconciliation && cargo test -p listing_api`
   - **Dependencies:** Task 1
 
-- [ ] **Task 2B: Listing Fee Admin Form & Price Breakdown Component**
+- [x] **Task 2B: Listing Fee Admin Form & Price Breakdown Component**
   - **Scope:** S (2 files)
   - **Description:** Expose cleaning fee and damage deposit inputs with toggle switches in the admin listing management UI, and render itemized cleaning fee and damage deposit lines in the shared guest price breakdown component.
   - **Files Touched:**
     - `web_app_admin_tc/src/pages/listings_admin.rs`
     - `web_app_common_tc/src/components/price_breakdown.rs`
   - **Acceptance Criteria:**
-    - [ ] Admin listing editor allows enabling/disabling cleaning fee and damage deposit with currency inputs.
-    - [ ] Zero or disabled fees are omitted from the guest price breakdown view.
-    - [ ] Non-zero fees render itemized before booking submission.
+    - [x] Admin listing editor allows enabling/disabling cleaning fee and damage deposit with currency inputs.
+    - [x] Zero or disabled fees are omitted from the guest price breakdown view.
+    - [x] Non-zero fees render itemized before booking submission.
   - **Verification Command:** `cargo test -p web_app_admin_tc && cargo test -p web_app_common_tc`
   - **Dependencies:** Task 2A
 

@@ -318,8 +318,10 @@ pub async fn listing_detail(cx: &Cx) -> Result<impl View> {
                                         effective_nightly_rate: price_num,
                                         subtotal: price_num * Decimal::from(5),
                                         discount_amount: None,
-                                        tax_amount: (price_num * Decimal::from(5)) * dec!(0.15),
-                                        total_amount: (price_num * Decimal::from(5)) * dec!(1.15),
+                                        cleaning_fee: listing.cleaning_fee,
+                                        damage_deposit: listing.damage_deposit,
+                                        tax_amount: (price_num * Decimal::from(5) + listing.cleaning_fee.unwrap_or(Decimal::ZERO)) * dec!(0.15),
+                                        total_amount: (price_num * Decimal::from(5) + listing.cleaning_fee.unwrap_or(Decimal::ZERO)) * dec!(1.15) + listing.damage_deposit.unwrap_or(Decimal::ZERO),
                                         currency: currency.clone(),
                                     )
                                 </div>
@@ -400,16 +402,26 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
     let details_opt = api.get_listing_by_id(slug, None).await.ok();
 
-    let (price_num, currency, listing_id) = details_opt
+    let (price_num, currency, listing_id, cleaning_fee, damage_deposit) = details_opt
         .as_ref()
         .map(|d| {
             (
                 d.listing.price_per_night.unwrap_or(dec!(500.00)),
                 d.listing.base_currency.clone(),
                 d.listing.id,
+                d.listing.cleaning_fee,
+                d.listing.damage_deposit,
             )
         })
-        .unwrap_or_else(|| (dec!(500.00), "USD".to_string(), uuid::Uuid::nil()));
+        .unwrap_or_else(|| {
+            (
+                dec!(500.00),
+                "USD".to_string(),
+                uuid::Uuid::nil(),
+                None,
+                None,
+            )
+        });
 
     let check_in = NaiveDate::from_ymd_opt(2026, 9, 10).unwrap_or_default();
     let check_out = NaiveDate::from_ymd_opt(2026, 9, 15).unwrap_or_default();
@@ -421,15 +433,17 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
         .map(|quote| {
             let nights = quote.nightly_breakdown.len() as i64;
             let subtotal = quote.subtotal;
-            let tax = subtotal * dec!(0.15);
-            let total = subtotal + tax;
+            let taxable_base = subtotal + cleaning_fee.unwrap_or(Decimal::ZERO);
+            let tax = taxable_base * dec!(0.15);
+            let total = taxable_base + tax + damage_deposit.unwrap_or(Decimal::ZERO);
             (subtotal, tax, total, nights)
         })
         .unwrap_or_else(|_| {
             let nights = 5;
             let subtotal = price_num * Decimal::from(nights);
-            let tax = subtotal * dec!(0.15);
-            let total = subtotal + tax;
+            let taxable_base = subtotal + cleaning_fee.unwrap_or(Decimal::ZERO);
+            let tax = taxable_base * dec!(0.15);
+            let total = taxable_base + tax + damage_deposit.unwrap_or(Decimal::ZERO);
             (subtotal, tax, total, nights)
         });
 
@@ -440,6 +454,8 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
                 effective_nightly_rate: price_num,
                 subtotal: subtotal,
                 discount_amount: None,
+                cleaning_fee: cleaning_fee,
+                damage_deposit: damage_deposit,
                 tax_amount: tax,
                 total_amount: total,
                 currency: currency,

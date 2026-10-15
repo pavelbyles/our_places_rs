@@ -30,3 +30,4 @@ topcoat = { version = "0.10.0", default-features = false, features = [
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
