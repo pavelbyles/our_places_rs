@@ -155,6 +155,27 @@ pub struct BookingConfirmationGuestPayload {
     pub currency: String,
     /// Full name of primary guest.
     pub guest_name: String,
+    /// Net accommodation charges.
+    #[serde(default)]
+    pub accommodation_net: Option<Decimal>,
+    /// Departure cleaning fee.
+    #[serde(default)]
+    pub cleaning_fee: Option<Decimal>,
+    /// Statutory tax rate applied (e.g. 0.1500).
+    #[serde(default)]
+    pub tax_rate: Option<Decimal>,
+    /// Statutory tax amount charged.
+    #[serde(default)]
+    pub tax_amount: Option<Decimal>,
+    /// Platform fee.
+    #[serde(default)]
+    pub platform_fee: Option<Decimal>,
+    /// Refundable security damage deposit held.
+    #[serde(default)]
+    pub damage_deposit: Option<Decimal>,
+    /// Direct URL to view statutory payment receipt.
+    #[serde(default)]
+    pub receipt_url: Option<String>,
 }
 
 /// Strongly-typed email payload for host booking confirmation.
@@ -534,10 +555,36 @@ mod tests {
             total_price: Decimal::new(125050, 2),
             currency: "USD".into(),
             guest_name: "John Doe".into(),
+            accommodation_net: Some(Decimal::new(100000, 2)),
+            cleaning_fee: Some(Decimal::new(10000, 2)),
+            tax_rate: Some(Decimal::new(15, 2)),
+            tax_amount: Some(Decimal::new(16500, 2)),
+            platform_fee: Some(Decimal::new(5000, 2)),
+            damage_deposit: Some(Decimal::new(20000, 2)),
+            receipt_url: Some(
+                "http://localhost:8080/bookings/000/documents/REC-2026-CONF123".into(),
+            ),
         };
         let json = serde_json::to_string(&guest_confirm).unwrap();
         let parsed: BookingConfirmationGuestPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(guest_confirm, parsed);
+
+        // Backward compatibility: JSON missing optional fee fields deserializes with None
+        let legacy_json = serde_json::json!({
+            "booking_id": Uuid::new_v4(),
+            "confirmation_code": "LEGACY1",
+            "listing_name": "Villa Sunset",
+            "date_from": "2026-11-01",
+            "date_to": "2026-11-05",
+            "total_price": "1250.50",
+            "currency": "USD",
+            "guest_name": "Legacy Guest"
+        });
+        let legacy_parsed: BookingConfirmationGuestPayload =
+            serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(legacy_parsed.accommodation_net, None);
+        assert_eq!(legacy_parsed.cleaning_fee, None);
+        assert_eq!(legacy_parsed.receipt_url, None);
 
         let pre_arrival = PreArrivalGuideGuestPayload {
             booking_id: Uuid::new_v4(),

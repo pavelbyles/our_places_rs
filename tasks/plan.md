@@ -86,7 +86,7 @@
   - **Verification Command:** `cargo test -p db_core tax_document && cargo test -p booking_api documents`
   - **Dependencies:** Task 2B
 
-- [ ] **Task 3B: Guest Tax Document SSR View & Confirmation Email Link**
+- [x] **Task 3B: Guest Tax Document SSR View & Confirmation Email Link**
   - **Scope:** S (4 files)
   - **Description:** Build the printable Topcoat SSR `TaxDocumentView` component in `web_app_common_tc`, mount the guest document route in `web_app_tc`, and update `booking_confirmation_guest` to include an itemized GCT breakdown table and receipt view link.
   - **Files Touched:**
@@ -95,9 +95,9 @@
     - `app_api/email_worker/templates/booking_confirmation_guest.html`
     - `app_api/email_worker/src/processor.rs`
   - **Acceptance Criteria:**
-    - [ ] Document route renders compliance-grade layout with supplier TRN, itemized lines, and print CSS.
-    - [ ] Confirmation email renders itemized GCT tax summary and direct link to the receipt.
-    - [ ] Unauthorized guest access returns HTTP 404.
+    - [x] Document route renders compliance-grade layout with supplier TRN, itemized lines, and print CSS.
+    - [x] Confirmation email renders itemized GCT tax summary and direct link to the receipt.
+    - [x] Unauthorized guest access returns HTTP 404.
   - **Verification Command:** `cargo test -p web_app_tc && cargo test -p email_worker`
   - **Dependencies:** Task 3A
 

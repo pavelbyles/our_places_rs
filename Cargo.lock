@@ -1339,6 +1339,7 @@ dependencies = [
  "db_core",
  "dotenvy",
  "lettre",
+ "rust_decimal",
  "rustls",
  "serde",
  "serde_json",

@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use common::models::{BookingResponse, UpdatedBookingRequest};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
@@ -252,6 +253,24 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                                         >
                                             "Cancel Reservation"
                                         </button>
+                                    }
+
+                                    if b.status.eq_ignore_ascii_case("confirmed") || b.status.eq_ignore_ascii_case("completed") {
+                                        let year = b.date_from.year();
+                                        let doc_num = common::tax_document::document_number(
+                                            common::tax_document::TaxDocumentType::PaymentReceipt,
+                                            year,
+                                            &b.confirmation_code,
+                                            1,
+                                        );
+                                        let doc_url = format!("/bookings/{}/documents/{}", b.id, doc_num);
+                                        <a
+                                            href=(doc_url)
+                                            class="btn btn-outline btn-sm font-bold mt-1"
+                                            id=(format!("btn-receipt-{}", booking_id))
+                                        >
+                                            "📄 Tax Receipt"
+                                        </a>
                                     }
 
                                     <a

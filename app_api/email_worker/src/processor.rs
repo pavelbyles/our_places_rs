@@ -129,6 +129,22 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         }
         "booking_confirmation_guest" | "BookingConfirmationGuest" => {
             let template = load_template("booking_confirmation_guest.html");
+            let tax_rate_raw = get_val("tax_rate");
+            let tax_rate_disp = if let Ok(dec) = tax_rate_raw.parse::<rust_decimal::Decimal>() {
+                if dec < rust_decimal::Decimal::ONE && dec > rust_decimal::Decimal::ZERO {
+                    let pct = dec * rust_decimal::Decimal::from(100);
+                    let s = format!("{:.2}", pct);
+                    s.trim_end_matches('0').trim_end_matches('.').to_string()
+                } else {
+                    let s = format!("{:.2}", dec);
+                    s.trim_end_matches('0').trim_end_matches('.').to_string()
+                }
+            } else if !tax_rate_raw.is_empty() {
+                tax_rate_raw
+            } else {
+                "15".to_string()
+            };
+
             template
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
@@ -137,6 +153,13 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{total_price}}", &get_val("total_price"))
                 .replace("{{currency}}", &get_val("currency"))
+                .replace("{{accommodation_net}}", &get_val("accommodation_net"))
+                .replace("{{cleaning_fee}}", &get_val("cleaning_fee"))
+                .replace("{{tax_rate}}", &tax_rate_disp)
+                .replace("{{tax_amount}}", &get_val("tax_amount"))
+                .replace("{{platform_fee}}", &get_val("platform_fee"))
+                .replace("{{damage_deposit}}", &get_val("damage_deposit"))
+                .replace("{{receipt_url}}", &get_val("receipt_url"))
         }
         "booking_confirmation_host" | "BookingConfirmationHost" => {
             let template = load_template("booking_confirmation_host.html");

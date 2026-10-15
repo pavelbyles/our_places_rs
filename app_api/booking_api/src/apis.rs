@@ -9,7 +9,7 @@ use api_core::{
     pagination,
     settings::Settings,
 };
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use common::models::NewBookingRequest;
 use common::models::{BookingMaterialTerms, is_material_booking_change};
 use common::pricing::BookingCalculator;
@@ -1128,6 +1128,21 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
 
         // 1. Confirmation: status changed to Confirmed
         if old_b.status != BookingStatus::Confirmed && new_b.status == BookingStatus::Confirmed {
+            let doc_number = common::tax_document::document_number(
+                common::tax_document::TaxDocumentType::PaymentReceipt,
+                new_b.date_from.year(),
+                &new_b.confirmation_code,
+                1,
+            );
+            let base_url =
+                std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let receipt_url = format!(
+                "{}/bookings/{}/documents/{}",
+                base_url.trim_end_matches('/'),
+                new_b.id,
+                doc_number
+            );
+
             // Guest confirmation
             let guest_payload = common::email::BookingConfirmationGuestPayload {
                 booking_id: new_b.id,
@@ -1138,6 +1153,13 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 total_price: new_b.total_price,
                 currency: new_b.currency.clone(),
                 guest_name: format!("{} {}", guest.first_name, guest.last_name),
+                accommodation_net: Some(new_b.sub_total_price),
+                cleaning_fee: Some(new_b.cleaning_fee),
+                tax_rate: Some(new_b.tax_rate),
+                tax_amount: new_b.tax_value,
+                platform_fee: Some(new_b.platform_fee),
+                damage_deposit: Some(new_b.damage_deposit),
+                receipt_url: Some(receipt_url),
             };
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
                 &pool_clone,

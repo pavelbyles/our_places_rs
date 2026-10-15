@@ -152,6 +152,26 @@ impl TopcoatApiClient {
         common::app_client::mark_booking_messages_read(id).await
     }
 
+    /// Retrieve a specific statutory tax document or receipt by number
+    pub async fn get_booking_document_by_number(
+        &self,
+        booking_id: Uuid,
+        document_number: &str,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::tax_document::TaxDocumentResponse> {
+        common::app_client::get_booking_document_by_number(booking_id, document_number, user_jwt)
+            .await
+    }
+
+    /// List all statutory tax documents for a booking
+    pub async fn list_booking_documents(
+        &self,
+        booking_id: Uuid,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<Vec<common::tax_document::TaxDocumentResponse>> {
+        common::app_client::list_booking_documents(booking_id, user_jwt).await
+    }
+
     /// Get all registered users for admin
     pub async fn get_all_users(
         &self,

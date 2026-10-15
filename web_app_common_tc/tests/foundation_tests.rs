@@ -259,3 +259,167 @@ async fn test_price_breakdown_zero_fees_omitted() {
     );
     assert!(html.contains("USD 2875.00"), "Should contain total amount");
 }
+
+#[tokio::test]
+async fn test_tax_document_view_compliance_layout_and_print_css() {
+    use chrono::Utc;
+    use common::tax_document::{
+        InvoiceLineItem, InvoiceTaxCategory, TaxDocumentResponse, TaxDocumentStatus,
+        TaxDocumentType,
+    };
+    use topcoat::context::Cx;
+    use topcoat::view::{ViewExt, view};
+    use web_app_common_tc::components::tax_document_view::tax_document_view;
+
+    let doc = TaxDocumentResponse {
+        id: uuid::Uuid::new_v4(),
+        document_type: TaxDocumentType::PaymentReceipt,
+        document_number: "REC-2026-BK-TEST1".to_string(),
+        revision: 1,
+        status: TaxDocumentStatus::Issued,
+        supersedes_id: None,
+        booking_id: uuid::Uuid::new_v4(),
+        booking_history_id: None,
+        recipient_id: uuid::Uuid::new_v4(),
+        listing_id: uuid::Uuid::new_v4(),
+        issue_date: Utc::now(),
+        supplier_name: "Our Places Jamaica Limited".to_string(),
+        supplier_address: "Main Street, Ocho Rios, St. Ann, Jamaica".to_string(),
+        supplier_trn: "000-111-222".to_string(),
+        recipient_name: "Jane Smith".to_string(),
+        recipient_email: "jane@example.com".to_string(),
+        recipient_company_name: Some("Global Vacations Inc".to_string()),
+        recipient_trn: Some("888-999-000".to_string()),
+        currency: "USD".to_string(),
+        exchange_rate: dec!(1.000000),
+        jmd_exchange_rate: dec!(155.500000),
+        accommodation_net: dec!(1000.00),
+        cleaning_fee: dec!(150.00),
+        taxable_amount: dec!(1150.00),
+        tax_rate: dec!(0.1500),
+        tax_amount: dec!(172.50),
+        platform_fee: dec!(100.00),
+        damage_deposit: dec!(300.00),
+        total_amount: dec!(1722.50),
+        amount_previously_paid: None,
+        balance_due: None,
+        refund_pct: None,
+        retained_amount: None,
+        jmd_tax_amount: dec!(26823.75),
+        jmd_total_amount: dec!(267848.75),
+        line_items: vec![InvoiceLineItem {
+            description: "5 Nights Accommodation".to_string(),
+            quantity: 5,
+            unit_price: dec!(200.00),
+            tax_category: InvoiceTaxCategory::Gct,
+            tax_rate: dec!(0.1500),
+            tax_amount: dec!(150.00),
+            total_amount: dec!(1150.00),
+        }],
+        created_at: Utc::now(),
+    };
+
+    let __cx = &Cx::default();
+    let v = view! {
+        tax_document_view(doc: doc)
+    };
+
+    let handle = v.first().await.expect("resolving view should succeed");
+    let html = handle.render(__cx);
+
+    // 1. Supplier TRN and Recipient details
+    assert!(
+        html.contains("000-111-222"),
+        "Supplier TRN must be rendered"
+    );
+    assert!(html.contains("Our Places Jamaica Limited"));
+    assert!(html.contains("Jane Smith"));
+    assert!(html.contains("Global Vacations Inc"));
+    assert!(
+        html.contains("888-999-000"),
+        "Recipient TRN must be rendered"
+    );
+
+    // 2. Document Number & Title
+    assert!(html.contains("Payment Receipt"));
+    assert!(html.contains("REC-2026-BK-TEST1"));
+    assert!(html.contains("Issued"));
+
+    // 3. Line items
+    assert!(html.contains("5 Nights Accommodation"));
+    assert!(html.contains("GCT"));
+
+    // 4. Statutory Dual Currency JMD
+    assert!(html.contains("1 USD = 155.5000 JMD"));
+    assert!(html.contains("JMD 26823.75"));
+    assert!(html.contains("JMD 267848.75"));
+
+    // 5. Print CSS
+    assert!(html.contains("@media print"));
+    assert!(html.contains(".no-print"));
+}
+
+#[tokio::test]
+async fn test_tax_document_view_superseded_and_revised_balance() {
+    use chrono::Utc;
+    use common::tax_document::{TaxDocumentResponse, TaxDocumentStatus, TaxDocumentType};
+    use topcoat::context::Cx;
+    use topcoat::view::{ViewExt, view};
+    use web_app_common_tc::components::tax_document_view::tax_document_view;
+
+    let doc = TaxDocumentResponse {
+        id: uuid::Uuid::new_v4(),
+        document_type: TaxDocumentType::PaymentReceipt,
+        document_number: "REC-2026-BK-TEST2-R2".to_string(),
+        revision: 2,
+        status: TaxDocumentStatus::Superseded,
+        supersedes_id: Some(uuid::Uuid::new_v4()),
+        booking_id: uuid::Uuid::new_v4(),
+        booking_history_id: None,
+        recipient_id: uuid::Uuid::new_v4(),
+        listing_id: uuid::Uuid::new_v4(),
+        issue_date: Utc::now(),
+        supplier_name: "Our Places Jamaica Limited".to_string(),
+        supplier_address: "Main Street, Ocho Rios, St. Ann, Jamaica".to_string(),
+        supplier_trn: "000-111-222".to_string(),
+        recipient_name: "Bob Traveler".to_string(),
+        recipient_email: "bob@example.com".to_string(),
+        recipient_company_name: None,
+        recipient_trn: None,
+        currency: "USD".to_string(),
+        exchange_rate: dec!(1.000000),
+        jmd_exchange_rate: dec!(155.500000),
+        accommodation_net: dec!(1200.00),
+        cleaning_fee: dec!(150.00),
+        taxable_amount: dec!(1350.00),
+        tax_rate: dec!(0.1500),
+        tax_amount: dec!(202.50),
+        platform_fee: dec!(120.00),
+        damage_deposit: dec!(300.00),
+        total_amount: dec!(1972.50),
+        amount_previously_paid: Some(dec!(1722.50)),
+        balance_due: Some(dec!(250.00)),
+        refund_pct: None,
+        retained_amount: None,
+        jmd_tax_amount: dec!(31488.75),
+        jmd_total_amount: dec!(306723.75),
+        line_items: vec![],
+        created_at: Utc::now(),
+    };
+
+    let __cx = &Cx::default();
+    let v = view! {
+        tax_document_view(doc: doc)
+    };
+
+    let handle = v.first().await.expect("resolving view should succeed");
+    let html = handle.render(__cx);
+
+    assert!(html.contains("SUPERSEDED DOCUMENT"));
+    assert!(html.contains("Superseded"));
+    assert!(html.contains("Revision:"));
+    assert!(html.contains("Amount Previously Paid:"));
+    assert!(html.contains("USD 1722.50"));
+    assert!(html.contains("Balance Due:"));
+    assert!(html.contains("USD 250.00"));
+}
