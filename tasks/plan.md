@@ -117,7 +117,7 @@
   - **Verification Command:** `cargo test -p common --test cancellation_tests`
   - **Dependencies:** Task 0
 
-- [ ] **Task 4B: Cancellation Hook, Refund Document & Cancellation Flow**
+- [x] **Task 4B: Cancellation Hook, Refund Document & Cancellation Flow**
   - **Scope:** M (4 files)
   - **Description:** Hook `issue_refund_receipt` (`REF-YYYY-{code}`) into `update_booking` on transition to `Cancelled`. Expose `GET /api/v1/bookings/{id}/cancellation-quote`, wire HTMX cancel quote preview in `web_app_tc`, and update `booking_cancelled_guest` to show the correct refunded and retained totals.
   - **Files Touched:**
@@ -126,10 +126,10 @@
     - `web_app_tc/src/components/cancel_modal.rs`
     - `app_api/email_worker/templates/booking_cancelled_guest.html`
   - **Acceptance Criteria:**
-    - [ ] Cancellation quote endpoint returns accurate preview without mutating database state.
-    - [ ] Cancelling a confirmed booking issues a `REF-YYYY-{code}` document.
-    - [ ] Host payout and retained amounts match the policy quote.
-    - [ ] Cancellation email displays the REF document amount, not `total_price`.
+    - [x] Cancellation quote endpoint returns accurate preview without mutating database state.
+    - [x] Cancelling a confirmed booking issues a `REF-YYYY-{code}` document.
+    - [x] Host payout and retained amounts match the policy quote.
+    - [x] Cancellation email displays the REF document amount, not `total_price`.
   - **Verification Command:** `cargo test -p db_core cancellation && cargo test -p booking_api cancel`
   - **Dependencies:** Task 3B, Task 4A
 

@@ -376,6 +376,31 @@ pub async fn update_booking(id: Uuid, req: &UpdatedBookingRequest) -> Result<Boo
         .context("Failed to parse booking response")
 }
 
+pub async fn get_cancellation_quote(id: Uuid) -> Result<crate::cancellation::RefundQuote> {
+    let api_url = booking_api_url();
+    let audience = booking_api_audience();
+    let url = format!("{}/api/v1/bookings/{}/cancellation-quote", api_url, id);
+
+    let res = get_client()
+        .get(&url, &audience)
+        .await
+        .context("Failed to connect to booking service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!(
+            "Failed to get cancellation quote ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    res.json::<crate::cancellation::RefundQuote>()
+        .await
+        .context("Failed to parse cancellation quote response")
+}
+
 pub async fn delete_booking(id: Uuid) -> Result<()> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();

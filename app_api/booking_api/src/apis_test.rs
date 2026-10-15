@@ -681,6 +681,54 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 404);
 
+        // H. Guest requests cancellation quote -> 200 OK without mutating DB state
+        let req = test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/{}/cancellation-quote",
+                booking.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let quote: common::cancellation::RefundQuote = test::read_body_json(resp).await;
+        assert_eq!(
+            quote.refund_total + quote.retained_total,
+            booking.total_price
+        );
+
+        // I. Stranger requests cancellation quote -> 404 Not Found
+        let req = test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/{}/cancellation-quote",
+                booking.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", stranger_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+
+        // J. Unauthenticated requests cancellation quote -> 404 Not Found
+        let req = test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/{}/cancellation-quote",
+                booking.id
+            ))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404);
+
+        // Verify DB state was NOT mutated
+        let doc_count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM tax_document WHERE booking_id = $1",
+            booking.id
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap_or(0);
+        assert_eq!(doc_count, 1);
+
         // Clean up
         let _ = sqlx::query!("DELETE FROM tax_document WHERE booking_id = $1", booking.id)
             .execute(&pool)

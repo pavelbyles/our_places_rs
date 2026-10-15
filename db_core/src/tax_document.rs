@@ -495,6 +495,229 @@ pub async fn issue_payment_receipt(
     insert_tax_document(conn, &new_doc).await
 }
 
+/// Retrieves the active (`status = 'issued'`) document of the specified type for a booking.
+pub async fn get_active_by_type<'e, E>(
+    executor: E,
+    booking_id: Uuid,
+    doc_type: TaxDocumentType,
+) -> Result<Option<TaxDocumentRow>>
+where
+    E: PgExecutor<'e>,
+{
+    let row = sqlx::query_as!(
+        TaxDocumentRow,
+        r#"
+        SELECT
+            id,
+            document_type as "document_type: TaxDocumentType",
+            document_number,
+            revision,
+            status as "status: TaxDocumentStatus",
+            supersedes_id,
+            booking_id,
+            booking_history_id,
+            recipient_id,
+            listing_id,
+            issue_date,
+            supplier_name,
+            supplier_address,
+            supplier_trn,
+            recipient_name,
+            recipient_email,
+            recipient_company_name,
+            recipient_trn,
+            currency,
+            exchange_rate,
+            jmd_exchange_rate,
+            accommodation_net,
+            cleaning_fee,
+            taxable_amount,
+            tax_rate,
+            tax_amount,
+            platform_fee,
+            damage_deposit,
+            total_amount,
+            amount_previously_paid,
+            balance_due,
+            refund_pct,
+            retained_amount,
+            jmd_tax_amount,
+            jmd_total_amount,
+            line_items,
+            created_at
+        FROM tax_document
+        WHERE booking_id = $1 AND document_type = $2 AND status = 'issued'::tax_document_status
+        "#,
+        booking_id,
+        doc_type as TaxDocumentType
+    )
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row)
+}
+
+/// Issues a statutory refund receipt (`REF-YYYY-{code}`) upon booking cancellation.
+pub async fn issue_refund_receipt(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    supplier: &SupplierInfo,
+    booking_history_id: Option<Uuid>,
+) -> Result<TaxDocumentRow> {
+    let issue_date = Utc::now();
+
+    // Look up JMD FX rate
+    let jmd_exchange_rate =
+        crate::exchange_rate::get_rate(&mut *conn, &booking.currency, "JMD", issue_date).await?;
+
+    let doc_num = common::tax_document::document_number(
+        common::tax_document::TaxDocumentType::RefundReceipt,
+        issue_date.year(),
+        &booking.confirmation_code,
+        1,
+    );
+
+    // Fetch recipient user details
+    let user = sqlx::query!(
+        r#"SELECT first_name, last_name, email FROM "user" WHERE id = $1"#,
+        booking.guest_id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let full_name = format!("{} {}", user.first_name, user.last_name)
+        .trim()
+        .to_string();
+    let recipient_name = if full_name.is_empty() {
+        user.email.clone()
+    } else {
+        full_name
+    };
+
+    let recipient_company_name = booking.metadata.business_company_name.clone();
+    let recipient_trn = booking.metadata.business_tax_id.clone();
+
+    let accommodation_net =
+        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let amounts = common::cancellation::RefundableAmounts::new(
+        accommodation_net,
+        booking.cleaning_fee,
+        booking.damage_deposit,
+        booking.platform_fee,
+        booking.tax_rate,
+        booking.total_price,
+    );
+
+    let quote = common::cancellation::quote_refund(
+        booking.cancellation_policy.into(),
+        amounts,
+        booking.created_at,
+        booking.date_from,
+        issue_date,
+    )
+    .map_err(|e| crate::error::DbError::ValidationError(e.to_string()))?;
+
+    let mut line_items = Vec::new();
+    if quote.accommodation_refund > Decimal::ZERO {
+        let acc_tax = (quote.accommodation_refund * booking.tax_rate).round_dp(2);
+        line_items.push(common::tax_document::InvoiceLineItem {
+            description: format!(
+                "Accommodation refund ({:.0}% policy schedule)",
+                quote.policy_pct * Decimal::from(100)
+            ),
+            quantity: 1,
+            unit_price: quote.accommodation_refund,
+            tax_category: common::tax_document::InvoiceTaxCategory::Gct,
+            tax_rate: booking.tax_rate,
+            tax_amount: acc_tax,
+            total_amount: quote.accommodation_refund + acc_tax,
+        });
+    }
+
+    if quote.cleaning_refund > Decimal::ZERO {
+        let clean_tax = (quote.cleaning_refund * booking.tax_rate).round_dp(2);
+        line_items.push(common::tax_document::InvoiceLineItem {
+            description: "Cleaning fee refund".to_string(),
+            quantity: 1,
+            unit_price: quote.cleaning_refund,
+            tax_category: common::tax_document::InvoiceTaxCategory::Gct,
+            tax_rate: booking.tax_rate,
+            tax_amount: clean_tax,
+            total_amount: quote.cleaning_refund + clean_tax,
+        });
+    }
+
+    if quote.deposit_refund > Decimal::ZERO {
+        line_items.push(common::tax_document::InvoiceLineItem {
+            description: "Security deposit refund (released)".to_string(),
+            quantity: 1,
+            unit_price: quote.deposit_refund,
+            tax_category: common::tax_document::InvoiceTaxCategory::Exempt,
+            tax_rate: Decimal::ZERO,
+            tax_amount: Decimal::ZERO,
+            total_amount: quote.deposit_refund,
+        });
+    }
+
+    if quote.platform_fee_refund > Decimal::ZERO {
+        line_items.push(common::tax_document::InvoiceLineItem {
+            description: "Platform fee refund".to_string(),
+            quantity: 1,
+            unit_price: quote.platform_fee_refund,
+            tax_category: common::tax_document::InvoiceTaxCategory::Exempt,
+            tax_rate: Decimal::ZERO,
+            tax_amount: Decimal::ZERO,
+            total_amount: quote.platform_fee_refund,
+        });
+    }
+
+    let line_items_val = serde_json::to_value(&line_items)
+        .map_err(|e| crate::error::DbError::ValidationError(e.to_string()))?;
+
+    let jmd_tax_amount = (quote.tax_refund * jmd_exchange_rate).round_dp(2);
+    let jmd_total_amount = (quote.refund_total * jmd_exchange_rate).round_dp(2);
+
+    let new_doc = NewTaxDocument {
+        document_type: TaxDocumentType::RefundReceipt,
+        document_number: doc_num,
+        revision: 1,
+        status: TaxDocumentStatus::Issued,
+        supersedes_id: None,
+        booking_id: booking.id,
+        booking_history_id,
+        recipient_id: booking.guest_id,
+        listing_id: booking.listing_id,
+        issue_date,
+        supplier_name: supplier.supplier_name.clone(),
+        supplier_address: supplier.supplier_address.clone(),
+        supplier_trn: supplier.supplier_trn.clone(),
+        recipient_name,
+        recipient_email: user.email,
+        recipient_company_name,
+        recipient_trn,
+        currency: booking.currency.clone(),
+        exchange_rate: booking.exchange_rate,
+        jmd_exchange_rate,
+        accommodation_net: quote.accommodation_refund,
+        cleaning_fee: quote.cleaning_refund,
+        taxable_amount: quote.accommodation_refund + quote.cleaning_refund,
+        tax_rate: booking.tax_rate,
+        tax_amount: quote.tax_refund,
+        platform_fee: quote.platform_fee_refund,
+        damage_deposit: quote.deposit_refund,
+        total_amount: quote.refund_total,
+        amount_previously_paid: None,
+        balance_due: None,
+        refund_pct: Some(quote.policy_pct),
+        retained_amount: Some(quote.retained_total),
+        jmd_tax_amount,
+        jmd_total_amount,
+        line_items: line_items_val,
+    };
+
+    insert_tax_document(conn, &new_doc).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,5 +947,21 @@ mod tests {
             .expect("Failed to query old doc")
             .expect("Old doc not found");
         assert_eq!(old_doc.status, TaxDocumentStatus::Superseded);
+
+        // 11. Issue refund receipt on cancellation (REF-2026-{code})
+        let ref_doc = issue_refund_receipt(&mut tx, &booking, &supplier, None)
+            .await
+            .expect("Failed to issue refund receipt");
+
+        assert_eq!(ref_doc.document_type, TaxDocumentType::RefundReceipt);
+        assert_eq!(ref_doc.document_number, format!("REF-2026-{}", code));
+        assert_eq!(ref_doc.revision, 1);
+        assert_eq!(ref_doc.status, TaxDocumentStatus::Issued);
+        assert!(ref_doc.refund_pct.is_some());
+        assert!(ref_doc.retained_amount.is_some());
+        assert_eq!(
+            ref_doc.total_amount + ref_doc.retained_amount.unwrap(),
+            booking.total_price
+        );
     }
 }

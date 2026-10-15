@@ -6,6 +6,7 @@ use crate::models::{
 };
 #[allow(unused_imports)]
 use chrono::Utc;
+use rust_decimal::Decimal;
 #[allow(unused_imports)]
 use sqlx::types::Json;
 
@@ -344,11 +345,80 @@ pub async fn update_booking(
         .await?;
     }
 
-    // Auto-cancel pending host payout if booking transitions to Cancelled
+    // Handle cancellation: issue refund receipt and adjust host payout ledger if transitioning from Confirmed
     if let Some(BookingStatus::Cancelled) = updated_booking.status
         && status_changed
     {
-        crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+        if current.status == BookingStatus::Confirmed {
+            let ref_doc =
+                crate::tax_document::issue_refund_receipt(&mut tx, &booking, supplier, history_id)
+                    .await?;
+
+            crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+
+            // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
+            let accommodation_net =
+                booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+            let host_retained = (accommodation_net - ref_doc.accommodation_net).round_dp(2);
+
+            if host_retained > Decimal::ZERO {
+                let listing_info = sqlx::query!(
+                    r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
+                    booking.listing_id
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+
+                let host_currency = sqlx::query_scalar!(
+                    r#"SELECT default_currency FROM "user" WHERE id = $1"#,
+                    listing_info.user_id
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+
+                let exchange_rate = if listing_info.base_currency == host_currency {
+                    Decimal::ONE
+                } else {
+                    sqlx::query_scalar!(
+                        r#"SELECT rate FROM currency_exchange_rates 
+                           WHERE base_currency = $1 AND target_currency = $2 
+                           ORDER BY effective_at DESC, updated_at DESC LIMIT 1"#,
+                        listing_info.base_currency,
+                        host_currency
+                    )
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .unwrap_or(Decimal::ONE)
+                };
+
+                let retained_gross = (host_retained * exchange_rate).round_dp(2);
+                let platform_fee_pct = listing_info.commission_pct;
+                let (platform_fee_amount, net_payout_amount) =
+                    common::pricing::calculate_host_payout(
+                        retained_gross,
+                        platform_fee_pct,
+                        Decimal::ZERO,
+                    );
+
+                crate::payout_ledger::create_payout_ledger_entry(
+                    &mut tx,
+                    uuid::Uuid::now_v7(),
+                    booking.id,
+                    booking.listing_id,
+                    listing_info.user_id,
+                    &host_currency,
+                    retained_gross,
+                    platform_fee_pct,
+                    platform_fee_amount,
+                    Decimal::ZERO,
+                    exchange_rate,
+                    net_payout_amount,
+                )
+                .await?;
+            }
+        } else {
+            crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+        }
     }
 
     tx.commit().await?;
@@ -1079,6 +1149,33 @@ mod tests {
         assert_eq!(doc.recipient_company_name.as_deref(), Some("Global Corp"));
         assert_eq!(doc.recipient_trn.as_deref(), Some("999-888-777"));
         assert_eq!(doc.document_number, format!("REC-2026-{}", code));
+
+        // Transition from Confirmed to Cancelled
+        let cancel_update = UpdatedBooking {
+            status: Some(BookingStatus::Cancelled),
+            ..Default::default()
+        };
+        let cancelled_booking = update_booking(&pool, booking.id, &cancel_update, &supplier)
+            .await
+            .expect("Failed to cancel confirmed booking");
+        assert_eq!(cancelled_booking.status, BookingStatus::Cancelled);
+
+        // Verify that a refund receipt document was created
+        let docs_after_cancel = crate::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .expect("Failed to list tax documents after cancel");
+        assert_eq!(docs_after_cancel.len(), 2);
+        let ref_doc = docs_after_cancel
+            .iter()
+            .find(|d| d.document_type == crate::models::TaxDocumentType::RefundReceipt)
+            .expect("Refund receipt document not found");
+        assert_eq!(ref_doc.document_number, format!("REF-2026-{}", code));
+        assert!(ref_doc.refund_pct.is_some());
+        assert!(ref_doc.retained_amount.is_some());
+        assert_eq!(
+            ref_doc.total_amount + ref_doc.retained_amount.unwrap(),
+            booking.total_price
+        );
 
         // Cleanup created data to preserve pagination baseline for other tests
         let _ = sqlx::query!("DELETE FROM tax_document WHERE booking_id = $1", booking.id)

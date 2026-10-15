@@ -51,6 +51,23 @@ pub async fn update_booking_api(
     Ok(Json(resp))
 }
 
+#[route(GET "/api/bookings/{id}/cancellation-quote")]
+pub async fn get_cancellation_quote_api(
+    cx: &Cx,
+) -> Result<Json<common::cancellation::RefundQuote>> {
+    let _user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let api = get_api_client(cx);
+    let resp = api
+        .get_cancellation_quote(id)
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
 #[page("/bookings")]
 pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
     let user = web_app_common_tc::auth::get_guest_session(cx)
@@ -301,9 +318,9 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                         <strong class="font-bold" id="cancel-modal-villa-name">"this stay"</strong>
                         "?"
                     </p>
-                    <div class="bg-base-200/60 p-4 rounded-2xl text-xs space-y-1">
-                        <div class="font-bold text-base-content">"Cancellation Policy: Flexible"</div>
-                        <div class="text-base-content/70">"Full refund available up to 48 hours prior to check-in. Statutory GCT is fully refunded."</div>
+                    <div id="cancel-modal-quote-details" class="bg-base-200/60 p-4 rounded-2xl text-xs space-y-1">
+                        <div class="font-bold text-base-content">"Cancellation Refund Preview"</div>
+                        <div class="text-base-content/70">"Calculating estimated refund according to statutory cancellation policy..."</div>
                     </div>
                     <div class="modal-action flex justify-end gap-2 pt-2">
                         <form method="dialog">
@@ -330,6 +347,27 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                     activeCancelBookingId = bookingId;
                     var nameEl = document.getElementById('cancel-modal-villa-name');
                     if (nameEl) nameEl.innerText = villaName || 'your stay';
+                    var quoteEl = document.getElementById('cancel-modal-quote-details');
+                    if (quoteEl) {
+                        quoteEl.innerHTML = '<div class="flex items-center gap-2 text-base-content/70"><span class="loading loading-spinner loading-xs"></span> Calculating refund quote...</div>';
+                        fetch('/api/bookings/' + bookingId + '/cancellation-quote')
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                if (data && data.refund_total !== undefined) {
+                                    var pct = Math.round(parseFloat(data.policy_pct) * 100);
+                                    quoteEl.innerHTML = 
+                                        '<div class="flex justify-between items-center py-0.5"><span class="font-bold text-base-content">Refund Schedule:</span><span class="badge badge-sm badge-success font-bold">' + pct + '% accommodation</span></div>' +
+                                        '<div class="flex justify-between items-center py-0.5"><span class="font-semibold text-base-content">Refund Total:</span><span class="text-success font-extrabold text-sm">$' + data.refund_total + '</span></div>' +
+                                        '<div class="flex justify-between items-center py-0.5 text-base-content/70"><span>Retained / Fees:</span><span>$' + data.retained_total + '</span></div>' +
+                                        '<div class="text-[10px] text-base-content/60 pt-1 border-t border-base-200 mt-1">Includes pro-rated GCT refund. Statutory refund receipt (REF) will be issued.</div>';
+                                } else {
+                                    quoteEl.innerHTML = '<div class="text-xs text-base-content/70">Refund will be processed according to property cancellation schedule.</div>';
+                                }
+                            })
+                            .catch(function(err) {
+                                quoteEl.innerHTML = '<div class="text-xs text-base-content/70">Refund will be processed according to property cancellation schedule.</div>';
+                            });
+                    }
                     var modal = document.getElementById('cancel-booking-modal');
                     if (modal) modal.showModal();
                 } catch(e) {

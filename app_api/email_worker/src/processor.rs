@@ -198,12 +198,33 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         }
         "booking_cancelled_guest" | "BookingCancelledGuest" => {
             let template = load_template("booking_cancelled_guest.html");
+            let refund_pct_raw = get_val("refund_pct");
+            let refund_pct_disp = if let Ok(dec) = refund_pct_raw.parse::<rust_decimal::Decimal>() {
+                if dec <= rust_decimal::Decimal::ONE && dec >= rust_decimal::Decimal::ZERO {
+                    let pct = (dec * rust_decimal::Decimal::from(100)).round_dp(0);
+                    pct.to_string()
+                } else {
+                    dec.round_dp(0).to_string()
+                }
+            } else if !refund_pct_raw.is_empty() {
+                refund_pct_raw
+            } else {
+                "0".to_string()
+            };
+            let retained = get_val("retained_amount");
+            let retained_disp = if retained.is_empty() {
+                "0.00".to_string()
+            } else {
+                retained
+            };
             template
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{date_from}}", &get_val("date_from"))
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{refund_amount}}", &get_val("refund_amount"))
+                .replace("{{refund_pct}}", &refund_pct_disp)
+                .replace("{{retained_amount}}", &retained_disp)
                 .replace("{{currency}}", &get_val("currency"))
                 .replace("{{cancellation_policy}}", &get_val("cancellation_policy"))
         }
@@ -440,5 +461,27 @@ mod tests {
         assert!(body.contains("Cozy Flat"));
         assert!(body.contains("2026-11-01 14:00 UTC"));
         assert!(body.contains("https://ourplaces.co/checkout/HOLD111"));
+    }
+
+    #[test]
+    fn test_render_booking_cancelled_guest() {
+        let payload = serde_json::json!({
+            "confirmation_code": "CANCEL123",
+            "listing_name": "Azure Haven",
+            "date_from": "2026-12-01",
+            "date_to": "2026-12-05",
+            "refund_amount": "500.00",
+            "currency": "USD",
+            "cancellation_policy": "Moderate",
+            "refund_pct": "0.50",
+            "retained_amount": "327.50"
+        });
+
+        let body = render_email_body("booking_cancelled_guest", &payload);
+        assert!(body.contains("CANCEL123"));
+        assert!(body.contains("Azure Haven"));
+        assert!(body.contains("50%"));
+        assert!(body.contains("USD 500.00"));
+        assert!(body.contains("USD 327.50"));
     }
 }

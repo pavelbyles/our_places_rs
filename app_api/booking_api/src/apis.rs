@@ -9,7 +9,7 @@ use api_core::{
     pagination,
     settings::Settings,
 };
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, Utc};
 use common::models::NewBookingRequest;
 use common::models::{BookingMaterialTerms, is_material_booking_change};
 use common::pricing::BookingCalculator;
@@ -1209,7 +1209,20 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
         else if old_b.status != BookingStatus::Cancelled
             && new_b.status == BookingStatus::Cancelled
         {
-            let refund_amount = new_b.total_price;
+            let ref_doc = db_core::tax_document::get_active_by_type(
+                &pool_clone,
+                new_b.id,
+                db_core::models::TaxDocumentType::RefundReceipt,
+            )
+            .await
+            .ok()
+            .flatten();
+
+            let (refund_amount, refund_pct, retained_amount) = match ref_doc {
+                Some(doc) => (doc.total_amount, doc.refund_pct, doc.retained_amount),
+                None => (Decimal::ZERO, Some(Decimal::ZERO), Some(Decimal::ZERO)),
+            };
+
             let guest_payload = common::email::BookingCancelledGuestPayload {
                 booking_id: new_b.id,
                 confirmation_code: new_b.confirmation_code.clone(),
@@ -1219,6 +1232,8 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 refund_amount,
                 currency: new_b.currency.clone(),
                 cancellation_policy: format!("{:?}", new_b.cancellation_policy),
+                refund_pct,
+                retained_amount,
             };
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
                 &pool_clone,
@@ -1637,6 +1652,53 @@ async fn check_booking_authorization(
 #[tracing::instrument]
 #[utoipa::path(
     get,
+    path = "/api/v1/bookings/{id}/cancellation-quote",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Cancellation refund quote calculated according to policy schedule", body = common::cancellation::RefundQuote),
+        (status = 404, description = "Booking not found or caller unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_cancellation_quote(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let booking_id = *id;
+    check_booking_authorization(&req, pool.get_ref(), booking_id).await?;
+
+    let booking = db_core::booking::get_booking_by_id(pool.get_ref(), booking_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let now = Utc::now();
+    let accommodation_net =
+        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let amounts = common::cancellation::RefundableAmounts::new(
+        accommodation_net,
+        booking.cleaning_fee,
+        booking.damage_deposit,
+        booking.platform_fee,
+        booking.tax_rate,
+        booking.total_price,
+    );
+
+    let quote = common::cancellation::quote_refund(
+        booking.cancellation_policy.into(),
+        amounts,
+        booking.created_at,
+        booking.date_from,
+        now,
+    )
+    .map_err(|e| ApiError::Database(db_core::error::DbError::ValidationError(e.to_string())))?;
+
+    Ok(HttpResponse::Ok().json(quote))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
     path = "/api/v1/bookings/{id}/documents",
     tag = "bookings",
     responses(
@@ -1710,6 +1772,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             send_booking_message,
             mark_booking_messages_read,
             process_scheduled_notifications,
+            get_cancellation_quote,
             get_booking_documents,
             get_booking_document_by_number,
         ),
@@ -1729,6 +1792,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::CreateBookingMessageRequest,
                 common::models::MarkMessagesReadResponse,
                 CronSweepResponse,
+                common::cancellation::RefundQuote,
                 common::tax_document::TaxDocumentResponse,
                 common::tax_document::TaxDocumentType,
                 common::tax_document::TaxDocumentStatus,
@@ -1802,6 +1866,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/{id}/transfer",
                 web::post()
                     .to(transfer_booking)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/cancellation-quote",
+                web::get()
+                    .to(get_cancellation_quote)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(

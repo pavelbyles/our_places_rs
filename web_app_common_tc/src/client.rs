@@ -130,6 +130,14 @@ impl TopcoatApiClient {
         common::app_client::update_booking(id, req).await
     }
 
+    /// Get cancellation quote
+    pub async fn get_cancellation_quote(
+        &self,
+        id: Uuid,
+    ) -> anyhow::Result<common::cancellation::RefundQuote> {
+        common::app_client::get_cancellation_quote(id).await
+    }
+
     /// Get booking messages
     pub async fn get_booking_messages(&self, id: Uuid) -> anyhow::Result<BookingMessagesWrapper> {
         common::app_client::get_booking_messages(id).await

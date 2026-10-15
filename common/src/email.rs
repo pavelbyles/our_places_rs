@@ -264,6 +264,12 @@ pub struct BookingCancelledGuestPayload {
     pub currency: String,
     /// Applied cancellation policy identifier.
     pub cancellation_policy: String,
+    /// Accommodation refund percentage applied.
+    #[serde(default)]
+    pub refund_pct: Option<Decimal>,
+    /// Total amount retained across accommodation and platform fees.
+    #[serde(default)]
+    pub retained_amount: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for host booking cancellation.
