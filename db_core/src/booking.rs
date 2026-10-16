@@ -219,6 +219,23 @@ pub async fn update_booking(
 
     let mut tx = pool.begin().await?;
 
+    // Standardize lock acquisition hierarchy (Listing -> Booking) to prevent
+    // deadlocks (PostgreSQL 40P01) with concurrent create_booking operations.
+    let dates_may_change = updated_booking.date_from.is_some() || updated_booking.date_to.is_some();
+
+    if dates_may_change {
+        let booking_listing = sqlx::query!("SELECT listing_id FROM booking WHERE id = $1", id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+        sqlx::query!(
+            "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+            booking_listing.listing_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+    }
+
     let current = sqlx::query!(
         r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to FROM booking WHERE id = $1 FOR UPDATE"#,
         id
@@ -236,14 +253,6 @@ pub async fn update_booking(
                 "Only confirmed bookings can have their dates modified".to_string(),
             ));
         }
-
-        // Lock listing row to prevent concurrent bookings
-        sqlx::query!(
-            "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
-            current.listing_id
-        )
-        .fetch_one(&mut *tx)
-        .await?;
 
         let target_from = updated_booking.date_from.unwrap_or(current.date_from);
         let target_to = updated_booking.date_to.unwrap_or(current.date_to);
