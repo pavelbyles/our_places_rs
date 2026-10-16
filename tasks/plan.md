@@ -241,7 +241,7 @@
   - **Verification Command:** `cargo test -p booking_api complete_stays && cargo test -p email_worker && (cd infra && terraform fmt -check && terraform validate)`
   - **Dependencies:** Task 3B
 
-- [ ] **Task 7: Admin Documents Panel, OpenAPI Sync & E2E Validation**
+- [x] **Task 7: Admin Documents Panel, OpenAPI Sync & E2E Validation**
   - **Scope:** S (5 files)
   - **Description:** Integrate the documents panel in the admin booking modal (`web_app_admin_tc`), update OpenAPI specifications, update test db seed data with string decimal fee amounts, and write Playwright E2E tests validating the full receipt, date change, refund, and invoice flows.
   - **Files Touched:**
@@ -251,8 +251,8 @@
     - `playwright/e2e/guest-portal/tax-documents.spec.ts`
     - `playwright/e2e/admin-portal/listing-fees-and-documents.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] Admin portal booking details modal lists all issued and superseded tax documents.
-    - [ ] OpenAPI schema accurately documents all new endpoints and string-serialized decimal fee structures.
-    - [ ] Full Playwright E2E suite passes for guest receipt generation, date modification, cancellation refund, and tax invoice access.
+    - [x] Admin portal booking details modal lists all issued and superseded tax documents.
+    - [x] OpenAPI schema accurately documents all new endpoints and string-serialized decimal fee structures.
+    - [x] Full Playwright E2E suite passes for guest receipt generation, date modification, cancellation refund, and tax invoice access.
   - **Verification Command:** `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo sqlx prepare --workspace --check && npx playwright test`
   - **Dependencies:** Task 4B, Task 5, Task 6

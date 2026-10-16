@@ -943,7 +943,7 @@ mod tests {
             supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
             supplier_trn: "000-111-222".to_string(),
         };
-        db_core::tax_document::issue_payment_receipt(&mut *tx, &booking, &supplier, None)
+        db_core::tax_document::issue_payment_receipt(&mut tx, &booking, &supplier, None)
             .await
             .unwrap();
 
@@ -1290,7 +1290,7 @@ mod tests {
             supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
             supplier_trn: "000-111-222".to_string(),
         };
-        db_core::tax_document::issue_payment_receipt(&mut *tx, &booking, &supplier, None)
+        db_core::tax_document::issue_payment_receipt(&mut tx, &booking, &supplier, None)
             .await
             .unwrap();
 

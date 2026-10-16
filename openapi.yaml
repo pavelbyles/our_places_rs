@@ -667,6 +667,116 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/bookings/{id}/documents:
+    get:
+      summary: List all statutory tax documents for a booking
+      operationId: getBookingDocuments
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: List of statutory tax documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaxDocumentResponse"
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/documents/{document_number}:
+    get:
+      summary: Get statutory tax document by document number
+      operationId: getBookingDocumentByNumber
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: path
+          name: document_number
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Statutory tax document found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxDocumentResponse"
+        "404":
+          description: Document not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/cancellation-quote:
+    get:
+      summary: Get itemized cancellation refund quote
+      operationId: getCancellationQuote
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: Itemized cancellation refund quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundQuote"
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+
+  /api/v1/internal/cron/complete-stays:
+    patch:
+      summary: Daily cron sweep to complete past checkout stays and issue statutory tax invoices
+      operationId: completeStaysCron
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: header
+          name: x-cron-secret
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Past checkout stays completed and invoiced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteStaysResponse"
+        "401":
+          description: Unauthorized - invalid or missing cron secret
+        "500":
+          description: Internal server error
+
 components:
   securitySchemes:
     api_key:
@@ -965,7 +1075,8 @@ components:
         name:
           type: string
         amount:
-          type: number
+          type: string
+          description: Monetary fee amount serialized as decimal string
 
     BookingStatus:
       type: string
@@ -1040,4 +1151,145 @@ components:
         expires_at:
           type: integer
           format: int64
+
+    CompleteStaysResponse:
+      type: object
+      properties:
+        completed_count:
+          type: integer
+        booking_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    RefundQuote:
+      type: object
+      properties:
+        cancellation_policy:
+          type: string
+        refund_pct:
+          type: string
+        total_paid:
+          type: string
+        refund_amount:
+          type: string
+        retained_amount:
+          type: string
+        refund_accommodation:
+          type: string
+        refund_cleaning:
+          type: string
+        refund_deposit:
+          type: string
+        refund_tax:
+          type: string
+        refund_platform_fee:
+          type: string
+        currency:
+          type: string
+
+    TaxDocumentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        document_type:
+          type: string
+          enum: [payment_receipt, refund_receipt, tax_invoice]
+        document_number:
+          type: string
+        revision:
+          type: integer
+        status:
+          type: string
+          enum: [issued, superseded, cancelled]
+        supersedes_id:
+          type: string
+          format: uuid
+          nullable: true
+        booking_id:
+          type: string
+          format: uuid
+        recipient_id:
+          type: string
+          format: uuid
+        listing_id:
+          type: string
+          format: uuid
+        issue_date:
+          type: string
+          format: date-time
+        supplier_name:
+          type: string
+        supplier_address:
+          type: string
+        supplier_trn:
+          type: string
+        recipient_name:
+          type: string
+        recipient_email:
+          type: string
+        currency:
+          type: string
+        exchange_rate:
+          type: string
+        jmd_exchange_rate:
+          type: string
+        accommodation_net:
+          type: string
+        cleaning_fee:
+          type: string
+        taxable_amount:
+          type: string
+        tax_rate:
+          type: string
+        tax_amount:
+          type: string
+        platform_fee:
+          type: string
+        damage_deposit:
+          type: string
+        total_amount:
+          type: string
+        amount_previously_paid:
+          type: string
+          nullable: true
+        balance_due:
+          type: string
+          nullable: true
+        refund_pct:
+          type: string
+          nullable: true
+        retained_amount:
+          type: string
+          nullable: true
+        jmd_tax_amount:
+          type: string
+        jmd_total_amount:
+          type: string
+        line_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceLineItem"
+
+    InvoiceLineItem:
+      type: object
+      properties:
+        description:
+          type: string
+        quantity:
+          type: integer
+        unit_price:
+          type: string
+        tax_category:
+          type: string
+          enum: [gct, standard, zero_rated, exempt]
+        tax_rate:
+          type: string
+        tax_amount:
+          type: string
+        total_amount:
+          type: string
 

@@ -424,6 +424,19 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                         </div>
                     </div>
 
+                    // Tax & Compliance Documents Section
+                    <div class="bg-base-200/80 p-4 rounded-2xl space-y-3 text-xs mt-4" id="admin-booking-documents-section">
+                        <div class="flex items-center justify-between border-b border-base-300 pb-1.5">
+                            <span class="font-bold text-xs uppercase tracking-wider text-base-content/70">
+                                "Statutory Tax Documents"
+                            </span>
+                            <span id="detail-docs-count-badge" class="badge badge-primary badge-xs font-semibold">"0 Documents"</span>
+                        </div>
+                        <div id="admin-booking-documents-list" class="space-y-2">
+                            <div class="text-xs text-base-content/50 italic py-1" id="detail-docs-empty-msg">"Loading documents..."</div>
+                        </div>
+                    </div>
+
                     // Messaging Section
                     <div class="bg-base-200/80 p-4 rounded-2xl space-y-2 text-xs mt-4 flex flex-row items-center justify-between">
                         <div class="font-bold text-xs uppercase tracking-wider text-base-content/70">
@@ -841,6 +854,57 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                             }
                         }
 
+                        var docsContainer = document.getElementById('admin-booking-documents-list');
+                        var docsBadge = document.getElementById('detail-docs-count-badge');
+                        if (docsContainer) {
+                            docsContainer.innerHTML = '<div class="text-xs text-base-content/50 italic py-1">Loading documents...</div>';
+                        }
+                        if (b_id) {
+                            fetch('/api/bookings/' + b_id + '/documents')
+                                .then(function(res) {
+                                    if (!res.ok) throw new Error('Status ' + res.status);
+                                    return res.json();
+                                })
+                                .then(function(docs) {
+                                    if (!docsContainer) return;
+                                    if (!Array.isArray(docs) || docs.length === 0) {
+                                        docsContainer.innerHTML = '<div class="text-xs text-base-content/50 italic py-1">No statutory tax documents issued yet.</div>';
+                                        if (docsBadge) docsBadge.innerText = '0 Documents';
+                                        return;
+                                    }
+                                    if (docsBadge) docsBadge.innerText = docs.length + ' Document' + (docs.length === 1 ? '' : 's');
+                                    var html = '';
+                                    docs.forEach(function(doc) {
+                                        var isSuperseded = (doc.status === 'superseded' || doc.status === 'Superseded');
+                                        var statusBadge = isSuperseded
+                                            ? '<span class="badge badge-neutral badge-xs font-semibold">Superseded</span>'
+                                            : '<span class="badge badge-success badge-xs font-semibold">Issued</span>';
+                                        var typeLabel = (doc.document_type === 'tax_invoice' || doc.document_type === 'TaxInvoice')
+                                            ? 'Tax Invoice'
+                                            : ((doc.document_type === 'refund_receipt' || doc.document_type === 'RefundReceipt')
+                                                ? 'Refund Receipt'
+                                                : 'Payment Receipt');
+                                        var docUrl = '/bookings/' + b_id + '/documents/' + doc.document_number;
+                                        html += '<div class="flex items-center justify-between p-2.5 rounded-xl bg-base-100 border border-base-300/60 text-xs">';
+                                        html += '  <div class="space-y-0.5">';
+                                        html += '    <div class="flex items-center gap-1.5">';
+                                        html += '      <span class="font-mono font-bold text-primary">' + doc.document_number + '</span>';
+                                        html += '      ' + statusBadge;
+                                        html += '    </div>';
+                                        html += '    <div class="text-base-content/60 text-[11px]">' + typeLabel + ' • Rev ' + doc.revision + ' • ' + (doc.currency || 'USD') + ' ' + (doc.total_amount || '0.00') + '</div>';
+                                        html += '  </div>';
+                                        html += '  <a href="' + docUrl + '" target="_blank" class="btn btn-ghost btn-xs text-primary font-bold">View ↗</a>';
+                                        html += '</div>';
+                                    });
+                                    docsContainer.innerHTML = html;
+                                })
+                                .catch(function(err) {
+                                    if (docsContainer) {
+                                        docsContainer.innerHTML = '<div class="text-xs text-error py-1">Failed to load documents.</div>';
+                                    }
+                                });
+                        }
+
                         var dialog = document.getElementById('admin-booking-details-dialog');
                         if (dialog) dialog.showModal();
                     } catch(e) {
@@ -1183,4 +1247,43 @@ pub async fn mark_messages_read_admin_api(cx: &Cx) -> Result<Json<MarkMessagesRe
         .await
         .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(resp))
+}
+
+#[route(GET "/api/bookings/{id}/documents")]
+pub async fn get_booking_documents_admin_api(
+    cx: &Cx,
+) -> Result<Json<Vec<common::tax_document::TaxDocumentResponse>>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let url = format!(
+        "{}/api/v1/bookings/{}/documents",
+        common::app_client::booking_api_url(),
+        id
+    );
+    let client = reqwest::Client::new();
+    let res = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(web_app_common_tc::app_error(format!(
+            "Failed to fetch booking documents ({}): {}",
+            status, err_text
+        ))
+        .into());
+    }
+
+    let docs = res
+        .json::<Vec<common::tax_document::TaxDocumentResponse>>()
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
+    Ok(Json(docs))
 }
