@@ -131,7 +131,7 @@ pub async fn render_booking_date_change_page(cx: &Cx) -> Result<impl View> {
                                 </label>
                                 <input
                                     type="date"
-                                    id="new-date-from"
+                                    id="new-check-in"
                                     min=(min_checkin)
                                     value=(current_start.clone())
                                     class="input input-bordered w-full rounded-xl font-medium text-sm"
@@ -144,7 +144,7 @@ pub async fn render_booking_date_change_page(cx: &Cx) -> Result<impl View> {
                                 </label>
                                 <input
                                     type="date"
-                                    id="new-date-to"
+                                    id="new-check-out"
                                     min=(min_checkout)
                                     value=(current_end.clone())
                                     class="input input-bordered w-full rounded-xl font-medium text-sm"
@@ -163,7 +163,7 @@ pub async fn render_booking_date_change_page(cx: &Cx) -> Result<impl View> {
                             <a href="/bookings" class="btn btn-ghost btn-sm font-semibold">"Cancel"</a>
                             <button
                                 type="button"
-                                id="btn-submit-change"
+                                id="btn-submit-date-change"
                                 class="btn btn-primary btn-sm font-bold px-6 shadow-sm"
                                 onclick="submitDateChange()"
                             >
@@ -178,9 +178,9 @@ pub async fn render_booking_date_change_page(cx: &Cx) -> Result<impl View> {
                         function submitDateChange() {{
                             var errorEl = document.getElementById('date-change-error');
                             var successEl = document.getElementById('date-change-success');
-                            var btn = document.getElementById('btn-submit-change');
-                            var dateFrom = document.getElementById('new-date-from').value;
-                            var dateTo = document.getElementById('new-date-to').value;
+                            var btn = document.getElementById('btn-submit-date-change');
+                            var dateFrom = document.getElementById('new-check-in').value;
+                            var dateTo = document.getElementById('new-check-out').value;
 
                             if (!dateFrom || !dateTo) {{
                                 if (errorEl) {{

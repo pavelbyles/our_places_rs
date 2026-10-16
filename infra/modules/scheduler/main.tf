@@ -34,10 +34,10 @@ resource "google_cloud_scheduler_job" "scheduled_notifications_sweep" {
 
 resource "google_cloud_scheduler_job" "complete_stays" {
   name             = "${var.env_prefix}-complete-stays"
-  description      = "Daily sweep at 11:30 AM Jamaica time to transition past-checkout bookings to Completed and issue GCT tax invoices"
+  description      = "Daily sweep at 12:00 PM Jamaica time to transition past-checkout bookings to Completed and issue GCT tax invoices"
   project          = var.project_id
   region           = var.region
-  schedule         = "30 11 * * *"
+  schedule         = "0 12 * * *"
   time_zone        = "America/Jamaica"
   attempt_deadline = "320s"
 

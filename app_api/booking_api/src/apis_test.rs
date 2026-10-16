@@ -2,6 +2,7 @@
 #[allow(clippy::module_inception)]
 mod tests {
     use crate::apis::BookingCalculator;
+    use crate::settings::{CronSettings, TaxSettings};
     use rust_decimal::Decimal;
 
     #[test]
@@ -1296,9 +1297,20 @@ mod tests {
 
         tx.commit().await.unwrap();
 
+        let tax_settings = TaxSettings {
+            taj_supplier_trn: "000-111-222".to_string(),
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+        };
+        let cron_settings = CronSettings {
+            cron_secret: "test-complete-stays-secret".to_string(),
+        };
+
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(tax_settings))
+                .app_data(web::Data::new(cron_settings))
                 .configure(crate::apis::configure_routes),
         )
         .await;
@@ -1319,11 +1331,9 @@ mod tests {
         assert_eq!(resp.status(), 401);
 
         // C. Valid cron secret -> 200 OK
-        let configured_secret =
-            std::env::var("CRON_SECRET").unwrap_or_else(|_| "dev-cron-secret".to_string());
         let valid_req = test::TestRequest::patch()
             .uri("/api/v1/internal/cron/complete-stays")
-            .insert_header(("x-cron-secret", configured_secret.as_str()))
+            .insert_header(("x-cron-secret", "test-complete-stays-secret"))
             .to_request();
         let resp = test::call_service(&app, valid_req).await;
         assert_eq!(resp.status(), 200);
@@ -1359,7 +1369,7 @@ mod tests {
         // F. Idempotency: second run does not re-process or duplicate invoices
         let valid_req2 = test::TestRequest::patch()
             .uri("/api/v1/internal/cron/complete-stays")
-            .insert_header(("x-cron-secret", configured_secret.as_str()))
+            .insert_header(("x-cron-secret", "test-complete-stays-secret"))
             .to_request();
         let resp2 = test::call_service(&app, valid_req2).await;
         assert_eq!(resp2.status(), 200);

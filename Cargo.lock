@@ -542,6 +542,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "sqlx-db-tester",
+ "subtle",
  "thiserror",
  "tokio",
  "tracing",

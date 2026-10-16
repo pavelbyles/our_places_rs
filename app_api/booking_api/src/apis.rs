@@ -1,4 +1,4 @@
-use crate::settings::TaxSettings;
+use crate::settings::{CronSettings, TaxSettings};
 use actix_web::middleware::from_fn;
 use actix_web::{FromRequest, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
@@ -25,6 +25,7 @@ use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use subtle::ConstantTimeEq;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -749,11 +750,10 @@ async fn update_booking(
         .as_ref()
         .map(|s| s.to_supplier_info())
         .or_else(|| TaxSettings::from_env().ok().map(|s| s.to_supplier_info()))
-        .unwrap_or_else(|| db_core::models::SupplierInfo {
-            supplier_name: "Our Places Jamaica Limited".to_string(),
-            supplier_address: "Main Street, Ocho Rios, St. Ann, Jamaica".to_string(),
-            supplier_trn: "000-000-000".to_string(),
-        });
+        .ok_or_else(|| {
+            tracing::error!("Statutory tax supplier settings are missing or invalid");
+            ApiError::Internal
+        })?;
 
     let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data, &supplier)
         .await
@@ -1706,7 +1706,41 @@ pub struct CronSweepResponse {
     pub hold_reminders_processed: usize,
 }
 
-#[tracing::instrument(skip(req, pool))]
+fn verify_cron_secret(
+    req: &HttpRequest,
+    cron_settings: Option<&web::Data<CronSettings>>,
+) -> Result<(), ApiError> {
+    let configured_secret = cron_settings
+        .map(|s| s.cron_secret.clone())
+        .or_else(|| CronSettings::from_env().ok().map(|s| s.cron_secret))
+        .ok_or_else(|| {
+            tracing::error!("Cron settings are not configured");
+            ApiError::Internal
+        })?;
+
+    let provided_secret = req
+        .headers()
+        .get("x-cron-secret")
+        .and_then(|v| v.to_str().ok());
+
+    let is_valid = match provided_secret {
+        Some(provided) if provided.len() == configured_secret.len() => {
+            bool::from(provided.as_bytes().ct_eq(configured_secret.as_bytes()))
+        }
+        _ => false,
+    };
+
+    if !is_valid {
+        tracing::warn!("Unauthorized attempt to trigger cron endpoint");
+        return Err(ApiError::Unauthorized(
+            "Invalid or missing cron secret".into(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(skip(req, pool, cron_settings))]
 #[utoipa::path(
     post,
     path = "/api/v1/internal/cron/process-scheduled-notifications",
@@ -1721,21 +1755,9 @@ pub struct CronSweepResponse {
 pub async fn process_scheduled_notifications(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    cron_settings: Option<web::Data<CronSettings>>,
 ) -> Result<HttpResponse, ApiError> {
-    static CRON_SECRET_ENV: &str = "CRON_SECRET";
-    let configured_secret =
-        std::env::var(CRON_SECRET_ENV).unwrap_or_else(|_| "dev-cron-secret".to_string());
-    let provided_secret = req
-        .headers()
-        .get("x-cron-secret")
-        .and_then(|v| v.to_str().ok());
-
-    if provided_secret != Some(&configured_secret) {
-        tracing::warn!("Unauthorized attempt to trigger scheduled notifications cron");
-        return Err(ApiError::Unauthorized(
-            "Invalid or missing cron secret".into(),
-        ));
-    }
+    verify_cron_secret(&req, cron_settings.as_ref())?;
 
     let publisher = api_core::email_publisher::EmailPublisher::from_env();
     let mut pre_arrival_count = 0;
@@ -1929,7 +1951,7 @@ pub struct CompleteStaysResponse {
     pub booking_ids: Vec<Uuid>,
 }
 
-#[tracing::instrument(skip(req, pool, tax_settings))]
+#[tracing::instrument(skip(req, pool, tax_settings, cron_settings))]
 #[utoipa::path(
     patch,
     path = "/api/v1/internal/cron/complete-stays",
@@ -1946,21 +1968,9 @@ pub async fn complete_stays_cron(
     req: HttpRequest,
     pool: web::Data<PgPool>,
     tax_settings: Option<web::Data<TaxSettings>>,
+    cron_settings: Option<web::Data<CronSettings>>,
 ) -> Result<HttpResponse, ApiError> {
-    static CRON_SECRET_ENV: &str = "CRON_SECRET";
-    let configured_secret =
-        std::env::var(CRON_SECRET_ENV).unwrap_or_else(|_| "dev-cron-secret".to_string());
-    let provided_secret = req
-        .headers()
-        .get("x-cron-secret")
-        .and_then(|v| v.to_str().ok());
-
-    if provided_secret != Some(&configured_secret) {
-        tracing::warn!("Unauthorized attempt to trigger complete stays cron");
-        return Err(ApiError::Unauthorized(
-            "Invalid or missing cron secret".into(),
-        ));
-    }
+    verify_cron_secret(&req, cron_settings.as_ref())?;
 
     let today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
     let eligible = db_booking::get_confirmed_bookings_past_checkout(pool.get_ref(), today)
@@ -1971,11 +1981,10 @@ pub async fn complete_stays_cron(
         .as_ref()
         .map(|s| s.to_supplier_info())
         .or_else(|| TaxSettings::from_env().ok().map(|s| s.to_supplier_info()))
-        .unwrap_or_else(|| db_core::models::SupplierInfo {
-            supplier_name: "Our Places Jamaica Limited".to_string(),
-            supplier_address: "Main Street, Ocho Rios, St. Ann, Jamaica".to_string(),
-            supplier_trn: "000-000-000".to_string(),
-        });
+        .ok_or_else(|| {
+            tracing::error!("Statutory tax supplier settings are missing or invalid");
+            ApiError::Internal
+        })?;
 
     let mut completed_ids = Vec::new();
     for booking in eligible {

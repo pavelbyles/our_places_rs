@@ -61,13 +61,13 @@ test.describe('Guest Portal - Statutory Tax Documents & Date Modification', () =
     await expect(page.locator('text=Reservation #OP-E2E-7788')).toBeVisible();
 
     // Check-in and check-out date inputs
-    const checkInInput = page.locator('#new-date-from');
-    const checkOutInput = page.locator('#new-date-to');
+    const checkInInput = page.locator('#new-check-in');
+    const checkOutInput = page.locator('#new-check-out');
     await expect(checkInInput).toBeVisible();
     await expect(checkOutInput).toBeVisible();
 
     // Submit button
-    const submitBtn = page.locator('#btn-submit-change');
+    const submitBtn = page.locator('#btn-submit-date-change');
     await expect(submitBtn).toBeVisible();
   });
 });
