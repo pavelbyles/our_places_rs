@@ -9,13 +9,18 @@
 ## Tasks
 
 - [x] **Task 0: Shared Contracts, Schema Migration, and FeeItem Serde**
-  - **Scope:** S (4 files)
+  - **Scope:** M (9 files)
   - **Description:** Create the single feature migration adding `cancellation_policy` enum values (`firm`, `limited`), listing fee columns, booking financial snapshot columns, and the `tax_document` table. Implement string-serialized Decimal serde for `FeeItem` with backward-compatible deserialization and define `tax_document` DTOs.
   - **Files Touched:**
+    - `Cargo.toml`
+    - `app_api/api_core/src/models.rs`
+    - `app_api/listing_api/src/apis_test.rs`
+    - `common/src/lib.rs`
+    - `common/src/models.rs`
+    - `common/src/tax_document.rs`
     - `db_core/migrations/20261013000000_gct_tax_documents.sql`
     - `db_core/src/models.rs`
-    - `common/src/tax_document.rs`
-    - `common/src/models.rs`
+    - `web_app_admin_tc/tests/admin_portal_tests.rs`
   - **Acceptance Criteria:**
     - [x] Migration applies cleanly against the database schema (`sqlx migrate run`).
     - [x] `FeeItem.amount` serializes as a JSON string and deserializes from both strings and legacy numbers.
@@ -25,13 +30,16 @@
   - **Dependencies:** None
 
 - [x] **Task 1: Single Statutory Tax Source with JM Default**
-  - **Scope:** S (4 files)
+  - **Scope:** M (7 files)
   - **Description:** Replace the hardcoded 10% tax rate in `BookingCalculator::apply_taxes` with the country-resolved statutory rate from `SupportedCountry::tax_rate_for` (defaulting to JM 15%). Pass this rate in `create_booking` and listing quotes, persisting `booking.tax_rate` and `booking.exchange_rate`.
   - **Files Touched:**
-    - `common/src/reference.rs`
-    - `common/src/pricing.rs`
+    - `app_api/api_core/src/models.rs`
     - `app_api/booking_api/src/apis.rs`
-    - `app_api/listing_api/src/apis.rs`
+    - `app_api/booking_api/src/apis_test.rs`
+    - `common/src/pricing.rs`
+    - `common/src/reference.rs`
+    - `db_core/src/booking.rs`
+    - `db_core/src/models.rs`
   - **Acceptance Criteria:**
     - [x] Quotes and bookings for Jamaican listings calculate GCT at statutory 15%.
     - [x] Listings with unrecognized country code default safely to 15% (JM) with a warning log.
@@ -41,13 +49,23 @@
   - **Dependencies:** Task 0
 
 - [x] **Task 2A: Listing Fee Backend & Reconciled Pricing Invariant**
-  - **Scope:** M (4 files)
+  - **Scope:** L (14 files)
   - **Description:** Add host-configurable `cleaning_fee` and `damage_deposit` to `listing` persistence and listing API endpoints. Update `BookingCalculator` with `with_fees(cleaning, deposit)` and enforce the financial reconciliation invariant: `total_price = taxable_base + tax_value + platform_fee + damage_deposit`.
   - **Files Touched:**
-    - `db_core/src/listing.rs`
+    - `Cargo.lock`
     - `app_api/api_core/src/models.rs`
+    - `app_api/booking_api/src/apis.rs`
     - `app_api/listing_api/src/apis.rs`
+    - `app_api/listing_api/src/apis_test.rs`
+    - `app_api/listing_api/src/apis_test_reviews.rs`
+    - `common/Cargo.toml`
+    - `common/src/models.rs`
     - `common/src/pricing.rs`
+    - `db_core/src/booking.rs`
+    - `db_core/src/listing.rs`
+    - `db_core/src/models.rs`
+    - `web_app_admin_tc/src/pages/listings_admin.rs`
+    - `web_app_admin_tc/tests/admin_portal_tests.rs`
   - **Acceptance Criteria:**
     - [x] Listing create and update endpoints accept optional `cleaning_fee` and `damage_deposit` (validating `0 <= fee <= 1,000,000` with 2 decimal places).
     - [x] Listings with fees disabled default to `0.00`.
@@ -56,11 +74,18 @@
   - **Dependencies:** Task 1
 
 - [x] **Task 2B: Listing Fee Admin Form & Price Breakdown Component**
-  - **Scope:** S (2 files)
+  - **Scope:** M (9 files)
   - **Description:** Expose cleaning fee and damage deposit inputs with toggle switches in the admin listing management UI, and render itemized cleaning fee and damage deposit lines in the shared guest price breakdown component.
   - **Files Touched:**
+    - `Cargo.lock`
+    - `db_core/src/listing.rs`
     - `web_app_admin_tc/src/pages/listings_admin.rs`
+    - `web_app_admin_tc/tests/admin_portal_tests.rs`
+    - `web_app_common_tc/Cargo.toml`
     - `web_app_common_tc/src/components/price_breakdown.rs`
+    - `web_app_common_tc/tests/foundation_tests.rs`
+    - `web_app_tc/src/pages/checkout.rs`
+    - `web_app_tc/src/pages/listing_detail.rs`
   - **Acceptance Criteria:**
     - [x] Admin listing editor allows enabling/disabling cleaning fee and damage deposit with currency inputs.
     - [x] Zero or disabled fees are omitted from the guest price breakdown view.
@@ -69,14 +94,24 @@
   - **Dependencies:** Task 2A
 
 - [x] **Task 3A: Tax Document Engine & Payment Receipt Hook**
-  - **Scope:** M (5 files)
+  - **Scope:** L (15 files)
   - **Description:** Implement `db_core::tax_document` queries, JMD FX rate lookup with direct/inverse resolution, and the transaction hook in `update_booking` that generates a `payment_receipt` (`REC-YYYY-{code}`) upon transitioning to `Confirmed`. Wire typed `TaxSettings` and expose JSON document API endpoints in `booking_api`.
   - **Files Touched:**
-    - `db_core/src/exchange_rate.rs`
-    - `db_core/src/tax_document.rs`
-    - `db_core/src/booking.rs`
-    - `app_api/booking_api/src/settings.rs`
+    - `app_api/api_core/src/error.rs`
     - `app_api/booking_api/src/apis.rs`
+    - `app_api/booking_api/src/apis_test.rs`
+    - `app_api/booking_api/src/lib.rs`
+    - `app_api/booking_api/src/main.rs`
+    - `app_api/booking_api/src/settings.rs`
+    - `app_api/listing_api/src/apis.rs`
+    - `app_api/user_api/src/apis.rs`
+    - `common/src/models.rs`
+    - `db_core/src/booking.rs`
+    - `db_core/src/error.rs`
+    - `db_core/src/exchange_rate.rs`
+    - `db_core/src/lib.rs`
+    - `db_core/src/models.rs`
+    - `db_core/src/tax_document.rs`
   - **Acceptance Criteria:**
     - [x] Transitioning booking to `Confirmed` issues exactly one `tax_document` with type `payment_receipt`.
     - [x] Document `total_amount` matches `booking.total_price` and snapshots `jmd_total_amount`.
@@ -87,13 +122,29 @@
   - **Dependencies:** Task 2B
 
 - [x] **Task 3B: Guest Tax Document SSR View & Confirmation Email Link**
-  - **Scope:** S (4 files)
+  - **Scope:** XL (20 files)
   - **Description:** Build the printable Topcoat SSR `TaxDocumentView` component in `web_app_common_tc`, mount the guest document route in `web_app_tc`, and update `booking_confirmation_guest` to include an itemized GCT breakdown table and receipt view link.
   - **Files Touched:**
-    - `web_app_common_tc/src/components/tax_document_view.rs`
-    - `web_app_tc/src/pages/booking_documents.rs`
-    - `app_api/email_worker/templates/booking_confirmation_guest.html`
+    - `Cargo.lock`
+    - `app_api/booking_api/src/apis.rs`
+    - `app_api/email_worker/Cargo.toml`
     - `app_api/email_worker/src/processor.rs`
+    - `app_api/email_worker/src/tests.rs`
+    - `app_api/email_worker/templates/booking_confirmation_guest.html`
+    - `common/src/app_client.rs`
+    - `common/src/email.rs`
+    - `web_app_common_tc/src/auth.rs`
+    - `web_app_common_tc/src/client.rs`
+    - `web_app_common_tc/src/components/mod.rs`
+    - `web_app_common_tc/src/components/tax_document_view.rs`
+    - `web_app_common_tc/tests/foundation_tests.rs`
+    - `web_app_tc/Cargo.toml`
+    - `web_app_tc/src/lib.rs`
+    - `web_app_tc/src/main.rs`
+    - `web_app_tc/src/pages/booking_documents.rs`
+    - `web_app_tc/src/pages/bookings.rs`
+    - `web_app_tc/src/pages/mod.rs`
+    - `web_app_tc/tests/guest_portal_tests.rs`
   - **Acceptance Criteria:**
     - [x] Document route renders compliance-grade layout with supplier TRN, itemized lines, and print CSS.
     - [x] Confirmation email renders itemized GCT tax summary and direct link to the receipt.
@@ -102,11 +153,15 @@
   - **Dependencies:** Task 3A
 
 - [x] **Task 4A: 5-Policy Typestate Refund Calculator**
-  - **Scope:** S (2 files)
+  - **Scope:** M (6 files)
   - **Description:** Implement `common::cancellation` with compile-time typestate `RefundCalculator` enforcing the exact schedules for all 5 policies: Flexible, Moderate, Strict, Firm, and Limited. Implement the watertight partial refund component formulas (accommodation at policy %, cleaning & deposit 100%, GCT pro-rata, platform fee only on 100% full refund).
   - **Files Touched:**
+    - `Cargo.lock`
+    - `common/Cargo.toml`
     - `common/src/cancellation.rs`
+    - `common/src/lib.rs`
     - `common/tests/cancellation_tests.rs`
+    - `db_core/src/models.rs`
   - **Acceptance Criteria:**
     - [x] Flexible: >=24h 100% accommodation refund; <24h 0% (100% host payout).
     - [x] Moderate: >=5d 100%; 5d to 24h 50%; <24h 0%.
@@ -118,13 +173,19 @@
   - **Dependencies:** Task 0
 
 - [x] **Task 4B: Cancellation Hook, Refund Document & Cancellation Flow**
-  - **Scope:** M (4 files)
+  - **Scope:** L (10 files)
   - **Description:** Hook `issue_refund_receipt` (`REF-YYYY-{code}`) into `update_booking` on transition to `Cancelled`. Expose `GET /api/v1/bookings/{id}/cancellation-quote`, wire HTMX cancel quote preview in `web_app_tc`, and update `booking_cancelled_guest` to show the correct refunded and retained totals.
   - **Files Touched:**
-    - `db_core/src/booking.rs`
     - `app_api/booking_api/src/apis.rs`
-    - `web_app_tc/src/components/cancel_modal.rs`
+    - `app_api/booking_api/src/apis_test.rs`
+    - `app_api/email_worker/src/processor.rs`
     - `app_api/email_worker/templates/booking_cancelled_guest.html`
+    - `common/src/app_client.rs`
+    - `common/src/email.rs`
+    - `db_core/src/booking.rs`
+    - `db_core/src/tax_document.rs`
+    - `web_app_common_tc/src/client.rs`
+    - `web_app_tc/src/pages/bookings.rs`
   - **Acceptance Criteria:**
     - [x] Cancellation quote endpoint returns accurate preview without mutating database state.
     - [x] Cancelling a confirmed booking issues a `REF-YYYY-{code}` document.
@@ -134,14 +195,23 @@
   - **Dependencies:** Task 3B, Task 4A
 
 - [x] **Task 5: Confirmed Booking Date Changes & Revised Receipts**
-  - **Scope:** M (5 files)
+  - **Scope:** L (14 files)
   - **Description:** Add `date_from` and `date_to` mutation support to `PATCH /api/v1/bookings/{id}` for confirmed bookings. Re-price with the standard calculator, acquire `FOR UPDATE` locks, check date availability excluding self, update dates/financials, supersede active receipt, issue `REC-YYYY-{code}-R{n}` with `amount_previously_paid` and `balance_due`, and dispatch revised receipt email.
   - **Files Touched:**
-    - `db_core/src/booking.rs`
-    - `common/src/models.rs`
+    - `app_api/api_core/src/error.rs`
     - `app_api/booking_api/src/apis.rs`
-    - `web_app_tc/src/pages/booking_date_change.rs`
+    - `app_api/booking_api/src/apis_test.rs`
+    - `app_api/email_worker/src/processor.rs`
     - `app_api/email_worker/templates/booking_updated_guest.html`
+    - `common/src/app_client.rs`
+    - `common/src/email.rs`
+    - `db_core/src/booking.rs`
+    - `db_core/src/error.rs`
+    - `db_core/src/models.rs`
+    - `web_app_common_tc/src/client.rs`
+    - `web_app_tc/src/pages/booking_date_change.rs`
+    - `web_app_tc/src/pages/bookings.rs`
+    - `web_app_tc/src/pages/mod.rs`
   - **Acceptance Criteria:**
     - [x] Date change on confirmed booking supersedes previous receipt and issues revision `R{n}`.
     - [x] Date overlap with another booking returns HTTP 409 `DATE_UNAVAILABLE` with no mutation.
@@ -151,21 +221,23 @@
   - **Verification Command:** `cargo test -p db_core date_change && cargo test -p booking_api date_change`
   - **Dependencies:** Task 3B
 
-- [ ] **Task 6: Automatic Stay Completion, Tax Invoice & Cloud Scheduler**
-  - **Scope:** M (5 files)
+- [x] **Task 6: Automatic Stay Completion, Tax Invoice & Cloud Scheduler**
+  - **Scope:** M (7 files)
   - **Description:** Add `PATCH /api/v1/internal/cron/complete-stays` endpoint protected by `x-cron-secret` that queries past-checkout confirmed stays and transitions them to `Completed`. Hook `issue_tax_invoice` (`INV-YYYY-{code}`) in `update_booking`, dispatch `booking_completed_guest` with invoice link, and write Terraform Cloud Scheduler definition.
   - **Files Touched:**
-    - `db_core/src/booking.rs`
     - `app_api/booking_api/src/apis.rs`
-    - `common/src/email.rs`
+    - `app_api/email_worker/src/processor.rs`
     - `app_api/email_worker/templates/booking_completed_guest.html`
+    - `common/src/email.rs`
+    - `db_core/src/booking.rs`
+    - `db_core/src/tax_document.rs`
     - `infra/modules/scheduler/main.tf`
   - **Acceptance Criteria:**
-    - [ ] `complete-stays` transitions eligible confirmed stays to `Completed` idempotently.
-    - [ ] Transitioning to `Completed` issues `tax_invoice` (`INV-YYYY-{code}`) excluding damage deposit from invoice total.
-    - [ ] Missing or invalid `x-cron-secret` returns HTTP 401.
-    - [ ] `booking_completed_guest` email sent with invoice URL.
-    - [ ] Terraform configuration passes `terraform fmt -check` and `terraform validate`.
+    - [x] `complete-stays` transitions eligible confirmed stays to `Completed` idempotently.
+    - [x] Transitioning to `Completed` issues `tax_invoice` (`INV-YYYY-{code}`) excluding damage deposit from invoice total.
+    - [x] Missing or invalid `x-cron-secret` returns HTTP 401.
+    - [x] `booking_completed_guest` email sent with invoice URL.
+    - [x] Terraform configuration passes `terraform fmt -check` and `terraform validate`.
   - **Verification Command:** `cargo test -p booking_api complete_stays && cargo test -p email_worker && (cd infra && terraform fmt -check && terraform validate)`
   - **Dependencies:** Task 3B
 

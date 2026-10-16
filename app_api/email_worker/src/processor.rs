@@ -247,6 +247,21 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{{payout_impact}}", &get_val("payout_impact"))
                 .replace("{{currency}}", &get_val("currency"))
         }
+        "booking_completed_guest" | "BookingCompletedGuest" => {
+            let template = load_template("booking_completed_guest.html");
+            template
+                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
+                .replace("{{listing_name}}", &get_val("listing_name"))
+                .replace("{{date_from}}", &get_val("date_from"))
+                .replace("{{date_to}}", &get_val("date_to"))
+                .replace("{{total_price}}", &get_val("total_price"))
+                .replace("{{currency}}", &get_val("currency"))
+                .replace("{{invoice_url}}", &get_val("invoice_url"))
+                .replace("{{invoice_number}}", &get_val("invoice_number"))
+                .replace("{{accommodation_net}}", &get_val("accommodation_net"))
+                .replace("{{cleaning_fee}}", &get_val("cleaning_fee"))
+                .replace("{{tax_amount}}", &get_val("tax_amount"))
+        }
         "pre_arrival_guide_guest" | "PreArrivalGuideGuest" => {
             let template = load_template("pre_arrival_guide_guest.html");
             template
@@ -513,5 +528,32 @@ mod tests {
         assert!(body.contains("USD 1200.00"));
         assert!(body.contains("USD 350.00"));
         assert!(body.contains("https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2"));
+    }
+
+    #[test]
+    fn test_render_booking_completed_guest() {
+        let payload = serde_json::json!({
+            "confirmation_code": "COMP123",
+            "listing_name": "Azure Haven",
+            "date_from": "2026-12-01",
+            "date_to": "2026-12-05",
+            "total_price": "1000.00",
+            "currency": "USD",
+            "invoice_url": "https://ourplaces.co/bookings/123/documents/INV-2026-COMP123",
+            "invoice_number": "INV-2026-COMP123",
+            "accommodation_net": "800.00",
+            "cleaning_fee": "50.00",
+            "tax_amount": "127.50"
+        });
+
+        let body = render_email_body("booking_completed_guest", &payload);
+        assert!(body.contains("COMP123"));
+        assert!(body.contains("Azure Haven"));
+        assert!(body.contains("INV-2026-COMP123"));
+        assert!(body.contains("USD 1000.00"));
+        assert!(body.contains("USD 800.00"));
+        assert!(body.contains("USD 50.00"));
+        assert!(body.contains("USD 127.50"));
+        assert!(body.contains("https://ourplaces.co/bookings/123/documents/INV-2026-COMP123"));
     }
 }

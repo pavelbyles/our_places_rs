@@ -1115,4 +1115,297 @@ mod tests {
         .execute(&pool)
         .await;
     }
+
+    #[actix_web::test]
+    async fn test_complete_stays_cron() {
+        use actix_web::{App, test, web};
+        use chrono::Utc;
+        use rust_decimal_macros::dec;
+        use sqlx::types::Json;
+        use sqlx_db_tester::TestPg;
+        use std::env;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let host_id = Uuid::now_v7();
+        let guest_id = Uuid::now_v7();
+
+        let mut tx = pool.begin().await.unwrap();
+
+        // 1. Host
+        let host_user = db_core::models::NewUser {
+            id: host_id,
+            email: format!("host_{}@example.com", host_id),
+            password_hash: "hash".to_string(),
+            first_name: "Host".to_string(),
+            last_name: "Cron".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Host]),
+            default_currency: "USD".to_string(),
+        };
+        db_core::user::create_user(&mut *tx, &host_user)
+            .await
+            .unwrap();
+
+        let profile = db_core::models::NewHostProfile {
+            description: Some("Host profile".to_string()),
+            verified_status: Some("verified".to_string()),
+            payout_details: None,
+        };
+        db_core::user::create_host_profile(&mut *tx, host_id, &profile)
+            .await
+            .unwrap();
+
+        // 2. Guest
+        let guest_user = db_core::models::NewUser {
+            id: guest_id,
+            email: format!("guest_{}@example.com", guest_id),
+            password_hash: "hash".to_string(),
+            first_name: "Guest".to_string(),
+            last_name: "Cron".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        db_core::user::create_user(&mut *tx, &guest_user)
+            .await
+            .unwrap();
+
+        // 3. Listing
+        let listing = db_core::listing::create_listing(
+            &mut *tx,
+            &db_core::models::NewListing {
+                name: "Cron Stay Test Villa".to_string(),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "JM".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: Some(dec!(50.00)),
+                damage_deposit: Some(dec!(100.00)),
+            },
+        )
+        .await
+        .unwrap();
+
+        // 4. Currency FX rate
+        sqlx::query!(
+            r#"
+            INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+            VALUES ('USD', 'JMD', 160.000000, NOW())
+            ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING
+            "#
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        // 5. Confirmed past booking (checked out in past relative to Jamaica today)
+        let jamaica_today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+        let check_in = jamaica_today - chrono::Duration::days(5);
+        let check_out = jamaica_today - chrono::Duration::days(1);
+
+        let booking_id = Uuid::now_v7();
+        let code = format!("C{}", Uuid::new_v4().simple())[..10].to_uppercase();
+        let booking = sqlx::query_as!(
+            db_core::models::Booking,
+            r#"
+            INSERT INTO booking (
+                id, confirmation_code, guest_id, listing_id, status,
+                date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+                sub_total_price, discount_value, tax_value, fee_breakdown,
+                total_price, cancellation_policy, metadata, door_access_code,
+                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                created_at, updated_at
+            )
+            VALUES (
+                $1, $2, $3, $4, 'confirmed'::booking_status,
+                $5, $6, 'USD', 200.00, 2, 4,
+                800.00, 0.00, 127.50, '[]'::jsonb,
+                1077.50, 'flexible'::cancellation_policy, $7, NULL,
+                50.00, 100.00, 40.00, 0.1500, 1.000000,
+                NOW(), NOW()
+            )
+            RETURNING
+                id, confirmation_code, guest_id, listing_id, status as "status: db_core::models::BookingStatus",
+                date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+                sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<db_core::models::FeeItem>>",
+                total_price, cancellation_policy as "cancellation_policy: db_core::models::CancellationPolicy",
+                metadata as "metadata: Json<db_core::models::BookingMetadata>",
+                door_access_code,
+                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                created_at, updated_at
+            "#,
+            booking_id,
+            code,
+            guest_id,
+            listing.id,
+            check_in,
+            check_out,
+            Json(db_core::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            }) as _
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+        // Initial R1 receipt
+        let supplier = db_core::models::SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+        db_core::tax_document::issue_payment_receipt(&mut *tx, &booking, &supplier, None)
+            .await
+            .unwrap();
+
+        tx.commit().await.unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        // A. Missing cron secret -> 401
+        let no_secret_req = test::TestRequest::patch()
+            .uri("/api/v1/internal/cron/complete-stays")
+            .to_request();
+        let resp = test::call_service(&app, no_secret_req).await;
+        assert_eq!(resp.status(), 401);
+
+        // B. Invalid cron secret -> 401
+        let bad_secret_req = test::TestRequest::patch()
+            .uri("/api/v1/internal/cron/complete-stays")
+            .insert_header(("x-cron-secret", "incorrect-secret"))
+            .to_request();
+        let resp = test::call_service(&app, bad_secret_req).await;
+        assert_eq!(resp.status(), 401);
+
+        // C. Valid cron secret -> 200 OK
+        let configured_secret =
+            std::env::var("CRON_SECRET").unwrap_or_else(|_| "dev-cron-secret".to_string());
+        let valid_req = test::TestRequest::patch()
+            .uri("/api/v1/internal/cron/complete-stays")
+            .insert_header(("x-cron-secret", configured_secret.as_str()))
+            .to_request();
+        let resp = test::call_service(&app, valid_req).await;
+        assert_eq!(resp.status(), 200);
+
+        let cron_resp: crate::apis::CompleteStaysResponse = test::read_body_json(resp).await;
+        assert!(cron_resp.completed_count >= 1);
+        assert!(cron_resp.booking_ids.contains(&booking.id));
+
+        // D. Verify booking is now Completed
+        let updated_booking = db_core::booking::get_booking_by_id(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            updated_booking.status,
+            db_core::models::BookingStatus::Completed
+        );
+
+        // E. Verify statutory Tax Invoice issued (INV-YYYY-{code})
+        let docs = db_core::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        let invoice = docs
+            .iter()
+            .find(|d| d.document_type == db_core::models::TaxDocumentType::TaxInvoice)
+            .expect("Tax invoice must be issued on completion");
+        assert_eq!(invoice.status, db_core::models::TaxDocumentStatus::Issued);
+        assert_eq!(invoice.document_number, format!("INV-2026-{}", code));
+        // Security deposit strictly excluded from invoice total:
+        assert_eq!(invoice.damage_deposit, Decimal::ZERO);
+        // Total = 800 (subtotal) + 50 (cleaning) + 127.50 (tax) + 40 (platform) = 1017.50
+        assert_eq!(invoice.total_amount, dec!(1017.50));
+
+        // F. Idempotency: second run does not re-process or duplicate invoices
+        let valid_req2 = test::TestRequest::patch()
+            .uri("/api/v1/internal/cron/complete-stays")
+            .insert_header(("x-cron-secret", configured_secret.as_str()))
+            .to_request();
+        let resp2 = test::call_service(&app, valid_req2).await;
+        assert_eq!(resp2.status(), 200);
+        let cron_resp2: crate::apis::CompleteStaysResponse = test::read_body_json(resp2).await;
+        assert!(!cron_resp2.booking_ids.contains(&booking.id));
+
+        let docs_after = db_core::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        let invoice_count = docs_after
+            .iter()
+            .filter(|d| d.document_type == db_core::models::TaxDocumentType::TaxInvoice)
+            .count();
+        assert_eq!(invoice_count, 1);
+
+        // Clean up
+        let _ = sqlx::query!("DELETE FROM tax_document WHERE booking_id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM host_payout_ledger WHERE booking_id = $1",
+            booking.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!(
+            "DELETE FROM booking_history WHERE booking_id = $1",
+            booking.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!("DELETE FROM booking WHERE id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM listing WHERE id = $1", listing.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM host_profiles WHERE user_id = $1", host_id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM \"user\" WHERE id = $1 OR id = $2",
+            host_id,
+            guest_id
+        )
+        .execute(&pool)
+        .await;
+    }
 }

@@ -1609,6 +1609,89 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 }
             }
         }
+        // 4. Completion: status changed to Completed
+        else if old_b.status != BookingStatus::Completed
+            && new_b.status == BookingStatus::Completed
+        {
+            let active_invoice = db_core::tax_document::get_active_by_type(
+                &pool_clone,
+                new_b.id,
+                db_core::models::TaxDocumentType::TaxInvoice,
+            )
+            .await
+            .ok()
+            .flatten();
+
+            let base_url =
+                std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let (invoice_url, invoice_number) = match active_invoice {
+                Some(doc) => (
+                    format!(
+                        "{}/bookings/{}/documents/{}",
+                        base_url.trim_end_matches('/'),
+                        new_b.id,
+                        doc.document_number
+                    ),
+                    doc.document_number,
+                ),
+                None => {
+                    let doc_num = common::tax_document::document_number(
+                        common::tax_document::TaxDocumentType::TaxInvoice,
+                        new_b.date_to.year(),
+                        &new_b.confirmation_code,
+                        1,
+                    );
+                    (
+                        format!(
+                            "{}/bookings/{}/documents/{}",
+                            base_url.trim_end_matches('/'),
+                            new_b.id,
+                            doc_num
+                        ),
+                        doc_num,
+                    )
+                }
+            };
+
+            let accommodation_net =
+                new_b.sub_total_price - new_b.discount_value.unwrap_or(Decimal::ZERO);
+            let cleaning_fee = new_b.cleaning_fee;
+            let tax_amount = new_b.tax_value.unwrap_or_else(|| {
+                ((accommodation_net + cleaning_fee) * new_b.tax_rate).round_dp(2)
+            });
+            let platform_fee = new_b.platform_fee;
+            let total_price = accommodation_net + cleaning_fee + tax_amount + platform_fee;
+
+            let guest_payload = common::email::BookingCompletedGuestPayload {
+                booking_id: new_b.id,
+                confirmation_code: new_b.confirmation_code.clone(),
+                listing_name: listing.listing.name.clone(),
+                date_from: new_b.date_from.to_string(),
+                date_to: new_b.date_to.to_string(),
+                total_price,
+                currency: new_b.currency.clone(),
+                invoice_url,
+                invoice_number,
+                accommodation_net,
+                cleaning_fee,
+                tax_amount,
+            };
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &guest.email,
+                &format!(
+                    "Your Stay Invoice - {} (Code: {})",
+                    listing.listing.name, new_b.confirmation_code
+                ),
+                common::email::EmailTemplate::BookingCompletedGuest.as_str(),
+                &serde_json::to_value(&guest_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+            }
+        }
     });
 }
 
@@ -1837,6 +1920,105 @@ pub async fn process_scheduled_notifications(
     }))
 }
 
+/// Summary response returned by the scheduled complete stays cron job.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CompleteStaysResponse {
+    /// Number of completed bookings transitioned.
+    pub completed_count: usize,
+    /// Identifiers of bookings marked completed and invoiced.
+    pub booking_ids: Vec<Uuid>,
+}
+
+#[tracing::instrument(skip(req, pool, tax_settings))]
+#[utoipa::path(
+    patch,
+    path = "/api/v1/internal/cron/complete-stays",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Past checkout stays completed and invoiced", body = CompleteStaysResponse),
+        (status = 401, description = "Unauthorized - invalid or missing cron secret"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+/// Scheduled cron task endpoint that sweeps past-checkout confirmed bookings, marks them Completed,
+/// issues statutory GCT tax invoices (INV-YYYY-{code}) excluding damage deposits, and notifies guests.
+pub async fn complete_stays_cron(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    tax_settings: Option<web::Data<TaxSettings>>,
+) -> Result<HttpResponse, ApiError> {
+    static CRON_SECRET_ENV: &str = "CRON_SECRET";
+    let configured_secret =
+        std::env::var(CRON_SECRET_ENV).unwrap_or_else(|_| "dev-cron-secret".to_string());
+    let provided_secret = req
+        .headers()
+        .get("x-cron-secret")
+        .and_then(|v| v.to_str().ok());
+
+    if provided_secret != Some(&configured_secret) {
+        tracing::warn!("Unauthorized attempt to trigger complete stays cron");
+        return Err(ApiError::Unauthorized(
+            "Invalid or missing cron secret".into(),
+        ));
+    }
+
+    let today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let eligible = db_booking::get_confirmed_bookings_past_checkout(pool.get_ref(), today)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let supplier = tax_settings
+        .as_ref()
+        .map(|s| s.to_supplier_info())
+        .or_else(|| TaxSettings::from_env().ok().map(|s| s.to_supplier_info()))
+        .unwrap_or_else(|| db_core::models::SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, St. Ann, Jamaica".to_string(),
+            supplier_trn: "000-000-000".to_string(),
+        });
+
+    let mut completed_ids = Vec::new();
+    for booking in eligible {
+        let old_booking = booking.clone();
+        let update_params = db_core::models::UpdatedBooking {
+            status: Some(BookingStatus::Completed),
+            metadata: None,
+            door_access_code: None,
+            date_from: None,
+            date_to: None,
+            daily_rate: None,
+            total_days: None,
+            sub_total_price: None,
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: None,
+            total_price: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            platform_fee: None,
+            tax_rate: None,
+            exchange_rate: None,
+        };
+
+        match db_booking::update_booking(pool.get_ref(), booking.id, &update_params, &supplier)
+            .await
+        {
+            Ok(updated_b) => {
+                completed_ids.push(updated_b.id);
+                dispatch_booking_status_notifications(pool.get_ref(), old_booking, updated_b).await;
+            }
+            Err(e) => {
+                tracing::error!(booking_id = %booking.id, error = %e, "Failed to complete stay in cron");
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(CompleteStaysResponse {
+        completed_count: completed_ids.len(),
+        booking_ids: completed_ids,
+    }))
+}
+
 /// Helper function enforcing that only booking guest, listing host, or administrator can view tax documents.
 /// Non-authenticated callers or unauthorized users receive 404 (do not leak existence).
 async fn check_booking_authorization(
@@ -2009,6 +2191,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_cancellation_quote,
             get_booking_documents,
             get_booking_document_by_number,
+            complete_stays_cron,
         ),
         components(
             schemas(
@@ -2026,6 +2209,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::CreateBookingMessageRequest,
                 common::models::MarkMessagesReadResponse,
                 CronSweepResponse,
+                CompleteStaysResponse,
                 common::cancellation::RefundQuote,
                 common::tax_document::TaxDocumentResponse,
                 common::tax_document::TaxDocumentType,
@@ -2166,10 +2350,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
     );
 
-    cfg.service(web::scope("/api/v1/internal/cron").route(
-        "/process-scheduled-notifications",
-        web::post().to(process_scheduled_notifications),
-    ));
+    cfg.service(
+        web::scope("/api/v1/internal/cron")
+            .route(
+                "/process-scheduled-notifications",
+                web::post().to(process_scheduled_notifications),
+            )
+            .route("/complete-stays", web::patch().to(complete_stays_cron)),
+    );
 }
 
 #[cfg(test)]

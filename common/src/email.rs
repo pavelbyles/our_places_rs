@@ -80,6 +80,8 @@ pub enum EmailTemplate {
     PaymentHoldExpiryReminder,
     /// In-app chat notification delivered when a counterparty sends a new message.
     GuestHostMessageNotification,
+    /// Notification delivered to guest after stay completion with final statutory tax invoice link.
+    BookingCompletedGuest,
 }
 
 impl EmailTemplate {
@@ -99,6 +101,7 @@ impl EmailTemplate {
             Self::HostUpcomingArrival => "host_upcoming_arrival",
             Self::PaymentHoldExpiryReminder => "payment_hold_expiry_reminder",
             Self::GuestHostMessageNotification => "guest_host_message_notification",
+            Self::BookingCompletedGuest => "booking_completed_guest",
         }
     }
 }
@@ -297,6 +300,35 @@ pub struct BookingCancelledHostPayload {
     pub payout_impact: Decimal,
     /// Currency code.
     pub currency: String,
+}
+
+/// Notification delivered to guest after completed checkout with final statutory tax invoice link.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCompletedGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Total price paid.
+    pub total_price: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Direct link to the final statutory tax invoice.
+    pub invoice_url: String,
+    /// Final statutory invoice document number (INV-YYYY-XXXX).
+    pub invoice_number: String,
+    /// Accommodation net total.
+    pub accommodation_net: Decimal,
+    /// Cleaning fee.
+    pub cleaning_fee: Decimal,
+    /// Statutory GCT tax amount.
+    pub tax_amount: Decimal,
 }
 
 /// Strongly-typed email payload for guest pre-arrival access guide.

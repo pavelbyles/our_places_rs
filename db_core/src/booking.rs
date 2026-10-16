@@ -5,7 +5,7 @@ use crate::models::{
     UpdatedBooking,
 };
 #[allow(unused_imports)]
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
 #[allow(unused_imports)]
 use sqlx::types::Json;
@@ -549,6 +549,13 @@ pub async fn update_booking(
         }
     }
 
+    // Handle completion: issue statutory tax invoice (INV-YYYY-{code}) if transitioning to Completed
+    if let Some(BookingStatus::Completed) = updated_booking.status
+        && status_changed
+    {
+        crate::tax_document::issue_tax_invoice(&mut tx, &booking, supplier, history_id).await?;
+    }
+
     tx.commit().await?;
 
     Ok(booking)
@@ -612,6 +619,39 @@ pub async fn transfer_booking_guest(
     tx.commit().await?;
 
     Ok(booking)
+}
+
+/// Retrieves all confirmed bookings whose checkout date has passed (`date_to <= cutoff_date`).
+#[tracing::instrument(skip(executor))]
+pub async fn get_confirmed_bookings_past_checkout<'e, E>(
+    executor: E,
+    cutoff_date: NaiveDate,
+) -> Result<Vec<Booking>>
+where
+    E: PgExecutor<'e>,
+{
+    let records = sqlx::query_as!(
+        Booking,
+        r#"
+        SELECT id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus",
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy",
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            created_at, updated_at
+        FROM booking
+        WHERE status = 'confirmed'::booking_status
+          AND date_to <= $1
+        ORDER BY date_to ASC, id ASC
+        "#,
+        cutoff_date
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(records)
 }
 
 /// Retrieves bookings for a specific user, sorted by date_from ASC.

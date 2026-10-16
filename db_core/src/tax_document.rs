@@ -495,6 +495,150 @@ pub async fn issue_payment_receipt(
     insert_tax_document(conn, &new_doc).await
 }
 
+/// Issues a statutory tax invoice (`INV-YYYY-{code}`) upon stay completion.
+/// Note: Damage deposits are strictly excluded from the final tax invoice total.
+pub async fn issue_tax_invoice(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    supplier: &SupplierInfo,
+    booking_history_id: Option<Uuid>,
+) -> Result<TaxDocumentRow> {
+    let issue_date = Utc::now();
+
+    // Idempotency: return existing tax invoice if already issued
+    if let Some(existing) =
+        get_active_by_type(&mut *conn, booking.id, TaxDocumentType::TaxInvoice).await?
+    {
+        return Ok(existing);
+    }
+
+    // Look up JMD FX rate
+    let jmd_exchange_rate =
+        crate::exchange_rate::get_rate(&mut *conn, &booking.currency, "JMD", issue_date).await?;
+
+    let doc_num = common::tax_document::document_number(
+        common::tax_document::TaxDocumentType::TaxInvoice,
+        issue_date.year(),
+        &booking.confirmation_code,
+        1,
+    );
+
+    // Fetch recipient user details
+    let user = sqlx::query!(
+        r#"SELECT first_name, last_name, email FROM "user" WHERE id = $1"#,
+        booking.guest_id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let full_name = format!("{} {}", user.first_name, user.last_name)
+        .trim()
+        .to_string();
+    let recipient_name = if full_name.is_empty() {
+        user.email.clone()
+    } else {
+        full_name
+    };
+
+    let accommodation_net =
+        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let cleaning_fee = booking.cleaning_fee;
+    let taxable_amount = accommodation_net + cleaning_fee;
+    let tax_rate = booking.tax_rate;
+    let tax_amount = booking
+        .tax_value
+        .unwrap_or_else(|| (taxable_amount * tax_rate).round_dp(2));
+    let platform_fee = booking.platform_fee;
+    // Damage deposit is strictly excluded from tax invoice total
+    let damage_deposit = Decimal::ZERO;
+    let total_amount = taxable_amount + tax_amount + platform_fee;
+
+    let jmd_tax_amount = (tax_amount * jmd_exchange_rate).round_dp(2);
+    let jmd_total_amount = (total_amount * jmd_exchange_rate).round_dp(2);
+
+    let mut line_items = Vec::new();
+    line_items.push(common::tax_document::InvoiceLineItem {
+        description: format!("Accommodation ({} nights)", booking.total_days),
+        quantity: booking.total_days.max(1) as u32,
+        unit_price: if booking.total_days > 0 {
+            (accommodation_net / Decimal::from(booking.total_days)).round_dp(2)
+        } else {
+            accommodation_net
+        },
+        tax_category: common::tax_document::InvoiceTaxCategory::Gct,
+        tax_rate,
+        tax_amount: (accommodation_net * tax_rate).round_dp(2),
+        total_amount: accommodation_net + (accommodation_net * tax_rate).round_dp(2),
+    });
+
+    if cleaning_fee > Decimal::ZERO {
+        line_items.push(common::tax_document::InvoiceLineItem {
+            description: "Cleaning fee".to_string(),
+            quantity: 1,
+            unit_price: cleaning_fee,
+            tax_category: common::tax_document::InvoiceTaxCategory::Gct,
+            tax_rate,
+            tax_amount: (cleaning_fee * tax_rate).round_dp(2),
+            total_amount: cleaning_fee + (cleaning_fee * tax_rate).round_dp(2),
+        });
+    }
+
+    if platform_fee > Decimal::ZERO {
+        line_items.push(common::tax_document::InvoiceLineItem {
+            description: "Platform fee".to_string(),
+            quantity: 1,
+            unit_price: platform_fee,
+            tax_category: common::tax_document::InvoiceTaxCategory::Exempt,
+            tax_rate: Decimal::ZERO,
+            tax_amount: Decimal::ZERO,
+            total_amount: platform_fee,
+        });
+    }
+
+    let line_items_val = serde_json::to_value(&line_items)
+        .map_err(|e| crate::error::DbError::ValidationError(e.to_string()))?;
+
+    let new_doc = NewTaxDocument {
+        document_type: TaxDocumentType::TaxInvoice,
+        document_number: doc_num,
+        revision: 1,
+        status: TaxDocumentStatus::Issued,
+        supersedes_id: None,
+        booking_id: booking.id,
+        booking_history_id,
+        recipient_id: booking.guest_id,
+        listing_id: booking.listing_id,
+        issue_date,
+        supplier_name: supplier.supplier_name.clone(),
+        supplier_address: supplier.supplier_address.clone(),
+        supplier_trn: supplier.supplier_trn.clone(),
+        recipient_name,
+        recipient_email: user.email,
+        recipient_company_name: booking.metadata.business_company_name.clone(),
+        recipient_trn: booking.metadata.business_tax_id.clone(),
+        currency: booking.currency.clone(),
+        exchange_rate: booking.exchange_rate,
+        jmd_exchange_rate,
+        accommodation_net,
+        cleaning_fee,
+        taxable_amount,
+        tax_rate,
+        tax_amount,
+        platform_fee,
+        damage_deposit,
+        total_amount,
+        amount_previously_paid: None,
+        balance_due: None,
+        refund_pct: None,
+        retained_amount: None,
+        jmd_tax_amount,
+        jmd_total_amount,
+        line_items: line_items_val,
+    };
+
+    insert_tax_document(conn, &new_doc).await
+}
+
 /// Retrieves the active (`status = 'issued'`) document of the specified type for a booking.
 pub async fn get_active_by_type<'e, E>(
     executor: E,
