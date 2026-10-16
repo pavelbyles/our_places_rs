@@ -69,6 +69,10 @@ pub struct UpdatedBookingRequest {
     pub metadata: Option<BookingMetadata>,
     /// Optional physical door lock pin code.
     pub door_access_code: Option<String>,
+    /// Optional updated check-in date.
+    pub date_from: Option<NaiveDate>,
+    /// Optional updated check-out date.
+    pub date_to: Option<NaiveDate>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -527,14 +531,218 @@ async fn update_booking(
         }
     }
 
+    let dates_requested = body.date_from.is_some() || body.date_to.is_some();
+    if dates_requested {
+        let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
+            .await
+            .map_err(ApiError::Database)?
+            .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )))?;
+
+        let mut dev_payload = actix_web::dev::Payload::None;
+        let claims = match api_core::auth::Claims::from_request(&req, &mut dev_payload).into_inner()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                    sqlx::Error::RowNotFound,
+                )));
+            }
+        };
+
+        let user = match db_core::user::get_user_by_id(pool.get_ref(), claims.sub).await {
+            Ok(u) => u,
+            Err(_) => {
+                return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                    sqlx::Error::RowNotFound,
+                )));
+            }
+        };
+
+        let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+        let is_guest = claims.sub == parties.guest_id;
+
+        if !is_admin && !is_guest {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    }
+
     let old_booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
         .await
         .map_err(ApiError::Database)?;
+
+    if dates_requested {
+        if old_booking.status != BookingStatus::Confirmed {
+            return Err(ApiError::BookingNotModifiable(
+                "Only confirmed bookings can have their dates modified".to_string(),
+            ));
+        }
+
+        let jamaica_today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+        let new_check_in = body.date_from.unwrap_or(old_booking.date_from);
+        let new_check_out = body.date_to.unwrap_or(old_booking.date_to);
+
+        if new_check_in <= jamaica_today {
+            return Err(ApiError::BookingNotModifiable(
+                "Date changes must be for future check-in dates".to_string(),
+            ));
+        }
+
+        if new_check_in >= new_check_out {
+            return Err(ApiError::Database(
+                db_core::error::DbError::ValidationError(
+                    "Check-out date must be after check-in date".to_string(),
+                ),
+            ));
+        }
+    }
+
+    let (
+        daily_rate,
+        total_days,
+        sub_total_price,
+        discount_value,
+        tax_value,
+        fee_breakdown,
+        total_price,
+        cleaning_fee,
+        damage_deposit,
+        platform_fee,
+        tax_rate,
+        exchange_rate,
+    ) = if dates_requested {
+        let new_check_in = body.date_from.unwrap_or(old_booking.date_from);
+        let new_check_out = body.date_to.unwrap_or(old_booking.date_to);
+
+        let listing_details = db_listing::get_listing_by_id(pool.get_ref(), old_booking.listing_id)
+            .await
+            .map_err(ApiError::Database)?;
+
+        let conversion_rate = old_booking.exchange_rate;
+        let base_price = listing_details
+            .listing
+            .price_per_night
+            .unwrap_or(Decimal::ZERO);
+        let base_nightly_rate = if conversion_rate != Decimal::ONE {
+            (base_price * conversion_rate).round_dp(2)
+        } else {
+            base_price
+        };
+
+        let raw_overrides = db_listing::get_active_overrides_for_dates(
+            pool.get_ref(),
+            old_booking.listing_id,
+            new_check_in,
+            new_check_out,
+        )
+        .await
+        .unwrap_or_default();
+
+        let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
+            .into_iter()
+            .map(|mut ovr| {
+                if conversion_rate != Decimal::ONE {
+                    ovr.nightly_rate = (ovr.nightly_rate * conversion_rate).round_dp(2);
+                }
+                ovr
+            })
+            .collect();
+
+        let dynamic_quote = common::pricing::calculate_dynamic_quote(
+            base_nightly_rate,
+            listing_details.listing.minimum_stay,
+            &converted_overrides,
+            new_check_in,
+            new_check_out,
+        )
+        .map_err(map_pricing_error)?;
+
+        let tax_rate =
+            common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
+
+        let clean_fee = if conversion_rate != Decimal::ONE {
+            (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
+        } else {
+            listing_details.listing.cleaning_fee
+        };
+
+        let dmg_deposit = if conversion_rate != Decimal::ONE {
+            (listing_details.listing.damage_deposit * conversion_rate).round_dp(2)
+        } else {
+            listing_details.listing.damage_deposit
+        };
+
+        let days = (new_check_out - new_check_in).num_days() as i32;
+        let calculator = BookingCalculator::with_subtotal(
+            dynamic_quote.effective_daily_rate,
+            days,
+            dynamic_quote.subtotal,
+        )
+        .apply_discounts(
+            listing_details.listing.monthly_discount_percentage,
+            listing_details.listing.weekly_discount_percentage,
+        )
+        .with_fees(Some(clean_fee), Some(dmg_deposit))
+        .apply_taxes(tax_rate)
+        .finalize();
+
+        let plat_fee = calculator
+            .fee_breakdown
+            .iter()
+            .find(|f| f.name == "Platform Fee")
+            .map(|f| f.amount)
+            .unwrap_or(Decimal::ZERO);
+
+        let fee_bd: Vec<FeeItem> = calculator
+            .fee_breakdown
+            .into_iter()
+            .map(|f| FeeItem {
+                name: f.name,
+                amount: f.amount,
+            })
+            .collect();
+
+        (
+            Some(calculator.actual_daily_rate),
+            Some(calculator.total_days),
+            Some(calculator.sub_total_price),
+            calculator.discount_value,
+            calculator.tax_value,
+            Some(fee_bd),
+            Some(calculator.total_price),
+            Some(clean_fee),
+            Some(dmg_deposit),
+            Some(plat_fee),
+            Some(tax_rate),
+            Some(conversion_rate),
+        )
+    } else {
+        (
+            None, None, None, None, None, None, None, None, None, None, None, None,
+        )
+    };
 
     let updated_data = UpdatedBooking {
         status: body.status,
         metadata: body.metadata.clone(),
         door_access_code: body.door_access_code.clone(),
+        date_from: body.date_from,
+        date_to: body.date_to,
+        daily_rate,
+        total_days,
+        sub_total_price,
+        discount_value,
+        tax_value,
+        fee_breakdown,
+        total_price,
+        cleaning_fee,
+        damage_deposit,
+        platform_fee,
+        tax_rate,
+        exchange_rate,
     };
 
     let supplier = tax_settings
@@ -1321,6 +1529,30 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 }
                 let changes_summary = changes.join(", ");
 
+                let active_receipt = db_core::tax_document::get_active_by_type(
+                    &pool_clone,
+                    new_b.id,
+                    db_core::models::TaxDocumentType::PaymentReceipt,
+                )
+                .await
+                .ok()
+                .flatten();
+
+                let base_url = std::env::var("BASE_URL")
+                    .unwrap_or_else(|_| "http://localhost:8080".to_string());
+                let (receipt_url, balance_due) = match active_receipt {
+                    Some(doc) => (
+                        Some(format!(
+                            "{}/bookings/{}/documents/{}",
+                            base_url.trim_end_matches('/'),
+                            new_b.id,
+                            doc.document_number
+                        )),
+                        doc.balance_due,
+                    ),
+                    None => (None, None),
+                };
+
                 let guest_payload = common::email::BookingUpdatedGuestPayload {
                     booking_id: new_b.id,
                     confirmation_code: new_b.confirmation_code.clone(),
@@ -1330,6 +1562,8 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                     total_price: new_b.total_price,
                     currency: new_b.currency.clone(),
                     changes_summary: changes_summary.clone(),
+                    receipt_url,
+                    balance_due,
                 };
                 if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
                     &pool_clone,

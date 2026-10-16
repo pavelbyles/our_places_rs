@@ -282,6 +282,34 @@ pub struct UpdatedBooking {
     pub metadata: Option<BookingMetadata>,
     /// Updated smart door access code.
     pub door_access_code: Option<String>,
+    /// Check-in start date if requesting a date change.
+    pub date_from: Option<chrono::NaiveDate>,
+    /// Check-out departure date if requesting a date change.
+    pub date_to: Option<chrono::NaiveDate>,
+    /// Daily rate if re-priced.
+    pub daily_rate: Option<Decimal>,
+    /// Total days if dates changed.
+    pub total_days: Option<i32>,
+    /// Subtotal price.
+    pub sub_total_price: Option<Decimal>,
+    /// Discount value.
+    pub discount_value: Option<Decimal>,
+    /// Tax value.
+    pub tax_value: Option<Decimal>,
+    /// Itemized fee breakdown.
+    pub fee_breakdown: Option<Vec<FeeItem>>,
+    /// Total price.
+    pub total_price: Option<Decimal>,
+    /// Cleaning fee.
+    pub cleaning_fee: Option<Decimal>,
+    /// Damage deposit.
+    pub damage_deposit: Option<Decimal>,
+    /// Platform fee.
+    pub platform_fee: Option<Decimal>,
+    /// Tax rate.
+    pub tax_rate: Option<Decimal>,
+    /// Exchange rate.
+    pub exchange_rate: Option<Decimal>,
 }
 
 /// Immutable audit log entry capturing booking status transitions.

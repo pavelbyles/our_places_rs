@@ -220,6 +220,12 @@ pub struct BookingUpdatedGuestPayload {
     pub currency: String,
     /// Summary of changes applied.
     pub changes_summary: String,
+    /// Direct link to revised payment receipt if issued.
+    #[serde(default)]
+    pub receipt_url: Option<String>,
+    /// Additional balance due or refundable post-revision.
+    #[serde(default)]
+    pub balance_due: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for host booking modifications.

@@ -356,12 +356,25 @@ pub async fn get_booking_by_id(id: Uuid, currency: Option<&str>) -> Result<Booki
 }
 
 pub async fn update_booking(id: Uuid, req: &UpdatedBookingRequest) -> Result<BookingResponse> {
+    update_booking_with_auth(id, req, None).await
+}
+
+pub async fn update_booking_with_auth(
+    id: Uuid,
+    req: &UpdatedBookingRequest,
+    user_jwt: Option<&str>,
+) -> Result<BookingResponse> {
     let api_url = booking_api_url();
-    let audience = booking_api_audience();
     let url = format!("{}/api/v1/bookings/{}", api_url, id);
 
-    let res = get_client()
-        .patch(&url, &audience, req)
+    let client = reqwest::Client::new();
+    let mut request = client.patch(&url).json(req);
+    if let Some(token) = user_jwt {
+        request = request.header("Authorization", format!("Bearer {}", token));
+    }
+
+    let res = request
+        .send()
         .await
         .context("Failed to connect to booking service")?;
 

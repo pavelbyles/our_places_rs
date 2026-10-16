@@ -133,7 +133,7 @@
   - **Verification Command:** `cargo test -p db_core cancellation && cargo test -p booking_api cancel`
   - **Dependencies:** Task 3B, Task 4A
 
-- [ ] **Task 5: Confirmed Booking Date Changes & Revised Receipts**
+- [x] **Task 5: Confirmed Booking Date Changes & Revised Receipts**
   - **Scope:** M (5 files)
   - **Description:** Add `date_from` and `date_to` mutation support to `PATCH /api/v1/bookings/{id}` for confirmed bookings. Re-price with the standard calculator, acquire `FOR UPDATE` locks, check date availability excluding self, update dates/financials, supersede active receipt, issue `REC-YYYY-{code}-R{n}` with `amount_previously_paid` and `balance_due`, and dispatch revised receipt email.
   - **Files Touched:**
@@ -143,11 +143,11 @@
     - `web_app_tc/src/pages/booking_date_change.rs`
     - `app_api/email_worker/templates/booking_updated_guest.html`
   - **Acceptance Criteria:**
-    - [ ] Date change on confirmed booking supersedes previous receipt and issues revision `R{n}`.
-    - [ ] Date overlap with another booking returns HTTP 409 `DATE_UNAVAILABLE` with no mutation.
-    - [ ] Attempted change to past date or non-confirmed booking returns HTTP 409 `BOOKING_NOT_MODIFIABLE`.
-    - [ ] Revised receipt reflects `amount_previously_paid` and `balance_due`.
-    - [ ] `booking_updated_guest` email includes link to revised receipt.
+    - [x] Date change on confirmed booking supersedes previous receipt and issues revision `R{n}`.
+    - [x] Date overlap with another booking returns HTTP 409 `DATE_UNAVAILABLE` with no mutation.
+    - [x] Attempted change to past date or non-confirmed booking returns HTTP 409 `BOOKING_NOT_MODIFIABLE`.
+    - [x] Revised receipt reflects `amount_previously_paid` and `balance_due`.
+    - [x] `booking_updated_guest` email includes link to revised receipt.
   - **Verification Command:** `cargo test -p db_core date_change && cargo test -p booking_api date_change`
   - **Dependencies:** Task 3B
 

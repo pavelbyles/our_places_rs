@@ -38,14 +38,15 @@ pub async fn update_booking_api(
     cx: &Cx,
     Json(payload): Json<UpdatedBookingRequest>,
 ) -> Result<Json<BookingResponse>> {
-    let _user = web_app_common_tc::auth::get_guest_session(cx)
+    let user = web_app_common_tc::auth::get_guest_session(cx)
         .await
         .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
     let id_str: &str = path_param::<Id>(cx);
     let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
     let api = get_api_client(cx);
     let resp = api
-        .update_booking(id, &payload)
+        .update_booking_with_auth(id, &payload, Some(&token))
         .await
         .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
     Ok(Json(resp))
@@ -270,6 +271,17 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                                         >
                                             "Cancel Reservation"
                                         </button>
+                                    }
+
+                                    if b.status.eq_ignore_ascii_case("confirmed") {
+                                        let change_dates_url = format!("/bookings/{}/change-dates", booking_id);
+                                        <a
+                                            href=(change_dates_url)
+                                            class="btn btn-outline btn-warning btn-sm font-bold mt-1"
+                                            id=(format!("btn-change-dates-{}", booking_id))
+                                        >
+                                            "📅 Change Dates"
+                                        </a>
                                     }
 
                                     if b.status.eq_ignore_ascii_case("confirmed") || b.status.eq_ignore_ascii_case("completed") {

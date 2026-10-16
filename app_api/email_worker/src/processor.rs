@@ -175,14 +175,22 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         }
         "booking_updated_guest" | "BookingUpdatedGuest" => {
             let template = load_template("booking_updated_guest.html");
+            let balance_due_raw = get_val("balance_due");
+            let balance_due_disp = if balance_due_raw.is_empty() {
+                "0.00".to_string()
+            } else {
+                balance_due_raw
+            };
             template
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{date_from}}", &get_val("date_from"))
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{total_price}}", &get_val("total_price"))
+                .replace("{{balance_due}}", &balance_due_disp)
                 .replace("{{currency}}", &get_val("currency"))
                 .replace("{{changes_summary}}", &get_val("changes_summary"))
+                .replace("{{receipt_url}}", &get_val("receipt_url"))
         }
         "booking_updated_host" | "BookingUpdatedHost" => {
             let template = load_template("booking_updated_host.html");
@@ -483,5 +491,27 @@ mod tests {
         assert!(body.contains("50%"));
         assert!(body.contains("USD 500.00"));
         assert!(body.contains("USD 327.50"));
+    }
+
+    #[test]
+    fn test_render_booking_updated_guest() {
+        let payload = serde_json::json!({
+            "confirmation_code": "UPDATE123",
+            "listing_name": "Azure Haven",
+            "date_from": "2026-12-05",
+            "date_to": "2026-12-10",
+            "total_price": "1200.00",
+            "currency": "USD",
+            "changes_summary": "Dates extended by 2 nights",
+            "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2",
+            "balance_due": "350.00"
+        });
+
+        let body = render_email_body("booking_updated_guest", &payload);
+        assert!(body.contains("UPDATE123"));
+        assert!(body.contains("Azure Haven"));
+        assert!(body.contains("USD 1200.00"));
+        assert!(body.contains("USD 350.00"));
+        assert!(body.contains("https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2"));
     }
 }

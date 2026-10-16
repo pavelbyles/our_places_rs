@@ -130,6 +130,16 @@ impl TopcoatApiClient {
         common::app_client::update_booking(id, req).await
     }
 
+    /// Update booking with optional user JWT token
+    pub async fn update_booking_with_auth(
+        &self,
+        id: Uuid,
+        req: &UpdatedBookingRequest,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<BookingResponse> {
+        common::app_client::update_booking_with_auth(id, req, user_jwt).await
+    }
+
     /// Get cancellation quote
     pub async fn get_cancellation_quote(
         &self,
