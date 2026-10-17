@@ -385,8 +385,7 @@ pub async fn issue_payment_receipt(
         full_name
     };
 
-    let accommodation_net =
-        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let accommodation_net = booking.accommodation_net();
     let cleaning_fee = booking.cleaning_fee;
     let taxable_amount = accommodation_net + cleaning_fee;
     let tax_rate = booking.tax_rate;
@@ -540,8 +539,7 @@ pub async fn issue_tax_invoice(
         full_name
     };
 
-    let accommodation_net =
-        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let accommodation_net = booking.accommodation_net();
     let cleaning_fee = booking.cleaning_fee;
     let taxable_amount = accommodation_net + cleaning_fee;
     let tax_rate = booking.tax_rate;
@@ -741,8 +739,7 @@ pub async fn issue_refund_receipt(
     let recipient_company_name = booking.metadata.business_company_name.clone();
     let recipient_trn = booking.metadata.business_tax_id.clone();
 
-    let accommodation_net =
-        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let accommodation_net = booking.accommodation_net();
     let amounts = common::cancellation::RefundableAmounts::new(
         accommodation_net,
         booking.cleaning_fee,
@@ -753,7 +750,7 @@ pub async fn issue_refund_receipt(
     );
 
     let quote = common::cancellation::quote_refund(
-        booking.cancellation_policy.into(),
+        booking.cancellation_policy,
         amounts,
         booking.created_at,
         booking.date_from,

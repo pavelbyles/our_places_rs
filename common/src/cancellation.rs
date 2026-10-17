@@ -16,12 +16,22 @@ pub const STANDARD_CHECK_IN_MINUTE: u32 = 0;
 
 /// Persisted cancellation policy identifier.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "cancellation_policy", rename_all = "lowercase")
+)]
 #[serde(rename_all = "lowercase")]
 pub enum CancellationPolicy {
+    /// Full refund up to 24 hours prior to check-in.
     Flexible,
+    /// Full refund up to 5 days prior to check-in.
     Moderate,
+    /// Full refund up to 14 days prior to check-in, 50% thereafter.
     Strict,
+    /// Full refund up to 30 days prior to check-in.
     Firm,
+    /// Non-refundable or minimal refund window.
     Limited,
 }
 

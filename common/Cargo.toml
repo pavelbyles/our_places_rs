@@ -3,6 +3,10 @@ name = "common"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+sqlx = ["dep:sqlx"]
+
 [dependencies]
 serde = { workspace = true }
 uuid = { workspace = true, features = ["js"] }
@@ -17,6 +21,7 @@ validator = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+sqlx = { workspace = true, optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 google-cloud-storage = { workspace = true }
 google-cloud-auth = "1.6.0"

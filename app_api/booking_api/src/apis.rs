@@ -1181,7 +1181,7 @@ async fn get_host_ledger_entries(
         pool.get_ref(),
         target_host_id,
         filter.listing_id,
-        filter.status.map(Into::into),
+        filter.status,
         filter.date_from,
         filter.date_to,
         page,
@@ -1257,7 +1257,7 @@ async fn export_host_ledger_csv(
         pool.get_ref(),
         target_host_id,
         filter.listing_id,
-        filter.status.map(Into::into),
+        filter.status,
         filter.date_from,
         filter.date_to,
         1,
@@ -1299,7 +1299,7 @@ async fn update_admin_payout_status(
     let updated = db_payout_ledger::update_payout_status(
         pool.get_ref(),
         ledger_id,
-        body.status.into(),
+        body.status,
         body.gateway_reference.clone(),
         body.failure_reason.clone(),
     )
@@ -1353,6 +1353,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
             );
 
             // Guest confirmation
+            let accommodation_net = new_b.accommodation_net();
             let guest_payload = common::email::BookingConfirmationGuestPayload {
                 booking_id: new_b.id,
                 confirmation_code: new_b.confirmation_code.clone(),
@@ -1362,7 +1363,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 total_price: new_b.total_price,
                 currency: new_b.currency.clone(),
                 guest_name: format!("{} {}", guest.first_name, guest.last_name),
-                accommodation_net: Some(new_b.sub_total_price),
+                accommodation_net: Some(accommodation_net),
                 cleaning_fee: Some(new_b.cleaning_fee),
                 tax_rate: Some(new_b.tax_rate),
                 tax_amount: new_b.tax_value,
@@ -1654,8 +1655,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 }
             };
 
-            let accommodation_net =
-                new_b.sub_total_price - new_b.discount_value.unwrap_or(Decimal::ZERO);
+            let accommodation_net = new_b.accommodation_net();
             let cleaning_fee = new_b.cleaning_fee;
             let tax_amount = new_b.tax_value.unwrap_or_else(|| {
                 ((accommodation_net + cleaning_fee) * new_b.tax_rate).round_dp(2)
@@ -2096,8 +2096,7 @@ async fn get_cancellation_quote(
         .map_err(ApiError::Database)?;
 
     let now = Utc::now();
-    let accommodation_net =
-        booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+    let accommodation_net = booking.accommodation_net();
     let amounts = common::cancellation::RefundableAmounts::new(
         accommodation_net,
         booking.cleaning_fee,
@@ -2108,7 +2107,7 @@ async fn get_cancellation_quote(
     );
 
     let quote = common::cancellation::quote_refund(
-        booking.cancellation_policy.into(),
+        booking.cancellation_policy,
         amounts,
         booking.created_at,
         booking.date_from,

@@ -5,7 +5,12 @@ use std::marker::PhantomData;
 use uuid::Uuid;
 
 /// Status of an outbox email notification record during delivery lifecycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "email_status", rename_all = "lowercase")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailStatus {
     /// Email is enqueued in the outbox table awaiting worker dispatch.
@@ -158,7 +163,7 @@ pub struct BookingConfirmationGuestPayload {
     pub currency: String,
     /// Full name of primary guest.
     pub guest_name: String,
-    /// Net accommodation charges.
+    /// Net accommodation charges after subtracting discounts.
     #[serde(default)]
     pub accommodation_net: Option<Decimal>,
     /// Departure cleaning fee.

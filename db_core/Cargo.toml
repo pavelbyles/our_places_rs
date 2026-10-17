@@ -20,7 +20,7 @@ anyhow = { workspace = true }
 strum = "0.28.0"
 strum_macros = "0.28.0"
 utoipa.workspace = true
-common.workspace = true
+common = { workspace = true, features = ["sqlx"] }
 bcrypt = { workspace = true }
 
 [dev-dependencies]

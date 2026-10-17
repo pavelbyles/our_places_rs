@@ -1426,4 +1426,94 @@ mod tests {
         .execute(&pool)
         .await;
     }
+
+    #[test]
+    fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discounts() {
+        use chrono::NaiveDate;
+        use common::email::BookingConfirmationGuestPayload;
+        use db_core::models::{Booking, BookingMetadata, BookingStatus, CancellationPolicy};
+        use rust_decimal_macros::dec;
+        use uuid::Uuid;
+
+        let booking_id = Uuid::new_v4();
+        let mut booking = Booking {
+            id: booking_id,
+            confirmation_code: "CONF1234".to_string(),
+            guest_id: Uuid::new_v4(),
+            listing_id: Uuid::new_v4(),
+            status: BookingStatus::Confirmed,
+            date_from: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(250.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(1000.00),
+            discount_value: Some(dec!(100.00)),
+            tax_value: Some(dec!(150.00)),
+            fee_breakdown: sqlx::types::Json(vec![]),
+            total_price: dec!(1150.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: sqlx::types::Json(BookingMetadata::default()),
+            door_access_code: None,
+            cleaning_fee: dec!(100.00),
+            damage_deposit: dec!(200.00),
+            platform_fee: dec!(50.00),
+            tax_rate: dec!(0.15),
+            exchange_rate: dec!(1.0),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        // Case 1: Booking with discount
+        let payload_with_discount = BookingConfirmationGuestPayload {
+            booking_id: booking.id,
+            confirmation_code: booking.confirmation_code.clone(),
+            listing_name: "Villa Azure".to_string(),
+            date_from: booking.date_from.to_string(),
+            date_to: booking.date_to.to_string(),
+            total_price: booking.total_price,
+            currency: booking.currency.clone(),
+            guest_name: "Alice Smith".to_string(),
+            accommodation_net: Some(booking.accommodation_net()),
+            cleaning_fee: Some(booking.cleaning_fee),
+            tax_rate: Some(booking.tax_rate),
+            tax_amount: booking.tax_value,
+            platform_fee: Some(booking.platform_fee),
+            damage_deposit: Some(booking.damage_deposit),
+            receipt_url: Some("http://localhost:8080/bookings/doc/1".to_string()),
+        };
+
+        assert_eq!(
+            payload_with_discount.accommodation_net,
+            Some(dec!(900.00)),
+            "accommodation_net must be subtotal minus discount (1000 - 100 = 900)"
+        );
+
+        // Case 2: Booking without discount (None)
+        booking.discount_value = None;
+        let payload_no_discount = BookingConfirmationGuestPayload {
+            booking_id: booking.id,
+            confirmation_code: booking.confirmation_code.clone(),
+            listing_name: "Villa Azure".to_string(),
+            date_from: booking.date_from.to_string(),
+            date_to: booking.date_to.to_string(),
+            total_price: booking.total_price,
+            currency: booking.currency.clone(),
+            guest_name: "Alice Smith".to_string(),
+            accommodation_net: Some(booking.accommodation_net()),
+            cleaning_fee: Some(booking.cleaning_fee),
+            tax_rate: Some(booking.tax_rate),
+            tax_amount: booking.tax_value,
+            platform_fee: Some(booking.platform_fee),
+            damage_deposit: Some(booking.damage_deposit),
+            receipt_url: Some("http://localhost:8080/bookings/doc/1".to_string()),
+        };
+
+        assert_eq!(
+            payload_no_discount.accommodation_net,
+            Some(dec!(1000.00)),
+            "accommodation_net without discount must equal subtotal"
+        );
+    }
 }

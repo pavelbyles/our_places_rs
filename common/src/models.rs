@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -6,6 +8,46 @@ use uuid::Uuid;
 use validator::Validate;
 
 pub use crate::payout::*;
+
+/// User authorization role within the platform.
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "user_role", rename_all = "lowercase")
+)]
+#[serde(rename_all = "lowercase")]
+pub enum UserRole {
+    /// Guest / reservation booker account.
+    Booker,
+    /// Property owner / villa host account.
+    Host,
+    /// System administrator with elevated access.
+    Admin,
+}
+
+impl fmt::Display for UserRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Booker => write!(f, "Booker"),
+            Self::Host => write!(f, "Host"),
+            Self::Admin => write!(f, "Admin"),
+        }
+    }
+}
+
+impl std::str::FromStr for UserRole {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "booker" => Ok(Self::Booker),
+            "host" => Ok(Self::Host),
+            "admin" => Ok(Self::Admin),
+            other => Err(format!("Unknown user role: {other}")),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct NewBookerProfile {
@@ -806,12 +848,44 @@ pub struct RefreshSessionRequest {
     pub ttl_seconds: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq)]
+/// Sender role classification for booking correspondence.
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "message_sender_role", rename_all = "lowercase")
+)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageSenderRole {
+    /// Message sent by the guest/booker.
     Guest,
+    /// Message sent by the villa host/owner.
     Host,
+    /// Message sent by system administration.
     Admin,
+}
+
+impl fmt::Display for MessageSenderRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Guest => write!(f, "guest"),
+            Self::Host => write!(f, "host"),
+            Self::Admin => write!(f, "admin"),
+        }
+    }
+}
+
+impl std::str::FromStr for MessageSenderRole {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "guest" => Ok(Self::Guest),
+            "host" => Ok(Self::Host),
+            "admin" => Ok(Self::Admin),
+            other => Err(format!("Unknown message sender role: {other}")),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
@@ -1080,6 +1154,51 @@ mod tests {
         assert!(validate_fee(&Decimal::from(1_000_001)).is_err());
         // More than 2 decimal places
         assert!(validate_fee(&Decimal::new(50001, 3)).is_err()); // 50.001
+    }
+
+    #[test]
+    fn test_user_role_display_and_parsing() {
+        use std::str::FromStr;
+        assert_eq!(UserRole::Booker.to_string(), "Booker");
+        assert_eq!(UserRole::Host.to_string(), "Host");
+        assert_eq!(UserRole::Admin.to_string(), "Admin");
+
+        assert_eq!(UserRole::from_str("booker").unwrap(), UserRole::Booker);
+        assert_eq!(UserRole::from_str("Host").unwrap(), UserRole::Host);
+        assert_eq!(UserRole::from_str("ADMIN").unwrap(), UserRole::Admin);
+        assert!(UserRole::from_str("unknown").is_err());
+
+        let json = serde_json::to_string(&UserRole::Host).unwrap();
+        assert_eq!(json, "\"host\"");
+        let parsed: UserRole = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, UserRole::Host);
+    }
+
+    #[test]
+    fn test_message_sender_role_display_and_parsing() {
+        use std::str::FromStr;
+        assert_eq!(MessageSenderRole::Guest.to_string(), "guest");
+        assert_eq!(MessageSenderRole::Host.to_string(), "host");
+        assert_eq!(MessageSenderRole::Admin.to_string(), "admin");
+
+        assert_eq!(
+            MessageSenderRole::from_str("guest").unwrap(),
+            MessageSenderRole::Guest
+        );
+        assert_eq!(
+            MessageSenderRole::from_str("Host").unwrap(),
+            MessageSenderRole::Host
+        );
+        assert_eq!(
+            MessageSenderRole::from_str("ADMIN").unwrap(),
+            MessageSenderRole::Admin
+        );
+        assert!(MessageSenderRole::from_str("unknown").is_err());
+
+        let json = serde_json::to_string(&MessageSenderRole::Guest).unwrap();
+        assert_eq!(json, "\"guest\"");
+        let parsed: MessageSenderRole = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, MessageSenderRole::Guest);
     }
 }
 

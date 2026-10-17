@@ -5,13 +5,24 @@ use thiserror::Error;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+/// Payout lifecycle status for host disbursement records.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, ToSchema)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "payout_status", rename_all = "lowercase")
+)]
 #[serde(rename_all = "lowercase")]
 pub enum PayoutStatus {
+    /// Payout ledger entry created and pending processing schedule.
     Pending,
+    /// Payout batch is currently being processed with payment provider.
     Processing,
+    /// Payout has been successfully remitted to host payout destination.
     Paid,
+    /// Payout was cancelled prior to funds disbursement.
     Cancelled,
+    /// Payout was refunded or reversed post-settlement.
     Refunded,
 }
 

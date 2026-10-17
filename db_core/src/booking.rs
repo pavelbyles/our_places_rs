@@ -219,22 +219,18 @@ pub async fn update_booking(
 
     let mut tx = pool.begin().await?;
 
-    // Standardize lock acquisition hierarchy (Listing -> Booking) to prevent
+    // Standardize global lock acquisition hierarchy (Listing -> Booking) to prevent
     // deadlocks (PostgreSQL 40P01) with concurrent create_booking operations.
-    let dates_may_change = updated_booking.date_from.is_some() || updated_booking.date_to.is_some();
-
-    if dates_may_change {
-        let booking_listing = sqlx::query!("SELECT listing_id FROM booking WHERE id = $1", id)
-            .fetch_one(&mut *tx)
-            .await?;
-
-        sqlx::query!(
-            "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
-            booking_listing.listing_id
-        )
+    let booking_listing = sqlx::query!("SELECT listing_id FROM booking WHERE id = $1", id)
         .fetch_one(&mut *tx)
         .await?;
-    }
+
+    sqlx::query!(
+        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+        booking_listing.listing_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
 
     let current = sqlx::query!(
         r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to FROM booking WHERE id = $1 FOR UPDATE"#,
@@ -388,10 +384,7 @@ pub async fn update_booking(
             .unwrap_or(rust_decimal::Decimal::ONE)
         };
 
-        let discounted_subtotal = booking.sub_total_price
-            - booking
-                .discount_value
-                .unwrap_or(rust_decimal::Decimal::ZERO);
+        let discounted_subtotal = booking.accommodation_net();
         let gross_amount = (discounted_subtotal * exchange_rate).round_dp(2);
         let platform_fee_pct = listing_info.commission_pct;
         let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
@@ -450,10 +443,7 @@ pub async fn update_booking(
             .unwrap_or(rust_decimal::Decimal::ONE)
         };
 
-        let discounted_subtotal = booking.sub_total_price
-            - booking
-                .discount_value
-                .unwrap_or(rust_decimal::Decimal::ZERO);
+        let discounted_subtotal = booking.accommodation_net();
         let gross_amount = (discounted_subtotal * exchange_rate).round_dp(2);
         let platform_fee_pct = listing_info.commission_pct;
         let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
@@ -494,8 +484,7 @@ pub async fn update_booking(
             crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
 
             // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
-            let accommodation_net =
-                booking.sub_total_price - booking.discount_value.unwrap_or(Decimal::ZERO);
+            let accommodation_net = booking.accommodation_net();
             let host_retained = (accommodation_net - ref_doc.accommodation_net).round_dp(2);
 
             if host_retained > Decimal::ZERO {

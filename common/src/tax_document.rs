@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -5,27 +7,88 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// Type of tax compliance document.
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "tax_document_type", rename_all = "snake_case")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TaxDocumentType {
+    /// Initial statutory payment receipt issued upon successful payment.
     PaymentReceipt,
+    /// Formal statutory tax invoice issued after stay check-in / completion.
     TaxInvoice,
+    /// Statutory refund receipt issued upon booking cancellation and refund.
     RefundReceipt,
 }
 
+impl fmt::Display for TaxDocumentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PaymentReceipt => write!(f, "payment_receipt"),
+            Self::TaxInvoice => write!(f, "tax_invoice"),
+            Self::RefundReceipt => write!(f, "refund_receipt"),
+        }
+    }
+}
+
+impl std::str::FromStr for TaxDocumentType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "payment_receipt" => Ok(Self::PaymentReceipt),
+            "tax_invoice" => Ok(Self::TaxInvoice),
+            "refund_receipt" => Ok(Self::RefundReceipt),
+            other => Err(format!("Unknown tax document type: {other}")),
+        }
+    }
+}
+
 /// Lifecycle status of an issued tax document.
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "tax_document_status", rename_all = "snake_case")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TaxDocumentStatus {
+    /// Active, legally valid document version.
     Issued,
+    /// Superseded by a subsequent revision or cancellation credit note.
     Superseded,
 }
 
+impl fmt::Display for TaxDocumentStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Issued => write!(f, "issued"),
+            Self::Superseded => write!(f, "superseded"),
+        }
+    }
+}
+
+impl std::str::FromStr for TaxDocumentStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "issued" => Ok(Self::Issued),
+            "superseded" => Ok(Self::Superseded),
+            other => Err(format!("Unknown tax document status: {other}")),
+        }
+    }
+}
+
 /// Tax classification for an invoice line item.
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum InvoiceTaxCategory {
+    /// Standard statutory General Consumption Tax rate (15%).
     Gct,
+    /// Non-taxable or exempt charge (e.g. security deposit, platform fee).
     Exempt,
 }
 
@@ -172,5 +235,54 @@ mod tests {
             document_number(TaxDocumentType::RefundReceipt, 2026, "JMK92Z", 1),
             "REF-2026-JMK92Z"
         );
+    }
+
+    #[test]
+    fn test_tax_document_type_and_status_display_parsing_serde() {
+        use std::str::FromStr;
+
+        assert_eq!(
+            TaxDocumentType::PaymentReceipt.to_string(),
+            "payment_receipt"
+        );
+        assert_eq!(TaxDocumentType::TaxInvoice.to_string(), "tax_invoice");
+        assert_eq!(TaxDocumentType::RefundReceipt.to_string(), "refund_receipt");
+
+        assert_eq!(
+            TaxDocumentType::from_str("payment_receipt").unwrap(),
+            TaxDocumentType::PaymentReceipt
+        );
+        assert_eq!(
+            TaxDocumentType::from_str("Tax_Invoice").unwrap(),
+            TaxDocumentType::TaxInvoice
+        );
+        assert_eq!(
+            TaxDocumentType::from_str("REFUND_RECEIPT").unwrap(),
+            TaxDocumentType::RefundReceipt
+        );
+        assert!(TaxDocumentType::from_str("unknown").is_err());
+
+        assert_eq!(TaxDocumentStatus::Issued.to_string(), "issued");
+        assert_eq!(TaxDocumentStatus::Superseded.to_string(), "superseded");
+
+        assert_eq!(
+            TaxDocumentStatus::from_str("issued").unwrap(),
+            TaxDocumentStatus::Issued
+        );
+        assert_eq!(
+            TaxDocumentStatus::from_str("SUPERSEDED").unwrap(),
+            TaxDocumentStatus::Superseded
+        );
+        assert!(TaxDocumentStatus::from_str("unknown").is_err());
+
+        let json = serde_json::to_string(&TaxDocumentType::TaxInvoice).unwrap();
+        assert_eq!(json, "\"tax_invoice\"");
+        let parsed: TaxDocumentType = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, TaxDocumentType::TaxInvoice);
+
+        let json_status = serde_json::to_string(&TaxDocumentStatus::Issued).unwrap();
+        assert_eq!(json_status, "\"issued\"");
+        let parsed_status: TaxDocumentStatus = serde_json::from_str(&json_status).unwrap();
+        assert_eq!(parsed_status, TaxDocumentStatus::Issued);
     }
 }

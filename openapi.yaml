@@ -592,7 +592,95 @@ paths:
         "500":
           description: Internal server error
 
-  /api/v1/bookings/bookings/{id}:
+  /api/v1/bookings/availability:
+    get:
+      summary: Check listing availability for dates
+      operationId: checkAvailability
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: query
+          name: listing_id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+          required: true
+      responses:
+        "200":
+          description: Availability check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilityResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/user/{id}:
+    get:
+      summary: Get all bookings for a user
+      operationId: getUserBookings
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: List of bookings for user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/listing/{id}:
+    get:
+      summary: Get all bookings for a listing
+      operationId: getListingBookings
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: List of bookings for listing
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingResponse"
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}:
     get:
       summary: Get booking by ID
       operationId: getBookingById
@@ -664,6 +752,40 @@ paths:
           description: Booking deleted
         "404":
           description: Booking not found
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/transfer:
+    post:
+      summary: Transfer booking to a registered user
+      operationId: transferBooking
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferBookingRequest"
+      responses:
+        "200":
+          description: Booking guest transferred
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResponse"
+        "400":
+          description: Validation error
+        "404":
+          description: Booking not found or not pending
         "500":
           description: Internal server error
 
@@ -752,6 +874,94 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/bookings/{id}/messages:
+    get:
+      summary: Get all messages for a booking
+      operationId: getBookingMessages
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: Messages retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingMessagesWrapper"
+        "403":
+          description: Forbidden
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+    post:
+      summary: Send a message for a booking
+      operationId: sendBookingMessage
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingMessageRequest"
+      responses:
+        "201":
+          description: Message created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingMessageResponse"
+        "400":
+          description: Bad request
+        "403":
+          description: Forbidden
+        "500":
+          description: Internal server error
+
+  /api/v1/bookings/{id}/messages/read:
+    patch:
+      summary: Mark booking messages as read
+      operationId: markBookingMessagesRead
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: Messages marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkMessagesReadResponse"
+        "403":
+          description: Forbidden
+        "404":
+          description: Booking not found
+        "500":
+          description: Internal server error
+
   /api/v1/internal/cron/complete-stays:
     patch:
       summary: Daily cron sweep to complete past checkout stays and issue statutory tax invoices
@@ -772,6 +982,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompleteStaysResponse"
+        "401":
+          description: Unauthorized - invalid or missing cron secret
+        "500":
+          description: Internal server error
+
+  /api/v1/internal/cron/process-scheduled-notifications:
+    post:
+      summary: Process scheduled booking notifications (pre-arrival guides and hold reminders)
+      operationId: processScheduledNotifications
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: header
+          name: x-cron-secret
+          schema:
+            type: string
+          required: true
+      responses:
+        "200":
+          description: Scheduled notification sweep completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CronSweepResponse"
         "401":
           description: Unauthorized - invalid or missing cron secret
         "500":
@@ -910,6 +1145,14 @@ components:
         days_between_bookings:
           type: integer
           default: 0
+        cleaning_fee:
+          type: number
+          nullable: true
+          description: Host cleaning fee (base currency)
+        damage_deposit:
+          type: number
+          nullable: true
+          description: Refundable damage deposit (base currency)
 
     UpdatedListingRequest:
       type: object
@@ -931,6 +1174,14 @@ components:
           type: integer
         days_between_bookings:
           type: integer
+        cleaning_fee:
+          type: number
+          nullable: true
+          description: Host cleaning fee (base currency)
+        damage_deposit:
+          type: number
+          nullable: true
+          description: Refundable damage deposit (base currency)
 
     ListingResponse:
       type: object
@@ -960,6 +1211,18 @@ components:
           type: integer
         days_between_bookings:
           type: integer
+        commission_pct:
+          type: string
+          nullable: true
+          description: Platform commission percentage
+        cleaning_fee:
+          type: number
+          nullable: true
+          description: Host cleaning fee (base currency)
+        damage_deposit:
+          type: number
+          nullable: true
+          description: Refundable damage deposit (base currency)
 
     # -------------------------------------------------------------
     # Booking Models
@@ -969,16 +1232,10 @@ components:
       required:
         - guest_id
         - listing_id
-        - date_from
-        - date_to
+        - check_in
+        - check_out
         - currency
-        - daily_rate
-        - number_of_persons
-        - total_days
-        - sub_total_price
-        - total_price
-        - cancellation_policy
-        - fee_breakdown
+        - agreed_cancellation_policy
       properties:
         guest_id:
           type: string
@@ -986,41 +1243,93 @@ components:
         listing_id:
           type: string
           format: uuid
-        date_from:
+        check_in:
           type: string
           format: date
-        date_to:
+        check_out:
           type: string
           format: date
+        num_adults:
+          type: integer
+          default: 1
+        num_children:
+          type: integer
+          default: 0
+        num_infants:
+          type: integer
+          default: 0
+        num_pets:
+          type: integer
+          default: 0
+        message_to_host:
+          type: string
+          nullable: true
+        estimated_arrival_time:
+          type: string
+          nullable: true
+        is_business_trip:
+          type: boolean
+          default: false
+        business_company_name:
+          type: string
+          nullable: true
+        business_tax_id:
+          type: string
+          nullable: true
         currency:
           type: string
-        daily_rate:
-          type: number
-        number_of_persons:
-          type: integer
-        total_days:
-          type: integer
-        sub_total_price:
-          type: number
-        discount_value:
-          type: number
-        tax_value:
-          type: number
-        fee_breakdown:
-          type: array
-          items:
-            $ref: "#/components/schemas/FeeItem"
-        total_price:
-          type: number
-        cancellation_policy:
-          type: string
-          enum: [Flexible, Moderate, Strict]
+        agreed_cancellation_policy:
+          $ref: "#/components/schemas/CancellationPolicy"
 
     UpdatedBookingRequest:
       type: object
       properties:
         status:
           $ref: "#/components/schemas/BookingStatus"
+        metadata:
+          $ref: "#/components/schemas/BookingMetadataResponse"
+        door_access_code:
+          type: string
+          nullable: true
+        date_from:
+          type: string
+          format: date
+          nullable: true
+        date_to:
+          type: string
+          format: date
+          nullable: true
+
+    BookingMetadataResponse:
+      type: object
+      properties:
+        num_adults:
+          type: integer
+          default: 1
+        num_children:
+          type: integer
+          default: 0
+        num_infants:
+          type: integer
+          default: 0
+        num_pets:
+          type: integer
+          default: 0
+        message_to_host:
+          type: string
+          nullable: true
+        estimated_arrival_time:
+          type: string
+          nullable: true
+        is_business_trip:
+          type: boolean
+          default: false
+        business_company_name:
+          type: string
+          nullable: true
+        business_tax_id:
+          type: string
+          nullable: true
 
     BookingResponse:
       type: object
@@ -1056,12 +1365,34 @@ components:
           type: number
         discount_value:
           type: number
+          nullable: true
         tax_value:
           type: number
+          nullable: true
         total_price:
           type: number
         cancellation_policy:
+          $ref: "#/components/schemas/CancellationPolicy"
+        metadata:
+          $ref: "#/components/schemas/BookingMetadataResponse"
+        door_access_code:
           type: string
+          nullable: true
+        cleaning_fee:
+          type: number
+          nullable: true
+        damage_deposit:
+          type: number
+          nullable: true
+        platform_fee:
+          type: number
+          nullable: true
+        tax_rate:
+          type: number
+          nullable: true
+        exchange_rate:
+          type: number
+          nullable: true
         created_at:
           type: string
           format: date-time
@@ -1080,7 +1411,26 @@ components:
 
     BookingStatus:
       type: string
-      enum: [Pending, Confirmed, Cancelled, Completed]
+      enum: [pending, confirmed, cancelled, completed]
+
+    CancellationPolicy:
+      type: string
+      enum: [flexible, moderate, strict, firm, limited]
+
+    TransferBookingRequest:
+      type: object
+      required:
+        - guest_id
+      properties:
+        guest_id:
+          type: string
+          format: uuid
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        available:
+          type: boolean
 
     PingResponse:
       type: object
@@ -1163,31 +1513,55 @@ components:
             type: string
             format: uuid
 
+    CronSweepResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        pre_arrival_processed:
+          type: integer
+        hold_reminders_processed:
+          type: integer
+
     RefundQuote:
       type: object
       properties:
-        cancellation_policy:
+        policy_pct:
           type: string
-        refund_pct:
+          description: Refund policy percentage as decimal string
+        accommodation_refund:
           type: string
-        total_paid:
+          description: Accommodation portion refunded as decimal string
+        cleaning_refund:
           type: string
-        refund_amount:
+          description: Cleaning fee portion refunded as decimal string
+        deposit_refund:
           type: string
-        retained_amount:
+          description: Security/damage deposit portion refunded as decimal string
+        tax_refund:
           type: string
-        refund_accommodation:
+          description: Statutory GCT tax portion refunded as decimal string
+        platform_fee_refund:
           type: string
-        refund_cleaning:
+          description: Platform fee portion refunded as decimal string
+        refund_total:
           type: string
-        refund_deposit:
+          description: Total refund amount as decimal string
+        retained_total:
           type: string
-        refund_tax:
-          type: string
-        refund_platform_fee:
-          type: string
-        currency:
-          type: string
+          description: Total retained amount by host/platform as decimal string
+
+    TaxDocumentType:
+      type: string
+      enum: [payment_receipt, tax_invoice, refund_receipt]
+
+    TaxDocumentStatus:
+      type: string
+      enum: [issued, superseded]
+
+    InvoiceTaxCategory:
+      type: string
+      enum: [gct, exempt]
 
     TaxDocumentResponse:
       type: object
@@ -1196,15 +1570,13 @@ components:
           type: string
           format: uuid
         document_type:
-          type: string
-          enum: [payment_receipt, refund_receipt, tax_invoice]
+          $ref: "#/components/schemas/TaxDocumentType"
         document_number:
           type: string
         revision:
           type: integer
         status:
-          type: string
-          enum: [issued, superseded, cancelled]
+          $ref: "#/components/schemas/TaxDocumentStatus"
         supersedes_id:
           type: string
           format: uuid
@@ -1212,6 +1584,10 @@ components:
         booking_id:
           type: string
           format: uuid
+        booking_history_id:
+          type: string
+          format: uuid
+          nullable: true
         recipient_id:
           type: string
           format: uuid
@@ -1231,6 +1607,12 @@ components:
           type: string
         recipient_email:
           type: string
+        recipient_company_name:
+          type: string
+          nullable: true
+        recipient_trn:
+          type: string
+          nullable: true
         currency:
           type: string
         exchange_rate:
@@ -1273,6 +1655,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InvoiceLineItem"
+        created_at:
+          type: string
+          format: date-time
 
     InvoiceLineItem:
       type: object
@@ -1284,12 +1669,67 @@ components:
         unit_price:
           type: string
         tax_category:
-          type: string
-          enum: [gct, standard, zero_rated, exempt]
+          $ref: "#/components/schemas/InvoiceTaxCategory"
         tax_rate:
           type: string
         tax_amount:
           type: string
         total_amount:
           type: string
+
+    MessageSenderRole:
+      type: string
+      enum: [guest, host, admin]
+
+    CreateBookingMessageRequest:
+      type: object
+      required:
+        - message_text
+      properties:
+        message_text:
+          type: string
+
+    BookingMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        booking_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        sender_role:
+          $ref: "#/components/schemas/MessageSenderRole"
+        sender_name:
+          type: string
+        message_text:
+          type: string
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    BookingMessagesWrapper:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingMessageResponse"
+        unread_count:
+          type: integer
+          format: int64
+
+    MarkMessagesReadResponse:
+      type: object
+      properties:
+        updated_count:
+          type: integer
+          format: int64
 

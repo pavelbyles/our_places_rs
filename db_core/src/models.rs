@@ -109,26 +109,7 @@ pub struct UpdatedUser {
     pub default_currency: Option<String>,
 }
 
-#[derive(
-    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
-)]
-#[sqlx(type_name = "user_role", rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum UserRole {
-    Booker,
-    Host,
-    Admin,
-}
-
-impl std::fmt::Display for UserRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            UserRole::Booker => write!(f, "Booker"),
-            UserRole::Host => write!(f, "Host"),
-            UserRole::Admin => write!(f, "Admin"),
-        }
-    }
-}
+pub use common::models::UserRole;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "user_status", rename_all = "lowercase")]
@@ -199,6 +180,13 @@ pub struct Booking {
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
     pub updated_at: DateTime<Utc>,
+}
+
+impl Booking {
+    /// Calculate net accommodation price after subtracting discounts.
+    pub fn accommodation_net(&self) -> Decimal {
+        self.sub_total_price - self.discount_value.unwrap_or(Decimal::ZERO)
+    }
 }
 
 /// Booking model paired with review submission eligibility.
@@ -380,108 +368,9 @@ pub struct BookingNotificationLog {
     pub sent_at: DateTime<Utc>,
 }
 
-#[derive(
-    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
-)]
-#[sqlx(type_name = "cancellation_policy", rename_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum CancellationPolicy {
-    Flexible,
-    Moderate,
-    Strict,
-    Firm,
-    Limited,
-}
+pub use common::cancellation::CancellationPolicy;
 
-impl From<common::cancellation::CancellationPolicy> for CancellationPolicy {
-    fn from(p: common::cancellation::CancellationPolicy) -> Self {
-        match p {
-            common::cancellation::CancellationPolicy::Flexible => CancellationPolicy::Flexible,
-            common::cancellation::CancellationPolicy::Moderate => CancellationPolicy::Moderate,
-            common::cancellation::CancellationPolicy::Strict => CancellationPolicy::Strict,
-            common::cancellation::CancellationPolicy::Firm => CancellationPolicy::Firm,
-            common::cancellation::CancellationPolicy::Limited => CancellationPolicy::Limited,
-        }
-    }
-}
-
-impl From<CancellationPolicy> for common::cancellation::CancellationPolicy {
-    fn from(p: CancellationPolicy) -> Self {
-        match p {
-            CancellationPolicy::Flexible => common::cancellation::CancellationPolicy::Flexible,
-            CancellationPolicy::Moderate => common::cancellation::CancellationPolicy::Moderate,
-            CancellationPolicy::Strict => common::cancellation::CancellationPolicy::Strict,
-            CancellationPolicy::Firm => common::cancellation::CancellationPolicy::Firm,
-            CancellationPolicy::Limited => common::cancellation::CancellationPolicy::Limited,
-        }
-    }
-}
-
-#[derive(
-    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, Eq, EnumString,
-)]
-#[sqlx(type_name = "tax_document_type", rename_all = "snake_case")]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum TaxDocumentType {
-    PaymentReceipt,
-    TaxInvoice,
-    RefundReceipt,
-}
-
-impl From<common::tax_document::TaxDocumentType> for TaxDocumentType {
-    fn from(t: common::tax_document::TaxDocumentType) -> Self {
-        match t {
-            common::tax_document::TaxDocumentType::PaymentReceipt => {
-                TaxDocumentType::PaymentReceipt
-            }
-            common::tax_document::TaxDocumentType::TaxInvoice => TaxDocumentType::TaxInvoice,
-            common::tax_document::TaxDocumentType::RefundReceipt => TaxDocumentType::RefundReceipt,
-        }
-    }
-}
-
-impl From<TaxDocumentType> for common::tax_document::TaxDocumentType {
-    fn from(t: TaxDocumentType) -> Self {
-        match t {
-            TaxDocumentType::PaymentReceipt => {
-                common::tax_document::TaxDocumentType::PaymentReceipt
-            }
-            TaxDocumentType::TaxInvoice => common::tax_document::TaxDocumentType::TaxInvoice,
-            TaxDocumentType::RefundReceipt => common::tax_document::TaxDocumentType::RefundReceipt,
-        }
-    }
-}
-
-#[derive(
-    Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, Eq, EnumString,
-)]
-#[sqlx(type_name = "tax_document_status", rename_all = "snake_case")]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum TaxDocumentStatus {
-    Issued,
-    Superseded,
-}
-
-impl From<common::tax_document::TaxDocumentStatus> for TaxDocumentStatus {
-    fn from(s: common::tax_document::TaxDocumentStatus) -> Self {
-        match s {
-            common::tax_document::TaxDocumentStatus::Issued => TaxDocumentStatus::Issued,
-            common::tax_document::TaxDocumentStatus::Superseded => TaxDocumentStatus::Superseded,
-        }
-    }
-}
-
-impl From<TaxDocumentStatus> for common::tax_document::TaxDocumentStatus {
-    fn from(s: TaxDocumentStatus) -> Self {
-        match s {
-            TaxDocumentStatus::Issued => common::tax_document::TaxDocumentStatus::Issued,
-            TaxDocumentStatus::Superseded => common::tax_document::TaxDocumentStatus::Superseded,
-        }
-    }
-}
+pub use common::tax_document::{TaxDocumentStatus, TaxDocumentType};
 
 /// Information identifying the Merchant of Record supplier issuing compliance documents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -579,10 +468,10 @@ impl From<TaxDocumentRow> for common::tax_document::TaxDocumentResponse {
             serde_json::from_value(r.line_items).unwrap_or_default();
         Self {
             id: r.id,
-            document_type: r.document_type.into(),
+            document_type: r.document_type,
             document_number: r.document_number,
             revision: r.revision,
-            status: r.status.into(),
+            status: r.status,
             supersedes_id: r.supersedes_id,
             booking_id: r.booking_id,
             booking_history_id: r.booking_history_id,
@@ -923,35 +812,8 @@ pub struct Review {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, Copy, PartialEq, Eq, EnumString)]
-#[sqlx(type_name = "message_sender_role", rename_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum DbMessageSenderRole {
-    Guest,
-    Host,
-    Admin,
-}
-
-impl From<DbMessageSenderRole> for common::models::MessageSenderRole {
-    fn from(r: DbMessageSenderRole) -> Self {
-        match r {
-            DbMessageSenderRole::Guest => common::models::MessageSenderRole::Guest,
-            DbMessageSenderRole::Host => common::models::MessageSenderRole::Host,
-            DbMessageSenderRole::Admin => common::models::MessageSenderRole::Admin,
-        }
-    }
-}
-
-impl From<common::models::MessageSenderRole> for DbMessageSenderRole {
-    fn from(r: common::models::MessageSenderRole) -> Self {
-        match r {
-            common::models::MessageSenderRole::Guest => DbMessageSenderRole::Guest,
-            common::models::MessageSenderRole::Host => DbMessageSenderRole::Host,
-            common::models::MessageSenderRole::Admin => DbMessageSenderRole::Admin,
-        }
-    }
-}
+pub use common::models::MessageSenderRole;
+pub type DbMessageSenderRole = MessageSenderRole;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct DbBookingMessage {
@@ -971,7 +833,7 @@ impl From<DbBookingMessage> for common::models::BookingMessageResponse {
             id: msg.id,
             booking_id: msg.booking_id,
             sender_id: msg.sender_id,
-            sender_role: msg.sender_role.into(),
+            sender_role: msg.sender_role,
             sender_name: msg.sender_name,
             message_text: msg.message_text,
             read_at: msg.read_at,
@@ -987,41 +849,8 @@ pub struct BookingParties {
     pub status: BookingStatus,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone, Copy, PartialEq, Eq, EnumString)]
-#[sqlx(type_name = "payout_status", rename_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum DbPayoutStatus {
-    Pending,
-    Processing,
-    Paid,
-    Cancelled,
-    Refunded,
-}
-
-impl From<DbPayoutStatus> for common::payout::PayoutStatus {
-    fn from(s: DbPayoutStatus) -> Self {
-        match s {
-            DbPayoutStatus::Pending => common::payout::PayoutStatus::Pending,
-            DbPayoutStatus::Processing => common::payout::PayoutStatus::Processing,
-            DbPayoutStatus::Paid => common::payout::PayoutStatus::Paid,
-            DbPayoutStatus::Cancelled => common::payout::PayoutStatus::Cancelled,
-            DbPayoutStatus::Refunded => common::payout::PayoutStatus::Refunded,
-        }
-    }
-}
-
-impl From<common::payout::PayoutStatus> for DbPayoutStatus {
-    fn from(s: common::payout::PayoutStatus) -> Self {
-        match s {
-            common::payout::PayoutStatus::Pending => DbPayoutStatus::Pending,
-            common::payout::PayoutStatus::Processing => DbPayoutStatus::Processing,
-            common::payout::PayoutStatus::Paid => DbPayoutStatus::Paid,
-            common::payout::PayoutStatus::Cancelled => DbPayoutStatus::Cancelled,
-            common::payout::PayoutStatus::Refunded => DbPayoutStatus::Refunded,
-        }
-    }
-}
+pub use common::payout::PayoutStatus;
+pub type DbPayoutStatus = PayoutStatus;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct HostPayoutLedger {
@@ -1089,7 +918,7 @@ impl From<DbPayoutLedgerEntry> for common::payout::PayoutLedgerEntry {
             tax_withheld_amount: e.tax_withheld_amount,
             exchange_rate: e.exchange_rate,
             net_payout_amount: e.net_payout_amount,
-            status: e.status.into(),
+            status: e.status,
             gateway_reference: e.gateway_reference,
             failure_reason: e.failure_reason,
             payout_date: e.payout_date,
@@ -1126,38 +955,8 @@ impl From<DbPayoutSummary> for common::payout::PayoutSummary {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, EnumString)]
-#[sqlx(type_name = "email_status", rename_all = "lowercase")]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum DbEmailStatus {
-    Pending,
-    Processing,
-    Sent,
-    Failed,
-}
-
-impl From<DbEmailStatus> for common::email::EmailStatus {
-    fn from(s: DbEmailStatus) -> Self {
-        match s {
-            DbEmailStatus::Pending => common::email::EmailStatus::Pending,
-            DbEmailStatus::Processing => common::email::EmailStatus::Processing,
-            DbEmailStatus::Sent => common::email::EmailStatus::Sent,
-            DbEmailStatus::Failed => common::email::EmailStatus::Failed,
-        }
-    }
-}
-
-impl From<common::email::EmailStatus> for DbEmailStatus {
-    fn from(s: common::email::EmailStatus) -> Self {
-        match s {
-            common::email::EmailStatus::Pending => DbEmailStatus::Pending,
-            common::email::EmailStatus::Processing => DbEmailStatus::Processing,
-            common::email::EmailStatus::Sent => DbEmailStatus::Sent,
-            common::email::EmailStatus::Failed => DbEmailStatus::Failed,
-        }
-    }
-}
+pub use common::email::EmailStatus;
+pub type DbEmailStatus = EmailStatus;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct EmailOutbox {
@@ -1173,4 +972,53 @@ pub struct EmailOutbox {
     pub sent_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn test_booking_accommodation_net_with_and_without_discount() {
+        let mut booking = Booking {
+            id: Uuid::new_v4(),
+            confirmation_code: "ABCDEF12".to_string(),
+            guest_id: Uuid::new_v4(),
+            listing_id: Uuid::new_v4(),
+            status: BookingStatus::Confirmed,
+            date_from: chrono::NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+            date_to: chrono::NaiveDate::from_ymd_opt(2026, 12, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(250.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(1000.00),
+            discount_value: Some(dec!(150.00)),
+            tax_value: Some(dec!(127.50)),
+            fee_breakdown: sqlx::types::Json(vec![]),
+            total_price: dec!(1077.50),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: sqlx::types::Json(BookingMetadata::default()),
+            door_access_code: None,
+            cleaning_fee: dec!(100.00),
+            damage_deposit: dec!(200.00),
+            platform_fee: dec!(50.00),
+            tax_rate: dec!(0.15),
+            exchange_rate: dec!(1.0),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        // With discount
+        assert_eq!(booking.accommodation_net(), dec!(850.00));
+
+        // Without discount (None)
+        booking.discount_value = None;
+        assert_eq!(booking.accommodation_net(), dec!(1000.00));
+
+        // With zero discount
+        booking.discount_value = Some(Decimal::ZERO);
+        assert_eq!(booking.accommodation_net(), dec!(1000.00));
+    }
 }
