@@ -997,9 +997,18 @@ mod tests {
 
         tx.commit().await.unwrap();
 
+        use crate::settings::TaxSettings;
+
+        let tax_settings = TaxSettings {
+            taj_supplier_trn: "000-111-222".to_string(),
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+        };
+
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(tax_settings))
                 .configure(crate::apis::configure_routes),
         )
         .await;
