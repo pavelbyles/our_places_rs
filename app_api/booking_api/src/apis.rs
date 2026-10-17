@@ -1,3 +1,4 @@
+use crate::settings::{CronSettings, TaxSettings};
 use actix_web::middleware::from_fn;
 use actix_web::{FromRequest, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
@@ -8,7 +9,7 @@ use api_core::{
     pagination,
     settings::Settings,
 };
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate, Utc};
 use common::models::NewBookingRequest;
 use common::models::{BookingMaterialTerms, is_material_booking_change};
 use common::pricing::BookingCalculator;
@@ -23,7 +24,9 @@ use db_core::payout_ledger as db_payout_ledger;
 use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use subtle::ConstantTimeEq;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -68,6 +71,10 @@ pub struct UpdatedBookingRequest {
     pub metadata: Option<BookingMetadata>,
     /// Optional physical door lock pin code.
     pub door_access_code: Option<String>,
+    /// Optional updated check-in date.
+    pub date_from: Option<NaiveDate>,
+    /// Optional updated check-out date.
+    pub date_to: Option<NaiveDate>,
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -209,6 +216,21 @@ async fn create_booking(
     )
     .map_err(map_pricing_error)?;
 
+    let tax_rate =
+        common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
+
+    let cleaning_fee = if conversion_rate != Decimal::ONE {
+        (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
+    } else {
+        listing_details.listing.cleaning_fee
+    };
+
+    let damage_deposit = if conversion_rate != Decimal::ONE {
+        (listing_details.listing.damage_deposit * conversion_rate).round_dp(2)
+    } else {
+        listing_details.listing.damage_deposit
+    };
+
     let calculator = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
         total_days,
@@ -218,8 +240,16 @@ async fn create_booking(
         listing_details.listing.monthly_discount_percentage,
         listing_details.listing.weekly_discount_percentage,
     )
-    .apply_taxes()
+    .with_fees(Some(cleaning_fee), Some(damage_deposit))
+    .apply_taxes(tax_rate)
     .finalize();
+
+    let platform_fee = calculator
+        .fee_breakdown
+        .iter()
+        .find(|f| f.name == "Platform Fee")
+        .map(|f| f.amount)
+        .unwrap_or(Decimal::ZERO);
 
     let confirmation_code = generate_confirmation_code();
     let policy = req_data
@@ -257,8 +287,15 @@ async fn create_booking(
                 message_to_host: req_data.message_to_host.clone(),
                 estimated_arrival_time: req_data.estimated_arrival_time.clone(),
                 is_business_trip: req_data.is_business_trip,
+                business_company_name: req_data.business_company_name.clone(),
+                business_tax_id: req_data.business_tax_id.clone(),
             },
             door_access_code: None,
+            cleaning_fee: calculator.cleaning_fee,
+            damage_deposit: calculator.damage_deposit,
+            platform_fee,
+            tax_rate: calculator.tax_rate,
+            exchange_rate: conversion_rate,
         };
 
         match db_booking::create_booking(pool.get_ref(), &new_booking).await {
@@ -455,6 +492,7 @@ async fn get_booking_by_id(
 async fn update_booking(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    tax_settings: Option<web::Data<TaxSettings>>,
     id: web::Path<Uuid>,
     body: web::Json<UpdatedBookingRequest>,
 ) -> Result<impl Responder, ApiError> {
@@ -495,17 +533,230 @@ async fn update_booking(
         }
     }
 
+    let dates_requested = body.date_from.is_some() || body.date_to.is_some();
+    if dates_requested {
+        let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
+            .await
+            .map_err(ApiError::Database)?
+            .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )))?;
+
+        let mut dev_payload = actix_web::dev::Payload::None;
+        let claims = match api_core::auth::Claims::from_request(&req, &mut dev_payload).into_inner()
+        {
+            Ok(c) => c,
+            Err(_) => {
+                return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                    sqlx::Error::RowNotFound,
+                )));
+            }
+        };
+
+        let user = match db_core::user::get_user_by_id(pool.get_ref(), claims.sub).await {
+            Ok(u) => u,
+            Err(_) => {
+                return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                    sqlx::Error::RowNotFound,
+                )));
+            }
+        };
+
+        let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+        let is_guest = claims.sub == parties.guest_id;
+
+        if !is_admin && !is_guest {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    }
+
     let old_booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
         .await
         .map_err(ApiError::Database)?;
+
+    if dates_requested {
+        if old_booking.status != BookingStatus::Confirmed {
+            return Err(ApiError::BookingNotModifiable(
+                "Only confirmed bookings can have their dates modified".to_string(),
+            ));
+        }
+
+        let jamaica_today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+        let new_check_in = body.date_from.unwrap_or(old_booking.date_from);
+        let new_check_out = body.date_to.unwrap_or(old_booking.date_to);
+
+        if new_check_in <= jamaica_today {
+            return Err(ApiError::BookingNotModifiable(
+                "Date changes must be for future check-in dates".to_string(),
+            ));
+        }
+
+        if new_check_in >= new_check_out {
+            return Err(ApiError::Database(
+                db_core::error::DbError::ValidationError(
+                    "Check-out date must be after check-in date".to_string(),
+                ),
+            ));
+        }
+    }
+
+    let (
+        daily_rate,
+        total_days,
+        sub_total_price,
+        discount_value,
+        tax_value,
+        fee_breakdown,
+        total_price,
+        cleaning_fee,
+        damage_deposit,
+        platform_fee,
+        tax_rate,
+        exchange_rate,
+    ) = if dates_requested {
+        let new_check_in = body.date_from.unwrap_or(old_booking.date_from);
+        let new_check_out = body.date_to.unwrap_or(old_booking.date_to);
+
+        let listing_details = db_listing::get_listing_by_id(pool.get_ref(), old_booking.listing_id)
+            .await
+            .map_err(ApiError::Database)?;
+
+        let conversion_rate = old_booking.exchange_rate;
+        let base_price = listing_details
+            .listing
+            .price_per_night
+            .unwrap_or(Decimal::ZERO);
+        let base_nightly_rate = if conversion_rate != Decimal::ONE {
+            (base_price * conversion_rate).round_dp(2)
+        } else {
+            base_price
+        };
+
+        let raw_overrides = db_listing::get_active_overrides_for_dates(
+            pool.get_ref(),
+            old_booking.listing_id,
+            new_check_in,
+            new_check_out,
+        )
+        .await
+        .unwrap_or_default();
+
+        let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
+            .into_iter()
+            .map(|mut ovr| {
+                if conversion_rate != Decimal::ONE {
+                    ovr.nightly_rate = (ovr.nightly_rate * conversion_rate).round_dp(2);
+                }
+                ovr
+            })
+            .collect();
+
+        let dynamic_quote = common::pricing::calculate_dynamic_quote(
+            base_nightly_rate,
+            listing_details.listing.minimum_stay,
+            &converted_overrides,
+            new_check_in,
+            new_check_out,
+        )
+        .map_err(map_pricing_error)?;
+
+        let tax_rate =
+            common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
+
+        let clean_fee = if conversion_rate != Decimal::ONE {
+            (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
+        } else {
+            listing_details.listing.cleaning_fee
+        };
+
+        let dmg_deposit = if conversion_rate != Decimal::ONE {
+            (listing_details.listing.damage_deposit * conversion_rate).round_dp(2)
+        } else {
+            listing_details.listing.damage_deposit
+        };
+
+        let days = (new_check_out - new_check_in).num_days() as i32;
+        let calculator = BookingCalculator::with_subtotal(
+            dynamic_quote.effective_daily_rate,
+            days,
+            dynamic_quote.subtotal,
+        )
+        .apply_discounts(
+            listing_details.listing.monthly_discount_percentage,
+            listing_details.listing.weekly_discount_percentage,
+        )
+        .with_fees(Some(clean_fee), Some(dmg_deposit))
+        .apply_taxes(tax_rate)
+        .finalize();
+
+        let plat_fee = calculator
+            .fee_breakdown
+            .iter()
+            .find(|f| f.name == "Platform Fee")
+            .map(|f| f.amount)
+            .unwrap_or(Decimal::ZERO);
+
+        let fee_bd: Vec<FeeItem> = calculator
+            .fee_breakdown
+            .into_iter()
+            .map(|f| FeeItem {
+                name: f.name,
+                amount: f.amount,
+            })
+            .collect();
+
+        (
+            Some(calculator.actual_daily_rate),
+            Some(calculator.total_days),
+            Some(calculator.sub_total_price),
+            calculator.discount_value,
+            calculator.tax_value,
+            Some(fee_bd),
+            Some(calculator.total_price),
+            Some(clean_fee),
+            Some(dmg_deposit),
+            Some(plat_fee),
+            Some(tax_rate),
+            Some(conversion_rate),
+        )
+    } else {
+        (
+            None, None, None, None, None, None, None, None, None, None, None, None,
+        )
+    };
 
     let updated_data = UpdatedBooking {
         status: body.status,
         metadata: body.metadata.clone(),
         door_access_code: body.door_access_code.clone(),
+        date_from: body.date_from,
+        date_to: body.date_to,
+        daily_rate,
+        total_days,
+        sub_total_price,
+        discount_value,
+        tax_value,
+        fee_breakdown,
+        total_price,
+        cleaning_fee,
+        damage_deposit,
+        platform_fee,
+        tax_rate,
+        exchange_rate,
     };
 
-    let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data)
+    let supplier = tax_settings
+        .as_ref()
+        .map(|s| s.to_supplier_info())
+        .or_else(|| TaxSettings::from_env().ok().map(|s| s.to_supplier_info()))
+        .ok_or_else(|| {
+            tracing::error!("Statutory tax supplier settings are missing or invalid");
+            ApiError::Internal
+        })?;
+
+    let booking = db_booking::update_booking(pool.get_ref(), *id, &updated_data, &supplier)
         .await
         .map_err(ApiError::Database)?;
 
@@ -930,7 +1181,7 @@ async fn get_host_ledger_entries(
         pool.get_ref(),
         target_host_id,
         filter.listing_id,
-        filter.status.map(Into::into),
+        filter.status,
         filter.date_from,
         filter.date_to,
         page,
@@ -1006,7 +1257,7 @@ async fn export_host_ledger_csv(
         pool.get_ref(),
         target_host_id,
         filter.listing_id,
-        filter.status.map(Into::into),
+        filter.status,
         filter.date_from,
         filter.date_to,
         1,
@@ -1048,7 +1299,7 @@ async fn update_admin_payout_status(
     let updated = db_payout_ledger::update_payout_status(
         pool.get_ref(),
         ledger_id,
-        body.status.into(),
+        body.status,
         body.gateway_reference.clone(),
         body.failure_reason.clone(),
     )
@@ -1086,7 +1337,23 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
 
         // 1. Confirmation: status changed to Confirmed
         if old_b.status != BookingStatus::Confirmed && new_b.status == BookingStatus::Confirmed {
+            let doc_number = common::tax_document::document_number(
+                common::tax_document::TaxDocumentType::PaymentReceipt,
+                new_b.date_from.year(),
+                &new_b.confirmation_code,
+                1,
+            );
+            let base_url =
+                std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let receipt_url = format!(
+                "{}/bookings/{}/documents/{}",
+                base_url.trim_end_matches('/'),
+                new_b.id,
+                doc_number
+            );
+
             // Guest confirmation
+            let accommodation_net = new_b.accommodation_net();
             let guest_payload = common::email::BookingConfirmationGuestPayload {
                 booking_id: new_b.id,
                 confirmation_code: new_b.confirmation_code.clone(),
@@ -1096,6 +1363,13 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 total_price: new_b.total_price,
                 currency: new_b.currency.clone(),
                 guest_name: format!("{} {}", guest.first_name, guest.last_name),
+                accommodation_net: Some(accommodation_net),
+                cleaning_fee: Some(new_b.cleaning_fee),
+                tax_rate: Some(new_b.tax_rate),
+                tax_amount: new_b.tax_value,
+                platform_fee: Some(new_b.platform_fee),
+                damage_deposit: Some(new_b.damage_deposit),
+                receipt_url: Some(receipt_url),
             };
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
                 &pool_clone,
@@ -1145,7 +1419,20 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
         else if old_b.status != BookingStatus::Cancelled
             && new_b.status == BookingStatus::Cancelled
         {
-            let refund_amount = new_b.total_price;
+            let ref_doc = db_core::tax_document::get_active_by_type(
+                &pool_clone,
+                new_b.id,
+                db_core::models::TaxDocumentType::RefundReceipt,
+            )
+            .await
+            .ok()
+            .flatten();
+
+            let (refund_amount, refund_pct, retained_amount) = match ref_doc {
+                Some(doc) => (doc.total_amount, doc.refund_pct, doc.retained_amount),
+                None => (Decimal::ZERO, Some(Decimal::ZERO), Some(Decimal::ZERO)),
+            };
+
             let guest_payload = common::email::BookingCancelledGuestPayload {
                 booking_id: new_b.id,
                 confirmation_code: new_b.confirmation_code.clone(),
@@ -1155,6 +1442,8 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 refund_amount,
                 currency: new_b.currency.clone(),
                 cancellation_policy: format!("{:?}", new_b.cancellation_policy),
+                refund_pct,
+                retained_amount,
             };
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
                 &pool_clone,
@@ -1242,6 +1531,30 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 }
                 let changes_summary = changes.join(", ");
 
+                let active_receipt = db_core::tax_document::get_active_by_type(
+                    &pool_clone,
+                    new_b.id,
+                    db_core::models::TaxDocumentType::PaymentReceipt,
+                )
+                .await
+                .ok()
+                .flatten();
+
+                let base_url = std::env::var("BASE_URL")
+                    .unwrap_or_else(|_| "http://localhost:8080".to_string());
+                let (receipt_url, balance_due) = match active_receipt {
+                    Some(doc) => (
+                        Some(format!(
+                            "{}/bookings/{}/documents/{}",
+                            base_url.trim_end_matches('/'),
+                            new_b.id,
+                            doc.document_number
+                        )),
+                        doc.balance_due,
+                    ),
+                    None => (None, None),
+                };
+
                 let guest_payload = common::email::BookingUpdatedGuestPayload {
                     booking_id: new_b.id,
                     confirmation_code: new_b.confirmation_code.clone(),
@@ -1251,6 +1564,8 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                     total_price: new_b.total_price,
                     currency: new_b.currency.clone(),
                     changes_summary: changes_summary.clone(),
+                    receipt_url,
+                    balance_due,
                 };
                 if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
                     &pool_clone,
@@ -1296,6 +1611,88 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 }
             }
         }
+        // 4. Completion: status changed to Completed
+        else if old_b.status != BookingStatus::Completed
+            && new_b.status == BookingStatus::Completed
+        {
+            let active_invoice = db_core::tax_document::get_active_by_type(
+                &pool_clone,
+                new_b.id,
+                db_core::models::TaxDocumentType::TaxInvoice,
+            )
+            .await
+            .ok()
+            .flatten();
+
+            let base_url =
+                std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let (invoice_url, invoice_number) = match active_invoice {
+                Some(doc) => (
+                    format!(
+                        "{}/bookings/{}/documents/{}",
+                        base_url.trim_end_matches('/'),
+                        new_b.id,
+                        doc.document_number
+                    ),
+                    doc.document_number,
+                ),
+                None => {
+                    let doc_num = common::tax_document::document_number(
+                        common::tax_document::TaxDocumentType::TaxInvoice,
+                        new_b.date_to.year(),
+                        &new_b.confirmation_code,
+                        1,
+                    );
+                    (
+                        format!(
+                            "{}/bookings/{}/documents/{}",
+                            base_url.trim_end_matches('/'),
+                            new_b.id,
+                            doc_num
+                        ),
+                        doc_num,
+                    )
+                }
+            };
+
+            let accommodation_net = new_b.accommodation_net();
+            let cleaning_fee = new_b.cleaning_fee;
+            let tax_amount = new_b.tax_value.unwrap_or_else(|| {
+                ((accommodation_net + cleaning_fee) * new_b.tax_rate).round_dp(2)
+            });
+            let platform_fee = new_b.platform_fee;
+            let total_price = accommodation_net + cleaning_fee + tax_amount + platform_fee;
+
+            let guest_payload = common::email::BookingCompletedGuestPayload {
+                booking_id: new_b.id,
+                confirmation_code: new_b.confirmation_code.clone(),
+                listing_name: listing.listing.name.clone(),
+                date_from: new_b.date_from.to_string(),
+                date_to: new_b.date_to.to_string(),
+                total_price,
+                currency: new_b.currency.clone(),
+                invoice_url,
+                invoice_number,
+                accommodation_net,
+                cleaning_fee,
+                tax_amount,
+            };
+            if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+                &pool_clone,
+                &guest.email,
+                &format!(
+                    "Your Stay Invoice - {} (Code: {})",
+                    listing.listing.name, new_b.confirmation_code
+                ),
+                common::email::EmailTemplate::BookingCompletedGuest.as_str(),
+                &serde_json::to_value(&guest_payload).unwrap_or_default(),
+                3,
+            )
+            .await
+            {
+                let _ = publisher.publish_email_event(outbox.id).await;
+            }
+        }
     });
 }
 
@@ -1310,7 +1707,38 @@ pub struct CronSweepResponse {
     pub hold_reminders_processed: usize,
 }
 
-#[tracing::instrument(skip(req, pool))]
+fn verify_cron_secret(
+    req: &HttpRequest,
+    cron_settings: Option<&web::Data<CronSettings>>,
+) -> Result<(), ApiError> {
+    let configured_secret = cron_settings
+        .map(|s| s.cron_secret.clone())
+        .or_else(|| CronSettings::from_env().ok().map(|s| s.cron_secret))
+        .ok_or_else(|| {
+            tracing::error!("Cron settings are not configured");
+            ApiError::Internal
+        })?;
+
+    let header_val = req.headers().get("x-cron-secret");
+    let has_header = subtle::Choice::from(header_val.is_some() as u8);
+    let provided_bytes = header_val.map(|v| v.as_bytes()).unwrap_or(b"");
+
+    let configured_hash = Sha256::digest(configured_secret.as_bytes());
+    let provided_hash = Sha256::digest(provided_bytes);
+
+    let is_valid = bool::from(has_header & configured_hash.ct_eq(&provided_hash));
+
+    if !is_valid {
+        tracing::warn!("Unauthorized attempt to trigger cron endpoint");
+        return Err(ApiError::Unauthorized(
+            "Invalid or missing cron secret".into(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(skip(req, pool, cron_settings))]
 #[utoipa::path(
     post,
     path = "/api/v1/internal/cron/process-scheduled-notifications",
@@ -1325,21 +1753,9 @@ pub struct CronSweepResponse {
 pub async fn process_scheduled_notifications(
     req: HttpRequest,
     pool: web::Data<PgPool>,
+    cron_settings: Option<web::Data<CronSettings>>,
 ) -> Result<HttpResponse, ApiError> {
-    static CRON_SECRET_ENV: &str = "CRON_SECRET";
-    let configured_secret =
-        std::env::var(CRON_SECRET_ENV).unwrap_or_else(|_| "dev-cron-secret".to_string());
-    let provided_secret = req
-        .headers()
-        .get("x-cron-secret")
-        .and_then(|v| v.to_str().ok());
-
-    if provided_secret != Some(&configured_secret) {
-        tracing::warn!("Unauthorized attempt to trigger scheduled notifications cron");
-        return Err(ApiError::Unauthorized(
-            "Invalid or missing cron secret".into(),
-        ));
-    }
+    verify_cron_secret(&req, cron_settings.as_ref())?;
 
     let publisher = api_core::email_publisher::EmailPublisher::from_env();
     let mut pre_arrival_count = 0;
@@ -1524,6 +1940,242 @@ pub async fn process_scheduled_notifications(
     }))
 }
 
+/// Summary response returned by the scheduled complete stays cron job.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CompleteStaysResponse {
+    /// Number of completed bookings transitioned.
+    pub completed_count: usize,
+    /// Identifiers of bookings marked completed and invoiced.
+    pub booking_ids: Vec<Uuid>,
+}
+
+#[tracing::instrument(skip(req, pool, tax_settings, cron_settings))]
+#[utoipa::path(
+    patch,
+    path = "/api/v1/internal/cron/complete-stays",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Past checkout stays completed and invoiced", body = CompleteStaysResponse),
+        (status = 401, description = "Unauthorized - invalid or missing cron secret"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+/// Scheduled cron task endpoint that sweeps past-checkout confirmed bookings, marks them Completed,
+/// issues statutory GCT tax invoices (INV-YYYY-{code}) excluding damage deposits, and notifies guests.
+pub async fn complete_stays_cron(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    tax_settings: Option<web::Data<TaxSettings>>,
+    cron_settings: Option<web::Data<CronSettings>>,
+) -> Result<HttpResponse, ApiError> {
+    verify_cron_secret(&req, cron_settings.as_ref())?;
+
+    let today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let eligible = db_booking::get_confirmed_bookings_past_checkout(pool.get_ref(), today)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let supplier = tax_settings
+        .as_ref()
+        .map(|s| s.to_supplier_info())
+        .or_else(|| TaxSettings::from_env().ok().map(|s| s.to_supplier_info()))
+        .ok_or_else(|| {
+            tracing::error!("Statutory tax supplier settings are missing or invalid");
+            ApiError::Internal
+        })?;
+
+    let mut completed_ids = Vec::new();
+    for booking in eligible {
+        let old_booking = booking.clone();
+        let update_params = db_core::models::UpdatedBooking {
+            status: Some(BookingStatus::Completed),
+            metadata: None,
+            door_access_code: None,
+            date_from: None,
+            date_to: None,
+            daily_rate: None,
+            total_days: None,
+            sub_total_price: None,
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: None,
+            total_price: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            platform_fee: None,
+            tax_rate: None,
+            exchange_rate: None,
+        };
+
+        match db_booking::update_booking(pool.get_ref(), booking.id, &update_params, &supplier)
+            .await
+        {
+            Ok(updated_b) => {
+                completed_ids.push(updated_b.id);
+                dispatch_booking_status_notifications(pool.get_ref(), old_booking, updated_b).await;
+            }
+            Err(e) => {
+                tracing::error!(booking_id = %booking.id, error = %e, "Failed to complete stay in cron");
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(CompleteStaysResponse {
+        completed_count: completed_ids.len(),
+        booking_ids: completed_ids,
+    }))
+}
+
+/// Helper function enforcing that only booking guest, listing host, or administrator can view tax documents.
+/// Non-authenticated callers or unauthorized users receive 404 (do not leak existence).
+async fn check_booking_authorization(
+    req: &HttpRequest,
+    pool: &PgPool,
+    booking_id: Uuid,
+) -> Result<(), ApiError> {
+    let parties = db_booking_message::get_booking_parties(pool, booking_id)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let mut dev_payload = actix_web::dev::Payload::None;
+    let claims = match api_core::auth::Claims::from_request(req, &mut dev_payload).into_inner() {
+        Ok(c) => c,
+        Err(_) => {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    };
+
+    let user = match db_core::user::get_user_by_id(pool, claims.sub).await {
+        Ok(u) => u,
+        Err(_) => {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    };
+
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let is_guest = claims.sub == parties.guest_id;
+    let is_host = claims.sub == parties.host_id;
+
+    if !is_admin && !is_guest && !is_host {
+        return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )));
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/{id}/cancellation-quote",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Cancellation refund quote calculated according to policy schedule", body = common::cancellation::RefundQuote),
+        (status = 404, description = "Booking not found or caller unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_cancellation_quote(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    let booking_id = *id;
+    check_booking_authorization(&req, pool.get_ref(), booking_id).await?;
+
+    let booking = db_core::booking::get_booking_by_id(pool.get_ref(), booking_id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let now = Utc::now();
+    let accommodation_net = booking.accommodation_net();
+    let amounts = common::cancellation::RefundableAmounts::new(
+        accommodation_net,
+        booking.cleaning_fee,
+        booking.damage_deposit,
+        booking.platform_fee,
+        booking.tax_rate,
+        booking.total_price,
+    );
+
+    let quote = common::cancellation::quote_refund(
+        booking.cancellation_policy,
+        amounts,
+        booking.created_at,
+        booking.date_from,
+        now,
+    )
+    .map_err(|e| ApiError::Database(db_core::error::DbError::ValidationError(e.to_string())))?;
+
+    Ok(HttpResponse::Ok().json(quote))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/{id}/documents",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "List of statutory tax documents for booking", body = Vec<common::tax_document::TaxDocumentResponse>),
+        (status = 404, description = "Booking not found or caller unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_booking_documents(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+) -> Result<impl Responder, ApiError> {
+    check_booking_authorization(&req, pool.get_ref(), *id).await?;
+
+    let docs = db_core::tax_document::list_for_booking(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let response: Vec<common::tax_document::TaxDocumentResponse> =
+        docs.into_iter().map(|d| d.into()).collect();
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/{id}/documents/{number}",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Statutory tax document found", body = common::tax_document::TaxDocumentResponse),
+        (status = 404, description = "Document not found or caller unauthorized"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_booking_document_by_number(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, String)>,
+) -> Result<impl Responder, ApiError> {
+    let (booking_id, document_number) = path.into_inner();
+    check_booking_authorization(&req, pool.get_ref(), booking_id).await?;
+
+    let doc = db_core::tax_document::get_by_number(pool.get_ref(), booking_id, &document_number)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let response: common::tax_document::TaxDocumentResponse = doc.into();
+    Ok(HttpResponse::Ok().json(response))
+}
+
 /// Configures Actix-web HTTP routes and OpenAPI specifications for the Booking service.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
@@ -1542,9 +2194,35 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             send_booking_message,
             mark_booking_messages_read,
             process_scheduled_notifications,
+            get_cancellation_quote,
+            get_booking_documents,
+            get_booking_document_by_number,
+            complete_stays_cron,
         ),
         components(
-            schemas(NewBookingRequest, UpdatedBookingRequest, common::models::TransferBookingRequest, AvailabilityResponse, BookingResponse, pagination::Pagination, FeeItem, BookingStatus, CancellationPolicy, common::models::BookingMessageResponse, common::models::BookingMessagesWrapper, common::models::CreateBookingMessageRequest, common::models::MarkMessagesReadResponse, CronSweepResponse)
+            schemas(
+                NewBookingRequest,
+                UpdatedBookingRequest,
+                common::models::TransferBookingRequest,
+                AvailabilityResponse,
+                BookingResponse,
+                pagination::Pagination,
+                FeeItem,
+                BookingStatus,
+                CancellationPolicy,
+                common::models::BookingMessageResponse,
+                common::models::BookingMessagesWrapper,
+                common::models::CreateBookingMessageRequest,
+                common::models::MarkMessagesReadResponse,
+                CronSweepResponse,
+                CompleteStaysResponse,
+                common::cancellation::RefundQuote,
+                common::tax_document::TaxDocumentResponse,
+                common::tax_document::TaxDocumentType,
+                common::tax_document::TaxDocumentStatus,
+                common::tax_document::InvoiceLineItem,
+                common::tax_document::InvoiceTaxCategory,
+            )
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints")
@@ -1615,6 +2293,24 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
+                "/{id}/cancellation-quote",
+                web::get()
+                    .to(get_cancellation_quote)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/documents",
+                web::get()
+                    .to(get_booking_documents)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/documents/{number}",
+                web::get()
+                    .to(get_booking_document_by_number)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
                 "/{id}/messages",
                 web::get()
                     .to(get_booking_messages)
@@ -1660,10 +2356,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
     );
 
-    cfg.service(web::scope("/api/v1/internal/cron").route(
-        "/process-scheduled-notifications",
-        web::post().to(process_scheduled_notifications),
-    ));
+    cfg.service(
+        web::scope("/api/v1/internal/cron")
+            .route(
+                "/process-scheduled-notifications",
+                web::post().to(process_scheduled_notifications),
+            )
+            .route("/complete-stays", web::patch().to(complete_stays_cron)),
+    );
 }
 
 #[cfg(test)]

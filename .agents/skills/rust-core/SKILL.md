@@ -1,5 +1,5 @@
 ---
-name: Rust Core Specialist
+name: rust-core-specialist
 description: Implement idiomatic, high-performance, panic-free Rust code using strict monadic error propagation and Option/Result combinators.
 version: 1.2.0
 rpi_phase: Implementation

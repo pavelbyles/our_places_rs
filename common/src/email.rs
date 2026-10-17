@@ -5,7 +5,12 @@ use std::marker::PhantomData;
 use uuid::Uuid;
 
 /// Status of an outbox email notification record during delivery lifecycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "sqlx",
+    sqlx(type_name = "email_status", rename_all = "lowercase")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EmailStatus {
     /// Email is enqueued in the outbox table awaiting worker dispatch.
@@ -80,6 +85,8 @@ pub enum EmailTemplate {
     PaymentHoldExpiryReminder,
     /// In-app chat notification delivered when a counterparty sends a new message.
     GuestHostMessageNotification,
+    /// Notification delivered to guest after stay completion with final statutory tax invoice link.
+    BookingCompletedGuest,
 }
 
 impl EmailTemplate {
@@ -99,6 +106,7 @@ impl EmailTemplate {
             Self::HostUpcomingArrival => "host_upcoming_arrival",
             Self::PaymentHoldExpiryReminder => "payment_hold_expiry_reminder",
             Self::GuestHostMessageNotification => "guest_host_message_notification",
+            Self::BookingCompletedGuest => "booking_completed_guest",
         }
     }
 }
@@ -155,6 +163,27 @@ pub struct BookingConfirmationGuestPayload {
     pub currency: String,
     /// Full name of primary guest.
     pub guest_name: String,
+    /// Net accommodation charges after subtracting discounts.
+    #[serde(default)]
+    pub accommodation_net: Option<Decimal>,
+    /// Departure cleaning fee.
+    #[serde(default)]
+    pub cleaning_fee: Option<Decimal>,
+    /// Statutory tax rate applied (e.g. 0.1500).
+    #[serde(default)]
+    pub tax_rate: Option<Decimal>,
+    /// Statutory tax amount charged.
+    #[serde(default)]
+    pub tax_amount: Option<Decimal>,
+    /// Platform fee.
+    #[serde(default)]
+    pub platform_fee: Option<Decimal>,
+    /// Refundable security damage deposit held.
+    #[serde(default)]
+    pub damage_deposit: Option<Decimal>,
+    /// Direct URL to view statutory payment receipt.
+    #[serde(default)]
+    pub receipt_url: Option<String>,
 }
 
 /// Strongly-typed email payload for host booking confirmation.
@@ -199,6 +228,12 @@ pub struct BookingUpdatedGuestPayload {
     pub currency: String,
     /// Summary of changes applied.
     pub changes_summary: String,
+    /// Direct link to revised payment receipt if issued.
+    #[serde(default)]
+    pub receipt_url: Option<String>,
+    /// Additional balance due or refundable post-revision.
+    #[serde(default)]
+    pub balance_due: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for host booking modifications.
@@ -243,6 +278,12 @@ pub struct BookingCancelledGuestPayload {
     pub currency: String,
     /// Applied cancellation policy identifier.
     pub cancellation_policy: String,
+    /// Accommodation refund percentage applied.
+    #[serde(default)]
+    pub refund_pct: Option<Decimal>,
+    /// Total amount retained across accommodation and platform fees.
+    #[serde(default)]
+    pub retained_amount: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for host booking cancellation.
@@ -264,6 +305,35 @@ pub struct BookingCancelledHostPayload {
     pub payout_impact: Decimal,
     /// Currency code.
     pub currency: String,
+}
+
+/// Notification delivered to guest after completed checkout with final statutory tax invoice link.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookingCompletedGuestPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Check-in date.
+    pub date_from: String,
+    /// Check-out date.
+    pub date_to: String,
+    /// Total price paid.
+    pub total_price: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Direct link to the final statutory tax invoice.
+    pub invoice_url: String,
+    /// Final statutory invoice document number (INV-YYYY-XXXX).
+    pub invoice_number: String,
+    /// Accommodation net total.
+    pub accommodation_net: Decimal,
+    /// Cleaning fee.
+    pub cleaning_fee: Decimal,
+    /// Statutory GCT tax amount.
+    pub tax_amount: Decimal,
 }
 
 /// Strongly-typed email payload for guest pre-arrival access guide.
@@ -534,10 +604,36 @@ mod tests {
             total_price: Decimal::new(125050, 2),
             currency: "USD".into(),
             guest_name: "John Doe".into(),
+            accommodation_net: Some(Decimal::new(100000, 2)),
+            cleaning_fee: Some(Decimal::new(10000, 2)),
+            tax_rate: Some(Decimal::new(15, 2)),
+            tax_amount: Some(Decimal::new(16500, 2)),
+            platform_fee: Some(Decimal::new(5000, 2)),
+            damage_deposit: Some(Decimal::new(20000, 2)),
+            receipt_url: Some(
+                "http://localhost:8080/bookings/000/documents/REC-2026-CONF123".into(),
+            ),
         };
         let json = serde_json::to_string(&guest_confirm).unwrap();
         let parsed: BookingConfirmationGuestPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(guest_confirm, parsed);
+
+        // Backward compatibility: JSON missing optional fee fields deserializes with None
+        let legacy_json = serde_json::json!({
+            "booking_id": Uuid::new_v4(),
+            "confirmation_code": "LEGACY1",
+            "listing_name": "Villa Sunset",
+            "date_from": "2026-11-01",
+            "date_to": "2026-11-05",
+            "total_price": "1250.50",
+            "currency": "USD",
+            "guest_name": "Legacy Guest"
+        });
+        let legacy_parsed: BookingConfirmationGuestPayload =
+            serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(legacy_parsed.accommodation_net, None);
+        assert_eq!(legacy_parsed.cleaning_fee, None);
+        assert_eq!(legacy_parsed.receipt_url, None);
 
         let pre_arrival = PreArrivalGuideGuestPayload {
             booking_id: Uuid::new_v4(),

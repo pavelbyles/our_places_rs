@@ -1,5 +1,5 @@
 ---
-description: Stage 4 AI-Native SDLC compliance check — execute synthetic benchmark test prompts against agent skills (rust-core, monad-design, grill-me, auto-triage-incident, sonarqube-guard) to verify behavioral compliance and prevent regressions after edits.
+description: Stage 4 AI-Native SDLC compliance check — execute synthetic benchmark test prompts against agent skills (rust-core, monad-design, grill-me, auto-triage-incident, sonarqube-guard, retro) to verify behavioral compliance and prevent regressions after edits.
 ---
 
 # /eval-skills — Synthetic Skill & Rule Benchmark Evaluation
@@ -9,7 +9,7 @@ Regression-test agent skills, `AGENTS.md`, and system rules against a standardiz
 
 ## When to Use
 Run `/eval-skills` whenever:
-- Modifying or adding files in `.agents/skills/` (e.g. `rust-core`, `monad-design`, `grill-me`, `auto-triage-incident`, `sonarqube-guard`).
+- Modifying or adding files in `.agents/skills/` (e.g. `rust-core`, `monad-design`, `grill-me`, `auto-triage-incident`, `sonarqube-guard`, `retro`).
 - Updating `AGENTS.md` or `.agents/rules/`.
 - Preparing a PR that updates AI workflow configurations.
 
@@ -20,7 +20,7 @@ Run `/eval-skills` whenever:
 The benchmark prompts are defined in [.agents/evals/skills_benchmarks.json](file:///home/pav/code/our_places_rs-update-agent-md/.agents/evals/skills_benchmarks.json).
 
 ```mermaid
-graph TD
+flowchart TD
     Trigger[Skill / Rule Edit] --> Select[1. Select Target Skill Benchmark]
     Select --> RunPrompt[2. Execute Synthetic Prompt]
     RunPrompt --> Evaluate[3. Evaluate Non-Negotiable Invariants]

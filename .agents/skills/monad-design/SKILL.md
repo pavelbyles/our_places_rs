@@ -1,5 +1,5 @@
 ---
-name: Monadic Design Specialist
+name: monad-design
 description: Design type-safe data pipelines, error flows, and functional domain models using Monads, Option/Result combinators, and Railway-Oriented Programming.
 version: 1.0.0
 rpi_phase: Architecture

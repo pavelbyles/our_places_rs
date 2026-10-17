@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(MAX(revision), 0)\n        FROM tax_document\n        WHERE booking_id = $1 AND document_type = 'payment_receipt'::tax_document_type\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coalesce",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3516af644dad2c292670cef1ba11b96d55ac00e3568bfe764b15565b46c58058"
+}

@@ -181,3 +181,23 @@ fn test_booking_messaging_role_alignment_and_cancelled_status() {
         || confirmed_status.eq_ignore_ascii_case("refunded");
     assert!(!is_not_cancelled);
 }
+
+#[tokio::test]
+async fn test_guest_document_unauthorized_access_returns_404() {
+    use topcoat::context::Cx;
+    use web_app_tc::pages::booking_documents::render_booking_document_page;
+
+    let cx = Cx::default();
+    let res = render_booking_document_page(&cx).await;
+    assert!(
+        res.is_err(),
+        "Unauthorized document access must return error"
+    );
+    let err = res.err().unwrap();
+    let err_str = format!("{:?}", err);
+    assert!(
+        err_str.to_lowercase().contains("not found") || err_str.contains("404"),
+        "Unauthorized access must return 404 NotFound, got: {}",
+        err_str
+    );
+}

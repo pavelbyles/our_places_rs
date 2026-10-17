@@ -35,6 +35,8 @@ async fn test_reviews_endpoints() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -202,6 +204,8 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await

@@ -129,6 +129,22 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         }
         "booking_confirmation_guest" | "BookingConfirmationGuest" => {
             let template = load_template("booking_confirmation_guest.html");
+            let tax_rate_raw = get_val("tax_rate");
+            let tax_rate_disp = if let Ok(dec) = tax_rate_raw.parse::<rust_decimal::Decimal>() {
+                if dec < rust_decimal::Decimal::ONE && dec > rust_decimal::Decimal::ZERO {
+                    let pct = dec * rust_decimal::Decimal::from(100);
+                    let s = format!("{:.2}", pct);
+                    s.trim_end_matches('0').trim_end_matches('.').to_string()
+                } else {
+                    let s = format!("{:.2}", dec);
+                    s.trim_end_matches('0').trim_end_matches('.').to_string()
+                }
+            } else if !tax_rate_raw.is_empty() {
+                tax_rate_raw
+            } else {
+                "15".to_string()
+            };
+
             template
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
@@ -137,6 +153,13 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{total_price}}", &get_val("total_price"))
                 .replace("{{currency}}", &get_val("currency"))
+                .replace("{{accommodation_net}}", &get_val("accommodation_net"))
+                .replace("{{cleaning_fee}}", &get_val("cleaning_fee"))
+                .replace("{{tax_rate}}", &tax_rate_disp)
+                .replace("{{tax_amount}}", &get_val("tax_amount"))
+                .replace("{{platform_fee}}", &get_val("platform_fee"))
+                .replace("{{damage_deposit}}", &get_val("damage_deposit"))
+                .replace("{{receipt_url}}", &get_val("receipt_url"))
         }
         "booking_confirmation_host" | "BookingConfirmationHost" => {
             let template = load_template("booking_confirmation_host.html");
@@ -152,14 +175,22 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         }
         "booking_updated_guest" | "BookingUpdatedGuest" => {
             let template = load_template("booking_updated_guest.html");
+            let balance_due_raw = get_val("balance_due");
+            let balance_due_disp = if balance_due_raw.is_empty() {
+                "0.00".to_string()
+            } else {
+                balance_due_raw
+            };
             template
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{date_from}}", &get_val("date_from"))
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{total_price}}", &get_val("total_price"))
+                .replace("{{balance_due}}", &balance_due_disp)
                 .replace("{{currency}}", &get_val("currency"))
                 .replace("{{changes_summary}}", &get_val("changes_summary"))
+                .replace("{{receipt_url}}", &get_val("receipt_url"))
         }
         "booking_updated_host" | "BookingUpdatedHost" => {
             let template = load_template("booking_updated_host.html");
@@ -175,12 +206,33 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         }
         "booking_cancelled_guest" | "BookingCancelledGuest" => {
             let template = load_template("booking_cancelled_guest.html");
+            let refund_pct_raw = get_val("refund_pct");
+            let refund_pct_disp = if let Ok(dec) = refund_pct_raw.parse::<rust_decimal::Decimal>() {
+                if dec <= rust_decimal::Decimal::ONE && dec >= rust_decimal::Decimal::ZERO {
+                    let pct = (dec * rust_decimal::Decimal::from(100)).round_dp(0);
+                    pct.to_string()
+                } else {
+                    dec.round_dp(0).to_string()
+                }
+            } else if !refund_pct_raw.is_empty() {
+                refund_pct_raw
+            } else {
+                "0".to_string()
+            };
+            let retained = get_val("retained_amount");
+            let retained_disp = if retained.is_empty() {
+                "0.00".to_string()
+            } else {
+                retained
+            };
             template
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{date_from}}", &get_val("date_from"))
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{refund_amount}}", &get_val("refund_amount"))
+                .replace("{{refund_pct}}", &refund_pct_disp)
+                .replace("{{retained_amount}}", &retained_disp)
                 .replace("{{currency}}", &get_val("currency"))
                 .replace("{{cancellation_policy}}", &get_val("cancellation_policy"))
         }
@@ -194,6 +246,21 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{{date_to}}", &get_val("date_to"))
                 .replace("{{payout_impact}}", &get_val("payout_impact"))
                 .replace("{{currency}}", &get_val("currency"))
+        }
+        "booking_completed_guest" | "BookingCompletedGuest" => {
+            let template = load_template("booking_completed_guest.html");
+            template
+                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
+                .replace("{{listing_name}}", &get_val("listing_name"))
+                .replace("{{date_from}}", &get_val("date_from"))
+                .replace("{{date_to}}", &get_val("date_to"))
+                .replace("{{total_price}}", &get_val("total_price"))
+                .replace("{{currency}}", &get_val("currency"))
+                .replace("{{invoice_url}}", &get_val("invoice_url"))
+                .replace("{{invoice_number}}", &get_val("invoice_number"))
+                .replace("{{accommodation_net}}", &get_val("accommodation_net"))
+                .replace("{{cleaning_fee}}", &get_val("cleaning_fee"))
+                .replace("{{tax_amount}}", &get_val("tax_amount"))
         }
         "pre_arrival_guide_guest" | "PreArrivalGuideGuest" => {
             let template = load_template("pre_arrival_guide_guest.html");
@@ -417,5 +484,76 @@ mod tests {
         assert!(body.contains("Cozy Flat"));
         assert!(body.contains("2026-11-01 14:00 UTC"));
         assert!(body.contains("https://ourplaces.co/checkout/HOLD111"));
+    }
+
+    #[test]
+    fn test_render_booking_cancelled_guest() {
+        let payload = serde_json::json!({
+            "confirmation_code": "CANCEL123",
+            "listing_name": "Azure Haven",
+            "date_from": "2026-12-01",
+            "date_to": "2026-12-05",
+            "refund_amount": "500.00",
+            "currency": "USD",
+            "cancellation_policy": "Moderate",
+            "refund_pct": "0.50",
+            "retained_amount": "327.50"
+        });
+
+        let body = render_email_body("booking_cancelled_guest", &payload);
+        assert!(body.contains("CANCEL123"));
+        assert!(body.contains("Azure Haven"));
+        assert!(body.contains("50%"));
+        assert!(body.contains("USD 500.00"));
+        assert!(body.contains("USD 327.50"));
+    }
+
+    #[test]
+    fn test_render_booking_updated_guest() {
+        let payload = serde_json::json!({
+            "confirmation_code": "UPDATE123",
+            "listing_name": "Azure Haven",
+            "date_from": "2026-12-05",
+            "date_to": "2026-12-10",
+            "total_price": "1200.00",
+            "currency": "USD",
+            "changes_summary": "Dates extended by 2 nights",
+            "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2",
+            "balance_due": "350.00"
+        });
+
+        let body = render_email_body("booking_updated_guest", &payload);
+        assert!(body.contains("UPDATE123"));
+        assert!(body.contains("Azure Haven"));
+        assert!(body.contains("USD 1200.00"));
+        assert!(body.contains("USD 350.00"));
+        assert!(body.contains("https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2"));
+    }
+
+    #[test]
+    fn test_render_booking_completed_guest() {
+        let payload = serde_json::json!({
+            "confirmation_code": "COMP123",
+            "listing_name": "Azure Haven",
+            "date_from": "2026-12-01",
+            "date_to": "2026-12-05",
+            "total_price": "1000.00",
+            "currency": "USD",
+            "invoice_url": "https://ourplaces.co/bookings/123/documents/INV-2026-COMP123",
+            "invoice_number": "INV-2026-COMP123",
+            "accommodation_net": "800.00",
+            "cleaning_fee": "50.00",
+            "tax_amount": "127.50"
+        });
+
+        let body = render_email_body("booking_completed_guest", &payload);
+        assert!(body.contains("COMP123"));
+        assert!(body.contains("Azure Haven"));
+        assert!(body.contains("INV-2026-COMP123"));
+        assert!(body.contains("USD 1000.00"));
+        assert!(body.contains("USD 800.00"));
+        assert!(body.contains("USD 50.00"));
+        assert!(body.contains("USD 127.50"));
+        assert!(body.contains("https://ourplaces.co/bookings/123/documents/INV-2026-COMP123"));
     }
 }

@@ -223,6 +223,8 @@ async fn create_listing(
             minimum_stay: req_data.minimum_stay,
             days_between_bookings: req_data.days_between_bookings,
             commission_pct: req_data.commission_pct,
+            cleaning_fee: req_data.cleaning_fee,
+            damage_deposit: req_data.damage_deposit,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -258,6 +260,7 @@ async fn create_listing(
                             continue;
                         }
                     }
+                    _ => {}
                 }
                 return Err(ApiError::Database(e));
             }
@@ -338,6 +341,8 @@ async fn update_listing(
         minimum_stay: req_data.minimum_stay,
         days_between_bookings: req_data.days_between_bookings,
         commission_pct: req_data.commission_pct,
+        cleaning_fee: req_data.cleaning_fee,
+        damage_deposit: req_data.damage_deposit,
     };
 
     let updated_listing =

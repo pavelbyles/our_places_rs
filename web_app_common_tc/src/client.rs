@@ -130,6 +130,24 @@ impl TopcoatApiClient {
         common::app_client::update_booking(id, req).await
     }
 
+    /// Update booking with optional user JWT token
+    pub async fn update_booking_with_auth(
+        &self,
+        id: Uuid,
+        req: &UpdatedBookingRequest,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<BookingResponse> {
+        common::app_client::update_booking_with_auth(id, req, user_jwt).await
+    }
+
+    /// Get cancellation quote
+    pub async fn get_cancellation_quote(
+        &self,
+        id: Uuid,
+    ) -> anyhow::Result<common::cancellation::RefundQuote> {
+        common::app_client::get_cancellation_quote(id).await
+    }
+
     /// Get booking messages
     pub async fn get_booking_messages(&self, id: Uuid) -> anyhow::Result<BookingMessagesWrapper> {
         common::app_client::get_booking_messages(id).await
@@ -150,6 +168,26 @@ impl TopcoatApiClient {
         id: Uuid,
     ) -> anyhow::Result<MarkMessagesReadResponse> {
         common::app_client::mark_booking_messages_read(id).await
+    }
+
+    /// Retrieve a specific statutory tax document or receipt by number
+    pub async fn get_booking_document_by_number(
+        &self,
+        booking_id: Uuid,
+        document_number: &str,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::tax_document::TaxDocumentResponse> {
+        common::app_client::get_booking_document_by_number(booking_id, document_number, user_jwt)
+            .await
+    }
+
+    /// List all statutory tax documents for a booking
+    pub async fn list_booking_documents(
+        &self,
+        booking_id: Uuid,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<Vec<common::tax_document::TaxDocumentResponse>> {
+        common::app_client::list_booking_documents(booking_id, user_jwt).await
     }
 
     /// Get all registered users for admin

@@ -58,30 +58,30 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
     const badge = dialog.locator('#detail-door-code-badge');
     const statusMsg = dialog.locator('#door-code-status-msg');
 
-    // Enter a new door code
-    const testCode = '8822-KEY';
+    // Enter a new door access code
+    const testCode = `KEY-${Math.floor(1000 + Math.random() * 9000)}`;
     await doorCodeInput.fill(testCode);
 
     // Click Save Code
     await saveBtn.click();
 
-    // Status message should indicate success
-    await expect(statusMsg).toBeVisible();
-    await expect(statusMsg).toContainText('Door access code updated successfully');
-
-    // Badge should reflect the configured code
+    // Status message and badge should reflect successful configuration
     await expect(badge).toContainText(`Configured (${testCode})`);
     await expect(badge).toHaveClass(/badge-success/);
+    await expect(statusMsg).toBeVisible();
+    await expect(statusMsg).toContainText('Door access code updated successfully');
 
     // Close the audit modal
     const closeBtn = dialog.locator('button:has-text("Close Audit View")');
     await closeBtn.click();
+    await expect(dialog).not.toHaveAttribute('open');
 
     // The details button on the table should now have the updated data-door-code attribute
     await expect(detailsBtn).toHaveAttribute('data-door-code', testCode);
 
     // Reopen modal and verify code remains populated
     await detailsBtn.click();
+    await expect(dialog).toHaveAttribute('open');
     await expect(doorCodeInput).toHaveValue(testCode);
     await expect(badge).toContainText(`Configured (${testCode})`);
   });

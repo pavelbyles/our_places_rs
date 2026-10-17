@@ -27,6 +27,14 @@ async fn main() -> anyhow::Result<()> {
     // Get settings
     let config = settings::get_settings().context("Could not load settings")?;
 
+    // Validate statutory tax configuration fast-fail (Spec §1.7)
+    let _tax_settings =
+        booking_api::settings::TaxSettings::from_env().map_err(|e| anyhow::anyhow!(e))?;
+
+    // Validate cron secret configuration fast-fail (Spec §1.7)
+    let _cron_settings =
+        booking_api::settings::CronSettings::from_env().map_err(|e| anyhow::anyhow!(e))?;
+
     // Create database connection pool
     tracing::info!("Connecting to database");
     let db_connection_pool = create_connection_pool(&config.database.connection_string()).await;

@@ -1,7 +1,7 @@
 ---
 name: sonarqube-guard
-description: Enforce SonarQube, SonarCloud, and DeepSource static analysis standards across Rust code, email templates, and database migrations.
-version: 1.0.0
+description: Implementation guide for satisfying SonarQube, SonarCloud, and DeepSource static analysis standards across Rust code, email templates, and database migrations.
+version: 2.0.0
 rpi_phase: Implementation
 trigger:
   - Generate Rust struct, enum, function, or module
@@ -16,54 +16,84 @@ capabilities:
   - Standardize HTML template headers and accessibility contrast
   - Guard database migration immutability and exclusions
   - Verify panic-free zero-unwrap error handling
-tools:
-  - name: verify hygiene
-    description: Scan workspace for SonarQube, DeepSource, and clippy hygiene violations
-    entrypoint: scripts/verify_sonarqube_hygiene.sh
 ---
 
 # SonarQube & DeepSource Hygiene Guard
 
-Enforce strict static analysis hygiene for SonarQube, SonarCloud, and DeepSource across the workspace.
+> **Authority**: [CONSTRAINTS.md](../../../CONSTRAINTS.md) defines the non-negotiable project quality contract and pass/fail thresholds. This skill provides the code transformations, structural patterns, and implementation guidance required to meet those static analysis gates.
 
-## Core Rules for Code Generation
+---
 
-1. **Full Doc Coverage (`RS-D1001`)**:
-   - Every public struct, enum, function, method, and module MUST have a `///` doc comment.
-   - Every **public struct field** and **enum variant** MUST have an individual `///` doc comment.
-   - Module declarations in `lib.rs` / `mod.rs` MUST be documented.
+## Core Transformation Patterns
 
-2. **No String Literals in `env::var` (`RS-W1015`)**:
-   - NEVER pass string literals to `std::env::var("KEY")`.
-   - Declare a `static KEY_ENV: &str = "KEY";` constant or use strongly-typed config structs.
+### 1. Full Doc Coverage (`RS-D1001`, `missing_docs`)
+- Every public `struct`, `enum`, `fn`, `trait`, and `mod` MUST have a `///` doc comment.
+- Every **public struct field** and **enum variant** MUST have an individual `///` doc comment.
+- Module declarations in `lib.rs` / `mod.rs` MUST be documented.
 
-3. **Temporary Directories (`RS-S1003`)**:
-   - NEVER hardcode `"/tmp"` or `"/tmp/..."`. Always use `std::env::temp_dir().join(...)`.
+```rust
+/// Represents a guest booking hold status.
+pub enum HoldStatus {
+    /// Hold has been reserved and is pending payment confirmation.
+    Pending,
+    /// Hold was confirmed following a successful payment capture.
+    Confirmed,
+}
+```
 
-4. **Empty Initializers (`RS-W1079`)**:
-   - Use `String::default()` instead of `String::new()` in mapping closures and default expressions.
+### 2. Strongly-Typed Environment Access (`RS-W1015`)
+- NEVER pass raw string literals into `std::env::var("KEY")`.
+- Declare a static constant or encapsulate configuration in a dedicated struct:
 
-5. **HTML Email Templates (Sonar S5254, S5148, WCAG AA)**:
-   - Must declare `<!DOCTYPE html>` and `<html lang="en">`.
-   - Must include `<head><meta charset="utf-8"><title>Descriptive Title - Our Places</title></head>`.
-   - Action buttons and text must meet WCAG 2.1 AA contrast ratios (e.g. `#0369a1` on white).
+```rust
+// BAD
+let secret = std::env::var("JWT_SECRET")?;
 
-6. **Migration Immutability & Exclusions**:
-   - NEVER edit applied migration files in `db_core/migrations/` (modifying invalidates SQLx checksum).
-   - Ensure `**/db_core/migrations/**` is excluded in `.sonarcloud.properties`, `sonar-project.properties`, and `.deepsource.toml`.
+// GOOD
+static JWT_SECRET_ENV: &str = "JWT_SECRET";
+let secret = std::env::var(JWT_SECRET_ENV)?;
+```
 
-7. **Zero-Panic & Monadic Error Handling (`RS-W1072`, `AGENTS.md`)**:
-   - NEVER use `.unwrap()` or `.expect()` in production code. Use `?`, `.unwrap_or_default()`, or `if let Ok(...)`.
-   - Annotate necessary complex orchestrations with `// skipcq: RS-R1000`.
+### 3. Cross-Platform Temporary Directories (`RS-S1003`)
+- NEVER hardcode `"/tmp"` or platform-specific paths.
+- Always invoke `std::env::temp_dir()`:
+
+```rust
+// BAD
+let path = std::path::Path::new("/tmp/upload.jpg");
+
+// GOOD
+let path = std::env::temp_dir().join("upload.jpg");
+```
+
+### 4. Idiomatic Initializers (`RS-W1079`)
+- Prefer `String::default()` over `String::new()` in mapping closures and default expressions.
+
+### 5. HTML Email Template Standards (Sonar S5254, S5148, WCAG AA)
+- Must declare `<!DOCTYPE html>` and `<html lang="en">`.
+- Must include `<head><meta charset="utf-8"><title>Descriptive Title - Our Places</title></head>`.
+- Interactive elements and text must satisfy WCAG 2.1 AA contrast ratios ($\ge 4.5:1$).
+
+### 6. Database Migration Immutability
+- NEVER edit applied migration scripts in `db_core/migrations/` (modifying invalidates SQLx checksums).
+- Verify that `**/db_core/migrations/**` remains excluded in `.sonarcloud.properties`, `sonar-project.properties`, and `.deepsource.toml`.
+
+### 7. Zero-Panic Error Propagation (`RS-W1072`)
+- NEVER use `.unwrap()` or `.expect()` in production code paths.
+- Propagate errors using `?`, `.unwrap_or_default()`, or monadic combinators (`.and_then()`, `.map()`).
+- Suppressions (`// skipcq:`) lower the bar and MUST be logged in [CONSTRAINTS.md](../../../CONSTRAINTS.md#4-exceptions-log).
+
+---
 
 ## Pre-Commit Verification Checklist
 
-- [ ] All new/modified public structs, fields, enums, variants, and functions have `///` doc comments.
-- [ ] No raw string literals in `env::var(...)` calls.
-- [ ] No hardcoded `/tmp` paths; uses `std::env::temp_dir()`.
-- [ ] HTML templates include `lang="en"`, `<head>`, `<meta charset="utf-8">`, and `<title>`.
-- [ ] Zero `.unwrap()` / `.expect()` in production code paths.
-- [ ] No alterations to previously applied database migrations.
+- [ ] All new or modified public structs, fields, enums, variants, and functions have `///` doc comments
+- [ ] No raw string literals in `env::var(...)` calls
+- [ ] No hardcoded `/tmp` paths; uses `std::env::temp_dir()`
+- [ ] HTML email templates include `lang="en"`, `<head>`, `<meta charset="utf-8">`, and `<title>`
+- [ ] Zero `.unwrap()` / `.expect()` in production code paths
+- [ ] No modifications to previously applied database migrations
+- [ ] Any necessary suppressions (`// skipcq`) are recorded in [CONSTRAINTS.md](../../../CONSTRAINTS.md#4-exceptions-log)
 
 ---
 

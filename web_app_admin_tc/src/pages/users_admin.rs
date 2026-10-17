@@ -1113,12 +1113,8 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UserRoleType {
-    Booker,
-    Host,
-    Admin,
-}
+pub use common::models::UserRole;
+pub use common::models::UserRole as UserRoleType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GranularPermissions {

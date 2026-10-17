@@ -23,6 +23,12 @@ pub enum ApiError {
 
     #[error("Forbidden: {0}")]
     Forbidden(String),
+
+    #[error("The requested dates are no longer available")]
+    DateUnavailable,
+
+    #[error("Booking not modifiable: {0}")]
+    BookingNotModifiable(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -38,8 +44,16 @@ impl ResponseError for ApiError {
         match self {
             ApiError::Database(DbError::Sqlx(sqlx::Error::RowNotFound)) => StatusCode::NOT_FOUND,
             ApiError::Database(DbError::ValidationError(_)) => StatusCode::BAD_REQUEST,
+            ApiError::Database(DbError::FxRateUnavailable { .. }) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             // Validation errors are always 400 Bad Request
             ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            ApiError::Database(DbError::DateUnavailable) | ApiError::DateUnavailable => {
+                StatusCode::CONFLICT
+            }
+            ApiError::Database(DbError::BookingNotModifiable(_))
+            | ApiError::BookingNotModifiable(_) => StatusCode::CONFLICT,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -56,6 +70,30 @@ impl ResponseError for ApiError {
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Database(DbError::FxRateUnavailable { base, target }) => {
+                HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                    "code": "FX_RATE_UNAVAILABLE",
+                    "message": format!("Foreign exchange rate unavailable for currency pair: {} -> {}", base, target)
+                }))
+            }
+            ApiError::DateUnavailable | ApiError::Database(DbError::DateUnavailable) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "DATE_UNAVAILABLE",
+                    "message": "The requested dates are no longer available."
+                }))
+            }
+            ApiError::BookingNotModifiable(msg) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "BOOKING_NOT_MODIFIABLE",
+                    "message": msg
+                }))
+            }
+            ApiError::Database(DbError::BookingNotModifiable(msg)) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "BOOKING_NOT_MODIFIABLE",
+                    "message": msg
+                }))
             }
             ApiError::Unauthorized(msg) => {
                 HttpResponse::Unauthorized().json(serde_json::json!({ "error": msg }))

@@ -5,6 +5,9 @@
 
 The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP Cloud Run scale-to-zero** workloads. Core domain logic, pricing mathematics, and data models are shared seamlessly between backend services (Actix-web) and frontend applications (Topcoat SSR & HTMX).
 
+> [!IMPORTANT]
+> **Read [CONSTRAINTS.md](CONSTRAINTS.md) before writing code. Do not weaken it to make a change pass.**
+
 ---
 
 ## 2. Monorepo Crate Architecture

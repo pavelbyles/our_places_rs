@@ -1,5 +1,5 @@
 ---
-name: Lint Hunter
+name: lint-hunter
 description: Resolve Rust compiler errors, borrow-checker conflicts, and lifetime constraints.
 version: 1.1.0
 rpi_phase: Verification

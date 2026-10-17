@@ -1,10 +1,12 @@
 use crate::error::Result;
 #[allow(unused_imports)]
 use crate::models::{
-    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, UpdatedBooking,
+    Booking, BookingHistory, BookingStatus, CancellationPolicy, FeeItem, NewBooking, SupplierInfo,
+    UpdatedBooking,
 };
 #[allow(unused_imports)]
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
+use rust_decimal::Decimal;
 #[allow(unused_imports)]
 use sqlx::types::Json;
 
@@ -63,6 +65,7 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         new_booking.guest_id,
@@ -88,15 +91,18 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
             id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, door_access_code, created_at, updated_at
+            total_price, cancellation_policy, metadata, door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -118,6 +124,11 @@ pub async fn create_booking(pool: &PgPool, new_booking: &NewBooking) -> Result<B
         new_booking.cancellation_policy as CancellationPolicy,
         Json(&new_booking.metadata) as _,
         new_booking.door_access_code.as_deref(),
+        new_booking.cleaning_fee,
+        new_booking.damage_deposit,
+        new_booking.platform_fee,
+        new_booking.tax_rate,
+        new_booking.exchange_rate,
         Utc::now(),
         Utc::now()
     )
@@ -150,6 +161,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -179,6 +191,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -198,6 +211,7 @@ pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
     updated_booking: &UpdatedBooking,
+    supplier: &SupplierInfo,
 ) -> Result<Booking> {
     // Check existence first or let standard update fail if not found?
     // Listing API uses transaction and SELECT FOR UPDATE, then COALESCE.
@@ -205,12 +219,48 @@ pub async fn update_booking(
 
     let mut tx = pool.begin().await?;
 
+    // Standardize global lock acquisition hierarchy (Listing -> Booking) to prevent
+    // deadlocks (PostgreSQL 40P01) with concurrent create_booking operations.
+    let booking_listing = sqlx::query!("SELECT listing_id FROM booking WHERE id = $1", id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    sqlx::query!(
+        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+        booking_listing.listing_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     let current = sqlx::query!(
-        r#"SELECT id, status as "status: BookingStatus" FROM booking WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to FROM booking WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    let dates_changed = (updated_booking.date_from.is_some()
+        && updated_booking.date_from != Some(current.date_from))
+        || (updated_booking.date_to.is_some() && updated_booking.date_to != Some(current.date_to));
+
+    if dates_changed {
+        if current.status != BookingStatus::Confirmed {
+            return Err(crate::error::DbError::BookingNotModifiable(
+                "Only confirmed bookings can have their dates modified".to_string(),
+            ));
+        }
+
+        let target_from = updated_booking.date_from.unwrap_or(current.date_from);
+        let target_to = updated_booking.date_to.unwrap_or(current.date_to);
+
+        let available =
+            check_availability_excluding(&mut *tx, current.listing_id, target_from, target_to, id)
+                .await?;
+
+        if !available {
+            return Err(crate::error::DbError::DateUnavailable);
+        }
+    }
 
     let booking = sqlx::query_as!(
         Booking,
@@ -219,19 +269,48 @@ pub async fn update_booking(
         SET status = COALESCE($1, status), 
             metadata = COALESCE($2, metadata),
             door_access_code = COALESCE($3, door_access_code),
-            updated_at = $4
-        WHERE id = $5
+            date_from = COALESCE($4, date_from),
+            date_to = COALESCE($5, date_to),
+            daily_rate = COALESCE($6, daily_rate),
+            total_days = COALESCE($7, total_days),
+            sub_total_price = COALESCE($8, sub_total_price),
+            discount_value = COALESCE($9, discount_value),
+            tax_value = COALESCE($10, tax_value),
+            fee_breakdown = COALESCE($11, fee_breakdown),
+            total_price = COALESCE($12, total_price),
+            cleaning_fee = COALESCE($13, cleaning_fee),
+            damage_deposit = COALESCE($14, damage_deposit),
+            platform_fee = COALESCE($15, platform_fee),
+            tax_rate = COALESCE($16, tax_rate),
+            exchange_rate = COALESCE($17, exchange_rate),
+            updated_at = $18
+        WHERE id = $19
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
         updated_booking.metadata.as_ref().map(Json) as _,
         updated_booking.door_access_code.as_deref(),
+        updated_booking.date_from,
+        updated_booking.date_to,
+        updated_booking.daily_rate,
+        updated_booking.total_days,
+        updated_booking.sub_total_price,
+        updated_booking.discount_value,
+        updated_booking.tax_value,
+        updated_booking.fee_breakdown.as_ref().map(Json) as _,
+        updated_booking.total_price,
+        updated_booking.cleaning_fee,
+        updated_booking.damage_deposit,
+        updated_booking.platform_fee,
+        updated_booking.tax_rate,
+        updated_booking.exchange_rate,
         Utc::now(),
         id
     )
@@ -246,16 +325,22 @@ pub async fn update_booking(
     let metadata_changed = updated_booking.metadata.is_some();
     let door_code_changed = updated_booking.door_access_code.is_some();
 
-    if status_changed || metadata_changed || door_code_changed {
-        let reason = match (status_changed, metadata_changed, door_code_changed) {
-            (true, true, _) => "Status and metadata updated",
-            (true, false, false) => "Status updated",
-            (false, true, false) => "Metadata updated",
-            (false, false, true) => "Door access code updated",
-            _ => "Booking updated",
+    let history_id = if status_changed || metadata_changed || door_code_changed || dates_changed {
+        let reason = if dates_changed {
+            "Date change on confirmed reservation"
+        } else {
+            match (status_changed, metadata_changed, door_code_changed) {
+                (true, true, _) => "Status and metadata updated",
+                (true, false, false) => "Status updated",
+                (false, true, false) => "Metadata updated",
+                (false, false, true) => "Door access code updated",
+                _ => "Booking updated",
+            }
         };
-        record_booking_history(&mut tx, &booking, reason, None).await?;
-    }
+        Some(record_booking_history(&mut tx, &booking, reason, None).await?)
+    } else {
+        None
+    };
 
     // Trigger review token generation if booking transitions to Completed
     if let Some(BookingStatus::Completed) = updated_booking.status
@@ -264,10 +349,12 @@ pub async fn update_booking(
         crate::review::create_review_token(&mut tx, booking.id).await?;
     }
 
-    // Trigger host payout ledger generation if booking transitions to Confirmed
+    // Trigger payment receipt issuance and host payout ledger generation if booking transitions to Confirmed
     if let Some(BookingStatus::Confirmed) = updated_booking.status
         && status_changed
     {
+        crate::tax_document::issue_payment_receipt(&mut tx, &booking, supplier, history_id).await?;
+
         let listing_info = sqlx::query!(
             r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
             booking.listing_id
@@ -297,10 +384,7 @@ pub async fn update_booking(
             .unwrap_or(rust_decimal::Decimal::ONE)
         };
 
-        let discounted_subtotal = booking.sub_total_price
-            - booking
-                .discount_value
-                .unwrap_or(rust_decimal::Decimal::ZERO);
+        let discounted_subtotal = booking.accommodation_net();
         let gross_amount = (discounted_subtotal * exchange_rate).round_dp(2);
         let platform_fee_pct = listing_info.commission_pct;
         let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
@@ -326,11 +410,148 @@ pub async fn update_booking(
         .await?;
     }
 
-    // Auto-cancel pending host payout if booking transitions to Cancelled
+    // Trigger revised receipt issuance and update pending host payout ledger if confirmed booking dates changed
+    if dates_changed && current.status == BookingStatus::Confirmed {
+        crate::tax_document::issue_payment_receipt(&mut tx, &booking, supplier, history_id).await?;
+
+        let listing_info = sqlx::query!(
+            r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
+            booking.listing_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let host_currency = sqlx::query_scalar!(
+            r#"SELECT default_currency FROM "user" WHERE id = $1"#,
+            listing_info.user_id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let exchange_rate = if listing_info.base_currency == host_currency {
+            rust_decimal::Decimal::ONE
+        } else {
+            sqlx::query_scalar!(
+                r#"SELECT rate FROM currency_exchange_rates 
+                   WHERE base_currency = $1 AND target_currency = $2 
+                   ORDER BY effective_at DESC, updated_at DESC LIMIT 1"#,
+                listing_info.base_currency,
+                host_currency
+            )
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(rust_decimal::Decimal::ONE)
+        };
+
+        let discounted_subtotal = booking.accommodation_net();
+        let gross_amount = (discounted_subtotal * exchange_rate).round_dp(2);
+        let platform_fee_pct = listing_info.commission_pct;
+        let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
+            gross_amount,
+            platform_fee_pct,
+            rust_decimal::Decimal::ZERO,
+        );
+
+        sqlx::query!(
+            r#"
+            UPDATE host_payout_ledger
+            SET gross_amount = $1,
+                platform_fee_amount = $2,
+                net_payout_amount = $3,
+                exchange_rate = $4,
+                updated_at = NOW()
+            WHERE booking_id = $5 AND status = 'pending'::payout_status
+            "#,
+            gross_amount,
+            platform_fee_amount,
+            net_payout_amount,
+            exchange_rate,
+            booking.id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Handle cancellation: issue refund receipt and adjust host payout ledger if transitioning from Confirmed
     if let Some(BookingStatus::Cancelled) = updated_booking.status
         && status_changed
     {
-        crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+        if current.status == BookingStatus::Confirmed {
+            let ref_doc =
+                crate::tax_document::issue_refund_receipt(&mut tx, &booking, supplier, history_id)
+                    .await?;
+
+            crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+
+            // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
+            let accommodation_net = booking.accommodation_net();
+            let host_retained = (accommodation_net - ref_doc.accommodation_net).round_dp(2);
+
+            if host_retained > Decimal::ZERO {
+                let listing_info = sqlx::query!(
+                    r#"SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1"#,
+                    booking.listing_id
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+
+                let host_currency = sqlx::query_scalar!(
+                    r#"SELECT default_currency FROM "user" WHERE id = $1"#,
+                    listing_info.user_id
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+
+                let exchange_rate = if listing_info.base_currency == host_currency {
+                    Decimal::ONE
+                } else {
+                    sqlx::query_scalar!(
+                        r#"SELECT rate FROM currency_exchange_rates 
+                           WHERE base_currency = $1 AND target_currency = $2 
+                           ORDER BY effective_at DESC, updated_at DESC LIMIT 1"#,
+                        listing_info.base_currency,
+                        host_currency
+                    )
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .unwrap_or(Decimal::ONE)
+                };
+
+                let retained_gross = (host_retained * exchange_rate).round_dp(2);
+                let platform_fee_pct = listing_info.commission_pct;
+                let (platform_fee_amount, net_payout_amount) =
+                    common::pricing::calculate_host_payout(
+                        retained_gross,
+                        platform_fee_pct,
+                        Decimal::ZERO,
+                    );
+
+                crate::payout_ledger::create_payout_ledger_entry(
+                    &mut tx,
+                    uuid::Uuid::now_v7(),
+                    booking.id,
+                    booking.listing_id,
+                    listing_info.user_id,
+                    &host_currency,
+                    retained_gross,
+                    platform_fee_pct,
+                    platform_fee_amount,
+                    Decimal::ZERO,
+                    exchange_rate,
+                    net_payout_amount,
+                )
+                .await?;
+            }
+        } else {
+            crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
+        }
+    }
+
+    // Handle completion: issue statutory tax invoice (INV-YYYY-{code}) if transitioning to Completed
+    if let Some(BookingStatus::Completed) = updated_booking.status
+        && status_changed
+    {
+        crate::tax_document::issue_tax_invoice(&mut tx, &booking, supplier, history_id).await?;
     }
 
     tx.commit().await?;
@@ -375,6 +596,7 @@ pub async fn transfer_booking_guest(
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         "#,
         new_guest_id,
@@ -395,6 +617,39 @@ pub async fn transfer_booking_guest(
     tx.commit().await?;
 
     Ok(booking)
+}
+
+/// Retrieves all confirmed bookings whose checkout date has passed (`date_to <= cutoff_date`).
+#[tracing::instrument(skip(executor))]
+pub async fn get_confirmed_bookings_past_checkout<'e, E>(
+    executor: E,
+    cutoff_date: NaiveDate,
+) -> Result<Vec<Booking>>
+where
+    E: PgExecutor<'e>,
+{
+    let records = sqlx::query_as!(
+        Booking,
+        r#"
+        SELECT id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus",
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            total_price, cancellation_policy as "cancellation_policy: CancellationPolicy",
+            metadata as "metadata: Json<crate::models::BookingMetadata>",
+            door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            created_at, updated_at
+        FROM booking
+        WHERE status = 'confirmed'::booking_status
+          AND date_to <= $1
+        ORDER BY date_to ASC, id ASC
+        "#,
+        cutoff_date
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(records)
 }
 
 /// Retrieves bookings for a specific user, sorted by date_from ASC.
@@ -445,7 +700,8 @@ where
                     END
             ) as "review_eligibility!",
             b.created_at, b.updated_at,
-            b.door_access_code
+            b.door_access_code,
+            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate
         FROM booking b
         LEFT JOIN review r ON r.booking_id = b.id
         LEFT JOIN LATERAL (
@@ -485,9 +741,14 @@ where
             total_price: r.total_price,
             cancellation_policy: r.cancellation_policy,
             metadata: r.metadata,
+            door_access_code: r.door_access_code,
+            cleaning_fee: r.cleaning_fee,
+            damage_deposit: r.damage_deposit,
+            platform_fee: r.platform_fee,
+            tax_rate: r.tax_rate,
+            exchange_rate: r.exchange_rate,
             created_at: r.created_at,
             updated_at: r.updated_at,
-            door_access_code: r.door_access_code,
         };
 
         let eligibility = serde_json::from_value::<common::models::BookingReviewEligibility>(
@@ -527,6 +788,7 @@ where
             total_price, cancellation_policy as "cancellation_policy: CancellationPolicy", 
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
             created_at, updated_at
         FROM booking
         WHERE listing_id = $1
@@ -576,6 +838,42 @@ where
     Ok(overlapping.count == Some(0))
 }
 
+/// Checks if a listing is available for a specified date range, excluding a specific booking.
+#[tracing::instrument(skip(executor))]
+pub async fn check_availability_excluding<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    date_from: chrono::NaiveDate,
+    date_to: chrono::NaiveDate,
+    exclude_booking_id: Uuid,
+) -> Result<bool>
+where
+    E: PgExecutor<'e>,
+{
+    if date_from >= date_to {
+        return Ok(false);
+    }
+
+    let overlapping = sqlx::query!(
+        r#"
+        SELECT count(*) as count FROM booking 
+        WHERE listing_id = $1 
+          AND status IN ('pending', 'confirmed') 
+          AND date_from < $3 
+          AND date_to > $2
+          AND id != $4
+        "#,
+        listing_id,
+        date_from,
+        date_to,
+        exclude_booking_id
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(overlapping.count == Some(0))
+}
+
 /// Retrieves the history of a specific booking.
 #[tracing::instrument(skip(executor))]
 pub async fn get_booking_history<'e, E>(
@@ -613,16 +911,19 @@ async fn record_booking_history(
     booking: &Booking,
     change_reason: &str,
     changed_by_id: Option<Uuid>,
-) -> Result<()> {
-    sqlx::query!(
+) -> Result<Uuid> {
+    let history_id = sqlx::query_scalar!(
         r#"
         INSERT INTO booking_history (
             booking_id, confirmation_code, guest_id, listing_id, status,
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown,
-            total_price, cancellation_policy, metadata, door_access_code, change_reason, changed_by_id
+            total_price, cancellation_policy, metadata, door_access_code,
+            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            change_reason, changed_by_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+        RETURNING id
         "#,
         booking.id,
         booking.confirmation_code,
@@ -643,19 +944,25 @@ async fn record_booking_history(
         booking.cancellation_policy as CancellationPolicy,
         Json(&booking.metadata.0) as _,
         booking.door_access_code.as_deref(),
+        booking.cleaning_fee,
+        booking.damage_deposit,
+        booking.platform_fee,
+        booking.tax_rate,
+        booking.exchange_rate,
         change_reason,
         changed_by_id
     )
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
 
-    Ok(())
+    Ok(history_id)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::NaiveDate;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use sqlx_db_tester::TestPg;
     use std::env;
@@ -728,6 +1035,8 @@ mod tests {
             minimum_stay: 1,
             days_between_bookings: 0,
             commission_pct: Some(dec!(0.1000)),
+            cleaning_fee: None,
+            damage_deposit: None,
         };
         let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
             .await
@@ -756,6 +1065,8 @@ mod tests {
             minimum_stay: 1,
             days_between_bookings: 0,
             commission_pct: Some(dec!(0.1000)),
+            cleaning_fee: None,
+            damage_deposit: None,
         };
         let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
             .await
@@ -806,6 +1117,11 @@ mod tests {
                 ..Default::default()
             },
             door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::ZERO,
+            tax_rate: dec!(0.1000),
+            exchange_rate: Decimal::ONE,
         };
 
         let b1 = create_booking(&pool, &new_booking1)
@@ -836,6 +1152,11 @@ mod tests {
                 ..Default::default()
             },
             door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::ZERO,
+            tax_rate: dec!(0.1000),
+            exchange_rate: Decimal::ONE,
         };
 
         let b2 = create_booking(&pool, &new_booking2)
@@ -860,5 +1181,563 @@ mod tests {
             .expect("Failed to fetch bookings for listing2");
         assert_eq!(listing2_bookings.len(), 1);
         assert_eq!(listing2_bookings[0].id, b2.id);
+    }
+
+    #[tokio::test]
+    async fn test_update_booking_confirmed_issues_payment_receipt() {
+        let test_db = setup_test_db().await;
+        let pool = test_db.get_pool().await;
+
+        let host_id = Uuid::now_v7();
+        let guest_id = Uuid::now_v7();
+
+        let mut tx = pool.begin().await.unwrap();
+
+        let host_user = crate::models::NewUser {
+            id: host_id,
+            email: format!("host_{}@example.com", host_id),
+            password_hash: "hash".to_string(),
+            first_name: "TaxHost".to_string(),
+            last_name: "Owner".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Host]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &host_user)
+            .await
+            .unwrap();
+
+        let profile = crate::models::NewHostProfile {
+            description: Some("Host".to_string()),
+            verified_status: Some("pending".to_string()),
+            payout_details: None,
+        };
+        crate::user::create_host_profile(&mut *tx, host_id, &profile)
+            .await
+            .unwrap();
+
+        let guest_user = crate::models::NewUser {
+            id: guest_id,
+            email: format!("guest_{}@example.com", guest_id),
+            password_hash: "hash".to_string(),
+            first_name: "TaxGuest".to_string(),
+            last_name: "Booker".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &guest_user)
+            .await
+            .unwrap();
+
+        let listing = crate::listing::create_listing(
+            &mut *tx,
+            &crate::models::NewListing {
+                name: format!("Receipt Test Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "JM".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: Some(dec!(50.00)),
+                damage_deposit: Some(dec!(100.00)),
+            },
+        )
+        .await
+        .unwrap();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+            VALUES ('USD', 'JMD', 160.000000, NOW())
+            ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING
+            "#
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.commit().await.unwrap();
+
+        let code = format!("R{}", Uuid::now_v7().simple())[..10].to_uppercase();
+        let new_booking = NewBooking {
+            confirmation_code: code.clone(),
+            guest_id,
+            listing_id: listing.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 12, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(800.00),
+            discount_value: None,
+            tax_value: Some(dec!(127.50)),
+            fee_breakdown: vec![],
+            total_price: dec!(1077.50),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                business_company_name: Some("Global Corp".to_string()),
+                business_tax_id: Some("999-888-777".to_string()),
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(40.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+        };
+
+        let booking = create_booking(&pool, &new_booking).await.unwrap();
+        assert_eq!(booking.status, BookingStatus::Pending);
+
+        let supplier = SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+
+        // Transition from Pending to Confirmed
+        let updated = UpdatedBooking {
+            status: Some(BookingStatus::Confirmed),
+            ..Default::default()
+        };
+
+        let confirmed_booking = update_booking(&pool, booking.id, &updated, &supplier)
+            .await
+            .expect("Failed to confirm booking");
+        assert_eq!(confirmed_booking.status, BookingStatus::Confirmed);
+
+        // Verify that exactly one payment receipt document was created
+        let docs = crate::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .expect("Failed to list tax documents");
+        assert_eq!(docs.len(), 1);
+        let doc = &docs[0];
+        assert_eq!(
+            doc.document_type,
+            crate::models::TaxDocumentType::PaymentReceipt
+        );
+        assert_eq!(doc.total_amount, dec!(1077.50));
+        assert_eq!(doc.jmd_total_amount, dec!(172400.00)); // 1077.50 * 160
+        assert_eq!(doc.recipient_company_name.as_deref(), Some("Global Corp"));
+        assert_eq!(doc.recipient_trn.as_deref(), Some("999-888-777"));
+        assert_eq!(doc.document_number, format!("REC-2026-{}", code));
+
+        // Transition from Confirmed to Cancelled
+        let cancel_update = UpdatedBooking {
+            status: Some(BookingStatus::Cancelled),
+            ..Default::default()
+        };
+        let cancelled_booking = update_booking(&pool, booking.id, &cancel_update, &supplier)
+            .await
+            .expect("Failed to cancel confirmed booking");
+        assert_eq!(cancelled_booking.status, BookingStatus::Cancelled);
+
+        // Verify that a refund receipt document was created
+        let docs_after_cancel = crate::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .expect("Failed to list tax documents after cancel");
+        assert_eq!(docs_after_cancel.len(), 2);
+        let ref_doc = docs_after_cancel
+            .iter()
+            .find(|d| d.document_type == crate::models::TaxDocumentType::RefundReceipt)
+            .expect("Refund receipt document not found");
+        assert_eq!(ref_doc.document_number, format!("REF-2026-{}", code));
+        assert!(ref_doc.refund_pct.is_some());
+        assert!(ref_doc.retained_amount.is_some());
+        assert_eq!(
+            ref_doc.total_amount + ref_doc.retained_amount.unwrap(),
+            booking.total_price
+        );
+
+        // Cleanup created data to preserve pagination baseline for other tests
+        let _ = sqlx::query!("DELETE FROM tax_document WHERE booking_id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM host_payout_ledger WHERE booking_id = $1",
+            booking.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!(
+            "DELETE FROM booking_history WHERE booking_id = $1",
+            booking.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!("DELETE FROM booking WHERE id = $1", booking.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM listing WHERE id = $1", listing.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM host_profiles WHERE user_id = $1", host_id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM \"user\" WHERE id = $1 OR id = $2",
+            host_id,
+            guest_id
+        )
+        .execute(&pool)
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_update_booking_date_change_and_revised_receipt() {
+        let test_db = setup_test_db().await;
+        let pool = test_db.get_pool().await;
+        let mut tx = pool.begin().await.expect("Failed to begin transaction");
+
+        let host_id = Uuid::now_v7();
+        let host_user = crate::models::NewUser {
+            id: host_id,
+            email: format!("host_{}@example.com", host_id),
+            password_hash: "hash".to_string(),
+            first_name: "Host".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Host]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &host_user)
+            .await
+            .unwrap();
+
+        let profile = crate::models::NewHostProfile {
+            description: Some("Host".to_string()),
+            verified_status: Some("pending".to_string()),
+            payout_details: None,
+        };
+        crate::user::create_host_profile(&mut *tx, host_id, &profile)
+            .await
+            .unwrap();
+
+        let nl = crate::models::NewListing {
+            name: format!("Date Change Villa {}", Uuid::now_v7()),
+            user_id: host_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(200.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.1000)),
+            cleaning_fee: Some(dec!(50.00)),
+            damage_deposit: Some(dec!(100.00)),
+        };
+        let listing = crate::listing::create_listing(&mut *tx, &nl).await.unwrap();
+
+        let guest_id = Uuid::now_v7();
+        let guest_user = crate::models::NewUser {
+            id: guest_id,
+            email: format!("guest_{}@example.com", guest_id),
+            password_hash: "hash".to_string(),
+            first_name: "Guest".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![crate::models::UserRole::Booker]),
+            default_currency: "USD".to_string(),
+        };
+        crate::user::create_user(&mut *tx, &guest_user)
+            .await
+            .unwrap();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+            VALUES ('USD', 'JMD', 160.000000, NOW())
+            ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING
+            "#
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        tx.commit().await.unwrap();
+
+        let code = format!("R{}", Uuid::new_v4().simple())[..10].to_uppercase();
+        let new_booking = NewBooking {
+            confirmation_code: code.clone(),
+            guest_id,
+            listing_id: listing.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(800.00),
+            discount_value: None,
+            tax_value: Some(dec!(127.50)),
+            fee_breakdown: vec![],
+            total_price: dec!(1077.50),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(40.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+        };
+
+        let booking = create_booking(&pool, &new_booking).await.unwrap();
+
+        let supplier = SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+
+        // Confirm booking -> Issues R1 (PaymentReceipt)
+        let confirm_update = UpdatedBooking {
+            status: Some(BookingStatus::Confirmed),
+            ..Default::default()
+        };
+        let confirmed = update_booking(&pool, booking.id, &confirm_update, &supplier)
+            .await
+            .expect("Failed to confirm booking");
+        assert_eq!(confirmed.status, BookingStatus::Confirmed);
+
+        let initial_docs = crate::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(initial_docs.len(), 1);
+        assert_eq!(initial_docs[0].revision, 1);
+        assert_eq!(
+            initial_docs[0].document_number,
+            format!("REC-2026-{}", code)
+        );
+        assert_eq!(
+            initial_docs[0].status,
+            crate::models::TaxDocumentStatus::Issued
+        );
+
+        // Date Change: extend stay by 2 days (Nov 1 - Nov 7, 6 nights)
+        let date_change = UpdatedBooking {
+            date_from: Some(NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()),
+            date_to: Some(NaiveDate::from_ymd_opt(2026, 11, 7).unwrap()),
+            daily_rate: Some(dec!(200.00)),
+            total_days: Some(6),
+            sub_total_price: Some(dec!(1200.00)),
+            discount_value: None,
+            tax_value: Some(dec!(187.50)),
+            fee_breakdown: Some(vec![]),
+            total_price: Some(dec!(1537.50)),
+            cleaning_fee: Some(dec!(50.00)),
+            damage_deposit: Some(dec!(100.00)),
+            platform_fee: Some(dec!(60.00)),
+            tax_rate: Some(dec!(0.1500)),
+            exchange_rate: Some(Decimal::ONE),
+            ..Default::default()
+        };
+
+        let updated_booking = update_booking(&pool, booking.id, &date_change, &supplier)
+            .await
+            .expect("Failed to update booking dates");
+        assert_eq!(updated_booking.total_days, 6);
+        assert_eq!(updated_booking.total_price, dec!(1537.50));
+        assert_eq!(
+            updated_booking.date_to,
+            NaiveDate::from_ymd_opt(2026, 11, 7).unwrap()
+        );
+
+        // Verify revised receipt: R1 is superseded, R2 is active with amount_previously_paid and balance_due
+        let docs = crate::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(docs.len(), 2);
+
+        let r1 = docs.iter().find(|d| d.revision == 1).unwrap();
+        assert_eq!(r1.status, crate::models::TaxDocumentStatus::Superseded);
+
+        let r2 = docs.iter().find(|d| d.revision == 2).unwrap();
+        assert_eq!(r2.status, crate::models::TaxDocumentStatus::Issued);
+        assert_eq!(r2.document_number, format!("REC-2026-{}-R2", code));
+        assert_eq!(r2.amount_previously_paid, Some(dec!(1077.50)));
+        assert_eq!(r2.balance_due, Some(dec!(460.00))); // 1537.50 - 1077.50
+        assert_eq!(r2.supersedes_id, Some(r1.id));
+
+        // Create a 2nd booking: Nov 10 - Nov 15
+        let code2 = format!("S{}", Uuid::new_v4().simple())[..10].to_uppercase();
+        let second_booking = NewBooking {
+            confirmation_code: code2,
+            guest_id,
+            listing_id: listing.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 11, 10).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 11, 15).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 5,
+            sub_total_price: dec!(1000.00),
+            discount_value: None,
+            tax_value: Some(dec!(150.00)),
+            fee_breakdown: vec![],
+            total_price: dec!(1300.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(50.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+        };
+        let b2 = create_booking(&pool, &second_booking).await.unwrap();
+        let _ = update_booking(&pool, b2.id, &confirm_update, &supplier)
+            .await
+            .unwrap();
+
+        // Attempt to change booking 1 dates to overlap with booking 2 (Nov 9 - Nov 12)
+        let overlapping_change = UpdatedBooking {
+            date_from: Some(NaiveDate::from_ymd_opt(2026, 11, 9).unwrap()),
+            date_to: Some(NaiveDate::from_ymd_opt(2026, 11, 12).unwrap()),
+            total_days: Some(3),
+            total_price: Some(dec!(900.00)),
+            ..Default::default()
+        };
+        let err = update_booking(&pool, booking.id, &overlapping_change, &supplier)
+            .await
+            .unwrap_err();
+        match err {
+            crate::error::DbError::DateUnavailable => {}
+            other => panic!("Expected DateUnavailable, got: {:?}", other),
+        }
+
+        // Attempt date change on a Pending booking -> BookingNotModifiable
+        let pending_req = NewBooking {
+            confirmation_code: format!("P{}", Uuid::new_v4().simple())[..10].to_uppercase(),
+            guest_id,
+            listing_id: listing.id,
+            date_from: NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+            date_to: NaiveDate::from_ymd_opt(2026, 12, 5).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 4,
+            sub_total_price: dec!(800.00),
+            discount_value: None,
+            tax_value: Some(dec!(127.50)),
+            fee_breakdown: vec![],
+            total_price: dec!(1077.50),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: crate::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(40.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+        };
+        let pending_b = create_booking(&pool, &pending_req).await.unwrap();
+        let pending_change = UpdatedBooking {
+            date_from: Some(NaiveDate::from_ymd_opt(2026, 12, 2).unwrap()),
+            date_to: Some(NaiveDate::from_ymd_opt(2026, 12, 6).unwrap()),
+            ..Default::default()
+        };
+        let pending_err = update_booking(&pool, pending_b.id, &pending_change, &supplier)
+            .await
+            .unwrap_err();
+        match pending_err {
+            crate::error::DbError::BookingNotModifiable(_) => {}
+            other => panic!("Expected BookingNotModifiable, got: {:?}", other),
+        }
+
+        // Clean up
+        let _ = sqlx::query!(
+            "DELETE FROM tax_document WHERE booking_id = $1 OR booking_id = $2 OR booking_id = $3",
+            booking.id,
+            b2.id,
+            pending_b.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!("DELETE FROM host_payout_ledger WHERE booking_id = $1 OR booking_id = $2 OR booking_id = $3", booking.id, b2.id, pending_b.id).execute(&pool).await;
+        let _ = sqlx::query!("DELETE FROM booking_history WHERE booking_id = $1 OR booking_id = $2 OR booking_id = $3", booking.id, b2.id, pending_b.id).execute(&pool).await;
+        let _ = sqlx::query!(
+            "DELETE FROM booking WHERE id = $1 OR id = $2 OR id = $3",
+            booking.id,
+            b2.id,
+            pending_b.id
+        )
+        .execute(&pool)
+        .await;
+        let _ = sqlx::query!("DELETE FROM listing WHERE id = $1", listing.id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!("DELETE FROM host_profiles WHERE user_id = $1", host_id)
+            .execute(&pool)
+            .await;
+        let _ = sqlx::query!(
+            "DELETE FROM \"user\" WHERE id = $1 OR id = $2",
+            host_id,
+            guest_id
+        )
+        .execute(&pool)
+        .await;
     }
 }

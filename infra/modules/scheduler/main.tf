@@ -31,3 +31,29 @@ resource "google_cloud_scheduler_job" "scheduled_notifications_sweep" {
 
   depends_on = [google_project_service.cloud_scheduler_api]
 }
+
+resource "google_cloud_scheduler_job" "complete_stays" {
+  name             = "${var.env_prefix}-complete-stays"
+  description      = "Daily sweep at 12:00 PM Jamaica time to transition past-checkout bookings to Completed and issue GCT tax invoices"
+  project          = var.project_id
+  region           = var.region
+  schedule         = "0 12 * * *"
+  time_zone        = "America/Jamaica"
+  attempt_deadline = "320s"
+
+  retry_config {
+    retry_count = 3
+  }
+
+  http_target {
+    http_method = "PATCH"
+    uri         = "${var.booking_api_url}/api/v1/internal/cron/complete-stays"
+
+    headers = {
+      "Content-Type"  = "application/json"
+      "x-cron-secret" = var.cron_secret
+    }
+  }
+
+  depends_on = [google_project_service.cloud_scheduler_api]
+}

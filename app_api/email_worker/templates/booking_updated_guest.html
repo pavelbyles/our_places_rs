@@ -20,7 +20,12 @@
     <div style="background-color: #f8fafc; border-radius: 6px; padding: 16px; margin: 24px 0; border: 1px solid #e2e8f0;">
       <p style="margin: 0 0 8px 0;"><strong>Confirmation Code:</strong> <span style="font-family: monospace; font-size: 16px; color: #0284c7;">{{confirmation_code}}</span></p>
       <p style="margin: 0 0 8px 0;"><strong>Updated Dates:</strong> {{date_from}} to {{date_to}}</p>
-      <p style="margin: 0;"><strong>Total Price:</strong> {{currency}} {{total_price}}</p>
+      <p style="margin: 0 0 8px 0;"><strong>Total Price:</strong> {{currency}} {{total_price}}</p>
+      <p style="margin: 0;"><strong>Balance Due:</strong> {{currency}} {{balance_due}}</p>
+    </div>
+
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="{{receipt_url}}" style="background-color: #0284c7; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">View Revised Payment Receipt</a>
     </div>
 
     <p style="color: #64748b; font-size: 14px;">If you did not request or expect these changes, please contact our support team immediately.</p>

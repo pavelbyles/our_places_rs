@@ -653,6 +653,10 @@ jobs:
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_INSTANCE_NAME: ${{ vars[format('DB_INSTANCE_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       GCS_BUCKET_RAW_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
+      TAJ_SUPPLIER_TRN: ${{ vars[format('TAJ_SUPPLIER_TRN_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_TRN || '000-000-000' }}
+      TAJ_SUPPLIER_NAME: ${{ vars[format('TAJ_SUPPLIER_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_NAME || 'Our Places Jamaica Limited' }}
+      TAJ_SUPPLIER_ADDRESS: ${{ vars[format('TAJ_SUPPLIER_ADDRESS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_ADDRESS || 'Main Street, Ocho Rios, St. Ann, Jamaica' }}
+      CRON_SECRET: ${{ secrets[format('CRON_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || secrets.CRON_SECRET || 'dev-cron-secret' }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -807,6 +811,10 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            TAJ_SUPPLIER_TRN=${{ env.TAJ_SUPPLIER_TRN }}
+            TAJ_SUPPLIER_NAME=${{ env.TAJ_SUPPLIER_NAME }}
+            TAJ_SUPPLIER_ADDRESS=${{ env.TAJ_SUPPLIER_ADDRESS }}
+            CRON_SECRET=${{ env.CRON_SECRET }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # Listing API

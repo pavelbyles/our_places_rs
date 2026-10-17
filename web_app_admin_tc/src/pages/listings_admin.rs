@@ -43,6 +43,8 @@ pub struct AdminCreateListingPayload {
     pub primary_image_url: Option<String>,
     pub is_active: Option<bool>,
     pub commission_pct: Option<Decimal>,
+    pub cleaning_fee: Option<Decimal>,
+    pub damage_deposit: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,6 +79,10 @@ pub struct AdminCreateListingFormPayload {
     pub primary_image_url: Option<String>,
     pub is_active: Option<String>,
     pub commission_pct: Option<String>,
+    pub cleaning_fee_enabled: Option<String>,
+    pub cleaning_fee: Option<String>,
+    pub damage_deposit_enabled: Option<String>,
+    pub damage_deposit: Option<String>,
 }
 
 impl AdminCreateListingFormPayload {
@@ -162,6 +168,36 @@ impl AdminCreateListingFormPayload {
                         pct
                     }
                 }),
+            cleaning_fee: {
+                let enabled = self
+                    .cleaning_fee_enabled
+                    .as_deref()
+                    .map(|v| v == "on" || v == "true")
+                    .unwrap_or(false);
+                if enabled {
+                    self.cleaning_fee
+                        .as_deref()
+                        .and_then(|s| Decimal::from_str(s.trim()).ok())
+                        .or(Some(Decimal::ZERO))
+                } else {
+                    Some(Decimal::ZERO)
+                }
+            },
+            damage_deposit: {
+                let enabled = self
+                    .damage_deposit_enabled
+                    .as_deref()
+                    .map(|v| v == "on" || v == "true")
+                    .unwrap_or(false);
+                if enabled {
+                    self.damage_deposit
+                        .as_deref()
+                        .and_then(|s| Decimal::from_str(s.trim()).ok())
+                        .or(Some(Decimal::ZERO))
+                } else {
+                    Some(Decimal::ZERO)
+                }
+            },
         }
     }
 }
@@ -252,6 +288,8 @@ async fn execute_create_listing(
                 }
             })
             .or_else(|| Some(Decimal::new(1000, 4))),
+        cleaning_fee: payload.cleaning_fee,
+        damage_deposit: payload.damage_deposit,
     };
 
     api.create_listing(&new_req)
@@ -574,6 +612,18 @@ async fn render_new_or_cloned_listing(
     let initial_image = template.as_ref()
         .and_then(|t| t.primary_image_url.clone())
         .unwrap_or_else(|| "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80".to_string());
+    let initial_cleaning_fee = template
+        .as_ref()
+        .and_then(|t| t.cleaning_fee)
+        .unwrap_or(Decimal::ZERO);
+    let initial_cleaning_fee_str = format!("{:.2}", initial_cleaning_fee);
+    let initial_cleaning_fee_enabled = initial_cleaning_fee > Decimal::ZERO;
+    let initial_damage_deposit = template
+        .as_ref()
+        .and_then(|t| t.damage_deposit)
+        .unwrap_or(Decimal::ZERO);
+    let initial_damage_deposit_str = format!("{:.2}", initial_damage_deposit);
+    let initial_damage_deposit_enabled = initial_damage_deposit > Decimal::ZERO;
 
     Ok(view! {
         if !is_authed {
@@ -851,6 +901,20 @@ async fn render_new_or_cloned_listing(
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Turnover Buffer"</label>
                             <input type="number" name="days_between_bookings" value=(initial_days_between) min="0" max="7" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70">"Cleaning Fee"</label>
+                                <input type="checkbox" name="cleaning_fee_enabled" class="toggle toggle-primary toggle-sm" checked=(initial_cleaning_fee_enabled) />
+                            </div>
+                            <input type="number" name="cleaning_fee" value=(initial_cleaning_fee_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70">"Damage Deposit"</label>
+                                <input type="checkbox" name="damage_deposit_enabled" class="toggle toggle-primary toggle-sm" checked=(initial_damage_deposit_enabled) />
+                            </div>
+                            <input type="number" name="damage_deposit" value=(initial_damage_deposit_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
                     </div>
                 </div>
 
@@ -985,6 +1049,8 @@ async fn render_new_or_cloned_listing(
                             monthly_discount_percentage: rawMonthly ? rawMonthly.toString() : null,
                             commission_pct: rawCommission ? (parseFloat(rawCommission.toString()) / 100).toFixed(4) : "0.1000",
                             days_between_bookings: rawDaysBetween ? parseInt(rawDaysBetween.toString(), 10) : 0,
+                            cleaning_fee: (fd.get('cleaning_fee_enabled') === 'on' && fd.get('cleaning_fee')) ? fd.get('cleaning_fee').toString() : "0.00",
+                            damage_deposit: (fd.get('damage_deposit_enabled') === 'on' && fd.get('damage_deposit')) ? fd.get('damage_deposit').toString() : "0.00",
                             primary_image_url: fd.get('primary_image_url'),
                             is_active: rawActive === 'on' ? true : false,
                             user_id: rawUserId ? rawUserId.toString() : null
@@ -1106,6 +1172,16 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
     let lat = listing.and_then(|l| l.latitude).unwrap_or(18.1760);
     let lon = listing.and_then(|l| l.longitude).unwrap_or(-76.4520);
     let image_url = listing.and_then(|l| l.primary_image_url.clone()).unwrap_or_else(|| "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1200&q=80".to_string());
+    let cleaning_fee = listing
+        .and_then(|l| l.cleaning_fee)
+        .unwrap_or(Decimal::ZERO);
+    let cleaning_fee_str = format!("{:.2}", cleaning_fee);
+    let cleaning_fee_enabled = cleaning_fee > Decimal::ZERO;
+    let damage_deposit = listing
+        .and_then(|l| l.damage_deposit)
+        .unwrap_or(Decimal::ZERO);
+    let damage_deposit_str = format!("{:.2}", damage_deposit);
+    let damage_deposit_enabled = damage_deposit > Decimal::ZERO;
 
     Ok(view! {
         if !is_authed {
@@ -1356,6 +1432,20 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Turnover Buffer"</label>
                             <input type="number" name="days_between_bookings" value=(days_between) min="0" max="7" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70">"Cleaning Fee"</label>
+                                <input type="checkbox" name="cleaning_fee_enabled" class="toggle toggle-primary toggle-sm" checked=(cleaning_fee_enabled) />
+                            </div>
+                            <input type="number" name="cleaning_fee" value=(cleaning_fee_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70">"Damage Deposit"</label>
+                                <input type="checkbox" name="damage_deposit_enabled" class="toggle toggle-primary toggle-sm" checked=(damage_deposit_enabled) />
+                            </div>
+                            <input type="number" name="damage_deposit" value=(damage_deposit_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                     </div>
                 </div>
