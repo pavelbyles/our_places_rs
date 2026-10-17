@@ -3,7 +3,7 @@
 ## Metadata
 - **Author**: Originator (via GitHub Issue #60)
 - **Date**: 2026-10-13 (rev. 2 — post-evaluation)
-- **Status**: Under Review
+- **Status**: Implemented (PR #93)
 - **Target Area**: Fullstack (`db_core`, `common`, `app_api/booking_api`, `app_api/listing_api`, `app_api/email_worker`, `web_app_common_tc`, `web_app_tc`, `web_app_admin_tc`, `infra`)
 
 ---
