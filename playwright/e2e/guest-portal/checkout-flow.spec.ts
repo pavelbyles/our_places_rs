@@ -23,10 +23,12 @@ test.describe('Guest Portal - Checkout Flow & 15-Minute Hold', () => {
     await expect(page.locator('.card', { hasText: targetVilla.name })).toBeVisible();
     await expect(page.locator('text=New Kingston, Jamaica').first()).toBeVisible();
 
-    // 3. Verify price breakdown and 15% statutory GCT
+    // 3. Verify price breakdown, cleaning fee, damage deposit, and 15% statutory GCT
     await expect(page.locator('#breakdown-subtotal')).toContainText('3250.00');
-    await expect(page.locator('#breakdown-tax')).toContainText('487.50');
-    await expect(page.locator('#breakdown-total')).toContainText('3737.50');
+    await expect(page.locator('#breakdown-cleaning-fee')).toContainText('75.00');
+    await expect(page.locator('#breakdown-tax')).toContainText('498.75');
+    await expect(page.locator('#breakdown-damage-deposit')).toContainText('150.00');
+    await expect(page.locator('#breakdown-total')).toContainText('3973.75');
 
     // 4. Verify guest form inputs are present
     await expect(page.locator('#guest-first-name')).toBeVisible();

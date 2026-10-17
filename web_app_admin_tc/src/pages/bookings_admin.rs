@@ -1068,7 +1068,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                                 msg.className = 'text-[11px] text-success font-semibold';
                                 setTimeout(function() {
                                     msg.className = 'text-[11px] text-success hidden font-semibold';
-                                }, 3000);
+                                }, 8000);
                             }
                         })
                         .catch(function(err) {

@@ -6,7 +6,7 @@ async function loginAsGuest(page: import('@playwright/test').Page) {
   await page.locator('#guest-email').fill(TEST_USERS.guest.email);
   await page.locator('#guest-password').fill(TEST_USERS.guest.password);
   await page.locator('#btn-guest-login').click();
-  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15000 });
+  await page.waitForFunction(() => !window.location.pathname.includes('/login'), { timeout: 15000 });
 }
 
 test.describe('Guest Portal - Statutory Tax Documents & Date Modification', () => {
