@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, commission_pct, base_currency FROM listing WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "commission_pct",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "base_currency",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2cc10e438a3f4f6ad73bb19fc77bdac624bf9de3f709254b8d4ddf6bc4232e32"
+}

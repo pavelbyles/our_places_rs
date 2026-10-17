@@ -1,0 +1,179 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE host_payout_ledger l\n        SET status = $1,\n            gateway_reference = COALESCE($2, l.gateway_reference),\n            failure_reason = $3,\n            payout_date = COALESCE($4, l.payout_date),\n            updated_at = $5\n        FROM booking b, listing list, \"user\" u\n        WHERE l.id = $6\n          AND l.booking_id = b.id\n          AND l.listing_id = list.id\n          AND l.host_id = u.id\n        RETURNING \n            l.id,\n            l.booking_id,\n            b.confirmation_code AS booking_confirmation_code,\n            l.listing_id,\n            list.name AS listing_name,\n            l.host_id,\n            CONCAT(u.first_name, ' ', u.last_name) AS host_name,\n            b.date_from AS \"check_in_date?\",\n            b.date_to AS \"check_out_date?\",\n            l.currency,\n            l.gross_amount,\n            l.platform_fee_pct,\n            l.platform_fee_amount,\n            l.tax_withheld_amount,\n            l.exchange_rate,\n            l.net_payout_amount,\n            l.status AS \"status: DbPayoutStatus\",\n            l.gateway_reference,\n            l.failure_reason,\n            l.payout_date,\n            l.created_at,\n            l.updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "booking_confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "check_in_date?",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "check_out_date?",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "gross_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "platform_fee_pct",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "platform_fee_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "tax_withheld_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 14,
+        "name": "exchange_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 15,
+        "name": "net_payout_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 16,
+        "name": "status: DbPayoutStatus",
+        "type_info": {
+          "Custom": {
+            "name": "payout_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "processing",
+                "paid",
+                "cancelled",
+                "refunded"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "gateway_reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "failure_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "payout_date",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "payout_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "processing",
+                "paid",
+                "cancelled",
+                "refunded"
+              ]
+            }
+          }
+        },
+        "Varchar",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "5590b96383b35dfb68da2955f4edd67ef5d7a5500f43f5bbb52de39238f03c17"
+}

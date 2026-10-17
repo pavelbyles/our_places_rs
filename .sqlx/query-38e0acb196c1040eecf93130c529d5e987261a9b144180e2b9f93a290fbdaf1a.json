@@ -1,0 +1,140 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            b.id AS booking_id,\n            b.confirmation_code,\n            b.date_from,\n            b.date_to,\n            b.door_access_code,\n            g.id AS guest_id,\n            g.email AS guest_email,\n            g.first_name AS guest_first_name,\n            g.last_name AS guest_last_name,\n            g.phone_number AS guest_phone,\n            h.id AS host_id,\n            h.email AS host_email,\n            h.first_name AS host_first_name,\n            h.last_name AS host_last_name,\n            h.phone_number AS host_phone,\n            l.id AS listing_id,\n            l.name AS listing_name,\n            l.city AS listing_city,\n            l.listing_details AS \"listing_details: sqlx::types::Json<serde_json::Value>\",\n            b.number_of_persons,\n            b.metadata->>'estimated_arrival_time' AS estimated_arrival_time\n        FROM booking b\n        JOIN \"user\" g ON b.guest_id = g.id\n        JOIN listing l ON b.listing_id = l.id\n        JOIN \"user\" h ON l.user_id = h.id\n        WHERE b.status = 'confirmed'\n          AND b.date_from = CURRENT_DATE + INTERVAL '2 days'\n          AND NOT EXISTS (\n              SELECT 1 FROM booking_notification_log \n              WHERE booking_id = b.id AND notification_type = 'pre_arrival_guide_guest'\n          )\n        ORDER BY b.created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 3,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "door_access_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "guest_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "guest_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "guest_last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "guest_phone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "host_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "host_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "host_last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "host_phone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 16,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "listing_city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "listing_details: sqlx::types::Json<serde_json::Value>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 19,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 20,
+        "name": "estimated_arrival_time",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "38e0acb196c1040eecf93130c529d5e987261a9b144180e2b9f93a290fbdaf1a"
+}

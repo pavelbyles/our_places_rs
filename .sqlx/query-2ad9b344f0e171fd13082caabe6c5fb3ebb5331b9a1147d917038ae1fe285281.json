@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ROUND(overall_rating) as \"stars!\", COUNT(*) as \"cnt!\"\n        FROM review\n        WHERE listing_id = $1\n        GROUP BY ROUND(overall_rating)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stars!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "cnt!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "2ad9b344f0e171fd13082caabe6c5fb3ebb5331b9a1147d917038ae1fe285281"
+}

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \n            rt.valid_from, rt.expires_at, rt.used_at,\n            l.name as listing_name,\n            u.first_name as guest_first_name,\n            b.date_from as check_in, b.date_to as check_out\n        FROM review_token rt\n        JOIN listing l ON rt.listing_id = l.id\n        JOIN \"user\" u ON rt.guest_id = u.id\n        JOIN booking b ON rt.booking_id = b.id\n        WHERE rt.token = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "valid_from",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "used_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "guest_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "check_in",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "check_out",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "356f38a24bae046e9b347c9fa8e668c2f2c4992acfe8ccaf1f415c61e15d977c"
+}
