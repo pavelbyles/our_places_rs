@@ -24,6 +24,7 @@ use db_core::payout_ledger as db_payout_ledger;
 use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use subtle::ConstantTimeEq;
 use utoipa::{IntoParams, OpenApi, ToSchema};
@@ -1718,17 +1719,14 @@ fn verify_cron_secret(
             ApiError::Internal
         })?;
 
-    let provided_secret = req
-        .headers()
-        .get("x-cron-secret")
-        .and_then(|v| v.to_str().ok());
+    let header_val = req.headers().get("x-cron-secret");
+    let has_header = subtle::Choice::from(header_val.is_some() as u8);
+    let provided_bytes = header_val.map(|v| v.as_bytes()).unwrap_or(b"");
 
-    let is_valid = match provided_secret {
-        Some(provided) if provided.len() == configured_secret.len() => {
-            bool::from(provided.as_bytes().ct_eq(configured_secret.as_bytes()))
-        }
-        _ => false,
-    };
+    let configured_hash = Sha256::digest(configured_secret.as_bytes());
+    let provided_hash = Sha256::digest(provided_bytes);
+
+    let is_valid = bool::from(has_header & configured_hash.ct_eq(&provided_hash));
 
     if !is_valid {
         tracing::warn!("Unauthorized attempt to trigger cron endpoint");

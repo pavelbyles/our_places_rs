@@ -1322,13 +1322,21 @@ mod tests {
         let resp = test::call_service(&app, no_secret_req).await;
         assert_eq!(resp.status(), 401);
 
-        // B. Invalid cron secret -> 401
-        let bad_secret_req = test::TestRequest::patch()
-            .uri("/api/v1/internal/cron/complete-stays")
-            .insert_header(("x-cron-secret", "incorrect-secret"))
-            .to_request();
-        let resp = test::call_service(&app, bad_secret_req).await;
-        assert_eq!(resp.status(), 401);
+        // B. Invalid cron secrets (different lengths, same length diff char, empty) -> 401
+        for bad_secret in [
+            "incorrect-secret",
+            "short",
+            "test-complete-stays-secred", // same length, 1 char diff
+            "this-is-a-much-longer-secret-that-exceeds-the-length-of-the-configured-token",
+            "",
+        ] {
+            let bad_secret_req = test::TestRequest::patch()
+                .uri("/api/v1/internal/cron/complete-stays")
+                .insert_header(("x-cron-secret", bad_secret))
+                .to_request();
+            let resp = test::call_service(&app, bad_secret_req).await;
+            assert_eq!(resp.status(), 401);
+        }
 
         // C. Valid cron secret -> 200 OK
         let valid_req = test::TestRequest::patch()
