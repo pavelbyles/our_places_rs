@@ -974,6 +974,177 @@ pub struct EmailOutbox {
     pub updated_at: DateTime<Utc>,
 }
 
+pub use common::models::{
+    ChangeInitiatorRole, ChangeSettlementStatus, ReservationChangePricingSnapshot,
+    ReservationChangeRequestResponse, ReservationChangeStatus,
+};
+
+/// Parameters required to insert a new `reservation_change_request` row into PostgreSQL.
+#[derive(Debug, Clone)]
+pub struct NewReservationChangeRequest {
+    /// Associated booking identifier.
+    pub booking_id: Uuid,
+    /// Associated listing identifier.
+    pub listing_id: Uuid,
+    /// User ID of the initiator.
+    pub initiated_by_id: Uuid,
+    /// Role of the initiator (`guest`, `host`, or `admin`).
+    pub initiated_by_role: ChangeInitiatorRole,
+    /// Check-in date prior to the change.
+    pub previous_date_from: NaiveDate,
+    /// Check-out date prior to the change.
+    pub previous_date_to: NaiveDate,
+    /// Proposed check-in date.
+    pub proposed_date_from: NaiveDate,
+    /// Proposed check-out date.
+    pub proposed_date_to: NaiveDate,
+    /// Total guest count prior to the change.
+    pub previous_number_of_persons: i32,
+    /// Proposed total guest count.
+    pub proposed_number_of_persons: i32,
+    /// Proposed adult count.
+    pub proposed_num_adults: i32,
+    /// Proposed children count.
+    pub proposed_num_children: i32,
+    /// Proposed infant count.
+    pub proposed_num_infants: i32,
+    /// Proposed pet count.
+    pub proposed_num_pets: i32,
+    /// Booking payment currency code.
+    pub currency: String,
+    /// Total price prior to the change.
+    pub previous_total_price: Decimal,
+    /// Proposed total price.
+    pub proposed_total_price: Decimal,
+    /// Difference owed by (`> 0`) or refunded to (`< 0`) the guest.
+    pub balance_due: Decimal,
+    /// Host net payout prior to the change.
+    pub previous_net_payout: Decimal,
+    /// Proposed host net payout.
+    pub proposed_net_payout: Decimal,
+    /// Host net payout delta.
+    pub host_payout_delta: Decimal,
+    /// Full pricing snapshot for atomic booking, receipt, and payout updates.
+    pub pricing_snapshot: ReservationChangePricingSnapshot,
+    /// Initial payment settlement status (`not_required`, `pending_charge`, or `pending_refund`).
+    pub settlement_status: ChangeSettlementStatus,
+    /// Optional initiator reason note.
+    pub reason: Option<String>,
+    /// Date on which the pending request auto-expires if unapproved.
+    pub expires_at_date: NaiveDate,
+}
+
+/// Database row entity representing a `reservation_change_request` record.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ReservationChangeRequestRow {
+    /// Unique change request identifier.
+    pub id: Uuid,
+    /// Associated booking identifier.
+    pub booking_id: Uuid,
+    /// Associated listing identifier.
+    pub listing_id: Uuid,
+    /// User ID of the initiator.
+    pub initiated_by_id: Uuid,
+    /// Role of the initiator.
+    pub initiated_by_role: ChangeInitiatorRole,
+    /// Current lifecycle status.
+    pub status: ReservationChangeStatus,
+    /// Check-in date prior to the change.
+    pub previous_date_from: NaiveDate,
+    /// Check-out date prior to the change.
+    pub previous_date_to: NaiveDate,
+    /// Proposed check-in date.
+    pub proposed_date_from: NaiveDate,
+    /// Proposed check-out date.
+    pub proposed_date_to: NaiveDate,
+    /// Total guest count prior to the change.
+    pub previous_number_of_persons: i32,
+    /// Proposed total guest count.
+    pub proposed_number_of_persons: i32,
+    /// Proposed adult count.
+    pub proposed_num_adults: i32,
+    /// Proposed children count.
+    pub proposed_num_children: i32,
+    /// Proposed infant count.
+    pub proposed_num_infants: i32,
+    /// Proposed pet count.
+    pub proposed_num_pets: i32,
+    /// Booking payment currency code.
+    pub currency: String,
+    /// Total price prior to the change.
+    pub previous_total_price: Decimal,
+    /// Proposed total price.
+    pub proposed_total_price: Decimal,
+    /// Guest balance due.
+    pub balance_due: Decimal,
+    /// Host net payout prior to the change.
+    pub previous_net_payout: Decimal,
+    /// Proposed host net payout.
+    pub proposed_net_payout: Decimal,
+    /// Host net payout delta.
+    pub host_payout_delta: Decimal,
+    /// JSONB pricing calculation snapshot.
+    pub pricing_snapshot: Json<ReservationChangePricingSnapshot>,
+    /// Payment settlement status.
+    pub settlement_status: ChangeSettlementStatus,
+    /// Payment gateway reference string if settled.
+    pub gateway_reference: Option<String>,
+    /// Optional initiator reason note.
+    pub reason: Option<String>,
+    /// User ID of the counterparty who approved or declined.
+    pub responder_id: Option<Uuid>,
+    /// Optional counterparty response note.
+    pub response_note: Option<String>,
+    /// Timestamp when the counterparty responded.
+    pub responded_at: Option<DateTime<Utc>>,
+    /// Date on which the pending request auto-expires if unapproved.
+    pub expires_at_date: NaiveDate,
+    /// Creation timestamp.
+    pub created_at: DateTime<Utc>,
+    /// Last update timestamp.
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<ReservationChangeRequestRow> for ReservationChangeRequestResponse {
+    fn from(r: ReservationChangeRequestRow) -> Self {
+        Self {
+            id: r.id,
+            booking_id: r.booking_id,
+            listing_id: r.listing_id,
+            initiated_by_id: r.initiated_by_id,
+            initiated_by_role: r.initiated_by_role,
+            status: r.status,
+            previous_date_from: r.previous_date_from,
+            previous_date_to: r.previous_date_to,
+            proposed_date_from: r.proposed_date_from,
+            proposed_date_to: r.proposed_date_to,
+            previous_number_of_persons: r.previous_number_of_persons,
+            proposed_number_of_persons: r.proposed_number_of_persons,
+            proposed_num_adults: r.proposed_num_adults,
+            proposed_num_children: r.proposed_num_children,
+            proposed_num_infants: r.proposed_num_infants,
+            proposed_num_pets: r.proposed_num_pets,
+            currency: r.currency.trim().to_string(),
+            previous_total_price: r.previous_total_price,
+            proposed_total_price: r.proposed_total_price,
+            balance_due: r.balance_due,
+            previous_net_payout: r.previous_net_payout,
+            proposed_net_payout: r.proposed_net_payout,
+            host_payout_delta: r.host_payout_delta,
+            pricing_snapshot: r.pricing_snapshot.0,
+            settlement_status: r.settlement_status,
+            gateway_reference: r.gateway_reference,
+            reason: r.reason,
+            responder_id: r.responder_id,
+            response_note: r.response_note,
+            responded_at: r.responded_at,
+            expires_at_date: r.expires_at_date,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

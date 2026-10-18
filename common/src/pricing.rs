@@ -71,32 +71,59 @@ pub fn calculate_dynamic_quote(
     })
 }
 
+/// Marker state for initial base rate calculation.
 pub struct BaseRate;
+/// Marker state after applying weekly or monthly stay discounts.
 pub struct Discounted;
+/// Marker state after applying statutory taxes.
 pub struct Taxed;
 
+/// Type-state calculator for booking accommodation, extra-guest fees, discounts, taxes, and fees.
 pub struct BookingCalculator<State> {
+    /// Effective nightly base rate in checkout currency.
     pub actual_daily_rate: Decimal,
+    /// Number of nights in the reservation.
     pub total_days: i32,
+    /// Number of extra guests above `guests_included`.
+    pub extra_guests: i32,
+    /// Per-night fee per extra guest in checkout currency.
+    pub extra_guest_fee_per_night: Decimal,
+    /// Total extra-guest fee across all nights (`extra_guests * extra_guest_fee_per_night * total_days`).
+    pub extra_guest_fee_total: Decimal,
+    /// Gross accommodation subtotal before discounts (includes seasonal nights + `extra_guest_fee_total`).
     pub sub_total_price: Decimal,
+    /// Discount amount subtracted for weekly/monthly stays.
     pub discount_value: Option<Decimal>,
+    /// Net accommodation subtotal after subtracting `discount_value`.
     pub discounted_subtotal: Decimal,
+    /// One-time host cleaning fee.
     pub cleaning_fee: Decimal,
+    /// Refundable security damage deposit.
     pub damage_deposit: Decimal,
+    /// Guest platform service fee (5% of `discounted_subtotal`).
     pub platform_fee: Decimal,
+    /// Statutory tax rate (e.g., `0.15` for 15% GCT).
     pub tax_rate: Decimal,
+    /// Computed statutory tax amount.
     pub tax_value: Option<Decimal>,
+    /// Itemized fee breakdown for receipts and UI display.
     pub fee_breakdown: Vec<FeeItem>,
+    /// Final guest total price (`discounted_subtotal + cleaning_fee + tax_value + platform_fee + damage_deposit`).
     pub total_price: Decimal,
+    /// Current type-state marker.
     pub state: State,
 }
 
 impl BookingCalculator<BaseRate> {
+    /// Initializes a calculator from a flat nightly rate and stay duration.
     pub fn new(actual_daily_rate: Decimal, total_days: i32) -> Self {
         let sub_total_price = actual_daily_rate * Decimal::from(total_days.max(0));
         Self {
             actual_daily_rate,
             total_days,
+            extra_guests: 0,
+            extra_guest_fee_per_night: Decimal::ZERO,
+            extra_guest_fee_total: Decimal::ZERO,
             sub_total_price,
             discount_value: None,
             discounted_subtotal: sub_total_price,
@@ -111,6 +138,7 @@ impl BookingCalculator<BaseRate> {
         }
     }
 
+    /// Initializes a calculator with a pre-computed dynamic seasonal subtotal.
     pub fn with_subtotal(
         actual_daily_rate: Decimal,
         total_days: i32,
@@ -119,6 +147,9 @@ impl BookingCalculator<BaseRate> {
         Self {
             actual_daily_rate,
             total_days,
+            extra_guests: 0,
+            extra_guest_fee_per_night: Decimal::ZERO,
+            extra_guest_fee_total: Decimal::ZERO,
             sub_total_price,
             discount_value: None,
             discounted_subtotal: sub_total_price,
@@ -133,17 +164,42 @@ impl BookingCalculator<BaseRate> {
         }
     }
 
+    /// Adds extra-guest charges (`max(0, number_of_persons - guests_included) * extra_guest_fee_per_night * total_days`)
+    /// to `sub_total_price` prior to discount calculation so that weekly and monthly discounts
+    /// apply to the overall stay subtotal.
+    pub fn with_extra_guests(
+        mut self,
+        number_of_persons: i32,
+        guests_included: i32,
+        extra_guest_fee_per_night: Decimal,
+    ) -> Self {
+        let extra_guests = (number_of_persons - guests_included.max(1)).max(0);
+        let fee_per_night = extra_guest_fee_per_night.max(Decimal::ZERO).round_dp(2);
+        let days = Decimal::from(self.total_days.max(0));
+        let extra_guest_fee_total =
+            (Decimal::from(extra_guests) * fee_per_night * days).round_dp(2);
+
+        self.extra_guests = extra_guests;
+        self.extra_guest_fee_per_night = fee_per_night;
+        self.extra_guest_fee_total = extra_guest_fee_total;
+        self.sub_total_price += extra_guest_fee_total;
+        self.discounted_subtotal = self.sub_total_price;
+        self
+    }
+
+    /// Applies monthly (`>= 28` nights) or weekly (`>= 7` nights) percentage discounts
+    /// to the overall stay `sub_total_price` (including any extra-guest fees).
     pub fn apply_discounts(
         mut self,
         monthly_pct: Option<Decimal>,
         weekly_pct: Option<Decimal>,
     ) -> BookingCalculator<Discounted> {
         if let (Some(pct), true) = (monthly_pct, self.total_days >= 28) {
-            let discount = self.sub_total_price * (pct / Decimal::new(100, 0));
+            let discount = (self.sub_total_price * (pct / Decimal::new(100, 0))).round_dp(2);
             self.discount_value = Some(discount);
             self.discounted_subtotal = self.sub_total_price - discount;
         } else if let (Some(pct), true) = (weekly_pct, self.total_days >= 7) {
-            let discount = self.sub_total_price * (pct / Decimal::new(100, 0));
+            let discount = (self.sub_total_price * (pct / Decimal::new(100, 0))).round_dp(2);
             self.discount_value = Some(discount);
             self.discounted_subtotal = self.sub_total_price - discount;
         }
@@ -151,6 +207,9 @@ impl BookingCalculator<BaseRate> {
         BookingCalculator {
             actual_daily_rate: self.actual_daily_rate,
             total_days: self.total_days,
+            extra_guests: self.extra_guests,
+            extra_guest_fee_per_night: self.extra_guest_fee_per_night,
+            extra_guest_fee_total: self.extra_guest_fee_total,
             sub_total_price: self.sub_total_price,
             discount_value: self.discount_value,
             discounted_subtotal: self.discounted_subtotal,
@@ -178,6 +237,7 @@ impl BookingCalculator<Discounted> {
         self
     }
 
+    /// Computes statutory tax on the taxable base (`discounted_subtotal + cleaning_fee`).
     pub fn apply_taxes(mut self, tax_rate: Decimal) -> BookingCalculator<Taxed> {
         let taxable_base = self.discounted_subtotal + self.cleaning_fee;
         let tax_value_decimal = (taxable_base * tax_rate).round_dp(2);
@@ -187,6 +247,9 @@ impl BookingCalculator<Discounted> {
         BookingCalculator {
             actual_daily_rate: self.actual_daily_rate,
             total_days: self.total_days,
+            extra_guests: self.extra_guests,
+            extra_guest_fee_per_night: self.extra_guest_fee_per_night,
+            extra_guest_fee_total: self.extra_guest_fee_total,
             sub_total_price: self.sub_total_price,
             discount_value: self.discount_value,
             discounted_subtotal: self.discounted_subtotal,
@@ -203,6 +266,7 @@ impl BookingCalculator<Discounted> {
 }
 
 impl BookingCalculator<Taxed> {
+    /// Finalizes the calculation by computing the 5% platform fee and total price.
     pub fn finalize(mut self) -> Self {
         let platform_fee = (self.discounted_subtotal * Decimal::new(5, 2)).round_dp(2);
         self.platform_fee = platform_fee;
@@ -246,6 +310,68 @@ pub fn calculate_host_payout(
     let fee_amount = (gross_amount * platform_fee_pct).round_dp(2);
     let net_payout = (gross_amount - fee_amount - tax_withheld).max(Decimal::ZERO);
     (fee_amount, net_payout)
+}
+
+/// Domain validation error when evaluating a proposed reservation change.
+#[derive(Debug, Error, PartialEq, Eq, Clone)]
+pub enum ReservationChangeValidationError {
+    /// Neither dates nor guest count were modified from the current booking.
+    #[error("At least one reservation term (dates or guest count) must change")]
+    NoMaterialChange,
+
+    /// Check-out date is on or before check-in date.
+    #[error("Invalid date range: check-out must be after check-in")]
+    InvalidDateRange,
+
+    /// Attempted to modify a reservation whose stay has already ended.
+    #[error("Reservation cannot be modified after check-out date has arrived")]
+    StayAlreadyEnded,
+
+    /// Attempted to modify check-in date on or after the current or proposed check-in date.
+    #[error("Check-in date cannot be modified once check-in has arrived")]
+    CheckInAlreadyArrived,
+
+    /// Attempted to set check-out date to today or a past date.
+    #[error("Proposed check-out date must be in the future")]
+    CheckOutNotInFuture,
+
+    /// Party size or adult count is invalid or exceeds listing capacity.
+    #[error("Guest count must be between 1 and {max_guests} with at least 1 adult")]
+    InvalidGuestCount {
+        /// Maximum allowed guests on the listing.
+        max_guests: i32,
+    },
+}
+
+/// Validates proposed reservation date changes against `America/Jamaica` (`today_jm`)
+/// pre-stay and mid-stay rules, returning the auto-expiry cutoff date (`expires_at_date`).
+pub fn validate_reservation_change_dates(
+    current_from: NaiveDate,
+    current_to: NaiveDate,
+    proposed_from: NaiveDate,
+    proposed_to: NaiveDate,
+    today_jm: NaiveDate,
+) -> Result<NaiveDate, ReservationChangeValidationError> {
+    if current_to <= today_jm {
+        return Err(ReservationChangeValidationError::StayAlreadyEnded);
+    }
+    if proposed_to <= proposed_from {
+        return Err(ReservationChangeValidationError::InvalidDateRange);
+    }
+    if proposed_from != current_from && (current_from <= today_jm || proposed_from <= today_jm) {
+        return Err(ReservationChangeValidationError::CheckInAlreadyArrived);
+    }
+    if proposed_to != current_to && proposed_to <= today_jm {
+        return Err(ReservationChangeValidationError::CheckOutNotInFuture);
+    }
+
+    let expires_at_date = if proposed_from != current_from {
+        current_from.min(proposed_from)
+    } else {
+        current_to.min(proposed_to)
+    };
+
+    Ok(expires_at_date)
 }
 
 #[cfg(test)]
@@ -628,7 +754,16 @@ mod tests {
 
             let tax_rate = Decimal::new(15, 2);
 
+            let guests_included: i32 = rng.random_range(1..=4);
+            let number_of_persons: i32 = rng.random_range(1..=8);
+            let extra_guest_fee = if rng.random_bool(0.6) {
+                Decimal::new(rng.random_range(0..15000), 2)
+            } else {
+                Decimal::ZERO
+            };
+
             let calc = BookingCalculator::new(daily_rate, days)
+                .with_extra_guests(number_of_persons, guests_included, extra_guest_fee)
                 .apply_discounts(monthly_discount, weekly_discount)
                 .with_fees(cleaning_fee, damage_deposit)
                 .apply_taxes(tax_rate)
@@ -650,5 +785,142 @@ mod tests {
                 days
             );
         }
+    }
+
+    #[test]
+    fn test_extra_guest_fee_within_and_above_included() {
+        let daily_rate = Decimal::new(200, 0); // $200/night
+        let extra_fee = Decimal::new(35, 0); // $35/extra guest/night
+
+        // Within guests_included (2 guests, 2 included) => 0 extra fee
+        let within = BookingCalculator::new(daily_rate, 4)
+            .with_extra_guests(2, 2, extra_fee)
+            .apply_discounts(None, None)
+            .apply_taxes(Decimal::new(15, 2))
+            .finalize();
+        assert_eq!(within.extra_guests, 0);
+        assert_eq!(within.extra_guest_fee_total, Decimal::ZERO);
+        assert_eq!(within.sub_total_price, Decimal::new(800, 0));
+
+        // Above guests_included (4 guests, 2 included => 2 extra * $35 * 4 nights = $280)
+        let above = BookingCalculator::new(daily_rate, 4)
+            .with_extra_guests(4, 2, extra_fee)
+            .apply_discounts(None, None)
+            .apply_taxes(Decimal::new(15, 2))
+            .finalize();
+        assert_eq!(above.extra_guests, 2);
+        assert_eq!(above.extra_guest_fee_per_night, Decimal::new(35, 0));
+        assert_eq!(above.extra_guest_fee_total, Decimal::new(280, 0));
+        assert_eq!(above.sub_total_price, Decimal::new(1080, 0)); // 800 + 280
+        assert_eq!(above.discounted_subtotal, Decimal::new(1080, 0));
+        assert_eq!(above.tax_value, Some(Decimal::new(16200, 2))); // 15% of 1080 = 162.00
+        assert_eq!(above.platform_fee, Decimal::new(5400, 2)); // 5% of 1080 = 54.00
+        assert_eq!(above.total_price, Decimal::new(129600, 2)); // 1080 + 162 + 54 = 1296.00
+    }
+
+    #[test]
+    fn test_overall_stay_discounts_include_extra_guest_fee() {
+        let daily_rate = Decimal::new(100, 0); // $100/night
+        let extra_fee = Decimal::new(25, 0); // $25/extra guest/night
+
+        // 7-night weekly stay with 2 extra guests:
+        // Base = 700, Extra = 2 * 25 * 7 = 350 => sub_total_price = 1050.00
+        // 10% weekly discount applies to overall stay (1050.00) => discount = 105.00, net = 945.00
+        let weekly = BookingCalculator::new(daily_rate, 7)
+            .with_extra_guests(4, 2, extra_fee)
+            .apply_discounts(Some(Decimal::new(20, 0)), Some(Decimal::new(10, 0)))
+            .apply_taxes(Decimal::new(15, 2))
+            .finalize();
+
+        assert_eq!(weekly.extra_guest_fee_total, Decimal::new(350, 0));
+        assert_eq!(weekly.sub_total_price, Decimal::new(1050, 0));
+        assert_eq!(weekly.discount_value, Some(Decimal::new(105, 0)));
+        assert_eq!(weekly.discounted_subtotal, Decimal::new(945, 0));
+
+        // 28-night monthly stay with 1 extra guest:
+        // Base = 2800, Extra = 1 * 25 * 28 = 700 => sub_total_price = 3500.00
+        // 20% monthly discount applies to overall stay (3500.00) => discount = 700.00, net = 2800.00
+        let monthly = BookingCalculator::new(daily_rate, 28)
+            .with_extra_guests(3, 2, extra_fee)
+            .apply_discounts(Some(Decimal::new(20, 0)), Some(Decimal::new(10, 0)))
+            .apply_taxes(Decimal::new(15, 2))
+            .finalize();
+
+        assert_eq!(monthly.extra_guest_fee_total, Decimal::new(700, 0));
+        assert_eq!(monthly.sub_total_price, Decimal::new(3500, 0));
+        assert_eq!(monthly.discount_value, Some(Decimal::new(700, 0)));
+        assert_eq!(monthly.discounted_subtotal, Decimal::new(2800, 0));
+    }
+
+    #[test]
+    fn test_validate_reservation_change_dates_pre_stay_and_mid_stay() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+
+        // 1. Pre-stay: moving check-in earlier (still after today) -> allowed, expires on proposed_from
+        let pre_from = NaiveDate::from_ymd_opt(2026, 11, 15).unwrap();
+        let pre_to = NaiveDate::from_ymd_opt(2026, 11, 20).unwrap();
+        let prop_from_earlier = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        assert_eq!(
+            validate_reservation_change_dates(pre_from, pre_to, prop_from_earlier, pre_to, today),
+            Ok(prop_from_earlier)
+        );
+
+        // 2. Pre-stay: moving check-in later -> allowed, expires on current_from
+        let prop_from_later = NaiveDate::from_ymd_opt(2026, 11, 17).unwrap();
+        assert_eq!(
+            validate_reservation_change_dates(pre_from, pre_to, prop_from_later, pre_to, today),
+            Ok(pre_from)
+        );
+
+        // 3. Pre-stay: moving check-in to today or past -> rejected (CheckInAlreadyArrived)
+        assert_eq!(
+            validate_reservation_change_dates(pre_from, pre_to, today, pre_to, today),
+            Err(ReservationChangeValidationError::CheckInAlreadyArrived)
+        );
+
+        // 4. Mid-stay: current_from <= today < current_to
+        let mid_from = NaiveDate::from_ymd_opt(2026, 11, 8).unwrap();
+        let mid_to = NaiveDate::from_ymd_opt(2026, 11, 15).unwrap();
+
+        // Mid-stay check-in modification -> rejected (CheckInAlreadyArrived)
+        let new_from = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        assert_eq!(
+            validate_reservation_change_dates(mid_from, mid_to, new_from, mid_to, today),
+            Err(ReservationChangeValidationError::CheckInAlreadyArrived)
+        );
+
+        // Mid-stay check-out shortening (still > today) -> allowed, expires on proposed_to
+        let short_to = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        assert_eq!(
+            validate_reservation_change_dates(mid_from, mid_to, mid_from, short_to, today),
+            Ok(short_to)
+        );
+
+        // Mid-stay check-out extension -> allowed, expires on current_to
+        let ext_to = NaiveDate::from_ymd_opt(2026, 11, 18).unwrap();
+        assert_eq!(
+            validate_reservation_change_dates(mid_from, mid_to, mid_from, ext_to, today),
+            Ok(mid_to)
+        );
+
+        // Mid-stay check-out set to today -> rejected (CheckOutNotInFuture)
+        assert_eq!(
+            validate_reservation_change_dates(mid_from, mid_to, mid_from, today, today),
+            Err(ReservationChangeValidationError::CheckOutNotInFuture)
+        );
+
+        // 5. Stay already ended (current_to <= today) -> rejected (StayAlreadyEnded)
+        let past_from = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let past_to = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+        assert_eq!(
+            validate_reservation_change_dates(past_from, past_to, past_from, ext_to, today),
+            Err(ReservationChangeValidationError::StayAlreadyEnded)
+        );
+
+        // 6. Invalid date range (proposed_to <= proposed_from)
+        assert_eq!(
+            validate_reservation_change_dates(pre_from, pre_to, pre_from, pre_from, today),
+            Err(ReservationChangeValidationError::InvalidDateRange)
+        );
     }
 }

@@ -142,7 +142,7 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
                                                                 S5 SQLx Offline Sync & Full Gate
 ```
 
-- [ ] **Slice 0: Database Migration & Isomorphic Pricing / Domain Contracts (`common`, `db_core`)** — **Scope: M**
+- [x] **Slice 0: Database Migration & Isomorphic Pricing / Domain Contracts (`common`, `db_core`)** — **Scope: M**
   - Create `db_core/migrations/20261018000000_reservation_change_requests.sql`.
   - Update `common/src/pricing.rs` (`with_extra_guests`, overall-stay discount calculation, `validate_reservation_change_dates`).
   - Add DTOs and enums to `common/src/models.rs` and `db_core/src/models.rs`.
