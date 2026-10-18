@@ -153,7 +153,7 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
   - Update `booking_api` (`create_booking`) to include extra-guest pricing in initial booking calculations and validate `number_of_persons <= listing.max_guests`.
   - **Verification**: `cargo test -p db_core listing && cargo test -p listing_api`
 
-- [ ] **Slice 2: Bilateral Reservation Change Engine & Payment Settlement Gateway (`db_core`, `booking_api`)** — **Scope: M**
+- [x] **Slice 2: Bilateral Reservation Change Engine & Payment Settlement Gateway (`db_core`, `booking_api`)** — **Scope: M**
   - Implement `db_core/src/reservation_change.rs` (create, list, approve with `FOR UPDATE` locks, decline, cancel, auto-expire).
   - Implement `PaymentSettlementGateway` trait and `SimulatedPaymentGateway` in `app_api/booking_api/`.
   - Add `/change-quote` and `/change-requests` endpoints in `app_api/booking_api/src/apis.rs`, restrict direct `PATCH /api/v1/bookings/{id}` date/guest mutation to Admins, and hook auto-expiry into `complete_stays_cron`.

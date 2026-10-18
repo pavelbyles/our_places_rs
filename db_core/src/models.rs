@@ -274,6 +274,8 @@ pub struct UpdatedBooking {
     pub date_from: Option<chrono::NaiveDate>,
     /// Check-out departure date if requesting a date change.
     pub date_to: Option<chrono::NaiveDate>,
+    /// Updated total guest count if modified.
+    pub number_of_persons: Option<i32>,
     /// Daily rate if re-priced.
     pub daily_rate: Option<Decimal>,
     /// Total days if dates changed.

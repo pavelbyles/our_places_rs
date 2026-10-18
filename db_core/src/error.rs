@@ -12,6 +12,8 @@ pub enum DbError {
     DateUnavailable,
     #[error("Booking is not in a modifiable state: {0}")]
     BookingNotModifiable(String),
+    #[error("A reservation change request is already pending for this booking")]
+    ChangeRequestAlreadyPending,
 }
 
 // A custom `Result` type that defaults to using our `DbError`.

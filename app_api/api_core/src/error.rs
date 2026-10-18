@@ -29,6 +29,12 @@ pub enum ApiError {
 
     #[error("Booking not modifiable: {0}")]
     BookingNotModifiable(String),
+
+    #[error("A reservation change request is already pending for this booking")]
+    ChangeRequestAlreadyPending,
+
+    #[error("Payment settlement failed: {0}")]
+    PaymentSettlementFailed(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -54,6 +60,9 @@ impl ResponseError for ApiError {
             }
             ApiError::Database(DbError::BookingNotModifiable(_))
             | ApiError::BookingNotModifiable(_) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::ChangeRequestAlreadyPending)
+            | ApiError::ChangeRequestAlreadyPending => StatusCode::CONFLICT,
+            ApiError::PaymentSettlementFailed(_) => StatusCode::UNPROCESSABLE_ENTITY,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -92,6 +101,19 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::BookingNotModifiable(msg)) => {
                 HttpResponse::Conflict().json(serde_json::json!({
                     "code": "BOOKING_NOT_MODIFIABLE",
+                    "message": msg
+                }))
+            }
+            ApiError::ChangeRequestAlreadyPending
+            | ApiError::Database(DbError::ChangeRequestAlreadyPending) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "CHANGE_REQUEST_ALREADY_PENDING",
+                    "message": "A reservation change request is already pending for this booking."
+                }))
+            }
+            ApiError::PaymentSettlementFailed(msg) => {
+                HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                    "code": "PAYMENT_SETTLEMENT_FAILED",
                     "message": msg
                 }))
             }
