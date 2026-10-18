@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, booking_id, status as \"status: ReservationChangeStatus\", expires_at_date\n        FROM reservation_change_request\n        WHERE id = $1\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "status: ReservationChangeStatus",
+        "type_info": {
+          "Custom": {
+            "name": "reservation_change_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "approved",
+                "declined",
+                "cancelled",
+                "expired"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at_date",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "05766d5e25f6cacf74356e4cb314bb1abf8808f570fc83382ef980fc1fb2b6a2"
+}

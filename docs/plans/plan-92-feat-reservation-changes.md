@@ -170,7 +170,7 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
   - Update `web_app_admin_tc/src/pages/listings_admin.rs` (extra-guest fee fields) and `web_app_admin_tc/src/pages/bookings_admin.rs` (review/approve/decline guest change requests and initiate host/admin changes).
   - **Verification**: `cargo test -p web_app_tc -p web_app_common_tc -p web_app_admin_tc`
 
-- [ ] **Slice 5: SQLx Offline Metadata Sync & Full Quality Gate Verification** — **Scope: XS**
+- [x] **Slice 5: SQLx Offline Metadata Sync & Full Quality Gate Verification** — **Scope: XS**
   - Run `cargo sqlx prepare --workspace -- --all-targets` and execute all `CONSTRAINTS.md` checks.
   - **Verification**: `cargo fmt --check && SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings && cargo sqlx prepare --workspace --check`
 
