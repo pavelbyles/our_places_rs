@@ -628,22 +628,41 @@ pub async fn record_failed_settlement(pool: &PgPool, id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Parameters for atomically approving a `pending` reservation change request.
+#[derive(Debug, Clone)]
+pub struct ApproveChangeRequestParams<'a> {
+    /// Target reservation change request UUID.
+    pub id: Uuid,
+    /// Authenticated counterparty or Admin user UUID approving the request.
+    pub responder_id: Uuid,
+    /// Optional response note from the responder.
+    pub response_note: Option<&'a str>,
+    /// Final settlement status (`charged`, `refunded`, or `not_required`).
+    pub settlement_status: ChangeSettlementStatus,
+    /// Optional payment gateway reference string.
+    pub gateway_reference: Option<&'a str>,
+    /// Statutory supplier metadata for issuing the revised payment receipt.
+    pub supplier: &'a SupplierInfo,
+    /// Current calendar date in Jamaica (`UTC-5`).
+    pub today_jm: NaiveDate,
+}
+
 /// Atomically approves a `pending` reservation change request under the global lock hierarchy
 /// (`listing` -> `booking` -> `reservation_change_request`), updating `booking`, `booking_history`,
 /// superseding and issuing a revised `tax_document` (`REC-YYYY-{code}-R{n}`), updating the
 /// `pending` `host_payout_ledger` entry, and marking the change request `approved`.
-#[allow(clippy::too_many_arguments)]
-#[tracing::instrument(skip(pool, supplier))]
+#[tracing::instrument(skip(pool, params))]
 pub async fn approve_change_request(
     pool: &PgPool,
-    id: Uuid,
-    responder_id: Uuid,
-    response_note: Option<&str>,
-    settlement_status: ChangeSettlementStatus,
-    gateway_reference: Option<&str>,
-    supplier: &SupplierInfo,
-    today_jm: NaiveDate,
+    params: &ApproveChangeRequestParams<'_>,
 ) -> Result<(ReservationChangeRequestRow, Booking)> {
+    let id = params.id;
+    let responder_id = params.responder_id;
+    let response_note = params.response_note;
+    let settlement_status = params.settlement_status;
+    let gateway_reference = params.gateway_reference;
+    let supplier = params.supplier;
+    let today_jm = params.today_jm;
     let mut tx = pool.begin().await?;
 
     // Lookup IDs first so we can acquire locks in strict global order:
@@ -963,9 +982,11 @@ mod tests {
     use std::env;
     use std::path::Path;
 
+    static DATABASE_URL_ENV: &str = "DATABASE_URL";
+
     async fn setup_test_db() -> TestPg {
         dotenvy::dotenv().ok();
-        let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let db_url = env::var(DATABASE_URL_ENV).unwrap_or_else(|_| {
             "postgres://postgres:password@localhost:5432/our_places".to_string()
         });
         TestPg::new(db_url, Path::new("migrations"))
@@ -1199,13 +1220,15 @@ mod tests {
         // 3. Approve change request
         let (approved_req, updated_booking) = approve_change_request(
             &pool,
-            created.id,
-            host_id,
-            Some("Welcome!"),
-            ChangeSettlementStatus::Charged,
-            Some("SIM-CHG-001"),
-            &supplier,
-            today_jm,
+            &ApproveChangeRequestParams {
+                id: created.id,
+                responder_id: host_id,
+                response_note: Some("Welcome!"),
+                settlement_status: ChangeSettlementStatus::Charged,
+                gateway_reference: Some("SIM-CHG-001"),
+                supplier: &supplier,
+                today_jm,
+            },
         )
         .await
         .expect("Failed to approve change request");

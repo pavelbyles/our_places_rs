@@ -190,6 +190,74 @@ impl TopcoatApiClient {
         common::app_client::list_booking_documents(booking_id, user_jwt).await
     }
 
+    /// Quote a reservation change (dates & guest counts)
+    pub async fn quote_reservation_change(
+        &self,
+        booking_id: Uuid,
+        req: &common::models::ReservationChangeQuoteRequest,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::models::ReservationChangeQuoteResponse> {
+        common::app_client::quote_reservation_change(booking_id, req, user_jwt).await
+    }
+
+    /// Create a bilateral reservation change request
+    pub async fn create_reservation_change_request(
+        &self,
+        booking_id: Uuid,
+        req: &common::models::CreateReservationChangeRequest,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::models::ReservationChangeRequestResponse> {
+        common::app_client::create_reservation_change_request(booking_id, req, user_jwt).await
+    }
+
+    /// List reservation change requests for a booking
+    pub async fn list_reservation_change_requests(
+        &self,
+        booking_id: Uuid,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<Vec<common::models::ReservationChangeRequestResponse>> {
+        common::app_client::list_reservation_change_requests(booking_id, user_jwt).await
+    }
+
+    /// Approve a pending reservation change request
+    pub async fn approve_reservation_change_request(
+        &self,
+        booking_id: Uuid,
+        request_id: Uuid,
+        req: &common::models::RespondReservationChangeRequest,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::models::ReservationChangeRequestResponse> {
+        common::app_client::approve_reservation_change_request(
+            booking_id, request_id, req, user_jwt,
+        )
+        .await
+    }
+
+    /// Decline a pending reservation change request
+    pub async fn decline_reservation_change_request(
+        &self,
+        booking_id: Uuid,
+        request_id: Uuid,
+        req: &common::models::RespondReservationChangeRequest,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::models::ReservationChangeRequestResponse> {
+        common::app_client::decline_reservation_change_request(
+            booking_id, request_id, req, user_jwt,
+        )
+        .await
+    }
+
+    /// Withdraw (cancel) a pending reservation change request
+    pub async fn cancel_reservation_change_request(
+        &self,
+        booking_id: Uuid,
+        request_id: Uuid,
+        user_jwt: Option<&str>,
+    ) -> anyhow::Result<common::models::ReservationChangeRequestResponse> {
+        common::app_client::cancel_reservation_change_request(booking_id, request_id, user_jwt)
+            .await
+    }
+
     /// Get all registered users for admin
     pub async fn get_all_users(
         &self,

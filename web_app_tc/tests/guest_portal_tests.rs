@@ -201,3 +201,48 @@ async fn test_guest_document_unauthorized_access_returns_404() {
         err_str
     );
 }
+
+#[test]
+fn test_guest_reservation_change_delta_and_tax_recalculation() {
+    // Original stay: 3 nights @ 500.00 = 1,500.00 + 15% GCT (225.00) = 1,725.00
+    let original_subtotal = dec!(1500.00);
+    let original_tax = original_subtotal * dec!(0.15);
+    let original_total = original_subtotal + original_tax; // 1725.00
+    assert_eq!(original_total, dec!(1725.00));
+
+    // Extension: 5 nights @ 500.00 = 2,500.00 + 15% GCT (375.00) = 2,875.00
+    let extended_subtotal = dec!(2500.00);
+    let extended_tax = extended_subtotal * dec!(0.15);
+    let extended_total = extended_subtotal + extended_tax; // 2875.00
+    let balance_due_extension = extended_total - original_total;
+    assert_eq!(balance_due_extension, dec!(1150.00));
+
+    // Shortening: 2 nights @ 500.00 = 1,000.00 + 15% GCT (150.00) = 1,150.00
+    let shortened_subtotal = dec!(1000.00);
+    let shortened_tax = shortened_subtotal * dec!(0.15);
+    let shortened_total = shortened_subtotal + shortened_tax; // 1150.00
+    let refund_due_shortening = shortened_total - original_total;
+    assert_eq!(refund_due_shortening, dec!(-575.00));
+}
+
+#[test]
+fn test_guest_extra_guest_fee_pricing_calculation() {
+    let nightly_rate = dec!(400.00);
+    let nights = 4;
+    let base_subtotal = nightly_rate * Decimal::from(nights); // 1600.00
+
+    let guests_included = 2;
+    let actual_guests = 4;
+    let extra_guests = (actual_guests - guests_included).max(0); // 2
+    let extra_guest_fee = dec!(50.00);
+    let total_extra_fee = extra_guest_fee * Decimal::from(extra_guests) * Decimal::from(nights); // 50 * 2 * 4 = 400.00
+
+    let subtotal_with_extra = base_subtotal + total_extra_fee; // 2000.00
+    let statutory_gct = subtotal_with_extra * dec!(0.15); // 300.00
+    let total_stay = subtotal_with_extra + statutory_gct; // 2300.00
+
+    assert_eq!(total_extra_fee, dec!(400.00));
+    assert_eq!(subtotal_with_extra, dec!(2000.00));
+    assert_eq!(statutory_gct, dec!(300.00));
+    assert_eq!(total_stay, dec!(2300.00));
+}

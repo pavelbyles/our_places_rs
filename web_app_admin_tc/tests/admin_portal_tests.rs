@@ -678,11 +678,15 @@ fn test_admin_create_listing_form_fee_toggles_enabled() {
         cleaning_fee: Some("150.00".to_string()),
         damage_deposit_enabled: Some("on".to_string()),
         damage_deposit: Some("500.00".to_string()),
+        guests_included: Some("4".to_string()),
+        extra_guest_fee: Some("50.00".to_string()),
     };
 
     let payload = form.into_payload();
     assert_eq!(payload.cleaning_fee, Some(dec!(150.00)));
     assert_eq!(payload.damage_deposit, Some(dec!(500.00)));
+    assert_eq!(payload.guests_included, Some(4));
+    assert_eq!(payload.extra_guest_fee, Some(dec!(50.00)));
 }
 
 #[test]
@@ -717,9 +721,13 @@ fn test_admin_create_listing_form_fee_toggles_disabled() {
         cleaning_fee: Some("150.00".to_string()),
         damage_deposit_enabled: Some("off".to_string()),
         damage_deposit: Some("500.00".to_string()),
+        guests_included: None,
+        extra_guest_fee: None,
     };
 
     let payload = form.into_payload();
     assert_eq!(payload.cleaning_fee, Some(Decimal::ZERO));
     assert_eq!(payload.damage_deposit, Some(Decimal::ZERO));
+    assert_eq!(payload.guests_included, None);
+    assert_eq!(payload.extra_guest_fee, None);
 }

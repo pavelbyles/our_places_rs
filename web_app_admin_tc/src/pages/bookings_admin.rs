@@ -1,6 +1,8 @@
 use common::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
-    MarkMessagesReadResponse, UpdatedBookingRequest,
+    CreateReservationChangeRequest, MarkMessagesReadResponse, ReservationChangeQuoteRequest,
+    ReservationChangeQuoteResponse, ReservationChangeRequestResponse,
+    RespondReservationChangeRequest, UpdatedBookingRequest,
 };
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
@@ -35,6 +37,7 @@ fn generate_jwt_for_user(user_id: Uuid) -> String {
 }
 
 path_param!(id);
+path_param!(request_id);
 
 #[page("/bookings")]
 pub async fn bookings_alias_page(cx: &Cx) -> Result<impl View> {
@@ -324,6 +327,9 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                                                 data-status=(status_display.to_string())
                                                 data-location=(villa_location.clone())
                                                 data-door-code=(b.door_access_code.clone().unwrap_or_default())
+                                                data-date-from=(b.date_from.to_string())
+                                                data-date-to=(b.date_to.to_string())
+                                                data-guests=(b.number_of_persons.to_string())
                                                 onclick="openAdminBookingDetailsFromBtn(this)"
                                             >
                                                 "Details"
@@ -434,6 +440,66 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                         </div>
                         <div id="admin-booking-documents-list" class="space-y-2">
                             <div class="text-xs text-base-content/50 italic py-1" id="detail-docs-empty-msg">"Loading documents..."</div>
+                        </div>
+                    </div>
+
+                    // Reservation Change Requests & Modification Controls
+                    <div class="bg-base-200/80 p-4 rounded-2xl space-y-3 text-xs mt-4" id="admin-booking-change-requests-section">
+                        <div class="flex items-center justify-between border-b border-base-300 pb-1.5">
+                            <span class="font-bold text-xs uppercase tracking-wider text-base-content/70">
+                                "Reservation Change Requests & Modifications"
+                            </span>
+                            <span id="admin-change-req-count-badge" class="badge badge-primary badge-xs font-semibold">"0 Pending"</span>
+                        </div>
+                        <div id="admin-booking-change-requests-list" class="space-y-2">
+                            <div class="text-xs text-base-content/50 italic py-1" id="detail-changes-empty-msg">"Loading change requests..."</div>
+                        </div>
+
+                        // Form for Host / Admin to propose or force-apply changes
+                        <div class="border-t border-base-300 pt-3 space-y-2">
+                            <div class="font-bold text-xs text-base-content">"Propose or Apply Stay Modification"</div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-base-content/60 uppercase">"Check-in"</label>
+                                    <input type="date" id="admin-change-date-from" class="input input-bordered input-xs w-full rounded-lg" onchange="previewAdminChangeQuote()" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-base-content/60 uppercase">"Check-out"</label>
+                                    <input type="date" id="admin-change-date-to" class="input input-bordered input-xs w-full rounded-lg" onchange="previewAdminChangeQuote()" />
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-base-content/60 uppercase">"Adults (13+)"</label>
+                                    <input type="number" id="admin-change-adults" min="1" value="1" class="input input-bordered input-xs w-full rounded-lg font-bold" onchange="previewAdminChangeQuote()" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-base-content/60 uppercase">"Children (2–12)"</label>
+                                    <input type="number" id="admin-change-children" min="0" value="0" class="input input-bordered input-xs w-full rounded-lg font-bold" onchange="previewAdminChangeQuote()" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-base-content/60 uppercase">"Reason / Host Note"</label>
+                                <input type="text" id="admin-change-reason" placeholder="e.g. Host approved room upgrade and date adjustment" class="input input-bordered input-xs w-full rounded-lg" />
+                            </div>
+                            <div class="flex items-center gap-2 pt-1">
+                                <input type="checkbox" id="admin-change-force-apply" class="checkbox checkbox-primary checkbox-xs" />
+                                <label for="admin-change-force-apply" class="text-[11px] font-semibold text-base-content cursor-pointer">
+                                    "Force-apply immediately (Admin override, bypass guest confirmation)"
+                                </label>
+                            </div>
+
+                            <div id="admin-change-quote-preview" class="hidden bg-base-100 p-2.5 rounded-xl border border-base-300 text-[11px] space-y-1"></div>
+                            <div id="admin-change-feedback-msg" class="hidden text-[11px] font-semibold"></div>
+
+                            <div class="flex items-center justify-between pt-1">
+                                <button type="button" class="btn btn-outline btn-xs font-semibold" onclick="previewAdminChangeQuote()">
+                                    "Preview Price Delta"
+                                </button>
+                                <button type="button" id="btn-admin-submit-change" class="btn btn-primary btn-xs font-bold px-3" onclick="submitAdminChangeRequest()">
+                                    "Submit Modification"
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -905,6 +971,31 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                                 });
                         }
 
+                        var dateFrom = btn.getAttribute('data-date-from') || '';
+                        var dateTo = btn.getAttribute('data-date-to') || '';
+                        var guestsCount = btn.getAttribute('data-guests') || '1';
+                        var cfInput = document.getElementById('admin-change-date-from');
+                        var ctInput = document.getElementById('admin-change-date-to');
+                        var caInput = document.getElementById('admin-change-adults');
+                        var ccInput = document.getElementById('admin-change-children');
+                        var crInput = document.getElementById('admin-change-reason');
+                        var cfaInput = document.getElementById('admin-change-force-apply');
+                        var cpDiv = document.getElementById('admin-change-quote-preview');
+                        var cfbDiv = document.getElementById('admin-change-feedback-msg');
+
+                        if (cfInput) cfInput.value = dateFrom;
+                        if (ctInput) ctInput.value = dateTo;
+                        if (caInput) caInput.value = guestsCount;
+                        if (ccInput) ccInput.value = '0';
+                        if (crInput) crInput.value = '';
+                        if (cfaInput) cfaInput.checked = false;
+                        if (cpDiv) cpDiv.classList.add('hidden');
+                        if (cfbDiv) cfbDiv.classList.add('hidden');
+
+                        if (b_id) {
+                            loadAdminChangeRequests(b_id);
+                        }
+
                         var dialog = document.getElementById('admin-booking-details-dialog');
                         if (dialog) dialog.showModal();
                     } catch(e) {
@@ -1084,6 +1175,255 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                     }
                 }
 
+                function loadAdminChangeRequests(bookingId) {
+                    var container = document.getElementById('admin-booking-change-requests-list');
+                    var badge = document.getElementById('admin-change-req-count-badge');
+                    if (!container || !bookingId) return;
+                    container.innerHTML = '<div class="text-xs text-base-content/50 italic py-1">Loading change requests...</div>';
+                    fetch('/api/bookings/' + bookingId + '/change-requests')
+                        .then(function(res) {
+                            if (!res.ok) throw new Error('Status ' + res.status);
+                            return res.json();
+                        })
+                        .then(function(reqs) {
+                            if (!Array.isArray(reqs) || reqs.length === 0) {
+                                container.innerHTML = '<div class="text-xs text-base-content/50 italic py-1">No modification requests on record.</div>';
+                                if (badge) badge.innerText = '0 Pending';
+                                return;
+                            }
+                            var pending = reqs.filter(function(r) { return r.status === 'pending'; });
+                            if (badge) badge.innerText = pending.length + ' Pending';
+
+                            var html = '';
+                            reqs.forEach(function(r) {
+                                var isPending = r.status === 'pending';
+                                var statusBadge = isPending
+                                    ? '<span class="badge badge-warning badge-xs font-bold">Pending Review</span>'
+                                    : (r.status === 'approved'
+                                        ? '<span class="badge badge-success badge-xs font-bold">Approved</span>'
+                                        : '<span class="badge badge-neutral badge-xs font-semibold">' + r.status + '</span>');
+                                var roleLabel = r.initiated_by_role === 'guest' ? 'Guest Proposed' : 'Host/Admin Proposed';
+                                var balVal = parseFloat(r.balance_due || '0');
+                                var balBadge = balVal > 0
+                                    ? '<span class="text-warning font-bold">Extra Charge: ' + r.currency + ' ' + r.balance_due + '</span>'
+                                    : (balVal < 0
+                                        ? '<span class="text-success font-bold">Refund: ' + r.currency + ' ' + Math.abs(balVal).toFixed(2) + '</span>'
+                                        : '<span class="text-base-content/70 font-medium">No Price Diff</span>');
+
+                                html += '<div class="p-3 rounded-xl bg-base-100 border border-base-300 space-y-1.5 text-xs">';
+                                html += '  <div class="flex items-center justify-between">';
+                                html += '    <span class="font-bold text-base-content">' + roleLabel + '</span>';
+                                html += '    ' + statusBadge;
+                                html += '  </div>';
+                                html += '  <div class="text-base-content/80">';
+                                html += '    <strong>Stay:</strong> ' + r.proposed_date_from + ' → ' + r.proposed_date_to + ' (' + r.proposed_total_days + ' nights, ' + r.proposed_number_of_persons + ' guests)';
+                                html += '  </div>';
+                                html += '  <div class="flex items-center justify-between text-[11px]">';
+                                html += '    <span>Total: <strong>' + r.currency + ' ' + r.proposed_total_price + '</strong> (' + balBadge + ')</span>';
+                                html += '    <span>Payout Delta: <strong class="font-mono text-primary">' + r.currency + ' ' + r.host_payout_delta + '</strong></span>';
+                                html += '  </div>';
+                                if (r.reason) {
+                                    html += '  <div class="text-[11px] text-base-content/60 italic">"' + r.reason + '"</div>';
+                                }
+                                if (isPending) {
+                                    html += '  <div class="flex items-center gap-2 pt-1 border-t border-base-200 mt-1">';
+                                    if (r.initiated_by_role === 'guest') {
+                                        html += '    <button type="button" class="btn btn-success btn-xs text-white font-bold" onclick="respondToAdminChangeRequest(\'' + bookingId + '\', \'' + r.id + '\', \'approve\')">✓ Approve Change</button>';
+                                        html += '    <button type="button" class="btn btn-outline btn-error btn-xs font-bold" onclick="respondToAdminChangeRequest(\'' + bookingId + '\', \'' + r.id + '\', \'decline\')">✕ Decline</button>';
+                                    } else {
+                                        html += '    <button type="button" class="btn btn-outline btn-xs font-bold" onclick="respondToAdminChangeRequest(\'' + bookingId + '\', \'' + r.id + '\', \'cancel\')">Withdraw Proposal</button>';
+                                    }
+                                    html += '  </div>';
+                                }
+                                html += '</div>';
+                            });
+                            container.innerHTML = html;
+                        })
+                        .catch(function(err) {
+                            container.innerHTML = '<div class="text-xs text-error py-1">Failed to load change requests.</div>';
+                        });
+                }
+
+                function respondToAdminChangeRequest(bookingId, requestId, action) {
+                    try {
+                        var url = '/api/bookings/' + bookingId + '/change-requests/' + requestId + '/' + action;
+                        var opts = {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            }
+                        };
+                        if (action === 'decline') {
+                            opts.body = JSON.stringify({ reason: 'Declined by host/admin' });
+                        }
+                        fetch(url, opts)
+                            .then(function(res) {
+                                if (!res.ok) {
+                                    return res.text().then(function(t) { throw new Error(t || ('Status ' + res.status)); });
+                                }
+                                return res.json();
+                            })
+                            .then(function() {
+                                loadAdminChangeRequests(bookingId);
+                                setTimeout(function() { window.location.reload(); }, 600);
+                            })
+                            .catch(function(err) {
+                                console.error('Failed to process change request action:', err);
+                                alert('Action failed: ' + err.message);
+                            });
+                    } catch(e) {
+                        console.error('Change request response error:', e);
+                    }
+                }
+
+                function gatherAdminChangePayload() {
+                    var dateFrom = document.getElementById('admin-change-date-from').value;
+                    var dateTo = document.getElementById('admin-change-date-to').value;
+                    var adults = parseInt(document.getElementById('admin-change-adults').value || '1', 10);
+                    var children = parseInt(document.getElementById('admin-change-children').value || '0', 10);
+                    var reasonEl = document.getElementById('admin-change-reason');
+                    var reason = reasonEl && reasonEl.value.trim() ? reasonEl.value.trim() : null;
+                    var forceApply = document.getElementById('admin-change-force-apply').checked;
+
+                    return {
+                        proposed_date_from: dateFrom,
+                        proposed_date_to: dateTo,
+                        proposed_adults: isNaN(adults) ? 1 : adults,
+                        proposed_children: isNaN(children) ? 0 : children,
+                        proposed_infants: 0,
+                        proposed_pets: 0,
+                        reason: reason,
+                        force_apply: forceApply
+                    };
+                }
+
+                function previewAdminChangeQuote() {
+                    var bookingId = activeDetailBookingId;
+                    if (!bookingId) return;
+                    var preview = document.getElementById('admin-change-quote-preview');
+                    var feedback = document.getElementById('admin-change-feedback-msg');
+                    var payload = gatherAdminChangePayload();
+
+                    if (!payload.proposed_date_from || !payload.proposed_date_to || payload.proposed_date_from >= payload.proposed_date_to) {
+                        return;
+                    }
+                    if (preview) {
+                        preview.classList.remove('hidden');
+                        preview.innerHTML = '<span class="loading loading-spinner loading-xs mr-1"></span> Calculating quote...';
+                    }
+                    if (feedback) feedback.classList.add('hidden');
+
+                    fetch('/api/bookings/' + bookingId + '/change-quote', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(function(res) {
+                        return res.json().then(function(data) { return { ok: res.ok, data: data }; });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            if (preview) preview.classList.add('hidden');
+                            if (feedback) {
+                                feedback.className = 'text-[11px] text-error font-semibold';
+                                feedback.innerText = (res.data && res.data.message) ? res.data.message : 'Unable to quote proposed changes.';
+                                feedback.classList.remove('hidden');
+                            }
+                            return;
+                        }
+                        var q = res.data;
+                        var bal = parseFloat(q.balance_due || '0');
+                        var balBadge = bal > 0
+                            ? '<span class="text-warning font-bold">Extra Charge: ' + q.currency + ' ' + q.balance_due + '</span>'
+                            : (bal < 0
+                                ? '<span class="text-success font-bold">Refund: ' + q.currency + ' ' + Math.abs(bal).toFixed(2) + '</span>'
+                                : '<span class="text-base-content/70 font-semibold">No Price Change</span>');
+
+                        if (preview) {
+                            preview.innerHTML =
+                                '<div class="flex justify-between font-bold border-b border-base-200 pb-1"><span>Quote (' + q.proposed_total_days + ' nights, ' + q.proposed_number_of_persons + ' guests)</span>' + balBadge + '</div>' +
+                                '<div class="flex justify-between pt-0.5"><span>Proposed Total:</span><span class="font-mono font-bold">' + q.currency + ' ' + q.proposed_total_price + '</span></div>' +
+                                '<div class="flex justify-between"><span>Host Payout Delta:</span><span class="font-mono font-bold text-primary">' + q.currency + ' ' + q.host_payout_delta + '</span></div>';
+                        }
+                    })
+                    .catch(function(err) {
+                        if (preview) preview.classList.add('hidden');
+                    });
+                }
+
+                function submitAdminChangeRequest() {
+                    var bookingId = activeDetailBookingId;
+                    if (!bookingId) return;
+                    var btn = document.getElementById('btn-admin-submit-change');
+                    var feedback = document.getElementById('admin-change-feedback-msg');
+                    var payload = gatherAdminChangePayload();
+
+                    if (!payload.proposed_date_from || !payload.proposed_date_to) {
+                        if (feedback) {
+                            feedback.className = 'text-[11px] text-error font-semibold';
+                            feedback.innerText = 'Please select valid check-in and check-out dates.';
+                            feedback.classList.remove('hidden');
+                        }
+                        return;
+                    }
+
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<span class="loading loading-spinner loading-xs mr-1"></span> Submitting...';
+                    }
+                    if (feedback) feedback.classList.add('hidden');
+
+                    fetch('/api/bookings/' + bookingId + '/change-requests', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(function(res) {
+                        return res.json().then(function(data) { return { ok: res.ok, data: data }; });
+                    })
+                    .then(function(res) {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerText = 'Submit Modification';
+                        }
+                        if (!res.ok) {
+                            if (feedback) {
+                                feedback.className = 'text-[11px] text-error font-semibold';
+                                feedback.innerText = (res.data && res.data.message) ? res.data.message : 'Failed to submit modification.';
+                                feedback.classList.remove('hidden');
+                            }
+                            return;
+                        }
+                        if (feedback) {
+                            feedback.className = 'text-[11px] text-success font-semibold';
+                            feedback.innerText = payload.force_apply ? '✓ Modification applied immediately!' : '✓ Change proposal sent to guest for confirmation.';
+                            feedback.classList.remove('hidden');
+                        }
+                        loadAdminChangeRequests(bookingId);
+                        if (payload.force_apply) {
+                            setTimeout(function() { window.location.reload(); }, 900);
+                        }
+                    })
+                    .catch(function(err) {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerText = 'Submit Modification';
+                        }
+                        if (feedback) {
+                            feedback.className = 'text-[11px] text-error font-semibold';
+                            feedback.innerText = 'Network error: ' + err.message;
+                            feedback.classList.remove('hidden');
+                        }
+                    });
+                }
+
                 window.approveAdminBookingDirect = approveAdminBookingDirect;
                 window.rejectAdminBookingDirect = rejectAdminBookingDirect;
                 window.approveAdminBooking = approveAdminBooking;
@@ -1094,6 +1434,10 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                 window.openAdminInvoiceDialog = openAdminInvoiceDialog;
                 window.exportBookingsCsv = exportBookingsCsv;
                 window.saveAdminDoorCode = saveAdminDoorCode;
+                window.loadAdminChangeRequests = loadAdminChangeRequests;
+                window.respondToAdminChangeRequest = respondToAdminChangeRequest;
+                window.previewAdminChangeQuote = previewAdminChangeQuote;
+                window.submitAdminChangeRequest = submitAdminChangeRequest;
                 "#
             </script>
         </div>
@@ -1286,4 +1630,113 @@ pub async fn get_booking_documents_admin_api(
         .await
         .map_err(|e| web_app_common_tc::app_error(format!("Parse error: {}", e)))?;
     Ok(Json(docs))
+}
+
+#[route(POST "/api/bookings/{id}/change-quote")]
+pub async fn quote_reservation_change_admin_api(
+    cx: &Cx,
+    Json(payload): Json<ReservationChangeQuoteRequest>,
+) -> Result<Json<ReservationChangeQuoteResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .quote_reservation_change(id, &payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests")]
+pub async fn create_reservation_change_request_admin_api(
+    cx: &Cx,
+    Json(payload): Json<CreateReservationChangeRequest>,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .create_reservation_change_request(id, &payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(GET "/api/bookings/{id}/change-requests")]
+pub async fn list_reservation_change_requests_admin_api(
+    cx: &Cx,
+) -> Result<Json<Vec<ReservationChangeRequestResponse>>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .list_reservation_change_requests(id, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests/{request_id}/approve")]
+pub async fn approve_reservation_change_request_admin_api(
+    cx: &Cx,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let req_str: &str = path_param::<RequestId>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let req_id =
+        Uuid::parse_str(req_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let default_payload = RespondReservationChangeRequest::default();
+    let resp = api
+        .approve_reservation_change_request(id, req_id, &default_payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests/{request_id}/decline")]
+pub async fn decline_reservation_change_request_admin_api(
+    cx: &Cx,
+    Json(payload): Json<RespondReservationChangeRequest>,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let req_str: &str = path_param::<RequestId>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let req_id =
+        Uuid::parse_str(req_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .decline_reservation_change_request(id, req_id, &payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests/{request_id}/cancel")]
+pub async fn cancel_reservation_change_request_admin_api(
+    cx: &Cx,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::require_admin_auth(cx).await?;
+    let id_str: &str = path_param::<Id>(cx);
+    let req_str: &str = path_param::<RequestId>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let req_id =
+        Uuid::parse_str(req_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .cancel_reservation_change_request(id, req_id, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
 }

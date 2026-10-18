@@ -450,6 +450,8 @@ pub struct UpdatedBookingRequest {
     pub date_from: Option<NaiveDate>,
     /// Check-out departure date if requesting a date change.
     pub date_to: Option<NaiveDate>,
+    /// Updated total guest count (Admin override only).
+    pub number_of_persons: Option<i32>,
 }
 
 /// Request payload to transfer a reservation to a promoted user account.

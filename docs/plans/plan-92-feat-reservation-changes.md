@@ -164,7 +164,7 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
   - Dispatch outbox notifications on change request creation, approval, and decline.
   - **Verification**: `cargo test -p email_worker`
 
-- [ ] **Slice 4: Topcoat Guest & Admin Portal UI (`web_app_common_tc`, `web_app_tc`, `web_app_admin_tc`)** — **Scope: M**
+- [x] **Slice 4: Topcoat Guest & Admin Portal UI (`web_app_common_tc`, `web_app_tc`, `web_app_admin_tc`)** — **Scope: M**
   - Add API client methods in `web_app_common_tc/src/client.rs`.
   - Update `web_app_tc/src/pages/booking_date_change.rs` and `web_app_tc/src/pages/bookings.rs` for guest change requests, mid-stay date rules, guest count inputs, and approving/declining host-initiated requests.
   - Update `web_app_admin_tc/src/pages/listings_admin.rs` (extra-guest fee fields) and `web_app_admin_tc/src/pages/bookings_admin.rs` (review/approve/decline guest change requests and initiate host/admin changes).

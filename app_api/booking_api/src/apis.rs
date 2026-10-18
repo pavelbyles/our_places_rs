@@ -32,6 +32,8 @@ use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
+static BASE_URL_ENV: &str = "BASE_URL";
+
 fn map_pricing_error(err: common::pricing::PricingError) -> ApiError {
     match err {
         common::pricing::PricingError::InvalidDateRange => {
@@ -713,8 +715,11 @@ async fn update_booking(
         )
         .map_err(map_pricing_error)?;
 
-        let tax_rate =
-            common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
+        let tax_rate = if old_booking.tax_rate > Decimal::ZERO {
+            old_booking.tax_rate
+        } else {
+            common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country)
+        };
 
         let clean_fee = if conversion_rate != Decimal::ONE {
             (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
@@ -1407,7 +1412,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 1,
             );
             let base_url =
-                std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+                std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
             let receipt_url = format!(
                 "{}/bookings/{}/documents/{}",
                 base_url.trim_end_matches('/'),
@@ -1603,7 +1608,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 .ok()
                 .flatten();
 
-                let base_url = std::env::var("BASE_URL")
+                let base_url = std::env::var(BASE_URL_ENV)
                     .unwrap_or_else(|_| "http://localhost:8080".to_string());
                 let (receipt_url, balance_due) = match active_receipt {
                     Some(doc) => (
@@ -1688,7 +1693,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
             .flatten();
 
             let base_url =
-                std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+                std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
             let (invoice_url, invoice_number) = match active_invoice {
                 Some(doc) => (
                     format!(
@@ -2156,16 +2161,10 @@ async fn authorize_booking_party(
     Ok((parties, user))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn compute_reservation_change_quote(
     pool: &PgPool,
     booking: &Booking,
-    proposed_date_from: Option<NaiveDate>,
-    proposed_date_to: Option<NaiveDate>,
-    proposed_num_adults: Option<u32>,
-    proposed_num_children: Option<u32>,
-    proposed_num_infants: Option<u32>,
-    proposed_num_pets: Option<u32>,
+    req_terms: &common::models::ReservationChangeQuoteRequest,
     today_jm: NaiveDate,
 ) -> Result<common::models::ReservationChangeQuoteResponse, ApiError> {
     if booking.status != BookingStatus::Confirmed {
@@ -2174,8 +2173,8 @@ async fn compute_reservation_change_quote(
         ));
     }
 
-    let new_date_from = proposed_date_from.unwrap_or(booking.date_from);
-    let new_date_to = proposed_date_to.unwrap_or(booking.date_to);
+    let new_date_from = req_terms.date_from.unwrap_or(booking.date_from);
+    let new_date_to = req_terms.date_to.unwrap_or(booking.date_to);
 
     let default_adults = if booking.metadata.0.num_adults == 0 && booking.number_of_persons > 0 {
         booking.number_of_persons as u32
@@ -2183,10 +2182,14 @@ async fn compute_reservation_change_quote(
         booking.metadata.0.num_adults
     };
 
-    let new_adults = proposed_num_adults.unwrap_or(default_adults);
-    let new_children = proposed_num_children.unwrap_or(booking.metadata.0.num_children);
-    let new_infants = proposed_num_infants.unwrap_or(booking.metadata.0.num_infants);
-    let new_pets = proposed_num_pets.unwrap_or(booking.metadata.0.num_pets);
+    let new_adults = req_terms.num_adults.unwrap_or(default_adults);
+    let new_children = req_terms
+        .num_children
+        .unwrap_or(booking.metadata.0.num_children);
+    let new_infants = req_terms
+        .num_infants
+        .unwrap_or(booking.metadata.0.num_infants);
+    let new_pets = req_terms.num_pets.unwrap_or(booking.metadata.0.num_pets);
 
     if new_adults < 1 {
         return Err(ApiError::Database(
@@ -2213,7 +2216,7 @@ async fn compute_reservation_change_quote(
         ));
     }
 
-    common::pricing::validate_reservation_change_dates(
+    let expires_at_date = common::pricing::validate_reservation_change_dates(
         booking.date_from,
         booking.date_to,
         new_date_from,
@@ -2310,8 +2313,11 @@ async fn compute_reservation_change_quote(
     )
     .map_err(map_pricing_error)?;
 
-    let tax_rate =
-        common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
+    let tax_rate = if booking.tax_rate > Decimal::ZERO {
+        booking.tax_rate
+    } else {
+        common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country)
+    };
 
     let clean_fee = if conversion_rate != Decimal::ONE {
         (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
@@ -2379,11 +2385,6 @@ async fn compute_reservation_change_quote(
     let host_payout_delta = proposed_net_payout - previous_net_payout;
 
     let balance_due = calculator.total_price - booking.total_price;
-    let expires_at_date = if booking.date_from > today_jm {
-        booking.date_from.min(new_date_from)
-    } else {
-        booking.date_to.min(new_date_to)
-    };
 
     let pricing_snapshot = common::models::ReservationChangePricingSnapshot {
         daily_rate: calculator.actual_daily_rate,
@@ -2458,18 +2459,7 @@ async fn quote_reservation_change(
         .map_err(ApiError::Database)?;
 
     let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
-    let quote = compute_reservation_change_quote(
-        pool.get_ref(),
-        &booking,
-        body.date_from,
-        body.date_to,
-        body.num_adults,
-        body.num_children,
-        body.num_infants,
-        body.num_pets,
-        today_jm,
-    )
-    .await?;
+    let quote = compute_reservation_change_quote(pool.get_ref(), &booking, &body, today_jm).await?;
 
     Ok(HttpResponse::Ok().json(quote))
 }
@@ -2510,18 +2500,16 @@ async fn create_reservation_change_request(
         .map_err(ApiError::Database)?;
 
     let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
-    let quote = compute_reservation_change_quote(
-        pool.get_ref(),
-        &booking,
-        body.date_from,
-        body.date_to,
-        body.num_adults,
-        body.num_children,
-        body.num_infants,
-        body.num_pets,
-        today_jm,
-    )
-    .await?;
+    let quote_req = common::models::ReservationChangeQuoteRequest {
+        date_from: body.date_from,
+        date_to: body.date_to,
+        num_adults: body.num_adults,
+        num_children: body.num_children,
+        num_infants: body.num_infants,
+        num_pets: body.num_pets,
+    };
+    let quote =
+        compute_reservation_change_quote(pool.get_ref(), &booking, &quote_req, today_jm).await?;
 
     let settlement_status = if quote.balance_due > Decimal::ZERO {
         common::models::ChangeSettlementStatus::PendingCharge
@@ -2732,13 +2720,15 @@ async fn approve_reservation_change_request(
     let response_note = body.as_ref().and_then(|b| b.response_note.as_deref());
     let (approved_row, updated_booking) = db_core::reservation_change::approve_change_request(
         pool.get_ref(),
-        request_id,
-        user.id,
-        response_note,
-        settlement_status,
-        gateway_reference.as_deref(),
-        &supplier,
-        today_jm,
+        &db_core::reservation_change::ApproveChangeRequestParams {
+            id: request_id,
+            responder_id: user.id,
+            response_note,
+            settlement_status,
+            gateway_reference: gateway_reference.as_deref(),
+            supplier: &supplier,
+            today_jm,
+        },
     )
     .await
     .map_err(ApiError::Database)?;
@@ -2868,7 +2858,7 @@ async fn dispatch_reservation_change_requested_notification(
     };
 
     let base_url =
-        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+        std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
     let guest_name = format!("{} {}", guest.first_name, guest.last_name);
     let host_name = format!("{} {}", host.first_name, host.last_name);
 
@@ -2973,7 +2963,7 @@ async fn dispatch_reservation_change_approved_notification(
     .flatten();
 
     let base_url =
-        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+        std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
     let receipt_url = active_receipt.map(|doc| {
         format!(
             "{}/bookings/{}/documents/{}",
@@ -3050,7 +3040,7 @@ async fn dispatch_reservation_change_declined_notification(
     };
 
     let base_url =
-        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+        std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
     let booking_url = match change_req.initiated_by_role {
         common::models::ChangeInitiatorRole::Guest => {
             format!("{}/bookings", base_url.trim_end_matches('/'))
