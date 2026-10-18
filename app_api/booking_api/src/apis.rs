@@ -2564,6 +2564,8 @@ async fn create_reservation_change_request(
             .await
             .map_err(ApiError::Database)?;
 
+    dispatch_reservation_change_requested_notification(pool.get_ref(), &booking, &created).await;
+
     let response: common::models::ReservationChangeRequestResponse = created.into();
     Ok(HttpResponse::Created().json(response))
 }
@@ -2728,7 +2730,7 @@ async fn approve_reservation_change_request(
         })?;
 
     let response_note = body.as_ref().and_then(|b| b.response_note.as_deref());
-    let (approved_row, _updated_booking) = db_core::reservation_change::approve_change_request(
+    let (approved_row, updated_booking) = db_core::reservation_change::approve_change_request(
         pool.get_ref(),
         request_id,
         user.id,
@@ -2740,6 +2742,14 @@ async fn approve_reservation_change_request(
     )
     .await
     .map_err(ApiError::Database)?;
+
+    dispatch_reservation_change_approved_notification(
+        pool.get_ref(),
+        &updated_booking,
+        &approved_row,
+        &user,
+    )
+    .await;
 
     let response: common::models::ReservationChangeRequestResponse = approved_row.into();
     Ok(HttpResponse::Ok().json(response))
@@ -2825,8 +2835,263 @@ async fn decline_reservation_change_request(
     .await
     .map_err(ApiError::Database)?;
 
+    if let Ok(booking) = db_booking::get_booking_by_id(pool.get_ref(), booking_id).await {
+        dispatch_reservation_change_declined_notification(
+            pool.get_ref(),
+            &booking,
+            &declined_row,
+            &user,
+        )
+        .await;
+    }
+
     let response: common::models::ReservationChangeRequestResponse = declined_row.into();
     Ok(HttpResponse::Ok().json(response))
+}
+
+async fn dispatch_reservation_change_requested_notification(
+    pool: &PgPool,
+    booking: &Booking,
+    change_req: &db_core::models::ReservationChangeRequestRow,
+) {
+    let listing = match db_listing::get_listing_by_id(pool, booking.listing_id).await {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let guest = match db_core::user::get_user_by_id(pool, booking.guest_id).await {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+    let host = match db_core::user::get_user_by_id(pool, listing.listing.user_id).await {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+
+    let base_url =
+        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let guest_name = format!("{} {}", guest.first_name, guest.last_name);
+    let host_name = format!("{} {}", host.first_name, host.last_name);
+
+    let targets: Vec<(&str, String, String, String)> = match change_req.initiated_by_role {
+        common::models::ChangeInitiatorRole::Guest => vec![(
+            host.email.as_str(),
+            host_name,
+            guest_name,
+            format!("{}/admin/bookings", base_url.trim_end_matches('/')),
+        )],
+        common::models::ChangeInitiatorRole::Host => vec![(
+            guest.email.as_str(),
+            guest_name,
+            host_name,
+            format!("{}/bookings", base_url.trim_end_matches('/')),
+        )],
+        common::models::ChangeInitiatorRole::Admin => vec![
+            (
+                guest.email.as_str(),
+                guest_name,
+                "Our Places Admin".to_string(),
+                format!("{}/bookings", base_url.trim_end_matches('/')),
+            ),
+            (
+                host.email.as_str(),
+                host_name,
+                "Our Places Admin".to_string(),
+                format!("{}/admin/bookings", base_url.trim_end_matches('/')),
+            ),
+        ],
+    };
+
+    for (recipient_email, recipient_name, initiator_name, action_url) in targets {
+        let payload = common::email::ReservationChangeRequestedPayload {
+            booking_id: booking.id,
+            change_request_id: change_req.id,
+            confirmation_code: booking.confirmation_code.clone(),
+            listing_name: listing.listing.name.clone(),
+            recipient_name,
+            initiator_name,
+            initiated_by_role: change_req.initiated_by_role.to_string(),
+            previous_date_from: change_req.previous_date_from.to_string(),
+            previous_date_to: change_req.previous_date_to.to_string(),
+            proposed_date_from: change_req.proposed_date_from.to_string(),
+            proposed_date_to: change_req.proposed_date_to.to_string(),
+            previous_number_of_persons: change_req.previous_number_of_persons,
+            proposed_number_of_persons: change_req.proposed_number_of_persons,
+            previous_total_price: change_req.previous_total_price,
+            proposed_total_price: change_req.proposed_total_price,
+            balance_due: change_req.balance_due,
+            currency: change_req.currency.trim().to_string(),
+            reason: change_req.reason.clone(),
+            action_url,
+        };
+        if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+            pool,
+            recipient_email,
+            &format!(
+                "Reservation Change Requested - {} (Code: {})",
+                listing.listing.name, booking.confirmation_code
+            ),
+            common::email::EmailTemplate::ReservationChangeRequested.as_str(),
+            &serde_json::to_value(&payload).unwrap_or_default(),
+            3,
+        )
+        .await
+        {
+            tokio::spawn(async move {
+                let publisher = api_core::email_publisher::EmailPublisher::from_env();
+                let _ = publisher.publish_email_event(outbox.id).await;
+            });
+        }
+    }
+}
+
+async fn dispatch_reservation_change_approved_notification(
+    pool: &PgPool,
+    booking: &Booking,
+    change_req: &db_core::models::ReservationChangeRequestRow,
+    responder: &db_core::models::User,
+) {
+    let listing = match db_listing::get_listing_by_id(pool, booking.listing_id).await {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let guest = match db_core::user::get_user_by_id(pool, booking.guest_id).await {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+    let host = match db_core::user::get_user_by_id(pool, listing.listing.user_id).await {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+
+    let active_receipt = db_core::tax_document::get_active_by_type(
+        pool,
+        booking.id,
+        db_core::models::TaxDocumentType::PaymentReceipt,
+    )
+    .await
+    .ok()
+    .flatten();
+
+    let base_url =
+        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let receipt_url = active_receipt.map(|doc| {
+        format!(
+            "{}/bookings/{}/documents/{}",
+            base_url.trim_end_matches('/'),
+            booking.id,
+            doc.document_number
+        )
+    });
+
+    let responder_name = format!("{} {}", responder.first_name, responder.last_name);
+    let recipients = [
+        (
+            guest.email.as_str(),
+            format!("{} {}", guest.first_name, guest.last_name),
+        ),
+        (
+            host.email.as_str(),
+            format!("{} {}", host.first_name, host.last_name),
+        ),
+    ];
+
+    for (recipient_email, recipient_name) in recipients {
+        let payload = common::email::ReservationChangeApprovedPayload {
+            booking_id: booking.id,
+            change_request_id: change_req.id,
+            confirmation_code: booking.confirmation_code.clone(),
+            listing_name: listing.listing.name.clone(),
+            recipient_name,
+            responder_name: responder_name.clone(),
+            date_from: booking.date_from.to_string(),
+            date_to: booking.date_to.to_string(),
+            number_of_persons: booking.number_of_persons,
+            total_price: booking.total_price,
+            balance_due: change_req.balance_due,
+            currency: change_req.currency.trim().to_string(),
+            settlement_status: change_req.settlement_status.to_string(),
+            response_note: change_req.response_note.clone(),
+            receipt_url: receipt_url.clone(),
+        };
+        if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+            pool,
+            recipient_email,
+            &format!(
+                "Reservation Change Approved - {} (Code: {})",
+                listing.listing.name, booking.confirmation_code
+            ),
+            common::email::EmailTemplate::ReservationChangeApproved.as_str(),
+            &serde_json::to_value(&payload).unwrap_or_default(),
+            3,
+        )
+        .await
+        {
+            tokio::spawn(async move {
+                let publisher = api_core::email_publisher::EmailPublisher::from_env();
+                let _ = publisher.publish_email_event(outbox.id).await;
+            });
+        }
+    }
+}
+
+async fn dispatch_reservation_change_declined_notification(
+    pool: &PgPool,
+    booking: &Booking,
+    change_req: &db_core::models::ReservationChangeRequestRow,
+    responder: &db_core::models::User,
+) {
+    let listing = match db_listing::get_listing_by_id(pool, booking.listing_id).await {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let initiator = match db_core::user::get_user_by_id(pool, change_req.initiated_by_id).await {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+
+    let base_url =
+        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let booking_url = match change_req.initiated_by_role {
+        common::models::ChangeInitiatorRole::Guest => {
+            format!("{}/bookings", base_url.trim_end_matches('/'))
+        }
+        common::models::ChangeInitiatorRole::Host | common::models::ChangeInitiatorRole::Admin => {
+            format!("{}/admin/bookings", base_url.trim_end_matches('/'))
+        }
+    };
+
+    let payload = common::email::ReservationChangeDeclinedPayload {
+        booking_id: booking.id,
+        change_request_id: change_req.id,
+        confirmation_code: booking.confirmation_code.clone(),
+        listing_name: listing.listing.name.clone(),
+        recipient_name: format!("{} {}", initiator.first_name, initiator.last_name),
+        responder_name: format!("{} {}", responder.first_name, responder.last_name),
+        proposed_date_from: change_req.proposed_date_from.to_string(),
+        proposed_date_to: change_req.proposed_date_to.to_string(),
+        proposed_number_of_persons: change_req.proposed_number_of_persons,
+        response_note: change_req.response_note.clone(),
+        booking_url,
+    };
+
+    if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
+        pool,
+        &initiator.email,
+        &format!(
+            "Reservation Change Declined - {} (Code: {})",
+            listing.listing.name, booking.confirmation_code
+        ),
+        common::email::EmailTemplate::ReservationChangeDeclined.as_str(),
+        &serde_json::to_value(&payload).unwrap_or_default(),
+        3,
+    )
+    .await
+    {
+        tokio::spawn(async move {
+            let publisher = api_core::email_publisher::EmailPublisher::from_env();
+            let _ = publisher.publish_email_event(outbox.id).await;
+        });
+    }
 }
 
 #[tracing::instrument(skip(req, pool))]

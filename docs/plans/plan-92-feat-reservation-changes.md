@@ -159,7 +159,7 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
   - Add `/change-quote` and `/change-requests` endpoints in `app_api/booking_api/src/apis.rs`, restrict direct `PATCH /api/v1/bookings/{id}` date/guest mutation to Admins, and hook auto-expiry into `complete_stays_cron`.
   - **Verification**: `cargo test -p db_core reservation_change && cargo test -p booking_api`
 
-- [ ] **Slice 3: Transactional Email Templates & Outbox Dispatch (`common`, `email_worker`, `booking_api`)** — **Scope: S**
+- [x] **Slice 3: Transactional Email Templates & Outbox Dispatch (`common`, `email_worker`, `booking_api`)** — **Scope: S**
   - Add `ReservationChangeRequested`, `ReservationChangeApproved`, and `ReservationChangeDeclined` templates and payloads in `common/src/email.rs` and `app_api/email_worker/`.
   - Dispatch outbox notifications on change request creation, approval, and decline.
   - **Verification**: `cargo test -p email_worker`
