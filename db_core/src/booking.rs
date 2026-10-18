@@ -1037,6 +1037,8 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
             .await
@@ -1067,6 +1069,8 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
             .await
@@ -1267,6 +1271,8 @@ mod tests {
                 commission_pct: Some(dec!(0.1000)),
                 cleaning_fee: Some(dec!(50.00)),
                 damage_deposit: Some(dec!(100.00)),
+                guests_included: None,
+                extra_guest_fee: None,
             },
         )
         .await
@@ -1473,6 +1479,8 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: Some(dec!(50.00)),
             damage_deposit: Some(dec!(100.00)),
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let listing = crate::listing::create_listing(&mut *tx, &nl).await.unwrap();
 

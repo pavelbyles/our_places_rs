@@ -193,6 +193,12 @@ pub struct ListingResponse {
     /// Optional refundable damage deposit (base currency).
     #[serde(default)]
     pub damage_deposit: Option<Decimal>,
+    /// Number of guests included in the base nightly rate before extra-guest fees apply.
+    #[serde(default = "default_guests_included")]
+    pub guests_included: i32,
+    /// Optional fee per extra guest per night above `guests_included` (base currency).
+    #[serde(default)]
+    pub extra_guest_fee: Option<Decimal>,
 }
 
 /// Itemized fee line item in booking price breakdowns.
@@ -560,6 +566,18 @@ pub struct NewListingRequest {
     #[schema(value_type = Option<String>, example = "200.00")]
     #[validate(custom(function = "validate_fee"))]
     pub damage_deposit: Option<Decimal>,
+
+    /// Number of guests included in the base nightly rate.
+    #[serde(default = "default_guests_included")]
+    #[schema(example = 1)]
+    #[validate(range(min = 1, message = "Guests included must be at least 1"))]
+    pub guests_included: i32,
+
+    /// Optional fee per extra guest per night above `guests_included` (base currency).
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "25.00")]
+    #[validate(custom(function = "validate_fee"))]
+    pub extra_guest_fee: Option<Decimal>,
 }
 
 /// Validates that a fee is between 0 and 1,000,000 and has at most 2 decimal places.
@@ -571,6 +589,11 @@ pub fn validate_fee(fee: &Decimal) -> Result<(), validator::ValidationError> {
         return Err(err);
     }
     Ok(())
+}
+
+/// Returns the default number of guests included in the base nightly rate (`1`).
+pub fn default_guests_included() -> i32 {
+    1
 }
 
 pub fn default_minimum_stay() -> i32 {
@@ -694,6 +717,18 @@ pub struct UpdatedListingRequest {
     #[schema(value_type = Option<String>, example = "200.00")]
     #[validate(custom(function = "validate_fee"))]
     pub damage_deposit: Option<Decimal>,
+
+    /// Updated number of guests included in the base nightly rate.
+    #[serde(default)]
+    #[schema(example = 2)]
+    #[validate(range(min = 1, message = "Guests included must be at least 1"))]
+    pub guests_included: Option<i32>,
+
+    /// Updated fee per extra guest per night above `guests_included` (base currency).
+    #[serde(default)]
+    #[schema(value_type = Option<String>, example = "25.00")]
+    #[validate(custom(function = "validate_fee"))]
+    pub extra_guest_fee: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]

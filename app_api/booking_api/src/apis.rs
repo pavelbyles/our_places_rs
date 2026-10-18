@@ -155,6 +155,24 @@ async fn create_booking(
             }
         })?;
 
+    if req_data.num_adults < 1 {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(
+                "Booking must include at least 1 adult".to_string(),
+            ),
+        ));
+    }
+    let number_of_persons =
+        (req_data.num_adults + req_data.num_children + req_data.num_infants) as i32;
+    if number_of_persons > listing_details.listing.max_guests {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(format!(
+                "Number of guests ({}) exceeds listing max_guests ({})",
+                number_of_persons, listing_details.listing.max_guests
+            )),
+        ));
+    }
+
     let total_days = (req_data.check_out - req_data.check_in)
         .num_days()
         .try_into()
@@ -231,10 +249,21 @@ async fn create_booking(
         listing_details.listing.damage_deposit
     };
 
+    let extra_guest_fee = if conversion_rate != Decimal::ONE {
+        (listing_details.listing.extra_guest_fee * conversion_rate).round_dp(2)
+    } else {
+        listing_details.listing.extra_guest_fee
+    };
+
     let calculator = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
         total_days,
         dynamic_quote.subtotal,
+    )
+    .with_extra_guests(
+        number_of_persons,
+        listing_details.listing.guests_included,
+        extra_guest_fee,
     )
     .apply_discounts(
         listing_details.listing.monthly_discount_percentage,
@@ -677,11 +706,22 @@ async fn update_booking(
             listing_details.listing.damage_deposit
         };
 
+        let extra_guest_fee = if conversion_rate != Decimal::ONE {
+            (listing_details.listing.extra_guest_fee * conversion_rate).round_dp(2)
+        } else {
+            listing_details.listing.extra_guest_fee
+        };
+
         let days = (new_check_out - new_check_in).num_days() as i32;
         let calculator = BookingCalculator::with_subtotal(
             dynamic_quote.effective_daily_rate,
             days,
             dynamic_quote.subtotal,
+        )
+        .with_extra_guests(
+            old_booking.number_of_persons,
+            listing_details.listing.guests_included,
+            extra_guest_fee,
         )
         .apply_discounts(
             listing_details.listing.monthly_discount_percentage,

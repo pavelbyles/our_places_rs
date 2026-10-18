@@ -148,7 +148,7 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
   - Add DTOs and enums to `common/src/models.rs` and `db_core/src/models.rs`.
   - **Verification**: `sqlx migrate run && cargo test -p common`
 
-- [ ] **Slice 1: Listing Extra-Guest Fee Persistence & API (`db_core`, `listing_api`, `booking_api`)** — **Scope: M**
+- [x] **Slice 1: Listing Extra-Guest Fee Persistence & API (`db_core`, `listing_api`, `booking_api`)** — **Scope: M**
   - Update `db_core/src/listing.rs` and `app_api/listing_api/src/apis.rs` to persist and return `guests_included` and `extra_guest_fee`.
   - Update `booking_api` (`create_booking`) to include extra-guest pricing in initial booking calculations and validate `number_of_persons <= listing.max_guests`.
   - **Verification**: `cargo test -p db_core listing && cargo test -p listing_api`

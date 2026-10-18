@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{DbError, Result};
 use crate::models::{Listing, ListingWithOwner, NewListing, UpdatedListing};
 use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
@@ -37,6 +37,13 @@ pub async fn create_listing<'e, E>(executor: E, new_listing: &NewListing) -> Res
 where
     E: PgExecutor<'e>,
 {
+    let guests_included = new_listing.guests_included.unwrap_or(1);
+    if guests_included < 1 || guests_included > new_listing.max_guests {
+        return Err(crate::error::DbError::ValidationError(
+            "Guests included must be between 1 and max_guests".to_string(),
+        ));
+    }
+
     let listing = sqlx::query_as!(
         Listing,
         r#"
@@ -44,16 +51,16 @@ where
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             weekly_discount_percentage, monthly_discount_percentage, added_at, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit
+            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee
         )
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, COALESCE($27, 0.0000), COALESCE($28, 0.00), COALESCE($29, 0.00)
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, COALESCE($27, 0.0000), COALESCE($28, 0.00), COALESCE($29, 0.00), COALESCE($30, 1), COALESCE($31, 0.00)
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
         RETURNING 
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, 
             weekly_discount_percentage, monthly_discount_percentage, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit
+            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee
         "#,
         Uuid::now_v7(),                                  // $1
         new_listing.user_id,                             // $2
@@ -84,6 +91,8 @@ where
         new_listing.commission_pct,                      // $27
         new_listing.cleaning_fee,                        // $28
         new_listing.damage_deposit,                      // $29
+        new_listing.guests_included,                     // $30
+        new_listing.extra_guest_fee,                     // $31
     )
     .fetch_one(executor)
     .await
@@ -122,7 +131,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee,
         "user".first_name || ' ' || "user".last_name as owner_name,
         primary_img.upload_url as primary_image_url
         FROM listing
@@ -215,7 +224,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -251,7 +260,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -314,7 +323,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -336,7 +345,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -403,13 +412,25 @@ pub async fn update_listing_with_conn(
     id: Uuid,
     updated_listing_data: &UpdatedListing,
 ) -> Result<Listing> {
-    let _current = sqlx::query_as!(
+    let current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    let effective_max_guests = updated_listing_data
+        .max_guests
+        .unwrap_or(current.max_guests);
+    let effective_guests_included = updated_listing_data
+        .guests_included
+        .unwrap_or(current.guests_included);
+    if effective_guests_included < 1 || effective_guests_included > effective_max_guests {
+        return Err(DbError::ValidationError(
+            "guests_included must be between 1 and max_guests".to_string(),
+        ));
+    }
 
     // 2. Archive current state to history via direct table copy to ensure 100% data fidelity
     sqlx::query!(
@@ -418,13 +439,13 @@ pub async fn update_listing_with_conn(
             listing_id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit
+            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee
         )
         SELECT 
             id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit
+            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee
         FROM listing 
         WHERE id = $1
         "#,
@@ -463,9 +484,11 @@ pub async fn update_listing_with_conn(
             days_between_bookings = COALESCE($22, days_between_bookings),
             commission_pct = COALESCE($23, commission_pct),
             cleaning_fee = COALESCE($24, cleaning_fee),
-            damage_deposit = COALESCE($25, damage_deposit)
+            damage_deposit = COALESCE($25, damage_deposit),
+            guests_included = COALESCE($26, guests_included),
+            extra_guest_fee = COALESCE($27, extra_guest_fee)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee
         "#,
         id,
         updated_listing_data.name,
@@ -492,6 +515,8 @@ pub async fn update_listing_with_conn(
         updated_listing_data.commission_pct,
         updated_listing_data.cleaning_fee,
         updated_listing_data.damage_deposit,
+        updated_listing_data.guests_included,
+        updated_listing_data.extra_guest_fee,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -962,6 +987,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
 
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -1002,6 +1029,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
 
         let result = create_listing(&mut *tx, &new_listing).await;
@@ -1042,6 +1071,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -1093,6 +1124,8 @@ mod tests {
                 commission_pct: Some(dec!(0.0000)),
                 cleaning_fee: None,
                 damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
             };
             let created = create_listing(&mut *tx, &listing).await.unwrap();
             created_ids.push(created.id);
@@ -1168,6 +1201,8 @@ mod tests {
                 commission_pct: Some(dec!(0.0000)),
                 cleaning_fee: None,
                 damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
             };
             create_listing(&mut *tx, &listing).await.unwrap();
         }
@@ -1233,6 +1268,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -1262,6 +1299,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -1291,6 +1330,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -1384,6 +1425,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 
@@ -1513,6 +1556,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         create_listing(&mut *tx, &l1).await.unwrap();
 
@@ -1542,6 +1587,8 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         create_listing(&mut *tx, &l2).await.unwrap();
 
@@ -1608,13 +1655,17 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: Some(dec!(75.00)),
             damage_deposit: Some(dec!(300.00)),
+            guests_included: Some(2),
+            extra_guest_fee: Some(dec!(25.00)),
         };
 
         let created = create_listing(&mut *tx, &new_listing).await.unwrap();
         assert_eq!(created.cleaning_fee, dec!(75.00));
         assert_eq!(created.damage_deposit, dec!(300.00));
+        assert_eq!(created.guests_included, 2);
+        assert_eq!(created.extra_guest_fee, dec!(25.00));
 
-        // Defaulting test (None defaults to 0.00)
+        // Defaulting test (None defaults to 0.00 / 1)
         let no_fees_listing = NewListing {
             name: format!("No Fees Villa {}", suffix),
             user_id,
@@ -1640,14 +1691,20 @@ mod tests {
             commission_pct: Some(dec!(0.0000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let created_no_fees = create_listing(&mut *tx, &no_fees_listing).await.unwrap();
         assert_eq!(created_no_fees.cleaning_fee, dec!(0.00));
         assert_eq!(created_no_fees.damage_deposit, dec!(0.00));
+        assert_eq!(created_no_fees.guests_included, 1);
+        assert_eq!(created_no_fees.extra_guest_fee, dec!(0.00));
 
         let update_data = UpdatedListing {
             cleaning_fee: Some(dec!(120.00)),
             damage_deposit: Some(dec!(500.00)),
+            guests_included: Some(4),
+            extra_guest_fee: Some(dec!(35.00)),
             ..Default::default()
         };
         let updated = update_listing_with_conn(&mut tx, created.id, &update_data)
@@ -1655,5 +1712,15 @@ mod tests {
             .unwrap();
         assert_eq!(updated.cleaning_fee, dec!(120.00));
         assert_eq!(updated.damage_deposit, dec!(500.00));
+        assert_eq!(updated.guests_included, 4);
+        assert_eq!(updated.extra_guest_fee, dec!(35.00));
+
+        // Verify guests_included > max_guests fails
+        let invalid_update = UpdatedListing {
+            guests_included: Some(10),
+            ..Default::default()
+        };
+        let invalid_res = update_listing_with_conn(&mut tx, created.id, &invalid_update).await;
+        assert!(matches!(invalid_res, Err(DbError::ValidationError(_))));
     }
 }

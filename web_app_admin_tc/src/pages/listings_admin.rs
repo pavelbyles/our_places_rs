@@ -290,6 +290,8 @@ async fn execute_create_listing(
             .or_else(|| Some(Decimal::new(1000, 4))),
         cleaning_fee: payload.cleaning_fee,
         damage_deposit: payload.damage_deposit,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     api.create_listing(&new_req)

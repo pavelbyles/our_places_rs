@@ -544,6 +544,10 @@ pub struct Listing {
     pub commission_pct: Decimal,
     pub cleaning_fee: Decimal,
     pub damage_deposit: Decimal,
+    /// Number of guests included in the base nightly rate.
+    pub guests_included: i32,
+    /// Fee per extra guest per night above `guests_included` (in `base_currency`).
+    pub extra_guest_fee: Decimal,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -580,6 +584,10 @@ pub struct ListingWithOwner {
     pub commission_pct: Decimal,
     pub cleaning_fee: Decimal,
     pub damage_deposit: Decimal,
+    /// Number of guests included in the base nightly rate.
+    pub guests_included: i32,
+    /// Fee per extra guest per night above `guests_included` (in `base_currency`).
+    pub extra_guest_fee: Decimal,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -618,6 +626,10 @@ pub struct NewListing {
     pub commission_pct: Option<Decimal>,
     pub cleaning_fee: Option<Decimal>,
     pub damage_deposit: Option<Decimal>,
+    /// Optional number of guests included in base rate (defaults to `1`).
+    pub guests_included: Option<i32>,
+    /// Optional fee per extra guest per night above `guests_included` (defaults to `0.00`).
+    pub extra_guest_fee: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Validate, Default)]
@@ -659,6 +671,10 @@ pub struct UpdatedListing {
     pub commission_pct: Option<Decimal>,
     pub cleaning_fee: Option<Decimal>,
     pub damage_deposit: Option<Decimal>,
+    /// Optional updated number of guests included in base rate.
+    pub guests_included: Option<i32>,
+    /// Optional updated fee per extra guest per night.
+    pub extra_guest_fee: Option<Decimal>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]

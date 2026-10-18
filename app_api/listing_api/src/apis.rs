@@ -94,6 +94,7 @@ pub async fn get_listings(
         for listing in &mut response {
             if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
                 listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
+                listing.extra_guest_fee = listing.extra_guest_fee.map(|p| (p * rate).round_dp(2));
                 listing.base_currency = final_curr.clone();
             }
         }
@@ -150,6 +151,10 @@ async fn get_listing_by_id(
                 .listing
                 .price_per_night
                 .map(|p| (p * rate).round_dp(2));
+            response.listing.extra_guest_fee = response
+                .listing
+                .extra_guest_fee
+                .map(|p| (p * rate).round_dp(2));
             response.listing.base_currency = final_curr;
         }
     }
@@ -182,6 +187,16 @@ async fn create_listing(
 ) -> Result<impl Responder, ApiError> {
     let req_data = new_listing.into_inner();
     req_data.validate()?;
+
+    if req_data.guests_included > req_data.max_guests {
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "guests_included",
+            validator::ValidationError::new("guests_included_exceeds_max_guests")
+                .with_message("guests_included cannot exceed max_guests.".into()),
+        );
+        return Err(ApiError::ValidationError(errors));
+    }
 
     let structure_type = StructureType::from_str(&req_data.listing_structure).map_err(|_| {
         let mut errors = validator::ValidationErrors::new();
@@ -225,6 +240,8 @@ async fn create_listing(
             commission_pct: req_data.commission_pct,
             cleaning_fee: req_data.cleaning_fee,
             damage_deposit: req_data.damage_deposit,
+            guests_included: Some(req_data.guests_included),
+            extra_guest_fee: req_data.extra_guest_fee,
         };
 
         match db_listing::create_listing(pool.get_ref(), &listing).await {
@@ -343,6 +360,8 @@ async fn update_listing(
         commission_pct: req_data.commission_pct,
         cleaning_fee: req_data.cleaning_fee,
         damage_deposit: req_data.damage_deposit,
+        guests_included: req_data.guests_included,
+        extra_guest_fee: req_data.extra_guest_fee,
     };
 
     let updated_listing =

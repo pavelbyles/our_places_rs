@@ -211,6 +211,8 @@ fn test_listing_23_fields_coordinate_and_price_boundaries() {
         commission_pct: Some(dec!(0.1000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     assert!(req.price_per_night.unwrap() > Decimal::ZERO);
@@ -372,6 +374,8 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         commission_pct: Some(dec!(0.1000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     let listing_a2 = ListingResponse {
@@ -406,6 +410,8 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         commission_pct: Some(dec!(0.1000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     let listing_b1 = ListingResponse {
@@ -440,6 +446,8 @@ fn test_host_dashboard_listing_and_kpi_scoping() {
         commission_pct: Some(dec!(0.1000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     let all_listings = vec![listing_a1.clone(), listing_a2.clone(), listing_b1.clone()];
