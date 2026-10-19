@@ -10,6 +10,8 @@ pub mod currency;
 pub mod email_outbox;
 /// Unified database error types.
 pub mod error;
+/// Foreign exchange rate queries with direct and inverse resolution.
+pub mod exchange_rate;
 /// Listing and property management models and queries.
 pub mod listing;
 /// Core database entity models and DTOs.
@@ -18,10 +20,14 @@ pub mod models;
 pub mod notification_log;
 /// Host financial earnings and payout ledger.
 pub mod payout_ledger;
+/// Bilateral reservation change requests and lifecycle operations.
+pub mod reservation_change;
 /// Guest reviews and verification tokens.
 pub mod review;
 /// Session store and authentication token management.
 pub mod sessions;
+/// Statutory tax documents and compliance invoicing.
+pub mod tax_document;
 /// User account and profile operations.
 pub mod user;
 

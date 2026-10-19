@@ -1,6 +1,6 @@
 use crate::get_api_client;
 use serde::{Deserialize, Serialize};
-use topcoat::context::Cx;
+use topcoat::context::{Cx, try_request_context};
 use uuid::Uuid;
 
 /// Strongly-typed authenticated user context for server-side rendering (SSR).
@@ -101,6 +101,7 @@ pub fn token_hash_to_hex(hash: &topcoat::session::TokenHash) -> String {
 
 /// Fetches and touches active admin session, refreshing client cookie and extending DB TTL.
 pub async fn get_admin_session(cx: &Cx) -> Option<AuthUser> {
+    try_request_context::<topcoat::session::SessionState>(cx)?;
     if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
         let hash_hex = token_hash_to_hex(&token_hash);
         let api = get_api_client(cx);
@@ -121,6 +122,7 @@ pub async fn get_admin_session(cx: &Cx) -> Option<AuthUser> {
 
 /// Fetches and touches active guest session, refreshing client cookie and extending DB TTL.
 pub async fn get_guest_session(cx: &Cx) -> Option<AuthUser> {
+    try_request_context::<topcoat::session::SessionState>(cx)?;
     if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
         let hash_hex = token_hash_to_hex(&token_hash);
         let api = get_api_client(cx);

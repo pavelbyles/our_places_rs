@@ -17,7 +17,46 @@
       <p style="margin: 0 0 8px 0;"><strong>Confirmation Code:</strong> <span style="font-family: monospace; font-size: 16px; color: #0284c7;">{{confirmation_code}}</span></p>
       <p style="margin: 0 0 8px 0;"><strong>Check-in:</strong> {{date_from}}</p>
       <p style="margin: 0 0 8px 0;"><strong>Check-out:</strong> {{date_to}}</p>
-      <p style="margin: 0;"><strong>Total Paid:</strong> {{currency}} {{total_price}}</p>
+    </div>
+
+    <h3 style="color: #0f172a; margin-top: 24px; margin-bottom: 12px; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Price Breakdown & Statutory Tax Summary</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b; font-size: 12px; text-transform: uppercase;">
+          <th style="padding: 8px 0;">Description</th>
+          <th style="padding: 8px 0; text-align: right;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0;">Accommodation (Net)</td>
+          <td style="padding: 8px 0; text-align: right;">{{currency}} {{accommodation_net}}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0;">Departure Cleaning Fee</td>
+          <td style="padding: 8px 0; text-align: right;">{{currency}} {{cleaning_fee}}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0;">Jamaican GCT ({{tax_rate}}%)</td>
+          <td style="padding: 8px 0; text-align: right;">{{currency}} {{tax_amount}}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0;">Platform & Service Fee</td>
+          <td style="padding: 8px 0; text-align: right;">{{currency}} {{platform_fee}}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0;">Security Damage Deposit (Held)</td>
+          <td style="padding: 8px 0; text-align: right;">{{currency}} {{damage_deposit}}</td>
+        </tr>
+        <tr style="font-weight: bold; border-top: 2px solid #0f172a;">
+          <td style="padding: 12px 0; font-size: 15px;">Total Paid</td>
+          <td style="padding: 12px 0; text-align: right; font-size: 15px; color: #0284c7;">{{currency}} {{total_price}}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="{{receipt_url}}" style="background-color: #0284c7; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; font-size: 14px;">View Payment Receipt</a>
     </div>
 
     <p style="color: #64748b; font-size: 14px;">Your digital pre-arrival guide containing WiFi credentials and property access details will be sent 48 hours prior to check-in.</p>

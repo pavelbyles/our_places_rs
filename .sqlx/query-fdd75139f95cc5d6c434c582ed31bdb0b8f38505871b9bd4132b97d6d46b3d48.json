@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM booking_history WHERE booking_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fdd75139f95cc5d6c434c582ed31bdb0b8f38505871b9bd4132b97d6d46b3d48"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM tax_document WHERE booking_id = $1 OR booking_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2287136d1af7e5ca18862befcf14f78a24463539b41fd3c6e4ef0d5ea4552855"
+}

@@ -1,0 +1,252 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id,\n            booking_id,\n            listing_id,\n            initiated_by_id,\n            initiated_by_role as \"initiated_by_role: ChangeInitiatorRole\",\n            status as \"status: ReservationChangeStatus\",\n            previous_date_from,\n            previous_date_to,\n            proposed_date_from,\n            proposed_date_to,\n            previous_number_of_persons,\n            proposed_number_of_persons,\n            proposed_num_adults,\n            proposed_num_children,\n            proposed_num_infants,\n            proposed_num_pets,\n            currency,\n            previous_total_price,\n            proposed_total_price,\n            balance_due,\n            previous_net_payout,\n            proposed_net_payout,\n            host_payout_delta,\n            pricing_snapshot as \"pricing_snapshot: Json<ReservationChangePricingSnapshot>\",\n            settlement_status as \"settlement_status: ChangeSettlementStatus\",\n            gateway_reference,\n            reason,\n            responder_id,\n            response_note,\n            responded_at,\n            expires_at_date,\n            created_at,\n            updated_at\n        FROM reservation_change_request\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "initiated_by_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "initiated_by_role: ChangeInitiatorRole",
+        "type_info": {
+          "Custom": {
+            "name": "change_initiator_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "status: ReservationChangeStatus",
+        "type_info": {
+          "Custom": {
+            "name": "reservation_change_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "approved",
+                "declined",
+                "cancelled",
+                "expired"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "previous_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "previous_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "proposed_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "proposed_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "previous_number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "proposed_number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "proposed_num_adults",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "proposed_num_children",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "proposed_num_infants",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "proposed_num_pets",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 16,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "previous_total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 18,
+        "name": "proposed_total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 19,
+        "name": "balance_due",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 20,
+        "name": "previous_net_payout",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 21,
+        "name": "proposed_net_payout",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 22,
+        "name": "host_payout_delta",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 23,
+        "name": "pricing_snapshot: Json<ReservationChangePricingSnapshot>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 24,
+        "name": "settlement_status: ChangeSettlementStatus",
+        "type_info": {
+          "Custom": {
+            "name": "change_settlement_status",
+            "kind": {
+              "Enum": [
+                "not_required",
+                "pending_charge",
+                "charged",
+                "pending_refund",
+                "refunded",
+                "failed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "gateway_reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 26,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 27,
+        "name": "responder_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 28,
+        "name": "response_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 29,
+        "name": "responded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 30,
+        "name": "expires_at_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 31,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 32,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2c25ce1d67e0c7cb178c08e95cb8615e000ab2cd0bbb58472f48c5e5bc9ccb5d"
+}

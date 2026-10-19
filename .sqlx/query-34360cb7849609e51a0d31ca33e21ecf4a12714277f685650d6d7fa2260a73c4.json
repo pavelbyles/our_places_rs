@@ -1,0 +1,213 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE booking\n        SET date_from = $1,\n            date_to = $2,\n            number_of_persons = $3,\n            metadata = $4,\n            daily_rate = $5,\n            total_days = $6,\n            sub_total_price = $7,\n            discount_value = $8,\n            tax_value = $9,\n            fee_breakdown = $10,\n            total_price = $11,\n            cleaning_fee = $12,\n            damage_deposit = $13,\n            platform_fee = $14,\n            tax_rate = $15,\n            updated_at = $16\n        WHERE id = $17\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\",\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "status: BookingStatus",
+        "type_info": {
+          "Custom": {
+            "name": "booking_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "confirmed",
+                "cancelled",
+                "completed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Bpchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "daily_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "total_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "sub_total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "discount_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 13,
+        "name": "tax_value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 14,
+        "name": "fee_breakdown: Json<Vec<FeeItem>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 15,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 16,
+        "name": "cancellation_policy: CancellationPolicy",
+        "type_info": {
+          "Custom": {
+            "name": "cancellation_policy",
+            "kind": {
+              "Enum": [
+                "flexible",
+                "moderate",
+                "strict",
+                "firm",
+                "limited"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "metadata: Json<crate::models::BookingMetadata>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
+        "name": "door_access_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "cleaning_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 20,
+        "name": "damage_deposit",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 21,
+        "name": "platform_fee",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 22,
+        "name": "tax_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 23,
+        "name": "exchange_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 24,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 25,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date",
+        "Int4",
+        "Jsonb",
+        "Numeric",
+        "Int4",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Jsonb",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "34360cb7849609e51a0d31ca33e21ecf4a12714277f685650d6d7fa2260a73c4"
+}

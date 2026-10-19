@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE reservation_change_request\n        SET settlement_status = 'failed'::change_settlement_status,\n            updated_at = NOW()\n        WHERE id = $1 AND status = 'pending'::reservation_change_status\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4032791dff79e166668443de69d7b717261d4ee9c4cbd46905edd5f30ee41c5a"
+}

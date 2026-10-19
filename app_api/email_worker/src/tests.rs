@@ -49,6 +49,38 @@ async fn test_render_email_body_templates() {
 }
 
 #[tokio::test]
+async fn test_render_booking_confirmation_guest_itemized_gct_and_receipt_link() {
+    let payload = serde_json::json!({
+        "confirmation_code": "BK-100",
+        "listing_name": "Seaside Sanctuary Villa",
+        "guest_name": "John Doe",
+        "date_from": "2026-11-01",
+        "date_to": "2026-11-06",
+        "total_price": "1725.00",
+        "currency": "USD",
+        "accommodation_net": "1000.00",
+        "cleaning_fee": "150.00",
+        "tax_rate": "0.1500",
+        "tax_amount": "172.50",
+        "platform_fee": "102.50",
+        "damage_deposit": "300.00",
+        "receipt_url": "http://localhost:8080/bookings/00000000-0000-0000-0000-000000000001/documents/REC-2026-BK-100"
+    });
+    let html = render_email_body("booking_confirmation_guest", &payload);
+    assert!(html.contains("BK-100"));
+    assert!(html.contains("Seaside Sanctuary Villa"));
+    assert!(html.contains("USD 1000.00"));
+    assert!(html.contains("USD 150.00"));
+    assert!(html.contains("15%"));
+    assert!(html.contains("USD 172.50"));
+    assert!(html.contains("USD 102.50"));
+    assert!(html.contains("USD 300.00"));
+    assert!(html.contains("USD 1725.00"));
+    assert!(html.contains("http://localhost:8080/bookings/00000000-0000-0000-0000-000000000001/documents/REC-2026-BK-100"));
+    assert!(html.contains("View Payment Receipt"));
+}
+
+#[tokio::test]
 async fn test_load_template_from_external_file() {
     let content = load_template("user_verification_otp.html");
     assert!(content.contains("Welcome to Our Places!"));

@@ -32,6 +32,8 @@ db_core.workspace = true
 api_core.workspace = true
 actix-web.workspace = true
 common.workspace = true
+subtle = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [

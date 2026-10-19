@@ -6,8 +6,7 @@ use topcoat::{
     session::{RouterBuilderSessionExt, SessionConfig, cookie::CookieTokenStore},
 };
 
-mod layout;
-mod pages;
+use web_app_tc::layout;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

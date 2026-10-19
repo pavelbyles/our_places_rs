@@ -7,6 +7,7 @@ use crate::models::{
     SessionResponse, TransferBookingRequest, UpdateUserRequest, UpdatedBookingRequest,
     UserResponse,
 };
+use crate::tax_document::TaxDocumentResponse;
 
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
@@ -355,12 +356,25 @@ pub async fn get_booking_by_id(id: Uuid, currency: Option<&str>) -> Result<Booki
 }
 
 pub async fn update_booking(id: Uuid, req: &UpdatedBookingRequest) -> Result<BookingResponse> {
+    update_booking_with_auth(id, req, None).await
+}
+
+pub async fn update_booking_with_auth(
+    id: Uuid,
+    req: &UpdatedBookingRequest,
+    user_jwt: Option<&str>,
+) -> Result<BookingResponse> {
     let api_url = booking_api_url();
-    let audience = booking_api_audience();
     let url = format!("{}/api/v1/bookings/{}", api_url, id);
 
-    let res = get_client()
-        .patch(&url, &audience, req)
+    let client = reqwest::Client::new();
+    let mut request = client.patch(&url).json(req);
+    if let Some(token) = user_jwt {
+        request = request.header("Authorization", format!("Bearer {}", token));
+    }
+
+    let res = request
+        .send()
         .await
         .context("Failed to connect to booking service")?;
 
@@ -373,6 +387,31 @@ pub async fn update_booking(id: Uuid, req: &UpdatedBookingRequest) -> Result<Boo
     res.json::<BookingResponse>()
         .await
         .context("Failed to parse booking response")
+}
+
+pub async fn get_cancellation_quote(id: Uuid) -> Result<crate::cancellation::RefundQuote> {
+    let api_url = booking_api_url();
+    let audience = booking_api_audience();
+    let url = format!("{}/api/v1/bookings/{}/cancellation-quote", api_url, id);
+
+    let res = get_client()
+        .get(&url, &audience)
+        .await
+        .context("Failed to connect to booking service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!(
+            "Failed to get cancellation quote ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    res.json::<crate::cancellation::RefundQuote>()
+        .await
+        .context("Failed to parse cancellation quote response")
 }
 
 pub async fn delete_booking(id: Uuid) -> Result<()> {
@@ -566,6 +605,238 @@ pub async fn mark_booking_messages_read(id: Uuid) -> Result<MarkMessagesReadResp
     res.json::<MarkMessagesReadResponse>()
         .await
         .context("Failed to parse mark booking messages read response")
+}
+
+pub async fn get_booking_document_by_number(
+    booking_id: Uuid,
+    document_number: &str,
+    user_jwt: Option<&str>,
+) -> Result<TaxDocumentResponse> {
+    let api_url = booking_api_url();
+    let url = format!(
+        "{}/api/v1/bookings/{}/documents/{}",
+        api_url, booking_id, document_number
+    );
+    let client = reqwest::Client::new();
+    let mut req = client.get(&url);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to fetch tax document ({}): {}", status, err_text);
+    }
+    res.json::<TaxDocumentResponse>()
+        .await
+        .context("Failed to parse tax document response")
+}
+
+pub async fn list_booking_documents(
+    booking_id: Uuid,
+    user_jwt: Option<&str>,
+) -> Result<Vec<TaxDocumentResponse>> {
+    let api_url = booking_api_url();
+    let url = format!("{}/api/v1/bookings/{}/documents", api_url, booking_id);
+    let client = reqwest::Client::new();
+    let mut req = client.get(&url);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to list tax documents ({}): {}", status, err_text);
+    }
+    res.json::<Vec<TaxDocumentResponse>>()
+        .await
+        .context("Failed to parse tax documents response")
+}
+
+fn extract_api_error_message(err_text: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(err_text)
+        .ok()
+        .and_then(|v| {
+            v.get("message")
+                .or_else(|| v.get("error"))
+                .and_then(|m| m.as_str())
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| err_text.to_string())
+}
+
+/// Requests a live pricing & payout quote for a proposed reservation change.
+pub async fn quote_reservation_change(
+    booking_id: Uuid,
+    body: &crate::models::ReservationChangeQuoteRequest,
+    user_jwt: Option<&str>,
+) -> Result<crate::models::ReservationChangeQuoteResponse> {
+    let api_url = booking_api_url();
+    let url = format!("{}/api/v1/bookings/{}/change-quote", api_url, booking_id);
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url).json(body);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("{}", extract_api_error_message(&err_text));
+    }
+    res.json::<crate::models::ReservationChangeQuoteResponse>()
+        .await
+        .context("Failed to parse reservation change quote response")
+}
+
+/// Submits a bilateral reservation change request awaiting counterparty approval.
+pub async fn create_reservation_change_request(
+    booking_id: Uuid,
+    body: &crate::models::CreateReservationChangeRequest,
+    user_jwt: Option<&str>,
+) -> Result<crate::models::ReservationChangeRequestResponse> {
+    let api_url = booking_api_url();
+    let url = format!("{}/api/v1/bookings/{}/change-requests", api_url, booking_id);
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url).json(body);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("{}", extract_api_error_message(&err_text));
+    }
+    res.json::<crate::models::ReservationChangeRequestResponse>()
+        .await
+        .context("Failed to parse reservation change request response")
+}
+
+/// Lists all reservation change requests for a booking.
+pub async fn list_reservation_change_requests(
+    booking_id: Uuid,
+    user_jwt: Option<&str>,
+) -> Result<Vec<crate::models::ReservationChangeRequestResponse>> {
+    let api_url = booking_api_url();
+    let url = format!("{}/api/v1/bookings/{}/change-requests", api_url, booking_id);
+    let client = reqwest::Client::new();
+    let mut req = client.get(&url);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("{}", extract_api_error_message(&err_text));
+    }
+    res.json::<Vec<crate::models::ReservationChangeRequestResponse>>()
+        .await
+        .context("Failed to parse reservation change requests list")
+}
+
+/// Approves a pending reservation change request as the required counterparty.
+pub async fn approve_reservation_change_request(
+    booking_id: Uuid,
+    request_id: Uuid,
+    body: &crate::models::RespondReservationChangeRequest,
+    user_jwt: Option<&str>,
+) -> Result<crate::models::ReservationChangeRequestResponse> {
+    let api_url = booking_api_url();
+    let url = format!(
+        "{}/api/v1/bookings/{}/change-requests/{}/approve",
+        api_url, booking_id, request_id
+    );
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url).json(body);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("{}", extract_api_error_message(&err_text));
+    }
+    res.json::<crate::models::ReservationChangeRequestResponse>()
+        .await
+        .context("Failed to parse approved reservation change response")
+}
+
+/// Declines a pending reservation change request as the required counterparty.
+pub async fn decline_reservation_change_request(
+    booking_id: Uuid,
+    request_id: Uuid,
+    body: &crate::models::RespondReservationChangeRequest,
+    user_jwt: Option<&str>,
+) -> Result<crate::models::ReservationChangeRequestResponse> {
+    let api_url = booking_api_url();
+    let url = format!(
+        "{}/api/v1/bookings/{}/change-requests/{}/decline",
+        api_url, booking_id, request_id
+    );
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url).json(body);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("{}", extract_api_error_message(&err_text));
+    }
+    res.json::<crate::models::ReservationChangeRequestResponse>()
+        .await
+        .context("Failed to parse declined reservation change response")
+}
+
+/// Withdraws (cancels) a pending reservation change request as the initiator.
+pub async fn cancel_reservation_change_request(
+    booking_id: Uuid,
+    request_id: Uuid,
+    user_jwt: Option<&str>,
+) -> Result<crate::models::ReservationChangeRequestResponse> {
+    let api_url = booking_api_url();
+    let url = format!(
+        "{}/api/v1/bookings/{}/change-requests/{}/cancel",
+        api_url, booking_id, request_id
+    );
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url);
+    if let Some(token) = user_jwt {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let res = req
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    if !res.status().is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("{}", extract_api_error_message(&err_text));
+    }
+    res.json::<crate::models::ReservationChangeRequestResponse>()
+        .await
+        .context("Failed to parse cancelled reservation change response")
 }
 
 pub async fn get_host_payout_ledger(

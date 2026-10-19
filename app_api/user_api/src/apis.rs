@@ -326,6 +326,7 @@ async fn create_user(
                         );
                         return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
                     }
+                    _ => {}
                 }
                 return Err(ApiError::Database(e));
             }
@@ -664,6 +665,7 @@ async fn update_user(
                         );
                         return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
                     }
+                    _ => {}
                 }
                 return Err(ApiError::Database(e));
             }

@@ -108,6 +108,10 @@ async fn test_get_listing_by_id_success() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -205,6 +209,10 @@ async fn test_create_listing_validation_error() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     let req = test::TestRequest::post()
@@ -249,6 +257,10 @@ async fn test_delete_listing() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -300,6 +312,10 @@ async fn test_delete_listing() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -355,6 +371,10 @@ async fn test_delete_listing_hard_forbidden() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -419,6 +439,10 @@ async fn test_xml_serialization_of_vec() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -460,6 +484,10 @@ async fn test_update_listing_multiple_times() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -550,6 +578,10 @@ async fn test_get_listings_with_filter() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -578,6 +610,10 @@ async fn test_get_listings_with_filter() {
         minimum_stay: 1,
         days_between_bookings: 0,
         commission_pct: Some(dec!(0.0000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await
@@ -610,6 +646,178 @@ async fn test_get_listings_with_filter() {
     let body: Vec<ListingResponse> = test::read_body_json(resp).await;
     assert_eq!(body.len(), 1);
     assert_eq!(body[0].name, "Apartment in Paris");
+}
+
+#[actix_web::test]
+async fn test_create_and_update_listing_with_fees_endpoint() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let user_id = create_test_user(&mut *conn).await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    // 1. Create with fees
+    let listing_with_fees = common::models::NewListingRequest {
+        name: "Fee Villa".to_string(),
+        user_id,
+        description: None,
+        listing_structure: "Villa".to_string(),
+        country: "Jamaica".to_string(),
+        price_per_night: Some(dec!(250.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 4,
+        bedrooms: 2,
+        beds: 2,
+        full_bathrooms: 2,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: Some("Montego Bay".to_string()),
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
+        commission_pct: None,
+        cleaning_fee: Some(dec!(75.00)),
+        damage_deposit: Some(dec!(200.00)),
+        guests_included: 2,
+        extra_guest_fee: Some(dec!(30.00)),
+    };
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&listing_with_fees)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let created: ListingResponse = test::read_body_json(resp).await;
+    assert_eq!(created.cleaning_fee, Some(dec!(75.00)));
+    assert_eq!(created.damage_deposit, Some(dec!(200.00)));
+    assert_eq!(created.guests_included, 2);
+    assert_eq!(created.extra_guest_fee, Some(dec!(30.00)));
+
+    // 2. Create with fees disabled / None -> defaults to 0.00 / 1
+    let listing_no_fees = common::models::NewListingRequest {
+        name: "Zero Fee Apartment".to_string(),
+        user_id,
+        description: None,
+        listing_structure: "Apartment".to_string(),
+        country: "Jamaica".to_string(),
+        price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        full_bathrooms: 1,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: None,
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
+        commission_pct: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
+    };
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&listing_no_fees)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let created_no_fees: ListingResponse = test::read_body_json(resp).await;
+    assert_eq!(created_no_fees.cleaning_fee, Some(dec!(0.00)));
+    assert_eq!(created_no_fees.damage_deposit, Some(dec!(0.00)));
+    assert_eq!(created_no_fees.guests_included, 1);
+    assert_eq!(created_no_fees.extra_guest_fee, Some(dec!(0.00)));
+
+    // 3. Update fees via PATCH
+    let update_req = UpdatedListingRequest {
+        cleaning_fee: Some(dec!(100.00)),
+        damage_deposit: Some(dec!(350.00)),
+        guests_included: Some(3),
+        extra_guest_fee: Some(dec!(45.00)),
+        ..Default::default()
+    };
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/listings/{}", created.id))
+        .set_json(&update_req)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let updated: ListingResponse = test::read_body_json(resp).await;
+    assert_eq!(updated.cleaning_fee, Some(dec!(100.00)));
+    assert_eq!(updated.damage_deposit, Some(dec!(350.00)));
+    assert_eq!(updated.guests_included, 3);
+    assert_eq!(updated.extra_guest_fee, Some(dec!(45.00)));
+
+    // 3b. Validation error: guests_included > max_guests on create
+    let invalid_guests_included = common::models::NewListingRequest {
+        guests_included: 5, // max_guests is 2
+        ..listing_no_fees.clone()
+    };
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&invalid_guests_included)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    // 4. Validation error: negative fee
+    let invalid_neg = common::models::NewListingRequest {
+        cleaning_fee: Some(dec!(-10.00)),
+        ..listing_no_fees.clone()
+    };
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&invalid_neg)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    // 5. Validation error: fee > 1,000,000
+    let invalid_large = common::models::NewListingRequest {
+        damage_deposit: Some(dec!(1000001.00)),
+        ..listing_no_fees.clone()
+    };
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&invalid_large)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    // 6. Validation error: scale > 2
+    let invalid_scale = common::models::NewListingRequest {
+        cleaning_fee: Some(Decimal::new(50005, 3)), // 50.005
+        ..listing_no_fees
+    };
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&invalid_scale)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
 }
 
 include!("apis_test_reviews.rs");

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT status as \"status: DbPayoutStatus\", exchange_rate, net_payout_amount\n        FROM host_payout_ledger\n        WHERE booking_id = $1\n        ORDER BY created_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: DbPayoutStatus",
+        "type_info": {
+          "Custom": {
+            "name": "payout_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "processing",
+                "paid",
+                "cancelled",
+                "refunded"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "exchange_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "net_payout_amount",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "45281d42789d9fb9c28b764413f8cb0ee0fe753c42b35f35ab8e08fae2111fbd"
+}

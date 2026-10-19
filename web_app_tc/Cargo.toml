@@ -3,6 +3,10 @@ name = "web_app_tc"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "web_app_tc"
+path = "src/lib.rs"
+
 [[bin]]
 name = "web_app_tc"
 path = "src/main.rs"
