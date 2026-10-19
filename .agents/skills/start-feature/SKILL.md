@@ -49,6 +49,6 @@ In the newly created worktree:
    ```
 
 ### Step 5: Handoff to Specification & Architecture Review
-Now that the active branch context is established in the worktree, run:
-$$\longrightarrow \text{\textbf{/create-spec-from-hl-req}}$$
-*(or activate the [`generate-spec`](file:///home/pav/code/our_places_rs-feat-76-update-agent-skills/.agents/skills/generate-spec/SKILL.md) skill)* to interview on design decisions via [`grill-me`](file:///home/pav/code/our_places_rs-feat-76-update-agent-skills/.agents/skills/grill-me/skill.md), run security/performance checks, and write `docs/specs/spec-<branch_name>.md`.
+Now that the active branch context is established in the worktree, activate the [`generate-spec`](../generate-spec/SKILL.md) skill:
+$$\longrightarrow \text{\textbf{generate-spec}}$$
+This will interview on design decisions via [`grill-me`](../grill-me/SKILL.md), execute performance and threat-modeling reviews, and write `docs/specs/spec-<branch_name>.md`.

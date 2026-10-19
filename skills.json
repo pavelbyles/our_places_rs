@@ -60,7 +60,7 @@
     {
       "id": "generate-spec",
       "name": "generate-spec",
-      "description": "Generate detailed feature specifications in docs/specs/spec-<branch>.md using GitHub issue context and codebase exploration.",
+      "description": "Extract requirements from a GitHub issue, cross-reference with ARCHITECTURE.md, interrogate design via grill-me, execute performance and threat-modeling reviews, and generate detailed technical specifications and test plans in docs/specs/spec-<branch>.md.",
       "path": "skills/generate-spec",
       "entrypoint": "skills/generate-spec/SKILL.md"
     },
@@ -88,7 +88,7 @@
     {
       "id": "monad-design",
       "name": "Monadic Design Specialist",
-      "description": "Design type-safe data pipelines, error flows, and functional domain models using Monads, Option/Result combinators, and Railway-Oriented Programming.",
+      "description": "Design type-safe data pipelines, error flows, and functional domain models using Monads, Option/Result combinators, and Railway-Oriented Programming. Consolidated into rust-core.",
       "path": "skills/monad-design",
       "entrypoint": "skills/monad-design/SKILL.md"
     },
@@ -130,7 +130,7 @@
     {
       "id": "rust-core",
       "name": "Rust Core Specialist",
-      "description": "Implement idiomatic, high-performance, panic-free Rust code using strict monadic error propagation and Option/Result combinators.",
+      "description": "Implement idiomatic, high-performance, panic-free Rust code using strict monadic error propagation, Option/Result combinators, Railway-Oriented Programming, and compile-time type safety.",
       "path": "skills/rust-core",
       "entrypoint": "skills/rust-core/SKILL.md"
     },
@@ -161,6 +161,13 @@
       "description": "Build Topcoat SSR web apps, view! templates, HTMX integration, and module routes in Rust.",
       "path": "skills/topcoat",
       "entrypoint": "skills/topcoat/SKILL.md"
+    },
+    {
+      "id": "type-state",
+      "name": "type-state",
+      "description": "Enforce compile-time correctness using the Typestate and Typestate Builder patterns for state machines, complex initialization, and sequential operations.",
+      "path": "skills/type-state",
+      "entrypoint": "skills/type-state/SKILL.md"
     },
     {
       "id": "vulnerability-analysis",

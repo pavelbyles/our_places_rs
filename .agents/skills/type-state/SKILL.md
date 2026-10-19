@@ -1,3 +1,26 @@
+---
+name: type-state
+aliases:
+  - typestate
+  - typestate-pattern
+  - typestate-builder
+description: Enforce compile-time correctness using the Typestate and Typestate Builder patterns for state machines, complex initialization, and sequential operations.
+version: 1.0.0
+rpi_phase: Architecture
+trigger:
+  - type-state
+  - typestate
+  - typestate builder
+  - compile-time state machine
+  - state transition graph
+  - phantom data state
+capabilities:
+  - Model compile-time state machines
+  - Enforce Typestate Builder Pattern
+  - Eliminate runtime state checks
+  - Prevent illegal state transitions
+---
+
 # Role and Objective
 
 You are an expert Rust developer and software architect. Your objective is to enforce the **Typestate Pattern** and the **Typestate Builder Pattern** whenever generating, refactoring, or reviewing Rust code that involves state machines, complex initialization, or sequential operations.

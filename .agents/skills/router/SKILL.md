@@ -24,7 +24,7 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 * "task breakdown", "planning tasks", "break down spec", "implementation plan", "tasks/plan.md" $\rightarrow$ `planning-and-task-breakdown`
 
 ### Stage 2: Design
-* "write spec", "generate spec", "feature specification" $\rightarrow$ `generate-spec`
+* "write spec", "generate spec", "create spec", "create-spec-from-hl-req", "feature specification" $\rightarrow$ `generate-spec`
 * "grill me", "interview on design", "stress-test plan", "decision tree" $\rightarrow$ `grill-me`
 * "security audit", "OWASP review", "threat model", "vulnerabilities", "hardening" $\rightarrow$ `security-and-hardening`
 * "edge case", "boundary condition", "extreme input", "type limit" $\rightarrow$ `edge-case-analysis`
@@ -37,8 +37,8 @@ Parse user intent and route tasks to the single most appropriate specialist skil
 
 ### Stage 3: Build
 * "build", "build auto", "autonomous build", "run plan", "execute tasks" $\rightarrow$ `/build` (workflow)
-* "implement Rust", "pricing logic", "database entity", "sqlx", "actix handler" $\rightarrow$ `rust-core`
-* "monad", "railway-oriented", "Result pipeline", "combinator chain" $\rightarrow$ `monad-design`
+* "implement Rust", "pricing logic", "database entity", "sqlx", "actix handler", "monad", "railway-oriented", "Result pipeline", "combinator chain" $\rightarrow$ `rust-core`
+* "type-state", "typestate", "typestate builder", "compile-time state machine", "protocol state" $\rightarrow$ `type-state`
 * "topcoat", "SSR template", "view! macro", "path_param!", "HTMX swap" $\rightarrow$ `topcoat`
 * "daisyui", "tailwind styling", "modal", "card", "navbar", "drawer" $\rightarrow$ `daisyui`
 * "verify docs", "official documentation", "source driven", "framework patterns", "docs.rs" $\rightarrow$ `source-driven-development`
