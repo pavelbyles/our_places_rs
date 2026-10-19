@@ -110,6 +110,8 @@ async fn test_get_listing_by_id_success() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -209,6 +211,8 @@ async fn test_create_listing_validation_error() {
         commission_pct: None,
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     let req = test::TestRequest::post()
@@ -255,6 +259,8 @@ async fn test_delete_listing() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -308,6 +314,8 @@ async fn test_delete_listing() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -365,6 +373,8 @@ async fn test_delete_listing_hard_forbidden() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -431,6 +441,8 @@ async fn test_xml_serialization_of_vec() {
         commission_pct: None,
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -474,6 +486,8 @@ async fn test_update_listing_multiple_times() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -566,6 +580,8 @@ async fn test_get_listings_with_filter() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -596,6 +612,8 @@ async fn test_get_listings_with_filter() {
         commission_pct: Some(dec!(0.0000)),
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await
@@ -675,6 +693,8 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         commission_pct: None,
         cleaning_fee: Some(dec!(75.00)),
         damage_deposit: Some(dec!(200.00)),
+        guests_included: 2,
+        extra_guest_fee: Some(dec!(30.00)),
     };
 
     let req = test::TestRequest::post()
@@ -686,8 +706,10 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
     let created: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(created.cleaning_fee, Some(dec!(75.00)));
     assert_eq!(created.damage_deposit, Some(dec!(200.00)));
+    assert_eq!(created.guests_included, 2);
+    assert_eq!(created.extra_guest_fee, Some(dec!(30.00)));
 
-    // 2. Create with fees disabled / None -> defaults to 0.00
+    // 2. Create with fees disabled / None -> defaults to 0.00 / 1
     let listing_no_fees = common::models::NewListingRequest {
         name: "Zero Fee Apartment".to_string(),
         user_id,
@@ -713,6 +735,8 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         commission_pct: None,
         cleaning_fee: None,
         damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
     };
 
     let req = test::TestRequest::post()
@@ -724,11 +748,15 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
     let created_no_fees: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(created_no_fees.cleaning_fee, Some(dec!(0.00)));
     assert_eq!(created_no_fees.damage_deposit, Some(dec!(0.00)));
+    assert_eq!(created_no_fees.guests_included, 1);
+    assert_eq!(created_no_fees.extra_guest_fee, Some(dec!(0.00)));
 
     // 3. Update fees via PATCH
     let update_req = UpdatedListingRequest {
         cleaning_fee: Some(dec!(100.00)),
         damage_deposit: Some(dec!(350.00)),
+        guests_included: Some(3),
+        extra_guest_fee: Some(dec!(45.00)),
         ..Default::default()
     };
     let req = test::TestRequest::patch()
@@ -740,6 +768,20 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
     let updated: ListingResponse = test::read_body_json(resp).await;
     assert_eq!(updated.cleaning_fee, Some(dec!(100.00)));
     assert_eq!(updated.damage_deposit, Some(dec!(350.00)));
+    assert_eq!(updated.guests_included, 3);
+    assert_eq!(updated.extra_guest_fee, Some(dec!(45.00)));
+
+    // 3b. Validation error: guests_included > max_guests on create
+    let invalid_guests_included = common::models::NewListingRequest {
+        guests_included: 5, // max_guests is 2
+        ..listing_no_fees.clone()
+    };
+    let req = test::TestRequest::post()
+        .uri("/api/v1/listings")
+        .set_json(&invalid_guests_included)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
 
     // 4. Validation error: negative fee
     let invalid_neg = common::models::NewListingRequest {

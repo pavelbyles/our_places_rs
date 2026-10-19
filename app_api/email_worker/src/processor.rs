@@ -64,6 +64,18 @@ pub fn load_template(filename: &str) -> String {
         "guest_host_message_notification.html" => {
             include_str!("../templates/guest_host_message_notification.html").to_string()
         }
+        "booking_completed_guest.html" => {
+            include_str!("../templates/booking_completed_guest.html").to_string()
+        }
+        "reservation_change_requested.html" => {
+            include_str!("../templates/reservation_change_requested.html").to_string()
+        }
+        "reservation_change_approved.html" => {
+            include_str!("../templates/reservation_change_approved.html").to_string()
+        }
+        "reservation_change_declined.html" => {
+            include_str!("../templates/reservation_change_declined.html").to_string()
+        }
         _ => include_str!("../templates/default_notification.html").to_string(),
     }
 }
@@ -315,6 +327,102 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{{message_text}}", message)
                 .replace("{message_text}", message)
         }
+        "reservation_change_requested" | "ReservationChangeRequested" => {
+            let template = load_template("reservation_change_requested.html");
+            let reason_raw = get_val("reason");
+            let reason_disp = if reason_raw.is_empty() {
+                "No additional note provided.".to_string()
+            } else {
+                escape_html(&reason_raw)
+            };
+            template
+                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
+                .replace("{{listing_name}}", &escape_html(&get_val("listing_name")))
+                .replace(
+                    "{{recipient_name}}",
+                    &escape_html(&get_val("recipient_name")),
+                )
+                .replace(
+                    "{{initiator_name}}",
+                    &escape_html(&get_val("initiator_name")),
+                )
+                .replace("{{initiated_by_role}}", &get_val("initiated_by_role"))
+                .replace("{{previous_date_from}}", &get_val("previous_date_from"))
+                .replace("{{previous_date_to}}", &get_val("previous_date_to"))
+                .replace("{{proposed_date_from}}", &get_val("proposed_date_from"))
+                .replace("{{proposed_date_to}}", &get_val("proposed_date_to"))
+                .replace(
+                    "{{previous_number_of_persons}}",
+                    &get_val("previous_number_of_persons"),
+                )
+                .replace(
+                    "{{proposed_number_of_persons}}",
+                    &get_val("proposed_number_of_persons"),
+                )
+                .replace("{{previous_total_price}}", &get_val("previous_total_price"))
+                .replace("{{proposed_total_price}}", &get_val("proposed_total_price"))
+                .replace("{{balance_due}}", &get_val("balance_due"))
+                .replace("{{currency}}", &get_val("currency"))
+                .replace("{{reason}}", &reason_disp)
+                .replace("{{action_url}}", &get_val("action_url"))
+        }
+        "reservation_change_approved" | "ReservationChangeApproved" => {
+            let template = load_template("reservation_change_approved.html");
+            let note_raw = get_val("response_note");
+            let note_disp = if note_raw.is_empty() {
+                "No additional note provided.".to_string()
+            } else {
+                escape_html(&note_raw)
+            };
+            template
+                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
+                .replace("{{listing_name}}", &escape_html(&get_val("listing_name")))
+                .replace(
+                    "{{recipient_name}}",
+                    &escape_html(&get_val("recipient_name")),
+                )
+                .replace(
+                    "{{responder_name}}",
+                    &escape_html(&get_val("responder_name")),
+                )
+                .replace("{{date_from}}", &get_val("date_from"))
+                .replace("{{date_to}}", &get_val("date_to"))
+                .replace("{{number_of_persons}}", &get_val("number_of_persons"))
+                .replace("{{total_price}}", &get_val("total_price"))
+                .replace("{{balance_due}}", &get_val("balance_due"))
+                .replace("{{currency}}", &get_val("currency"))
+                .replace("{{settlement_status}}", &get_val("settlement_status"))
+                .replace("{{response_note}}", &note_disp)
+                .replace("{{receipt_url}}", &get_val("receipt_url"))
+        }
+        "reservation_change_declined" | "ReservationChangeDeclined" => {
+            let template = load_template("reservation_change_declined.html");
+            let note_raw = get_val("response_note");
+            let note_disp = if note_raw.is_empty() {
+                "No additional note provided.".to_string()
+            } else {
+                escape_html(&note_raw)
+            };
+            template
+                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
+                .replace("{{listing_name}}", &escape_html(&get_val("listing_name")))
+                .replace(
+                    "{{recipient_name}}",
+                    &escape_html(&get_val("recipient_name")),
+                )
+                .replace(
+                    "{{responder_name}}",
+                    &escape_html(&get_val("responder_name")),
+                )
+                .replace("{{proposed_date_from}}", &get_val("proposed_date_from"))
+                .replace("{{proposed_date_to}}", &get_val("proposed_date_to"))
+                .replace(
+                    "{{proposed_number_of_persons}}",
+                    &get_val("proposed_number_of_persons"),
+                )
+                .replace("{{response_note}}", &note_disp)
+                .replace("{{booking_url}}", &get_val("booking_url"))
+        }
         _ => {
             let pretty_json = serde_json::to_string_pretty(payload).unwrap_or_default();
             let template = load_template("default_notification.html");
@@ -323,6 +431,15 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{payload}", &pretty_json)
         }
     }
+}
+
+fn escape_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
 }
 
 /// Processes an individual outbox email event with idempotency, exponential backoff, and delivery status tracking.
@@ -555,5 +672,84 @@ mod tests {
         assert!(body.contains("USD 50.00"));
         assert!(body.contains("USD 127.50"));
         assert!(body.contains("https://ourplaces.co/bookings/123/documents/INV-2026-COMP123"));
+    }
+
+    #[test]
+    fn test_render_reservation_change_templates() {
+        let requested_payload = serde_json::json!({
+            "booking_id": Uuid::new_v4(),
+            "change_request_id": Uuid::new_v4(),
+            "confirmation_code": "CHG1234",
+            "listing_name": "Villa Coral",
+            "recipient_name": "Marcus Host",
+            "initiator_name": "Elena Guest",
+            "initiated_by_role": "guest",
+            "previous_date_from": "2026-12-01",
+            "previous_date_to": "2026-12-04",
+            "proposed_date_from": "2026-12-01",
+            "proposed_date_to": "2026-12-06",
+            "previous_number_of_persons": 2,
+            "proposed_number_of_persons": 4,
+            "previous_total_price": "800.00",
+            "proposed_total_price": "1350.00",
+            "balance_due": "550.00",
+            "currency": "USD",
+            "reason": "Friends joining <script>alert(1)</script>",
+            "action_url": "https://ourplaces.co/admin/bookings"
+        });
+        let req_body = render_email_body("reservation_change_requested", &requested_payload);
+        assert!(req_body.contains("CHG1234"));
+        assert!(req_body.contains("Villa Coral"));
+        assert!(req_body.contains("Marcus Host"));
+        assert!(req_body.contains("Elena Guest"));
+        assert!(req_body.contains("2026-12-06"));
+        assert!(req_body.contains("USD 550.00"));
+        assert!(req_body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(!req_body.contains("{{"));
+        assert!(!req_body.contains("}}"));
+
+        let approved_payload = serde_json::json!({
+            "booking_id": Uuid::new_v4(),
+            "change_request_id": Uuid::new_v4(),
+            "confirmation_code": "CHG1234",
+            "listing_name": "Villa Coral",
+            "recipient_name": "Elena Guest",
+            "responder_name": "Marcus Host",
+            "date_from": "2026-12-01",
+            "date_to": "2026-12-06",
+            "number_of_persons": 4,
+            "total_price": "1350.00",
+            "balance_due": "550.00",
+            "currency": "USD",
+            "settlement_status": "charged",
+            "response_note": "Happy to host your friends!",
+            "receipt_url": "https://ourplaces.co/bookings/123/documents/REC-2026-CHG1234-R2"
+        });
+        let app_body = render_email_body("reservation_change_approved", &approved_payload);
+        assert!(app_body.contains("CHG1234"));
+        assert!(app_body.contains("Happy to host your friends!"));
+        assert!(app_body.contains("REC-2026-CHG1234-R2"));
+        assert!(!app_body.contains("{{"));
+        assert!(!app_body.contains("}}"));
+
+        let declined_payload = serde_json::json!({
+            "booking_id": Uuid::new_v4(),
+            "change_request_id": Uuid::new_v4(),
+            "confirmation_code": "CHG1234",
+            "listing_name": "Villa Coral",
+            "recipient_name": "Elena Guest",
+            "responder_name": "Marcus Host",
+            "proposed_date_from": "2026-12-01",
+            "proposed_date_to": "2026-12-06",
+            "proposed_number_of_persons": 4,
+            "response_note": "Maintenance scheduled after Dec 4",
+            "booking_url": "https://ourplaces.co/bookings"
+        });
+        let dec_body = render_email_body("reservation_change_declined", &declined_payload);
+        assert!(dec_body.contains("CHG1234"));
+        assert!(dec_body.contains("Maintenance scheduled after Dec 4"));
+        assert!(dec_body.contains("https://ourplaces.co/bookings"));
+        assert!(!dec_body.contains("{{"));
+        assert!(!dec_body.contains("}}"));
     }
 }

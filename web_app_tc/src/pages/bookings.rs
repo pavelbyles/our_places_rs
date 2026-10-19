@@ -1,5 +1,10 @@
 use chrono::Datelike;
-use common::models::{BookingResponse, UpdatedBookingRequest};
+use common::models::{
+    BookingResponse, ChangeInitiatorRole, CreateReservationChangeRequest,
+    ReservationChangeQuoteRequest, ReservationChangeQuoteResponse,
+    ReservationChangeRequestResponse, ReservationChangeStatus, RespondReservationChangeRequest,
+    UpdatedBookingRequest,
+};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use topcoat::{
@@ -32,6 +37,7 @@ fn generate_jwt_for_user(user_id: Uuid) -> String {
 }
 
 path_param!(id);
+path_param!(request_id);
 
 #[route(PATCH "/api/bookings/{id}")]
 pub async fn update_booking_api(
@@ -64,6 +70,127 @@ pub async fn get_cancellation_quote_api(
     let api = get_api_client(cx);
     let resp = api
         .get_cancellation_quote(id)
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-quote")]
+pub async fn quote_reservation_change_api(
+    cx: &Cx,
+    Json(payload): Json<ReservationChangeQuoteRequest>,
+) -> Result<Json<ReservationChangeQuoteResponse>> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .quote_reservation_change(id, &payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests")]
+pub async fn create_reservation_change_request_api(
+    cx: &Cx,
+    Json(payload): Json<CreateReservationChangeRequest>,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .create_reservation_change_request(id, &payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(GET "/api/bookings/{id}/change-requests")]
+pub async fn list_reservation_change_requests_api(
+    cx: &Cx,
+) -> Result<Json<Vec<ReservationChangeRequestResponse>>> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .list_reservation_change_requests(id, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests/{request_id}/approve")]
+pub async fn approve_reservation_change_request_api(
+    cx: &Cx,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let req_str: &str = path_param::<RequestId>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let req_id =
+        Uuid::parse_str(req_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let default_payload = RespondReservationChangeRequest::default();
+    let resp = api
+        .approve_reservation_change_request(id, req_id, &default_payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests/{request_id}/decline")]
+pub async fn decline_reservation_change_request_api(
+    cx: &Cx,
+    Json(payload): Json<RespondReservationChangeRequest>,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let req_str: &str = path_param::<RequestId>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let req_id =
+        Uuid::parse_str(req_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .decline_reservation_change_request(id, req_id, &payload, Some(&token))
+        .await
+        .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
+    Ok(Json(resp))
+}
+
+#[route(POST "/api/bookings/{id}/change-requests/{request_id}/cancel")]
+pub async fn cancel_reservation_change_request_api(
+    cx: &Cx,
+) -> Result<Json<ReservationChangeRequestResponse>> {
+    let user = web_app_common_tc::auth::get_guest_session(cx)
+        .await
+        .ok_or_else(|| web_app_common_tc::app_error("Unauthorized"))?;
+    let id_str: &str = path_param::<Id>(cx);
+    let req_str: &str = path_param::<RequestId>(cx);
+    let id = Uuid::parse_str(id_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let req_id =
+        Uuid::parse_str(req_str).map_err(|_| web_app_common_tc::app_error("Invalid UUID"))?;
+    let token = generate_jwt_for_user(user.id.unwrap_or_default());
+    let api = get_api_client(cx);
+    let resp = api
+        .cancel_reservation_change_request(id, req_id, Some(&token))
         .await
         .map_err(|e| web_app_common_tc::app_error(format!("Server error: {}", e)))?;
     Ok(Json(resp))
@@ -167,6 +294,15 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                             None
                         };
                         let unread_count = msgs_wrapper.as_ref().map(|w| w.unread_count).unwrap_or(0);
+                        let pending_change_req = if b.status.eq_ignore_ascii_case("confirmed") {
+                            api.list_reservation_change_requests(b.id, Some(&token))
+                                .await
+                                .unwrap_or_default()
+                                .into_iter()
+                                .find(|r| r.status == ReservationChangeStatus::Pending)
+                        } else {
+                            None
+                        };
 
                         let start_str = b.date_from.format("%b %d, %Y").to_string();
                         let end_str = b.date_to.format("%b %d, %Y").to_string();
@@ -220,6 +356,79 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                                     <span>(booked_on_str)</span>
                                 </div>
                             </div>
+
+                            if let Some(ref req) = pending_change_req {
+                                let req_id_str = req.id.to_string();
+                                let prop_dates = format!(
+                                    "{} – {} ({} nights, {} guests)",
+                                    req.proposed_date_from.format("%b %d, %Y"),
+                                    req.proposed_date_to.format("%b %d, %Y"),
+                                    (req.proposed_date_to - req.proposed_date_from).num_days(),
+                                    req.proposed_number_of_persons
+                                );
+                                let bal_label = if req.balance_due > rust_decimal::Decimal::ZERO {
+                                    format!("Extra Charge: {} {:.2}", req.currency, req.balance_due)
+                                } else if req.balance_due < rust_decimal::Decimal::ZERO {
+                                    format!("Refund: {} {:.2}", req.currency, req.balance_due.abs())
+                                } else {
+                                    "No Price Difference".to_string()
+                                };
+                                let is_host_proposed = req.initiated_by_role == ChangeInitiatorRole::Host
+                                    || req.initiated_by_role == ChangeInitiatorRole::Admin;
+
+                                <div
+                                    id=(format!("pending-change-banner-{}", booking_id))
+                                    class="bg-warning/10 border border-warning/30 rounded-2xl p-4 text-xs space-y-2"
+                                >
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="font-bold text-sm text-base-content flex items-center gap-1.5">
+                                            <span>(if is_host_proposed { "⚡ Host Proposed Reservation Change" } else { "⏳ Change Request Pending Host Approval" })</span>
+                                        </div>
+                                        <span class="badge badge-warning badge-sm font-bold">(bal_label)</span>
+                                    </div>
+                                    <div class="text-base-content/80">
+                                        <strong>"Proposed Stay: "</strong>
+                                        <span>(prop_dates)</span>
+                                        " · "
+                                        <strong>"New Total: "</strong>
+                                        <span>(format!("{} {:.2}", req.currency, req.proposed_total_price))</span>
+                                    </div>
+                                    if let Some(ref reason) = req.reason {
+                                        <div class="text-base-content/70 italic">
+                                            (format!("Note: \"{}\"", reason))
+                                        </div>
+                                    }
+                                    <div class="flex items-center gap-2 pt-1">
+                                        if is_host_proposed {
+                                            <button
+                                                type="button"
+                                                id=(format!("btn-approve-change-{}", req_id_str))
+                                                class="btn btn-success btn-xs text-white font-bold"
+                                                onclick=(format!("respondToGuestChangeRequest('{}', '{}', 'approve')", booking_id, req_id_str))
+                                            >
+                                                "✓ Approve Change"
+                                            </button>
+                                            <button
+                                                type="button"
+                                                id=(format!("btn-decline-change-{}", req_id_str))
+                                                class="btn btn-outline btn-error btn-xs font-bold"
+                                                onclick=(format!("respondToGuestChangeRequest('{}', '{}', 'decline')", booking_id, req_id_str))
+                                            >
+                                                "✕ Decline"
+                                            </button>
+                                        } else {
+                                            <button
+                                                type="button"
+                                                id=(format!("btn-cancel-change-{}", req_id_str))
+                                                class="btn btn-outline btn-xs font-bold"
+                                                onclick=(format!("respondToGuestChangeRequest('{}', '{}', 'cancel')", booking_id, req_id_str))
+                                            >
+                                                "Withdraw Request"
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            }
 
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
                                 <img
@@ -280,7 +489,7 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                                             class="btn btn-outline btn-warning btn-sm font-bold mt-1"
                                             id=(format!("btn-change-dates-{}", booking_id))
                                         >
-                                            "📅 Change Dates"
+                                            "📅 Modify Stay"
                                         </a>
                                     }
 
@@ -353,6 +562,38 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
         <script>
             r#"
             var activeCancelBookingId = null;
+
+            function respondToGuestChangeRequest(bookingId, requestId, action) {
+                try {
+                    var url = '/api/bookings/' + bookingId + '/change-requests/' + requestId + '/' + action;
+                    var opts = {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        }
+                    };
+                    if (action === 'decline') {
+                        opts.body = JSON.stringify({ reason: 'Declined by guest' });
+                    }
+                    fetch(url, opts)
+                        .then(function(res) {
+                            if (!res.ok) {
+                                return res.text().then(function(t) { throw new Error(t || ('Status ' + res.status)); });
+                            }
+                            return res.json();
+                        })
+                        .then(function() {
+                            window.location.reload();
+                        })
+                        .catch(function(err) {
+                            console.error('Failed to process change request action:', err);
+                            alert('Failed to process change request: ' + err.message);
+                        });
+                } catch(e) {
+                    console.error('Change request action error:', e);
+                }
+            }
 
             function openGuestCancelModal(bookingId, villaName) {
                 try {

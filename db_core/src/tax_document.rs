@@ -942,6 +942,8 @@ mod tests {
                 commission_pct: Some(dec!(0.1000)),
                 cleaning_fee: Some(dec!(50.00)),
                 damage_deposit: Some(dec!(100.00)),
+                guests_included: None,
+                extra_guest_fee: None,
             },
         )
         .await

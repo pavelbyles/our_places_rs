@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE host_payout_ledger\n        SET gross_amount = $1,\n            platform_fee_amount = $2,\n            net_payout_amount = $3,\n            updated_at = NOW()\n        WHERE booking_id = $4 AND status = 'pending'::payout_status\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Numeric",
+        "Numeric",
+        "Numeric",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6f7342d609608094747b842e8b3cb17cab4e416b7491cb44e46067051f4aa4f8"
+}

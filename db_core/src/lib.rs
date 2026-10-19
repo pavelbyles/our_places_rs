@@ -20,6 +20,8 @@ pub mod models;
 pub mod notification_log;
 /// Host financial earnings and payout ledger.
 pub mod payout_ledger;
+/// Bilateral reservation change requests and lifecycle operations.
+pub mod reservation_change;
 /// Guest reviews and verification tokens.
 pub mod review;
 /// Session store and authentication token management.

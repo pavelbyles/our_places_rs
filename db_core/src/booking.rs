@@ -233,7 +233,7 @@ pub async fn update_booking(
     .await?;
 
     let current = sqlx::query!(
-        r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to FROM booking WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to, number_of_persons FROM booking WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -242,14 +242,17 @@ pub async fn update_booking(
     let dates_changed = (updated_booking.date_from.is_some()
         && updated_booking.date_from != Some(current.date_from))
         || (updated_booking.date_to.is_some() && updated_booking.date_to != Some(current.date_to));
+    let guests_changed = updated_booking.number_of_persons.is_some()
+        && updated_booking.number_of_persons != Some(current.number_of_persons);
+    let terms_changed = dates_changed || guests_changed;
+
+    if terms_changed && current.status != BookingStatus::Confirmed {
+        return Err(crate::error::DbError::BookingNotModifiable(
+            "Only confirmed bookings can have their dates modified".to_string(),
+        ));
+    }
 
     if dates_changed {
-        if current.status != BookingStatus::Confirmed {
-            return Err(crate::error::DbError::BookingNotModifiable(
-                "Only confirmed bookings can have their dates modified".to_string(),
-            ));
-        }
-
         let target_from = updated_booking.date_from.unwrap_or(current.date_from);
         let target_to = updated_booking.date_to.unwrap_or(current.date_to);
 
@@ -283,7 +286,8 @@ pub async fn update_booking(
             platform_fee = COALESCE($15, platform_fee),
             tax_rate = COALESCE($16, tax_rate),
             exchange_rate = COALESCE($17, exchange_rate),
-            updated_at = $18
+            updated_at = $18,
+            number_of_persons = COALESCE($20, number_of_persons)
         WHERE id = $19
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
@@ -312,7 +316,8 @@ pub async fn update_booking(
         updated_booking.tax_rate,
         updated_booking.exchange_rate,
         Utc::now(),
-        id
+        id,
+        updated_booking.number_of_persons
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -325,9 +330,11 @@ pub async fn update_booking(
     let metadata_changed = updated_booking.metadata.is_some();
     let door_code_changed = updated_booking.door_access_code.is_some();
 
-    let history_id = if status_changed || metadata_changed || door_code_changed || dates_changed {
+    let history_id = if status_changed || metadata_changed || door_code_changed || terms_changed {
         let reason = if dates_changed {
             "Date change on confirmed reservation"
+        } else if guests_changed {
+            "Guest count change on confirmed reservation"
         } else {
             match (status_changed, metadata_changed, door_code_changed) {
                 (true, true, _) => "Status and metadata updated",
@@ -410,8 +417,8 @@ pub async fn update_booking(
         .await?;
     }
 
-    // Trigger revised receipt issuance and update pending host payout ledger if confirmed booking dates changed
-    if dates_changed && current.status == BookingStatus::Confirmed {
+    // Trigger revised receipt issuance and update pending host payout ledger if confirmed booking terms changed
+    if terms_changed && current.status == BookingStatus::Confirmed {
         crate::tax_document::issue_payment_receipt(&mut tx, &booking, supplier, history_id).await?;
 
         let listing_info = sqlx::query!(
@@ -476,6 +483,18 @@ pub async fn update_booking(
     if let Some(BookingStatus::Cancelled) = updated_booking.status
         && status_changed
     {
+        sqlx::query!(
+            r#"
+            UPDATE reservation_change_request
+            SET status = 'cancelled'::reservation_change_status,
+                updated_at = NOW()
+            WHERE booking_id = $1 AND status = 'pending'::reservation_change_status
+            "#,
+            booking.id
+        )
+        .execute(&mut *tx)
+        .await?;
+
         if current.status == BookingStatus::Confirmed {
             let ref_doc =
                 crate::tax_document::issue_refund_receipt(&mut tx, &booking, supplier, history_id)
@@ -551,6 +570,18 @@ pub async fn update_booking(
     if let Some(BookingStatus::Completed) = updated_booking.status
         && status_changed
     {
+        sqlx::query!(
+            r#"
+            UPDATE reservation_change_request
+            SET status = 'expired'::reservation_change_status,
+                updated_at = NOW()
+            WHERE booking_id = $1 AND status = 'pending'::reservation_change_status
+            "#,
+            booking.id
+        )
+        .execute(&mut *tx)
+        .await?;
+
         crate::tax_document::issue_tax_invoice(&mut tx, &booking, supplier, history_id).await?;
     }
 
@@ -906,7 +937,7 @@ where
     Ok(history)
 }
 
-async fn record_booking_history(
+pub(crate) async fn record_booking_history(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     booking: &Booking,
     change_reason: &str,
@@ -1037,6 +1068,8 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
             .await
@@ -1067,6 +1100,8 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: None,
             damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
             .await
@@ -1267,6 +1302,8 @@ mod tests {
                 commission_pct: Some(dec!(0.1000)),
                 cleaning_fee: Some(dec!(50.00)),
                 damage_deposit: Some(dec!(100.00)),
+                guests_included: None,
+                extra_guest_fee: None,
             },
         )
         .await
@@ -1473,6 +1510,8 @@ mod tests {
             commission_pct: Some(dec!(0.1000)),
             cleaning_fee: Some(dec!(50.00)),
             damage_deposit: Some(dec!(100.00)),
+            guests_included: None,
+            extra_guest_fee: None,
         };
         let listing = crate::listing::create_listing(&mut *tx, &nl).await.unwrap();
 

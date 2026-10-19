@@ -87,6 +87,12 @@ pub enum EmailTemplate {
     GuestHostMessageNotification,
     /// Notification delivered to guest after stay completion with final statutory tax invoice link.
     BookingCompletedGuest,
+    /// Notification delivered to counterparty when a reservation change request is submitted.
+    ReservationChangeRequested,
+    /// Notification delivered when a reservation change request is approved and settled.
+    ReservationChangeApproved,
+    /// Notification delivered to initiator when a reservation change request is declined.
+    ReservationChangeDeclined,
 }
 
 impl EmailTemplate {
@@ -107,6 +113,9 @@ impl EmailTemplate {
             Self::PaymentHoldExpiryReminder => "payment_hold_expiry_reminder",
             Self::GuestHostMessageNotification => "guest_host_message_notification",
             Self::BookingCompletedGuest => "booking_completed_guest",
+            Self::ReservationChangeRequested => "reservation_change_requested",
+            Self::ReservationChangeApproved => "reservation_change_approved",
+            Self::ReservationChangeDeclined => "reservation_change_declined",
         }
     }
 }
@@ -135,6 +144,10 @@ impl std::str::FromStr for EmailTemplate {
             "host_upcoming_arrival" => Ok(Self::HostUpcomingArrival),
             "payment_hold_expiry_reminder" => Ok(Self::PaymentHoldExpiryReminder),
             "guest_host_message_notification" => Ok(Self::GuestHostMessageNotification),
+            "booking_completed_guest" => Ok(Self::BookingCompletedGuest),
+            "reservation_change_requested" => Ok(Self::ReservationChangeRequested),
+            "reservation_change_approved" => Ok(Self::ReservationChangeApproved),
+            "reservation_change_declined" => Ok(Self::ReservationChangeDeclined),
             other => Err(format!("Unknown email template: {}", other)),
         }
     }
@@ -401,6 +414,115 @@ pub struct PaymentHoldExpiryReminderPayload {
     pub checkout_url: String,
 }
 
+/// Strongly-typed email payload when a reservation change request is submitted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReservationChangeRequestedPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Unique reservation change request identifier.
+    pub change_request_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of recipient (counterparty).
+    pub recipient_name: String,
+    /// Full name of initiator.
+    pub initiator_name: String,
+    /// Role of initiator (`guest`, `host`, or `admin`).
+    pub initiated_by_role: String,
+    /// Original check-in date.
+    pub previous_date_from: String,
+    /// Original check-out date.
+    pub previous_date_to: String,
+    /// Proposed check-in date.
+    pub proposed_date_from: String,
+    /// Proposed check-out date.
+    pub proposed_date_to: String,
+    /// Original guest count.
+    pub previous_number_of_persons: i32,
+    /// Proposed guest count.
+    pub proposed_number_of_persons: i32,
+    /// Original total price.
+    pub previous_total_price: Decimal,
+    /// Proposed total price.
+    pub proposed_total_price: Decimal,
+    /// Net balance due from guest (>0 charge, <0 refund, 0 none).
+    pub balance_due: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Optional initiator reason.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// Direct URL to review and approve/decline the change request.
+    pub action_url: String,
+}
+
+/// Strongly-typed email payload when a reservation change request is approved and settled.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReservationChangeApprovedPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Unique reservation change request identifier.
+    pub change_request_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of email recipient.
+    pub recipient_name: String,
+    /// Full name of approving counterparty.
+    pub responder_name: String,
+    /// Updated check-in date.
+    pub date_from: String,
+    /// Updated check-out date.
+    pub date_to: String,
+    /// Updated guest count.
+    pub number_of_persons: i32,
+    /// Updated total price.
+    pub total_price: Decimal,
+    /// Net balance settled (>0 charged, <0 refunded, 0 none).
+    pub balance_due: Decimal,
+    /// Currency code.
+    pub currency: String,
+    /// Settlement status (`charged`, `refunded`, `not_required`).
+    pub settlement_status: String,
+    /// Optional note from responder.
+    #[serde(default)]
+    pub response_note: Option<String>,
+    /// Direct URL to view the revised payment receipt (`REC-YYYY-{code}-R{n}`).
+    #[serde(default)]
+    pub receipt_url: Option<String>,
+}
+
+/// Strongly-typed email payload when a reservation change request is declined.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReservationChangeDeclinedPayload {
+    /// Unique booking identifier.
+    pub booking_id: Uuid,
+    /// Unique reservation change request identifier.
+    pub change_request_id: Uuid,
+    /// Human-readable booking confirmation code.
+    pub confirmation_code: String,
+    /// Name of booked property.
+    pub listing_name: String,
+    /// Full name of email recipient (initiator).
+    pub recipient_name: String,
+    /// Full name of declining counterparty.
+    pub responder_name: String,
+    /// Proposed check-in date that was declined.
+    pub proposed_date_from: String,
+    /// Proposed check-out date that was declined.
+    pub proposed_date_to: String,
+    /// Proposed guest count that was declined.
+    pub proposed_number_of_persons: i32,
+    /// Optional note from responder explaining why the change was declined.
+    #[serde(default)]
+    pub response_note: Option<String>,
+    /// Direct URL to view the unchanged booking.
+    pub booking_url: String,
+}
+
 // ============================================================================
 // Type State Pattern for Compile-Time Guaranteed Email State Transitions
 // ============================================================================
@@ -583,6 +705,22 @@ mod tests {
             (
                 EmailTemplate::GuestHostMessageNotification,
                 "guest_host_message_notification",
+            ),
+            (
+                EmailTemplate::BookingCompletedGuest,
+                "booking_completed_guest",
+            ),
+            (
+                EmailTemplate::ReservationChangeRequested,
+                "reservation_change_requested",
+            ),
+            (
+                EmailTemplate::ReservationChangeApproved,
+                "reservation_change_approved",
+            ),
+            (
+                EmailTemplate::ReservationChangeDeclined,
+                "reservation_change_declined",
             ),
         ];
 

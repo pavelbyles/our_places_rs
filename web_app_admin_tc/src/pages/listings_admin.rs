@@ -45,6 +45,8 @@ pub struct AdminCreateListingPayload {
     pub commission_pct: Option<Decimal>,
     pub cleaning_fee: Option<Decimal>,
     pub damage_deposit: Option<Decimal>,
+    pub guests_included: Option<i32>,
+    pub extra_guest_fee: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,6 +85,8 @@ pub struct AdminCreateListingFormPayload {
     pub cleaning_fee: Option<String>,
     pub damage_deposit_enabled: Option<String>,
     pub damage_deposit: Option<String>,
+    pub guests_included: Option<String>,
+    pub extra_guest_fee: Option<String>,
 }
 
 impl AdminCreateListingFormPayload {
@@ -198,6 +202,14 @@ impl AdminCreateListingFormPayload {
                     Some(Decimal::ZERO)
                 }
             },
+            guests_included: self
+                .guests_included
+                .as_deref()
+                .and_then(|s| s.trim().parse::<i32>().ok()),
+            extra_guest_fee: self
+                .extra_guest_fee
+                .as_deref()
+                .and_then(|s| Decimal::from_str(s.trim()).ok()),
         }
     }
 }
@@ -248,6 +260,12 @@ async fn execute_create_listing(
         details_map.insert("is_active".to_string(), serde_json::Value::Bool(active));
     }
 
+    let max_guests_val = payload.max_guests.unwrap_or(2).max(1);
+    let guests_included_val = payload
+        .guests_included
+        .unwrap_or(max_guests_val)
+        .clamp(1, max_guests_val);
+
     let new_req = NewListingRequest {
         name,
         user_id: target_user_id,
@@ -261,7 +279,7 @@ async fn execute_create_listing(
             .or_else(|| Some(Decimal::from(1000))),
         weekly_discount_percentage: payload.weekly_discount_percentage,
         monthly_discount_percentage: payload.monthly_discount_percentage,
-        max_guests: payload.max_guests.unwrap_or(2).max(1),
+        max_guests: max_guests_val,
         bedrooms: payload.bedrooms.unwrap_or(1).max(0),
         beds: payload.beds.unwrap_or(1).max(0),
         full_bathrooms: payload.full_bathrooms.unwrap_or(1).max(0),
@@ -290,6 +308,8 @@ async fn execute_create_listing(
             .or_else(|| Some(Decimal::new(1000, 4))),
         cleaning_fee: payload.cleaning_fee,
         damage_deposit: payload.damage_deposit,
+        guests_included: guests_included_val,
+        extra_guest_fee: payload.extra_guest_fee,
     };
 
     api.create_listing(&new_req)
@@ -624,6 +644,15 @@ async fn render_new_or_cloned_listing(
         .unwrap_or(Decimal::ZERO);
     let initial_damage_deposit_str = format!("{:.2}", initial_damage_deposit);
     let initial_damage_deposit_enabled = initial_damage_deposit > Decimal::ZERO;
+    let initial_guests_included = template
+        .as_ref()
+        .map(|t| t.guests_included.max(1))
+        .unwrap_or(initial_guests);
+    let initial_extra_guest_fee = template
+        .as_ref()
+        .and_then(|t| t.extra_guest_fee)
+        .unwrap_or(Decimal::ZERO);
+    let initial_extra_guest_fee_str = format!("{:.2}", initial_extra_guest_fee);
 
     Ok(view! {
         if !is_authed {
@@ -915,6 +944,14 @@ async fn render_new_or_cloned_listing(
                             </div>
                             <input type="number" name="damage_deposit" value=(initial_damage_deposit_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Guests Included"</label>
+                            <input type="number" name="guests_included" value=(initial_guests_included) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Extra Guest Fee/Night"</label>
+                            <input type="number" name="extra_guest_fee" value=(initial_extra_guest_fee_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
                     </div>
                 </div>
 
@@ -1027,6 +1064,8 @@ async fn render_new_or_cloned_listing(
                         var rawDaysBetween = fd.get('days_between_bookings');
                         var rawUserId = fd.get('user_id');
                         var rawActive = fd.get('is_active');
+                        var rawGuestsIncluded = fd.get('guests_included');
+                        var rawExtraGuestFee = fd.get('extra_guest_fee');
 
                         var payload = {
                             name: name,
@@ -1051,6 +1090,8 @@ async fn render_new_or_cloned_listing(
                             days_between_bookings: rawDaysBetween ? parseInt(rawDaysBetween.toString(), 10) : 0,
                             cleaning_fee: (fd.get('cleaning_fee_enabled') === 'on' && fd.get('cleaning_fee')) ? fd.get('cleaning_fee').toString() : "0.00",
                             damage_deposit: (fd.get('damage_deposit_enabled') === 'on' && fd.get('damage_deposit')) ? fd.get('damage_deposit').toString() : "0.00",
+                            guests_included: rawGuestsIncluded ? parseInt(rawGuestsIncluded.toString(), 10) : null,
+                            extra_guest_fee: rawExtraGuestFee ? rawExtraGuestFee.toString() : "0.00",
                             primary_image_url: fd.get('primary_image_url'),
                             is_active: rawActive === 'on' ? true : false,
                             user_id: rawUserId ? rawUserId.toString() : null
@@ -1182,6 +1223,11 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
         .unwrap_or(Decimal::ZERO);
     let damage_deposit_str = format!("{:.2}", damage_deposit);
     let damage_deposit_enabled = damage_deposit > Decimal::ZERO;
+    let guests_included = listing.map(|l| l.guests_included.max(1)).unwrap_or(guests);
+    let extra_guest_fee = listing
+        .and_then(|l| l.extra_guest_fee)
+        .unwrap_or(Decimal::ZERO);
+    let extra_guest_fee_str = format!("{:.2}", extra_guest_fee);
 
     Ok(view! {
         if !is_authed {
@@ -1446,6 +1492,14 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                                 <input type="checkbox" name="damage_deposit_enabled" class="toggle toggle-primary toggle-sm" checked=(damage_deposit_enabled) />
                             </div>
                             <input type="number" name="damage_deposit" value=(damage_deposit_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Guests Included"</label>
+                            <input type="number" name="guests_included" value=(guests_included) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Extra Guest Fee/Night"</label>
+                            <input type="number" name="extra_guest_fee" value=(extra_guest_fee_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                     </div>
                 </div>

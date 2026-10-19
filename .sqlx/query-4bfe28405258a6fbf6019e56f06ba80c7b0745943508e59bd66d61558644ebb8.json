@@ -1,16 +1,15 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM \"user\" WHERE id = $1 OR id = $2 OR id = $3",
+  "query": "DELETE FROM reservation_change_request WHERE booking_id = $1 OR booking_id = $2",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid",
         "Uuid"
       ]
     },
     "nullable": []
   },
-  "hash": "642a7caca8dab4ad77e3471117a59bc8133929c3f6e2557fd552eeb4a36a527e"
+  "hash": "4bfe28405258a6fbf6019e56f06ba80c7b0745943508e59bd66d61558644ebb8"
 }

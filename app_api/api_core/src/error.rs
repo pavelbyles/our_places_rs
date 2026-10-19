@@ -4,31 +4,48 @@ use std::fmt::{Debug, Formatter};
 use thiserror::Error;
 use validator::ValidationErrors;
 
+/// Unified HTTP API error enum returned by Actix route handlers.
 #[derive(Error)]
 pub enum ApiError {
+    /// Database error mapped from db_core.
     #[error("Database error")]
     Database(#[from] DbError),
 
+    /// Internal unexpected server error.
     #[error("Internal server error")]
     Internal,
 
+    /// Request payload validation failure.
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationErrors),
 
+    /// Requested feature is currently toggled off.
     #[error("Feature '{0}' is currently disabled")]
     FeatureDisabled(String),
 
+    /// Authentication failed or caller lacks required credentials.
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    /// Caller is authenticated but lacks required permission.
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
+    /// Requested booking dates overlap with an existing reservation.
     #[error("The requested dates are no longer available")]
     DateUnavailable,
 
+    /// Reservation is in a terminal status or dates cannot be modified.
     #[error("Booking not modifiable: {0}")]
     BookingNotModifiable(String),
+
+    /// A reservation change request is already pending for this booking.
+    #[error("A reservation change request is already pending for this booking")]
+    ChangeRequestAlreadyPending,
+
+    /// Payment or refund settlement with payment gateway failed.
+    #[error("Payment settlement failed: {0}")]
+    PaymentSettlementFailed(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -54,6 +71,9 @@ impl ResponseError for ApiError {
             }
             ApiError::Database(DbError::BookingNotModifiable(_))
             | ApiError::BookingNotModifiable(_) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::ChangeRequestAlreadyPending)
+            | ApiError::ChangeRequestAlreadyPending => StatusCode::CONFLICT,
+            ApiError::PaymentSettlementFailed(_) => StatusCode::UNPROCESSABLE_ENTITY,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -92,6 +112,19 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::BookingNotModifiable(msg)) => {
                 HttpResponse::Conflict().json(serde_json::json!({
                     "code": "BOOKING_NOT_MODIFIABLE",
+                    "message": msg
+                }))
+            }
+            ApiError::ChangeRequestAlreadyPending
+            | ApiError::Database(DbError::ChangeRequestAlreadyPending) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "CHANGE_REQUEST_ALREADY_PENDING",
+                    "message": "A reservation change request is already pending for this booking."
+                }))
+            }
+            ApiError::PaymentSettlementFailed(msg) => {
+                HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                    "code": "PAYMENT_SETTLEMENT_FAILED",
                     "message": msg
                 }))
             }

@@ -521,6 +521,8 @@ mod tests {
                 commission_pct: Some(dec!(0.1000)),
                 cleaning_fee: Some(dec!(50.00)),
                 damage_deposit: Some(dec!(100.00)),
+                guests_included: None,
+                extra_guest_fee: None,
             },
         )
         .await
@@ -874,6 +876,8 @@ mod tests {
                 commission_pct: Some(dec!(0.1000)),
                 cleaning_fee: Some(dec!(50.00)),
                 damage_deposit: Some(dec!(100.00)),
+                guests_included: None,
+                extra_guest_fee: None,
             },
         )
         .await
@@ -997,6 +1001,28 @@ mod tests {
 
         tx.commit().await.unwrap();
 
+        let admin_id = Uuid::now_v7();
+        let admin_user = db_core::models::NewUser {
+            id: admin_id,
+            email: format!("admin_{}@example.com", admin_id),
+            password_hash: "hash".to_string(),
+            first_name: "Admin".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![db_core::models::UserRole::Admin]),
+            default_currency: "USD".to_string(),
+        };
+        let mut tx_admin = pool.begin().await.unwrap();
+        db_core::user::create_user(&mut *tx_admin, &admin_user)
+            .await
+            .unwrap();
+        tx_admin.commit().await.unwrap();
+
         use crate::settings::TaxSettings;
 
         let tax_settings = TaxSettings {
@@ -1014,6 +1040,8 @@ mod tests {
         .await;
 
         let guest_jwt = api_core::auth::generate_test_jwt(guest_id);
+        let host_jwt = api_core::auth::generate_test_jwt(host_id);
+        let admin_jwt = api_core::auth::generate_test_jwt(admin_id);
         let stranger_jwt = api_core::auth::generate_test_jwt(stranger_id);
 
         // A. Stranger attempts to change dates -> 404 (IDOR guard)
@@ -1028,10 +1056,32 @@ mod tests {
         let resp = test::call_service(&app, stranger_req).await;
         assert_eq!(resp.status(), 404);
 
-        // B. Guest attempts to change dates to past date -> 409 BOOKING_NOT_MODIFIABLE
-        let past_req = test::TestRequest::patch()
+        // A2. Non-admin Guest or Host attempting direct PATCH date/guest mutation -> 403 Forbidden
+        let guest_direct_req = test::TestRequest::patch()
             .uri(&format!("/api/v1/bookings/{}", booking.id))
             .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({
+                "date_from": "2026-11-01",
+                "date_to": "2026-11-07"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, guest_direct_req).await;
+        assert_eq!(resp.status(), 403);
+
+        let host_direct_req = test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{}", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
+            .set_json(serde_json::json!({
+                "number_of_persons": 3
+            }))
+            .to_request();
+        let resp = test::call_service(&app, host_direct_req).await;
+        assert_eq!(resp.status(), 403);
+
+        // B. Admin attempts to change dates to past date -> 409 BOOKING_NOT_MODIFIABLE
+        let past_req = test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{}", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
             .set_json(serde_json::json!({
                 "date_from": "2020-01-01",
                 "date_to": "2020-01-05"
@@ -1042,10 +1092,10 @@ mod tests {
         let err_body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(err_body["code"], "BOOKING_NOT_MODIFIABLE");
 
-        // C. Guest attempts to change dates overlapping booking 2 (Nov 16 - Nov 22) -> 409 DATE_UNAVAILABLE
+        // C. Admin attempts to change dates overlapping booking 2 (Nov 16 - Nov 22) -> 409 DATE_UNAVAILABLE
         let overlap_req = test::TestRequest::patch()
             .uri(&format!("/api/v1/bookings/{}", booking.id))
-            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
             .set_json(serde_json::json!({
                 "date_from": "2026-11-16",
                 "date_to": "2026-11-22"
@@ -1056,13 +1106,13 @@ mod tests {
         let err_body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(err_body["code"], "DATE_UNAVAILABLE");
 
-        // D. Guest successfully changes dates (Nov 1 - Nov 7, 6 nights) -> 200 OK
+        // D. Admin successfully changes dates (Nov 1 - Nov 6, 5 nights) -> 200 OK
         let valid_req = test::TestRequest::patch()
             .uri(&format!("/api/v1/bookings/{}", booking.id))
-            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
             .set_json(serde_json::json!({
                 "date_from": "2026-11-01",
-                "date_to": "2026-11-07"
+                "date_to": "2026-11-06"
             }))
             .to_request();
         let resp = test::call_service(&app, valid_req).await;
@@ -1081,7 +1131,217 @@ mod tests {
         assert!(r2.balance_due.is_some());
         assert!(r2.amount_previously_paid.is_some());
 
+        // F. Bilateral Reservation Change Workflow:
+        // F1. Empty / no-op change quote -> 400 Bad Request
+        let noop_quote_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{}/change-quote", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({}))
+            .to_request();
+        let resp = test::call_service(&app, noop_quote_req).await;
+        assert_eq!(resp.status(), 400);
+
+        // F2. Guest previews extending stay to Nov 7 and adding 1 adult (3 adults total) -> 200 OK
+        let quote_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{}/change-quote", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({
+                "date_from": "2026-11-01",
+                "date_to": "2026-11-07",
+                "num_adults": 3
+            }))
+            .to_request();
+        let resp = test::call_service(&app, quote_req).await;
+        assert_eq!(resp.status(), 200);
+        let quote_body: common::models::ReservationChangeQuoteResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(quote_body.proposed_number_of_persons, 3);
+        assert!(quote_body.balance_due > rust_decimal::Decimal::ZERO);
+
+        // F3. Guest submits change request -> 201 Created
+        let create_cr_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({
+                "date_from": "2026-11-01",
+                "date_to": "2026-11-07",
+                "num_adults": 3,
+                "reason": "Bringing a friend and staying an extra night"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, create_cr_req).await;
+        assert_eq!(resp.status(), 201);
+        let created_cr: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(
+            created_cr.status,
+            common::models::ReservationChangeStatus::Pending
+        );
+        assert_eq!(
+            created_cr.initiated_by_role,
+            common::models::ChangeInitiatorRole::Guest
+        );
+        assert_eq!(
+            created_cr.settlement_status,
+            common::models::ChangeSettlementStatus::PendingCharge
+        );
+
+        // F4. Duplicate pending request -> 409 CHANGE_REQUEST_ALREADY_PENDING
+        let dup_cr_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({
+                "date_from": "2026-11-01",
+                "date_to": "2026-11-08"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, dup_cr_req).await;
+        assert_eq!(resp.status(), 409);
+        let err_body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(err_body["code"], "CHANGE_REQUEST_ALREADY_PENDING");
+
+        // F5. Guest attempts self-approval -> 403 Forbidden
+        let self_approve_req = test::TestRequest::post()
+            .uri(&format!(
+                "/api/v1/bookings/{}/change-requests/{}/approve",
+                booking.id, created_cr.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({}))
+            .to_request();
+        let resp = test::call_service(&app, self_approve_req).await;
+        assert_eq!(resp.status(), 403);
+
+        // F6. Host approves Guest's change request -> 200 OK
+        let host_approve_req = test::TestRequest::post()
+            .uri(&format!(
+                "/api/v1/bookings/{}/change-requests/{}/approve",
+                booking.id, created_cr.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
+            .set_json(serde_json::json!({
+                "response_note": "Approved! Looking forward to hosting your group."
+            }))
+            .to_request();
+        let resp = test::call_service(&app, host_approve_req).await;
+        assert_eq!(resp.status(), 200);
+        let approved_cr: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(
+            approved_cr.status,
+            common::models::ReservationChangeStatus::Approved
+        );
+        assert_eq!(
+            approved_cr.settlement_status,
+            common::models::ChangeSettlementStatus::Charged
+        );
+        assert!(approved_cr.gateway_reference.is_some());
+
+        // Verify booking updated to 6 nights, 3 persons, and REC-R3 issued
+        let b_after = db_core::booking::get_booking_by_id(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(b_after.total_days, 6);
+        assert_eq!(b_after.number_of_persons, 3);
+        let docs_after_approve = db_core::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(docs_after_approve.len(), 3);
+        let r3 = docs_after_approve.iter().find(|d| d.revision == 3).unwrap();
+        assert_eq!(r3.status, db_core::models::TaxDocumentStatus::Issued);
+        assert_eq!(r3.document_number, format!("REC-2026-{}-R3", code));
+
+        // F7. Host initiates a shorten-stay change request (Nov 1 - Nov 5, balance_due < 0) -> Guest declines -> 200 OK
+        let host_cr_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
+            .set_json(serde_json::json!({
+                "date_from": "2026-11-01",
+                "date_to": "2026-11-05",
+                "reason": "Maintenance needed on Nov 6"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, host_cr_req).await;
+        assert_eq!(resp.status(), 201);
+        let host_cr: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(
+            host_cr.initiated_by_role,
+            common::models::ChangeInitiatorRole::Host
+        );
+        assert_eq!(
+            host_cr.settlement_status,
+            common::models::ChangeSettlementStatus::PendingRefund
+        );
+
+        let guest_decline_req = test::TestRequest::post()
+            .uri(&format!(
+                "/api/v1/bookings/{}/change-requests/{}/decline",
+                booking.id, host_cr.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .set_json(serde_json::json!({
+                "response_note": "We already booked flights for Nov 7"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, guest_decline_req).await;
+        assert_eq!(resp.status(), 200);
+        let declined_cr: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(
+            declined_cr.status,
+            common::models::ReservationChangeStatus::Declined
+        );
+
+        // F8. Host initiates another change request and withdraws it via /cancel -> 200 OK
+        let host_cr2_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
+            .set_json(serde_json::json!({
+                "date_from": "2026-11-01",
+                "date_to": "2026-11-06"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, host_cr2_req).await;
+        assert_eq!(resp.status(), 201);
+        let host_cr2: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+
+        let host_cancel_req = test::TestRequest::post()
+            .uri(&format!(
+                "/api/v1/bookings/{}/change-requests/{}/cancel",
+                booking.id, host_cr2.id
+            ))
+            .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, host_cancel_req).await;
+        assert_eq!(resp.status(), 200);
+        let cancelled_cr: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+        assert_eq!(
+            cancelled_cr.status,
+            common::models::ReservationChangeStatus::Cancelled
+        );
+
+        // F9. List change requests returns all 3 requests
+        let list_cr_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
+            .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
+            .to_request();
+        let resp = test::call_service(&app, list_cr_req).await;
+        assert_eq!(resp.status(), 200);
+        let listed_crs: Vec<common::models::ReservationChangeRequestResponse> =
+            test::read_body_json(resp).await;
+        assert_eq!(listed_crs.len(), 3);
+
         // Clean up
+        let _ = sqlx::query!(
+            "DELETE FROM reservation_change_request WHERE booking_id = $1 OR booking_id = $2",
+            booking.id,
+            b2_id
+        )
+        .execute(&pool)
+        .await;
         let _ = sqlx::query!(
             "DELETE FROM tax_document WHERE booking_id = $1 OR booking_id = $2",
             booking.id,
@@ -1117,10 +1377,11 @@ mod tests {
             .execute(&pool)
             .await;
         let _ = sqlx::query!(
-            "DELETE FROM \"user\" WHERE id = $1 OR id = $2 OR id = $3",
+            "DELETE FROM \"user\" WHERE id = $1 OR id = $2 OR id = $3 OR id = $4",
             host_id,
             guest_id,
-            stranger_id
+            stranger_id,
+            admin_id
         )
         .execute(&pool)
         .await;
@@ -1226,6 +1487,8 @@ mod tests {
                 commission_pct: Some(dec!(0.1000)),
                 cleaning_fee: Some(dec!(50.00)),
                 damage_deposit: Some(dec!(100.00)),
+                guests_included: None,
+                extra_guest_fee: None,
             },
         )
         .await
