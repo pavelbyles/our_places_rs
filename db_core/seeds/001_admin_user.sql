@@ -37,3 +37,12 @@ ON CONFLICT (email) DO UPDATE SET
     is_active = TRUE,
     is_verified = TRUE,
     updated_at = NOW();
+
+INSERT INTO host_profiles (user_id, verified_status, payout_details, description)
+VALUES (
+    '01a0bcbd-014d-7062-99b2-6a42d05b9ed7',
+    'verified',
+    '{}'::jsonb,
+    'Platform Administrator & Founding Host'
+)
+ON CONFLICT (user_id) DO NOTHING;

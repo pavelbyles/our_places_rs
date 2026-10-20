@@ -240,7 +240,7 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
                         // Property selector
                         <div class="form-control w-full">
                             <label class="label pb-1">
-                                <span class="label-text text-xs font-bold uppercase text-base-content/70">"Villa Property"</span>
+                                <span class="label-text text-xs font-bold uppercase text-base-content/70">"Listing"</span>
                             </label>
                             <select name="listing_id" class="select select-bordered select-sm w-full rounded-xl">
                                 <option value="" selected=(selected_listing_str.is_empty())>"All Properties"</option>
@@ -529,7 +529,7 @@ pub async fn payouts_ledger_table(
                         <thead>
                             <tr class="text-base-content/60 uppercase tracking-wider text-[11px] bg-base-200/50">
                                 <th>"Booking / Host"</th>
-                                <th>"Villa Listing"</th>
+                                <th>"Listing"</th>
                                 <th>"Stay Dates"</th>
                                 <th class="text-right">"Gross Amount"</th>
                                 <th class="text-right">"Platform Fee"</th>
@@ -556,8 +556,8 @@ pub async fn payouts_ledger_table(
                                 let booking_code = entry.booking_confirmation_code.clone().unwrap_or_else(|| {
                                     format!("{:.8}...", entry.booking_id.to_string())
                                 });
-                                let listing_title = entry.listing_name.clone().unwrap_or_else(|| "Luxury Villa".to_string());
-                                let host_display = entry.host_name.clone().unwrap_or_else(|| "Villa Host".to_string());
+                                let listing_title = entry.listing_name.clone().unwrap_or_else(|| "Luxury Listing".to_string());
+                                let host_display = entry.host_name.clone().unwrap_or_else(|| "Host".to_string());
                                 let fee_pct_display = format!("{:.1}%", entry.platform_fee_pct * Decimal::from(100));
 
                                 <tr id=(format!("payout-row-{}", entry.id)) class="hover:bg-base-200/60 transition-colors">
@@ -571,7 +571,7 @@ pub async fn payouts_ledger_table(
                                         </div>
                                     </td>
 
-                                    // Villa
+                                    // Listing
                                     <td>
                                         <div class="font-medium text-sm text-base-content max-w-[200px] truncate">
                                             (listing_title)

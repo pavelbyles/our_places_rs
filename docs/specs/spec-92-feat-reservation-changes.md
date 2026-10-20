@@ -228,6 +228,24 @@ CREATE INDEX idx_reservation_change_status_expiry ON reservation_change_request 
    - Approval fails with `409 DATE_UNAVAILABLE` if another confirmed booking took the requested extension dates before approval.
    - Pending change request auto-expires when `expires_at_date <= today_jm`.
    - Non-admin direct `PATCH /api/v1/bookings/{id}` with `date_from`/`date_to`/`number_of_persons` returns `403`; Admin direct `PATCH` succeeds.
+3. **Playwright End-to-End (`playwright/e2e/`)**:
+   - **Guest Portal (`playwright/e2e/guest-portal/reservation-changes.spec.ts`)**:
+     - Form Rendering & Dynamic Pricing Preview: Navigate to `/bookings/{id}/change-dates`, verify check-in/out inputs, guest count breakdown controls (adults, children, infants, pets), input change triggering `#btn-preview-change-quote`, and verify `#change-quote-preview` renders updated subtotal, extra-guest fee total, statutory Jamaican GCT (15%), and positive/negative `balance_due`.
+     - Request Submission: Guest submits modification request via `#btn-submit-date-change`, verifies success alert (`#date-change-success`) and non-reload transition.
+     - Bookings List Status & Cancellation: Navigate to `/bookings`, verify active pending change banner on booking card, and verify "Withdraw Request" button cancels the pending change request.
+     - Mid-Stay Boundary Behavior: For an active mid-stay booking (`current.date_from <= today_jm < current.date_to`), navigate to `/bookings/{id}/change-dates`, verify `#mid-stay-notice` is displayed, `#new-check-in` is `readonly`, and `#new-check-out` and guest count inputs remain editable.
+     - Host-Initiated Change Review & Approval: Navigate to `/bookings` when host has proposed a change, verify counterparty card displays proposed terms and price delta, click "Approve Change", and verify status updates to approved with revised total.
+   - **Admin Portal (`playwright/e2e/admin-portal/reservation-changes-admin.spec.ts`)**:
+     - Listing Extra-Guest Fee Configuration: Navigate to `/admin/listings` (or listing editor), verify `guests_included` and `extra_guest_fee` input fields, update values, submit, and verify persistence upon reload.
+     - Master Booking Schedule & Change Audit: Navigate to `/admin/bookings`, open booking details modal (`#admin-booking-details-dialog`), verify `#admin-booking-change-requests-section` displays pending guest-initiated change requests with dates, guest breakdown, guest `balance_due`, and host payout delta.
+     - Host/Admin Approval & Receipt Supersession: Click "Approve Change" in audit modal, verify request status transitions to `approved`, and verify revised receipt (e.g. `REC-YYYY-{code}-R2`) appears under `#admin-booking-documents-list`.
+     - Propose Change to Guest: Use host change proposal form in booking details modal to submit proposed terms to guest, and verify new pending request row.
+     - Admin Force-Apply Direct Change: Execute administrative direct update and verify booking updates immediately.
+   - **Backend API Direct Validation (`playwright/e2e/api/reservation-changes-api.spec.ts`)**:
+     - `POST /api/v1/bookings/{id}/change-quote` calculations and pricing snapshot accuracy.
+     - `POST /api/v1/bookings/{id}/change-requests` creation and duplicate request prevention (`409 CHANGE_REQUEST_ALREADY_PENDING`).
+     - Authorization enforcement: initiator self-approval rejected (`403 FORBIDDEN`), non-admin direct `PATCH /api/v1/bookings/{id}` rejected (`403 FORBIDDEN`).
+     - State machine lifecycle: decline, cancel/withdraw, and approve endpoints.
 
 ---
 
@@ -239,4 +257,5 @@ CREATE INDEX idx_reservation_change_status_expiry ON reservation_change_request 
 - [ ] Counterparty approval acquires `FOR UPDATE` locks, executes payment gateway settlement for `balance_due`, updates `booking` + `booking_history`, supersedes and issues `REC-YYYY-{code}-R{n}`, and updates `host_payout_ledger`.
 - [ ] Pending change requests auto-expire once their relevant check-in or check-out cutoff date arrives.
 - [ ] Transactional emails (`reservation_change_requested`, `reservation_change_approved`, `reservation_change_declined`) render and queue via `email_outbox`.
-- [ ] All quality gates in `CONSTRAINTS.md` pass (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo sqlx prepare --check`, unit & integration tests).
+- [ ] Playwright E2E test suites (`guest-portal-chromium`, `admin-portal-chromium`, `backend-api`) pass with 100% green runs.
+- [ ] All quality gates in `CONSTRAINTS.md` pass (`cargo fmt --check`, `cargo clippy -D warnings`, `cargo sqlx prepare --check`, unit, integration & E2E tests).

@@ -2,8 +2,9 @@ use chrono::NaiveDate;
 use common::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
     CreateSessionRequest, DynamicPricingQuote, ListingDetails, ListingResponse, LoginRequest,
-    MarkMessagesReadResponse, NewBookingRequest, NewUserRequest, PriceOverride, ReviewResponse,
-    SessionResponse, UpdateUserRequest, UpdatedBookingRequest, UserResponse,
+    MarkMessagesReadResponse, NewBookingRequest, NewUserRequest, PriceOverride,
+    ResendVerificationRequest, ReviewResponse, SessionResponse, UpdateUserRequest,
+    UpdatedBookingRequest, UserResponse, VerifyRequest,
 };
 
 pub use common::app_client::ListingSearchParams;
@@ -324,6 +325,19 @@ impl TopcoatApiClient {
     /// Authenticate user credentials with user_api
     pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
         common::app_client::login_user(req).await
+    }
+
+    /// Verifies a user's email address with their 6-character OTP code
+    pub async fn verify_user(&self, req: &VerifyRequest) -> anyhow::Result<UserResponse> {
+        common::app_client::verify_user(req).await
+    }
+
+    /// Resends the 6-character OTP verification code to a user's email address
+    pub async fn resend_verification(
+        &self,
+        req: &ResendVerificationRequest,
+    ) -> anyhow::Result<UserResponse> {
+        common::app_client::resend_verification(req).await
     }
 
     /// Retrieve host payout ledger entries

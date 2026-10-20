@@ -157,7 +157,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         for pb in &pending_bookings {
                             let pb_id = pb.id.to_string();
-                            let (v_name, _) = listing_map.get(&pb.listing_id).cloned().unwrap_or_else(|| ("Luxury Villa".to_string(), "Jamaica".to_string()));
+                            let (v_name, _) = listing_map.get(&pb.listing_id).cloned().unwrap_or_else(|| ("Luxury Listing".to_string(), "Jamaica".to_string()));
                             let (g_name, g_email) = user_map.get(&pb.guest_id).cloned().unwrap_or_else(|| ("Guest".to_string(), "guest@ourplaces.io".to_string()));
                             let dates = format!("{} – {}", pb.date_from.format("%b %d"), pb.date_to.format("%b %d, %Y"));
                             let total = format!("{} {:.2}", pb.currency, pb.total_price);
@@ -200,7 +200,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                 <div class="flex-1 w-full flex items-center gap-3">
                     <input
                         type="text"
-                        placeholder="Search by guest name, booking UUID, or villa..."
+                        placeholder="Search by guest name, booking UUID, or listing..."
                         class="input input-bordered input-sm w-full max-w-md rounded-xl font-medium"
                     />
                     <select class="select select-bordered select-sm rounded-xl font-medium">
@@ -248,7 +248,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                                     let (villa_name, villa_location) = listing_map
                                         .get(&b.listing_id)
                                         .cloned()
-                                        .unwrap_or_else(|| ("Luxury Villa".to_string(), "Jamaica".to_string()));
+                                        .unwrap_or_else(|| ("Luxury Listing".to_string(), "Jamaica".to_string()));
                                     let (guest_name, guest_email) = user_map
                                         .get(&b.guest_id)
                                         .cloned()
@@ -359,7 +359,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                     <div class="flex justify-between items-start border-b border-base-200 pb-4">
                         <div>
                             <span class="text-primary font-bold uppercase tracking-widest text-[10px]">"PostgreSQL Verified Lock"</span>
-                            <h3 class="font-serif font-bold text-xl text-base-content" id="detail-villa-name">"Villa Name"</h3>
+                            <h3 class="font-serif font-bold text-xl text-base-content" id="detail-villa-name">"Listing Name"</h3>
                             <span class="text-xs font-mono text-base-content/60" id="detail-ref-id">"REF-..."</span>
                         </div>
                         <span class="badge badge-success font-bold text-xs" id="detail-status-badge">"Confirmed"</span>
@@ -542,7 +542,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                         </div>
                         <div class="flex justify-between">
                             <span class="text-base-content/60">"Property:"</span>
-                            <span class="font-semibold" id="invoice-villa">"Villa"</span>
+                            <span class="font-semibold" id="invoice-villa">"Listing"</span>
                         </div>
                         <div class="flex justify-between">
                             <span class="text-base-content/60">"Stay Duration:"</span>
@@ -583,7 +583,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                     </div>
                     <p class="text-sm text-base-content/80">
                         "Are you sure you want to cancel the reservation for "
-                        <strong class="font-bold" id="admin-dialog-villa-name">"Villa"</strong>
+                        <strong class="font-bold" id="admin-dialog-villa-name">"Listing"</strong>
                         " (Booking Code: "<code id="admin-dialog-booking-ref" class="font-mono text-primary font-bold">"REF"</code>")?"
                     </p>
                     <div class="bg-base-200/60 p-4 rounded-2xl text-xs space-y-1">
@@ -1054,7 +1054,7 @@ async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
                 function exportBookingsCsv() {
                     try {
                         var rows = [
-                            ['Reservation Ref', 'Villa', 'Lead Guest', 'Email', 'Dates', 'Nights', 'Total Amount', 'Statutory GCT (15%)', 'Status']
+                            ['Reservation Ref', 'Listing', 'Lead Guest', 'Email', 'Dates', 'Nights', 'Total Amount', 'Statutory GCT (15%)', 'Status']
                         ];
                         
                         var table = document.getElementById('admin-bookings-table');

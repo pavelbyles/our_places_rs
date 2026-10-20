@@ -3,9 +3,9 @@ use crate::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, BookingReviewEligibility,
     CreateBookingMessageRequest, CreateSessionRequest, DynamicPricingQuote, HostReplyRequest,
     ListingDetails, ListingResponse, LoginRequest, MarkMessagesReadResponse, NewBookingRequest,
-    NewReviewRequest, NewUserRequest, PriceOverride, ReviewResponse, ReviewTokenInfoResponse,
-    SessionResponse, TransferBookingRequest, UpdateUserRequest, UpdatedBookingRequest,
-    UserResponse,
+    NewReviewRequest, NewUserRequest, PriceOverride, ResendVerificationRequest, ReviewResponse,
+    ReviewTokenInfoResponse, SessionResponse, TransferBookingRequest, UpdateUserRequest,
+    UpdatedBookingRequest, UserResponse, VerifyRequest,
 };
 use crate::tax_document::TaxDocumentResponse;
 
@@ -1258,6 +1258,56 @@ pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
         .json()
         .await
         .context("Failed to parse user response from login")?;
+
+    Ok(user)
+}
+
+/// Verifies a user's email address with their 6-character OTP code.
+pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let url = format!("{}/api/v1/users/verify", api_url);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for verification")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Verification failed ({}): {}", status, err_text);
+    }
+
+    let user: UserResponse = res
+        .json()
+        .await
+        .context("Failed to parse user response from verification")?;
+
+    Ok(user)
+}
+
+/// Resends the 6-character OTP verification code to a user's email address.
+pub async fn resend_verification(req: &ResendVerificationRequest) -> Result<UserResponse> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let url = format!("{}/api/v1/users/resend-verification", api_url);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for resending verification")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Resend verification failed ({}): {}", status, err_text);
+    }
+
+    let user: UserResponse = res
+        .json()
+        .await
+        .context("Failed to parse user response from resend verification")?;
 
     Ok(user)
 }

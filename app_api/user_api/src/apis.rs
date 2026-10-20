@@ -26,24 +26,13 @@ use uuid::Uuid;
 use validator::Validate;
 
 pub use common::models::{
-    CreateSessionRequest, LoginRequest, NewUserRequest, SessionResponse, UpdateUserRequest,
+    CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
+    UpdateUserRequest, VerifyRequest,
 };
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SessionNamespaceQuery {
     pub namespace: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct VerifyRequest {
-    pub email: String,
-    pub code: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct ResendVerificationRequest {
-    #[validate(email)]
-    pub email: String,
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -566,11 +555,17 @@ async fn update_user(
         .map_err(ApiError::Database)?;
 
     if target_user.roles.contains(&UserRole::Admin) {
-        let is_modifying_roles = req_data.roles.is_some();
-        let is_modifying_active = req_data.is_active.is_some();
-        let is_modifying_verified = req_data.is_verified.is_some();
+        let is_demoting_admin = req_data.roles.as_ref().is_some_and(|roles| {
+            let parsed_roles: std::collections::HashSet<UserRole> = roles
+                .iter()
+                .filter_map(|r| UserRole::from_str(r).ok())
+                .collect();
+            !parsed_roles.contains(&UserRole::Admin)
+        });
+        let is_deactivating = req_data.is_active == Some(false);
+        let is_unverifying = req_data.is_verified == Some(false);
 
-        if is_modifying_roles || is_modifying_active || is_modifying_verified {
+        if is_demoting_admin || is_deactivating || is_unverifying {
             return Err(ApiError::Forbidden(
                 "Cannot modify roles or active status of the system admin".to_string(),
             ));

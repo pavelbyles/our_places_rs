@@ -444,7 +444,7 @@ async fn render_checkout(cx: &Cx, id: String, settlement_currency: String) -> Re
                                 "Welcome to Jamaica!"
                             </h3>
                             <p class="text-xs text-base-content/70 max-w-xs mx-auto" id="success-modal-desc">
-                                "Your luxury villa reservation has been successfully booked. Transferring to your itinerary..."
+                                "Your luxury reservation has been successfully booked. Transferring to your itinerary..."
                             </p>
                         </div>
                         <div class="flex items-center justify-center gap-2 text-xs font-semibold text-primary pt-2">

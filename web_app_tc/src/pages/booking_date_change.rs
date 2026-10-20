@@ -48,7 +48,7 @@ pub async fn render_booking_date_change_page(cx: &Cx) -> Result<impl View> {
     let villa_name = listing
         .as_ref()
         .map(|l| l.name.clone())
-        .unwrap_or_else(|| "Luxury Jamaican Villa".to_string());
+        .unwrap_or_else(|| "Luxury Jamaican Listing".to_string());
     let location = listing
         .as_ref()
         .map(|l| {

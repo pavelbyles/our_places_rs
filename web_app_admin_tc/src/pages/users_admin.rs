@@ -702,9 +702,14 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                         </div>
 
                         <div class="bg-base-200/50 p-4 rounded-2xl space-y-3 border border-base-200">
-                            <span class="text-base-content/70 font-bold uppercase block text-[10px] tracking-wider">
-                                "3. Roles and Status"
-                            </span>
+                            <div class="flex items-center justify-between">
+                                <span class="text-base-content/70 font-bold uppercase block text-[10px] tracking-wider">
+                                    "3. Roles and Status"
+                                </span>
+                                <span id="edit-user-admin-badge" class="badge badge-warning text-[10px] font-bold hidden">
+                                    "System Admin (Roles & Status Protected)"
+                                </span>
+                            </div>
                             <div class="flex items-center gap-4 flex-wrap">
                                 <label class="label cursor-pointer gap-2">
                                     <input type="checkbox" id="edit-role-admin" class="checkbox checkbox-primary checkbox-sm rounded-md" />
@@ -756,7 +761,7 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
             </dialog>
 
             <script>
-                r#"
+                (r#"
                 function applyClientFilter() {
                     var qInput = document.getElementById('user-search-input');
                     var rSelect = document.getElementById('user-role-select');
@@ -965,14 +970,36 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                         document.getElementById('edit-user-phone').value = phone;
                         document.getElementById('edit-user-currency').value = currency;
 
-                        document.getElementById('edit-role-admin').checked = (rolesStr.indexOf('admin') !== -1);
-                        document.getElementById('edit-role-host').checked = (rolesStr.indexOf('host') !== -1);
-                        document.getElementById('edit-role-booker').checked = (rolesStr.indexOf('booker') !== -1);
+                        var isAdmin = (rolesStr.indexOf('admin') !== -1);
+                        var adminCb = document.getElementById('edit-role-admin');
+                        var hostCb = document.getElementById('edit-role-host');
+                        var bookerCb = document.getElementById('edit-role-booker');
+                        var activeCb = document.getElementById('edit-user-active');
+                        var verifiedCb = document.getElementById('edit-user-verified');
 
-                        document.getElementById('edit-user-active').checked = isActive;
-                        document.getElementById('edit-user-verified').checked = isVerified;
+                        adminCb.checked = isAdmin;
+                        hostCb.checked = (rolesStr.indexOf('host') !== -1);
+                        bookerCb.checked = (rolesStr.indexOf('booker') !== -1);
+
+                        activeCb.checked = isActive;
+                        verifiedCb.checked = isVerified;
                         document.getElementById('edit-user-can-bookings').checked = canBookings;
                         document.getElementById('edit-user-can-listings').checked = canListings;
+
+                        adminCb.disabled = isAdmin;
+                        hostCb.disabled = isAdmin;
+                        bookerCb.disabled = isAdmin;
+                        activeCb.disabled = isAdmin;
+                        verifiedCb.disabled = isAdmin;
+
+                        var adminBadge = document.getElementById('edit-user-admin-badge');
+                        if (adminBadge) {
+                            if (isAdmin) {
+                                adminBadge.classList.remove('hidden');
+                            } else {
+                                adminBadge.classList.add('hidden');
+                            }
+                        }
 
                         var fb = document.getElementById('edit-user-feedback');
                         if (fb) { fb.style.setProperty('display', 'none', 'important'); }
@@ -1038,14 +1065,25 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                         }
                     }
 
-                    var roles = [];
-                    if (document.getElementById('edit-role-admin').checked) { roles.push('admin'); }
-                    if (document.getElementById('edit-role-host').checked) { roles.push('host'); }
-                    if (document.getElementById('edit-role-booker').checked) { roles.push('booker'); }
-                    if (roles.length === 0) { roles.push('booker'); }
+                    var isAdminUser = false;
+                    var adminRoleEl = document.getElementById('edit-role-admin');
+                    var adminBadgeEl = document.getElementById('edit-user-admin-badge');
+                    if (adminRoleEl ? adminRoleEl.disabled : false) {
+                        isAdminUser = true;
+                    } else if (adminBadgeEl ? !adminBadgeEl.classList.contains('hidden') : false) {
+                        isAdminUser = true;
+                    }
 
-                    var isActive = document.getElementById('edit-user-active').checked;
-                    var isVerified = document.getElementById('edit-user-verified').checked;
+                    var roles = isAdminUser ? null : [];
+                    if (!isAdminUser) {
+                        if (document.getElementById('edit-role-admin').checked) { roles.push('admin'); }
+                        if (document.getElementById('edit-role-host').checked) { roles.push('host'); }
+                        if (document.getElementById('edit-role-booker').checked) { roles.push('booker'); }
+                        if (roles.length === 0) { roles.push('booker'); }
+                    }
+
+                    var isActive = isAdminUser ? null : document.getElementById('edit-user-active').checked;
+                    var isVerified = isAdminUser ? null : document.getElementById('edit-user-verified').checked;
                     var canBookings = document.getElementById('edit-user-can-bookings').checked;
                     var canListings = document.getElementById('edit-user-can-listings').checked;
 
@@ -1105,7 +1143,7 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
 
                     return false;
                 }
-                "#
+                "#)
             </script>
         </div>
         }
@@ -1355,7 +1393,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result<impl View> {
                             />
                             <div>
                                 <div class="font-bold text-sm text-base-content">"Booker / Guest 🧳"</div>
-                                <div class="text-[11px] text-base-content/60">"Can book villas"</div>
+                                <div class="text-[11px] text-base-content/60">"Can book listings"</div>
                             </div>
                         </label>
                     </div>
@@ -1552,7 +1590,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result<impl View> {
                                 permUsersBadge.innerText = 'Granted (Admin)';
                             }
                         } else if (isHost) {
-                            // Host only: listings & bookings enabled, admin options (rates & users) strictly locked & disabled
+                            // Host only: listings and bookings enabled, admin options (rates and users) strictly locked and disabled
                             if (container) {
                                 container.style.opacity = '1';
                                 container.style.pointerEvents = 'auto';

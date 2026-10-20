@@ -93,6 +93,25 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Request payload for verifying a user's email with an OTP code.
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
+pub struct VerifyRequest {
+    /// Email address of the user to verify.
+    #[validate(email)]
+    pub email: String,
+    /// 6-character alphanumeric verification OTP code.
+    #[validate(length(min = 1))]
+    pub code: String,
+}
+
+/// Request payload for resending an email verification OTP code.
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
+pub struct ResendVerificationRequest {
+    /// Target email address for resending verification code.
+    #[validate(email)]
+    pub email: String,
+}
+
 /// Request payload for updating user account details.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {

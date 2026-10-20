@@ -69,7 +69,7 @@ pub async fn listing_detail(cx: &Cx) -> Result<impl View> {
                 // Breadcrumbs & Title Bar
                 <div class="space-y-2">
                     <div class="text-xs text-base-content/60 font-medium tracking-wide flex items-center gap-1.5">
-                        <a href="/listings" class="hover:text-primary transition-colors">"Villas"</a>
+                        <a href="/listings" class="hover:text-primary transition-colors">"Listings"</a>
                         <span>"/"</span>
                         <span>(listing.city.as_deref().unwrap_or("Jamaica"))</span>
                         <span>"/"</span>
@@ -389,7 +389,7 @@ pub async fn listing_detail(cx: &Cx) -> Result<impl View> {
         } else {
             <div class="max-w-md mx-auto py-20 text-center space-y-4">
                 <h2 class="text-2xl font-bold">"Listing Not Found"</h2>
-                <p class="text-base-content/70">"The requested villa does not exist or has been retired."</p>
+                <p class="text-base-content/70">"The requested listing does not exist or has been retired."</p>
                 <a href="/listings" class="btn btn-primary">"Browse All Listings"</a>
             </div>
         }
