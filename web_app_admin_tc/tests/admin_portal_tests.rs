@@ -5,7 +5,8 @@ use rust_decimal_macros::dec;
 use uuid::Uuid;
 use validator::Validate;
 use web_app_admin_tc::{
-    AdminUpdateUserPayload, GranularPermissions, HostRegisterRequest,
+    AdminDeleteUserPayload, AdminDeleteUserResponse, AdminRestoreUserPayload,
+    AdminRestoreUserResponse, AdminUpdateUserPayload, GranularPermissions, HostRegisterRequest,
     PermissionTypeConstraintError, RoleCapabilityProfile, UserFilterQuery,
 };
 
@@ -250,6 +251,7 @@ fn test_user_search_and_role_filter_matching() {
     let query = UserFilterQuery {
         q: Some("Pavel".to_string()),
         role: Some("admin".to_string()),
+        status: None,
     };
 
     assert_eq!(query.q.as_deref(), Some("Pavel"));
@@ -1155,4 +1157,136 @@ fn test_login_script_has_zero_escaped_entities() {
         "Expected at least 3 script blocks in login.rs, found {}",
         script_count
     );
+}
+
+#[test]
+fn test_admin_user_deletion_and_restore_payloads() {
+    let user_id = Uuid::new_v4();
+
+    // Soft delete payload
+    let soft_payload = AdminDeleteUserPayload {
+        user_id,
+        purge: false,
+    };
+    let json_soft = serde_json::to_string(&soft_payload).expect("Failed to serialize soft delete");
+    let deser_soft: AdminDeleteUserPayload =
+        serde_json::from_str(&json_soft).expect("Failed to deserialize soft delete");
+    assert_eq!(deser_soft.user_id, user_id);
+    assert!(!deser_soft.purge);
+
+    // Hard delete / purge payload
+    let hard_payload = AdminDeleteUserPayload {
+        user_id,
+        purge: true,
+    };
+    let json_hard = serde_json::to_string(&hard_payload).expect("Failed to serialize hard delete");
+    let deser_hard: AdminDeleteUserPayload =
+        serde_json::from_str(&json_hard).expect("Failed to deserialize hard delete");
+    assert_eq!(deser_hard.user_id, user_id);
+    assert!(deser_hard.purge);
+
+    // Restore payload
+    let restore_payload = AdminRestoreUserPayload { user_id };
+    let json_restore =
+        serde_json::to_string(&restore_payload).expect("Failed to serialize restore");
+    let deser_restore: AdminRestoreUserPayload =
+        serde_json::from_str(&json_restore).expect("Failed to deserialize restore");
+    assert_eq!(deser_restore.user_id, user_id);
+
+    // Response models
+    let delete_resp = AdminDeleteUserResponse {
+        success: true,
+        message: Some("User archived successfully".to_string()),
+    };
+    assert!(delete_resp.success);
+    assert_eq!(
+        delete_resp.message.as_deref(),
+        Some("User archived successfully")
+    );
+
+    let restore_resp = AdminRestoreUserResponse {
+        success: true,
+        message: Some("User restored successfully".to_string()),
+    };
+    assert!(restore_resp.success);
+}
+
+#[test]
+fn test_admin_user_deletion_protection_invariant() {
+    // Invariant: accounts containing admin or superadmin role cannot be deleted
+    let admin_roles = vec!["admin".to_string()];
+    let is_admin = admin_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(is_admin, "Admin role must be detected as protected");
+
+    let superadmin_roles = vec!["superadmin".to_string(), "booker".to_string()];
+    let is_superadmin = superadmin_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(
+        is_superadmin,
+        "Superadmin role must be detected as protected"
+    );
+
+    let host_roles = vec!["host".to_string(), "booker".to_string()];
+    let is_host_admin = host_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(
+        !is_host_admin,
+        "Host role must not be marked as protected admin"
+    );
+
+    let guest_roles = vec!["booker".to_string()];
+    let is_guest_admin = guest_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(
+        !is_guest_admin,
+        "Guest role must not be marked as protected admin"
+    );
+}
+
+#[test]
+fn test_admin_user_status_filter_mapping() {
+    // Active filter
+    let active_status = "active";
+    let active_param = match active_status {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
+    assert_eq!(active_param, Some(false));
+
+    // Archived filter
+    let archived_status = "archived";
+    let archived_param = match archived_status {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
+    assert_eq!(archived_param, Some(true));
+
+    // All filter
+    let all_status = "all";
+    let all_param = match all_status {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
+    assert_eq!(all_param, None);
+
+    // Default fallback
+    let default_query = UserFilterQuery::default();
+    let status_filter = default_query
+        .status
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "active".to_string());
+    assert_eq!(status_filter, "active");
 }

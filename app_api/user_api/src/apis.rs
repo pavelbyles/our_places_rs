@@ -39,6 +39,7 @@ pub struct SessionNamespaceQuery {
 pub struct UserFilter {
     pub search: Option<String>,
     pub is_deleted: Option<bool>,
+    pub all: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -806,12 +807,18 @@ async fn get_all_users(
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
 
+    let is_deleted_filter = if filter.all.unwrap_or(false) {
+        None
+    } else {
+        Some(filter.is_deleted.unwrap_or(false))
+    };
+
     let users = db_core::user::get_all_users(
         pool.get_ref(),
         page,
         per_page,
         filter.search.clone(),
-        filter.is_deleted,
+        is_deleted_filter,
     )
     .await
     .map_err(ApiError::Database)?;
@@ -854,6 +861,16 @@ async fn soft_delete_user(
         return Err(ApiError::Unauthorized(
             "Cannot delete admin users".to_string(),
         ));
+    }
+
+    // Revoke all active sessions across all namespaces immediately
+    let session_store = db_core::sessions::SessionsDb::new((**pool).clone());
+    if let Err(e) = session_store.delete_user_sessions(id, None).await {
+        tracing::warn!(
+            "Failed to revoke sessions for soft-deleted user {}: {:?}",
+            id,
+            e
+        );
     }
 
     let deleted = db_core::user::soft_delete_user(pool.get_ref(), id)
@@ -927,6 +944,16 @@ async fn hard_delete_user(
         return Err(ApiError::Unauthorized(
             "Cannot hard delete admin users".to_string(),
         ));
+    }
+
+    // Revoke all active sessions across all namespaces
+    let session_store = db_core::sessions::SessionsDb::new((**pool).clone());
+    if let Err(e) = session_store.delete_user_sessions(id, None).await {
+        tracing::warn!(
+            "Failed to revoke sessions for hard-deleted user {}: {:?}",
+            id,
+            e
+        );
     }
 
     db_core::user::hard_delete_user(pool.get_ref(), id)

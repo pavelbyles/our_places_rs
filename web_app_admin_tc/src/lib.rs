@@ -6,7 +6,8 @@ pub use pages::login::{
 };
 pub use pages::payouts_admin::PayoutFilterQuery;
 pub use pages::users_admin::{
-    AdminUpdateUserPayload, AdminUpdateUserResponse, GranularPermissions,
+    AdminDeleteUserPayload, AdminDeleteUserResponse, AdminRestoreUserPayload,
+    AdminRestoreUserResponse, AdminUpdateUserPayload, AdminUpdateUserResponse, GranularPermissions,
     PermissionTypeConstraintError, PrivilegedScope, RoleCapabilityProfile, UserFilterQuery,
     UserRoleType,
 };

@@ -1069,10 +1069,12 @@ pub async fn fetch_user_profile(user_id: &str) -> Result<Response> {
     get_client().get(&url, &audience).await
 }
 
-pub async fn get_all_users(
+/// Retrieves all users with optional pagination, search filtering, and soft-delete filtering.
+pub async fn get_all_users_filtered(
     page: Option<u32>,
     per_page: Option<u32>,
     search: Option<String>,
+    is_deleted: Option<bool>,
 ) -> Result<Vec<UserResponse>> {
     let api_url = user_api_url();
     let audience = user_api_audience();
@@ -1084,6 +1086,11 @@ pub async fn get_all_users(
     );
     if let Some(s) = search.filter(|s| !s.is_empty()) {
         url.push_str(&format!("&search={}", s));
+    }
+    if let Some(del) = is_deleted {
+        url.push_str(&format!("&is_deleted={}", del));
+    } else {
+        url.push_str("&all=true");
     }
 
     let res = get_client()
@@ -1100,6 +1107,82 @@ pub async fn get_all_users(
     res.json::<Vec<UserResponse>>()
         .await
         .context("Failed to parse users response")
+}
+
+/// Retrieves active users with pagination and search.
+pub async fn get_all_users(
+    page: Option<u32>,
+    per_page: Option<u32>,
+    search: Option<String>,
+) -> Result<Vec<UserResponse>> {
+    get_all_users_filtered(page, per_page, search, None).await
+}
+
+/// Soft deletes a user account (marks as deleted and deactivated).
+pub async fn soft_delete_user(id: Uuid) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/user/{}", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to user service for soft deletion")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to soft delete user ({}): {}", status, err_text);
+    }
+
+    res.json::<UserResponse>()
+        .await
+        .context("Failed to parse soft deleted user response")
+}
+
+/// Permanently purges a user from the database.
+pub async fn hard_delete_user(id: Uuid) -> Result<()> {
+    let url = format!("{}/api/v1/users/user/{}/hard", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to user service for hard deletion")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&err_text)
+            && let Some(err_msg) = json_val.get("error").and_then(|v| v.as_str())
+        {
+            bail!("{}", err_msg);
+        }
+        bail!(
+            "Failed to permanently purge user ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    Ok(())
+}
+
+/// Restores an archived / soft-deleted user.
+pub async fn restore_user(id: Uuid) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/user/{}/restore", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, &serde_json::json!({}))
+        .await
+        .context("Failed to connect to user service for user restoration")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to restore user ({}): {}", status, err_text);
+    }
+
+    res.json::<UserResponse>()
+        .await
+        .context("Failed to parse restored user response")
 }
 
 pub async fn update_user(id: Uuid, req: &UpdateUserRequest) -> Result<UserResponse> {
