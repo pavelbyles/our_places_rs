@@ -51,22 +51,99 @@ pub async fn admin_bookings_page(cx: &Cx) -> Result<impl View> {
 
 async fn render_bookings_content(cx: &Cx) -> Result<impl View> {
     let __cx = cx;
-    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
-        .await
-        .is_ok();
+    let admin_user = web_app_common_tc::auth::get_admin_session(cx).await;
+    let is_authed = admin_user.is_some();
+    let is_admin = admin_user.as_ref().is_some_and(|u| u.is_admin());
+    let host_user_id = admin_user.as_ref().and_then(|u| u.id);
+    let host_email = admin_user.as_ref().map(|u| u.email.clone());
     let api = get_api_client(cx);
 
-    let bookings = api
-        .get_all_bookings(Some(1), Some(50))
-        .await
-        .unwrap_or_default();
-    let listings = api
-        .search_listings(ListingSearchParams {
-            per_page: Some(50),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
+    let raw_listings = if is_admin {
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!("Failed to fetch listings in bookings admin: {:?}", err);
+                Vec::new()
+            }
+        }
+    } else {
+        let mut results = if let Some(uid) = host_user_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch bookings listings by user_id {:?}: {:?}",
+                        uid,
+                        err
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if results.is_empty()
+            && let Some(ref email) = host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    results = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch bookings listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+        results
+    };
+
+    let host_listing_ids: std::collections::HashSet<uuid::Uuid> =
+        raw_listings.iter().map(|l| l.id).collect();
+
+    let raw_bookings = match api.get_all_bookings(Some(1), Some(100)).await {
+        Ok(b) => b,
+        Err(err) => {
+            tracing::error!("Failed to fetch bookings in bookings admin: {:?}", err);
+            Vec::new()
+        }
+    };
+
+    let bookings: Vec<common::models::BookingResponse> = if is_admin {
+        raw_bookings
+    } else {
+        raw_bookings
+            .into_iter()
+            .filter(|b| host_listing_ids.contains(&b.listing_id))
+            .collect()
+    };
+
+    let listings = raw_listings;
     let users = match api.get_all_users(Some(1), Some(50), None).await {
         Ok(users) => users,
         Err(err) => {

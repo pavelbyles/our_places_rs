@@ -352,7 +352,9 @@ pub async fn admin_create_listing_form(
     cx: &Cx,
     Form(payload): Form<AdminCreateListingFormPayload>,
 ) -> Result<SeeOther> {
-    let _ = execute_create_listing(cx, payload.into_payload()).await;
+    if let Err(err) = execute_create_listing(cx, payload.into_payload()).await {
+        tracing::error!("Failed to create listing via admin form: {}", err);
+    }
     Ok(see_other("/admin/listings"))
 }
 
@@ -389,20 +391,64 @@ async fn render_listings_content(cx: &Cx) -> Result<impl View> {
     let api = get_api_client(cx);
 
     let raw_listings = if is_admin {
-        api.search_listings(ListingSearchParams {
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!("Failed to fetch listings for admin directory: {:?}", err);
+                Vec::new()
+            }
+        }
     } else {
-        api.search_listings(ListingSearchParams {
-            owner_email: host_email.clone(),
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
+        let mut results = if let Some(uid) = host_user_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!("Failed to fetch listings by user_id {:?}: {:?}", uid, err);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if results.is_empty()
+            && let Some(ref email) = host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    results = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+        results
     };
 
     let listings: Vec<common::models::ListingResponse> = if is_admin {
@@ -619,21 +665,71 @@ async fn render_new_or_cloned_listing(
 
     // Dynamic clone options: Admin sees all listings, Host only sees their own listings
     let available_listings: Vec<common::models::ListingResponse> = if is_admin {
-        api.search_listings(ListingSearchParams {
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
-    } else {
-        let raw = api
+        match api
             .search_listings(ListingSearchParams {
-                owner_email: current_host_email.clone(),
                 per_page: Some(100),
                 ..Default::default()
             })
             .await
-            .unwrap_or_default();
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!(
+                    "Failed to fetch available listings for admin clone: {:?}",
+                    err
+                );
+                Vec::new()
+            }
+        }
+    } else {
+        let mut raw = if let Some(uid) = current_host_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch clone listings by user_id {:?}: {:?}",
+                        uid,
+                        err
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if raw.is_empty()
+            && let Some(ref email) = current_host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    raw = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch clone listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+
         raw.into_iter()
             .filter(|l| {
                 if let Some(uid) = current_host_id {

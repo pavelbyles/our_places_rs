@@ -34,9 +34,11 @@ pub async fn payouts_alias_page(cx: &Cx) -> Result<impl View> {
 
 async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
     let __cx = cx;
-    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
-        .await
-        .is_ok();
+    let admin_user = web_app_common_tc::auth::get_admin_session(cx).await;
+    let is_authed = admin_user.is_some();
+    let is_admin = admin_user.as_ref().is_some_and(|u| u.is_admin());
+    let host_user_id = admin_user.as_ref().and_then(|u| u.id);
+    let host_email = admin_user.as_ref().map(|u| u.email.clone());
     let api = get_api_client(cx);
 
     let filter_query = parse_query_params::<PayoutFilterQuery>(cx).unwrap_or_default();
@@ -73,7 +75,7 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
 
     let filter = PayoutFilter {
         listing_id,
-        host_id: None,
+        host_id: if is_admin { None } else { host_user_id },
         status,
         date_from,
         date_to,
@@ -82,19 +84,79 @@ async fn render_payouts_content(cx: &Cx) -> Result<impl View> {
     };
 
     // Fetch listings for filter dropdown
-    let listings = api
-        .search_listings(ListingSearchParams {
-            per_page: Some(50),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
+    let listings = if is_admin {
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!("Failed to fetch listings in payouts admin: {:?}", err);
+                Vec::new()
+            }
+        }
+    } else {
+        let mut results = if let Some(uid) = host_user_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch payouts listings by user_id {:?}: {:?}",
+                        uid,
+                        err
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if results.is_empty()
+            && let Some(ref email) = host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    results = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch payouts listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+        results
+    };
 
     // Fetch financial summary metrics
-    let summary = api
-        .get_host_payout_summary(&filter)
-        .await
-        .unwrap_or_default();
+    let summary = match api.get_host_payout_summary(&filter).await {
+        Ok(s) => s,
+        Err(err) => {
+            tracing::error!("Failed to fetch host payout summary: {:?}", err);
+            common::payout::PayoutSummary::default()
+        }
+    };
 
     let selected_status_str = filter_query.status.clone().unwrap_or_default();
     let selected_listing_str = filter_query.listing_id.clone().unwrap_or_default();

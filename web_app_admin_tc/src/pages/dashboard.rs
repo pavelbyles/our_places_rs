@@ -33,20 +33,68 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
     let host_user_id = admin_user.as_ref().and_then(|u| u.id);
 
     let raw_listings = if is_admin {
-        api.search_listings(ListingSearchParams {
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!("Failed to fetch listings for admin dashboard: {:?}", err);
+                Vec::new()
+            }
+        }
     } else {
-        api.search_listings(ListingSearchParams {
-            owner_email: host_email.clone(),
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
+        let mut results = if let Some(uid) = host_user_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch dashboard listings by user_id {:?}: {:?}",
+                        uid,
+                        err
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if results.is_empty()
+            && let Some(ref email) = host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    results = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch dashboard listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+        results
     };
 
     let listings: Vec<common::models::ListingResponse> = if is_admin {

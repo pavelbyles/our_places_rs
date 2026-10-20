@@ -343,7 +343,7 @@ pub struct ListingDetails {
     pub rating_summary: Option<ListingRatingSummary>,
 }
 
-#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingFilter {
     pub name: Option<String>,
     pub country: Option<String>,
@@ -354,9 +354,12 @@ pub struct ListingFilter {
     pub owner: Option<String>,
     pub resolution: Option<String>,
     pub currency: Option<String>,
+    /// Optional owner user identifier filter for exact host scoping.
+    #[serde(default)]
+    pub user_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingQueryParams {
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -369,6 +372,8 @@ pub struct ListingQueryParams {
     pub owner: Option<String>,
     pub resolution: Option<String>,
     pub currency: Option<String>,
+    /// Optional owner user identifier query parameter for host listings scoping.
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]

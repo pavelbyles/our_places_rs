@@ -1290,3 +1290,40 @@ fn test_admin_user_status_filter_mapping() {
         .unwrap_or_else(|| "active".to_string());
     assert_eq!(status_filter, "active");
 }
+
+#[test]
+fn test_host_listings_scoping_params_and_url_encoding() {
+    let host_id = Uuid::new_v4();
+    let email_with_plus = "host+luxury@ourplaces.io";
+
+    let params = common::app_client::ListingSearchParams {
+        user_id: Some(host_id),
+        owner_email: Some(email_with_plus.to_string()),
+        per_page: Some(100),
+        ..Default::default()
+    };
+
+    assert_eq!(params.user_id, Some(host_id));
+    assert_eq!(
+        params.owner_email.as_deref(),
+        Some("host+luxury@ourplaces.io")
+    );
+
+    // Verify percent-encoding of query parameters prevents '+' from decoding as space
+    let mut url = reqwest::Url::parse("http://localhost:8080/api/v1/listings").unwrap();
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("per_page", "100");
+        if let Some(uid) = params.user_id {
+            query.append_pair("user_id", &uid.to_string());
+        }
+        if let Some(ref email) = params.owner_email {
+            query.append_pair("owner", email.trim());
+        }
+    }
+
+    let url_str = url.to_string();
+    assert!(url_str.contains(&format!("user_id={}", host_id)));
+    assert!(url_str.contains("owner=host%2Bluxury%40ourplaces.io"));
+    assert!(!url_str.contains("owner=host+luxury@ourplaces.io"));
+}

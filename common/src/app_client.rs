@@ -78,6 +78,8 @@ pub fn user_api_audience() -> String {
 pub struct ListingSearchParams {
     pub name: Option<String>,
     pub owner_email: Option<String>,
+    /// Optional canonical user ID to query listings belonging strictly to a specific host.
+    pub user_id: Option<Uuid>,
     pub listing_structure: Option<Vec<String>>,
     pub max_price: Option<f64>,
     pub currency: Option<String>,
@@ -89,30 +91,39 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
     let api_url = listing_api_url();
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(20);
-    let mut url = format!(
-        "{}/api/v1/listings?page={}&per_page={}",
-        api_url, page, per_page
-    );
+    let base_url = format!("{}/api/v1/listings", api_url);
+    let mut url =
+        reqwest::Url::parse(&base_url).context("Failed to parse listings API base URL")?;
 
-    if let Some(s) = params.name.filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&name={}", s));
-    }
-    if let Some(s) = params.owner_email.filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&owner={}", s));
-    }
-    if let Some(structures) = params.listing_structure.filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&structure_type={}", structures.join(",")));
-    }
-    if let Some(s) = params.max_price.filter(|&s| s > 0.0) {
-        url.push_str(&format!("&max_price={}", s));
-    }
-    if let Some(c) = params.currency.filter(|c| !c.is_empty()) {
-        url.push_str(&format!("&currency={}", c));
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("page", &page.to_string());
+        query.append_pair("per_page", &per_page.to_string());
+
+        if let Some(uid) = params.user_id {
+            query.append_pair("user_id", &uid.to_string());
+        }
+        if let Some(s) = params.name.filter(|s| !s.is_empty()) {
+            query.append_pair("name", &s);
+        }
+        if let Some(s) = params.owner_email.filter(|s| !s.is_empty()) {
+            query.append_pair("owner", s.trim());
+        }
+        if let Some(structures) = params.listing_structure.filter(|s| !s.is_empty()) {
+            query.append_pair("structure_type", &structures.join(","));
+        }
+        if let Some(s) = params.max_price.filter(|&s| s > 0.0) {
+            query.append_pair("max_price", &s.to_string());
+        }
+        if let Some(c) = params.currency.filter(|c| !c.is_empty()) {
+            query.append_pair("currency", &c);
+        }
     }
 
+    let url_str = url.to_string();
     let audience = listing_api_audience();
     let res = get_client()
-        .get(&url, &audience)
+        .get(&url_str, &audience)
         .await
         .context("Failed to connect to listing service")?;
 
