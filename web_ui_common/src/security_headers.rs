@@ -17,6 +17,19 @@ base-uri 'self'; \
 form-action 'self'; \
 object-src 'none'";
 
+/// Content-Security-Policy for the admin portal: as [`CONTENT_SECURITY_POLICY`],
+/// plus Cloud Storage in `connect-src` for direct signed-URL photo uploads.
+pub const ADMIN_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; \
+script-src 'self'; \
+style-src 'self'; \
+img-src 'self' https://storage.googleapis.com data:; \
+font-src 'self'; \
+connect-src 'self' https://storage.googleapis.com; \
+frame-ancestors 'none'; \
+base-uri 'self'; \
+form-action 'self'; \
+object-src 'none'";
+
 /// `Cache-Control` for HTML: pages vary by session and theme cookies, so
 /// shared caches must not store them.
 pub const HTML_CACHE_CONTROL: &str = "private, no-cache";
@@ -31,22 +44,41 @@ const HSTS: &str = "max-age=31536000; includeSubDomains";
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SecurityHeaders {
     hsts: bool,
+    admin: bool,
 }
 
 impl SecurityHeaders {
     /// Headers without HSTS (local development over plain HTTP).
     pub fn new() -> Self {
-        Self { hsts: false }
+        Self {
+            hsts: false,
+            admin: false,
+        }
+    }
+
+    /// The admin portal's headers ([`ADMIN_CONTENT_SECURITY_POLICY`]).
+    pub fn admin() -> Self {
+        Self {
+            hsts: false,
+            admin: true,
+        }
     }
 
     /// Also send `Strict-Transport-Security` (production, behind HTTPS).
     pub fn with_hsts(self, hsts: bool) -> Self {
-        Self { hsts }
+        Self { hsts, ..self }
     }
 
     fn static_headers(&self) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {
         [
-            ("content-security-policy", CONTENT_SECURITY_POLICY),
+            (
+                "content-security-policy",
+                if self.admin {
+                    ADMIN_CONTENT_SECURITY_POLICY
+                } else {
+                    CONTENT_SECURITY_POLICY
+                },
+            ),
             ("x-content-type-options", "nosniff"),
             ("x-frame-options", "DENY"),
             ("referrer-policy", "strict-origin-when-cross-origin"),

@@ -11,6 +11,8 @@ use topcoat::{
 use uuid::Uuid;
 use web_client::session::AdminRole;
 
+use web_ui_common::components::domain::responsive_image::responsive_image;
+
 use super::form::{ListingFields, listing_form};
 use super::managed_listing;
 use crate::support::staff;
@@ -27,6 +29,12 @@ pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
     let admin = user.role == AdminRole::Admin;
     let fields = ListingFields::from_listing(&listing);
     let action = format!("/admin/listings/{}/edit", listing.id);
+    let presign = format!("/admin/listings/{}/images/presign", listing.id);
+    let photos: Vec<String> = web_client::get_api_client(cx)
+        .get_listing_by_id(&listing.id.to_string(), None)
+        .await
+        .map(|d| d.images.into_iter().map(|i| i.url).collect())
+        .unwrap_or_default();
     Ok(view! {
         <div class="space-y-6">
             <div>
@@ -34,6 +42,24 @@ pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
                 <h1 class="text-2xl font-semibold">(format!("Edit {}", listing.name))</h1>
             </div>
             listing_form(action: action, submit_label: "Save changes".into(), fields: fields, owners: Vec::new(), can_set_commission: admin, errors: Vec::new())
+            <section aria-labelledby="photos-heading" class="space-y-4 rounded-xl border border-border p-6">
+                <h2 id="photos-heading" class="text-sm font-semibold">"Photos"</h2>
+                if photos.is_empty() {
+                    <p class="text-sm text-muted-foreground">"No processed photos yet."</p>
+                } else {
+                    <ul id="listing-photos" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        for src in photos {
+                            <li>responsive_image(src: src, alt: listing.name.clone(), attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" })</li>
+                        }
+                    </ul>
+                }
+                <form id="image-upload-form" data-upload=(presign) class="flex flex-wrap items-center gap-3">
+                    <label for="image-upload-input" class="text-sm">"Add photos (JPEG, PNG or WebP, up to 15 MB each)"</label>
+                    <input id="image-upload-input" type="file" name="photos" multiple=(true) accept="image/jpeg,image/png,image/webp" class="text-sm" />
+                    <button id="btn-upload-images" type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Upload"</button>
+                    <p data-upload-status="" role="status" class="w-full text-sm text-muted-foreground"></p>
+                </form>
+            </section>
         </div>
     })
 }

@@ -532,6 +532,27 @@ impl TopcoatApiClient {
     }
 }
 
+impl TopcoatApiClient {
+    /// Asks `listing_api` for GCP V4 signed upload URLs for new listing
+    /// photos (the browser then uploads straight to Cloud Storage).
+    pub async fn presign_listing_images(
+        &self,
+        listing_id: Uuid,
+        req: &common::models::ImagePresignRequest,
+    ) -> anyhow::Result<Vec<common::models::ImagePresignResponse>> {
+        let url = format!(
+            "{}/api/v1/listings/{listing_id}/images/presign",
+            self.listing_api_url
+        );
+        let audience = common::app_client::listing_api_audience();
+        let res = self.client.post(&url, &audience, req).await?;
+        if !res.status().is_success() {
+            anyhow::bail!("presign failed with status {}", res.status());
+        }
+        Ok(res.json().await?)
+    }
+}
+
 /// Sends a JSON body with the user's bearer token (and the gateway API key,
 /// if configured) and decodes a JSON response.
 async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(

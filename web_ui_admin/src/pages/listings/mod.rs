@@ -23,6 +23,8 @@ pub mod create;
 pub mod edit;
 /// The studio form shared by create, clone and edit.
 pub mod form;
+/// Signed-URL photo uploads.
+pub mod images;
 
 path_param!(id);
 

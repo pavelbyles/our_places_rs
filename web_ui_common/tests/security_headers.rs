@@ -9,7 +9,7 @@ use topcoat::{
     view::{View, view},
 };
 use web_ui_common::security_headers::{
-    CONTENT_SECURITY_POLICY, HTML_CACHE_CONTROL, SecurityHeaders,
+    ADMIN_CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY, HTML_CACHE_CONTROL, SecurityHeaders,
 };
 
 #[page("/__probe")]
@@ -93,5 +93,30 @@ async fn cross_origin_posts_are_rejected() -> reqwest::Result<()> {
         .send()
         .await?;
     assert_eq!(same.status(), 200);
+    Ok(())
+}
+
+#[tokio::test]
+async fn admin_csp_only_adds_cloud_storage_uploads() -> reqwest::Result<()> {
+    let base = serve(SecurityHeaders::admin()).await;
+    let res = reqwest::get(format!("{base}/__probe")).await?;
+    assert_eq!(
+        res.headers()["content-security-policy"],
+        ADMIN_CONTENT_SECURITY_POLICY
+    );
+    assert!(
+        ADMIN_CONTENT_SECURITY_POLICY
+            .contains("connect-src 'self' https://storage.googleapis.com;")
+    );
+    assert!(!CONTENT_SECURITY_POLICY.contains("connect-src 'self' https"));
+    assert_eq!(
+        ADMIN_CONTENT_SECURITY_POLICY
+            .replace(" https://storage.googleapis.com;", ";")
+            .replace(
+                "img-src 'self' data:",
+                "img-src 'self' https://storage.googleapis.com data:"
+            ),
+        CONTENT_SECURITY_POLICY
+    );
     Ok(())
 }

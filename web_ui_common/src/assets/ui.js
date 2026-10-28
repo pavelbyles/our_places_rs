@@ -137,6 +137,46 @@
 
   document.addEventListener('toast', function (event) { showToast(event.detail); });
 
+  // --- Listing photo uploads (admin): ask the portal for signed URLs, then
+  // PUT each file straight to Cloud Storage. No image bytes go through the
+  // portal itself.
+  document.addEventListener('submit', function (event) {
+    var form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form || !form.hasAttribute('data-upload')) return;
+    event.preventDefault();
+    var input = form.querySelector('input[type="file"]');
+    var status = form.querySelector('[data-upload-status]');
+    var say = function (text) { if (status) status.textContent = text; };
+    var files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+    if (!files.length) { say('Choose at least one photo.'); return; }
+    say('Uploading ' + files.length + ' photo(s)…');
+    fetch(form.getAttribute('data-upload'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ files: files.map(function (f) { return { content_type: f.type, size_bytes: f.size }; }) })
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('rejected');
+        return res.json();
+      })
+      .then(function (signed) {
+        return Promise.all(signed.map(function (s) {
+          var file = files[Number(s.client_file_id)];
+          return fetch(s.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+            .then(function (r) { return r.ok; }, function () { return false; });
+        }));
+      })
+      .then(function (results) {
+        var ok = results.filter(Boolean).length;
+        say(ok === results.length
+          ? 'Uploaded ' + ok + ' photo(s). They appear here once processing finishes.'
+          : 'Uploaded ' + ok + ' of ' + results.length + ' photo(s). Try the others again.');
+        if (input) input.value = '';
+      })
+      .catch(function () { say('Upload failed. Check the files (JPEG, PNG or WebP, under 15 MB) and try again.'); });
+  });
+
   // Clear a form after htmx submits it successfully (e.g. the message box).
   document.addEventListener('htmx:afterRequest', function (event) {
     var form = event.target instanceof HTMLFormElement ? event.target : null;
