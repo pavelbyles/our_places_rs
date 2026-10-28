@@ -124,7 +124,7 @@ pub async fn admin_document(
     #[default]
     child: Child<'_>,
 ) -> Result<impl View> {
-    let title = format!("{} · Our Places Console", shell.title);
+    let title = format!("{} · Our Places Admin", shell.title);
     let html_class = shell.theme.html_class();
     Ok(view! {
         <!DOCTYPE html>

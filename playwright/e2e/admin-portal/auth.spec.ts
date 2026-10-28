@@ -1,5 +1,7 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { TEST_USERS } from '../fixtures/test-data.js';
+import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
+import { createGuest, psql } from '../fixtures/bookings-data.js';
 
 test.describe('Admin Portal - Authentication & Route Guard', () => {
   test.beforeEach(async ({ page }) => {
@@ -40,4 +42,30 @@ test.describe('Admin Portal - Authentication & Route Guard', () => {
     await page.waitForURL((url) => url.pathname.includes('/login'), { timeout: 8000 });
     expect(page.url()).toContain('/login');
   });
+
+  test('signs in with a server session in the admin namespace', { tag: '@new-only' }, async ({ page }) => {
+    const host = createHost();
+    await loginAdminAs(page, host);
+    await expect(page).toHaveURL(/\/admin$/);
+    expect(psql(`SELECT namespace FROM sessions WHERE user_id = '${host.id}';`)).toBe('admin');
+    await expect(page.getByRole('main')).toContainText('Your listings');
+  });
+
+  test('refuses guest-only accounts', { tag: '@new-only' }, async ({ page }) => {
+    const guest = createGuest();
+    await page.locator('#admin-login-email').fill(guest.email);
+    await page.locator('#admin-login-password').fill(guest.password);
+    await page.locator('#btn-admin-login').click();
+    await expect(page.locator('#admin-auth-error')).toBeVisible();
+    expect(psql(`SELECT count(*) FROM sessions WHERE user_id = '${guest.id}';`)).toBe('0');
+  });
+
+  test('redirects legacy console paths permanently', { tag: '@new-only' }, async ({ request }) => {
+    for (const [from, to] of [['/', '/admin'], ['/listings', '/admin/listings'], ['/bookings', '/admin/bookings'], ['/payouts', '/admin/payouts'], ['/users', '/admin/users']]) {
+      const res = await request.get(from, { maxRedirects: 0 });
+      expect(res.status(), from).toBe(308);
+      expect(res.headers()['location'], from).toBe(to);
+    }
+  });
 });
+

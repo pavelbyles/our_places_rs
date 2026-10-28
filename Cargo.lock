@@ -6167,12 +6167,16 @@ dependencies = [
 name = "web_ui_admin"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "common",
  "dotenvy",
+ "rust_decimal",
+ "serde",
  "tokio",
  "topcoat",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "web_client",
  "web_ui_common",
 ]

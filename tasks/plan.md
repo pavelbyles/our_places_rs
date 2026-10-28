@@ -452,7 +452,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ## Phase 5: `web_ui_admin` (:3012)
 
-- [ ] **Task 44: Admin app bootstrap, login/logout, dashboard, alias redirects**
+- [x] **Task 44: Admin app bootstrap, login/logout, dashboard, alias redirects**
   - **Scope:** M
   - **Description:** `main.rs` (`op_admin_session`), layout with `admin_shell`, `GET/POST /login`, `GET/POST /logout`, `/admin` dashboard with `stat_tile`s, `/` and unprefixed aliases → 308.
   - **Files Touched:** `web_ui_admin/src/{main,lib,layout}.rs`, `web_ui_admin/src/pages/{mod,auth,dashboard,aliases}.rs`
