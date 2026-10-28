@@ -137,6 +137,14 @@
 
   document.addEventListener('toast', function (event) { showToast(event.detail); });
 
+  // Clear a form after htmx submits it successfully (e.g. the message box).
+  document.addEventListener('htmx:afterRequest', function (event) {
+    var form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (form && form.hasAttribute('data-reset-on-success') && event.detail && event.detail.successful) {
+      form.reset();
+    }
+  });
+
   // --- Stay-dates calendar (server-rendered by date_range_calendar). -------
   // A booked night can still be the check-out day: the guest leaves that
   // morning. A range may not include any booked or past night.

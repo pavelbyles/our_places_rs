@@ -403,7 +403,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/reservation-changes --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 30, Task 37
 
-- [ ] **Task 39: Guest messaging**
+- [x] **Task 39: Guest messaging**
   - **Scope:** S
   - **Description:** `GET/POST /bookings/{code}/messages`, code resolved within own bookings, `chat_thread`, `beforeend` swap into `#messages-list`.
   - **Files Touched:** `web_ui_guest/src/pages/messages.rs`

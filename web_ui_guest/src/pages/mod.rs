@@ -6,12 +6,16 @@ pub mod booking_change;
 pub mod bookings;
 /// Checkout and legacy per-currency checkout redirects.
 pub mod checkout;
+/// Tax documents.
+pub mod documents;
 /// Landing page.
 pub mod home;
 /// Listing detail, quote and calendar fragments.
 pub mod listing_detail;
 /// Listing search.
 pub mod listings;
+/// Guest–host messaging.
+pub mod messages;
 /// Guest registration.
 pub mod register;
 /// Email verification and resend.

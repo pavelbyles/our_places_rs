@@ -477,6 +477,73 @@ impl TopcoatApiClient {
     }
 }
 
+impl TopcoatApiClient {
+    /// A booking's message thread, as the user who owns `jwt` (guest, host or
+    /// admin of that booking).
+    pub async fn get_booking_messages_as(
+        &self,
+        id: Uuid,
+        jwt: &str,
+    ) -> Result<BookingMessagesWrapper, UserCallError> {
+        let url = format!("{}/api/v1/bookings/{id}/messages", self.booking_api_url);
+        get_json_as(&url, jwt).await
+    }
+
+    /// Posts a message to a booking's thread as the user who owns `jwt`.
+    pub async fn send_booking_message_as(
+        &self,
+        id: Uuid,
+        text: &str,
+        jwt: &str,
+    ) -> Result<BookingMessageResponse, UserCallError> {
+        let url = format!("{}/api/v1/bookings/{id}/messages", self.booking_api_url);
+        let body = CreateBookingMessageRequest {
+            message_text: text.to_string(),
+        };
+        send_json_as(reqwest::Method::POST, &url, jwt, &body).await
+    }
+
+    /// Marks the other party's messages read, as the user who owns `jwt`.
+    pub async fn mark_booking_messages_read_as(
+        &self,
+        id: Uuid,
+        jwt: &str,
+    ) -> Result<MarkMessagesReadResponse, UserCallError> {
+        let url = format!(
+            "{}/api/v1/bookings/{id}/messages/read",
+            self.booking_api_url
+        );
+        send_json_as(reqwest::Method::PATCH, &url, jwt, &serde_json::json!({})).await
+    }
+}
+
+/// Sends a JSON body with the user's bearer token (and the gateway API key,
+/// if configured) and decodes a JSON response.
+async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
+    method: reqwest::Method,
+    url: &str,
+    jwt: &str,
+    body: &B,
+) -> Result<T, UserCallError> {
+    let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
+    let mut request = client.request(method, url).bearer_auth(jwt).json(body);
+    if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
+        request = request.header("x-api-key", key);
+    }
+    decode(request.send().await?).await
+}
+
+async fn decode<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T, UserCallError> {
+    match response.status().as_u16() {
+        200..=299 => Ok(response.json::<T>().await?),
+        404 => Err(UserCallError::NotFound),
+        401 | 403 => Err(UserCallError::Unauthorized),
+        status => Err(UserCallError::Status(status)),
+    }
+}
+
 /// Sends a GET with the user's bearer token (and the gateway API key, if
 /// configured) and decodes a JSON body.
 async fn get_json_as<T: serde::de::DeserializeOwned>(
