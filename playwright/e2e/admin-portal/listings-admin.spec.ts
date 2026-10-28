@@ -74,5 +74,24 @@ test.describe('Admin Portal - Listings Management', () => {
     await expect(page.locator('#admin-listings-table')).not.toContainText(KNOWN_LISTINGS.courtyardStudio.name);
     await context.close();
   });
+
+  test('edits a listing and keeps its owner', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
+    const name = `E2E listing ${Date.now()}`;
+    await page.goto('/admin/listings/new');
+    await page.locator('#listing-name').fill(name);
+    await page.locator('input[name="price_per_night"]').fill('300');
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(/\/admin\/listings\/[0-9a-f-]{36}$/);
+    const id = page.url().split('/').pop() ?? '';
+    const owner = psql(`SELECT user_id FROM listing WHERE id = '${id}';`);
+
+    await page.goto(`/admin/listings/${id}/edit`);
+    await expect(page.locator('input[name="price_per_night"]')).toHaveValue('300');
+    await page.locator('input[name="price_per_night"]').fill('345.75');
+    await page.locator('input[name="cleaning_fee"]').fill('60');
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/listings/${id}$`));
+    expect(psql(`SELECT price_per_night, cleaning_fee, user_id FROM listing WHERE id = '${id}';`)).toBe(`345.75|60.00|${owner}`);
+  });
 });
 

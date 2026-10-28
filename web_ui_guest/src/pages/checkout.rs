@@ -248,7 +248,11 @@ async fn build_view(
         last_name,
         email: guest.email.clone(),
         phone: String::new(),
-        arrival_time: ARRIVAL_TIMES[0].to_string(),
+        arrival_time: ARRIVAL_TIMES
+            .first()
+            .copied()
+            .unwrap_or_default()
+            .to_string(),
         message: String::new(),
         error: None,
     }

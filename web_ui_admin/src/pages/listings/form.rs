@@ -184,7 +184,7 @@ impl Parser {
             v.to_string()
         } else {
             self.errors.push(format!("Choose a valid {label}."));
-            allowed[0].to_string()
+            allowed.first().copied().unwrap_or_default().to_string()
         }
     }
     fn int(&mut self, label: &str, v: &str, min: i32) -> i32 {

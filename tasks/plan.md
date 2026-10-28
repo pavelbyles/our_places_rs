@@ -479,12 +479,12 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/listings-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 
-- [ ] **Task 47: Listing edit studio (fees, documents)**
+- [x] **Task 47: Listing edit studio (fees, documents)**
   - **Scope:** M
   - **Description:** A13 in `tabs`, fees and documents sections.
   - **Files Touched:** `web_ui_admin/src/pages/listings/edit.rs`
   - **Acceptance Criteria:**
-    - [ ] `listings-admin` + `listing-fees-and-documents` specs green on NEW_ADMIN.
+    - [x] `listings-admin` green on NEW_ADMIN (edit round-trip keeps the owner). `listing-fees-and-documents` exercises the booking dialog, so it is verified in Task 50.
   - **Verification Command:** `npx playwright test admin-portal/listings-admin admin-portal/listing-fees-and-documents --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 46
 

@@ -19,6 +19,8 @@ use crate::support::{scoped_listings, staff};
 
 /// New listing, clone and create.
 pub mod create;
+/// Edit an existing listing.
+pub mod edit;
 /// The studio form shared by create, clone and edit.
 pub mod form;
 
