@@ -128,3 +128,27 @@ export async function requestDateChange(
     throw new Error(`requestDateChange: ${res.status()} ${await res.text()}`);
   }
 }
+
+const LISTING_API_URL = process.env.LISTING_API_URL || 'http://127.0.0.1:8082';
+
+/**
+ * Turns a booking into a stay that ended 2 days ago (eligible for review for
+ * 15 days after checkout) and returns its review token from listing_api.
+ */
+export async function reviewTokenForPastStay(
+  request: APIRequestContext,
+  guest: TestGuest,
+  booking: TestBooking,
+): Promise<string> {
+  psql(`UPDATE booking
+        SET status = 'completed', date_from = CURRENT_DATE - 5, date_to = CURRENT_DATE - 2
+        WHERE id = '${booking.id}';`);
+  const res = await request.get(`${LISTING_API_URL}/api/v1/reviews/booking/${booking.id}/token`, {
+    headers: { Authorization: `Bearer ${signTestJwt(guest.id)}` },
+  });
+  const body = await res.json();
+  if (!res.ok() || !body.token) {
+    throw new Error(`reviewTokenForPastStay: ${res.status()} ${JSON.stringify(body)}`);
+  }
+  return body.token as string;
+}

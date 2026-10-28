@@ -169,7 +169,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/bookings guest-portal/reservation-changes --project=guest-portal-chromium --project=guest-portal-firefox`
   - **Dependencies:** Task 10, Task 12
 
-- [ ] **Task 15: Old-app specs — messaging, static pages, profile, reviews**
+- [x] **Task 15: Old-app specs — messaging, static pages, profile, reviews**
   - **Scope:** M
   - **Description:** `messaging.spec.ts` (G24–G25), `static-pages.spec.ts` (G3), and `@new-only` skeletons for `profile.spec.ts` (G32) and `reviews.spec.ts` (G33–G34; G34 runs on old too).
   - **Files Touched:** `playwright/e2e/guest-portal/{messaging,static-pages,profile,reviews}.spec.ts`
