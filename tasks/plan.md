@@ -141,10 +141,10 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test --project=admin-portal-chromium --project=admin-portal-firefox`
   - **Dependencies:** None
 
-- [ ] **Task 12: New-port projects, tag filters and CSP fixture**
+- [x] **Task 12: New-port projects, tag filters and CSP fixture**
   - **Scope:** S
   - **Description:** Add `guest-portal-new-*` (:3010) and `admin-portal-new-*` (:3012) projects reusing the same `testDir`s; `grepInvert` `@old-only` / `@new-only` per side; `webServer` entries for the new bins; CSP-violation fixture (file-based init script) auto-used by `-new-` projects.
-  - **Files Touched:** `playwright/playwright.config.ts`, `playwright/e2e/fixtures/csp.fixture.ts`, `playwright/e2e/fixtures/csp-listener.js`
+  - **Files Touched:** `playwright/playwright.config.ts`, `playwright/e2e/fixtures/base.fixture.ts` (auto `cspGuard` fixture; all portal specs now import `test` from it or from `auth.fixture`), `playwright/e2e/fixtures/csp-listener.js`
   - **Acceptance Criteria:**
     - [ ] `npx playwright test --list` shows 8 portal projects.
     - [ ] A deliberate inline-script test page fails the fixture (verified once, not committed).

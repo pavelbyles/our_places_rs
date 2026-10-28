@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/base.fixture.js';
 import { KNOWN_LISTINGS } from '../fixtures/test-data.js';
 
 test.describe('Guest Portal - Listing Detail & Dynamic Pricing', () => {

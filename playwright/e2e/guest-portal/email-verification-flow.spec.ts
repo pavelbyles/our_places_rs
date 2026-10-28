@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/base.fixture.js';
 import { execSync } from 'node:child_process';
 import { isNewPortal } from '../fixtures/portal.js';
 

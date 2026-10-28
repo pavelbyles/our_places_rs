@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/base.fixture.js';
 import { KNOWN_LISTINGS, TEST_USERS } from '../fixtures/test-data.js';
 
 test.describe('Guest Portal - Checkout Flow & 15-Minute Hold', () => {

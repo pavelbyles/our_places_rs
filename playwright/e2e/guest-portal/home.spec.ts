@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/base.fixture.js';
 
 test.describe('Guest Portal - Home Page', () => {
   test.beforeEach(async ({ page }) => {

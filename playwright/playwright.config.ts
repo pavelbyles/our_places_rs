@@ -47,6 +47,7 @@ export default defineConfig({
     // ----------------------------------------------------
     {
       name: 'guest-portal-chromium',
+      grepInvert: /@new-only/,
       testDir: path.resolve(__dirname, 'e2e/guest-portal'),
       use: {
         ...devices['Desktop Chrome'],
@@ -55,6 +56,7 @@ export default defineConfig({
     },
     {
       name: 'guest-portal-firefox',
+      grepInvert: /@new-only/,
       testDir: path.resolve(__dirname, 'e2e/guest-portal'),
       use: {
         ...devices['Desktop Firefox'],
@@ -73,6 +75,7 @@ export default defineConfig({
     // ----------------------------------------------------
     {
       name: 'admin-portal-chromium',
+      grepInvert: /@new-only/,
       testDir: path.resolve(__dirname, 'e2e/admin-portal'),
       use: {
         ...devices['Desktop Chrome'],
@@ -81,10 +84,64 @@ export default defineConfig({
     },
     {
       name: 'admin-portal-firefox',
+      grepInvert: /@new-only/,
       testDir: path.resolve(__dirname, 'e2e/admin-portal'),
       use: {
         ...devices['Desktop Firefox'],
         baseURL: 'http://localhost:3002',
+        launchOptions: {
+          env: {
+            ...process.env,
+            LD_LIBRARY_PATH: `/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:${process.env.LD_LIBRARY_PATH || ''}`,
+          },
+        },
+      },
+    },
+    // ----------------------------------------------------
+    // Redesigned portals (web_ui_guest on :3010, web_ui_admin on :3012).
+    // Same spec files as the legacy projects; tests tagged @old-only are
+    // skipped, and base.fixture fails any test with a CSP violation.
+    // ----------------------------------------------------
+    {
+      name: 'guest-portal-new-chromium',
+      testDir: path.resolve(__dirname, 'e2e/guest-portal'),
+      grepInvert: /@old-only/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: 'http://localhost:3010',
+      },
+    },
+    {
+      name: 'guest-portal-new-firefox',
+      testDir: path.resolve(__dirname, 'e2e/guest-portal'),
+      grepInvert: /@old-only/,
+      use: {
+        ...devices['Desktop Firefox'],
+        baseURL: 'http://localhost:3010',
+        launchOptions: {
+          env: {
+            ...process.env,
+            LD_LIBRARY_PATH: `/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:${process.env.LD_LIBRARY_PATH || ''}`,
+          },
+        },
+      },
+    },
+    {
+      name: 'admin-portal-new-chromium',
+      testDir: path.resolve(__dirname, 'e2e/admin-portal'),
+      grepInvert: /@old-only/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: 'http://localhost:3012',
+      },
+    },
+    {
+      name: 'admin-portal-new-firefox',
+      testDir: path.resolve(__dirname, 'e2e/admin-portal'),
+      grepInvert: /@old-only/,
+      use: {
+        ...devices['Desktop Firefox'],
+        baseURL: 'http://localhost:3012',
         launchOptions: {
           env: {
             ...process.env,
@@ -117,6 +174,24 @@ export default defineConfig({
       command: 'cd web_app_admin_tc && PORT=3002 CARGO_TARGET_DIR=../target/admin topcoat dev',
       cwd: rootDir,
       url: 'http://localhost:3002',
+      reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 180 * 1000,
+    },
+    {
+      command: 'cd web_ui_guest && PORT=3010 CARGO_TARGET_DIR=../target/ui_guest topcoat dev',
+      cwd: rootDir,
+      url: 'http://localhost:3010',
+      reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 180 * 1000,
+    },
+    {
+      command: 'cd web_ui_admin && PORT=3012 CARGO_TARGET_DIR=../target/ui_admin topcoat dev',
+      cwd: rootDir,
+      url: 'http://localhost:3012',
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
