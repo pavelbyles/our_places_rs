@@ -44,7 +44,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test playwright/e2e/spike --project=guest-portal-new-chromium --project=guest-portal-new-firefox` (run before deletion); `rg -n "Spike results" docs/specs/spec-96-*.md`
   - **Dependencies:** Task 1 (needs Task 12's projects; if not yet done, run with an inline `--config` baseURL override)
 
-- [ ] **Task 3: Initialise Topcoat UI registry in `web_ui_common`**
+- [x] **Task 3: Initialise Topcoat UI registry in `web_ui_common`**
   - **Scope:** M
   - **Description:** `topcoat ui init`, then `topcoat ui add` the 29 components listed in spec FR-3.1. Commit `components.toml` with pinned versions; components compile under workspace clippy/doc rules (add `///` docs where the registry lacks them). **Because the Task 2 spike failed:** check every component for runtime usage (`@event`, `$(…)`, `signal`, `#[shard]`) and inline `style=`, and record the list. Fixing them happens when each component is first used.
   - **Files Touched:** `web_ui_common/components.toml`, `web_ui_common/src/components/ui/*.rs`, `web_ui_common/src/lib.rs`

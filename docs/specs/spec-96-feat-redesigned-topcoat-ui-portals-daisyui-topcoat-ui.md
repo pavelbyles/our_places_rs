@@ -307,6 +307,23 @@ The spike page had one `signal(cx, || 0.0)`, a button with `@click=$(|_e| count.
 - The spike page itself emitted no inline `style=`. Topcoat UI registry components are fetched by `topcoat ui add`, so Task 3 must check them for inline `style=` attributes **and for `@event`/`$(…)` runtime usage**. Any component that relies on the runtime gets rewritten to native elements plus `data-*` hooks in `ui.js`.
 - **Consequence for the plan:** every interactive behavior is native HTML (`<dialog>`, `<details>`, forms), HTMX, or `ui.js`. Topcoat UI components that rely on the runtime are patched in-repo (they are source-owned).
 
+#### Topcoat UI registry audit (Task 3, 29 components, theme `neutral`)
+
+| Component | Finding | Effect without the runtime | Action when first used |
+|---|---|---|---|
+| `dialog`, `alert_dialog`, `sheet` | `open: Expr<bool>` bound with `:attr=$(…)` | Initial state is server-rendered; it never changes on the client. The leftover `data-topcoat-*` attributes are inert, because no runtime script is loaded. | Open/close via native `<dialog>` + `ui.js` (`data-dialog-open` / `data-dialog-close`); change the prop to a plain `bool`. |
+| `sidebar` | `open`, `mobile_open`, `active` as `Expr<bool>` (14 bindings) | Same as above | Collapse/mobile state via `ui.js` + a cookie; `active` as a plain `bool`. |
+| `tabs` | `active: Expr<bool>` for `aria-current` | Same as above | Plain `bool`; tab switching via links/HTMX or `ui.js`. |
+| `select` | `style=(checkmark_style(cx))` inline style | Blocked by `style-src 'self'` | Replace with a class or token-driven stylesheet rule. |
+| other 23 | No runtime usage, no inline styles | Work as-is | — |
+
+**Changes needed to vendor the registry under this repo's rules:**
+- Enabled the `ui` and `icon-iconify` features on `topcoat` and added `web_ui_common/build.rs`, which stages the `lucide` icon set.
+- Added a `//!` doc to each file. `#[component]` turns each parameter into a props-struct field, and a `///` on the parameter is forwarded to that field, so every parameter got a `///` (crate-level `deny(missing_docs)`).
+- Removed 16 `#[allow(dead_code)]`, which aren't needed on public items (CONSTRAINTS: zero suppression pragmas).
+- The registry's 62 usage examples are ` ```ignore ` doctests (they need a page context to compile). They are kept as documentation, not counted as silenced tests.
+- These edits change the files' hashes from `components.toml`, so `topcoat ui add --overwrite` would discard them. Review registry updates by diff instead.
+
 ## Performance Considerations
 - **Cold start (< 300 ms p50, < 1 s p95)**: no DB pool in the frontends (HTTP only), `reqwest` client built once and stored in `app_context`, asset bundle loaded once. No `chrono-tz` (D7). Release profile already `opt-level="z"`, LTO.
 - **Memory (256 MiB)**: SSR views stream; no per-request caches. Calendar fragment renders ≤ 62 day cells.
