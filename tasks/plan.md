@@ -286,10 +286,10 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ### Phase 3b: Calendar availability (the one backend change)
 
-- [ ] **Task 27: `UnavailableRange` model and `merge_ranges`**
+- [x] **Task 27: `UnavailableRange` model and `merge_ranges`**
   - **Scope:** S
   - **Description:** Documented DTOs in `common` and pure `merge_ranges`.
-  - **Files Touched:** `common/src/models.rs`, `common/src/availability.rs`, `common/src/lib.rs`
+  - **Files Touched:** `common/src/availability.rs` (DTOs and `merge_ranges` live together), `common/src/lib.rs`, `common/tests/availability.rs`
   - **Acceptance Criteria:**
     - [ ] Tests: empty, disjoint, touching, nested, unsorted.
   - **Verification Command:** `cargo test -p common availability`
