@@ -1,5 +1,7 @@
 /// Message thread and bubbles.
 pub mod chat;
+/// Stay-dates calendar.
+pub mod date_range_calendar;
 /// Booking-domain components (money, listings, documents).
 pub mod domain;
 /// Rounded photo frame.

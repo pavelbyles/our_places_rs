@@ -313,7 +313,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p booking_api unavailable_ranges`
   - **Dependencies:** Task 28
 
-- [ ] **Task 30: `date_range_calendar` server component**
+- [x] **Task 30: `date_range_calendar` server component**
   - **Scope:** M
   - **Description:** Two-month `role="grid"` render (one month on small screens), day buttons with `aria-label`/`aria-disabled`, HTMX prev/next, hidden `check_in`/`check_out`, progressive fallback to native date inputs; client method `get_unavailable_ranges`.
   - **Files Touched:** `web_ui_common/src/components/date_range_calendar.rs`, `web_client/src/client.rs`

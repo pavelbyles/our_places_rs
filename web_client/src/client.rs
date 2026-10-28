@@ -496,3 +496,34 @@ async fn get_json_as<T: serde::de::DeserializeOwned>(
         status => Err(UserCallError::Status(status)),
     }
 }
+
+impl TopcoatApiClient {
+    /// Booked date ranges for a listing within `[from, to)`. Public data
+    /// (dates only), so no user token is sent.
+    pub async fn get_unavailable_ranges(
+        &self,
+        listing_id: Uuid,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> Result<Vec<common::availability::UnavailableRange>, UserCallError> {
+        let url = format!(
+            "{}/api/v1/bookings/listing/{listing_id}/unavailable-ranges?from={from}&to={to}",
+            self.booking_api_url
+        );
+        let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
+        let mut request = client.get(&url);
+        if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
+            request = request.header("x-api-key", key);
+        }
+        let response = request.send().await?;
+        match response.status().as_u16() {
+            200..=299 => Ok(response
+                .json::<common::availability::UnavailableRangesResponse>()
+                .await?
+                .ranges),
+            404 => Err(UserCallError::NotFound),
+            401 | 403 => Err(UserCallError::Unauthorized),
+            status => Err(UserCallError::Status(status)),
+        }
+    }
+}

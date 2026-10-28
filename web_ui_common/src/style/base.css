@@ -65,3 +65,12 @@
     margin: 15mm;
   }
 }
+
+/* Booking calendar: the grid needs ui.js; without it, the native date
+   inputs are the control. ui.js sets data-enhanced on #booking-dates. */
+[data-calendar]:not([data-enhanced]) [data-calendar-grid] {
+  display: none;
+}
+[data-calendar][data-enhanced] [data-calendar-fallback] {
+  display: none;
+}

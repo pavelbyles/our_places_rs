@@ -98,3 +98,33 @@ async fn unauthorized_and_server_errors_are_distinct() {
         Err(UserCallError::Status(503))
     ));
 }
+
+#[tokio::test]
+async fn unavailable_ranges_are_public_and_decoded() -> Result<(), UserCallError> {
+    use chrono::NaiveDate;
+    let server = MockServer::start().await;
+    let listing = Uuid::now_v7();
+    Mock::given(method("GET"))
+        .and(path(format!(
+            "/api/v1/bookings/listing/{listing}/unavailable-ranges"
+        )))
+        .and(wiremock::matchers::query_param("from", "2027-01-01"))
+        .and(wiremock::matchers::query_param("to", "2027-03-01"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "ranges": [{"date_from": "2027-01-10", "date_to": "2027-01-14"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let d = |m, day| NaiveDate::from_ymd_opt(2027, m, day).unwrap_or_default();
+    let ranges = client_for(&server)
+        .get_unavailable_ranges(listing, d(1, 1), d(3, 1))
+        .await?;
+    assert_eq!(ranges.len(), 1);
+    assert_eq!(
+        (ranges[0].date_from, ranges[0].date_to),
+        (d(1, 10), d(1, 14))
+    );
+    Ok(())
+}
