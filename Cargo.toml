@@ -12,6 +12,10 @@ members = [
     "web_app_common_tc",
     "web_app_tc",
     "web_app_admin_tc",
+    "web_client",
+    "web_ui_common",
+    "web_ui_guest",
+    "web_ui_admin",
 ]
 resolver = "2"
 
@@ -23,6 +27,8 @@ db_core = { path = "db_core" }
 topcoat = { version = "0.10.0", features = ["htmx", "tailwind", "session"] }
 
 web_app_common_tc = { path = "web_app_common_tc" }
+web_client = { path = "web_client" }
+web_ui_common = { path = "web_ui_common" }
 anyhow = "1.0.102"
 dotenvy = "0.15.7"
 rust_decimal_macros = "1.40.0"

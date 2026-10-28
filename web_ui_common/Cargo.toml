@@ -1,0 +1,12 @@
+[package]
+name = "web_ui_common"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+topcoat = { workspace = true, features = ["htmx", "tailwind", "session"] }
+web_client = { workspace = true }
+common = { workspace = true }

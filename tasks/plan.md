@@ -4,7 +4,7 @@
 **Baseline Commit:** `b77cfb7a`
 
 ## Conventions for every task
-- Gates run on each task: `cargo fmt --check` and `SQLX_OFFLINE=true cargo clippy -p <touched crates> --all-features -- -D warnings -D missing_docs`.
+- Gates run on each task: `cargo fmt --check` and `SQLX_OFFLINE=true cargo clippy -p <touched crates> --all-targets --all-features -- -D warnings`. New crates enforce docs with a crate-level `#![deny(missing_docs)]`. Passing `-D missing_docs` on the command line also lints `common`, which already fails it, so that is left to Task 57.
 - **Old-app guard** (any task touching `web_app_common_tc`, `common`, `playwright/`): `git diff b77cfb7a -- web_app_tc web_app_admin_tc` must be empty except `web_app_*/tests` selector updates.
 - Shorthands: `NEW_GUEST` = `npx playwright test --project=guest-portal-new-chromium --project=guest-portal-new-firefox`; `NEW_ADMIN` = same with `admin-portal-new-*`; `OLD_GUEST` / `OLD_ADMIN` = the existing `guest-portal-*` / `admin-portal-*` projects.
 - No `.unwrap()`/`.expect()`, inline `<script>`, `onclick`, `hx-on`, `localStorage` or daisyUI in `web_client` / `web_ui_*`.
@@ -24,7 +24,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ## Phase 0: Foundations (risk-first)
 
-- [ ] **Task 1: Scaffold the four new crates**
+- [x] **Task 1: Scaffold the four new crates**
   - **Scope:** M
   - **Description:** Add `web_client`, `web_ui_common` (libs) and `web_ui_guest`, `web_ui_admin` (bins, ports 3010/3012 defaults) to the workspace with minimal documented `lib.rs`/`main.rs` and workspace deps. Bins serve a placeholder `/` page.
   - **Files Touched:** `Cargo.toml`, `web_client/{Cargo.toml,src/lib.rs}`, `web_ui_common/{Cargo.toml,src/lib.rs}`, `web_ui_guest/{Cargo.toml,build.rs,src/main.rs,src/lib.rs}`, `web_ui_admin/{…same}`

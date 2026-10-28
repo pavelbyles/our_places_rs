@@ -6087,6 +6087,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "web_client"
+version = "0.1.0"
+
+[[package]]
+name = "web_ui_admin"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "dotenvy",
+ "tokio",
+ "topcoat",
+ "tracing",
+ "tracing-subscriber",
+ "web_client",
+ "web_ui_common",
+]
+
+[[package]]
+name = "web_ui_common"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "topcoat",
+ "web_client",
+]
+
+[[package]]
+name = "web_ui_guest"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "dotenvy",
+ "tokio",
+ "topcoat",
+ "tracing",
+ "tracing-subscriber",
+ "web_client",
+ "web_ui_common",
+]
+
+[[package]]
 name = "webp"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
