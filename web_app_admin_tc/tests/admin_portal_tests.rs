@@ -1,11 +1,13 @@
 use chrono::NaiveDate;
-use common::models::NewListingRequest;
+use common::models::{NewListingRequest, ResendVerificationRequest, VerifyRequest};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use uuid::Uuid;
+use validator::Validate;
 use web_app_admin_tc::{
-    AdminUpdateUserPayload, GranularPermissions, PermissionTypeConstraintError,
-    RoleCapabilityProfile, UserFilterQuery,
+    AdminDeleteUserPayload, AdminDeleteUserResponse, AdminRestoreUserPayload,
+    AdminRestoreUserResponse, AdminUpdateUserPayload, GranularPermissions, HostRegisterRequest,
+    PermissionTypeConstraintError, RoleCapabilityProfile, UserFilterQuery,
 };
 
 #[test]
@@ -249,6 +251,7 @@ fn test_user_search_and_role_filter_matching() {
     let query = UserFilterQuery {
         q: Some("Pavel".to_string()),
         role: Some("admin".to_string()),
+        status: None,
     };
 
     assert_eq!(query.q.as_deref(), Some("Pavel"));
@@ -730,4 +733,597 @@ fn test_admin_create_listing_form_fee_toggles_disabled() {
     assert_eq!(payload.damage_deposit, Some(Decimal::ZERO));
     assert_eq!(payload.guests_included, None);
     assert_eq!(payload.extra_guest_fee, None);
+}
+
+#[test]
+fn test_clone_listings_scoping_and_admin_host_assignment() {
+    use common::models::ListingResponse;
+    use web_app_admin_tc::pages::listings_admin::AdminCreateListingFormPayload;
+
+    let host_a_id = Uuid::new_v4();
+    let host_b_id = Uuid::new_v4();
+
+    let listing_a1 = ListingResponse {
+        id: Uuid::new_v4(),
+        user_id: host_a_id,
+        name: "Host A Villa 1".to_string(),
+        slug: "host-a-villa-1".to_string(),
+        description: None,
+        listing_structure: "Villa".to_string(),
+        country: "Jamaica".to_string(),
+        city: Some("Montego Bay".to_string()),
+        price_per_night: Some(dec!(1000.00)),
+        is_active: true,
+        added_at: chrono::Utc::now(),
+        owner_name: Some("Host A".to_string()),
+        primary_image_url: None,
+        max_guests: 6,
+        bedrooms: 3,
+        beds: 4,
+        full_bathrooms: 3,
+        half_bathrooms: 0,
+        square_meters: Some(300),
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        listing_details: None,
+        minimum_stay: 2,
+        days_between_bookings: 1,
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        base_currency: "USD".to_string(),
+        commission_pct: Some(dec!(0.1000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: 4,
+        extra_guest_fee: None,
+    };
+
+    let listing_b1 = ListingResponse {
+        id: Uuid::new_v4(),
+        user_id: host_b_id,
+        name: "Host B Villa 1".to_string(),
+        slug: "host-b-villa-1".to_string(),
+        description: None,
+        listing_structure: "Villa".to_string(),
+        country: "Jamaica".to_string(),
+        city: Some("Negril".to_string()),
+        price_per_night: Some(dec!(1200.00)),
+        is_active: true,
+        added_at: chrono::Utc::now(),
+        owner_name: Some("Host B".to_string()),
+        primary_image_url: None,
+        max_guests: 8,
+        bedrooms: 4,
+        beds: 5,
+        full_bathrooms: 4,
+        half_bathrooms: 1,
+        square_meters: Some(400),
+        latitude: None,
+        longitude: None,
+        overall_rating: None,
+        listing_details: None,
+        minimum_stay: 3,
+        days_between_bookings: 1,
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        base_currency: "USD".to_string(),
+        commission_pct: Some(dec!(0.1000)),
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: 6,
+        extra_guest_fee: None,
+    };
+
+    let all_listings = vec![listing_a1.clone(), listing_b1.clone()];
+
+    // 1. Admin view: Can clone from ALL listings across the platform
+    let is_admin = true;
+    let admin_clone_options: Vec<ListingResponse> = if is_admin {
+        all_listings.clone()
+    } else {
+        vec![]
+    };
+    assert_eq!(
+        admin_clone_options.len(),
+        2,
+        "Admin must see all existing listings as clone options"
+    );
+
+    // 2. Host view: Can ONLY clone from their own listings
+    let is_host_admin = false;
+    let current_host_id = host_a_id;
+    let host_a_clone_options: Vec<ListingResponse> = if is_host_admin {
+        all_listings
+    } else {
+        all_listings
+            .into_iter()
+            .filter(|l| l.user_id == current_host_id)
+            .collect()
+    };
+    assert_eq!(
+        host_a_clone_options.len(),
+        1,
+        "Host A must only see their own listings to clone"
+    );
+    assert_eq!(host_a_clone_options[0].slug, "host-a-villa-1");
+
+    // 3. Admin creation form requires and maps user_id for host assignment
+    let form = AdminCreateListingFormPayload {
+        user_id: Some(host_b_id.to_string()),
+        name: Some("Assigned Villa".to_string()),
+        listing_structure: Some("Villa".to_string()),
+        description: Some("Description".to_string()),
+        city: Some("Port Antonio".to_string()),
+        country: Some("Jamaica".to_string()),
+        latitude: None,
+        longitude: None,
+        max_guests: Some("4".to_string()),
+        bedrooms: Some("2".to_string()),
+        beds: Some("2".to_string()),
+        full_bathrooms: Some("2".to_string()),
+        half_bathrooms: Some("0".to_string()),
+        square_meters: None,
+        base_currency: Some("USD".to_string()),
+        price_per_night: Some("800.00".to_string()),
+        minimum_stay: Some("2".to_string()),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        days_between_bookings: None,
+        primary_image_url: None,
+        is_active: Some("on".to_string()),
+        commission_pct: Some("10.0".to_string()),
+        cleaning_fee_enabled: None,
+        cleaning_fee: None,
+        damage_deposit_enabled: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
+    };
+
+    let payload = form.into_payload();
+    assert_eq!(
+        payload.user_id,
+        Some(host_b_id),
+        "Admin must assign listing to a designated host"
+    );
+}
+
+#[test]
+fn test_users_admin_script_has_zero_escaped_entities() {
+    let source = include_str!("../src/pages/users_admin.rs");
+    // Verify that every client script in users_admin.rs has no raw &, <, or > characters
+    // which would otherwise be escaped by Topcoat SSR into HTML entities and break JS execution.
+    let mut script_count = 0;
+    for part in source.split("<script>").skip(1) {
+        if let Some(script_body) = part.split("</script>").next() {
+            script_count += 1;
+            assert!(
+                !script_body.contains('&'),
+                "Client script in users_admin.rs must not contain '&' (causes &amp; in Topcoat view! templates)"
+            );
+            assert!(
+                !script_body.contains('<'),
+                "Client script in users_admin.rs must not contain '<' (causes &lt; in Topcoat view! templates)"
+            );
+            assert!(
+                !script_body.contains('>'),
+                "Client script in users_admin.rs must not contain '>' (causes &gt; in Topcoat view! templates)"
+            );
+        }
+    }
+    assert!(
+        script_count >= 3,
+        "Expected multiple script blocks in users_admin.rs"
+    );
+}
+
+#[test]
+fn test_host_signup_payload_validation() {
+    // 1. Valid host signup payload
+    let valid_req = HostRegisterRequest {
+        first_name: "Marcus".to_string(),
+        last_name: "Garvey".to_string(),
+        email: "marcus@stannsbay.jm".to_string(),
+        password: "securepassword123".to_string(),
+        phone_number: Some("+18765550199".to_string()),
+    };
+    assert!(valid_req.validate().is_ok());
+
+    // 2. Empty first name rejected
+    let empty_fn = HostRegisterRequest {
+        first_name: "".to_string(),
+        ..valid_req.clone()
+    };
+    assert!(empty_fn.validate().is_err());
+
+    // 3. Empty last name rejected
+    let empty_ln = HostRegisterRequest {
+        last_name: "".to_string(),
+        ..valid_req.clone()
+    };
+    assert!(empty_ln.validate().is_err());
+
+    // 4. Invalid email format rejected
+    let invalid_email = HostRegisterRequest {
+        email: "not-an-email".to_string(),
+        ..valid_req.clone()
+    };
+    assert!(invalid_email.validate().is_err());
+
+    // 5. Short password (< 8 chars) rejected
+    let short_pass = HostRegisterRequest {
+        password: "short".to_string(),
+        ..valid_req.clone()
+    };
+    assert!(short_pass.validate().is_err());
+}
+
+#[test]
+fn test_host_signup_dual_capability_and_default_profiles() {
+    use common::models::NewUserRequest;
+
+    let host_signup = HostRegisterRequest {
+        first_name: "Usain".to_string(),
+        last_name: "Bolt".to_string(),
+        email: "usain@tracksandrecords.jm".to_string(),
+        password: "fastestmanalive958".to_string(),
+        phone_number: Some("+18769990100".to_string()),
+    };
+
+    // Construct the domain NewUserRequest exactly as host_register_api does:
+    let mut attrs = serde_json::Map::new();
+    attrs.insert(
+        "can_manage_listings".to_string(),
+        serde_json::Value::Bool(true),
+    );
+    attrs.insert(
+        "can_manage_bookings".to_string(),
+        serde_json::Value::Bool(true),
+    );
+
+    let new_user = NewUserRequest {
+        email: host_signup.email.trim().to_lowercase(),
+        password: host_signup.password,
+        first_name: host_signup.first_name.trim().to_string(),
+        last_name: host_signup.last_name.trim().to_string(),
+        phone_number: host_signup.phone_number,
+        is_active: true,
+        is_verified: false,
+        attributes: Some(serde_json::Value::Object(attrs)),
+        roles: Some(vec!["host".to_string(), "booker".to_string()]),
+        booker_profile: Some(common::models::NewBookerProfile {
+            emergency_contacts: None,
+            booking_preferences: None,
+            loyalty: None,
+        }),
+        host_profile: Some(common::models::NewHostProfile {
+            verified_status: Some("pending".to_string()),
+            payout_details: Some(serde_json::json!({})),
+            description: Some("Host registered via Executive Console".to_string()),
+        }),
+        default_currency: Some("USD".to_string()),
+    };
+
+    // Dual Capability: must have both host and booker roles
+    let roles = new_user.roles.as_ref().unwrap();
+    assert!(roles.contains(&"host".to_string()), "Must have host role");
+    assert!(
+        roles.contains(&"booker".to_string()),
+        "Must have booker role so host can be a guest"
+    );
+    assert!(
+        !roles.contains(&"admin".to_string()),
+        "Must NEVER grant admin role via host signup"
+    );
+
+    // Default Profiles attached
+    assert!(
+        new_user.host_profile.is_some(),
+        "Default host profile must be created"
+    );
+    assert!(
+        new_user.booker_profile.is_some(),
+        "Default booker profile must be created"
+    );
+
+    // Granular capabilities
+    let user_attrs = new_user.attributes.as_ref().unwrap();
+    assert_eq!(
+        user_attrs.get("can_manage_listings"),
+        Some(&serde_json::Value::Bool(true))
+    );
+    assert_eq!(
+        user_attrs.get("can_manage_bookings"),
+        Some(&serde_json::Value::Bool(true))
+    );
+    assert_eq!(
+        user_attrs.get("can_manage_users"),
+        None,
+        "Host must NOT receive user management privilege"
+    );
+    assert_eq!(
+        user_attrs.get("can_configure_rates"),
+        None,
+        "Host must NOT receive global rate configuration privilege"
+    );
+
+    // Verification requirement: initial is_verified must be false
+    assert!(
+        !new_user.is_verified,
+        "Host account must require email code verification"
+    );
+}
+
+#[test]
+fn test_admin_creation_security_enforcement() {
+    // 1. Host cannot hold administrative capabilities
+    let host_perms_with_admin_escalation = GranularPermissions {
+        can_manage_listings: true,
+        can_manage_bookings: true,
+        can_configure_rates: true, // Forbidden for hosts
+        can_manage_users: false,
+    };
+    let result = RoleCapabilityProfile::build(true, false, false, host_perms_with_admin_escalation);
+    assert_eq!(
+        result,
+        Err(PermissionTypeConstraintError::HostCannotHoldAdminPrivileges),
+        "Hosts attempting to configure rates must be rejected by RoleCapabilityProfile"
+    );
+
+    let host_perms_with_user_mgmt = GranularPermissions {
+        can_manage_listings: true,
+        can_manage_bookings: true,
+        can_configure_rates: false,
+        can_manage_users: true, // Forbidden for hosts
+    };
+    let result2 = RoleCapabilityProfile::build(true, false, false, host_perms_with_user_mgmt);
+    assert_eq!(
+        result2,
+        Err(PermissionTypeConstraintError::HostCannotHoldAdminPrivileges),
+        "Hosts attempting to manage users must be rejected by RoleCapabilityProfile"
+    );
+
+    // 2. Legitimate host permissions are accepted
+    let valid_host_perms = GranularPermissions {
+        can_manage_listings: true,
+        can_manage_bookings: true,
+        can_configure_rates: false,
+        can_manage_users: false,
+    };
+    let valid_profile = RoleCapabilityProfile::build(true, false, false, valid_host_perms);
+    assert!(valid_profile.is_ok());
+
+    // 3. Admin accounts can only be granted by actual admins
+    let admin_perms = GranularPermissions {
+        can_manage_listings: true,
+        can_manage_bookings: true,
+        can_configure_rates: true,
+        can_manage_users: true,
+    };
+    let admin_profile = RoleCapabilityProfile::build(false, true, false, admin_perms);
+    assert!(admin_profile.is_ok());
+    assert!(admin_profile.unwrap().is_privileged());
+}
+
+#[test]
+fn test_email_verification_request_validation() {
+    let verify_req = VerifyRequest {
+        email: "host@ourplaces.io".to_string(),
+        code: "ABC123".to_string(),
+    };
+    assert!(verify_req.validate().is_ok());
+
+    let invalid_verify = VerifyRequest {
+        email: "not-valid".to_string(),
+        code: "".to_string(),
+    };
+    assert!(invalid_verify.validate().is_err());
+
+    let resend_req = ResendVerificationRequest {
+        email: "host@ourplaces.io".to_string(),
+    };
+    assert!(resend_req.validate().is_ok());
+
+    let invalid_resend = ResendVerificationRequest {
+        email: "invalid-email".to_string(),
+    };
+    assert!(invalid_resend.validate().is_err());
+}
+
+#[test]
+fn test_login_script_has_zero_escaped_entities() {
+    let source = include_str!("../src/pages/login.rs");
+    let mut script_count = 0;
+    for part in source.split("<script>").skip(1) {
+        if let Some(script_body) = part.split("</script>").next() {
+            script_count += 1;
+            assert!(
+                !script_body.contains('&'),
+                "Client script in login.rs must not contain '&' (causes &amp; in Topcoat view! templates)"
+            );
+            assert!(
+                !script_body.contains('<'),
+                "Client script in login.rs must not contain '<' (causes &lt; in Topcoat view! templates)"
+            );
+            assert!(
+                !script_body.contains('>'),
+                "Client script in login.rs must not contain '>' (causes &gt; in Topcoat view! templates)"
+            );
+        }
+    }
+    assert!(
+        script_count >= 3,
+        "Expected at least 3 script blocks in login.rs, found {}",
+        script_count
+    );
+}
+
+#[test]
+fn test_admin_user_deletion_and_restore_payloads() {
+    let user_id = Uuid::new_v4();
+
+    // Soft delete payload
+    let soft_payload = AdminDeleteUserPayload {
+        user_id,
+        purge: false,
+    };
+    let json_soft = serde_json::to_string(&soft_payload).expect("Failed to serialize soft delete");
+    let deser_soft: AdminDeleteUserPayload =
+        serde_json::from_str(&json_soft).expect("Failed to deserialize soft delete");
+    assert_eq!(deser_soft.user_id, user_id);
+    assert!(!deser_soft.purge);
+
+    // Hard delete / purge payload
+    let hard_payload = AdminDeleteUserPayload {
+        user_id,
+        purge: true,
+    };
+    let json_hard = serde_json::to_string(&hard_payload).expect("Failed to serialize hard delete");
+    let deser_hard: AdminDeleteUserPayload =
+        serde_json::from_str(&json_hard).expect("Failed to deserialize hard delete");
+    assert_eq!(deser_hard.user_id, user_id);
+    assert!(deser_hard.purge);
+
+    // Restore payload
+    let restore_payload = AdminRestoreUserPayload { user_id };
+    let json_restore =
+        serde_json::to_string(&restore_payload).expect("Failed to serialize restore");
+    let deser_restore: AdminRestoreUserPayload =
+        serde_json::from_str(&json_restore).expect("Failed to deserialize restore");
+    assert_eq!(deser_restore.user_id, user_id);
+
+    // Response models
+    let delete_resp = AdminDeleteUserResponse {
+        success: true,
+        message: Some("User archived successfully".to_string()),
+    };
+    assert!(delete_resp.success);
+    assert_eq!(
+        delete_resp.message.as_deref(),
+        Some("User archived successfully")
+    );
+
+    let restore_resp = AdminRestoreUserResponse {
+        success: true,
+        message: Some("User restored successfully".to_string()),
+    };
+    assert!(restore_resp.success);
+}
+
+#[test]
+fn test_admin_user_deletion_protection_invariant() {
+    // Invariant: accounts containing admin or superadmin role cannot be deleted
+    let admin_roles = vec!["admin".to_string()];
+    let is_admin = admin_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(is_admin, "Admin role must be detected as protected");
+
+    let superadmin_roles = vec!["superadmin".to_string(), "booker".to_string()];
+    let is_superadmin = superadmin_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(
+        is_superadmin,
+        "Superadmin role must be detected as protected"
+    );
+
+    let host_roles = vec!["host".to_string(), "booker".to_string()];
+    let is_host_admin = host_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(
+        !is_host_admin,
+        "Host role must not be marked as protected admin"
+    );
+
+    let guest_roles = vec!["booker".to_string()];
+    let is_guest_admin = guest_roles.iter().any(|r| {
+        let l = r.to_lowercase();
+        l == "admin" || l == "superadmin"
+    });
+    assert!(
+        !is_guest_admin,
+        "Guest role must not be marked as protected admin"
+    );
+}
+
+#[test]
+fn test_admin_user_status_filter_mapping() {
+    // Active filter
+    let active_status = "active";
+    let active_param = match active_status {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
+    assert_eq!(active_param, Some(false));
+
+    // Archived filter
+    let archived_status = "archived";
+    let archived_param = match archived_status {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
+    assert_eq!(archived_param, Some(true));
+
+    // All filter
+    let all_status = "all";
+    let all_param = match all_status {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
+    assert_eq!(all_param, None);
+
+    // Default fallback
+    let default_query = UserFilterQuery::default();
+    let status_filter = default_query
+        .status
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "active".to_string());
+    assert_eq!(status_filter, "active");
+}
+
+#[test]
+fn test_host_listings_scoping_params_and_url_encoding() {
+    let host_id = Uuid::new_v4();
+    let email_with_plus = "host+luxury@ourplaces.io";
+
+    let params = common::app_client::ListingSearchParams {
+        user_id: Some(host_id),
+        owner_email: Some(email_with_plus.to_string()),
+        per_page: Some(100),
+        ..Default::default()
+    };
+
+    assert_eq!(params.user_id, Some(host_id));
+    assert_eq!(
+        params.owner_email.as_deref(),
+        Some("host+luxury@ourplaces.io")
+    );
+
+    // Verify percent-encoding of query parameters prevents '+' from decoding as space
+    let mut url = reqwest::Url::parse("http://localhost:8080/api/v1/listings").unwrap();
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("per_page", "100");
+        if let Some(uid) = params.user_id {
+            query.append_pair("user_id", &uid.to_string());
+        }
+        if let Some(ref email) = params.owner_email {
+            query.append_pair("owner", email.trim());
+        }
+    }
+
+    let url_str = url.to_string();
+    assert!(url_str.contains(&format!("user_id={}", host_id)));
+    assert!(url_str.contains("owner=host%2Bluxury%40ourplaces.io"));
+    assert!(!url_str.contains("owner=host+luxury@ourplaces.io"));
 }

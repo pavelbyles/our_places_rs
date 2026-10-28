@@ -70,6 +70,7 @@ pub async fn get_listings(
         owner: query.owner.clone(),
         resolution: query.resolution.clone(),
         currency: query.currency.clone(),
+        user_id: query.user_id,
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))

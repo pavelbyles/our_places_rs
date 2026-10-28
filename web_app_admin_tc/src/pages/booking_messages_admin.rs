@@ -143,7 +143,7 @@ pub async fn booking_messages_admin_page(cx: &Cx) -> Result<impl View> {
     let listing_name = listing_details
         .as_ref()
         .map(|l| l.listing.name.clone())
-        .unwrap_or_else(|| "Luxury Villa".to_string());
+        .unwrap_or_else(|| "Luxury Listing".to_string());
     let listing_slug = listing_details
         .as_ref()
         .map(|l| l.listing.slug.clone())

@@ -93,6 +93,25 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// Request payload for verifying a user's email with an OTP code.
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
+pub struct VerifyRequest {
+    /// Email address of the user to verify.
+    #[validate(email)]
+    pub email: String,
+    /// 6-character alphanumeric verification OTP code.
+    #[validate(length(min = 1))]
+    pub code: String,
+}
+
+/// Request payload for resending an email verification OTP code.
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
+pub struct ResendVerificationRequest {
+    /// Target email address for resending verification code.
+    #[validate(email)]
+    pub email: String,
+}
+
 /// Request payload for updating user account details.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateUserRequest {
@@ -324,7 +343,7 @@ pub struct ListingDetails {
     pub rating_summary: Option<ListingRatingSummary>,
 }
 
-#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingFilter {
     pub name: Option<String>,
     pub country: Option<String>,
@@ -335,9 +354,12 @@ pub struct ListingFilter {
     pub owner: Option<String>,
     pub resolution: Option<String>,
     pub currency: Option<String>,
+    /// Optional owner user identifier filter for exact host scoping.
+    #[serde(default)]
+    pub user_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingQueryParams {
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -350,6 +372,8 @@ pub struct ListingQueryParams {
     pub owner: Option<String>,
     pub resolution: Option<String>,
     pub currency: Option<String>,
+    /// Optional owner user identifier query parameter for host listings scoping.
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]

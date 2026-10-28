@@ -33,20 +33,68 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
     let host_user_id = admin_user.as_ref().and_then(|u| u.id);
 
     let raw_listings = if is_admin {
-        api.search_listings(ListingSearchParams {
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!("Failed to fetch listings for admin dashboard: {:?}", err);
+                Vec::new()
+            }
+        }
     } else {
-        api.search_listings(ListingSearchParams {
-            owner_email: host_email.clone(),
-            per_page: Some(100),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default()
+        let mut results = if let Some(uid) = host_user_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch dashboard listings by user_id {:?}: {:?}",
+                        uid,
+                        err
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if results.is_empty()
+            && let Some(ref email) = host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    results = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch dashboard listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+        results
     };
 
     let listings: Vec<common::models::ListingResponse> = if is_admin {
@@ -123,15 +171,15 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                     </h1>
                     <p class="text-sm text-base-content/60">
                         if is_admin {
-                            "Real-time overview of Jamaican villas, reservations, pricing schedules, and system health."
+                            "Real-time overview of Jamaican listings, reservations, pricing schedules, and system health."
                         } else {
-                            "Real-time overview of your Jamaican villas, reservations, pricing schedules, and guest bookings."
+                            "Real-time overview of your Jamaican listings, reservations, pricing schedules, and guest bookings."
                         }
                     </p>
                 </div>
                 <div class="flex items-center gap-3">
                     <a href="/admin/listings/new" class="btn btn-primary btn-sm rounded-full px-5 font-bold tracking-wide shadow-md">
-                        <span>"+ New Villa"</span>
+                        <span>"+ New Listing"</span>
                     </a>
                     <a href="/admin/bookings" class="btn btn-outline btn-sm rounded-full px-4 font-semibold">
                         "View Bookings"
@@ -143,10 +191,10 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div class="card bg-base-100 dark:bg-base-200 border border-base-200 dark:border-base-100/20 p-6 rounded-2xl shadow-md space-y-2">
                     <div class="flex justify-between items-center text-base-content/60">
-                        <span class="text-xs font-bold uppercase tracking-wider">"Active Villas"</span>
+                        <span class="text-xs font-bold uppercase tracking-wider">"Active Listings"</span>
                         <span class="text-xl">"🏡"</span>
                     </div>
-                    <div class="text-3xl font-serif font-bold text-primary" id="kpi-active-villas-count">
+                    <div class="text-3xl font-serif font-bold text-primary" id="kpi-active-listings-count">
                         (listing_count)
                     </div>
                     <div class="text-xs text-base-content/50">
@@ -170,7 +218,7 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                         if is_admin {
                             "15-min atomic holds active"
                         } else {
-                            "15-min holds on your villas"
+                            "15-min holds on your listings"
                         }
                     </div>
                 </div>
@@ -187,7 +235,7 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                         if is_admin {
                             "Tri-currency statutory GCT 15%"
                         } else {
-                            "Gross bookings on your villas"
+                            "Gross bookings on your listings"
                         }
                     </div>
                 </div>
@@ -236,14 +284,14 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                             if is_admin {
                                 "Featured Properties Portfolio"
                             } else {
-                                "Your Villa Portfolio"
+                                "Your Listing Portfolio"
                             }
                         </h2>
                         <a href="/admin/listings" class="text-xs font-bold text-primary hover:underline">
                             if is_admin {
-                                "View All Villas ›"
+                                "View All Listings ›"
                             } else {
-                                "View Your Villas ›"
+                                "View Your Listings ›"
                             }
                         </a>
                     </div>
@@ -267,7 +315,7 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                                                 if is_admin {
                                                     "No properties currently in the portfolio."
                                                 } else {
-                                                    "You have no villas listed yet. Click '+ New Villa' above to list your property."
+                                                    "You have no listings yet. Click '+ New Listing' above to list your property."
                                                 }
                                             </td>
                                         </tr>
@@ -377,9 +425,9 @@ async fn render_dashboard_content(cx: &Cx) -> Result<impl View> {
                         <ul class="menu menu-sm p-0 space-y-1">
                             <li><a href="/admin/listings" class="font-medium">
                                 if is_admin {
-                                    "🌴 Villa Listings Catalog"
+                                    "🌴 Listings Catalog"
                                 } else {
-                                    "🌴 Your Villa Portfolio"
+                                    "🌴 Your Listing Portfolio"
                                 }
                             </a></li>
                             <li><a href="/admin/bookings" class="font-medium">

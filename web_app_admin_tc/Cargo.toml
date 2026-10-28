@@ -27,6 +27,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 jsonwebtoken = { workspace = true }
+validator = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 

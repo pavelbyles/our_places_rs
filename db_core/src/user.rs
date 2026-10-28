@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{DbError, Result};
 use crate::models::{
     BookerProfile, HostProfile, NewBookerProfile, NewHostProfile, NewUser, UpdatedUser, User,
     UserRole,
@@ -340,10 +340,16 @@ where
         "#,
     );
 
-    if is_deleted.unwrap_or(false) {
-        query_builder.push(" AND deleted_at IS NOT NULL ");
-    } else {
-        query_builder.push(" AND deleted_at IS NULL ");
+    match is_deleted {
+        Some(true) => {
+            query_builder.push(" AND deleted_at IS NOT NULL ");
+        }
+        Some(false) => {
+            query_builder.push(" AND deleted_at IS NULL ");
+        }
+        None => {
+            // No filter on deleted_at: returns all users (active and archived)
+        }
     }
 
     if let Some(search) = filter {
@@ -389,12 +395,21 @@ pub async fn initialize_system_admin(pool: &PgPool) {
     if !exists {
         tracing::info!("Initializing default system admin");
 
-        let password_hash = tokio::task::spawn_blocking(|| {
-            bcrypt::hash("admin_changeme_2026", bcrypt::DEFAULT_COST)
-                .expect("Failed to hash default admin password")
+        let password_hash = match tokio::task::spawn_blocking(|| {
+            bcrypt::hash("admin_changeme_2026", bcrypt::DEFAULT_COST).map_err(|e| e.to_string())
         })
         .await
-        .expect("Failed to join blocking task");
+        {
+            Ok(Ok(h)) => h,
+            Ok(Err(e)) => {
+                tracing::error!("Failed to hash default admin password: {e}");
+                return;
+            }
+            Err(e) => {
+                tracing::error!("Failed to join blocking task for admin password hash: {e}");
+                return;
+            }
+        };
 
         let new_user = NewUser {
             id: Uuid::now_v7(),
@@ -628,6 +643,7 @@ pub async fn soft_delete_user(pool: &PgPool, id: Uuid) -> Result<User> {
         r#"
         UPDATE "user"
         SET
+            is_active = FALSE,
             deleted_at = now(),
             updated_at = now()
         WHERE id = $1
@@ -681,6 +697,7 @@ pub async fn restore_user(pool: &PgPool, id: Uuid) -> Result<User> {
         r#"
         UPDATE "user"
         SET
+            is_active = TRUE,
             deleted_at = NULL,
             updated_at = now()
         WHERE id = $1
@@ -700,6 +717,16 @@ pub async fn restore_user(pool: &PgPool, id: Uuid) -> Result<User> {
 pub async fn hard_delete_user(pool: &PgPool, id: Uuid) -> Result<()> {
     sqlx::query!(r#"DELETE FROM "user" WHERE id = $1"#, id)
         .execute(pool)
-        .await?;
+        .await
+        .map_err(|err| {
+            if let Some(db_err) = err.as_database_error()
+                && db_err.code().as_deref() == Some("23503")
+            {
+                return DbError::ValidationError(
+                    "Cannot permanently delete user with linked bookings, listings, or financial records. Please use Soft Delete (Archive) instead.".to_string(),
+                );
+            }
+            DbError::Sqlx(err)
+        })?;
     Ok(())
 }

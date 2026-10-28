@@ -245,11 +245,11 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                         <div class="text-4xl">"🌴"</div>
                         <h3 class="text-xl font-bold font-serif text-base-content">"No Active Bookings"</h3>
                         <p class="text-xs text-base-content/70 max-w-md mx-auto">
-                            "You do not have any active reservations or pending date holds at this time. Explore our luxury villa collection in Jamaica."
+                            "You do not have any active reservations or pending date holds at this time. Explore our luxury collection in Jamaica."
                         </p>
                         <div class="pt-2">
                             <a href="/listings" class="btn btn-primary btn-sm rounded-xl font-bold px-6">
-                                "Browse Luxury Villas"
+                                "Browse Luxury Listings"
                             </a>
                         </div>
                     </div>
@@ -453,7 +453,7 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                                 </div>
 
                                 <div class="flex flex-col gap-2" id=(booking_actions_id)>
-                                    <a href=(villa_link) class="btn btn-outline btn-sm font-semibold">"View Villa"</a>
+                                    <a href=(villa_link) class="btn btn-outline btn-sm font-semibold">"View Listing"</a>
 
                                     if is_confirmed {
                                         <div class="tooltip tooltip-bottom" data-tip=(review_tip)>

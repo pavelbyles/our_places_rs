@@ -9,10 +9,15 @@ use topcoat::{
 use uuid::Uuid;
 use web_app_common_tc::get_api_client;
 
+/// Query parameters for filtering users in the administrator directory.
 #[derive(Debug, Default, Deserialize)]
 pub struct UserFilterQuery {
+    /// Optional search query matching name, email, or UUID.
     pub q: Option<String>,
+    /// Optional role filter (admin, host, booker).
     pub role: Option<String>,
+    /// Optional account status filter ("active", "archived", or "all").
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -234,6 +239,136 @@ pub async fn admin_update_user_api(
     }
 }
 
+/// Request payload for administrator user deletion.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminDeleteUserPayload {
+    /// ID of the user to delete or purge.
+    pub user_id: Uuid,
+    /// Whether to permanently purge the user record from the database.
+    pub purge: bool,
+}
+
+/// Response returned by the administrator user deletion endpoint.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminDeleteUserResponse {
+    /// Whether deletion succeeded.
+    pub success: bool,
+    /// Informative message or error description.
+    pub message: Option<String>,
+}
+
+/// Request payload for administrator user restoration.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminRestoreUserPayload {
+    /// ID of the soft-deleted user to restore and reactivate.
+    pub user_id: Uuid,
+}
+
+/// Response returned by the administrator user restoration endpoint.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminRestoreUserResponse {
+    /// Whether restoration succeeded.
+    pub success: bool,
+    /// Informative message or error description.
+    pub message: Option<String>,
+}
+
+#[route(POST "/api/admin/users/delete")]
+pub async fn admin_delete_user_api(
+    cx: &Cx,
+    Json(payload): Json<AdminDeleteUserPayload>,
+) -> Result<Json<AdminDeleteUserResponse>> {
+    if let Err(err) = web_app_common_tc::auth::require_admin_role_auth(cx).await {
+        return Ok(Json(AdminDeleteUserResponse {
+            success: false,
+            message: Some(format!("Forbidden: {:?}", err)),
+        }));
+    }
+
+    let api = get_api_client(cx);
+
+    // Fetch user profile first to enforce system administrator protection
+    let target_user = api.get_user_by_id(payload.user_id).await.ok();
+
+    if let Some(user) = target_user
+        && user.roles.iter().any(|r| {
+            let l = r.to_lowercase();
+            l == "admin" || l == "superadmin"
+        })
+    {
+        return Ok(Json(AdminDeleteUserResponse {
+            success: false,
+            message: Some("System administrator accounts cannot be deleted or purged.".to_string()),
+        }));
+    }
+
+    if payload.purge {
+        match api.hard_delete_user(payload.user_id).await {
+            Ok(_) => Ok(Json(AdminDeleteUserResponse {
+                success: true,
+                message: Some("User permanently purged from the database.".to_string()),
+            })),
+            Err(err) => {
+                tracing::warn!("Failed to hard delete user {}: {:?}", payload.user_id, err);
+                let err_msg = err.to_string();
+                let clean_msg = if err_msg.contains("linked bookings") || err_msg.contains("23503")
+                {
+                    "Cannot permanently delete user with linked bookings, listings, or financial records. Please use Soft Delete (Archive) instead.".to_string()
+                } else {
+                    format!("Failed to permanently purge user: {}", err_msg)
+                };
+                Ok(Json(AdminDeleteUserResponse {
+                    success: false,
+                    message: Some(clean_msg),
+                }))
+            }
+        }
+    } else {
+        match api.soft_delete_user(payload.user_id).await {
+            Ok(_) => Ok(Json(AdminDeleteUserResponse {
+                success: true,
+                message: Some("User account successfully archived and deactivated.".to_string()),
+            })),
+            Err(err) => {
+                tracing::warn!("Failed to soft delete user {}: {:?}", payload.user_id, err);
+                Ok(Json(AdminDeleteUserResponse {
+                    success: false,
+                    message: Some(format!("Failed to archive user: {}", err)),
+                }))
+            }
+        }
+    }
+}
+
+#[route(POST "/api/admin/users/restore")]
+pub async fn admin_restore_user_api(
+    cx: &Cx,
+    Json(payload): Json<AdminRestoreUserPayload>,
+) -> Result<Json<AdminRestoreUserResponse>> {
+    if let Err(err) = web_app_common_tc::auth::require_admin_role_auth(cx).await {
+        return Ok(Json(AdminRestoreUserResponse {
+            success: false,
+            message: Some(format!("Forbidden: {:?}", err)),
+        }));
+    }
+
+    let api = get_api_client(cx);
+
+    match api.restore_user(payload.user_id).await {
+        Ok(_) => Ok(Json(AdminRestoreUserResponse {
+            success: true,
+            message: Some("User account successfully restored and reactivated.".to_string()),
+        })),
+        Err(err) => {
+            tracing::warn!("Failed to restore user {}: {:?}", payload.user_id, err);
+            Ok(Json(AdminRestoreUserResponse {
+                success: false,
+                message: Some(format!("Failed to restore user: {}", err)),
+            }))
+        }
+    }
+}
+
 #[page("/admin/users")]
 pub async fn admin_users_page(cx: &Cx) -> Result<impl View> {
     render_users_directory(cx).await
@@ -261,11 +396,25 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
         .role
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty());
+    let status_filter = filter_query
+        .status
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "active".to_string());
+
+    let is_deleted_param = match status_filter.as_str() {
+        "archived" | "deleted" => Some(true),
+        "all" => None,
+        _ => Some(false),
+    };
 
     let __cx = cx;
     let api = get_api_client(cx);
 
-    let all_users = match api.get_all_users(Some(1), Some(100), None).await {
+    let all_users = match api
+        .get_all_users_filtered(Some(1), Some(100), None, is_deleted_param)
+        .await
+    {
         Ok(users) => users,
         Err(err) => {
             tracing::error!("Failed to fetch users from user_api: {:?}", err);
@@ -358,6 +507,16 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                             <option value="host" selected=(role_filter.as_deref() == Some("host"))>"Host / Property Owner"</option>
                             <option value="booker" selected=(role_filter.as_deref() == Some("booker"))>"Guest / Booker"</option>
                         </select>
+                        <select
+                            name="status"
+                            id="user-status-select"
+                            class="select select-bordered select-sm rounded-xl font-medium w-full sm:w-auto"
+                            onchange="document.getElementById('user-filter-form').submit()"
+                        >
+                            <option value="active" selected=(status_filter == "active")>"Status: Active"</option>
+                            <option value="archived" selected=(status_filter == "archived")>"Status: Archived"</option>
+                            <option value="all" selected=(status_filter == "all")>"Status: All Accounts"</option>
+                        </select>
                         <div class="flex items-center gap-2 w-full sm:w-auto">
                             <button
                                 type="submit"
@@ -366,7 +525,7 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                             >
                                 <span>"Filter"</span>
                             </button>
-                            if search_filter.is_some() || role_filter.is_some() {
+                            if search_filter.is_some() || role_filter.is_some() || status_filter != "active" {
                                 <a href="/admin/users" class="btn btn-ghost btn-sm rounded-xl font-semibold text-xs">
                                     "✕ Reset"
                                 </a>
@@ -388,8 +547,8 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                                 <th>"User"</th>
                                 <th>"Roles and Permissions"</th>
                                 <th>"Verification"</th>
-                                <th>"Properties and Bookings"</th>
-                                <th>"Account Type"</th>
+                                <th>"Account Status"</th>
+                                <th>"Default Currency"</th>
                                 <th class="text-right">"Actions"</th>
                             </tr>
                         </thead>
@@ -417,6 +576,25 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                                         u.roles.clone()
                                     };
                                     let is_verified = u.is_verified;
+                                    let is_admin_user = u.roles.iter().any(|r| {
+                                        let lower = r.to_lowercase();
+                                        lower == "admin" || lower == "superadmin"
+                                    });
+                                    let is_deleted = u.deleted_at.is_some();
+                                    let status_badge_class = if is_deleted {
+                                        "badge badge-error badge-xs font-semibold"
+                                    } else if u.is_active {
+                                        "badge badge-success badge-xs font-semibold"
+                                    } else {
+                                        "badge badge-warning badge-xs font-semibold"
+                                    };
+                                    let status_text = if is_deleted {
+                                        "Archived"
+                                    } else if u.is_active {
+                                        "Active Account"
+                                    } else {
+                                        "Suspended"
+                                    };
 
                                     let can_manage_bookings = u.attributes.get("can_manage_bookings").and_then(|v| v.as_bool()).unwrap_or(false);
                                     let can_manage_listings = u.attributes.get("can_manage_listings").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -461,8 +639,12 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                                                 <span class="badge badge-ghost badge-xs font-semibold">"Unverified"</span>
                                             }
                                         </td>
-                                        <td class="text-xs font-medium">"Active Account"</td>
-                                        <td class="text-xs font-mono text-base-content/60">"Standard"</td>
+                                        <td>
+                                            <span class=(status_badge_class)>(status_text)</span>
+                                        </td>
+                                        <td class="text-xs font-mono text-base-content/60">
+                                            (u.default_currency.to_uppercase())
+                                        </td>
                                         <td class="text-right space-x-1 whitespace-nowrap">
                                             <button
                                                 type="button"
@@ -486,24 +668,68 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                                             >
                                                 "View Details"
                                             </button>
-                                            <button
-                                                type="button"
-                                                class="btn btn-outline btn-primary btn-xs font-bold rounded-lg hover:bg-primary hover:text-white"
-                                                data-id=(u.id.to_string())
-                                                data-first-name=(u.first_name.clone())
-                                                data-last-name=(u.last_name.clone())
-                                                data-email=(u.email.clone())
-                                                data-phone=(phone_str.to_string())
-                                                data-roles=(roles_str)
-                                                data-verified=(if is_verified { "true" } else { "false" })
-                                                data-active=(if u.is_active { "true" } else { "false" })
-                                                data-currency=(u.default_currency.clone())
-                                                data-can-manage-bookings=(if can_manage_bookings { "true" } else { "false" })
-                                                data-can-manage-listings=(if can_manage_listings { "true" } else { "false" })
-                                                onclick="openUserEditModal(this)"
-                                            >
-                                                "✏️ Edit"
-                                            </button>
+                                            if !is_deleted {
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-outline btn-primary btn-xs font-bold rounded-lg hover:bg-primary hover:text-white"
+                                                    data-id=(u.id.to_string())
+                                                    data-first-name=(u.first_name.clone())
+                                                    data-last-name=(u.last_name.clone())
+                                                    data-email=(u.email.clone())
+                                                    data-phone=(phone_str.to_string())
+                                                    data-roles=(roles_str.clone())
+                                                    data-verified=(if is_verified { "true" } else { "false" })
+                                                    data-active=(if u.is_active { "true" } else { "false" })
+                                                    data-currency=(u.default_currency.clone())
+                                                    data-can-manage-bookings=(if can_manage_bookings { "true" } else { "false" })
+                                                    data-can-manage-listings=(if can_manage_listings { "true" } else { "false" })
+                                                    onclick="openUserEditModal(this)"
+                                                >
+                                                    "✏️ Edit"
+                                                </button>
+                                            }
+                                            if is_admin_user {
+                                                <span class="badge badge-neutral badge-sm font-bold gap-1 cursor-default opacity-80" title="Administrator accounts are protected from deletion">
+                                                    "🛡️ Protected Admin"
+                                                </span>
+                                            } else {
+                                                if is_deleted {
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-outline btn-success btn-xs font-bold rounded-lg hover:bg-success hover:text-white"
+                                                        data-id=(u.id.to_string())
+                                                        data-email=(u.email.clone())
+                                                        onclick="restoreUserAccount(this)"
+                                                    >
+                                                        "♻️ Restore"
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-outline btn-error btn-xs font-bold rounded-lg hover:bg-error hover:text-white"
+                                                        data-id=(u.id.to_string())
+                                                        data-email=(u.email.clone())
+                                                        data-display-name=(display_name.clone())
+                                                        data-roles=(roles_str.clone())
+                                                        data-purge-only="true"
+                                                        onclick="openUserDeleteModal(this)"
+                                                    >
+                                                        "🗑️ Purge"
+                                                    </button>
+                                                } else {
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-outline btn-error btn-xs font-bold rounded-lg hover:bg-error hover:text-white"
+                                                        data-id=(u.id.to_string())
+                                                        data-email=(u.email.clone())
+                                                        data-display-name=(display_name.clone())
+                                                        data-roles=(roles_str.clone())
+                                                        data-purge-only="false"
+                                                        onclick="openUserDeleteModal(this)"
+                                                    >
+                                                        "🗑️ Delete"
+                                                    </button>
+                                                }
+                                            }
                                         </td>
                                     </tr>
                                 }
@@ -702,9 +928,14 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                         </div>
 
                         <div class="bg-base-200/50 p-4 rounded-2xl space-y-3 border border-base-200">
-                            <span class="text-base-content/70 font-bold uppercase block text-[10px] tracking-wider">
-                                "3. Roles and Status"
-                            </span>
+                            <div class="flex items-center justify-between">
+                                <span class="text-base-content/70 font-bold uppercase block text-[10px] tracking-wider">
+                                    "3. Roles and Status"
+                                </span>
+                                <span id="edit-user-admin-badge" class="badge badge-warning text-[10px] font-bold hidden">
+                                    "System Admin (Roles & Status Protected)"
+                                </span>
+                            </div>
                             <div class="flex items-center gap-4 flex-wrap">
                                 <label class="label cursor-pointer gap-2">
                                     <input type="checkbox" id="edit-role-admin" class="checkbox checkbox-primary checkbox-sm rounded-md" />
@@ -743,6 +974,36 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                             </div>
                         </div>
 
+                        // Danger Zone: Account Deletion and Purge
+                        <div id="edit-user-danger-zone" class="bg-error/10 border border-error/30 p-4 rounded-2xl space-y-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-error font-bold uppercase text-[10px] tracking-wider">
+                                    "⚠️ Danger Zone — Account Deletion"
+                                </span>
+                            </div>
+                            <p class="text-xs text-base-content/70">
+                                "Archive this user account (soft delete) or permanently purge it from the database."
+                            </p>
+                            <div class="flex items-center gap-2 pt-1">
+                                <button
+                                    type="button"
+                                    id="edit-user-soft-delete-btn"
+                                    class="btn btn-warning btn-sm rounded-xl font-bold gap-1 shadow-xs"
+                                    onclick="openDeleteFromEdit(false)"
+                                >
+                                    <span>"📦 Archive Account"</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    id="edit-user-purge-btn"
+                                    class="btn btn-error btn-sm rounded-xl font-bold gap-1 shadow-xs"
+                                    onclick="openDeleteFromEdit(true)"
+                                >
+                                    <span>"🗑️ Permanently Purge"</span>
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="modal-action flex justify-end gap-2 pt-2">
                             <button type="button" class="btn btn-ghost btn-sm rounded-xl font-semibold" onclick="closeUserEditModal()">
                                 "Cancel"
@@ -755,8 +1016,105 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                 </div>
             </dialog>
 
+            // Admin User Delete & Purge Confirmation Dialog
+            <dialog id="admin-user-delete-dialog" class="modal modal-bottom sm:modal-middle">
+                <div class="modal-box rounded-3xl p-6 md:p-8 space-y-6 max-w-lg border border-error/30 shadow-2xl">
+                    <div class="flex justify-between items-start border-b border-base-200 pb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-2xl bg-error/20 text-error flex items-center justify-center text-2xl font-bold">
+                                <span>"⚠️"</span>
+                            </div>
+                            <div>
+                                <span class="text-error font-bold uppercase tracking-widest text-[10px] block">
+                                    "Account Termination & Lifecycle"
+                                </span>
+                                <h3 class="font-serif font-bold text-xl text-base-content">
+                                    "Delete User Account"
+                                </h3>
+                            </div>
+                        </div>
+                        <form method="dialog">
+                            <button class="btn btn-sm btn-circle btn-ghost">"✕"</button>
+                        </form>
+                    </div>
+
+                    <div id="delete-user-feedback" class="alert text-xs py-2.5 px-4 rounded-xl font-semibold" style="display: none;"></div>
+
+                    <div class="space-y-3">
+                        <p class="text-xs text-base-content/80 font-medium">
+                            "You are initiating deletion for the following user account:"
+                        </p>
+                        <div class="bg-base-200/60 p-4 rounded-2xl border border-base-200 space-y-1.5 text-xs">
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60 font-semibold">"Name:"</span>
+                                <span class="font-bold text-base-content" id="delete-user-name">"—"</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60 font-semibold">"Email:"</span>
+                                <span class="font-bold text-base-content" id="delete-user-email">"—"</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60 font-semibold">"Roles:"</span>
+                                <span class="font-mono text-base-content/80" id="delete-user-roles">"—"</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-base-content/60 font-semibold">"User UUID:"</span>
+                                <code class="text-[11px] font-mono text-base-content/70 select-all" id="delete-user-id-display">"—"</code>
+                            </div>
+                        </div>
+                        <input type="hidden" id="delete-target-user-id" />
+                    </div>
+
+                    <div class="space-y-4 pt-1">
+                        <div id="delete-option-soft" class="p-3.5 rounded-2xl border border-warning/40 bg-warning/10 space-y-1">
+                            <div class="font-bold text-xs text-warning-content dark:text-warning flex items-center gap-1.5">
+                                <span>"📦"</span>
+                                <span>"Option 1: Soft Delete (Archive)"</span>
+                            </div>
+                            <p class="text-[11px] text-base-content/70">
+                                "Revokes all active sessions immediately, deactivates login, and hides the user from public directories while preserving audit and financial history. Can be restored anytime."
+                            </p>
+                        </div>
+
+                        <div class="p-3.5 rounded-2xl border border-error/40 bg-error/10 space-y-1">
+                            <div class="font-bold text-xs text-error flex items-center gap-1.5">
+                                <span>"🔥"</span>
+                                <span>"Option 2: Permanent Purge (Hard Delete)"</span>
+                            </div>
+                            <p class="text-[11px] text-base-content/70">
+                                "Irreversibly deletes the user record. Restricted to zero-history accounts with no linked reservations, properties, or tax records."
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="modal-action flex flex-col sm:flex-row justify-between items-center gap-2 pt-2 border-t border-base-200">
+                        <button type="button" class="btn btn-ghost btn-sm rounded-xl font-semibold order-last sm:order-first w-full sm:w-auto" onclick="closeUserDeleteModal()">
+                            "Cancel"
+                        </button>
+                        <div class="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                            <button
+                                type="button"
+                                id="confirm-soft-delete-btn"
+                                class="btn btn-warning btn-sm rounded-xl font-bold shadow-sm w-full sm:w-auto"
+                                onclick="executeUserDelete(false)"
+                            >
+                                "Archive Account"
+                            </button>
+                            <button
+                                type="button"
+                                id="confirm-hard-delete-btn"
+                                class="btn btn-error btn-sm rounded-xl font-bold shadow-sm w-full sm:w-auto"
+                                onclick="executeUserDelete(true)"
+                            >
+                                "Permanently Purge"
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </dialog>
+
             <script>
-                r#"
+                (r#"
                 function applyClientFilter() {
                     var qInput = document.getElementById('user-search-input');
                     var rSelect = document.getElementById('user-role-select');
@@ -965,14 +1323,45 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                         document.getElementById('edit-user-phone').value = phone;
                         document.getElementById('edit-user-currency').value = currency;
 
-                        document.getElementById('edit-role-admin').checked = (rolesStr.indexOf('admin') !== -1);
-                        document.getElementById('edit-role-host').checked = (rolesStr.indexOf('host') !== -1);
-                        document.getElementById('edit-role-booker').checked = (rolesStr.indexOf('booker') !== -1);
+                        var isAdmin = (rolesStr.indexOf('admin') !== -1);
+                        var adminCb = document.getElementById('edit-role-admin');
+                        var hostCb = document.getElementById('edit-role-host');
+                        var bookerCb = document.getElementById('edit-role-booker');
+                        var activeCb = document.getElementById('edit-user-active');
+                        var verifiedCb = document.getElementById('edit-user-verified');
 
-                        document.getElementById('edit-user-active').checked = isActive;
-                        document.getElementById('edit-user-verified').checked = isVerified;
+                        adminCb.checked = isAdmin;
+                        hostCb.checked = (rolesStr.indexOf('host') !== -1);
+                        bookerCb.checked = (rolesStr.indexOf('booker') !== -1);
+
+                        activeCb.checked = isActive;
+                        verifiedCb.checked = isVerified;
                         document.getElementById('edit-user-can-bookings').checked = canBookings;
                         document.getElementById('edit-user-can-listings').checked = canListings;
+
+                        adminCb.disabled = isAdmin;
+                        hostCb.disabled = isAdmin;
+                        bookerCb.disabled = isAdmin;
+                        activeCb.disabled = isAdmin;
+                        verifiedCb.disabled = isAdmin;
+
+                        var adminBadge = document.getElementById('edit-user-admin-badge');
+                        if (adminBadge) {
+                            if (isAdmin) {
+                                adminBadge.classList.remove('hidden');
+                            } else {
+                                adminBadge.classList.add('hidden');
+                            }
+                        }
+
+                        var dangerZone = document.getElementById('edit-user-danger-zone');
+                        if (dangerZone) {
+                            if (isAdmin) {
+                                dangerZone.style.setProperty('display', 'none', 'important');
+                            } else {
+                                dangerZone.style.removeProperty('display');
+                            }
+                        }
 
                         var fb = document.getElementById('edit-user-feedback');
                         if (fb) { fb.style.setProperty('display', 'none', 'important'); }
@@ -1038,14 +1427,25 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
                         }
                     }
 
-                    var roles = [];
-                    if (document.getElementById('edit-role-admin').checked) { roles.push('admin'); }
-                    if (document.getElementById('edit-role-host').checked) { roles.push('host'); }
-                    if (document.getElementById('edit-role-booker').checked) { roles.push('booker'); }
-                    if (roles.length === 0) { roles.push('booker'); }
+                    var isAdminUser = false;
+                    var adminRoleEl = document.getElementById('edit-role-admin');
+                    var adminBadgeEl = document.getElementById('edit-user-admin-badge');
+                    if (adminRoleEl ? adminRoleEl.disabled : false) {
+                        isAdminUser = true;
+                    } else if (adminBadgeEl ? !adminBadgeEl.classList.contains('hidden') : false) {
+                        isAdminUser = true;
+                    }
 
-                    var isActive = document.getElementById('edit-user-active').checked;
-                    var isVerified = document.getElementById('edit-user-verified').checked;
+                    var roles = isAdminUser ? null : [];
+                    if (!isAdminUser) {
+                        if (document.getElementById('edit-role-admin').checked) { roles.push('admin'); }
+                        if (document.getElementById('edit-role-host').checked) { roles.push('host'); }
+                        if (document.getElementById('edit-role-booker').checked) { roles.push('booker'); }
+                        if (roles.length === 0) { roles.push('booker'); }
+                    }
+
+                    var isActive = isAdminUser ? null : document.getElementById('edit-user-active').checked;
+                    var isVerified = isAdminUser ? null : document.getElementById('edit-user-verified').checked;
                     var canBookings = document.getElementById('edit-user-can-bookings').checked;
                     var canListings = document.getElementById('edit-user-can-listings').checked;
 
@@ -1105,7 +1505,182 @@ async fn render_users_directory(cx: &Cx) -> Result<impl View> {
 
                     return false;
                 }
-                "#
+
+                function openUserDeleteModal(btn) {
+                    try {
+                        var ds = btn.dataset;
+                        var id = ds.id || '';
+                        var email = ds.email || '';
+                        var name = ds.displayName || email || 'User';
+                        var roles = ds.roles || 'guest';
+                        var purgeOnly = (ds.purgeOnly === 'true');
+
+                        var targetInput = document.getElementById('delete-target-user-id');
+                        if (targetInput) targetInput.value = id;
+
+                        var idDisplay = document.getElementById('delete-user-id-display');
+                        if (idDisplay) idDisplay.innerText = id;
+
+                        var nameEl = document.getElementById('delete-user-name');
+                        if (nameEl) nameEl.innerText = name;
+
+                        var emailEl = document.getElementById('delete-user-email');
+                        if (emailEl) emailEl.innerText = email;
+
+                        var rolesEl = document.getElementById('delete-user-roles');
+                        if (rolesEl) rolesEl.innerText = roles;
+
+                        var softBox = document.getElementById('delete-option-soft');
+                        var softBtn = document.getElementById('confirm-soft-delete-btn');
+                        if (purgeOnly) {
+                            if (softBox) { softBox.style.setProperty('display', 'none', 'important'); }
+                            if (softBtn) { softBtn.style.setProperty('display', 'none', 'important'); }
+                        } else {
+                            if (softBox) { softBox.style.removeProperty('display'); }
+                            if (softBtn) { softBtn.style.removeProperty('display'); }
+                        }
+
+                        var fb = document.getElementById('delete-user-feedback');
+                        if (fb) { fb.style.setProperty('display', 'none', 'important'); }
+
+                        var dialog = document.getElementById('admin-user-delete-dialog');
+                        if (dialog) { dialog.showModal(); }
+                    } catch(err) {
+                        console.error('Failed to open delete user dialog:', err);
+                    }
+                }
+
+                function openDeleteFromEdit(purge) {
+                    var editDialog = document.getElementById('admin-user-edit-dialog');
+                    if (editDialog) { editDialog.close(); }
+                    var id = document.getElementById('edit-user-id').value;
+                    var email = document.getElementById('edit-user-email').value;
+                    var fn = document.getElementById('edit-user-first-name').value;
+                    var ln = document.getElementById('edit-user-last-name').value;
+                    var name = (fn + ' ' + ln).trim();
+                    if (!name) { name = email; }
+
+                    var mockBtn = {
+                        dataset: {
+                            id: id,
+                            email: email,
+                            displayName: name,
+                            roles: '',
+                            purgeOnly: purge ? 'true' : 'false'
+                        }
+                    };
+                    openUserDeleteModal(mockBtn);
+                }
+
+                function closeUserDeleteModal() {
+                    var dialog = document.getElementById('admin-user-delete-dialog');
+                    if (dialog) { dialog.close(); }
+                }
+
+                function executeUserDelete(purge) {
+                    var targetInput = document.getElementById('delete-target-user-id');
+                    var id = targetInput ? targetInput.value : '';
+                    if (!id) { return; }
+
+                    var softBtn = document.getElementById('confirm-soft-delete-btn');
+                    var hardBtn = document.getElementById('confirm-hard-delete-btn');
+                    if (softBtn) { softBtn.disabled = true; }
+                    if (hardBtn) { hardBtn.disabled = true; }
+
+                    var fb = document.getElementById('delete-user-feedback');
+                    if (fb) { fb.style.setProperty('display', 'none', 'important'); }
+
+                    var payload = {
+                        user_id: id,
+                        purge: purge
+                    };
+
+                    fetch('/api/admin/users/delete', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(function(res) {
+                        return res.json().then(function(data) {
+                            if (softBtn) { softBtn.disabled = false; }
+                            if (hardBtn) { hardBtn.disabled = false; }
+                            if (data.success) {
+                                if (fb) {
+                                    fb.className = 'alert alert-success text-xs py-2.5 px-4 rounded-xl font-semibold';
+                                    fb.innerText = data.message || 'User deletion completed successfully.';
+                                    fb.style.removeProperty('display');
+                                }
+                                setTimeout(function() {
+                                    window.location.reload();
+                                }, 800);
+                            } else {
+                                if (fb) {
+                                    fb.className = 'alert alert-error text-xs py-2.5 px-4 rounded-xl font-semibold';
+                                    fb.innerText = data.message || 'Operation failed.';
+                                    fb.style.removeProperty('display');
+                                }
+                            }
+                        });
+                    })
+                    .catch(function(err) {
+                        if (softBtn) { softBtn.disabled = false; }
+                        if (hardBtn) { hardBtn.disabled = false; }
+                        if (fb) {
+                            fb.className = 'alert alert-error text-xs py-2.5 px-4 rounded-xl font-semibold';
+                            fb.innerText = 'Network error while attempting to delete user.';
+                            fb.style.removeProperty('display');
+                        }
+                    });
+                }
+
+                function restoreUserAccount(btn) {
+                    try {
+                        var id = btn.dataset.id;
+                        var email = btn.dataset.email || 'this user';
+                        if (!id) { return; }
+                        if (!confirm('Are you sure you want to restore and reactivate ' + email + '?')) {
+                            return;
+                        }
+
+                        btn.disabled = true;
+                        var prevText = btn.innerText;
+                        btn.innerText = 'Restoring...';
+
+                        var payload = { user_id: id };
+                        fetch('/api/admin/users/restore', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify(payload)
+                        })
+                        .then(function(res) {
+                            return res.json().then(function(data) {
+                                btn.disabled = false;
+                                btn.innerText = prevText;
+                                if (data.success) {
+                                    window.location.reload();
+                                } else {
+                                    alert(data.message || 'Failed to restore user.');
+                                }
+                            });
+                        })
+                        .catch(function(err) {
+                            btn.disabled = false;
+                            btn.innerText = prevText;
+                            alert('Network error while attempting to restore user.');
+                        });
+                    } catch(err) {
+                        console.error('Failed to restore user:', err);
+                    }
+                }
+                "#)
             </script>
         </div>
         }
@@ -1355,7 +1930,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result<impl View> {
                             />
                             <div>
                                 <div class="font-bold text-sm text-base-content">"Booker / Guest 🧳"</div>
-                                <div class="text-[11px] text-base-content/60">"Can book villas"</div>
+                                <div class="text-[11px] text-base-content/60">"Can book listings"</div>
                             </div>
                         </label>
                     </div>
@@ -1552,7 +2127,7 @@ pub async fn admin_new_user_page(cx: &Cx) -> Result<impl View> {
                                 permUsersBadge.innerText = 'Granted (Admin)';
                             }
                         } else if (isHost) {
-                            // Host only: listings & bookings enabled, admin options (rates & users) strictly locked & disabled
+                            // Host only: listings and bookings enabled, admin options (rates and users) strictly locked and disabled
                             if (container) {
                                 container.style.opacity = '1';
                                 container.style.pointerEvents = 'auto';

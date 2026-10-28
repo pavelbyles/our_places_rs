@@ -5,7 +5,7 @@ use topcoat::{
     view::{View, view},
 };
 use web_app_common_tc::{
-    client::ListingSearchParams, components::villa_card::villa_card, get_api_client,
+    client::ListingSearchParams, components::listing_card::listing_card, get_api_client,
 };
 
 #[page("/")]
@@ -147,7 +147,7 @@ pub async fn home(cx: &Cx) -> Result<impl View> {
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     for item in listings {
-                        villa_card(
+                        listing_card(
                             id: item.slug.clone(),
                             title: item.name.clone(),
                             image_url: item.primary_image_url.clone().unwrap_or_default(),

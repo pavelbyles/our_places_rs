@@ -3,9 +3,9 @@ use crate::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, BookingReviewEligibility,
     CreateBookingMessageRequest, CreateSessionRequest, DynamicPricingQuote, HostReplyRequest,
     ListingDetails, ListingResponse, LoginRequest, MarkMessagesReadResponse, NewBookingRequest,
-    NewReviewRequest, NewUserRequest, PriceOverride, ReviewResponse, ReviewTokenInfoResponse,
-    SessionResponse, TransferBookingRequest, UpdateUserRequest, UpdatedBookingRequest,
-    UserResponse,
+    NewReviewRequest, NewUserRequest, PriceOverride, ResendVerificationRequest, ReviewResponse,
+    ReviewTokenInfoResponse, SessionResponse, TransferBookingRequest, UpdateUserRequest,
+    UpdatedBookingRequest, UserResponse, VerifyRequest,
 };
 use crate::tax_document::TaxDocumentResponse;
 
@@ -78,6 +78,8 @@ pub fn user_api_audience() -> String {
 pub struct ListingSearchParams {
     pub name: Option<String>,
     pub owner_email: Option<String>,
+    /// Optional canonical user ID to query listings belonging strictly to a specific host.
+    pub user_id: Option<Uuid>,
     pub listing_structure: Option<Vec<String>>,
     pub max_price: Option<f64>,
     pub currency: Option<String>,
@@ -89,30 +91,39 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
     let api_url = listing_api_url();
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(20);
-    let mut url = format!(
-        "{}/api/v1/listings?page={}&per_page={}",
-        api_url, page, per_page
-    );
+    let base_url = format!("{}/api/v1/listings", api_url);
+    let mut url =
+        reqwest::Url::parse(&base_url).context("Failed to parse listings API base URL")?;
 
-    if let Some(s) = params.name.filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&name={}", s));
-    }
-    if let Some(s) = params.owner_email.filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&owner={}", s));
-    }
-    if let Some(structures) = params.listing_structure.filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&structure_type={}", structures.join(",")));
-    }
-    if let Some(s) = params.max_price.filter(|&s| s > 0.0) {
-        url.push_str(&format!("&max_price={}", s));
-    }
-    if let Some(c) = params.currency.filter(|c| !c.is_empty()) {
-        url.push_str(&format!("&currency={}", c));
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("page", &page.to_string());
+        query.append_pair("per_page", &per_page.to_string());
+
+        if let Some(uid) = params.user_id {
+            query.append_pair("user_id", &uid.to_string());
+        }
+        if let Some(s) = params.name.filter(|s| !s.is_empty()) {
+            query.append_pair("name", &s);
+        }
+        if let Some(s) = params.owner_email.filter(|s| !s.is_empty()) {
+            query.append_pair("owner", s.trim());
+        }
+        if let Some(structures) = params.listing_structure.filter(|s| !s.is_empty()) {
+            query.append_pair("structure_type", &structures.join(","));
+        }
+        if let Some(s) = params.max_price.filter(|&s| s > 0.0) {
+            query.append_pair("max_price", &s.to_string());
+        }
+        if let Some(c) = params.currency.filter(|c| !c.is_empty()) {
+            query.append_pair("currency", &c);
+        }
     }
 
+    let url_str = url.to_string();
     let audience = listing_api_audience();
     let res = get_client()
-        .get(&url, &audience)
+        .get(&url_str, &audience)
         .await
         .context("Failed to connect to listing service")?;
 
@@ -1069,10 +1080,12 @@ pub async fn fetch_user_profile(user_id: &str) -> Result<Response> {
     get_client().get(&url, &audience).await
 }
 
-pub async fn get_all_users(
+/// Retrieves all users with optional pagination, search filtering, and soft-delete filtering.
+pub async fn get_all_users_filtered(
     page: Option<u32>,
     per_page: Option<u32>,
     search: Option<String>,
+    is_deleted: Option<bool>,
 ) -> Result<Vec<UserResponse>> {
     let api_url = user_api_url();
     let audience = user_api_audience();
@@ -1084,6 +1097,11 @@ pub async fn get_all_users(
     );
     if let Some(s) = search.filter(|s| !s.is_empty()) {
         url.push_str(&format!("&search={}", s));
+    }
+    if let Some(del) = is_deleted {
+        url.push_str(&format!("&is_deleted={}", del));
+    } else {
+        url.push_str("&all=true");
     }
 
     let res = get_client()
@@ -1100,6 +1118,82 @@ pub async fn get_all_users(
     res.json::<Vec<UserResponse>>()
         .await
         .context("Failed to parse users response")
+}
+
+/// Retrieves active users with pagination and search.
+pub async fn get_all_users(
+    page: Option<u32>,
+    per_page: Option<u32>,
+    search: Option<String>,
+) -> Result<Vec<UserResponse>> {
+    get_all_users_filtered(page, per_page, search, None).await
+}
+
+/// Soft deletes a user account (marks as deleted and deactivated).
+pub async fn soft_delete_user(id: Uuid) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/user/{}", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to user service for soft deletion")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to soft delete user ({}): {}", status, err_text);
+    }
+
+    res.json::<UserResponse>()
+        .await
+        .context("Failed to parse soft deleted user response")
+}
+
+/// Permanently purges a user from the database.
+pub async fn hard_delete_user(id: Uuid) -> Result<()> {
+    let url = format!("{}/api/v1/users/user/{}/hard", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to user service for hard deletion")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&err_text)
+            && let Some(err_msg) = json_val.get("error").and_then(|v| v.as_str())
+        {
+            bail!("{}", err_msg);
+        }
+        bail!(
+            "Failed to permanently purge user ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    Ok(())
+}
+
+/// Restores an archived / soft-deleted user.
+pub async fn restore_user(id: Uuid) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/user/{}/restore", user_api_url(), id);
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, &serde_json::json!({}))
+        .await
+        .context("Failed to connect to user service for user restoration")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to restore user ({}): {}", status, err_text);
+    }
+
+    res.json::<UserResponse>()
+        .await
+        .context("Failed to parse restored user response")
 }
 
 pub async fn update_user(id: Uuid, req: &UpdateUserRequest) -> Result<UserResponse> {
@@ -1258,6 +1352,56 @@ pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
         .json()
         .await
         .context("Failed to parse user response from login")?;
+
+    Ok(user)
+}
+
+/// Verifies a user's email address with their 6-character OTP code.
+pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let url = format!("{}/api/v1/users/verify", api_url);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for verification")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Verification failed ({}): {}", status, err_text);
+    }
+
+    let user: UserResponse = res
+        .json()
+        .await
+        .context("Failed to parse user response from verification")?;
+
+    Ok(user)
+}
+
+/// Resends the 6-character OTP verification code to a user's email address.
+pub async fn resend_verification(req: &ResendVerificationRequest) -> Result<UserResponse> {
+    let api_url = user_api_url();
+    let audience = user_api_audience();
+    let url = format!("{}/api/v1/users/resend-verification", api_url);
+
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for resending verification")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Resend verification failed ({}): {}", status, err_text);
+    }
+
+    let user: UserResponse = res
+        .json()
+        .await
+        .context("Failed to parse user response from resend verification")?;
 
     Ok(user)
 }
