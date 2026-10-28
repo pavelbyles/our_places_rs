@@ -1,5 +1,5 @@
 ---
-name: retro-specialist
+name: retro
 description: Conduct a retrospective on a coding session to suggest environment-level improvements (navigation, automated checks, guardrails, steering files).
 version: 1.0.0
 rpi_phase: Maintain

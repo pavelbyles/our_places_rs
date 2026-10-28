@@ -1,5 +1,5 @@
 ---
-name: write-a-skill
+name: write-new-skill
 description: Author structured agent skills following progressive disclosure and workspace standards.
 ---
 
