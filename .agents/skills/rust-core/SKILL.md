@@ -1,5 +1,5 @@
 ---
-name: rust-core-specialist
+name: rust-core
 aliases:
   - rust-core
   - monad-design

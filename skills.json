@@ -76,7 +76,7 @@
       "name": "Agent handoff",
       "description": "Compact conversation history into a structured handoff document for subsequent agents.",
       "path": "skills/handoff",
-      "entrypoint": "skills/handoff/skill.md"
+      "entrypoint": "skills/handoff/SKILL.md"
     },
     {
       "id": "lint-hunter",
@@ -129,7 +129,7 @@
     },
     {
       "id": "rust-core",
-      "name": "Rust Core Specialist",
+      "name": "rust-core",
       "description": "Implement idiomatic, high-performance, panic-free Rust code using strict monadic error propagation, Option/Result combinators, Railway-Oriented Programming, and compile-time type safety.",
       "path": "skills/rust-core",
       "entrypoint": "skills/rust-core/SKILL.md"
@@ -178,10 +178,10 @@
     },
     {
       "id": "write-new-skill",
-      "name": "write-a-skill",
+      "name": "write-new-skill",
       "description": "Author structured agent skills following progressive disclosure and workspace standards.",
       "path": "skills/write-new-skill",
-      "entrypoint": "skills/write-new-skill/skill.md"
+      "entrypoint": "skills/write-new-skill/SKILL.md"
     },
     {
       "id": "playwright-e2e",
@@ -227,7 +227,7 @@
     },
     {
       "id": "retro",
-      "name": "retro-specialist",
+      "name": "retro",
       "description": "Conduct a retrospective on a coding session to suggest environment-level improvements (navigation, automated checks, guardrails, steering files).",
       "path": "skills/retro",
       "entrypoint": "skills/retro/SKILL.md"

@@ -2,7 +2,6 @@
 name: monad-design
 aliases:
   - rust-core
-  - rust-core-specialist
 description: Design type-safe data pipelines, error flows, and functional domain models using Monads, Option/Result combinators, and Railway-Oriented Programming. Consolidated into rust-core.
 ---
 
