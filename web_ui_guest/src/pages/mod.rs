@@ -1,5 +1,7 @@
 /// Sign in and sign out.
 pub mod auth;
+/// Checkout and legacy per-currency checkout redirects.
+pub mod checkout;
 /// Landing page.
 pub mod home;
 /// Listing detail, quote and calendar fragments.

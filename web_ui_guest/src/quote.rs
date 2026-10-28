@@ -1,4 +1,8 @@
+use chrono::NaiveDate;
+use common::models::ListingDetails;
 use rust_decimal::Decimal;
+use topcoat::context::Cx;
+use web_client::get_api_client;
 use web_ui_common::components::domain::price_breakdown::PriceBreakdown;
 
 /// Jamaican GCT on accommodation and cleaning.
@@ -28,6 +32,34 @@ pub fn stay_price(
         total_amount: taxable + tax + damage_deposit.unwrap_or(Decimal::ZERO),
         currency: currency.to_string(),
     }
+}
+
+/// Prices a stay with `booking_api`'s dynamic (seasonal) quote. `None` when
+/// the API cannot quote it (e.g. below the minimum stay).
+pub async fn quote_for(
+    cx: &Cx,
+    details: &ListingDetails,
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    currency: Option<&str>,
+) -> Option<PriceBreakdown> {
+    let quote = get_api_client(cx)
+        .get_pricing_quote(details.listing.id, check_in, check_out, currency)
+        .await
+        .map_err(|e| tracing::info!("no quote for {check_in}..{check_out}: {e}"))
+        .ok()?;
+    let nights = i64::try_from(quote.nightly_breakdown.len()).ok()?;
+    let cur = currency
+        .map(str::to_string)
+        .unwrap_or_else(|| details.listing.base_currency.clone());
+    Some(stay_price(
+        nights,
+        quote.effective_daily_rate,
+        quote.subtotal,
+        details.listing.cleaning_fee,
+        details.listing.damage_deposit,
+        &cur,
+    ))
 }
 
 #[cfg(test)]

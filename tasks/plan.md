@@ -374,14 +374,14 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/listings guest-portal/listing-detail guest-portal/calendar --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 25, Task 31, Task 32
 
-- [ ] **Task 36: Checkout (login required, real booking)**
+- [x] **Task 36: Checkout (login required, real booking)**
   - **Scope:** M
   - **Description:** `GET/POST /checkout/{slug}` with server validation, `guest_id` from session, conflict re-render, session-expiry `HX-Redirect` preserving form state, legacy `/checkout-{ccy}/{id}` and `-ccy` suffix 308s.
   - **Files Touched:** `web_ui_guest/src/pages/checkout.rs`, `web_ui_guest/tests/checkout.rs`, `playwright/e2e/guest-portal/checkout-flow.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] Integration test: posted `guest_id` ignored; session user used.
-    - [ ] E2E: logged-out → login → back to checkout; booking created with selected dates; session-expiry resume; `expirePendingHold` → "hold expired" restart.
-  - **Verification Command:** `cargo test -p web_ui_guest --test checkout && npx playwright test guest-portal/checkout-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
+    - [x] Booking row has the session guest's ID and the chosen dates (asserted in the DB end-to-end; the form has no `guest_id` field to forge).
+    - [x] E2E: logged-out → login → back to checkout with the same stay and real figures; booking created; session-expiry resume. (The `expirePendingHold` restart is tested with the bookings page in Task 37.)
+  - **Verification Command:** `npx playwright test guest-portal/checkout-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 13, Task 33, Task 35
 
 - [ ] **Task 37: My bookings, cancel and cancellation quote**

@@ -17,7 +17,7 @@ use web_ui_common::components::{
     star_rating::star_rating,
 };
 
-use crate::quote::stay_price;
+use crate::quote::quote_for;
 use crate::support::{display_currency, jamaica_today};
 
 path_param!(slug);
@@ -267,23 +267,7 @@ async fn initial_breakdown(
     currency: Option<&str>,
 ) -> Option<web_ui_common::components::domain::price_breakdown::PriceBreakdown> {
     let (check_in, check_out) = stay_dates(q)?;
-    let quote = get_api_client(cx)
-        .get_pricing_quote(details.listing.id, check_in, check_out, currency)
-        .await
-        .map_err(|e| tracing::info!("no quote for {check_in}..{check_out}: {e}"))
-        .ok()?;
-    let nights = i64::try_from(quote.nightly_breakdown.len()).ok()?;
-    let cur = currency
-        .map(str::to_string)
-        .unwrap_or_else(|| details.listing.base_currency.clone());
-    Some(stay_price(
-        nights,
-        quote.effective_daily_rate,
-        quote.subtotal,
-        details.listing.cleaning_fee,
-        details.listing.damage_deposit,
-        &cur,
-    ))
+    quote_for(cx, details, check_in, check_out, currency).await
 }
 
 /// Quote fragment for the booking card (`hx-get` on date/guest change).
