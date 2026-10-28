@@ -59,7 +59,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ## Phase 1: `web_client` extraction
 
-- [ ] **Task 4: Move `error`, `client`, `api_client` into `web_client` with re-exports**
+- [x] **Task 4: Move `error`, `client`, `api_client` into `web_client` with re-exports**
   - **Scope:** M
   - **Description:** Move the three modules verbatim; `web_app_common_tc` re-exports them at identical paths (`web_app_common_tc::{client, api_client, error, AppError, app_error, TopcoatApiClient, get_api_client}`).
   - **Files Touched:** `web_client/src/{client,api_client,error,lib}.rs`, `web_client/Cargo.toml`, `web_app_common_tc/src/{lib,client,api_client,error}.rs`, `web_app_common_tc/Cargo.toml`

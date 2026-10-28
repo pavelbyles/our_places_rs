@@ -6073,6 +6073,7 @@ dependencies = [
  "topcoat-asset",
  "tracing",
  "uuid",
+ "web_client",
 ]
 
 [[package]]
@@ -6100,6 +6101,14 @@ dependencies = [
 [[package]]
 name = "web_client"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "common",
+ "thiserror",
+ "topcoat",
+ "uuid",
+]
 
 [[package]]
 name = "web_ui_admin"

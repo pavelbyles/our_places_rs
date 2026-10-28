@@ -7,3 +7,9 @@ edition = "2024"
 crate-type = ["rlib"]
 
 [dependencies]
+topcoat = { workspace = true, features = ["session"] }
+common = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
