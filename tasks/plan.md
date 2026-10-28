@@ -79,7 +79,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_client -p web_app_common_tc -p web_app_tc -p web_app_admin_tc && git diff --quiet b77cfb7a -- web_app_tc web_app_admin_tc`
   - **Dependencies:** Task 4
 
-- [ ] **Task 6: Typed sessions and route guards**
+- [x] **Task 6: Typed sessions and route guards**
   - **Scope:** S
   - **Description:** Add `GuestSession`, `AdminSession` (non-optional `user_id`), `AdminRole`, `GuestAuthError`, and `require_guest` / `require_admin` / `require_admin_role` returning redirect-friendly errors (303 for pages, `HX-Redirect` for HTMX requests).
   - **Files Touched:** `web_client/src/session.rs`, `web_client/src/lib.rs`
@@ -347,7 +347,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 - [ ] **Task 33: Guest login and logout (server sessions)**
   - **Scope:** M
-  - **Description:** `GET/POST /login` (fixation-safe), `GET/POST /logout`, `safe_redirect`, generic error messages, server-rendered nav.
+  - **Description:** `GET/POST /login` (fixation-safe), `GET/POST /logout`, `safe_redirect`, generic error messages, server-rendered nav. Also add the shared mapping from `web_client::session::GuardError` to responses: `Unauthenticated` → 303 to `login_redirect(current path)` (or `HX-Redirect` for HTMX requests), `Forbidden` → 403, `Service` → 503 error page. Task 6 only provides the guards and `login_redirect`.
   - **Files Touched:** `web_ui_guest/src/pages/auth.rs`, `web_ui_guest/tests/auth.rs`
   - **Acceptance Criteria:**
     - [ ] `auth.spec.ts` green on NEW_GUEST; no auth keys in browser storage; `redirect=//evil.com` → `/`.

@@ -6108,6 +6108,7 @@ dependencies = [
  "serde",
  "thiserror",
  "topcoat",
+ "tracing",
  "uuid",
 ]
 
