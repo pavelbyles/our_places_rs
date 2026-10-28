@@ -1788,4 +1788,177 @@ mod tests {
             "accommodation_net without discount must equal subtotal"
         );
     }
+
+    #[tokio::test]
+    async fn test_unavailable_ranges_endpoint() {
+        use actix_web::{App, test, web};
+        use chrono::NaiveDate;
+        use rust_decimal::Decimal;
+        use rust_decimal_macros::dec;
+        use sqlx_db_tester::TestPg;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let new_user = |id: Uuid, role: db_core::models::UserRole| db_core::models::NewUser {
+            id,
+            email: format!("u_{id}@example.com"),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![role]),
+            default_currency: "USD".to_string(),
+        };
+
+        let host_id = Uuid::now_v7();
+        db_core::user::create_user(&pool, &new_user(host_id, db_core::models::UserRole::Host))
+            .await
+            .unwrap();
+        db_core::user::create_host_profile(
+            &pool,
+            host_id,
+            &db_core::models::NewHostProfile {
+                description: None,
+                verified_status: Some("pending".to_string()),
+                payout_details: None,
+            },
+        )
+        .await
+        .unwrap();
+        let listing = db_core::listing::create_listing(
+            &pool,
+            &db_core::models::NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let day = |m: u32, d: u32| NaiveDate::from_ymd_opt(2030, m, d).unwrap();
+        // Back-to-back stays (merged in the response) and one separate stay.
+        for (from, to) in [
+            (day(5, 1), day(5, 4)),
+            (day(5, 4), day(5, 6)),
+            (day(5, 20), day(5, 22)),
+        ] {
+            let guest_id = Uuid::now_v7();
+            db_core::user::create_user(
+                &pool,
+                &new_user(guest_id, db_core::models::UserRole::Booker),
+            )
+            .await
+            .unwrap();
+            db_core::booking::create_booking(
+                &pool,
+                &db_core::models::NewBooking {
+                    confirmation_code: Uuid::now_v7().simple().to_string()[22..].to_uppercase(),
+                    guest_id,
+                    listing_id: listing.id,
+                    date_from: from,
+                    date_to: to,
+                    currency: "USD".to_string(),
+                    daily_rate: dec!(200.00),
+                    number_of_persons: 2,
+                    total_days: (to - from).num_days() as i32,
+                    sub_total_price: dec!(400.00),
+                    discount_value: None,
+                    tax_value: None,
+                    fee_breakdown: vec![],
+                    total_price: dec!(400.00),
+                    cancellation_policy: db_core::models::CancellationPolicy::Flexible,
+                    metadata: db_core::models::BookingMetadata {
+                        num_adults: 2,
+                        ..Default::default()
+                    },
+                    door_access_code: None,
+                    cleaning_fee: Decimal::ZERO,
+                    damage_deposit: Decimal::ZERO,
+                    platform_fee: Decimal::ZERO,
+                    tax_rate: dec!(0.1000),
+                    exchange_rate: Decimal::ONE,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+        let get = |uri: String| test::TestRequest::get().uri(&uri).to_request();
+        let base = format!("/api/v1/bookings/listing/{}/unavailable-ranges", listing.id);
+
+        // Public, merged, sorted, and dates only.
+        let resp =
+            test::call_service(&app, get(format!("{base}?from=2030-05-01&to=2030-06-01"))).await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(
+            body,
+            serde_json::json!({"ranges": [
+                {"date_from": "2030-05-01", "date_to": "2030-05-06"},
+                {"date_from": "2030-05-20", "date_to": "2030-05-22"}
+            ]})
+        );
+
+        // Bad windows -> 400.
+        for query in [
+            "from=2030-05-10&to=2030-05-10",
+            "from=2030-01-01&to=2031-01-03",
+        ] {
+            let resp = test::call_service(&app, get(format!("{base}?{query}"))).await;
+            assert_eq!(resp.status(), 400, "{query}");
+        }
+
+        // Unknown listing -> 404.
+        let resp = test::call_service(
+            &app,
+            get(format!(
+                "/api/v1/bookings/listing/{}/unavailable-ranges?from=2030-05-01&to=2030-06-01",
+                Uuid::now_v7()
+            )),
+        )
+        .await;
+        assert_eq!(resp.status(), 404);
+    }
 }

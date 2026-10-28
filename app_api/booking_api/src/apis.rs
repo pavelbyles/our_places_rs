@@ -93,6 +93,64 @@ pub struct AvailabilityResponse {
     pub available: bool,
 }
 
+/// Longest window `unavailable-ranges` accepts, in days.
+const MAX_UNAVAILABLE_RANGE_DAYS: i64 = 366;
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct UnavailableRangesParams {
+    /// First day of the window (inclusive).
+    pub from: NaiveDate,
+    /// Last day of the window (exclusive).
+    pub to: NaiveDate,
+}
+
+/// Public: returns only merged date ranges (no booking IDs, guest data or
+/// statuses), so the guest calendar can grey out booked nights.
+#[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/listing/{id}/unavailable-ranges",
+    tag = "bookings",
+    params(
+        ("id" = Uuid, Path, description = "Listing UUID"),
+        UnavailableRangesParams
+    ),
+    responses(
+        (status = 200, description = "Booked date ranges in the window", body = common::availability::UnavailableRangesResponse),
+        (status = 400, description = "Window is empty, reversed, or longer than 366 days"),
+        (status = 404, description = "Listing not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_unavailable_ranges(
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    query: web::Query<UnavailableRangesParams>,
+) -> Result<impl Responder, ApiError> {
+    let span_days = (query.to - query.from).num_days();
+    if span_days <= 0 || span_days > MAX_UNAVAILABLE_RANGE_DAYS {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(format!(
+                "`to` must be after `from` and at most {MAX_UNAVAILABLE_RANGE_DAYS} days later"
+            )),
+        ));
+    }
+
+    db_listing::get_listing_by_id(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let ranges = db_booking::get_unavailable_ranges(pool.get_ref(), *id, query.from, query.to)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(
+        HttpResponse::Ok().json(common::availability::UnavailableRangesResponse {
+            ranges: common::availability::merge_ranges(ranges),
+        }),
+    )
+}
+
 #[tracing::instrument]
 #[utoipa::path(
     get,
@@ -3250,6 +3308,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_booking_by_id,
             get_user_bookings,
             get_listing_bookings,
+            get_unavailable_ranges,
             update_booking,
             delete_booking,
             transfer_booking,
@@ -3274,6 +3333,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 UpdatedBookingRequest,
                 common::models::TransferBookingRequest,
                 AvailabilityResponse,
+                common::availability::UnavailableRange,
+                common::availability::UnavailableRangesResponse,
                 BookingResponse,
                 pagination::Pagination,
                 FeeItem,
@@ -3345,6 +3406,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get()
                     .to(get_listing_bookings)
                     .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/listing/{id}/unavailable-ranges",
+                web::get().to(get_unavailable_ranges),
             )
             .route(
                 "/{id}",

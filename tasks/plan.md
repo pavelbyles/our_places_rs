@@ -304,10 +304,10 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p db_core unavailable_ranges && cargo sqlx prepare --workspace --check -- --all-targets`
   - **Dependencies:** Task 27
 
-- [ ] **Task 29: `booking_api` `GET /bookings/listing/{id}/unavailable-ranges`**
+- [x] **Task 29: `booking_api` `GET /bookings/listing/{id}/unavailable-ranges`**
   - **Scope:** S
-  - **Description:** Public handler with 366-day span limit, 404 unknown listing, utoipa annotations; regenerate `openapi.yaml`.
-  - **Files Touched:** `app_api/booking_api/src/apis.rs`, `app_api/booking_api/src/apis_test.rs`, `openapi.yaml`
+  - **Description:** Public handler with 366-day span limit, 404 unknown listing, utoipa annotations; add the route and schemas to the API Gateway specs by hand (there is no generator).
+  - **Files Touched:** `app_api/booking_api/src/apis.rs`, `app_api/booking_api/src/apis_test.rs`, `openapi.yaml`, `openapi-prod.yaml`
   - **Acceptance Criteria:**
     - [ ] Tests: ranges returned, no guest fields in JSON, 400 span/order, 404 listing.
   - **Verification Command:** `cargo test -p booking_api unavailable_ranges`
