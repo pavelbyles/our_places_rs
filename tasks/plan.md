@@ -295,13 +295,13 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p common availability`
   - **Dependencies:** None
 
-- [ ] **Task 28: `db_core::booking::get_unavailable_ranges`**
+- [x] **Task 28: `db_core::booking::get_unavailable_ranges`**
   - **Scope:** S
   - **Description:** Parameterized query (spec §Data Models) and `.sqlx` metadata.
   - **Files Touched:** `db_core/src/booking.rs`, `.sqlx/*.json`
   - **Acceptance Criteria:**
     - [ ] Returns only `pending`/`confirmed` overlapping rows; `cargo sqlx prepare --workspace --check` passes.
-  - **Verification Command:** `cargo test -p db_core unavailable_ranges && cargo sqlx prepare --workspace --check`
+  - **Verification Command:** `cargo test -p db_core unavailable_ranges && cargo sqlx prepare --workspace --check -- --all-targets`
   - **Dependencies:** Task 27
 
 - [ ] **Task 29: `booking_api` `GET /bookings/listing/{id}/unavailable-ranges`**
