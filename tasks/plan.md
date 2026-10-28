@@ -239,7 +239,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `! rg -q 'eval\(|new Function' web_ui_common/src/assets/ui.js && wc -c web_ui_common/src/assets/ui.js`
   - **Dependencies:** Task 2, Task 19
 
-- [ ] **Task 22: Custom presentational components**
+- [x] **Task 22: Custom presentational components**
   - **Scope:** M
   - **Description:** `toast`, `steps`, `stat_tile`, `framed_image`, `hero` following Topcoat UI conventions (token-only colors, `attrs` passthrough).
   - **Files Touched:** `web_ui_common/src/components/{toast,steps,stat_tile,framed_image,hero}.rs`, `web_ui_common/src/components/mod.rs`
