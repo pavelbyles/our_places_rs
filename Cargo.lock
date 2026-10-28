@@ -6184,8 +6184,11 @@ dependencies = [
  "chrono",
  "common",
  "reqwest",
+ "rust_decimal",
+ "rust_decimal_macros",
  "tokio",
  "topcoat",
+ "web_app_common_tc",
  "web_client",
 ]
 

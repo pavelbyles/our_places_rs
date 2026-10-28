@@ -257,7 +257,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common star_rating chat`
   - **Dependencies:** Task 3
 
-- [ ] **Task 24: Domain components — money**
+- [x] **Task 24: Domain components — money**
   - **Scope:** M
   - **Description:** Port `currency_selector` and `price_breakdown` to Topcoat UI. Add parity tests comparing formatted numbers/currency codes with the old `web_app_common_tc` components for USD/JMD/EUR/GBP/CAD.
   - **Files Touched:** `web_ui_common/src/components/domain/{currency_selector,price_breakdown,mod}.rs`, `web_ui_common/tests/money_parity.rs`, `web_ui_common/Cargo.toml` (dev-dep on `web_app_common_tc`)

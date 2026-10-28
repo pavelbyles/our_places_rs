@@ -1,5 +1,7 @@
 /// Message thread and bubbles.
 pub mod chat;
+/// Booking-domain components (money, listings, documents).
+pub mod domain;
 /// Rounded photo frame.
 pub mod framed_image;
 /// Guest home hero.

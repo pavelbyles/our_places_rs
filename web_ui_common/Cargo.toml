@@ -11,6 +11,7 @@ topcoat = { workspace = true, features = ["htmx", "tailwind", "session", "ui", "
 web_client = { workspace = true }
 common = { workspace = true }
 chrono = { workspace = true }
+rust_decimal = { workspace = true }
 
 [build-dependencies]
 topcoat = { version = "0.10.0", default-features = false, features = [
@@ -18,5 +19,7 @@ topcoat = { version = "0.10.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+web_app_common_tc = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
 reqwest = { workspace = true }
