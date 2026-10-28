@@ -49,3 +49,19 @@
     outline-offset: 2px;
   }
 }
+
+/* Printing tax documents: hide page chrome, flatten the document card. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .tax-document-container {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}

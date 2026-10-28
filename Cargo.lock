@@ -6188,6 +6188,7 @@ dependencies = [
  "rust_decimal_macros",
  "tokio",
  "topcoat",
+ "uuid",
  "web_app_common_tc",
  "web_client",
 ]

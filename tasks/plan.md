@@ -266,7 +266,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common --test money_parity`
   - **Dependencies:** Task 3
 
-- [ ] **Task 25: Domain components — listing card, image, tax document**
+- [x] **Task 25: Domain components — listing card, image, tax document**
   - **Scope:** M
   - **Description:** Port `listing_card` (portrait), `responsive_image` (`<picture>`/`srcset` kept), `tax_document_view`.
   - **Files Touched:** `web_ui_common/src/components/domain/{listing_card,responsive_image,tax_document_view}.rs`

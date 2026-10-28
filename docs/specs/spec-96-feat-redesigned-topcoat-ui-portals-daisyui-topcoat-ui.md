@@ -195,6 +195,9 @@ Legend — **Auth**: `P` public, `G` guest session, `G*` guest session + ownersh
 
 Coverage note: the 51 old admin routes collapse into 31 rows, because aliases and sibling change-request endpoints share a row. A24b is new.
 
+### Legacy placeholder data not carried over
+The legacy `listing_card` shows an invented rating (4.95 from 112 reviews) and fixed amenity pills ("Infinity Pool", "Private Beach", "Staffed") for every listing. The redesigned card shows the real rating, or "New" when there is none, and no invented amenities.
+
 ### Legacy inline-script failures found in Phase 2
 Topcoat HTML-escapes the bodies of the old portals' raw-string `<script>` blocks (`&&` → `&amp;&amp;`, `<` → `&lt;`). Any block that contains those characters fails to parse, and every function it defines is undefined. A sweep of every legacy page (signed in where needed) found exactly five pages whose script fails to parse: guest `/bookings` (G15, G21–G23), guest `/bookings/{id}/change-dates` (G18–G19), admin `/admin/bookings` (A20, A21, A24, A25), and admin `/admin/listings/new` and `/admin/listings/clone/{slug}` (A11, A12, A14). All other pages parse. The tests for those rows are tagged `@new-only`. The redesigned portals avoid this class of bug entirely, because they have no inline scripts (strict CSP, `ui.js` only).
 

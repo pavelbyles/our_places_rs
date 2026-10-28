@@ -19,6 +19,7 @@ topcoat = { version = "0.10.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+uuid = { workspace = true }
 web_app_common_tc = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
