@@ -439,7 +439,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/reviews guest-portal/static-pages --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 23, Task 32
 
-- [ ] **Task 43: Guest security and theme e2e sweep**
+- [x] **Task 43: Guest security and theme e2e sweep**
   - **Scope:** S
   - **Description:** `@new-only` specs: raw-HTML no-user-nav for logged-out, storage has no auth keys, cross-account matrix, theme first-visit (mocked clock) / `op_tz_offset` / persistence / no class change after first paint.
   - **Files Touched:** `playwright/e2e/guest-portal/{security,theme}.spec.ts`

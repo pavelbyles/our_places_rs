@@ -4,8 +4,44 @@ import { execSync } from 'node:child_process';
  * Seeds the database with essential test entities (test user, listing, image)
  * to ensure all listing and checkout E2E tests have deterministic data.
  */
+/**
+ * Removes data created by earlier e2e runs: accounts named `e2e.*@example.com`
+ * (and the hold-expiry test guest's bookings) with everything that hangs off
+ * them. Several legacy pages only look at the first 100 bookings or users, so
+ * leftovers from previous runs would otherwise break them.
+ */
+const CLEANUP_SQL = `
+BEGIN;
+CREATE TEMP TABLE e2e_users ON COMMIT DROP AS
+  SELECT id FROM "user" WHERE email LIKE 'e2e.%@example.com';
+CREATE TEMP TABLE e2e_bookings ON COMMIT DROP AS
+  SELECT id FROM booking
+  WHERE guest_id IN (SELECT id FROM e2e_users)
+     OR guest_id = (SELECT id FROM "user" WHERE email = 'hold.expiry@example.com');
+DELETE FROM tax_document WHERE booking_id IN (SELECT id FROM e2e_bookings)
+                            OR recipient_id IN (SELECT id FROM e2e_users);
+DELETE FROM host_payout_ledger WHERE booking_id IN (SELECT id FROM e2e_bookings);
+DELETE FROM reservation_change_request WHERE booking_id IN (SELECT id FROM e2e_bookings)
+                                          OR initiated_by_id IN (SELECT id FROM e2e_users)
+                                          OR responder_id IN (SELECT id FROM e2e_users);
+DELETE FROM booking WHERE id IN (SELECT id FROM e2e_bookings);
+DELETE FROM "user" WHERE id IN (SELECT id FROM e2e_users);
+COMMIT;
+`;
+
+function cleanupPreviousRuns(dbUrl: string): void {
+  try {
+    execSync(`psql "${dbUrl}" -v ON_ERROR_STOP=1 -q`, { input: CLEANUP_SQL, stdio: ['pipe', 'pipe', 'pipe'] });
+    console.log('✓ Removed data left by previous e2e runs');
+  } catch (err: unknown) {
+    const error = err as { message?: string; stderr?: Buffer };
+    console.warn('⚠ Could not remove previous e2e data:', error.stderr?.toString() || error.message);
+  }
+}
+
 export async function seedTestData(): Promise<void> {
   const dbUrl = process.env.DATABASE_URL || 'postgres://postgres:password@localhost:5432/our_places';
+  cleanupPreviousRuns(dbUrl);
 
   const seedSql = `
     -- 1. Ensure test admin/host user exists
