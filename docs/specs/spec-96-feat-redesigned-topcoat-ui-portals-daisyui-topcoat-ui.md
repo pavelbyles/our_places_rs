@@ -29,7 +29,7 @@ Build two new server-rendered portals on **Topcoat UI** (typed, source-owned `#[
 | D2 | Anonymous / shadow-user checkout | **Login required.** No shadow-user mechanism exists in the backend. `/checkout/*` redirects to `/login?redirect=…`; the booking's `guest_id` always comes from the server session. Closes the intent's "shadow-user" open question as N/A. |
 | D3 | Date-range picker | **Custom calendar component**, server-rendered, month navigation over HTMX, range selection and keyboard support in `ui.js`. |
 | D4 | Blocked nights in the calendar | **Add one read-only `booking_api` endpoint**: `GET /api/v1/bookings/listing/{id}/unavailable-ranges` (the only backend change in this spec). |
-| D5 | CSP fallback if the Topcoat runtime fails strict CSP | **`ui.js` only.** Strict `script-src 'self'` wins; runtime signals are dropped. |
+| D5 | CSP fallback if the Topcoat runtime fails strict CSP | **`ui.js` only.** Strict `script-src 'self'` wins; runtime signals are dropped. **Triggered**: the Phase 0 spike failed (see Spike results), so neither bin calls `.runtime()` or renders `topcoat::runtime::script()`. |
 | D6 | Theme cookie vs HTML caching | No CDN/edge HTML caching exists. HTML responses send `Cache-Control: private, no-cache` and `Vary: Cookie` defensively. |
 | D7 | Visitor time zone for the theme default | `ui.js` stores the **UTC offset in minutes** (`op_tz_offset`), not an IANA name. No `chrono-tz` dependency (keeps the binary and cold start lean). First visit uses `America/Jamaica` = fixed UTC−05:00 (no DST). |
 | D8 | Who may see a booking's cancellation quote | **Only the booking's guest or a system administrator** (`admin` role). Hosts are not included. Enforced in the frontend for both portals (FR-4.13, FR-5.6). |
@@ -252,7 +252,7 @@ web_ui_guest/src/{main,lib,layout}.rs, src/pages/*.rs, Dockerfile.web_ui_guest
 web_ui_admin/src/{main,lib,layout}.rs, src/pages/*.rs, Dockerfile.web_ui_admin
 ```
 - `#[layout("/")]` lives only in the binary crates (linkme constraint from spec 80); `web_ui_common` exports shell functions.
-- Each bin wires `.runtime()` only if the Phase 0 spike passes (D5); otherwise it is omitted.
+- Neither bin wires `.runtime()` (Phase 0 spike failed, D5). Both still load the `AssetBundle` (served as hashed `/_topcoat/assets/*` files) for `ui.js`, `htmx.min.js`, fonts and CSS. The bundle is only produced when the app runs under `topcoat dev` or the bundler build, as with the old apps; a plain `cargo run` logs "no asset bundle".
 - Workspace: add members and `web_client`, `web_ui_common` to `[workspace.dependencies]`.
 
 ### API Endpoints (new apps; all HTML unless noted)
@@ -286,6 +286,26 @@ None. Emails triggered by booking/verification flows are unchanged (same backend
 
 ### Phase 0: CSP spike (gates D5)
 Render a page using one runtime signal under `Content-Security-Policy: script-src 'self'`; run Chromium + Firefox; record any violation. Also check that Topcoat/HTMX emit no inline `style=` that `style-src 'self'` would block. Record the result in this spec under "Spike results" before Phase 3 starts.
+
+#### Spike results (2026-10-28, Topcoat 0.10.0, `web_ui_guest` under `topcoat dev`)
+
+**Outcome: FAIL. The Topcoat runtime cannot run under `script-src 'self'`. D5 applies: no `.runtime()`, no signals, no `@event` handlers, no `$(…)` runtime expressions, and no shards in `web_ui_*`.**
+
+The spike page had one `signal(cx, || 0.0)`, a button with `@click=$(|_e| count.set(count.get() + 1.0))`, and a `$(count.get())` text node. The CSP was `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'`, delivered via `<meta http-equiv>`.
+
+| Check | Chromium | Firefox |
+|---|---|---|
+| Runtime script loads (`<script type="module" src="/_topcoat/assets/topcoat-<hash>.js">`) | ✅ allowed by `'self'` | ✅ |
+| `securitypolicyviolation` events | `script-src blocked=eval` | `script-src blocked=eval` ("Missing 'unsafe-eval'") |
+| Page error | `Failed to compile event @click` | same |
+| Click updates the signal | ❌ stays `Count: 0` | ❌ |
+
+**Why:** the server ships every handler and expression as **JavaScript source text**, in `data-topcoat-on:<event>="(…) => …"` attributes and `<!--::topcoat::expr::start("…")-->` comments. The browser runtime compiles them with `new Function("cx", "return " + source)` (`topcoat-runtime/browser/src/expression/compile.ts`). Making them work would need `'unsafe-eval'`, which defeats the point of the CSP. A nonce or hash does not help, because `eval` is not covered by nonces.
+
+**Other findings:**
+- The vendored `htmx.min.js` has no `Function(`/`eval` path except `hx-on`, which is already banned. It is compatible with the strict CSP.
+- The spike page itself emitted no inline `style=`. Topcoat UI registry components are fetched by `topcoat ui add`, so Task 3 must check them for inline `style=` attributes **and for `@event`/`$(…)` runtime usage**. Any component that relies on the runtime gets rewritten to native elements plus `data-*` hooks in `ui.js`.
+- **Consequence for the plan:** every interactive behavior is native HTML (`<dialog>`, `<details>`, forms), HTMX, or `ui.js`. Topcoat UI components that rely on the runtime are patched in-repo (they are source-owned).
 
 ## Performance Considerations
 - **Cold start (< 300 ms p50, < 1 s p95)**: no DB pool in the frontends (HTTP only), `reqwest` client built once and stored in `app_context`, asset bundle loaded once. No `chrono-tz` (D7). Release profile already `opt-level="z"`, LTO.
@@ -337,7 +357,7 @@ Render a page using one runtime signal under `Content-Security-Policy: script-sr
 - **Parity gate command**: `npx playwright test --project=guest-portal-chromium --project=guest-portal-firefox --project=admin-portal-chromium --project=admin-portal-firefox --project=guest-portal-new-chromium --project=guest-portal-new-firefox --project=admin-portal-new-chromium --project=admin-portal-new-firefox`.
 
 ## Acceptance Criteria
-- [ ] 1. Phase 0 spike result recorded in this spec; `.runtime()` usage matches it (D5).
+- [x] 1. Phase 0 spike result recorded in this spec; `.runtime()` usage matches it (D5): runtime dropped.
 - [ ] 2. `git diff main -- web_app_tc web_app_admin_tc` is empty; `cargo test -p web_app_tc -p web_app_admin_tc -p web_app_common_tc` passes.
 - [ ] 3. Every row in §Parity Inventory has a passing spec on its required projects (`same` → old + new; `fixed` → new; `retired` → none), Chromium and Firefox.
 - [ ] 4. `rg -i 'daisyui' web_ui_common web_ui_guest web_ui_admin web_client` returns nothing.

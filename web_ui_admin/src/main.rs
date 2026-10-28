@@ -3,6 +3,7 @@
 use std::env;
 
 use tokio::net::TcpListener;
+use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
 use topcoat::router::{Router, RouterBuilderDiscoverExt};
 
 use web_ui_admin::DEFAULT_PORT;
@@ -25,7 +26,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => DEFAULT_PORT,
     };
 
-    let router = Router::builder().discover().build();
+    // No `.runtime()`: it needs 'unsafe-eval' (spec, Phase 0 spike results).
+    let mut builder = Router::builder().discover();
+    match AssetBundle::load() {
+        Ok(bundle) => builder = builder.assets(bundle),
+        Err(e) => tracing::error!("Failed to load assets: {e}"),
+    }
+    let router = builder.build();
     let listener = TcpListener::bind((host.as_str(), port)).await?;
     tracing::info!("Starting web_ui_admin on {host}:{port}");
     topcoat::serve(listener, router).await?;

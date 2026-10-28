@@ -34,7 +34,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `SQLX_OFFLINE=true cargo check -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin && cargo test -p web_ui_guest -p web_ui_admin`
   - **Dependencies:** None
 
-- [ ] **Task 2: CSP spike — Topcoat runtime under strict `script-src 'self'`**
+- [x] **Task 2: CSP spike — Topcoat runtime under strict `script-src 'self'`**
   - **Scope:** M
   - **Description:** In `web_ui_guest`, add a spike page using one runtime signal and a temporary hand-set CSP header (`default-src 'self'; script-src 'self'; style-src 'self'`). Write a throwaway Playwright spec that collects `securitypolicyviolation` events in Chromium + Firefox. Also check HTMX/Topcoat for inline `style=` output. Record result + decision (keep `.runtime()` or drop per D5) in the spec under "Spike results", then delete the spike page.
   - **Files Touched:** `web_ui_guest/src/pages/spike.rs` (temporary), `playwright/e2e/spike/csp-spike.spec.ts` (temporary), `docs/specs/spec-96-…md`
@@ -46,11 +46,12 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 - [ ] **Task 3: Initialise Topcoat UI registry in `web_ui_common`**
   - **Scope:** M
-  - **Description:** `topcoat ui init`, then `topcoat ui add` the 29 components listed in spec FR-3.1. Commit `components.toml` with pinned versions; components compile under workspace clippy/doc rules (add `///` docs where the registry lacks them).
+  - **Description:** `topcoat ui init`, then `topcoat ui add` the 29 components listed in spec FR-3.1. Commit `components.toml` with pinned versions; components compile under workspace clippy/doc rules (add `///` docs where the registry lacks them). **Because the Task 2 spike failed:** check every component for runtime usage (`@event`, `$(…)`, `signal`, `#[shard]`) and inline `style=`, and record the list. Fixing them happens when each component is first used.
   - **Files Touched:** `web_ui_common/components.toml`, `web_ui_common/src/components/ui/*.rs`, `web_ui_common/src/lib.rs`
   - **Acceptance Criteria:**
     - [ ] `topcoat ui list` shows all 29 installed.
-    - [ ] `cargo clippy -p web_ui_common -- -D warnings -D missing_docs` clean.
+    - [ ] `cargo clippy -p web_ui_common -- -D warnings` clean (crate-level `deny(missing_docs)`).
+    - [ ] Audit of runtime usage and inline styles recorded in the spec's Spike results.
   - **Verification Command:** `(cd web_ui_common && topcoat ui list) && SQLX_OFFLINE=true cargo clippy -p web_ui_common --all-features -- -D warnings -D missing_docs`
   - **Dependencies:** Task 1
 
