@@ -178,7 +178,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/messaging guest-portal/static-pages guest-portal/reviews --project=guest-portal-chromium`
   - **Dependencies:** Task 10, Task 12
 
-- [ ] **Task 16: Old-app specs — host signup, users admin**
+- [x] **Task 16: Old-app specs — host signup, users admin**
   - **Scope:** M
   - **Description:** `host-signup.spec.ts` (A4–A7), `users-admin.spec.ts` (A29–A31, admin role vs host 403).
   - **Files Touched:** `playwright/e2e/admin-portal/{host-signup,users-admin}.spec.ts`, `playwright/e2e/fixtures/auth.fixture.ts`
