@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { TEST_USERS } from '../fixtures/test-data.js';
+import { createGuest, loginGuest, psql } from '../fixtures/bookings-data.js';
 
 test.describe('Guest Portal - Authentication Flows', () => {
   test.beforeEach(async ({ page }) => {
@@ -41,4 +42,46 @@ test.describe('Guest Portal - Authentication Flows', () => {
     const verifyLink = page.getByRole('main').locator('a[href="/verify"]');
     await expect(verifyLink).toBeVisible();
   });
+
+  // Parity inventory G28: the redesigned portal keeps guest auth on the server.
+  test('signs in with a server-side guest session', { tag: '@new-only' }, async ({ page, context }) => {
+    const guest = createGuest();
+    await loginGuest(page, guest);
+    expect(
+      psql(`SELECT count(*) FROM sessions WHERE user_id = '${guest.id}' AND namespace = 'guest';`),
+    ).toBe('1');
+    const storage = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+    expect(storage).not.toMatch(/op_auth_user|token|session/i);
+    const cookie = (await context.cookies()).find((c) => c.name.endsWith('op_guest_session'));
+    expect(cookie?.httpOnly).toBe(true);
+  });
+
+  test('returns to a same-origin page after signing in', { tag: '@new-only' }, async ({ page }) => {
+    const guest = createGuest();
+    await page.goto('/login?redirect=%2Fabout');
+    await page.locator('#guest-email').fill(guest.email);
+    await page.locator('#guest-password').fill(guest.password);
+    await page.locator('#btn-guest-login').click();
+    await expect(page).toHaveURL(/\/about$/);
+  });
+
+  test('ignores an off-site redirect after signing in', { tag: '@new-only' }, async ({ page }) => {
+    const guest = createGuest();
+    await page.goto('/login?redirect=%2F%2Fevil.example');
+    await page.locator('#guest-email').fill(guest.email);
+    await page.locator('#guest-password').fill(guest.password);
+    await page.locator('#btn-guest-login').click();
+    await expect(page).toHaveURL(/localhost:3010\/$/);
+  });
+
+  test('signs out and removes the server session', { tag: '@new-only' }, async ({ page }) => {
+    const guest = createGuest();
+    await loginGuest(page, guest);
+    await page.locator('#nav-user-dropdown summary').click();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator('#nav-user-dropdown')).toHaveCount(0);
+    expect(psql(`SELECT count(*) FROM sessions WHERE user_id = '${guest.id}';`)).toBe('0');
+  });
 });
+

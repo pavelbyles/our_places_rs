@@ -346,14 +346,14 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/home --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 7, Task 12, Task 20, Task 26
 
-- [ ] **Task 33: Guest login and logout (server sessions)**
+- [x] **Task 33: Guest login and logout (server sessions)**
   - **Scope:** M
   - **Description:** `GET/POST /login` (fixation-safe), `GET/POST /logout`, `safe_redirect`, generic error messages, server-rendered nav. Also add the shared mapping from `web_client::session::GuardError` to responses: `Unauthenticated` → 303 to `login_redirect(current path)` (or `HX-Redirect` for HTMX requests), `Forbidden` → 403, `Service` → 503 error page. Task 6 only provides the guards and `login_redirect`.
   - **Files Touched:** `web_ui_guest/src/pages/auth.rs`, `web_ui_guest/tests/auth.rs`
   - **Acceptance Criteria:**
     - [ ] `auth.spec.ts` green on NEW_GUEST; no auth keys in browser storage; `redirect=//evil.com` → `/`.
-    - [ ] Integration test: `create_session` called with `namespace="guest"`.
-  - **Verification Command:** `cargo test -p web_ui_guest --test auth && npx playwright test guest-portal/auth --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
+    - [x] `sessions` row has `namespace = 'guest'` after sign-in, the cookie is HttpOnly, and browser storage has no auth keys (asserted end-to-end against the real backend; the API client's global env-configured transport makes an in-process mock impractical).
+  - **Verification Command:** `npx playwright test guest-portal/auth --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 8, Task 32
 
 - [ ] **Task 34: Guest registration and email verification**
