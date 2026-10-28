@@ -21,6 +21,9 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 dotenvy = { workspace = true }
 serde = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
 
 [build-dependencies]
 topcoat = { version = "0.10.0", default-features = false, features = [
@@ -28,4 +31,5 @@ topcoat = { version = "0.10.0", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

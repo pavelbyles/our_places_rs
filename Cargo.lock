@@ -6197,13 +6197,17 @@ dependencies = [
 name = "web_ui_guest"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "common",
  "dotenvy",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "tokio",
  "topcoat",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "web_client",
  "web_ui_common",
 ]

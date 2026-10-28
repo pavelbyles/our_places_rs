@@ -1,8 +1,9 @@
-//! Server-rendered stay-dates calendar (decision D3). Two months of day
-//! buttons with booked and past nights disabled; prev/next re-render the
-//! fragment over HTMX. `ui.js` adds range selection and keyboard support
-//! and marks the root `data-enhanced`; without it, the two native date inputs
-//! stay visible and the grid stays hidden.
+//! Server-rendered stay-dates calendar (decision D3). Two native date
+//! inputs (always visible: they can be typed into and they are what the form
+//! submits) above two months of day buttons with booked and past nights
+//! disabled; prev/next re-render the fragment over HTMX. `ui.js` adds range
+//! selection and keyboard support and marks the root `data-enhanced`; without
+//! it the grid stays hidden.
 
 use chrono::{Datelike, Months, NaiveDate, Weekday};
 use common::availability::UnavailableRange;
@@ -28,6 +29,10 @@ pub struct CalendarProps {
     pub check_in: Option<NaiveDate>,
     /// Selected check-out, if any.
     pub check_out: Option<NaiveDate>,
+    /// `id` of the check-in date input (e.g. `reserve-check-in`).
+    pub check_in_id: String,
+    /// `id` of the check-out date input (e.g. `reserve-check-out`).
+    pub check_out_id: String,
 }
 
 /// Availability of one night.
@@ -132,6 +137,8 @@ pub async fn date_range_calendar(
         ranges,
         check_in,
         check_out,
+        check_in_id,
+        check_out_id,
     } = props;
     let month = first_of_month(month);
     let prev = month.checked_sub_months(Months::new(1)).unwrap_or(month);
@@ -156,11 +163,11 @@ pub async fn date_range_calendar(
             <div data-calendar-fallback="" class="grid grid-cols-2 gap-3">
                 <label class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     "Check in"
-                    <input type="date" name="check_in" id="check-in-input" min=(min.clone()) value=(check_in_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
+                    <input type="date" name="check_in" id=(check_in_id) min=(min.clone()) value=(check_in_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
                 </label>
                 <label class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     "Check out"
-                    <input type="date" name="check_out" id="check-out-input" min=(min) value=(check_out_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
+                    <input type="date" name="check_out" id=(check_out_id) min=(min) value=(check_out_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
                 </label>
             </div>
             <div data-calendar-grid="" class="space-y-3">

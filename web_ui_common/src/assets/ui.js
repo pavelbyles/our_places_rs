@@ -281,6 +281,18 @@
     }
   });
 
+  // Typed dates repaint the grid (the change event still bubbles to
+  // #booking-dates for htmx).
+  document.addEventListener('change', function (event) {
+    var input = event.target instanceof Element ? event.target : null;
+    var root = input && input.matches('[data-calendar] input[type="date"]') && input.closest('[data-calendar]');
+    if (!root) return;
+    var p = calendarParts(root);
+    root.setAttribute('data-check-in', p.checkIn ? p.checkIn.value : '');
+    root.setAttribute('data-check-out', p.checkOut ? p.checkOut.value : '');
+    paintCalendar(root);
+  });
+
   // Re-enhance calendars that htmx swaps in (prev/next month).
   document.addEventListener('htmx:load', function (event) {
     var el = event.target instanceof Element ? event.target : null;

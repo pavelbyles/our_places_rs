@@ -94,6 +94,8 @@ async fn renders_two_months_with_booked_nights_disabled() {
         }],
         check_in: Some(d(2027, 2, 2)),
         check_out: None,
+        check_in_id: "reserve-check-in".into(),
+        check_out_id: "reserve-check-out".into(),
     };
     let out = html(view! { date_range_calendar(props: props) }, __cx).await;
     assert_eq!(out.matches(r#"role="grid""#).count(), 2, "two months");
@@ -143,6 +145,8 @@ async fn ui_js_fixture_matches_the_component() {
         }],
         check_in: None,
         check_out: None,
+        check_in_id: "reserve-check-in".into(),
+        check_out_id: "reserve-check-out".into(),
     };
     let rendered = html(view! { date_range_calendar(props: props) }, __cx).await;
     let path = concat!(

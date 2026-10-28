@@ -328,7 +328,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Files Touched:** `web_ui_common/src/assets/ui.js`, `playwright/e2e/ui-js/calendar.spec.ts` (behaviour, against `fixtures/calendar.html`, which a Rust test keeps identical to the component's output), `playwright/e2e/guest-portal/calendar.spec.ts` (`@new-only` portal contract; it runs once Task 35 adds the listing page)
   - **Acceptance Criteria:**
     - [x] Keyboard-only range selection works in Chromium + Firefox (ui-js projects).
-    - [ ] Portal calendar spec green on NEW_GUEST (verified in Task 35).
+    - [x] Portal calendar spec green on NEW_GUEST (verified in Task 35).
   - **Verification Command:** `npx playwright test --project=ui-js-chromium --project=ui-js-firefox`
   - **Dependencies:** Task 30, Task 21
 
@@ -365,7 +365,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/email-verification-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 33
 
-- [ ] **Task 35: Listings search and listing detail with calendar**
+- [x] **Task 35: Listings search and listing detail with calendar**
   - **Scope:** M
   - **Description:** `/listings`, `/listings/{slug}` (gallery dialog, amenities, reviews, concurrent fetches via `try_join!`), `/listings/{slug}/quote`, `/listings/{slug}/calendar` fragments.
   - **Files Touched:** `web_ui_guest/src/pages/{listings,listing_detail}.rs`

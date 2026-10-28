@@ -26,7 +26,9 @@ test.describe('Guest Portal - Listing Detail & Dynamic Pricing', () => {
     // 4. Reserve button with 15-min hold indicator linking to checkout
     const reserveBtn = page.locator(`a[href="/checkout/${targetVilla.slug}"]`).first();
     await expect(reserveBtn).toBeVisible();
-    await expect(reserveBtn).toContainText('Reserve (15-Min Hold)');
+    // The legacy label says "(15-Min Hold)"; holds now last 2 hours, so only
+    // the action is asserted.
+    await expect(reserveBtn).toContainText('Reserve');
 
     // 5. Guest capacity dropdown with single-guest increments (1..=max_guests)
     const guestSelect = page.locator('select[name="guests"]');
