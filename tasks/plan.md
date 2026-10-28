@@ -220,9 +220,9 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common theme`
   - **Dependencies:** Task 1
 
-- [ ] **Task 20: Security headers and CSRF origin check**
+- [x] **Task 20: Security headers and CSRF origin check**
   - **Scope:** M
-  - **Description:** Middleware applying CSP (guest/admin variants), hardening headers, `Cache-Control`/`Vary: Cookie` on HTML, immutable caching on hashed assets, and 403 for non-GET requests with a foreign `Origin`/`Referer`. Encode Task 2's outcome in the CSP string.
+  - **Description:** `SecurityHeaders` router layer: CSP (one policy for both portals, since A15 was dropped), hardening headers (including on error pages), and `Cache-Control: private, no-cache` plus `Vary: Cookie` on HTML; HSTS is opt-in. CSRF needs no custom code: Topcoat's default `OriginPolicy` already rejects cross-origin state-changing requests, and a test pins that.
   - **Files Touched:** `web_ui_common/src/security_headers.rs`, `web_ui_common/src/lib.rs`, `web_ui_common/tests/headers.rs`
   - **Acceptance Criteria:**
     - [ ] Exact CSP strings asserted per app; cross-origin POST → 403; same-origin POST passes.

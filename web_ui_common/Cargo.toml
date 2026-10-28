@@ -16,3 +16,7 @@ chrono = { workspace = true }
 topcoat = { version = "0.10.0", default-features = false, features = [
     "icon-iconify",
 ] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+reqwest = { workspace = true }

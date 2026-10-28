@@ -7,3 +7,6 @@ pub mod components;
 
 /// Light / dim / dark theme selection, rendered on the server.
 pub mod theme;
+
+/// Content-Security-Policy and hardening headers for both portals.
+pub mod security_headers;
