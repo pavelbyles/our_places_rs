@@ -220,6 +220,14 @@ export async function seedTestData(): Promise<void> {
     ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING;
 
     -- 6. Seed deterministic payment receipt for OP-E2E-7788
+    -- Reset documents derived from the seeded booking by earlier runs (refund
+    -- receipts and revised receipts from the API cancellation test). Only one
+    -- document per type may be active, so the original receipt can only be
+    -- restored to 'issued' once they are gone.
+    DELETE FROM tax_document
+    WHERE booking_id = '018f3a5e-6b9c-7000-8000-000000000010'
+      AND document_number <> 'REC-2026-OP-E2E-7788';
+
     INSERT INTO tax_document (
         id,
         document_type,

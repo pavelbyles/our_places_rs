@@ -5,10 +5,13 @@ import { TEST_USERS } from '../fixtures/test-data.js';
 
 test.describe('Admin Portal - User Administration', () => {
   test('lists and searches user accounts', async ({ page }) => {
+    // A fresh account: the legacy directory only loads the newest 100 users
+    // before filtering, and every test run adds users.
+    const host = createHost();
     await loginAdminAs(page, TEST_USERS.admin);
-    await page.goto(`/admin/users?q=${encodeURIComponent(TEST_USERS.guest.email)}`);
+    await page.goto(`/admin/users?q=${encodeURIComponent(host.email)}`);
     await expect(page.locator('#user-search-input')).toBeVisible();
-    await expect(page.getByRole('main')).toContainText(TEST_USERS.guest.email);
+    await expect(page.getByRole('main')).toContainText(host.email);
   });
 
   test('creates a user account', async ({ page }) => {
