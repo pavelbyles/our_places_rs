@@ -419,3 +419,80 @@ pub fn get_api_client(cx: &Cx) -> &TopcoatApiClient {
         DEFAULT_CLIENT.get_or_init(TopcoatApiClient::from_env)
     }
 }
+
+static GATEWAY_API_KEY_ENV: &str = "GATEWAY_API_KEY";
+static USER_CALL_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+/// Why a backend call made on behalf of a user failed.
+#[derive(Debug, thiserror::Error)]
+pub enum UserCallError {
+    /// 404: the resource does not exist, or the user may not see it (the
+    /// backend answers 404 to strangers to prevent ID enumeration).
+    #[error("not found")]
+    NotFound,
+    /// 401/403: the user token was missing, invalid or not allowed.
+    #[error("unauthorized")]
+    Unauthorized,
+    /// Any other non-success status.
+    #[error("backend returned status {0}")]
+    Status(u16),
+    /// The request could not be sent or the body could not be decoded.
+    #[error("backend request failed: {0}")]
+    Transport(#[from] reqwest::Error),
+}
+
+impl TopcoatApiClient {
+    /// Lists the bookings of `user_id`, authenticated as that user.
+    pub async fn get_user_bookings_as(
+        &self,
+        user_id: Uuid,
+        jwt: &str,
+    ) -> Result<Vec<BookingResponse>, UserCallError> {
+        let url = format!("{}/api/v1/bookings/user/{user_id}", self.booking_api_url);
+        get_json_as(&url, jwt).await
+    }
+
+    /// Fetches one booking, authenticated as the user who owns `jwt`.
+    pub async fn get_booking_as(
+        &self,
+        id: Uuid,
+        jwt: &str,
+    ) -> Result<BookingResponse, UserCallError> {
+        let url = format!("{}/api/v1/bookings/{id}", self.booking_api_url);
+        get_json_as(&url, jwt).await
+    }
+
+    /// Fetches a booking's cancellation refund quote, authenticated as the
+    /// user who owns `jwt`.
+    pub async fn get_cancellation_quote_as(
+        &self,
+        id: Uuid,
+        jwt: &str,
+    ) -> Result<common::cancellation::RefundQuote, UserCallError> {
+        let url = format!(
+            "{}/api/v1/bookings/{id}/cancellation-quote",
+            self.booking_api_url
+        );
+        get_json_as(&url, jwt).await
+    }
+}
+
+/// Sends a GET with the user's bearer token (and the gateway API key, if
+/// configured) and decodes a JSON body.
+async fn get_json_as<T: serde::de::DeserializeOwned>(
+    url: &str,
+    jwt: &str,
+) -> Result<T, UserCallError> {
+    let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
+    let mut request = client.get(url).bearer_auth(jwt);
+    if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
+        request = request.header("x-api-key", key);
+    }
+    let response = request.send().await?;
+    match response.status().as_u16() {
+        200..=299 => Ok(response.json::<T>().await?),
+        404 => Err(UserCallError::NotFound),
+        401 | 403 => Err(UserCallError::Unauthorized),
+        status => Err(UserCallError::Status(status)),
+    }
+}

@@ -108,9 +108,9 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_client redirect`
   - **Dependencies:** Task 1
 
-- [ ] **Task 9: JWT-forwarding client methods**
+- [x] **Task 9: JWT-forwarding client methods**
   - **Scope:** S
-  - **Description:** Add `get_user_bookings(user_id, jwt)`, `get_booking(id, jwt)`, `get_cancellation_quote_as(id, jwt)` to `TopcoatApiClient` (new names; existing methods untouched for old crates). Calls set `Authorization: Bearer`.
+  - **Description:** Add `get_user_bookings_as(user_id, jwt)`, `get_booking_as(id, jwt)`, `get_cancellation_quote_as(id, jwt)` to `TopcoatApiClient` (new names; existing methods untouched for old crates). Calls set `Authorization: Bearer` and return a typed `UserCallError` (`NotFound` / `Unauthorized` / `Status` / `Transport`).
   - **Files Touched:** `web_client/src/client.rs`, `web_client/tests/client_auth.rs`
   - **Acceptance Criteria:**
     - [ ] `wiremock` tests assert the bearer header and path for each method.
@@ -385,7 +385,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 - [ ] **Task 37: My bookings, cancel and cancellation quote**
   - **Scope:** M
-  - **Description:** `/bookings` (own bookings only, via `get_user_bookings(session.user_id, jwt)`), `POST /bookings/{id}/cancel`, `GET /bookings/{id}/cancellation-quote` with ownership 404 (D8, D9).
+  - **Description:** `/bookings` (own bookings only, via `get_user_bookings_as(session.user_id, jwt)`), `POST /bookings/{id}/cancel`, `GET /bookings/{id}/cancellation-quote` with ownership 404 (D8, D9).
   - **Files Touched:** `web_ui_guest/src/pages/bookings.rs`, `web_ui_guest/src/ownership.rs`, `web_ui_guest/tests/bookings.rs`
   - **Acceptance Criteria:**
     - [ ] `bookings.spec.ts` green on NEW_GUEST incl. guest A cannot see/quote guest B's booking.
