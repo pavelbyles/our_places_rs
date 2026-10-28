@@ -21,6 +21,7 @@ test.describe('Guest Portal - Profile', () => {
 
     await page.getByLabel('First name').fill('Robin');
     await page.getByRole('button', { name: /save/i }).click();
+    await expect(page.getByRole('status')).toContainText('saved');
     await page.reload();
     await expect(page.getByLabel('First name')).toHaveValue('Robin');
   });

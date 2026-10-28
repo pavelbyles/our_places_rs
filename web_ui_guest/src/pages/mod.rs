@@ -16,6 +16,8 @@ pub mod listing_detail;
 pub mod listings;
 /// Guest–host messaging.
 pub mod messages;
+/// The guest's profile.
+pub mod profile;
 /// Guest registration.
 pub mod register;
 /// Email verification and resend.

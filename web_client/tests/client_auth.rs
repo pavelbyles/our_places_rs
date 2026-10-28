@@ -128,3 +128,18 @@ async fn unavailable_ranges_are_public_and_decoded() -> Result<(), UserCallError
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn user_profile_uses_the_user_route() -> Result<(), UserCallError> {
+    let server = MockServer::start().await;
+    let id = Uuid::now_v7();
+    Mock::given(method("GET"))
+        .and(path(format!("/api/v1/users/user/{id}")))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let result = client_for(&server).get_user_profile(id).await;
+    assert!(matches!(result, Err(UserCallError::NotFound)));
+    Ok(())
+}

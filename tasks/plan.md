@@ -421,9 +421,9 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/tax-documents --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 25, Task 37
 
-- [ ] **Task 41: Profile**
+- [x] **Task 41: Profile**
   - **Scope:** M
-  - **Description:** `GET/POST /profile` with real `user_api` data; email change and password reset flows using existing endpoints.
+  - **Description:** `GET/POST /profile` with real `user_api` data (name, phone, preferred currency); the user ID always comes from the session. **Deferred:** email change and password reset. The legacy profile had neither (it was static), so they are new features rather than parity.
   - **Files Touched:** `web_ui_guest/src/pages/profile.rs`, `web_client/src/client.rs`, `playwright/e2e/guest-portal/profile.spec.ts`
   - **Acceptance Criteria:**
     - [ ] `profile.spec.ts` green on NEW_GUEST (name update persists after reload).

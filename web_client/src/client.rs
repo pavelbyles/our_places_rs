@@ -517,6 +517,21 @@ impl TopcoatApiClient {
     }
 }
 
+impl TopcoatApiClient {
+    /// One user's account, from `user_api`'s `/api/v1/users/user/{id}`. (The
+    /// legacy `get_user_by_id` calls `/api/v1/users/{id}`, which does not
+    /// exist; it is kept unchanged for the old portals.)
+    pub async fn get_user_profile(&self, id: Uuid) -> Result<UserResponse, UserCallError> {
+        let url = format!("{}/api/v1/users/user/{id}", self.user_api_url);
+        let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
+        let mut request = client.get(&url);
+        if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
+            request = request.header("x-api-key", key);
+        }
+        decode(request.send().await?).await
+    }
+}
+
 /// Sends a JSON body with the user's bearer token (and the gateway API key,
 /// if configured) and decodes a JSON response.
 async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
