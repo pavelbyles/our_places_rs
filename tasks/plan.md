@@ -89,7 +89,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_client session`
   - **Dependencies:** Task 5
 
-- [ ] **Task 7: `ServiceJwt` with fail-fast secret**
+- [x] **Task 7: `ServiceJwt` with fail-fast secret**
   - **Scope:** S
   - **Description:** `ServiceJwt::from_env()` reads `JWT_SECRET` via `static JWT_SECRET_ENV`; errors if missing/empty. `mint(user_id)` issues 5-minute tokens.
   - **Files Touched:** `web_client/src/jwt.rs`, `web_client/src/lib.rs`

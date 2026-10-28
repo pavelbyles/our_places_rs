@@ -6105,6 +6105,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
+ "jsonwebtoken 9.3.1",
  "serde",
  "thiserror",
  "topcoat",
