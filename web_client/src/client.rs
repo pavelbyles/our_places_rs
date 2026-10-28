@@ -565,6 +565,15 @@ impl TopcoatApiClient {
         let url = format!("{}/api/v1/admin/ledger/{id}/status", self.booking_api_url);
         send_json_as(reqwest::Method::PATCH, &url, jwt, req).await
     }
+
+    /// The newest rate per currency pair, as the admin who owns `jwt`.
+    pub async fn get_exchange_rates_as(
+        &self,
+        jwt: &str,
+    ) -> Result<common::exchange_rate::ExchangeRatesResponse, UserCallError> {
+        let url = format!("{}/api/v1/admin/exchange-rates", self.booking_api_url);
+        get_json_as(&url, jwt).await
+    }
 }
 
 /// Sends a JSON body with the user's bearer token (and the gateway API key,

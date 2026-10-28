@@ -6,6 +6,8 @@ pub mod auth;
 pub mod bookings;
 /// Dashboard.
 pub mod dashboard;
+/// Exchange rate table.
+pub mod exchange_rates;
 /// Listings studio.
 pub mod listings;
 /// Payout ledger.

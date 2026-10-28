@@ -533,12 +533,12 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/payouts-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 
-- [ ] **Task 53: Exchange rates**
+- [x] **Task 53: Exchange rates**
   - **Scope:** XS
   - **Description:** A28 read-only table.
   - **Files Touched:** `web_ui_admin/src/pages/exchange_rates.rs`
   - **Acceptance Criteria:**
-    - [ ] `exchange-rates.spec.ts` green on NEW_ADMIN.
+    - [x] `exchange-rates.spec.ts` green on NEW_ADMIN.
   - **Verification Command:** `npx playwright test admin-portal/exchange-rates --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 

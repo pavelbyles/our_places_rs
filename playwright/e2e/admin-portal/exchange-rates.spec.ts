@@ -8,4 +8,12 @@ test.describe('Admin Portal - Exchange Rates', () => {
     await expect(page.getByRole('main')).toContainText('USD / JMD');
     await expect(page.getByRole('main')).toContainText('USD / EUR');
   });
+
+  // The legacy table is hardcoded; the redesign reads currency_exchange_rates.
+  test('shows the stored USD / JMD rate', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
+    await page.goto('/admin/exchange-rates');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    const row = page.locator('#exchange-rates-table tr', { hasText: 'USD / JMD' });
+    await expect(row).toContainText(/\d+\.\d{6}/);
+  });
 });
