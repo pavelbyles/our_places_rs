@@ -99,7 +99,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_client jwt && ! rg -q '"secret"' web_client/src`
   - **Dependencies:** Task 4
 
-- [ ] **Task 8: `safe_redirect` helper**
+- [x] **Task 8: `safe_redirect` helper**
   - **Scope:** XS
   - **Description:** Same-origin relative path validator per spec FR-1.4.
   - **Files Touched:** `web_client/src/redirect.rs`

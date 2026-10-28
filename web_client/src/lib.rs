@@ -12,6 +12,8 @@ pub mod client;
 pub mod error;
 /// Short-lived service tokens for backend calls on behalf of a user.
 pub mod jwt;
+/// Open-redirect protection for `redirect` parameters.
+pub mod redirect;
 /// Typed guest and admin sessions and the route guards that produce them.
 pub mod session;
 
