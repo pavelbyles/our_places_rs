@@ -12,14 +12,20 @@
   };
   var YEAR_SECONDS = 31536000;
 
+  // Cookie access throws where cookies are blocked; that must never stop the
+  // rest of ui.js (the theme still switches for this page view).
   function setCookie(name, value) {
     var secure = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = name + '=' + encodeURIComponent(value) +
-      '; Path=/; Max-Age=' + YEAR_SECONDS + '; SameSite=Lax' + secure;
+    try {
+      document.cookie = name + '=' + encodeURIComponent(value) +
+        '; Path=/; Max-Age=' + YEAR_SECONDS + '; SameSite=Lax' + secure;
+    } catch (e) { /* cookies unavailable */ }
   }
 
   function getCookie(name) {
-    var parts = document.cookie ? document.cookie.split('; ') : [];
+    var raw = '';
+    try { raw = document.cookie; } catch (e) { return null; }
+    var parts = raw ? raw.split('; ') : [];
     for (var i = 0; i < parts.length; i++) {
       var eq = parts[i].indexOf('=');
       if (parts[i].slice(0, eq) === name) {
@@ -131,8 +137,160 @@
 
   document.addEventListener('toast', function (event) { showToast(event.detail); });
 
+  // --- Stay-dates calendar (server-rendered by date_range_calendar). -------
+  // A booked night can still be the check-out day: the guest leaves that
+  // morning. A range may not include any booked or past night.
+  var DAY_MS = 86400000;
+
+  function parseDay(iso) { return iso ? Date.parse(iso + 'T00:00:00Z') : NaN; }
+  function isoDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+  function calendarParts(root) {
+    return {
+      checkIn: root.querySelector('input[name="check_in"]'),
+      checkOut: root.querySelector('input[name="check_out"]'),
+      status: root.querySelector('[data-calendar-status]'),
+      buttons: root.querySelectorAll('button[data-date]')
+    };
+  }
+
+  function dayButton(root, iso) {
+    return root.querySelector('button[data-date="' + iso + '"]');
+  }
+
+  function rangeIsFree(root, startIso, endIso) {
+    for (var t = parseDay(startIso); t < parseDay(endIso); t += DAY_MS) {
+      var btn = dayButton(root, isoDay(t));
+      // Nights outside the rendered months are re-checked by the server.
+      if (btn && btn.getAttribute('data-state') !== 'available') return false;
+    }
+    return true;
+  }
+
+  function paintCalendar(root) {
+    var p = calendarParts(root);
+    var start = p.checkIn ? p.checkIn.value : '';
+    var end = p.checkOut ? p.checkOut.value : '';
+    for (var i = 0; i < p.buttons.length; i++) {
+      var b = p.buttons[i];
+      var iso = b.getAttribute('data-date');
+      var t = parseDay(iso);
+      var isEnd = iso === start || iso === end;
+      b.toggleAttribute('data-selected', isEnd);
+      b.toggleAttribute('data-in-range', !!(start && end && t > parseDay(start) && t < parseDay(end)));
+      if (b.parentElement) b.parentElement.setAttribute('aria-selected', isEnd ? 'true' : 'false');
+    }
+  }
+
+  function announce(root, text) {
+    var status = calendarParts(root).status;
+    if (status) status.textContent = text;
+  }
+
+  function setRoving(root, button) {
+    var buttons = calendarParts(root).buttons;
+    for (var i = 0; i < buttons.length; i++) buttons[i].setAttribute('tabindex', '-1');
+    if (button) button.setAttribute('tabindex', '0');
+  }
+
+  function enhanceCalendar(root) {
+    root.setAttribute('data-enhanced', '');
+    var p = calendarParts(root);
+    var focusIso = (p.checkIn && p.checkIn.value) || '';
+    var first = (focusIso && dayButton(root, focusIso)) ||
+      root.querySelector('button[data-date][data-state="available"]') || p.buttons[0];
+    setRoving(root, first);
+    paintCalendar(root);
+  }
+
+  function enhanceCalendars(scope) {
+    var roots = (scope || document).querySelectorAll('[data-calendar]');
+    for (var i = 0; i < roots.length; i++) enhanceCalendar(roots[i]);
+  }
+
+  function pickDay(root, button) {
+    var p = calendarParts(root);
+    if (!p.checkIn || !p.checkOut) return;
+    var iso = button.getAttribute('data-date');
+    var state = button.getAttribute('data-state');
+    var start = p.checkIn.value;
+    var choosingEnd = start && !p.checkOut.value && parseDay(iso) > parseDay(start);
+
+    if (choosingEnd) {
+      if (state === 'past' || !rangeIsFree(root, start, iso)) {
+        announce(root, 'Those dates include booked nights. Choose an earlier check-out.');
+        return;
+      }
+      p.checkOut.value = iso;
+      announce(root, 'Check-out ' + iso + ' selected.');
+    } else {
+      if (state !== 'available') {
+        announce(root, 'That night is not available.');
+        return;
+      }
+      p.checkIn.value = iso;
+      p.checkOut.value = '';
+      announce(root, 'Check-in ' + iso + ' selected. Choose a check-out date.');
+    }
+    root.setAttribute('data-check-in', p.checkIn.value);
+    root.setAttribute('data-check-out', p.checkOut.value);
+    setRoving(root, button);
+    paintCalendar(root);
+    root.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function moveFocus(root, fromIso, days) {
+    var target = dayButton(root, isoDay(parseDay(fromIso) + days * DAY_MS));
+    if (target) {
+      setRoving(root, target);
+      target.focus();
+      return true;
+    }
+    return false;
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    var button = target && target.closest('[data-calendar] button[data-date]');
+    if (!button) return;
+    pickDay(button.closest('[data-calendar]'), button);
+  });
+
+  document.addEventListener('keydown', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    var button = target && target.closest('[data-calendar] button[data-date]');
+    if (!button) return;
+    var root = button.closest('[data-calendar]');
+    var iso = button.getAttribute('data-date');
+    var t = new Date(parseDay(iso));
+    var step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+    if (event.key === 'Home') step = -t.getUTCDay();
+    if (event.key === 'End') step = 6 - t.getUTCDay();
+    if (event.key === 'PageUp' || event.key === 'PageDown') {
+      var forward = event.key === 'PageDown';
+      var other = new Date(t.getTime());
+      other.setUTCMonth(t.getUTCMonth() + (forward ? 1 : -1));
+      step = Math.round((other.getTime() - t.getTime()) / DAY_MS);
+    }
+    if (step === undefined) return;
+    event.preventDefault();
+    if (!moveFocus(root, iso, step)) {
+      // Outside the rendered months: ask the server for the next/previous page.
+      var nav = root.querySelector(step > 0 ? '[aria-label="Next month"]' : '[aria-label="Previous month"]');
+      if (nav && !nav.disabled) nav.click();
+    }
+  });
+
+  // Re-enhance calendars that htmx swaps in (prev/next month).
+  document.addEventListener('htmx:load', function (event) {
+    var el = event.target instanceof Element ? event.target : null;
+    if (el && el.matches('[data-calendar]')) enhanceCalendar(el);
+    else if (el) enhanceCalendars(el);
+  });
+
   function init() {
     applyTheme(currentTheme());
+    enhanceCalendars(document);
     storeTimezoneOffset();
   }
 

@@ -125,3 +125,36 @@ async fn renders_two_months_with_booked_nights_disabled() {
         "{out}"
     );
 }
+
+/// Keeps playwright/e2e/ui-js/fixtures/calendar.html (used to test the
+/// calendar's ui.js behaviour) identical to what the component renders.
+/// Regenerate with `UPDATE_FIXTURES=1 cargo test -p web_ui_common --test date_range_calendar`.
+#[tokio::test]
+async fn ui_js_fixture_matches_the_component() {
+    let __cx = &Cx::default();
+    let props = CalendarProps {
+        listing_slug: "villa-a".into(),
+        month: d(2027, 1, 1),
+        months: 2,
+        today: d(2027, 1, 5),
+        ranges: vec![UnavailableRange {
+            date_from: d(2027, 1, 10),
+            date_to: d(2027, 1, 14),
+        }],
+        check_in: None,
+        check_out: None,
+    };
+    let rendered = html(view! { date_range_calendar(props: props) }, __cx).await;
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../playwright/e2e/ui-js/fixtures/calendar.html"
+    );
+    if std::env::var("UPDATE_FIXTURES").is_ok() {
+        assert!(std::fs::write(path, &rendered).is_ok(), "write {path}");
+    }
+    let committed = std::fs::read_to_string(path).unwrap_or_default();
+    assert_eq!(
+        committed, rendered,
+        "fixture is stale; rerun with UPDATE_FIXTURES=1"
+    );
+}

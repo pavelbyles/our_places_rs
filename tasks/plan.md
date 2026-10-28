@@ -322,13 +322,14 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common date_range_calendar`
   - **Dependencies:** Task 3, Task 9, Task 29
 
-- [ ] **Task 31: Calendar interaction in `ui.js`**
+- [x] **Task 31: Calendar interaction in `ui.js`**
   - **Scope:** S
   - **Description:** Click + Arrow/Home/End/PageUp/PageDown, range highlight, reject ranges crossing blocked nights, fire `change` on `#booking-dates`.
-  - **Files Touched:** `web_ui_common/src/assets/ui.js`, `playwright/e2e/guest-portal/calendar.spec.ts` (`@new-only`)
+  - **Files Touched:** `web_ui_common/src/assets/ui.js`, `playwright/e2e/ui-js/calendar.spec.ts` (behaviour, against `fixtures/calendar.html`, which a Rust test keeps identical to the component's output), `playwright/e2e/guest-portal/calendar.spec.ts` (`@new-only` portal contract; it runs once Task 35 adds the listing page)
   - **Acceptance Criteria:**
-    - [ ] Keyboard-only range selection works in Chromium + Firefox (verified in Task 35).
-  - **Verification Command:** `npx playwright test guest-portal/calendar --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
+    - [x] Keyboard-only range selection works in Chromium + Firefox (ui-js projects).
+    - [ ] Portal calendar spec green on NEW_GUEST (verified in Task 35).
+  - **Verification Command:** `npx playwright test --project=ui-js-chromium --project=ui-js-firefox`
   - **Dependencies:** Task 30, Task 21
 
 ---
