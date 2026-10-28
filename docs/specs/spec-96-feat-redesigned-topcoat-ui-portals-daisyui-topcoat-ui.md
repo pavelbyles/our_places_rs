@@ -179,7 +179,7 @@ Legend — **Auth**: `P` public, `G` guest session, `G*` guest session + ownersh
 | A17 | `…/pricing/add` (×2, hx-post) | `POST /admin/listings/{id}/pricing/add` (hx-post → `#price-overrides-container` outerHTML) | A | `pricing-admin.spec.ts` | same |
 | A18 | `POST /admin/listings/{id}/pricing/remove` (hx-post ×4) | same | A | `pricing-admin.spec.ts` | same |
 | A19 | `GET /admin/bookings`, `GET /bookings` | `GET /admin/bookings` (alias 308) | A | `bookings-admin.spec.ts` | same |
-| A20 | — (detail dialog built in JS) | `GET /admin/bookings/{id}` (dialog fragment) | A | `bookings-admin.spec.ts` | same |
+| A20 | — (detail dialog built in JS) | `GET /admin/bookings/{id}` (dialog fragment) | A | `bookings-admin.spec.ts`, `listing-fees-and-documents.spec.ts` | fixed (legacy dialog never opens: its inline script throws `SyntaxError: Unexpected token ';'`, so door codes, documents and the financial audit are unreachable; 4 tests `@new-only`) |
 | A21 | `PATCH /api/bookings/{id}` (status, door code) | `POST /admin/bookings/{id}/status`, `POST /admin/bookings/{id}/door-code` | A | `bookings-admin.spec.ts` | same |
 | A22 | `GET/POST /api/bookings/{id}/messages`, `PATCH …/messages/read` | `GET/POST /admin/bookings/{code}/messages` (read marked on view) | A | `booking-messages-admin.spec.ts` (new) | same |
 | A23 | `GET/POST /admin/bookings/{code}/messages` (hx-post) | same (`beforeend` `#admin-messages-list`) | A | `booking-messages-admin.spec.ts` | same |

@@ -1,5 +1,10 @@
 import { test, expect } from '../fixtures/auth.fixture.js';
 
+// Parity inventory A20: the legacy admin's booking-details dialog never opens
+// (its inline script throws "SyntaxError: Unexpected token ';'", so
+// openAdminBookingDetailsFromBtn is undefined). These run on the new portal only.
+const NEW_ONLY = { tag: '@new-only' };
+
 test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
   test.beforeEach(async ({ authenticatedAdminPage }) => {
     await authenticatedAdminPage.goto('/admin/bookings');
@@ -18,7 +23,7 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
     await expect(table).toBeVisible();
   });
 
-  test('should open reservation audit modal and display Keyless Access configuration panel', async ({ authenticatedAdminPage }) => {
+  test('should open reservation audit modal and display Keyless Access configuration panel', NEW_ONLY, async ({ authenticatedAdminPage }) => {
     // Find the details button on the first booking row
     const detailsBtn = authenticatedAdminPage.locator('button:has-text("Details")').first();
     await expect(detailsBtn).toBeVisible();
@@ -44,7 +49,7 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
     await expect(badge).toBeVisible();
   });
 
-  test('should allow host/admin to set, save, and persist a door access code', async ({ authenticatedAdminPage }) => {
+  test('should allow host/admin to set, save, and persist a door access code', NEW_ONLY, async ({ authenticatedAdminPage }) => {
     const detailsBtn = authenticatedAdminPage.locator('button:has-text("Details")').first();
     await expect(detailsBtn).toBeVisible();
 

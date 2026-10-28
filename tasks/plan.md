@@ -131,9 +131,9 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test --project=guest-portal-chromium --project=guest-portal-firefox`
   - **Dependencies:** None
 
-- [ ] **Task 11: Migrate admin specs off daisyUI selectors**
+- [x] **Task 11: Migrate admin specs off daisyUI selectors**
   - **Scope:** M
-  - **Description:** Same as Task 10 for the 6 admin specs.
+  - **Description:** Same as Task 10 for the 6 admin specs. Also fix drifted IDs and copy (`#admin-auth-error`, "Listings Management", "Active Listings"), and tag the 4 tests that need the broken legacy booking-details dialog `@new-only` (inventory A20). Verified with `--grep-invert @new-only` until Task 12 adds the per-project filters.
   - **Files Touched:** `playwright/e2e/admin-portal/*.spec.ts`
   - **Acceptance Criteria:**
     - [ ] No daisyUI class selectors in `playwright/e2e/admin-portal`.

@@ -1,16 +1,16 @@
 import { test, expect } from '../fixtures/auth.fixture.js';
 
-test.describe('Admin Portal - Villa Listings Management', () => {
+test.describe('Admin Portal - Listings Management', () => {
   test.beforeEach(async ({ authenticatedAdminPage }) => {
     await authenticatedAdminPage.goto('/admin/listings');
   });
 
   test('should render listings inventory page and title', async ({ authenticatedAdminPage }) => {
     const heading = authenticatedAdminPage.locator('h1');
-    await expect(heading).toContainText('Villa Listings Management');
+    await expect(heading).toContainText('Listings Management');
 
     // Check action buttons
-    const createBtn = authenticatedAdminPage.locator('main a[href*="/listings/new"], a.btn:has-text("New Villa")').first();
+    const createBtn = authenticatedAdminPage.locator('main a[href*="/listings/new"]').first();
     await expect(createBtn).toBeVisible();
   });
 

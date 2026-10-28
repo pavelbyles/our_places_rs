@@ -29,9 +29,9 @@ test.describe('Admin Portal - Authentication & Route Guard', () => {
     await page.locator('#admin-login-password').fill('incorrectPassword123');
     await page.locator('#btn-admin-login').click();
 
-    const errorAlert = page.locator('#admin-login-error');
+    const errorAlert = page.locator('#admin-auth-error');
     await expect(errorAlert).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('#admin-login-error-text')).toContainText(/Invalid|Access restricted|failed/i);
+    await expect(page.locator('#admin-auth-error-text')).toContainText(/Invalid|Access restricted|failed/i);
   });
 
   test('should redirect unauthenticated users visiting protected pages to login', async ({ page }) => {
