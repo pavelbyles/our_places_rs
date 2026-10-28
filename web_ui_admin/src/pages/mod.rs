@@ -4,3 +4,5 @@ pub mod aliases;
 pub mod auth;
 /// Dashboard.
 pub mod dashboard;
+/// Host sign-up and verification.
+pub mod register;

@@ -461,7 +461,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/auth admin-portal/dashboard --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 6, Task 7, Task 12, Task 20, Task 26
 
-- [ ] **Task 45: Host sign-up and verification**
+- [x] **Task 45: Host sign-up and verification**
   - **Scope:** S
   - **Description:** `GET/POST /register`, `GET/POST /verify`, `POST /verify/resend` as form posts.
   - **Files Touched:** `web_ui_admin/src/pages/register.rs`
