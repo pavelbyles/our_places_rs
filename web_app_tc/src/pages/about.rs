@@ -41,7 +41,7 @@ pub async fn about_page(cx: &Cx) -> Result<impl View> {
             // Stats
             <div class="stats stats-vertical lg:stats-horizontal shadow-md w-full bg-base-100 border border-base-200 rounded-3xl">
                 <div class="stat text-center">
-                    <div class="stat-title font-bold">"Villas Managed"</div>
+                    <div class="stat-title font-bold">"Listings Managed"</div>
                     <div class="stat-value text-primary">"5"</div>
                     <div class="stat-desc">"Luxury Jamaican properties"</div>
                 </div>
@@ -64,7 +64,7 @@ pub async fn about_page(cx: &Cx) -> Result<impl View> {
                     "Book your private Caribbean sanctuary today and let our dedicated concierges take care of the rest."
                 </p>
                 <div>
-                    <a href="/listings" class="btn btn-secondary btn-wide font-bold">"Browse Luxury Villas"</a>
+                    <a href="/listings" class="btn btn-secondary btn-wide font-bold">"Browse Luxury Listings"</a>
                 </div>
             </div>
         </div>

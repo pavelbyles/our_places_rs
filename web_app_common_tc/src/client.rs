@@ -2,8 +2,9 @@ use chrono::NaiveDate;
 use common::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
     CreateSessionRequest, DynamicPricingQuote, ListingDetails, ListingResponse, LoginRequest,
-    MarkMessagesReadResponse, NewBookingRequest, NewUserRequest, PriceOverride, ReviewResponse,
-    SessionResponse, UpdateUserRequest, UpdatedBookingRequest, UserResponse,
+    MarkMessagesReadResponse, NewBookingRequest, NewUserRequest, PriceOverride,
+    ResendVerificationRequest, ReviewResponse, SessionResponse, UpdateUserRequest,
+    UpdatedBookingRequest, UserResponse, VerifyRequest,
 };
 
 pub use common::app_client::ListingSearchParams;
@@ -268,6 +269,43 @@ impl TopcoatApiClient {
         common::app_client::get_all_users(page, per_page, role).await
     }
 
+    /// Get all users with optional pagination, search filtering, and soft-delete filtering
+    pub async fn get_all_users_filtered(
+        &self,
+        page: Option<u32>,
+        per_page: Option<u32>,
+        search: Option<String>,
+        is_deleted: Option<bool>,
+    ) -> anyhow::Result<Vec<UserResponse>> {
+        common::app_client::get_all_users_filtered(page, per_page, search, is_deleted).await
+    }
+
+    /// Soft deletes a user account (marks as deleted and deactivated)
+    pub async fn soft_delete_user(&self, id: Uuid) -> anyhow::Result<UserResponse> {
+        common::app_client::soft_delete_user(id).await
+    }
+
+    /// Permanently purges a user from the database
+    pub async fn hard_delete_user(&self, id: Uuid) -> anyhow::Result<()> {
+        common::app_client::hard_delete_user(id).await
+    }
+
+    /// Restores an archived / soft-deleted user
+    pub async fn restore_user(&self, id: Uuid) -> anyhow::Result<UserResponse> {
+        common::app_client::restore_user(id).await
+    }
+
+    /// Fetch a single user by ID
+    pub async fn get_user_by_id(&self, id: Uuid) -> anyhow::Result<UserResponse> {
+        let res = common::app_client::fetch_user_profile(&id.to_string()).await?;
+        if !res.status().is_success() {
+            anyhow::bail!("Failed to fetch user {}: status {}", id, res.status());
+        }
+        res.json::<UserResponse>()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to parse user: {}", e))
+    }
+
     /// Create user account for admin
     pub async fn create_user(&self, req: &NewUserRequest) -> anyhow::Result<UserResponse> {
         common::app_client::create_user(req).await
@@ -324,6 +362,19 @@ impl TopcoatApiClient {
     /// Authenticate user credentials with user_api
     pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
         common::app_client::login_user(req).await
+    }
+
+    /// Verifies a user's email address with their 6-character OTP code
+    pub async fn verify_user(&self, req: &VerifyRequest) -> anyhow::Result<UserResponse> {
+        common::app_client::verify_user(req).await
+    }
+
+    /// Resends the 6-character OTP verification code to a user's email address
+    pub async fn resend_verification(
+        &self,
+        req: &ResendVerificationRequest,
+    ) -> anyhow::Result<UserResponse> {
+        common::app_client::resend_verification(req).await
     }
 
     /// Retrieve host payout ledger entries

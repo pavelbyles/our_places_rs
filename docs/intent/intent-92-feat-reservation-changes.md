@@ -62,6 +62,14 @@ Currently, post-booking modifications on confirmed reservations have three criti
   - Admin listing form inputs for `guests_included` and `extra_guest_fee`.
   - Guest portal (`web_app_tc`): update reservation modification UI to support both date and guest count changes (before or during stay per date rules) with live price/delta preview, submit a change request to the host, and review/approve/decline host-initiated change requests.
   - Host/Admin portal (`web_app_admin_tc`): initiate a reservation change request (dates and/or guest count) to the guest, review/approve/decline guest-initiated requests, and allow Admin direct-apply when needed.
+- **End-to-End Test Automation (`playwright/e2e/`)**:
+  - Automated Playwright browser tests across Guest and Admin portals validating:
+    - Guest reservation modification form, live quote preview, and request submission.
+    - Mid-stay date locking boundary rules (check-in locked, check-out and guests editable).
+    - Guest booking list pending change banners, withdrawal, and counterparty approvals.
+    - Admin listing extra-guest fee configuration and persistence.
+    - Admin/Host master booking audit details modal: reviewing, approving, and declining change requests, plus proposing changes to guests.
+    - Direct API E2E validation for quote pricing, atomic locks, anti-duplication, and bilateral authorization enforcement.
 
 ### Out of Scope / Non-Goals
 - Third-party payment processor credentials/SDK wiring (the settlement state machine, database columns, and gateway trait/hook for positive `balance_due` capture and negative `balance_due` refund are included in scope so live gateway integration is a drop-in adapter).
@@ -106,6 +114,7 @@ Currently, post-booking modifications on confirmed reservations have three criti
 - **Leading Indicator**: 100% of guest- and host-initiated date/guest changes transition through `pending` $\rightarrow$ `approved`/`declined` with atomic row-level availability verification and zero double-bookings.
 - **Financial Accuracy Signal**: Property and integration tests verify that any approved date or guest count change produces a revised `REC-YYYY-{code}-R{n}` receipt whose `balance_due` equals `new_total_price - old_total_price` and updates the `pending` `host_payout_ledger` entry to match the recalculated net accommodation.
 - **Quality Gate**: `cargo fmt --check`, `SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings`, and full test suites pass with zero warnings.
+- **E2E Playwright Reliability**: 100% pass rate across Guest Portal, Admin Portal, and Backend API Playwright test suites (`guest-portal-chromium`, `admin-portal-chromium`, `backend-api`) in both CI and local test execution.
 
 ---
 

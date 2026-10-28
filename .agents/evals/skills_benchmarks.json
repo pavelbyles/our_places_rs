@@ -189,6 +189,28 @@
           "reason": "Must propose actionable steering file or guardrail updates"
         }
       ]
+    },
+    {
+      "skill_id": "plan-eng-review",
+      "name": "Multi-Agent Engineering Plan Review Test",
+      "prompt": "Orchestrate an engineering review panel for the implementation plan in docs/plans/plan-92-feat-reservation-changes.md against CONSTRAINTS.md.",
+      "assertions": [
+        {
+          "type": "contains",
+          "value": "Lead Architect",
+          "reason": "Must dispatch specialized review panelists including Lead Architect"
+        },
+        {
+          "type": "contains",
+          "value": "CONSTRAINTS.md",
+          "reason": "Must evaluate plan compliance against CONSTRAINTS.md"
+        },
+        {
+          "type": "contains_pattern",
+          "pattern": "Scorecard|Review Findings|Gating Criteria",
+          "reason": "Must output structured panelist findings and scorecard"
+        }
+      ]
     }
   ]
 }

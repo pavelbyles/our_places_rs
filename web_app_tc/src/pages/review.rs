@@ -112,7 +112,7 @@ pub async fn review_success_page(cx: &Cx) -> Result<impl View> {
                     </p>
                 </div>
                 <div class="flex flex-col sm:flex-row justify-center gap-3 pt-4">
-                    <a href="/listings" class="btn btn-primary rounded-xl">"Explore More Villas"</a>
+                    <a href="/listings" class="btn btn-primary rounded-xl">"Explore More Listings"</a>
                     <a href="/bookings" class="btn btn-outline rounded-xl">"View My Bookings"</a>
                 </div>
             </div>

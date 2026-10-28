@@ -189,7 +189,10 @@ where
             }
         }
 
-        if let Some(owner) = f.owner {
+        if let Some(uid) = f.user_id {
+            query_builder.push(" AND listing.user_id = ");
+            query_builder.push_bind(uid);
+        } else if let Some(owner) = f.owner {
             let trimmed = owner.trim();
             if trimmed.contains('@') {
                 query_builder.push(" AND LOWER(\"user\".email) = LOWER(");
@@ -1345,6 +1348,7 @@ mod tests {
             owner: None,
             resolution: None,
             currency: None,
+            user_id: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -1366,6 +1370,7 @@ mod tests {
             owner: None,
             resolution: None,
             currency: None,
+            user_id: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -1385,6 +1390,7 @@ mod tests {
             owner: None,
             resolution: None,
             currency: None,
+            user_id: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
@@ -1602,6 +1608,7 @@ mod tests {
             owner: Some(u1.email.clone()),
             resolution: None,
             currency: None,
+            user_id: None,
         };
         let results1 = get_listings(&mut *tx, 1, 10, Some(filter1)).await.unwrap();
         assert_eq!(results1.len(), 1);
@@ -1617,10 +1624,47 @@ mod tests {
             owner: Some(u2.email.clone()),
             resolution: None,
             currency: None,
+            user_id: None,
         };
         let results2 = get_listings(&mut *tx, 1, 10, Some(filter2)).await.unwrap();
         assert_eq!(results2.len(), 1);
         assert_eq!(results2[0].name, "Host 2 Listing");
+
+        // Query strictly by user_id for User 1
+        let filter_uid1 = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: None,
+            resolution: None,
+            currency: None,
+            user_id: Some(u1.id),
+        };
+        let results_uid1 = get_listings(&mut *tx, 1, 10, Some(filter_uid1))
+            .await
+            .unwrap();
+        assert_eq!(results_uid1.len(), 1);
+        assert_eq!(results_uid1[0].name, "Host 1 Listing");
+
+        // Query strictly by user_id for User 2
+        let filter_uid2 = common::models::ListingFilter {
+            name: None,
+            country: None,
+            min_price: None,
+            max_price: None,
+            structure_type: vec![],
+            owner: None,
+            resolution: None,
+            currency: None,
+            user_id: Some(u2.id),
+        };
+        let results_uid2 = get_listings(&mut *tx, 1, 10, Some(filter_uid2))
+            .await
+            .unwrap();
+        assert_eq!(results_uid2.len(), 1);
+        assert_eq!(results_uid2[0].name, "Host 2 Listing");
     }
 
     #[tokio::test]

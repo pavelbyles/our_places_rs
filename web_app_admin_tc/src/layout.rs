@@ -38,10 +38,12 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
                     (function() {
                         try {
                             var path = window.location.pathname;
-                            if (path !== '/login') {
-                                if (path !== '/login/') {
-                                    var isAuthedAdmin = false;
-                                    var isStrictAdmin = false;
+                            var isAuthPath = path === '/login' || path === '/login/' ||
+                                             path === '/register' || path === '/register/' ||
+                                             path === '/verify' || path === '/verify/';
+                            if (!isAuthPath) {
+                                var isAuthedAdmin = false;
+                                var isStrictAdmin = false;
                                     var userJson = localStorage.getItem('op_auth_user');
                                     if (!userJson) {
                                         userJson = sessionStorage.getItem('op_auth_user');
@@ -77,7 +79,6 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
                                         }
                                     }
                                 }
-                            }
                         } catch(e) {}
                     })();
                     "#
@@ -124,7 +125,7 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
                                         "+ Quick Create ▾"
                                     </div>
                                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-50 w-52 p-2 shadow-2xl border border-base-200">
-                                        <li><a href="/admin/listings/new" class="font-semibold">"🌴 New Villa Listing"</a></li>
+                                        <li><a href="/admin/listings/new" class="font-semibold">"🌴 New Listing"</a></li>
                                         if is_admin_ssr {
                                             <li id="admin-quick-add-user"><a href="/admin/users/new" class="font-semibold">"👤 Invite / Add User"</a></li>
                                         }
@@ -214,13 +215,13 @@ pub async fn admin_layout(cx: &Cx, slot: Child<'_>) -> Result<impl View> {
                                     <li>
                                         <a href="/admin/listings" class="flex items-center gap-3 font-semibold rounded-xl active:bg-primary">
                                             <span>"🌴"</span>
-                                            <span>"Villa Portfolio"</span>
+                                            <span>"Listing Portfolio"</span>
                                         </a>
                                     </li>
                                     <li>
                                         <a href="/admin/listings/new" class="flex items-center gap-3 text-xs font-medium rounded-xl text-base-content/80">
                                             <span>"➕"</span>
-                                            <span>"Add New Villa"</span>
+                                            <span>"Add New Listing"</span>
                                         </a>
                                     </li>
 

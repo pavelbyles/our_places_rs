@@ -22,9 +22,9 @@ pub use auth::{
 };
 
 pub use components::currency_selector::currency_selector;
+pub use components::listing_card::{listing_card, listing_card as villa_card};
 pub use components::price_breakdown::price_breakdown;
 pub use components::responsive_image::responsive_image;
 pub use components::star_rating::star_rating;
-pub use components::villa_card::villa_card;
 pub use layout::guest_base_layout;
 pub use theme::{theme_init_script, theme_toggle, theme_toggle_script};

@@ -26,7 +26,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 pub use common::models::{
-    CreateSessionRequest, LoginRequest, NewUserRequest, SessionResponse, UpdateUserRequest,
+    CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
+    UpdateUserRequest, VerifyRequest,
 };
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -34,22 +35,11 @@ pub struct SessionNamespaceQuery {
     pub namespace: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct VerifyRequest {
-    pub email: String,
-    pub code: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
-pub struct ResendVerificationRequest {
-    #[validate(email)]
-    pub email: String,
-}
-
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserFilter {
     pub search: Option<String>,
     pub is_deleted: Option<bool>,
+    pub all: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -566,11 +556,17 @@ async fn update_user(
         .map_err(ApiError::Database)?;
 
     if target_user.roles.contains(&UserRole::Admin) {
-        let is_modifying_roles = req_data.roles.is_some();
-        let is_modifying_active = req_data.is_active.is_some();
-        let is_modifying_verified = req_data.is_verified.is_some();
+        let is_demoting_admin = req_data.roles.as_ref().is_some_and(|roles| {
+            let parsed_roles: std::collections::HashSet<UserRole> = roles
+                .iter()
+                .filter_map(|r| UserRole::from_str(r).ok())
+                .collect();
+            !parsed_roles.contains(&UserRole::Admin)
+        });
+        let is_deactivating = req_data.is_active == Some(false);
+        let is_unverifying = req_data.is_verified == Some(false);
 
-        if is_modifying_roles || is_modifying_active || is_modifying_verified {
+        if is_demoting_admin || is_deactivating || is_unverifying {
             return Err(ApiError::Forbidden(
                 "Cannot modify roles or active status of the system admin".to_string(),
             ));
@@ -811,12 +807,18 @@ async fn get_all_users(
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
 
+    let is_deleted_filter = if filter.all.unwrap_or(false) {
+        None
+    } else {
+        Some(filter.is_deleted.unwrap_or(false))
+    };
+
     let users = db_core::user::get_all_users(
         pool.get_ref(),
         page,
         per_page,
         filter.search.clone(),
-        filter.is_deleted,
+        is_deleted_filter,
     )
     .await
     .map_err(ApiError::Database)?;
@@ -859,6 +861,16 @@ async fn soft_delete_user(
         return Err(ApiError::Unauthorized(
             "Cannot delete admin users".to_string(),
         ));
+    }
+
+    // Revoke all active sessions across all namespaces immediately
+    let session_store = db_core::sessions::SessionsDb::new((**pool).clone());
+    if let Err(e) = session_store.delete_user_sessions(id, None).await {
+        tracing::warn!(
+            "Failed to revoke sessions for soft-deleted user {}: {:?}",
+            id,
+            e
+        );
     }
 
     let deleted = db_core::user::soft_delete_user(pool.get_ref(), id)
@@ -932,6 +944,16 @@ async fn hard_delete_user(
         return Err(ApiError::Unauthorized(
             "Cannot hard delete admin users".to_string(),
         ));
+    }
+
+    // Revoke all active sessions across all namespaces
+    let session_store = db_core::sessions::SessionsDb::new((**pool).clone());
+    if let Err(e) = session_store.delete_user_sessions(id, None).await {
+        tracing::warn!(
+            "Failed to revoke sessions for hard-deleted user {}: {:?}",
+            id,
+            e
+        );
     }
 
     db_core::user::hard_delete_user(pool.get_ref(), id)

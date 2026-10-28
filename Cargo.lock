@@ -6040,6 +6040,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "validator",
  "web_app_common_tc",
 ]
 

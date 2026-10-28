@@ -6,7 +6,7 @@ use topcoat::{
     view::{View, view},
 };
 use web_app_common_tc::{
-    client::ListingSearchParams, components::villa_card::villa_card, get_api_client,
+    client::ListingSearchParams, components::listing_card::listing_card, get_api_client,
 };
 
 #[shard]
@@ -60,8 +60,8 @@ pub async fn search_results(
                 </div>
             } else {
                 for item in listings {
-                    <div id=(format!("villa-card-{}", item.slug))>
-                        villa_card(
+                    <div id=(format!("listing-card-{}", item.slug))>
+                        listing_card(
                             id: item.slug.clone(),
                             title: item.name.clone(),
                             image_url: item.primary_image_url.clone().unwrap_or_default(),
@@ -95,7 +95,7 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
             <div class="text-center space-y-2 max-w-xl">
                 <span class="text-primary font-bold tracking-widest uppercase text-xs">"Jamaican Sanctuary Collection"</span>
                 <h1 class="text-3xl md:text-5xl font-serif font-bold tracking-tight text-base-content">
-                    "Explore All Villas"
+                    "Explore All Listings"
                 </h1>
                 <p class="text-base-content/60 text-sm font-medium">
                     "Filter by parish, structure type, and bespoke amenities."
@@ -108,7 +108,7 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
                     <input
                         type="text"
                         name="name"
-                        placeholder="Search villa name or keyword..."
+                        placeholder="Search listing name or keyword..."
                         class="input input-ghost input-sm w-full font-medium placeholder:text-base-content/50 focus:bg-transparent"
                         :value=$(search_name.get())
                         @input=$(|e: Event| search_name.set(e.target.value))

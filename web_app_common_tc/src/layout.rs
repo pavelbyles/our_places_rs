@@ -192,7 +192,7 @@ pub async fn guest_base_layout<'a>(
                             <div class="hidden lg:flex items-center">
                                 <ul class="flex items-center gap-6 font-medium text-xs tracking-wider uppercase text-base-content/80">
                                     <li><a href="/listings" class="hover:text-primary transition-colors">"Destinations"</a></li>
-                                    <li><a href="/listings" class="hover:text-primary transition-colors">"Villas"</a></li>
+                                    <li><a href="/listings" class="hover:text-primary transition-colors">"Listings"</a></li>
                                     <li><a href="/about" class="hover:text-primary transition-colors">"Experiences"</a></li>
                                     <li><a href="/listings" class="hover:text-primary transition-colors">"Special Offers"</a></li>
                                     <li><a href="/about" class="hover:text-primary transition-colors">"Contact"</a></li>
@@ -229,7 +229,7 @@ pub async fn guest_base_layout<'a>(
                                         </li>
                                         <li><a href="/bookings">"📅 My Bookings"</a></li>
                                         <li><a href="/profile">"👤 Profile & Preferences"</a></li>
-                                        <li><a href="/listings">"🌴 Explore Villas"</a></li>
+                                        <li><a href="/listings">"🌴 Explore Listings"</a></li>
                                         <li class="border-t border-base-200 mt-2 pt-2">
                                             <a href="/logout" onclick="logoutUser(event)" class="text-error font-medium">"Logout"</a>
                                         </li>

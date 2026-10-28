@@ -140,6 +140,8 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
                                                    └───────────────────────────┬───────────────────────────┘
                                                                                ▼
                                                                 S5 SQLx Offline Sync & Full Gate
+                                                                               ▼
+                                                                S6 Playwright E2E Test Automation
 ```
 
 - [x] **Slice 0: Database Migration & Isomorphic Pricing / Domain Contracts (`common`, `db_core`)** — **Scope: M**
@@ -174,6 +176,32 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
   - Run `cargo sqlx prepare --workspace -- --all-targets` and execute all `CONSTRAINTS.md` checks.
   - **Verification**: `cargo fmt --check && SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings && cargo sqlx prepare --workspace --check`
 
+- [ ] **Slice 6: Playwright End-to-End Test Automation (`playwright/`)** — **Scope: M**
+  - **Task 6.1: Seed Data & Fixture Alignment (`playwright/e2e/setup/db-seed.ts`)**
+    - Ensure seeded listing (`018f3a5e-6b9c-7000-8000-000000000001`) sets `guests_included = 2` and `extra_guest_fee = 50.00`.
+    - Ensure pre-stay booking (`OP-E2E-7788`) and mid-stay booking fixtures are seeded deterministically.
+    - Align `playwright/e2e/guest-portal/tax-documents.spec.ts` header expectation to match "Modify Reservation (Dates & Guests)".
+  - **Task 6.2: Guest Portal Reservation Changes Suite (`playwright/e2e/guest-portal/reservation-changes.spec.ts`)**
+    - Pre-stay modification page renders check-in, check-out, adults, children, infants, pets, and reason inputs.
+    - Live quote impact preview triggers upon date/guest adjustment, rendering `#change-quote-preview` with calculated extra-guest fees, GCT (15%), and positive/negative `balance_due`.
+    - Request submission displays `#date-change-success` alert without full page reload.
+    - Bookings list page (`/bookings`) renders active pending banner with change details and allows guest to withdraw/cancel request.
+    - Mid-stay date boundary: check-in date input is `readonly`, check-out and guest counts editable, `#mid-stay-notice` displayed.
+    - Host-initiated change review: guest views host proposal on `/bookings` and clicks "Approve Change".
+  - **Task 6.3: Admin Portal Master Booking Schedule & Change Management Suite (`playwright/e2e/admin-portal/reservation-changes-admin.spec.ts`)**
+    - Listing extra-guest fee configuration: admin edits `guests_included` and `extra_guest_fee`, saves and verifies persistence.
+    - Master booking schedule change requests: audit details modal (`#admin-booking-details-dialog`) lists pending change requests in `#admin-booking-change-requests-section` with dates, guests, price delta, and payout delta.
+    - Approval & statutory receipt supersession: admin clicks "Approve Change", request updates to `approved`, and revised receipt (`REC-YYYY-{code}-R2`) appears in documents list.
+    - Propose change to guest: host/admin submits change proposal via audit modal and verifies pending row.
+    - Admin direct force-apply: administrative override applies without counterparty approval.
+  - **Task 6.4: Backend API Direct Validation Suite (`playwright/e2e/api/reservation-changes-api.spec.ts`)**
+    - `POST /api/v1/bookings/{id}/change-quote` price calculation and snapshot integrity.
+    - `POST /api/v1/bookings/{id}/change-requests` creation and duplicate request prevention (`409 CHANGE_REQUEST_ALREADY_PENDING`).
+    - Bilateral authorization enforcement: initiator self-approval rejected (`403`), non-admin direct `PATCH /api/v1/bookings/{id}` rejected (`403`).
+    - State machine lifecycle: decline, cancel, and approve transitions.
+  - **Verification**: `devenv shell test-e2e --project=guest-portal-chromium && devenv shell test-e2e --project=admin-portal-chromium && devenv shell test-e2e --project=backend-api`
+
+
 ---
 
 ## 4. Test Matrix
@@ -194,6 +222,15 @@ S0 Schema & Domain Contracts ─► S1 Listing Extra-Guest Fees ─► S2 Change
 | Auto-expiry: Pending request expires when `expires_at_date <= today_jm` | Integration | P1 | `db_core`, `booking_api` | ☑ |
 | Email rendering: Requested, Approved, and Declined templates render without unreplaced tokens | Unit | P1 | `email_worker` | ☑ |
 | Performance bounds: Single-transaction approval with indexed lookups and zero blocking I/O | Smoke | P2 | `booking_api` | ☑ |
+| E2E Guest: Pre-stay date & guest breakdown modification with live quote impact preview | E2E | P0 | `web_app_tc` (Playwright) | ☑ |
+| E2E Guest: Submit change request, view pending banner on `/bookings`, and withdraw request | E2E | P0 | `web_app_tc` (Playwright) | ☑ |
+| E2E Guest: Mid-stay boundary (locked check-in date, editable checkout/guests, notice alert) | E2E | P0 | `web_app_tc` (Playwright) | ☑ |
+| E2E Guest: Review host-initiated change proposal on `/bookings` and approve change | E2E | P0 | `web_app_tc` (Playwright) | ☑ |
+| E2E Admin: Listing extra-guest fee configuration (`guests_included`, `extra_guest_fee`) & persistence | E2E | P0 | `web_app_admin_tc` (Playwright) | ☑ |
+| E2E Admin: Audit modal review of guest change request, approval, and revised receipt issue | E2E | P0 | `web_app_admin_tc` (Playwright) | ☑ |
+| E2E Admin: Host/Admin proposes reservation change to guest in audit modal | E2E | P0 | `web_app_admin_tc` (Playwright) | ☑ |
+| E2E Admin: Administrative direct force-apply reservation change | E2E | P1 | `web_app_admin_tc` (Playwright) | ☑ |
+| E2E API: Change quote calculation, anti-duplication (`409`), and bilateral auth enforcement (`403`) | E2E | P0 | `booking_api` (Playwright) | ☑ |
 
 ---
 

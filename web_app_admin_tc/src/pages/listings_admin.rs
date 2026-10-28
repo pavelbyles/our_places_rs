@@ -73,6 +73,7 @@ pub struct AdminCreateListingFormPayload {
     pub half_bathrooms: Option<String>,
     pub square_meters: Option<String>,
     pub base_currency: Option<String>,
+    #[serde(alias = "price")]
     pub price_per_night: Option<String>,
     pub minimum_stay: Option<String>,
     pub weekly_discount_percentage: Option<String>,
@@ -224,22 +225,32 @@ async fn execute_create_listing(
 
     let api = get_api_client(cx);
 
-    let target_user_id = if let Some(uid) = payload.user_id {
-        uid
-    } else if auth_user.is_host()
-        && let Some(uid) = auth_user.id
-    {
-        uid
-    } else if let Ok(hosts) = api
-        .get_all_users(Some(1), Some(10), Some("host".to_string()))
-        .await
-        && let Some(first_host) = hosts.first()
-    {
-        first_host.id
-    } else if let Some(uid) = auth_user.id {
-        uid
+    let target_user_id = if auth_user.is_admin() {
+        if let Some(uid) = payload.user_id {
+            uid
+        } else if let Some(uid) = auth_user.id
+            && auth_user.is_host()
+        {
+            uid
+        } else if let Ok(users) = api.get_all_users(Some(1), Some(100), None).await
+            && let Some(first_host) = users.into_iter().find(|u| {
+                u.roles
+                    .iter()
+                    .any(|r| r.eq_ignore_ascii_case("host") || r.eq_ignore_ascii_case("admin"))
+            })
+        {
+            first_host.id
+        } else if let Some(uid) = auth_user.id {
+            uid
+        } else {
+            return Err(
+                "Each listing must be assigned to a host. Please select a host.".to_string(),
+            );
+        }
     } else {
-        return Err("No valid host user available to assign listing to.".to_string());
+        auth_user
+            .id
+            .ok_or_else(|| "Host session lacks a valid user ID.".to_string())?
     };
 
     let name = payload.name.trim().to_string();
@@ -341,7 +352,9 @@ pub async fn admin_create_listing_form(
     cx: &Cx,
     Form(payload): Form<AdminCreateListingFormPayload>,
 ) -> Result<SeeOther> {
-    let _ = execute_create_listing(cx, payload.into_payload()).await;
+    if let Err(err) = execute_create_listing(cx, payload.into_payload()).await {
+        tracing::error!("Failed to create listing via admin form: {}", err);
+    }
     Ok(see_other("/admin/listings"))
 }
 
@@ -369,18 +382,89 @@ pub async fn listings_alias_detail_page(cx: &Cx) -> Result<impl View> {
 
 async fn render_listings_content(cx: &Cx) -> Result<impl View> {
     let __cx = cx;
-    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
-        .await
-        .is_ok();
+    let admin_user = web_app_common_tc::auth::get_admin_session(cx).await;
+    let is_authed = admin_user.is_some();
+    let is_admin = admin_user.as_ref().is_some_and(|u| u.is_admin());
+    let host_email = admin_user.as_ref().map(|u| u.email.clone());
+    let host_user_id = admin_user.as_ref().and_then(|u| u.id);
+
     let api = get_api_client(cx);
 
-    let listings = api
-        .search_listings(ListingSearchParams {
-            per_page: Some(50),
-            ..Default::default()
-        })
-        .await
-        .unwrap_or_default();
+    let raw_listings = if is_admin {
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!("Failed to fetch listings for admin directory: {:?}", err);
+                Vec::new()
+            }
+        }
+    } else {
+        let mut results = if let Some(uid) = host_user_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!("Failed to fetch listings by user_id {:?}: {:?}", uid, err);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if results.is_empty()
+            && let Some(ref email) = host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    results = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+        results
+    };
+
+    let listings: Vec<common::models::ListingResponse> = if is_admin {
+        raw_listings
+    } else {
+        raw_listings
+            .into_iter()
+            .filter(|l| {
+                if let Some(uid) = host_user_id {
+                    l.user_id == uid
+                } else {
+                    true
+                }
+            })
+            .collect()
+    };
 
     Ok(view! {
         if !is_authed {
@@ -394,7 +478,7 @@ async fn render_listings_content(cx: &Cx) -> Result<impl View> {
                 <div class="space-y-1">
                     <span class="text-primary font-bold tracking-widest uppercase text-xs">"Inventory & Property Catalog"</span>
                     <h1 class="text-3xl font-serif font-bold tracking-tight text-base-content">
-                        "Villa Listings Management"
+                        "Listings Management"
                     </h1>
                     <p class="text-xs text-base-content/60">
                         "Create, edit, duplicate, and configure seasonal pricing overrides for luxury Caribbean properties."
@@ -402,7 +486,7 @@ async fn render_listings_content(cx: &Cx) -> Result<impl View> {
                 </div>
                 <div class="flex items-center gap-3">
                     <a href="/admin/listings/new" class="btn btn-primary btn-sm rounded-full px-5 font-bold tracking-wide shadow-md">
-                        "+ Create New Villa"
+                        "+ Create New Listing"
                     </a>
                 </div>
             </div>
@@ -412,7 +496,7 @@ async fn render_listings_content(cx: &Cx) -> Result<impl View> {
                 <div class="flex-1 w-full flex items-center gap-3">
                     <input
                         type="text"
-                        placeholder="Search by villa name, parish, or slug..."
+                        placeholder="Search by listing name, parish, or slug..."
                         class="input input-bordered border-2 border-base-300 input-sm w-full max-w-md rounded-xl font-medium"
                     />
                     <select class="select select-bordered border-2 border-base-300 select-sm rounded-xl font-medium">
@@ -447,6 +531,18 @@ async fn render_listings_content(cx: &Cx) -> Result<impl View> {
                             </tr>
                         </thead>
                         <tbody>
+                            if listings.is_empty() {
+                                <tr>
+                                    <td colspan="9" class="text-center py-12 text-base-content/60">
+                                        <div class="flex flex-col items-center justify-center gap-2">
+                                            <span class="text-3xl">"🏖️"</span>
+                                            <span class="font-bold text-sm">"No properties in portfolio yet"</span>
+                                            <p class="text-xs text-base-content/50">"Create your first listing to start accepting reservations."</p>
+                                            <a href="/admin/listings/new" class="btn btn-primary btn-xs mt-2 rounded-full font-bold">"+ Create New Listing"</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
                             for item in listings {
                                 let item_key = if !item.slug.is_empty() {
                                     item.slug.clone()
@@ -551,15 +647,143 @@ async fn render_new_or_cloned_listing(
     cx: &Cx,
     template: Option<common::models::ListingResponse>,
 ) -> Result<impl View> {
-    let is_authed = web_app_common_tc::auth::require_admin_auth(cx)
-        .await
-        .is_ok();
+    let admin_user = web_app_common_tc::auth::get_admin_session(cx).await;
+    let is_authed = admin_user.is_some();
+    let is_admin = admin_user.as_ref().is_some_and(|u| u.is_admin());
+    let current_host_id = admin_user.as_ref().and_then(|u| u.id);
+    let current_host_email = admin_user.as_ref().map(|u| u.email.clone());
+
+    // Security check: Only admins can clone any listing; hosts can only clone their own listings
+    let template = if is_admin {
+        template
+    } else {
+        template.filter(|t| Some(t.user_id) == current_host_id)
+    };
+
     let __cx = cx;
     let api = get_api_client(cx);
-    let hosts = api
-        .get_all_users(Some(1), Some(50), Some("host".to_string()))
+
+    // Dynamic clone options: Admin sees all listings, Host only sees their own listings
+    let available_listings: Vec<common::models::ListingResponse> = if is_admin {
+        match api
+            .search_listings(ListingSearchParams {
+                per_page: Some(100),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(l) => l,
+            Err(err) => {
+                tracing::error!(
+                    "Failed to fetch available listings for admin clone: {:?}",
+                    err
+                );
+                Vec::new()
+            }
+        }
+    } else {
+        let mut raw = if let Some(uid) = current_host_id {
+            match api
+                .search_listings(ListingSearchParams {
+                    user_id: Some(uid),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => l,
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to fetch clone listings by user_id {:?}: {:?}",
+                        uid,
+                        err
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if raw.is_empty()
+            && let Some(ref email) = current_host_email
+            && !email.trim().is_empty()
+        {
+            match api
+                .search_listings(ListingSearchParams {
+                    owner_email: Some(email.clone()),
+                    per_page: Some(100),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(l) => {
+                    raw = l;
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to fetch clone listings by owner_email {:?}: {:?}",
+                        email,
+                        err
+                    );
+                }
+            }
+        }
+
+        raw.into_iter()
+            .filter(|l| {
+                if let Some(uid) = current_host_id {
+                    l.user_id == uid
+                } else {
+                    true
+                }
+            })
+            .collect()
+    };
+
+    // Host list for admin assignment: fetch users with host/admin role
+    let all_users = api
+        .get_all_users(Some(1), Some(100), None)
         .await
         .unwrap_or_default();
+    let mut eligible_hosts: Vec<common::models::UserResponse> = all_users
+        .into_iter()
+        .filter(|u| {
+            u.roles
+                .iter()
+                .any(|r| r.eq_ignore_ascii_case("host") || r.eq_ignore_ascii_case("admin"))
+        })
+        .collect();
+
+    if eligible_hosts.is_empty()
+        && let Some(ref au) = admin_user
+        && let Some(uid) = au.id
+    {
+        eligible_hosts.push(common::models::UserResponse {
+            id: uid,
+            email: au.email.clone(),
+            first_name: au.name.clone(),
+            last_name: String::new(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            attributes: serde_json::Value::Object(serde_json::Map::new()),
+            roles: vec![au.role.clone()],
+            default_currency: "USD".to_string(),
+            deleted_at: None,
+        });
+    }
+
+    let initial_user_id = template.as_ref().map(|t| t.user_id).or_else(|| {
+        if is_admin {
+            eligible_hosts.first().map(|h| h.id)
+        } else {
+            current_host_id
+        }
+    });
 
     // Pre-populate fields from template if cloning
 
@@ -665,7 +889,7 @@ async fn render_new_or_cloned_listing(
                 <div>
                     <span class="text-primary font-bold tracking-widest uppercase text-xs">
                         if template.is_some() {
-                            "Duplicate & Create New Villa"
+                            "Duplicate & Create New Listing"
                         } else {
                             "Property Creation Studio"
                         }
@@ -674,7 +898,7 @@ async fn render_new_or_cloned_listing(
                         if let Some(ref t) = template {
                             "Clone from: "(t.name.clone())
                         } else {
-                            "Add New Luxury Caribbean Villa"
+                            "Add New Luxury Caribbean Listing"
                         }
                     </h1>
                 </div>
@@ -684,28 +908,36 @@ async fn render_new_or_cloned_listing(
             </div>
 
             // Clone from existing listing selector banner
-            <div class="bg-base-100 dark:bg-base-200/90 p-4 rounded-2xl border-2 border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
-                <div class="flex items-center gap-2">
-                    <span class="text-lg">"⚡"</span>
-                    <span class="font-bold text-base-content">"Want to clone an existing villa as your starting template?"</span>
+            if !available_listings.is_empty() {
+                <div class="bg-base-100 dark:bg-base-200/90 p-4 rounded-2xl border-2 border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="text-lg">"⚡"</span>
+                        <span class="font-bold text-base-content">"Want to clone an existing listing as your starting template?"</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="template-select" class="select select-bordered border-2 border-base-300 select-xs rounded-lg font-semibold bg-base-100">
+                            for item in &available_listings {
+                                let item_key = if !item.slug.is_empty() {
+                                    item.slug.clone()
+                                } else {
+                                    item.id.to_string()
+                                };
+                                let is_selected = template.as_ref().is_some_and(|t| t.id == item.id || t.slug == item.slug);
+                                <option value=(item_key) selected=(is_selected)>
+                                    (format!("{} ({})", item.name, item.city.clone().unwrap_or_else(|| "Jamaica".to_string())))
+                                </option>
+                            }
+                        </select>
+                        <button
+                            onclick="var slug = document.getElementById('template-select').value; if (slug) { window.location.href = '/admin/listings/clone/' + encodeURIComponent(slug); }"
+                            type="button"
+                            class="btn btn-primary btn-xs rounded-lg font-bold shadow-xs"
+                        >
+                            "Load Template"
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <select id="template-select" class="select select-bordered border-2 border-base-300 select-xs rounded-lg font-semibold bg-base-100">
-                        <option value="the-reef-house">"The Reef House"</option>
-                        <option value="blue-lagoon-sanctuary">"Blue Lagoon Sanctuary"</option>
-                        <option value="negril-sunset-cliffside-estate">"Negril Sunset Cliffside Estate"</option>
-                        <option value="ocho-rios-coastal-haven">"Ocho Rios Coastal Haven"</option>
-                        <option value="kingston-skyline-luxury-penthouse">"Kingston Skyline Luxury Penthouse"</option>
-                    </select>
-                    <button
-                        onclick="var slug = document.getElementById('template-select').value; window.location.href = '/admin/listings/clone/' + slug;"
-                        type="button"
-                        class="btn btn-primary btn-xs rounded-lg font-bold shadow-xs"
-                    >
-                        "Load Template"
-                    </button>
-                </div>
-            </div>
+            }
 
             <div id="create-listing-feedback" class="hidden alert mb-6 rounded-2xl font-semibold shadow-md">
                 <span id="create-listing-feedback-msg"></span>
@@ -726,7 +958,7 @@ async fn render_new_or_cloned_listing(
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
                         <div class="md:col-span-2">
-                            <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Villa Name / Title"</label>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Listing Name / Title"</label>
                             <input
                                 type="text"
                                 name="name"
@@ -753,20 +985,48 @@ async fn render_new_or_cloned_listing(
                         </div>
                     </div>
 
-                    if !hosts.is_empty() {
-                        <div>
-                            <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Assigned Host / Property Owner"</label>
+                    if is_admin {
+                        <div class="bg-base-200/50 p-4 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80">
+                                    "Assigned Host / Property Owner"
+                                    <span class="text-error font-black ml-1">"*"</span>
+                                </label>
+                                <span class="badge badge-warning badge-xs font-bold">"Host Assignment Required"</span>
+                            </div>
                             <select
                                 name="user_id"
                                 id="new-listing-user-id"
+                                required=(true)
                                 class="select select-bordered border-2 border-base-300 dark:border-base-content/20 bg-base-100 dark:bg-base-300/40 text-base-content font-bold rounded-xl w-full shadow-xs"
                             >
-                                for host in &hosts {
-                                    <option value=(host.id.to_string())>
+                                if eligible_hosts.is_empty() {
+                                    <option value="" disabled=(true) selected=(true)>
+                                        "No registered hosts found in platform"
+                                    </option>
+                                }
+                                for host in &eligible_hosts {
+                                    let is_selected = initial_user_id == Some(host.id);
+                                    <option value=(host.id.to_string()) selected=(is_selected)>
                                         (format!("{} {} ({})", host.first_name, host.last_name, host.email))
                                     </option>
                                 }
                             </select>
+                            <p class="text-[11px] text-base-content/60 mt-1.5">
+                                "Each listing must be assigned to a host for revenue payouts and guest communications."
+                            </p>
+                        </div>
+                    } else if let Some(uid) = current_host_id {
+                        <input type="hidden" name="user_id" value=(uid.to_string()) />
+                        <div class="bg-base-200/40 p-3 rounded-xl border border-base-300 dark:border-base-content/10 flex items-center justify-between text-xs">
+                            <span class="text-base-content/70">"Assigned Host:"</span>
+                            <span class="font-bold text-base-content">
+                                if let Some(ref au) = admin_user {
+                                    (format!("{} ({})", au.name, au.email))
+                                } else {
+                                    "Current Host"
+                                }
+                            </span>
                         </div>
                     }
 
@@ -857,7 +1117,7 @@ async fn render_new_or_cloned_listing(
                         <span class="badge badge-accent badge-sm font-bold">"Floor Plan"</span>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Max Guests"</label>
                             <input type="number" name="max_guests" value=(initial_guests) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
@@ -897,17 +1157,18 @@ async fn render_new_or_cloned_listing(
                         <span class="badge badge-warning badge-sm font-bold">"Financial Yield"</span>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
-                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        // Row 1: Base Rate (2 cols) + Min Stay (1 col) + Guests Included (1 col) = 4 cols
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10 col-span-1 sm:col-span-2">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Base Rate / Night"</label>
                             <div class="join w-full">
-                                <select name="base_currency" class="select select-bordered border-2 border-base-300 join-item font-bold bg-base-100">
+                                <select name="base_currency" class="select select-bordered border-2 border-base-300 join-item font-bold bg-base-100 w-24 shrink-0 focus:z-10">
                                     <option value="USD" selected=(initial_currency == "USD")>"USD"</option>
                                     <option value="JMD" selected=(initial_currency == "JMD")>"JMD"</option>
                                     <option value="EUR" selected=(initial_currency == "EUR")>"EUR"</option>
                                     <option value="GBP" selected=(initial_currency == "GBP")>"GBP"</option>
                                 </select>
-                                <input type="number" name="price_per_night" value=(initial_price) min="50" step="10" class="input input-bordered border-2 border-base-300 join-item w-full font-bold bg-base-100" />
+                                <input type="number" name="price_per_night" value=(initial_price) min="50" step="10" class="input input-bordered border-2 border-base-300 join-item flex-1 min-w-0 font-bold bg-base-100 px-4 focus:z-10" />
                             </div>
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
@@ -915,9 +1176,11 @@ async fn render_new_or_cloned_listing(
                             <input type="number" name="minimum_stay" value=(initial_min_stay) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Platform Comm %"</label>
-                            <input type="number" name="commission_pct" value=(initial_commission) min="0" max="100" step="0.1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Guests Included"</label>
+                            <input type="number" name="guests_included" value=(initial_guests_included) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
+
+                        // Row 2: Stay Duration Discounts & Booking Policies = 4 cols
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Weekly Disc %"</label>
                             <input type="number" name="weekly_discount_percentage" value=(initial_weekly_disc) min="0" max="50" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
@@ -927,9 +1190,15 @@ async fn render_new_or_cloned_listing(
                             <input type="number" name="monthly_discount_percentage" value=(initial_monthly_disc) min="0" max="50" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Turnover Buffer"</label>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Turnover Buffer (Days)"</label>
                             <input type="number" name="days_between_bookings" value=(initial_days_between) min="0" max="7" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Platform Comm %"</label>
+                            <input type="number" name="commission_pct" value=(initial_commission) min="0" max="100" step="0.1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+
+                        // Row 3: Fees & Extra Guests = 4 cols
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <div class="flex items-center justify-between mb-1">
                                 <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70">"Cleaning Fee"</label>
@@ -944,12 +1213,8 @@ async fn render_new_or_cloned_listing(
                             </div>
                             <input type="number" name="damage_deposit" value=(initial_damage_deposit_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
-                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Guests Included"</label>
-                            <input type="number" name="guests_included" value=(initial_guests_included) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
-                        </div>
-                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Extra Guest Fee/Night"</label>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10 col-span-1 sm:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Extra Guest Fee / Night"</label>
                             <input type="number" name="extra_guest_fee" value=(initial_extra_guest_fee_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                     </div>
@@ -998,9 +1263,9 @@ async fn render_new_or_cloned_listing(
                             <span id="btn-create-listing-spinner" class="loading loading-spinner loading-sm hidden"></span>
                             <span id="btn-create-listing-text">
                                 if template.is_some() {
-                                    "Create Duplicate Villa"
+                                    "Create Duplicate Listing"
                                 } else {
-                                    "Create Villa Listing"
+                                    "Create Listing"
                                 }
                             </span>
                         </button>
@@ -1036,7 +1301,7 @@ async fn render_new_or_cloned_listing(
                         var rawName = fd.get('name');
                         var name = rawName ? rawName.toString().trim() : '';
                         if (!name) {
-                            showFeedback('Please enter the villa name.', false);
+                            showFeedback('Please enter the listing name.', false);
                             return false;
                         }
 
@@ -1046,7 +1311,7 @@ async fn render_new_or_cloned_listing(
 
                         if (btn) btn.disabled = true;
                         if (spinner) spinner.classList.remove('hidden');
-                        if (btnText) btnText.innerText = 'Creating Villa...';
+                        if (btnText) btnText.innerText = 'Creating Listing...';
 
                         var rawLat = fd.get('latitude');
                         var rawLon = fd.get('longitude');
@@ -1109,23 +1374,23 @@ async fn render_new_or_cloned_listing(
                         .then(function(res) {
                             return res.json().then(function(data) {
                                 if (data.success) {
-                                    showFeedback('Villa listing created successfully! Redirecting...', true);
+                                    showFeedback('Listing created successfully! Redirecting...', true);
                                     setTimeout(function() {
                                         window.location.href = '/admin/listings';
                                     }, 600);
                                 } else {
                                     if (btn) btn.disabled = false;
                                     if (spinner) spinner.classList.add('hidden');
-                                    if (btnText) btnText.innerText = 'Create Villa Listing';
-                                    showFeedback(data.message ? data.message : 'Failed to create villa listing.', false);
+                                    if (btnText) btnText.innerText = 'Create Listing';
+                                    showFeedback(data.message ? data.message : 'Failed to create listing.', false);
                                 }
                             });
                         })
                         .catch(function(err) {
                             if (btn) btn.disabled = false;
                             if (spinner) spinner.classList.add('hidden');
-                            if (btnText) btnText.innerText = 'Create Villa Listing';
-                            showFeedback('Network error while creating villa listing.', false);
+                            if (btnText) btnText.innerText = 'Create Listing';
+                            showFeedback('Network error while creating listing.', false);
                         });
 
                         return false;
@@ -1271,7 +1536,7 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                         class="btn btn-secondary btn-sm rounded-full font-bold shadow-xs"
                         title="Duplicate this listing to create a new property"
                     >
-                        "Duplicate Villa 📑"
+                        "Duplicate Listing 📑"
                     </a>
                     <a href=(format!("/admin/listings/{}/pricing", id_str)) class="btn btn-warning btn-sm rounded-full font-bold shadow-xs">
                         "Dynamic Pricing ⏱"
@@ -1297,7 +1562,7 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
                         <div class="md:col-span-2">
-                            <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Villa Name / Title"</label>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-base-content/80 mb-1.5">"Listing Name / Title"</label>
                             <input
                                 type="text"
                                 name="name"
@@ -1406,7 +1671,7 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                         <span class="badge badge-accent badge-sm font-bold">"Floor Plan"</span>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Max Guests"</label>
                             <input type="number" name="max_guests" value=(guests) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
@@ -1446,17 +1711,18 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                         <span class="badge badge-warning badge-sm font-bold">"Financial Yield"</span>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
-                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        // Row 1: Base Rate (2 cols) + Min Stay (1 col) + Guests Included (1 col) = 4 cols
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10 col-span-1 sm:col-span-2">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Base Rate / Night"</label>
                             <div class="join w-full">
-                                <select name="base_currency" class="select select-bordered border-2 border-base-300 join-item font-bold bg-base-100">
+                                <select name="base_currency" class="select select-bordered border-2 border-base-300 join-item font-bold bg-base-100 w-24 shrink-0 focus:z-10">
                                     <option value="USD" selected=(currency == "USD")>"USD"</option>
                                     <option value="JMD" selected=(currency == "JMD")>"JMD"</option>
                                     <option value="EUR" selected=(currency == "EUR")>"EUR"</option>
                                     <option value="GBP" selected=(currency == "GBP")>"GBP"</option>
                                 </select>
-                                <input type="number" name="price" value=(price) class="input input-bordered border-2 border-base-300 join-item w-full font-bold bg-base-100" />
+                                <input type="number" name="price_per_night" value=(price) min="50" step="10" class="input input-bordered border-2 border-base-300 join-item flex-1 min-w-0 font-bold bg-base-100 px-4 focus:z-10" />
                             </div>
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
@@ -1464,9 +1730,11 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                             <input type="number" name="minimum_stay" value=(min_stay) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Platform Comm %"</label>
-                            <input type="number" name="commission_pct" value=(initial_commission) min="0" max="100" step="0.1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Guests Included"</label>
+                            <input type="number" name="guests_included" value=(guests_included) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
+
+                        // Row 2: Stay Duration Discounts & Booking Policies = 4 cols
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Weekly Disc %"</label>
                             <input type="number" name="weekly_discount_percentage" value=(weekly_disc) min="0" max="50" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
@@ -1476,9 +1744,15 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                             <input type="number" name="monthly_discount_percentage" value=(monthly_disc) min="0" max="50" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Turnover Buffer"</label>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Turnover Buffer (Days)"</label>
                             <input type="number" name="days_between_bookings" value=(days_between) min="0" max="7" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Platform Comm %"</label>
+                            <input type="number" name="commission_pct" value=(initial_commission) min="0" max="100" step="0.1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
+                        </div>
+
+                        // Row 3: Fees & Extra Guests = 4 cols
                         <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
                             <div class="flex items-center justify-between mb-1">
                                 <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70">"Cleaning Fee"</label>
@@ -1493,12 +1767,8 @@ async fn render_edit_listing_content(cx: &Cx, id: String) -> Result<impl View> {
                             </div>
                             <input type="number" name="damage_deposit" value=(damage_deposit_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
-                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Guests Included"</label>
-                            <input type="number" name="guests_included" value=(guests_included) min="1" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
-                        </div>
-                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10">
-                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Extra Guest Fee/Night"</label>
+                        <div class="bg-base-200/50 p-3.5 rounded-2xl border border-base-300 dark:border-base-content/10 col-span-1 sm:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-base-content/70 mb-1">"Extra Guest Fee / Night"</label>
                             <input type="number" name="extra_guest_fee" value=(extra_guest_fee_str) min="0" step="0.01" class="input input-bordered border-2 border-base-300 bg-base-100 font-bold text-center w-full rounded-xl" />
                         </div>
                     </div>

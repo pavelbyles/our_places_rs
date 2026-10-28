@@ -277,6 +277,110 @@ async fn test_update_user_add_role_and_profile() {
 }
 
 #[actix_web::test]
+async fn test_update_admin_user_password_and_protection() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let migrations_path = Path::new("../../db_core/migrations");
+    let test_db = TestPg::new(db_url, migrations_path);
+    let pool = test_db.get_pool().await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    // 1. Create admin user
+    let email = format!("admin_update_{}@example.com", Uuid::now_v7());
+    let create_body = json!({
+        "email": email,
+        "password": "initial_admin_password",
+        "first_name": "Initial",
+        "last_name": "Admin",
+        "phone_number": "+18765550100",
+        "is_active": true,
+        "roles": ["admin"],
+        "attributes": {"access_level": "super"}
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/")
+        .set_json(&create_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let user: UserResponse = test::read_body_json(resp).await;
+    let user_id = user.id;
+
+    // 2. Update password and profile while keeping roles & active status identical (standard admin UI flow)
+    let update_body = json!({
+        "password": "new_super_secret_password_2026",
+        "first_name": "Updated",
+        "roles": ["admin"],
+        "is_active": true,
+        "is_verified": true
+    });
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/users/user/{}", user_id))
+        .set_json(&update_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let updated_user: UserResponse = test::read_body_json(resp).await;
+    assert_eq!(updated_user.first_name, "Updated");
+    assert!(updated_user.roles.contains(&UserRole::Admin.to_string()));
+
+    // 3. Attempt to deactivate the admin user -> must return 403 Forbidden
+    let deactivate_body = json!({
+        "is_active": false
+    });
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/users/user/{}", user_id))
+        .set_json(&deactivate_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    // 4. Attempt to strip the admin role -> must return 403 Forbidden
+    let strip_role_body = json!({
+        "roles": ["booker"]
+    });
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/users/user/{}", user_id))
+        .set_json(&strip_role_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    // 5. Update admin password with omitted/null roles & active status (UI modal pattern)
+    let pwd_only_body = json!({
+        "password": "final_admin_password_2026"
+    });
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/users/user/{}", user_id))
+        .set_json(&pwd_only_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 6. Verify authentication with the newly updated password succeeds
+    let login_body = json!({
+        "email": email,
+        "password": "final_admin_password_2026"
+    });
+    let req = test::TestRequest::post()
+        .uri("/api/v1/users/login")
+        .set_json(&login_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
 async fn test_create_user_booker_missing_profile() {
     dotenvy::dotenv().ok();
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");

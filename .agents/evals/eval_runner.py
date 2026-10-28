@@ -206,6 +206,24 @@ pub struct NotificationConfig {
 - **Category**: Automated Checks & Guardrails
 - **Enforcement**: Deterministic pre-commit hook / CI check
 - **Actionable Fix**: Run `cargo sqlx prepare --check` before commit.
+""",
+        "plan-eng-review:Multi-Agent Engineering Plan Review Test": """
+### Lead Architect Review Findings
+- **Dimension Score (0–10)**: 9/10
+- **Hard Invariant Compliance**: PASS
+- **Review Panel**: Lead Architect, Edge Case Analyst, Security Reviewer, DB Guardian, QA Strategist
+- **Evaluation**: Evaluated plan compliance against CONSTRAINTS.md and zero-tolerance invariants.
+
+### Unified Engineering Review Scorecard
+| Dimension | Reviewer | Score (0–10) | Status | Key Blocker / Recommendation |
+| :--- | :--- | :---: | :---: | :--- |
+| Architecture & Flow | Lead Architect | 9/10 | Pass | Clean monadic combinator pipeline |
+| Edge Cases & Scale | Edge Case Analyst | 9/10 | Pass | Graceful connection reset handling |
+| Security Posture | Security Reviewer | 9/10 | Pass | Claims verified, V4 signed URLs enforced |
+| Concurrency & DB | DB Guardian | 10/10 | Pass | Row-level locks and 15m hold TTL verified |
+| Test Matrix & QA | QA Strategist | 9/10 | Pass | Comprehensive integration and unit coverage |
+
+**Gating Criteria**: 100% compliance with CONSTRAINTS.md. Average score: 9.2/10. Status: LOCKED.
 """
     }
 
