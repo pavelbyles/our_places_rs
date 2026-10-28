@@ -24,7 +24,7 @@ test.describe('Guest Portal - Statutory Tax Documents & Date Modification', () =
     await expect(docContainer).toBeVisible();
     await expect(page.locator('h1, h2, h3', { hasText: 'Payment Receipt' })).toBeVisible();
     await expect(page.locator('text=' + receiptNumber)).toBeVisible();
-    await expect(page.locator('.badge', { hasText: 'Issued' })).toBeVisible();
+    await expect(docContainer.getByText('Issued', { exact: true })).toBeVisible();
 
     // Verify statutory Jamaican GCT (15.0%) and line items
     await expect(page.locator('text=15.0%').or(page.locator('text=Jamaican GCT')).first()).toBeVisible();
@@ -33,7 +33,8 @@ test.describe('Guest Portal - Statutory Tax Documents & Date Modification', () =
     await expect(page.locator('text=Security Damage Deposit').or(page.locator('text=Security deposit')).first()).toBeVisible();
 
     // Verify JMD equivalent amounts and conversion rate
-    await expect(page.locator('text=JMD').first()).toBeVisible();
+    // Scoped to the document: the navbar currency menu also has a (hidden) JMD link.
+    await expect(docContainer.getByText(/JMD/).first()).toBeVisible();
     await expect(page.locator('text=160.0000 JMD').or(page.locator('text=160.00')).first()).toBeVisible();
 
     // Verify print button
@@ -57,7 +58,7 @@ test.describe('Guest Portal - Statutory Tax Documents & Date Modification', () =
     const resp = await page.goto(`/bookings/${bookingId}/change-dates`);
     expect(resp?.status()).toBe(200);
 
-    await expect(page.locator('h1', { hasText: 'Modify Reservation Dates' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'Modify Reservation' })).toBeVisible();
     await expect(page.locator('text=Reservation #OP-E2E-7788')).toBeVisible();
 
     // Check-in and check-out date inputs

@@ -121,9 +121,9 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ## Phase 2: Parity baseline against the OLD apps
 
-- [ ] **Task 10: Migrate guest specs off daisyUI selectors and `localStorage`**
+- [x] **Task 10: Migrate guest specs off daisyUI selectors and `localStorage`**
   - **Scope:** M
-  - **Description:** Replace `.card/.btn/.badge/.alert/.modal/.chat` selectors with roles/labels/IDs/`data-testid` in all 7 guest specs; tag `localStorage` assertions `@old-only` and add equivalent UI assertions.
+  - **Description:** Replace `.card/.btn/.badge/.alert/.modal/.chat` selectors with roles/labels/IDs/`data-testid` in all 7 guest specs, and update assertions that had drifted from the app ("Villa" → "Listing" copy). The `localStorage` assertion is gated with `isNewPortal()` (`fixtures/portal.ts`) and paired with a UI assertion.
   - **Files Touched:** `playwright/e2e/guest-portal/*.spec.ts`, `playwright/e2e/fixtures/auth.fixture.ts`
   - **Acceptance Criteria:**
     - [ ] `rg '\.(card|btn|badge|alert|modal|chat)\b' playwright/e2e/guest-portal` returns nothing.

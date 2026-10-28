@@ -9,15 +9,15 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
     expect(response?.status()).toBe(200);
 
     // Main headings and filters
-    await expect(page.locator('h1')).toHaveText('Explore All Villas');
-    await expect(page.locator('input[placeholder*="Search villa name"]')).toBeVisible();
+    await expect(page.locator('h1')).toHaveText('Explore All Listings');
+    await expect(page.locator('input[placeholder*="Search listing name"]')).toBeVisible();
 
     // Listings grid should contain the seeded villa
     const grid = page.locator('#listings-grid');
     await expect(grid).toBeVisible();
 
     // Verify villa card contents
-    const villaCard = grid.locator('.card', { hasText: targetVilla.name });
+    const villaCard = grid.locator(`#listing-card-${targetVilla.slug}`);
     await expect(villaCard).toBeVisible();
     await expect(villaCard).toContainText('USD 650');
     await expect(villaCard).toContainText('New Kingston, Jamaica');
@@ -28,11 +28,11 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
     await expect(detailLink).toBeVisible();
   });
 
-  test('should navigate to listing detail page when clicking View Villa', async ({ page }) => {
+  test('should navigate to listing detail page when clicking View Listing', async ({ page }) => {
     await page.goto('/listings');
 
-    const villaCard = page.locator('#listings-grid .card', { hasText: targetVilla.name });
-    const viewBtn = villaCard.getByRole('link', { name: 'View Villa' });
+    const villaCard = page.locator(`#listings-grid #listing-card-${targetVilla.slug}`);
+    const viewBtn = villaCard.getByRole('link', { name: 'View Listing' });
     await expect(viewBtn).toBeVisible();
 
     await viewBtn.click();

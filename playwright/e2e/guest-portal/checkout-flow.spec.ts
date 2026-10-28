@@ -20,7 +20,7 @@ test.describe('Guest Portal - Checkout Flow & 15-Minute Hold', () => {
     await expect(timerBadge).toHaveText(/\d{1,2}:\d{2}\s+Remaining/);
 
     // 2. Verify listing summary card
-    await expect(page.locator('.card', { hasText: targetVilla.name })).toBeVisible();
+    await expect(page.getByRole('main').getByText(targetVilla.name).first()).toBeVisible();
     await expect(page.locator('text=New Kingston, Jamaica').first()).toBeVisible();
 
     // 3. Verify price breakdown, cleaning fee, damage deposit, and 15% statutory GCT

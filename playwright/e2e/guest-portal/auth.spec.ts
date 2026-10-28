@@ -34,11 +34,11 @@ test.describe('Guest Portal - Authentication Flows', () => {
   });
 
   test('should provide links to registration and passwordless code login', async ({ page }) => {
-    // Scope to the login card to avoid strict mode violation with navbar and footer links
-    const registerLink = page.locator('.card a[href="/register"]');
+    // Scope to the page body to avoid strict mode violations with navbar and footer links
+    const registerLink = page.getByRole('main').locator('a[href="/register"]');
     await expect(registerLink).toBeVisible();
 
-    const verifyLink = page.locator('.card a[href="/verify"]');
+    const verifyLink = page.getByRole('main').locator('a[href="/verify"]');
     await expect(verifyLink).toBeVisible();
   });
 });

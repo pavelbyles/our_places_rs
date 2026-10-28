@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
+import { isNewPortal } from '../fixtures/portal.js';
 
 const DB_URL =
   process.env.DATABASE_URL || 'postgres://postgres:password@localhost:5432/our_places';
@@ -163,12 +164,18 @@ test.describe('Guest Portal - Email Pub/Sub & Verification Flow', () => {
       })
       .toBe(true);
 
-    // 10. Verify authenticated guest session in localStorage
-    const authUserJson = await page.evaluate(() => localStorage.getItem('op_auth_user'));
-    expect(authUserJson).not.toBeNull();
-    const authUser = JSON.parse(authUserJson!);
-    expect(authUser.email).toBe(testEmail);
-    expect(authUser.role).toBe('booker');
+    // 10. The navbar shows the signed-in guest menu
+    await expect(page.locator('#nav-user-dropdown')).toBeVisible();
+
+    // Legacy portal only: auth state is mirrored into localStorage. The
+    // redesigned portal keeps it on the server (parity inventory G28).
+    if (!isNewPortal(test.info())) {
+      const authUserJson = await page.evaluate(() => localStorage.getItem('op_auth_user'));
+      expect(authUserJson).not.toBeNull();
+      const authUser = JSON.parse(authUserJson!);
+      expect(authUser.email).toBe(testEmail);
+      expect(authUser.role).toBe('booker');
+    }
   });
 
   test('should reject invalid 6-digit verification code', async ({ page }) => {
