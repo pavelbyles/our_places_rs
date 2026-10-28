@@ -412,7 +412,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/messaging --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 23, Task 37
 
-- [ ] **Task 40: Tax documents**
+- [x] **Task 40: Tax documents**
   - **Scope:** S
   - **Description:** `/bookings/{id}/documents/{number}` with ownership check and `data-print`.
   - **Files Touched:** `web_ui_guest/src/pages/documents.rs`
