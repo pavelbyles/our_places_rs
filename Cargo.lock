@@ -6105,6 +6105,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
+ "serde",
  "thiserror",
  "topcoat",
  "uuid",

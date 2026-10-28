@@ -4,6 +4,8 @@
 
 /// Backend API wrappers and request helpers.
 pub mod api_client;
+/// Authenticated user model and session lookup for guest and admin portals.
+pub mod auth;
 /// HTTP client for the backend services, registered in Topcoat's app context.
 pub mod client;
 /// Application error type for Topcoat SSR handlers.

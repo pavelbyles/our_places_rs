@@ -69,7 +69,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_client -p web_app_common_tc -p web_app_tc -p web_app_admin_tc && git diff --quiet b77cfb7a -- web_app_tc web_app_admin_tc`
   - **Dependencies:** Task 1
 
-- [ ] **Task 5: Move Rust auth/session logic into `web_client::auth`**
+- [x] **Task 5: Move Rust auth/session logic into `web_client::auth`**
   - **Scope:** S
   - **Description:** Move `AuthUser`, `AdminAuthError`, `token_hash_to_hex`, `get_admin_session`, `get_guest_session`, `require_admin_auth`, `require_admin_role_auth`, `get_authenticated_*` (legacy, unchanged behavior, doc-commented as legacy). `web_app_common_tc::auth` becomes `pub use web_client::auth::*;` + `auth_init_script`.
   - **Files Touched:** `web_client/src/auth.rs`, `web_app_common_tc/src/auth.rs`, `web_app_common_tc/src/lib.rs`
