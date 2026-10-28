@@ -2,6 +2,8 @@
 pub mod aliases;
 /// Sign in and sign out.
 pub mod auth;
+/// Booking schedule and details.
+pub mod bookings;
 /// Dashboard.
 pub mod dashboard;
 /// Listings studio.

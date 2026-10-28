@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth.fixture.js';
+import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
 
 // Parity inventory A20: the legacy admin's booking-details dialog never opens
 // (its inline script throws "SyntaxError: Unexpected token ';'", so
@@ -72,7 +73,7 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
 
     // Status message and badge should reflect successful configuration
     await expect(badge).toContainText(`Configured (${testCode})`);
-    await expect(badge).toHaveClass(/badge-success/);
+    await expect(badge).toHaveAttribute('data-state', 'configured');
     await expect(statusMsg).toBeVisible();
     await expect(statusMsg).toContainText('Door access code updated successfully');
 
@@ -90,4 +91,31 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
     await expect(doorCodeInput).toHaveValue(testCode);
     await expect(badge).toContainText(`Configured (${testCode})`);
   });
+
+  test('shows admins the refund quote in the details dialog', NEW_ONLY, async ({ authenticatedAdminPage: page }) => {
+    await page.locator('button:has-text("Details")').first().click();
+    const dialog = page.locator('#admin-booking-details-dialog');
+    await dialog.getByRole('button', { name: 'Show refund quote' }).click();
+    await expect(dialog.locator('#admin-cancellation-quote')).toContainText('Refund total');
+  });
+
+  test('exports the schedule as CSV', NEW_ONLY, async ({ authenticatedAdminPage: page }) => {
+    const res = await page.request.get('/admin/bookings/export.csv');
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-type']).toContain('text/csv');
+    expect((await res.text()).split('\r\n')[0]).toBe('confirmation_code,listing,check_in,check_out,guests,status,currency,total');
+  });
+
+  test("keeps hosts out of other listings' bookings and refund quotes", NEW_ONLY, async ({ browser }) => {
+    const context = await browser.newContext({ baseURL: 'http://localhost:3012' });
+    const page = await context.newPage();
+    await loginAdminAs(page, createHost());
+    const seeded = '018f3a5e-6b9c-7000-8000-000000000010';
+    expect((await page.goto(`/admin/bookings/${seeded}`))?.status()).toBe(404);
+    expect((await page.goto(`/admin/bookings/${seeded}/cancellation-quote`))?.status()).toBe(403);
+    await page.goto('/admin/bookings');
+    await expect(page.locator('#admin-bookings-table')).not.toContainText('OP-E2E-7788');
+    await context.close();
+  });
 });
+

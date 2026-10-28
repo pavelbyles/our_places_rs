@@ -506,7 +506,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/pricing-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 46
 
-- [ ] **Task 50: Admin bookings list and detail dialog**
+- [x] **Task 50: Admin bookings list and detail dialog**
   - **Scope:** M
   - **Description:** A19–A21, A24, A24b: list, `hx-get` detail dialog, status + door-code forms, documents, cancellation quote (admin role only; hosts 403, control not rendered).
   - **Files Touched:** `web_ui_admin/src/pages/bookings/{mod,list,detail,actions}.rs`
