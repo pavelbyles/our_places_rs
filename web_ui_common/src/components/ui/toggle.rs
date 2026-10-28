@@ -5,8 +5,6 @@ use topcoat::{
     view::{Attributes, Child, PromotedStr, StaticClass, View, class, component, view},
 };
 
-use crate::components::svg_icon::svg_icon;
-
 /// How a [`toggle`] relates to the others sharing its `name`.
 ///
 /// [`Default`] is `ToggleKind::Independent`, used when no kind is given.

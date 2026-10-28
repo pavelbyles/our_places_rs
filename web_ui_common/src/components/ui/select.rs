@@ -3,7 +3,7 @@
 use topcoat::{
     Result,
     context::Cx,
-    icon::{IconData, icon, iconify::iconify_icon},
+    icon::{IconData, iconify::iconify_icon},
     view::{Attributes, Child, StaticClass, View, attributes, class, component, view},
 };
 
