@@ -275,7 +275,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common domain`
   - **Dependencies:** Task 24
 
-- [ ] **Task 26: Navbar and shells**
+- [x] **Task 26: Navbar and shells**
   - **Scope:** M
   - **Description:** `navbar`, `guest_shell` (server-rendered auth state, mobile `sheet`, footer, theme button, `<html class>` from Task 19) and `admin_shell` (sidebar; user-management links only for `AdminRole::Admin`).
   - **Files Touched:** `web_ui_common/src/components/navbar.rs`, `web_ui_common/src/{shell_guest,shell_admin}.rs`, `web_ui_common/src/lib.rs`

@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["rlib"]
 
 [dependencies]
-topcoat = { workspace = true, features = ["htmx", "tailwind", "session", "ui", "icon-iconify"] }
+topcoat = { workspace = true, features = ["htmx", "tailwind", "session", "ui", "icon-iconify", "font-fontsource", "asset"] }
 web_client = { workspace = true }
 common = { workspace = true }
 chrono = { workspace = true }

@@ -6,6 +6,8 @@ pub mod domain;
 pub mod framed_image;
 /// Guest home hero.
 pub mod hero;
+/// Header controls (theme toggle).
+pub mod navbar;
 /// Star rating display and input.
 pub mod star_rating;
 /// Dashboard metric tile.

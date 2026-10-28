@@ -13,3 +13,12 @@ pub mod security_headers;
 
 /// Hashed client assets: `ui.js` and vendored htmx.
 pub mod assets;
+
+/// Self-hosted Newsreader and Inter.
+pub mod fonts;
+
+/// Guest portal page shell.
+pub mod shell_guest;
+
+/// Admin portal page shell.
+pub mod shell_admin;
