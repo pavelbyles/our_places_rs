@@ -201,10 +201,10 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ## Phase 3: `web_ui_common`
 
-- [ ] **Task 18: Theme stylesheets**
+- [x] **Task 18: Theme stylesheets**
   - **Scope:** S
   - **Description:** `guest.css` / `admin.css` with exact tokens from `guest-theme.md` §1/§6 (light, `.dim`, `.dark`), `@custom-variant dark`, Newsreader + Inter via `topcoat-font`; `build.rs` in each bin compiles its theme.
-  - **Files Touched:** `web_ui_common/src/style/{guest,admin}.css`, `web_ui_guest/build.rs`, `web_ui_admin/build.rs`
+  - **Files Touched:** `web_ui_common/src/style/{base,guest,admin}.css`, `web_ui_{guest,admin}/src/style/tailwind.css` (entry points), `web_ui_common/tests/theme_tokens.rs` (diffs guest tokens against the design doc). Font files are wired in Task 26 with the shells.
   - **Acceptance Criteria:**
     - [ ] Token values match the design doc (scripted diff of `--*` declarations).
     - [ ] No raw hex outside the two theme files: `rg '#[0-9A-Fa-f]{6}' web_ui_*/src --glob '!**/style/*.css'` empty.

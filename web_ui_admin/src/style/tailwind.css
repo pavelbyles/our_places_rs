@@ -1,1 +1,7 @@
+/* Tailwind entry point for web_ui_admin: the shared admin theme plus the class
+   sources to scan (this crate and web_ui_common). */
 @import "tailwindcss";
+@import "../../../web_ui_common/src/style/admin.css";
+
+@source "../../src/**/*.rs";
+@source "../../../web_ui_common/src/**/*.rs";
