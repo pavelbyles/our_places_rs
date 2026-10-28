@@ -18,14 +18,16 @@ fn tokens(css: &str) -> BTreeMap<String, BTreeMap<String, String>> {
                 .then(|| sel.to_string());
         } else if line == "}" {
             current = None;
-        } else if let (Some(sel), Some((name, value))) = (&current, line.split_once(':')) {
-            if let Some(name) = name.trim().strip_prefix("--") {
-                let entry: &mut BTreeMap<String, String> = blocks.entry(sel.clone()).or_default();
-                entry.insert(
+        } else if let (Some(sel), Some((name, value))) = (&current, line.split_once(':'))
+            && let Some(name) = name.trim().strip_prefix("--")
+        {
+            blocks
+                .entry(sel.clone())
+                .or_insert_with(BTreeMap::new)
+                .insert(
                     name.to_string(),
                     value.trim().trim_end_matches(';').trim().to_lowercase(),
                 );
-            }
         }
     }
     blocks
