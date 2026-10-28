@@ -79,6 +79,6 @@ fn html_class_and_cycle() {
     assert_eq!(ThemeChoice::Dark.next(), ThemeChoice::Light);
     assert_eq!(
         ThemeChoice::Light.next().toggle_label(),
-        "Switch to dark theme"
+        "Switch to dim theme"
     );
 }
