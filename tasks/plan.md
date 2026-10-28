@@ -160,10 +160,10 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test --project=backend-api hold-expiry`
   - **Dependencies:** None
 
-- [ ] **Task 14: Old-app specs — bookings & reservation changes**
+- [x] **Task 14: Old-app specs — bookings & reservation changes**
   - **Scope:** M
   - **Description:** New `bookings.spec.ts` and `reservation-changes.spec.ts` covering G14–G23 against :3000. Rows marked `fixed` in the inventory (G14 scope, G16) are `@new-only`.
-  - **Files Touched:** `playwright/e2e/guest-portal/{bookings,reservation-changes}.spec.ts`, `playwright/e2e/fixtures/test-data.ts`
+  - **Files Touched:** `playwright/e2e/guest-portal/{bookings,reservation-changes}.spec.ts`, `playwright/e2e/fixtures/bookings-data.ts` (per-test guests and bookings, test JWTs)
   - **Acceptance Criteria:**
     - [ ] OLD_GUEST green for non-`@new-only` tests.
   - **Verification Command:** `npx playwright test guest-portal/bookings guest-portal/reservation-changes --project=guest-portal-chromium --project=guest-portal-firefox`

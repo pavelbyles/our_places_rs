@@ -137,13 +137,13 @@ Legend — **Auth**: `P` public, `G` guest session, `G*` guest session + ownersh
 | G9–G12 | `GET /checkout-{jmd,eur,gbp,cad}/{id}` | 308 → `/checkout/{id}?currency=` | G | `checkout-flow.spec.ts` | same (redirect) |
 | G13 | browser `POST localhost:8081/api/v1/bookings` | `POST /checkout/{slug}` | G | `checkout-flow.spec.ts` | fixed (D1: real dates, session guest_id) |
 | G14 | `GET /bookings` | `GET /bookings` | G* | `bookings.spec.ts` (new) | fixed (IDOR: own bookings only) |
-| G15 | `PATCH /api/bookings/{id}` (cancel/update) | `POST /bookings/{id}/cancel` (fragment) | G* | `bookings.spec.ts` | same |
+| G15 | `PATCH /api/bookings/{id}` (cancel/update) | `POST /bookings/{id}/cancel` (fragment) | G* | `bookings.spec.ts` | fixed (legacy cancel dialog never opens: page script is HTML-escaped by Topcoat, `SyntaxError: Unexpected token ';'`) |
 | G16 | `GET /api/bookings/{id}/cancellation-quote` | `GET /bookings/{id}/cancellation-quote` (fragment) | G* | `bookings.spec.ts` | fixed (D8: ownership check + forwards guest JWT; old route sent no JWT) |
 | G17 | `GET /bookings/{id}/change-dates` | `GET /bookings/{id}/change-dates` | G* | `tax-documents.spec.ts`, `reservation-changes.spec.ts` (new) | same |
-| G18 | `POST /api/bookings/{id}/change-quote` | `POST /bookings/{id}/change-quote` (fragment) | G* | `reservation-changes.spec.ts` | same |
-| G19 | `POST /api/bookings/{id}/change-requests` | `POST /bookings/{id}/change-requests` | G* | `reservation-changes.spec.ts` | same |
+| G18 | `POST /api/bookings/{id}/change-quote` | `POST /bookings/{id}/change-quote` (fragment) | G* | `reservation-changes.spec.ts` | fixed (legacy form script HTML-escaped: `&&` → `&amp;&amp;`, `SyntaxError: Unexpected token '&'`) |
+| G19 | `POST /api/bookings/{id}/change-requests` | `POST /bookings/{id}/change-requests` | G* | `reservation-changes.spec.ts` | fixed (same script failure as G18) |
 | G20 | `GET /api/bookings/{id}/change-requests` | rendered server-side into G17 | G* | `reservation-changes.spec.ts` | same |
-| G21–G23 | `POST /api/bookings/{id}/change-requests/{rid}/{approve,decline,cancel}` | `POST /bookings/{id}/change-requests/{rid}/{approve,decline,cancel}` (fragment) | G* | `reservation-changes.spec.ts` | same |
+| G21–G23 | `POST /api/bookings/{id}/change-requests/{rid}/{approve,decline,cancel}` | `POST /bookings/{id}/change-requests/{rid}/{approve,decline,cancel}` (fragment) | G* | `reservation-changes.spec.ts` | fixed (buttons on the legacy My Bookings page do nothing: same script failure as G15) |
 | G24 | `GET /bookings/{code}/messages` | `GET /bookings/{code}/messages` | G* | `messaging.spec.ts` (new) | fixed (code resolved within own bookings) |
 | G25 | `POST /bookings/{code}/messages` (hx-post) | same (hx-post, `beforeend` `#messages-list`) | G* | `messaging.spec.ts` | same |
 | G26 | `GET /bookings/{id}/documents/{number}` | same | G* | `tax-documents.spec.ts` | same |
@@ -194,6 +194,9 @@ Legend — **Auth**: `P` public, `G` guest session, `G*` guest session + ownersh
 | A31 | `POST /api/admin/users/{create,update,delete,restore}` | `POST /admin/users`, `POST /admin/users/{id}`, `POST /admin/users/{id}/delete`, `POST /admin/users/{id}/restore` | A! | `users-admin.spec.ts` | same |
 
 Coverage note: the 51 old admin routes collapse into 31 rows, because aliases and sibling change-request endpoints share a row. A24b is new.
+
+### Legacy inline-script failures found in Phase 2
+Topcoat HTML-escapes the bodies of the old portals' raw-string `<script>` blocks (`&&` → `&amp;&amp;`, `<` → `&lt;`). Any block that contains those characters fails to parse, and every function it defines is undefined. Confirmed broken so far: the guest My Bookings page (G15, G21–G23), the guest change-dates form (G18–G19) and the admin booking-details dialog (A20). The tests for those rows are tagged `@new-only`. The redesigned portals avoid this class of bug entirely, because they have no inline scripts (strict CSP, `ui.js` only).
 
 ### Inline-JS sites to eliminate
 ~90 `<script>`/`onclick` sites; 23 `fetch(...)` calls (`bookings_admin.rs` ×10, `users_admin.rs` ×4, `login.rs` ×5, `listings_admin.rs`, `payouts_admin.rs`, guest `auth.rs` ×4, `bookings.rs` ×2, `booking_date_change.rs` ×2, `checkout.rs`); 7 `hx-post` sites (pricing ×5, messages ×2). All map to rows above.
