@@ -22,6 +22,8 @@ use crate::support::{scoped_bookings, scoped_listings, service_token, staff};
 
 /// The booking-details dialog and its actions.
 pub mod detail;
+/// Host/admin messaging.
+pub mod messages;
 
 /// Booking statuses an admin or host can filter and set.
 pub const STATUSES: [&str; 4] = ["pending", "confirmed", "completed", "cancelled"];

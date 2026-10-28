@@ -1,6 +1,11 @@
 //! The booking-details dialog ("audit view") and its actions.
 
-use common::models::{BookingResponse, UpdatedBookingRequest};
+use chrono::NaiveDate;
+use common::models::{
+    BookingResponse, ChangeInitiatorRole, CreateReservationChangeRequest,
+    ReservationChangeRequestResponse, ReservationChangeStatus, RespondReservationChangeRequest,
+    UpdatedBookingRequest,
+};
 use common::tax_document::TaxDocumentResponse;
 use serde::Deserialize;
 use topcoat::{
@@ -96,6 +101,7 @@ async fn door_code_panel(
 struct DialogData {
     booking: BookingResponse,
     documents: Vec<TaxDocumentResponse>,
+    pending_change: Option<ReservationChangeRequestResponse>,
     show_quote: bool,
 }
 
@@ -138,6 +144,53 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
                 </section>
 
                 door_code_panel(booking_id: id, code: code, message: None)
+
+
+                <section id="admin-change-requests" class="space-y-2 rounded-lg border border-border p-4">
+
+                    <h4 class="text-sm font-semibold">"Reservation changes"</h4>
+
+                    if let Some(change) = data.pending_change.clone() {
+
+                        let rid = change.id;
+
+                        let from_guest = change.initiated_by_role == ChangeInitiatorRole::Guest;
+
+                        <p class="text-sm">(format!("{} → {}, {} guest(s) · new total {}", change.proposed_date_from, change.proposed_date_to, change.proposed_number_of_persons, money(&change.currency, change.proposed_total_price)))</p>
+
+                        if from_guest {
+
+                            <div class="flex gap-2">
+
+                                <form method="post" action=(format!("/admin/bookings/{id}/change-requests/{rid}/approve"))><button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Approve change"</button></form>
+
+                                <form method="post" action=(format!("/admin/bookings/{id}/change-requests/{rid}/decline"))><button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Decline change"</button></form>
+
+                            </div>
+
+                        } else {
+
+                            <p class="text-sm text-muted-foreground">"Waiting for the guest to respond."</p>
+
+                            <form method="post" action=(format!("/admin/bookings/{id}/change-requests/{rid}/cancel"))><button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Withdraw proposal"</button></form>
+
+                        }
+
+                    } else {
+
+                        <form method="post" action=(format!("/admin/bookings/{id}/change-requests")) class="flex flex-wrap items-end gap-2">
+
+                            <label class="text-xs text-muted-foreground">"New check-in"<input type="date" name="check_in" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
+
+                            <label class="text-xs text-muted-foreground">"New check-out"<input type="date" name="check_out" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
+
+                            <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Propose change to guest"</button>
+
+                        </form>
+
+                    }
+
+                </section>
 
                 <section class="space-y-2 rounded-lg border border-border p-4">
                     <h4 class="text-sm font-semibold">"Status"</h4>
@@ -185,9 +238,16 @@ pub async fn booking_dialog(cx: &Cx) -> Result<impl View> {
         .list_booking_documents(booking.id, Some(&token))
         .await
         .unwrap_or_default();
+    let pending_change = get_api_client(cx)
+        .list_reservation_change_requests(booking.id, Some(&token))
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .find(|r| r.status == ReservationChangeStatus::Pending);
     let data = DialogData {
         booking,
         documents,
+        pending_change,
         show_quote: user.role == AdminRole::Admin,
     };
     Ok(view! { dialog_view(data: data) })
@@ -299,4 +359,96 @@ pub async fn admin_document(cx: &Cx) -> Result<impl View> {
             tax_document_view(doc: doc)
         </div>
     })
+}
+
+path_param!(request_id);
+
+/// Proposed dates for a host/admin change proposal.
+#[derive(Deserialize)]
+pub struct ProposeForm {
+    /// New check-in.
+    pub check_in: NaiveDate,
+    /// New check-out.
+    pub check_out: NaiveDate,
+}
+
+/// Proposes new dates to the guest (the guest accepts or declines).
+#[page(POST "/admin/bookings/{id}/change-requests")]
+pub async fn propose_change(
+    cx: &Cx,
+    /// The proposal form.
+    Form(form): Form<ProposeForm>,
+) -> Result<()> {
+    let user = staff(cx).await?;
+    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    if form.check_out <= form.check_in {
+        return Err(web_client::app_error("check-out must be after check-in").into());
+    }
+    let token = service_token(cx, &user)?;
+    let request = CreateReservationChangeRequest {
+        date_from: Some(form.check_in),
+        date_to: Some(form.check_out),
+        num_adults: None,
+        num_children: None,
+        num_infants: None,
+        num_pets: None,
+        reason: Some("Proposed by the host".to_string()),
+    };
+    get_api_client(cx)
+        .create_reservation_change_request(booking.id, &request, Some(&token))
+        .await
+        .map_err(web_client::app_error)?;
+    Err(topcoat::router::error::see_other("/admin/bookings").into())
+}
+
+/// What a host/admin can do with a pending change request.
+#[derive(Clone, Copy)]
+enum ChangeAction {
+    Approve,
+    Decline,
+    Withdraw,
+}
+
+async fn respond(cx: &Cx, action: ChangeAction) -> Result<()> {
+    let user = staff(cx).await?;
+    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let request_id = Uuid::parse_str(path_param::<RequestId>(cx)).map_err(|_| not_found())?;
+    let token = service_token(cx, &user)?;
+    let api = get_api_client(cx);
+    let note = RespondReservationChangeRequest::default();
+    let result = match action {
+        ChangeAction::Approve => {
+            api.approve_reservation_change_request(booking.id, request_id, &note, Some(&token))
+                .await
+        }
+        ChangeAction::Decline => {
+            api.decline_reservation_change_request(booking.id, request_id, &note, Some(&token))
+                .await
+        }
+        ChangeAction::Withdraw => {
+            api.cancel_reservation_change_request(booking.id, request_id, Some(&token))
+                .await
+        }
+    };
+    result.map_err(web_client::app_error)?;
+    tracing::info!(booking_id = %booking.id, request_id = %request_id, "change request answered");
+    Err(topcoat::router::error::see_other("/admin/bookings").into())
+}
+
+/// Approves a guest's change request.
+#[page(POST "/admin/bookings/{id}/change-requests/{request_id}/approve")]
+pub async fn approve_change(cx: &Cx) -> Result<()> {
+    respond(cx, ChangeAction::Approve).await
+}
+
+/// Declines a guest's change request.
+#[page(POST "/admin/bookings/{id}/change-requests/{request_id}/decline")]
+pub async fn decline_change(cx: &Cx) -> Result<()> {
+    respond(cx, ChangeAction::Decline).await
+}
+
+/// Withdraws a host/admin proposal.
+#[page(POST "/admin/bookings/{id}/change-requests/{request_id}/cancel")]
+pub async fn withdraw_change(cx: &Cx) -> Result<()> {
+    respond(cx, ChangeAction::Withdraw).await
 }

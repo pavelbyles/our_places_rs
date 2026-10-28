@@ -515,7 +515,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/bookings-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 
-- [ ] **Task 51: Admin booking messages and change requests**
+- [x] **Task 51: Admin booking messages and change requests**
   - **Scope:** M
   - **Description:** A22, A23, A25.
   - **Files Touched:** `web_ui_admin/src/pages/bookings/{messages,changes}.rs`
