@@ -248,7 +248,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common components`
   - **Dependencies:** Task 3
 
-- [ ] **Task 23: Star rating and chat components**
+- [x] **Task 23: Star rating and chat components**
   - **Scope:** S
   - **Description:** `star_rating` (display), `star_rating_input` (radio group, labelled), `chat_thread` / `chat_bubble` (keeps `#messages-list` id hook via attrs).
   - **Files Touched:** `web_ui_common/src/components/{star_rating,chat}.rs`
