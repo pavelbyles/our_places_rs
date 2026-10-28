@@ -6181,6 +6181,7 @@ dependencies = [
 name = "web_ui_common"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "common",
  "topcoat",
  "web_client",

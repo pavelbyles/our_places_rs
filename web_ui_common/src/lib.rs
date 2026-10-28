@@ -4,3 +4,6 @@
 
 /// Reusable view components.
 pub mod components;
+
+/// Light / dim / dark theme selection, rendered on the server.
+pub mod theme;

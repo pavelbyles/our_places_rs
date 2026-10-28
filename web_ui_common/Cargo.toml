@@ -10,6 +10,7 @@ crate-type = ["rlib"]
 topcoat = { workspace = true, features = ["htmx", "tailwind", "session", "ui", "icon-iconify"] }
 web_client = { workspace = true }
 common = { workspace = true }
+chrono = { workspace = true }
 
 [build-dependencies]
 topcoat = { version = "0.10.0", default-features = false, features = [

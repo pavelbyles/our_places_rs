@@ -211,7 +211,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `SQLX_OFFLINE=true cargo build -p web_ui_guest -p web_ui_admin && ! rg -q '#[0-9A-Fa-f]{6}' web_ui_common/src/components web_ui_guest/src web_ui_admin/src`
   - **Dependencies:** Task 3
 
-- [ ] **Task 19: Theme resolution engine**
+- [x] **Task 19: Theme resolution engine**
   - **Scope:** S
   - **Description:** `ThemeChoice`, cookie parsing (`op_theme`, `op_tz_offset` validation), `resolve_theme(…, now_utc)` with Jamaica UTC−05:00 fallback; `html_class()`.
   - **Files Touched:** `web_ui_common/src/theme.rs`
