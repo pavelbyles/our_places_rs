@@ -41,7 +41,7 @@ test.describe('Admin Portal - Seasonal Pricing Overrides', () => {
     await page.locator('form:has(input[name="start_date"]) [type="submit"]').click();
 
     await expect.poll(() => overrides(start), { timeout: 10_000 }).toBe('1');
-    const row = page.locator('#price-overrides-container tr', { hasText: '1,234' });
+    const row = page.locator('#price-overrides-container tr', { hasText: '1234.00' });
     await expect(row).toBeVisible();
 
     await row.getByRole('button', { name: /remove/i }).click();

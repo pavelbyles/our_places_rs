@@ -497,7 +497,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/listing-images --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 47
 
-- [ ] **Task 49: Seasonal pricing overrides**
+- [x] **Task 49: Seasonal pricing overrides**
   - **Scope:** S
   - **Description:** A16–A18 with `hx-post` → `#price-overrides-container` `outerHTML`.
   - **Files Touched:** `web_ui_admin/src/pages/pricing.rs`
