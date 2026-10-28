@@ -187,13 +187,13 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/host-signup admin-portal/users-admin --project=admin-portal-chromium --project=admin-portal-firefox`
   - **Dependencies:** Task 11, Task 12
 
-- [ ] **Task 17: Old-app specs — pricing, exchange rates, admin messages, admin change requests, listing images**
+- [x] **Task 17: Old-app specs — pricing, exchange rates, admin messages, admin change requests, listing images**
   - **Scope:** M
-  - **Description:** `pricing-admin`, `exchange-rates`, `booking-messages-admin`, `reservation-changes-admin`, `listing-images` specs (A15–A18, A22–A25, A28). `payouts-admin.spec.ts` gains an `@new-only` host-read-only test (D10).
-  - **Files Touched:** `playwright/e2e/admin-portal/{pricing-admin,exchange-rates,booking-messages-admin,reservation-changes-admin,listing-images,payouts-admin}.spec.ts`
+  - **Description:** `pricing-admin`, `exchange-rates`, `booking-messages-admin`, `reservation-changes-admin` specs (A16–A18, A22–A25, A28). `payouts-admin.spec.ts` gains `@new-only` host-read-only tests (D10). (`listing-images` dropped: inventory A15 is out of scope, since no legacy UI uploads images.)
+  - **Files Touched:** `playwright/e2e/admin-portal/{pricing-admin,exchange-rates,booking-messages-admin,reservation-changes-admin,payouts-admin}.spec.ts`
   - **Acceptance Criteria:**
     - [ ] OLD_ADMIN green for non-`@new-only` tests.
-    - [ ] Every inventory row's "Spec file" exists.
+    - [x] Every inventory row's "Spec file" exists (except `calendar.spec.ts`, which Task 31 adds).
   - **Verification Command:** `npx playwright test --project=admin-portal-chromium --project=admin-portal-firefox`
   - **Dependencies:** Task 11, Task 12
 
@@ -487,14 +487,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/listings-admin admin-portal/listing-fees-and-documents --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 46
 
-- [ ] **Task 48: Listing image upload via signed URL**
-  - **Scope:** S
-  - **Description:** A15 presign fragment + `ui.js` direct `PUT` to GCS; admin CSP `connect-src` includes `https://storage.googleapis.com`.
-  - **Files Touched:** `web_ui_admin/src/pages/listings/images.rs`, `web_ui_common/src/assets/ui.js`
-  - **Acceptance Criteria:**
-    - [ ] `listing-images.spec.ts` green on NEW_ADMIN (GCS mocked via `page.route`); no bytes through the app server.
-  - **Verification Command:** `npx playwright test admin-portal/listing-images --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 47
+- [x] **Task 48: ~~Listing image upload via signed URL~~** (dropped: inventory A15 is out of scope, since no legacy admin page uploads images.)
 
 - [ ] **Task 49: Seasonal pricing overrides**
   - **Scope:** S
