@@ -99,3 +99,26 @@ pub async fn listing_card(
         </article>
     })
 }
+
+impl From<&common::models::ListingResponse> for ListingSummary {
+    fn from(l: &common::models::ListingResponse) -> Self {
+        Self {
+            slug: l.slug.clone(),
+            name: l.name.clone(),
+            image_url: l.primary_image_url.clone(),
+            // Same rounding as the legacy grid ("USD 650").
+            price: l
+                .price_per_night
+                .map(|p| format!("{p:.0}"))
+                .unwrap_or_else(|| "0".to_string()),
+            currency: l.base_currency.clone(),
+            country: l.country.clone(),
+            city: l.city.clone(),
+            max_guests: l.max_guests,
+            bedrooms: l.bedrooms,
+            full_bathrooms: l.full_bathrooms,
+            rating: l.overall_rating,
+            review_count: None,
+        }
+    }
+}

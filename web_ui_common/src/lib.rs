@@ -22,3 +22,6 @@ pub mod shell_guest;
 
 /// Admin portal page shell.
 pub mod shell_admin;
+
+/// Guard failure → 303 / HX-Redirect / 403 / 503.
+pub mod guard;

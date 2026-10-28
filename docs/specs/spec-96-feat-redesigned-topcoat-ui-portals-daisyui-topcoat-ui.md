@@ -322,6 +322,7 @@ The spike page had one `signal(cx, || 0.0)`, a button with `@click=$(|_e| count.
 | `tabs` | `active: Expr<bool>` for `aria-current` | Same as above | Plain `bool`; tab switching via links/HTMX or `ui.js`. |
 | `select` | `style=(checkmark_style(cx))` inline style | Blocked by `style-src 'self'` | Replace with a class or token-driven stylesheet rule. |
 | other 23 | No runtime usage, no inline styles | Work as-is | — |
+| all icon users (12 registry components + ours) | `topcoat::icon::icon` hard-codes `style="vertical-align: -0.125em"` | Blocked by `style-src 'self'` (found by the CSP guard in Task 32) | Replaced everywhere with `web_ui_common::components::svg_icon` (same markup, Tailwind class instead of the inline style). |
 
 **Changes needed to vendor the registry under this repo's rules:**
 - Enabled the `ui` and `icon-iconify` features on `topcoat` and added `web_ui_common/build.rs`, which stages the `lucide` icon set.

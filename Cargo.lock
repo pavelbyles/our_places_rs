@@ -6199,6 +6199,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "dotenvy",
+ "serde",
  "tokio",
  "topcoat",
  "tracing",

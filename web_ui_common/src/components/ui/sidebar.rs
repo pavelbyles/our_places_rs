@@ -2,10 +2,12 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     runtime::Expr,
     view::{Attributes, Child, Class, StaticClass, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 use super::{
     button::{ButtonSize, ButtonVariant, button},
@@ -255,7 +257,7 @@ pub async fn sidebar_trigger(
                 :aria-expanded=$(if open { "true" } else { "false" })
                 (attrs)
             },
-            icon(data: iconify_icon!("lucide:panel-left"))
+            svg_icon(data: iconify_icon!("lucide:panel-left"))
         )
     })
 }

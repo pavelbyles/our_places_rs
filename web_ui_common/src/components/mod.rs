@@ -16,6 +16,8 @@ pub mod star_rating;
 pub mod stat_tile;
 /// Numbered progress steps.
 pub mod steps;
+/// CSP-safe icon rendering (no inline style).
+pub mod svg_icon;
 /// Toast notifications and their live region.
 pub mod toast;
 /// Topcoat UI registry components.

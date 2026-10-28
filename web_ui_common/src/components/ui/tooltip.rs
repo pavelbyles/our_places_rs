@@ -5,6 +5,8 @@ use topcoat::{
     view::{Attributes, Child, StaticClass, View, class, component, view},
 };
 
+use crate::components::svg_icon::svg_icon;
+
 /// A short hint shown when its trigger is hovered or focused.
 ///
 /// Pass the trigger and `tooltip_content` as children. Positioning does not adjust to
@@ -20,7 +22,7 @@ use topcoat::{
 ///         button(
 ///             size: ButtonSize::Icon,
 ///             variant: ButtonVariant::Outline,
-///             icon(data: iconify_icon!("lucide:copy"), label: "Copy link")
+///             svg_icon(data: iconify_icon!("lucide:copy"), label: "Copy link")
 ///         )
 ///         tooltip_content("Copy link")
 ///     )

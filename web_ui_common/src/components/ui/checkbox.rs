@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, StaticClass, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 /// Classes for the native checkbox input and its checked state.
 const CHECKBOX: StaticClass = class!(
@@ -47,8 +49,7 @@ pub async fn checkbox(
             ))
         >
             <input type="checkbox" class=(CHECKBOX) (attrs)>
-            icon(
-                data: iconify_icon!("lucide:check"),
+            svg_icon(data: iconify_icon!("lucide:check"),
                 attrs: attributes! {
                     class="pointer-events-none absolute inset-0 m-auto size-3.5 \
                         text-primary-foreground opacity-0 peer-checked:opacity-100"

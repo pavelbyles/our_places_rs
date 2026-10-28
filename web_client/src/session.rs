@@ -1,5 +1,5 @@
 use common::models::SessionResponse;
-use topcoat::context::{Cx, try_request_context};
+use topcoat::context::{Cx, memoize, try_request_context};
 use uuid::Uuid;
 
 use crate::auth::token_hash_to_hex;
@@ -126,18 +126,29 @@ async fn current_session(cx: &Cx, namespace: &str) -> Result<SessionResponse, Gu
     Ok(session)
 }
 
+/// The request's session in `namespace`, looked up once per request (the
+/// layout and the page share the result).
+#[memoize]
+async fn session_for_request(cx: &Cx, namespace: &str) -> Result<SessionResponse, GuardError> {
+    current_session(cx, namespace).await
+}
+
 /// Requires a signed-in guest.
 pub async fn require_guest(cx: &Cx) -> Result<GuestSession, GuardError> {
-    current_session(cx, GUEST_NAMESPACE)
+    session_for_request(cx, GUEST_NAMESPACE)
         .await
-        .and_then(|s| GuestSession::from_session(&s))
+        .as_ref()
+        .map_err(|e| *e)
+        .and_then(GuestSession::from_session)
 }
 
 /// Requires a signed-in admin or host.
 pub async fn require_admin(cx: &Cx) -> Result<AdminSession, GuardError> {
-    current_session(cx, ADMIN_NAMESPACE)
+    session_for_request(cx, ADMIN_NAMESPACE)
         .await
-        .and_then(|s| AdminSession::from_session(&s))
+        .as_ref()
+        .map_err(|e| *e)
+        .and_then(AdminSession::from_session)
 }
 
 /// Requires a signed-in user with the admin role (hosts are forbidden).

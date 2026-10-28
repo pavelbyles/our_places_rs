@@ -336,7 +336,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 ## Phase 4: `web_ui_guest` (:3010)
 
-- [ ] **Task 32: Guest app bootstrap and home page**
+- [x] **Task 32: Guest app bootstrap and home page**
   - **Scope:** M
   - **Description:** `main.rs` (session store `op_guest_session`, `ServiceJwt::from_env` fail-fast, security middleware, `.runtime()` per Task 2), `#[layout("/")]` using `guest_shell`, `/` with hero + search.
   - **Files Touched:** `web_ui_guest/src/{main,lib,layout}.rs`, `web_ui_guest/src/pages/{mod,home}.rs`

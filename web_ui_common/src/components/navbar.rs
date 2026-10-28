@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 use crate::theme::ThemeChoice;
 
@@ -27,7 +29,7 @@ pub async fn theme_toggle(
             class=(class!("inline-flex size-11 items-center justify-center rounded-full border border-border text-foreground", attrs.remove("class")))
             (attrs)
         >
-            icon(data: iconify_icon!("lucide:moon"), attrs: attributes! { class="size-5" aria-hidden="true" })
+            svg_icon(data: iconify_icon!("lucide:moon"), attrs: attributes! { class="size-5" aria-hidden="true" })
         </button>
     })
 }

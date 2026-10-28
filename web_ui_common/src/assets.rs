@@ -16,3 +16,6 @@ pub const HTMX_JS: Asset = asset!(
 /// (style-src 'self'), no eval, no script tags in swapped content.
 pub const HTMX_CONFIG: &str =
     r#"{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}"#;
+
+/// Home page hero photograph.
+pub const HERO_IMAGE: Asset = asset!("src/assets/hero.jpg");

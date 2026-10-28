@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, Child, StaticClass, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 /// A floating action menu controlled by a trigger.
 ///
@@ -203,8 +205,7 @@ pub async fn dropdown_menu_sub_trigger(
             (attrs)
         >
             (child)
-            icon(
-                data: iconify_icon!("lucide:chevron-right"),
+            svg_icon(data: iconify_icon!("lucide:chevron-right"),
                 attrs: attributes! { class="ml-auto size-4" }
             )
         </summary>

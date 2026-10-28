@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, Child, StaticClass, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 use super::button::{ButtonSize, ButtonVariant, button_variants};
 
@@ -152,7 +154,7 @@ pub async fn pagination_previous(
             ))
             (attrs)
         >
-            icon(data: iconify_icon!("lucide:chevron-left"))
+            svg_icon(data: iconify_icon!("lucide:chevron-left"))
             <span class=(LABEL)>(label)</span>
         </a>
     })
@@ -178,7 +180,7 @@ pub async fn pagination_next(
             (attrs)
         >
             <span class=(LABEL)>(label)</span>
-            icon(data: iconify_icon!("lucide:chevron-right"))
+            svg_icon(data: iconify_icon!("lucide:chevron-right"))
         </a>
     })
 }
@@ -198,8 +200,7 @@ pub async fn pagination_ellipsis(
             ))
             (attrs)
         >
-            icon(
-                data: iconify_icon!("lucide:ellipsis"),
+            svg_icon(data: iconify_icon!("lucide:ellipsis"),
                 attrs: attributes! { class="size-4" }
             )
             <span class="sr-only">"More pages"</span>

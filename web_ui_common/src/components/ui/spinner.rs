@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, Length, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 /// An animated icon for work in progress.
 ///
@@ -36,8 +38,7 @@ pub async fn spinner(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
-        icon(
-            data: iconify_icon!("lucide:loader-circle"),
+        svg_icon(data: iconify_icon!("lucide:loader-circle"),
             size: size,
             label: label,
             attrs: attributes! {

@@ -5,6 +5,8 @@ use topcoat::{
     view::{Attributes, Child, StaticClass, View, class, component, view},
 };
 
+use crate::components::svg_icon::svg_icon;
+
 /// The visual style of an [`alert`].
 ///
 /// [`Default`] is `AlertVariant::Neutral`, used when no variant is given.
@@ -44,7 +46,7 @@ const BASE: StaticClass = class!(
 /// view! {
 ///     alert(
 ///         variant: AlertVariant::Destructive,
-///         icon(data: iconify_icon!("lucide:triangle-alert"))
+///         svg_icon(data: iconify_icon!("lucide:triangle-alert"))
 ///         alert_title("Build failed")
 ///         alert_description("The last deploy did not finish.")
 ///     )

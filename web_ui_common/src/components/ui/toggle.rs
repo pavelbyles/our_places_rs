@@ -5,6 +5,8 @@ use topcoat::{
     view::{Attributes, Child, PromotedStr, StaticClass, View, class, component, view},
 };
 
+use crate::components::svg_icon::svg_icon;
+
 /// How a [`toggle`] relates to the others sharing its `name`.
 ///
 /// [`Default`] is `ToggleKind::Independent`, used when no kind is given.
@@ -76,7 +78,7 @@ const BASE: StaticClass = class!(
 /// view! {
 ///     toggle(
 ///         attrs: attributes! { name="bold" checked="" },
-///         icon(data: iconify_icon!("lucide:bold"), label: "Bold")
+///         svg_icon(data: iconify_icon!("lucide:bold"), label: "Bold")
 ///     )
 /// }
 /// ```

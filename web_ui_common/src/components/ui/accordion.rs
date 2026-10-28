@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, Child, StaticClass, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 /// A group of collapsible sections.
 ///
@@ -108,8 +110,7 @@ pub async fn accordion_trigger(
             (attrs)
         >
             (child)
-            icon(
-                data: iconify_icon!("lucide:chevron-down"),
+            svg_icon(data: iconify_icon!("lucide:chevron-down"),
                 attrs: attributes! {
                     class="size-4 shrink-0 text-muted-foreground transition-transform \
                         duration-200 ease-out group-open:rotate-180"

@@ -122,12 +122,12 @@ export async function seedTestData(): Promise<void> {
         '018f3a5e-6b9c-7000-8000-000000000001',
         'primary_courtyard_image',
         'Processed',
-        'https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=1000&q=85',
+        'https://storage.googleapis.com/our-places-e2e/listings/courtyard-studio',
         'image/jpeg',
         0,
         'Raw',
         true
-    ) ON CONFLICT (id) DO UPDATE SET status = 'Processed';
+    ) ON CONFLICT (id) DO UPDATE SET status = 'Processed', upload_url = EXCLUDED.upload_url;
 
     INSERT INTO listing_image (
         id,
@@ -145,13 +145,13 @@ export async function seedTestData(): Promise<void> {
         '018f3a5e-6b9c-7000-8000-000000000001',
         'thumb_courtyard_image',
         'Processed',
-        'https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=400&q=80',
+        'https://storage.googleapis.com/our-places-e2e/listings/courtyard-studio-thumb',
         'image/jpeg',
         0,
         'Thumbnail400w',
         '018f3a5e-6b9c-7000-8000-000000000002',
         false
-    ) ON CONFLICT (id) DO UPDATE SET status = 'Processed';
+    ) ON CONFLICT (id) DO UPDATE SET status = 'Processed', upload_url = EXCLUDED.upload_url;
 
     -- 4. Ensure deterministic test booking exists for E2E tests
     INSERT INTO booking (

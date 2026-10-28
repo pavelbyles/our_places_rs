@@ -2,9 +2,11 @@
 
 use topcoat::{
     Result,
-    icon::{icon, iconify::iconify_icon},
+    icon::iconify::iconify_icon,
     view::{Attributes, View, attributes, class, component, view},
 };
+
+use crate::components::svg_icon::svg_icon;
 
 /// An average rating such as "★ 4.7 (12 reviews)", or "New" when there is
 /// none yet.
@@ -27,7 +29,7 @@ pub async fn star_rating(
         if let Some(r) = rating {
             <span class=(root) (attrs)>
                 <span role="img" aria-label=(format!("Rated {r:.1} out of 5")) class="inline-flex items-center gap-1 font-medium">
-                    icon(data: iconify_icon!("lucide:star"), attrs: attributes! { class="size-4 fill-current text-primary" aria-hidden="true" })
+                    svg_icon(data: iconify_icon!("lucide:star"), attrs: attributes! { class="size-4 fill-current text-primary" aria-hidden="true" })
                     (format!("{r:.1}"))
                 </span>
                 if let Some(count) = review_count {

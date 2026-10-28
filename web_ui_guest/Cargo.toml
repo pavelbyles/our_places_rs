@@ -20,6 +20,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 dotenvy = { workspace = true }
+serde = { workspace = true }
 
 [build-dependencies]
 topcoat = { version = "0.10.0", default-features = false, features = [
