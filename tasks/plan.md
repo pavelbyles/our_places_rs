@@ -189,7 +189,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
 
 - [x] **Task 17: Old-app specs — pricing, exchange rates, admin messages, admin change requests, listing images**
   - **Scope:** M
-  - **Description:** `pricing-admin`, `exchange-rates`, `booking-messages-admin`, `reservation-changes-admin` specs (A16–A18, A22–A25, A28). `payouts-admin.spec.ts` gains `@new-only` host-read-only tests (D10). (`listing-images` dropped: inventory A15 is out of scope, since no legacy UI uploads images.)
+  - **Description:** `pricing-admin`, `exchange-rates`, `booking-messages-admin`, `reservation-changes-admin` specs (A16–A18, A22–A25, A28). `payouts-admin.spec.ts` gains `@new-only` host-read-only tests (D10). (`listing-images` is written with Task 48, since no legacy UI uploads images.)
   - **Files Touched:** `playwright/e2e/admin-portal/{pricing-admin,exchange-rates,booking-messages-admin,reservation-changes-admin,payouts-admin}.spec.ts`
   - **Acceptance Criteria:**
     - [ ] OLD_ADMIN green for non-`@new-only` tests.
@@ -488,7 +488,14 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/listings-admin admin-portal/listing-fees-and-documents --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 46
 
-- [x] **Task 48: ~~Listing image upload via signed URL~~** (dropped: inventory A15 is out of scope, since no legacy admin page uploads images.)
+- [ ] **Task 48: Listing image upload via signed URL** (restored by owner decision 2026-10-28)
+  - **Scope:** S
+  - **Description:** A15 presign fragment + `ui.js` direct `PUT` to GCS (`data-upload` hook); `SecurityHeaders::admin()` adds `https://storage.googleapis.com` to `connect-src`.
+  - **Files Touched:** `web_ui_admin/src/pages/listings/images.rs`, `web_ui_common/src/assets/ui.js`, `web_ui_common/src/security_headers.rs`, `playwright/e2e/admin-portal/listing-images.spec.ts`
+  - **Acceptance Criteria:**
+    - [ ] `listing-images.spec.ts` green on NEW_ADMIN (GCS mocked via `page.route`); no image bytes go through the app server.
+  - **Verification Command:** `npx playwright test admin-portal/listing-images --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
+  - **Dependencies:** Task 47
 
 - [ ] **Task 49: Seasonal pricing overrides**
   - **Scope:** S
