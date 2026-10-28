@@ -18,7 +18,7 @@ use web_client::{
 };
 use web_ui_common::components::domain::price_breakdown::money;
 
-use crate::support::{scoped_bookings, scoped_listings, service_token, staff};
+use crate::support::{csv_cell, scoped_bookings, scoped_listings, service_token, staff};
 
 /// The booking-details dialog and its actions.
 pub mod detail;
@@ -146,17 +146,6 @@ pub async fn schedule_page(cx: &Cx) -> Result<impl View> {
     })
 }
 
-/// Escapes one CSV cell, and neutralises spreadsheet formulas
-/// (`=`, `+`, `-`, `@` prefixes) so exported data cannot run in Excel/Sheets.
-pub fn csv_cell(value: &str) -> String {
-    let guarded = if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
-        format!("'{value}")
-    } else {
-        value.to_string()
-    };
-    format!("\"{}\"", guarded.replace('"', "\"\""))
-}
-
 /// The schedule as CSV (same scope and filters as the page).
 #[route(GET "/admin/bookings/export.csv")]
 pub async fn export_csv(cx: &Cx) -> Result<Response> {
@@ -197,17 +186,4 @@ pub async fn export_csv(cx: &Cx) -> Result<Response> {
         )
         .body(csv.into())
         .map_err(|e| web_client::app_error(e).into())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::csv_cell;
-
-    #[test]
-    fn csv_cells_are_quoted_and_formula_safe() {
-        assert_eq!(csv_cell("Villa \"A\""), "\"Villa \"\"A\"\"\"");
-        assert_eq!(csv_cell("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
-        assert_eq!(csv_cell("-1"), "\"'-1\"");
-        assert_eq!(csv_cell("ABC123"), "\"ABC123\"");
-    }
 }

@@ -25,7 +25,9 @@ test.describe('Admin Portal - Host Earnings & Payout Ledger', () => {
     await expect(authenticatedAdminPage.locator('text=Platform Fee')).toBeVisible();
     await expect(authenticatedAdminPage.locator('text=Net Host Payouts')).toBeVisible();
   });
+});
 
+test.describe('Admin Portal - Payout status for hosts', () => {
   // Decision D10 (parity inventory A27): only admins may change a payout
   // status. The legacy page renders the status dialog for hosts too.
   test('shows hosts the ledger without status controls', { tag: '@new-only' }, async ({ page }) => {

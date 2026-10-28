@@ -138,3 +138,27 @@ pub async fn scoped_bookings(
         }
     }
 }
+
+/// Escapes one CSV cell, and neutralises spreadsheet formulas
+/// (`=`, `+`, `-`, `@` prefixes) so exported data cannot run in Excel/Sheets.
+pub fn csv_cell(value: &str) -> String {
+    let guarded = if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{value}")
+    } else {
+        value.to_string()
+    };
+    format!("\"{}\"", guarded.replace('"', "\"\""))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::csv_cell;
+
+    #[test]
+    fn csv_cells_are_quoted_and_formula_safe() {
+        assert_eq!(csv_cell("Villa \"A\""), "\"Villa \"\"A\"\"\"");
+        assert_eq!(csv_cell("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(csv_cell("-1"), "\"'-1\"");
+        assert_eq!(csv_cell("ABC123"), "\"ABC123\"");
+    }
+}

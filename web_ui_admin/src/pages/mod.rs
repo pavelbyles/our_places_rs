@@ -8,6 +8,8 @@ pub mod bookings;
 pub mod dashboard;
 /// Listings studio.
 pub mod listings;
+/// Payout ledger.
+pub mod payouts;
 /// Seasonal pricing overrides.
 pub mod pricing;
 /// Host sign-up and verification.

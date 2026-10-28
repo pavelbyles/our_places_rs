@@ -553,6 +553,20 @@ impl TopcoatApiClient {
     }
 }
 
+impl TopcoatApiClient {
+    /// Overrides a payout's status as the admin who owns `jwt` (`booking_api`
+    /// requires the admin role; the legacy call sent no user token).
+    pub async fn update_payout_status_as(
+        &self,
+        id: Uuid,
+        req: &common::payout::UpdatePayoutStatusRequest,
+        jwt: &str,
+    ) -> Result<common::payout::PayoutLedgerEntry, UserCallError> {
+        let url = format!("{}/api/v1/admin/ledger/{id}/status", self.booking_api_url);
+        send_json_as(reqwest::Method::PATCH, &url, jwt, req).await
+    }
+}
+
 /// Sends a JSON body with the user's bearer token (and the gateway API key,
 /// if configured) and decodes a JSON response.
 async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(

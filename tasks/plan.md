@@ -524,12 +524,12 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/booking-messages-admin admin-portal/reservation-changes-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 23, Task 50
 
-- [ ] **Task 52: Payouts (admin-only status override)**
+- [x] **Task 52: Payouts (admin-only status override)**
   - **Scope:** S
   - **Description:** A26–A27: ledger for all; status form only for admin role with required reason; host POST → 403 (D10).
   - **Files Touched:** `web_ui_admin/src/pages/payouts.rs`
   - **Acceptance Criteria:**
-    - [ ] `payouts-admin.spec.ts` green on NEW_ADMIN incl. host read-only + forged POST 403.
+    - [x] `payouts-admin.spec.ts` green on NEW_ADMIN incl. host read-only + forged POST 403.
   - **Verification Command:** `npx playwright test admin-portal/payouts-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 
