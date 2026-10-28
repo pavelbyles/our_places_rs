@@ -4,5 +4,7 @@ pub mod aliases;
 pub mod auth;
 /// Dashboard.
 pub mod dashboard;
+/// Listings studio.
+pub mod listings;
 /// Host sign-up and verification.
 pub mod register;

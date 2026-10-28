@@ -25,6 +25,7 @@ DELETE FROM reservation_change_request WHERE booking_id IN (SELECT id FROM e2e_b
                                           OR initiated_by_id IN (SELECT id FROM e2e_users)
                                           OR responder_id IN (SELECT id FROM e2e_users);
 DELETE FROM booking WHERE id IN (SELECT id FROM e2e_bookings);
+DELETE FROM listing WHERE user_id IN (SELECT id FROM e2e_users) OR name LIKE 'E2E listing %';
 DELETE FROM "user" WHERE id IN (SELECT id FROM e2e_users);
 COMMIT;
 `;
@@ -62,6 +63,12 @@ export async function seedTestData(): Promise<void> {
     ) ON CONFLICT (email) DO UPDATE SET
         roles = '{admin,host}',
         is_active = true;
+
+    -- 1a. The admin also hosts the seeded villa, and listing_api only lets
+    -- users with a host profile own listings.
+    INSERT INTO host_profiles (user_id, verified_status)
+    SELECT id, 'verified' FROM "user" WHERE email = 'admin@ourplaces.io'
+    ON CONFLICT (user_id) DO NOTHING;
 
     -- 1b. Ensure test guest user exists
     INSERT INTO "user" (

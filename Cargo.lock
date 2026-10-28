@@ -6172,6 +6172,7 @@ dependencies = [
  "dotenvy",
  "rust_decimal",
  "serde",
+ "serde_json",
  "tokio",
  "topcoat",
  "tracing",

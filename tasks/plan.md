@@ -470,7 +470,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/host-signup --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 
-- [ ] **Task 46: Listings list, detail, new, clone, create**
+- [x] **Task 46: Listings list, detail, new, clone, create**
   - **Scope:** M
   - **Description:** A9–A12, A14 with dense `table` + `pagination`.
   - **Files Touched:** `web_ui_admin/src/pages/listings/{mod,list,detail,create}.rs`
