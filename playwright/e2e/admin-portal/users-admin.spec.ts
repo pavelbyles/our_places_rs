@@ -49,4 +49,47 @@ test.describe('Admin Portal - User Administration', () => {
     await page.goto('/admin/users');
     await expect(page.locator('#user-search-input')).toHaveCount(0);
   });
+
+  test('rejects user changes posted by a host', { tag: '@new-only' }, async ({ page }) => {
+    const target = createHost();
+    await loginAdminAs(page, createHost());
+    await page.goto('/admin');
+    const origin = new URL(page.url()).origin;
+    for (const path of ['/admin/users', `/admin/users/${target.id}`, `/admin/users/${target.id}/delete`, `/admin/users/${target.id}/restore`]) {
+      const resp = await page.request.post(path, { form: { first_name: 'X', purge: 'true' }, headers: { Origin: origin } });
+      expect(resp.status(), path).toBe(403);
+    }
+    expect(psql(`SELECT deleted_at IS NULL FROM "user" WHERE id = '${target.id}';`)).toBe('t');
+  });
+
+  test('archives and restores an account', { tag: '@new-only' }, async ({ page }) => {
+    const host = createHost();
+    await loginAdminAs(page, TEST_USERS.admin);
+    await page.goto(`/admin/users?q=${encodeURIComponent(host.email)}`);
+
+    await page.getByRole('row', { name: new RegExp(host.email) }).getByRole('button', { name: 'Archive' }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Archive this account?' });
+    await dialog.getByRole('button', { name: 'Archive account' }).click();
+    await expect(page.locator('#users-notice')).toContainText('archived');
+    expect(psql(`SELECT deleted_at IS NOT NULL FROM "user" WHERE id = '${host.id}';`)).toBe('t');
+
+    await page.goto(`/admin/users?status=archived&q=${encodeURIComponent(host.email)}`);
+    await page.getByRole('row', { name: new RegExp(host.email) }).getByRole('button', { name: 'Restore' }).click();
+    await expect(page.locator('#users-notice')).toContainText('restored');
+    expect(psql(`SELECT deleted_at IS NULL FROM "user" WHERE id = '${host.id}';`)).toBe('t');
+  });
+
+  test('refuses to delete the signed-in administrator', { tag: '@new-only' }, async ({ page }) => {
+    await loginAdminAs(page, TEST_USERS.admin);
+    const adminId = psql(`SELECT id FROM "user" WHERE email = '${TEST_USERS.admin.email}';`);
+    await page.goto('/admin/users');
+    const resp = await page.request.post(`/admin/users/${adminId}/delete`, {
+      form: { purge: 'true' },
+      headers: { Origin: new URL(page.url()).origin },
+      maxRedirects: 0,
+    });
+    expect(resp.status()).toBe(303);
+    expect(resp.headers()['location']).toContain('notice=self');
+    expect(psql(`SELECT deleted_at IS NULL FROM "user" WHERE id = '${adminId}';`)).toBe('t');
+  });
 });

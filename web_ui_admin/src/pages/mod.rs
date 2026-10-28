@@ -16,3 +16,5 @@ pub mod payouts;
 pub mod pricing;
 /// Host sign-up and verification.
 pub mod register;
+/// User administration.
+pub mod users;

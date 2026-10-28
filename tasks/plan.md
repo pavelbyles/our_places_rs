@@ -542,12 +542,12 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test admin-portal/exchange-rates --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 
-- [ ] **Task 54: User administration**
+- [x] **Task 54: User administration**
   - **Scope:** M
   - **Description:** A29–A31: list, new, create, update, delete, restore; `require_admin_role` everywhere; destructive actions behind `alert_dialog`.
   - **Files Touched:** `web_ui_admin/src/pages/users/{mod,list,form,actions}.rs`
   - **Acceptance Criteria:**
-    - [ ] `users-admin.spec.ts` green on NEW_ADMIN incl. host 403.
+    - [x] `users-admin.spec.ts` green on NEW_ADMIN incl. host 403.
   - **Verification Command:** `npx playwright test admin-portal/users-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
   - **Dependencies:** Task 44
 

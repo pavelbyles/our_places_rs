@@ -282,6 +282,8 @@ impl TopcoatApiClient {
         search: Option<String>,
         is_deleted: Option<bool>,
     ) -> anyhow::Result<Vec<UserResponse>> {
+        // The shared client puts `search` into the URL as-is.
+        let search = search.map(|s| encode_query_value(&s));
         common::app_client::get_all_users_filtered(page, per_page, search, is_deleted).await
     }
 
@@ -651,5 +653,30 @@ impl TopcoatApiClient {
             401 | 403 => Err(UserCallError::Unauthorized),
             status => Err(UserCallError::Status(status)),
         }
+    }
+}
+
+/// Percent-encodes everything except RFC 3986 unreserved characters.
+fn encode_query_value(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_query_value;
+
+    #[test]
+    fn encodes_reserved_characters() {
+        assert_eq!(encode_query_value("a.b+c@x.com"), "a.b%2Bc%40x.com");
+        assert_eq!(encode_query_value("x&per_page=1000"), "x%26per_page%3D1000");
+        assert_eq!(encode_query_value("José"), "Jos%C3%A9");
     }
 }
