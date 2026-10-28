@@ -10,3 +10,6 @@ pub mod theme;
 
 /// Content-Security-Policy and hardening headers for both portals.
 pub mod security_headers;
+
+/// Hashed client assets: `ui.js` and vendored htmx.
+pub mod assets;

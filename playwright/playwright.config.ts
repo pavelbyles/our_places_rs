@@ -151,6 +151,27 @@ export default defineConfig({
       },
     },
     // ----------------------------------------------------
+    // web_ui_common/src/assets/ui.js in a bare page (no server needed).
+    // ----------------------------------------------------
+    {
+      name: 'ui-js-chromium',
+      testDir: path.resolve(__dirname, 'e2e/ui-js'),
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'ui-js-firefox',
+      testDir: path.resolve(__dirname, 'e2e/ui-js'),
+      use: {
+        ...devices['Desktop Firefox'],
+        launchOptions: {
+          env: {
+            ...process.env,
+            LD_LIBRARY_PATH: `/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:${process.env.LD_LIBRARY_PATH || ''}`,
+          },
+        },
+      },
+    },
+    // ----------------------------------------------------
     // Backend API Validation
     // ----------------------------------------------------
     {

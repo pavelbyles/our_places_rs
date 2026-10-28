@@ -229,10 +229,10 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `cargo test -p web_ui_common --test headers`
   - **Dependencies:** Task 2
 
-- [ ] **Task 21: `ui.js` core behaviors**
+- [x] **Task 21: `ui.js` core behaviors**
   - **Scope:** M
   - **Description:** Hashed asset with dialog open/close, outside-click dismiss, theme cycle + `op_theme` cookie + `aria-label`, `op_tz_offset` writer, `data-print`, HTMX toast glue; vendored `htmx.min.js`; `<meta name="htmx-config">` helper. ≤15 KB minified.
-  - **Files Touched:** `web_ui_common/src/assets/{ui.js,htmx.min.js}`, `web_ui_common/src/assets.rs`, `playwright/e2e/guest-portal/theme.spec.ts`
+  - **Files Touched:** `web_ui_common/src/assets/{ui.js,htmx-2.0.4.min.js}`, `web_ui_common/src/assets.rs`, `playwright/e2e/ui-js/ui-js.spec.ts` (+ `ui-js-*` projects). HTMX 2.0.4 matches the CDN version the legacy portals actually run (the repo's unused vendored file is 4.0.0); verified against the npm tarball. **Bins (Tasks 32/44) must fail startup if the asset bundle is missing:** rendering an `Asset` without one panics.
   - **Acceptance Criteria:**
     - [ ] Theme toggle cycles and persists (theme.spec on NEW_GUEST once Task 26 lands; unit-level check via a fixture page now).
     - [ ] No `eval`/`new Function`/inline handlers in `ui.js`.
