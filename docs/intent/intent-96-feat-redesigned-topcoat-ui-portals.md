@@ -3,7 +3,7 @@
 ## Metadata
 - **Author**: Originator (via GitHub Issue #96, @pavelbyles)
 - **Date**: 2026-10-28
-- **Status**: Draft
+- **Status**: Approved
 - **Target Area**: Frontend + shared web plumbing (`web_client` NEW, `web_ui_common` NEW, `web_ui_guest` NEW, `web_ui_admin` NEW, `web_app_common_tc`, Playwright suite, Dockerfiles, docker-compose, `infra/`); minimal `user_api` touch for guest sessions only.
 - **Source Issue**: https://github.com/pavelbyles/our_places_rs/issues/96
 - **Design Reference**: [`docs/design/guest-theme.md`](../design/guest-theme.md) ("Shoreline Mist")
