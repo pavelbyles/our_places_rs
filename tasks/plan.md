@@ -151,13 +151,13 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test --list | grep -c "portal-new"`
   - **Dependencies:** Task 1
 
-- [ ] **Task 13: Hold-expiry seed helper**
+- [x] **Task 13: Hold-expiry seed helper**
   - **Scope:** XS
   - **Description:** `expirePendingHold(bookingId)` in db-seed, running the cron's UPDATE + `booking_history` insert for one booking; SQL constant commented with the source migration (`20260927000000`).
-  - **Files Touched:** `playwright/e2e/setup/db-seed.ts`
+  - **Files Touched:** `playwright/e2e/setup/db-seed.ts`, `playwright/e2e/api/hold-expiry.spec.ts`
   - **Acceptance Criteria:**
     - [ ] Helper flips a seeded `pending` booking to `cancelled` with history reason "Hold expired after 2 hours".
-  - **Verification Command:** `npx playwright test --project=backend-api -g "expirePendingHold"`
+  - **Verification Command:** `npx playwright test --project=backend-api hold-expiry`
   - **Dependencies:** None
 
 - [ ] **Task 14: Old-app specs — bookings & reservation changes**

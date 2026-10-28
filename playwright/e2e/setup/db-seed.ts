@@ -321,3 +321,50 @@ export async function seedTestData(): Promise<void> {
     console.warn('⚠ Note: DB seed command could not be completed directly:', error.message, stderrMsg);
   }
 }
+
+/**
+ * Mirrors the `cleanup_stale_pending_holds` pg_cron job from migration
+ * `db_core/migrations/20260927000000_add_door_code_and_notification_log.sql`,
+ * scoped to one booking and without the 2-hour age check. pg_cron is not
+ * installed in test databases, and tests cannot wait 2 hours, so e2e tests
+ * call this to simulate a hold expiring. Keep it in sync with that migration.
+ */
+const EXPIRE_PENDING_HOLD_SQL = `
+WITH expired_bookings AS (
+    UPDATE booking
+    SET status = 'cancelled', updated_at = NOW()
+    WHERE status = 'pending' AND id = :'booking_id'::uuid
+    RETURNING *
+)
+INSERT INTO booking_history (
+    booking_id, confirmation_code, guest_id, listing_id, status,
+    date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+    sub_total_price, discount_value, tax_value, fee_breakdown, total_price,
+    cancellation_policy, metadata, door_access_code, change_reason, created_at
+)
+SELECT
+    id, confirmation_code, guest_id, listing_id, status,
+    date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+    sub_total_price, discount_value, tax_value, fee_breakdown, total_price,
+    cancellation_policy, metadata, door_access_code, 'Hold expired after 2 hours', NOW()
+FROM expired_bookings;
+`;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Expires one `pending` booking the same way the hold-cleanup cron job does.
+ * Returns the number of bookings expired (0 if it was not pending).
+ */
+export function expirePendingHold(bookingId: string): number {
+  if (!UUID_PATTERN.test(bookingId)) {
+    throw new Error(`expirePendingHold: not a UUID: ${bookingId}`);
+  }
+  const dbUrl = process.env.DATABASE_URL || 'postgres://postgres:password@localhost:5432/our_places';
+  const out = execSync(`psql "${dbUrl}" -v ON_ERROR_STOP=1 -v booking_id=${bookingId} -t -A`, {
+    input: EXPIRE_PENDING_HOLD_SQL,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }).toString();
+  const match = out.match(/INSERT 0 (\d+)/);
+  return match ? Number(match[1]) : 0;
+}
