@@ -83,3 +83,28 @@ pub async fn start_guest_session(cx: &Cx, user: &UserResponse) -> Result<(), Str
 pub fn jamaica_today() -> chrono::NaiveDate {
     (chrono::Utc::now() - chrono::Duration::hours(5)).date_naive()
 }
+
+/// Loads booking `id` as `guest`. Anything the guest does not own (or that
+/// does not exist) is a 404, so IDs cannot be probed.
+pub async fn owned_booking(
+    cx: &Cx,
+    guest: &GuestSession,
+    id: uuid::Uuid,
+) -> topcoat::Result<common::models::BookingResponse> {
+    let token = service_token(cx, guest)?;
+    match get_api_client(cx).get_booking_as(id, &token).await {
+        Ok(b) if b.guest_id == guest.user_id => Ok(b),
+        Ok(_)
+        | Err(web_client::client::UserCallError::NotFound)
+        | Err(web_client::client::UserCallError::Unauthorized) => {
+            tracing::info!(booking_id = %id, "booking access denied");
+            Err(topcoat::router::error::not_found().into())
+        }
+        Err(e) => Err(web_client::app_error(e).into()),
+    }
+}
+
+/// Parses a booking ID path segment; malformed IDs are a 404.
+pub fn parse_booking_id(raw: &str) -> topcoat::Result<uuid::Uuid> {
+    uuid::Uuid::parse_str(raw).map_err(|_| topcoat::router::error::not_found().into())
+}

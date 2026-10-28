@@ -1,5 +1,7 @@
 /// Sign in and sign out.
 pub mod auth;
+/// My bookings, cancellation and refund quotes.
+pub mod bookings;
 /// Checkout and legacy per-currency checkout redirects.
 pub mod checkout;
 /// Landing page.

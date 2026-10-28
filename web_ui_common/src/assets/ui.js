@@ -293,11 +293,17 @@
     paintCalendar(root);
   });
 
-  // Re-enhance calendars that htmx swaps in (prev/next month).
+  // Re-enhance calendars that htmx swaps in (prev/next month), and open
+  // dialogs that arrive with data-auto-open (e.g. the cancel confirmation).
   document.addEventListener('htmx:load', function (event) {
     var el = event.target instanceof Element ? event.target : null;
-    if (el && el.matches('[data-calendar]')) enhanceCalendar(el);
-    else if (el) enhanceCalendars(el);
+    if (!el) return;
+    if (el.matches('[data-calendar]')) enhanceCalendar(el);
+    else enhanceCalendars(el);
+    var dialogs = el.matches('dialog[data-auto-open]') ? [el] : el.querySelectorAll('dialog[data-auto-open]');
+    for (var i = 0; i < dialogs.length; i++) {
+      if (!dialogs[i].open && typeof dialogs[i].showModal === 'function') dialogs[i].showModal();
+    }
   });
 
   function init() {

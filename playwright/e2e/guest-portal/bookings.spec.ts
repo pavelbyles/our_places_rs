@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { bookingStatus, createBooking, createGuest, loginGuest } from '../fixtures/bookings-data.js';
+import { expirePendingHold } from '../setup/db-seed.js';
 
 // Legacy deviations (parity inventory): the legacy page's inline script is
 // HTML-escaped by Topcoat ("SyntaxError: Unexpected token ';'"), so its cancel
@@ -73,4 +74,25 @@ test.describe('Guest Portal - My Bookings', () => {
     const resp = await page.goto(`/bookings/${other.id}/cancellation-quote`);
     expect(resp?.status()).toBe(404);
   });
+
+  // Hold expiry (intent §5, 2-hour hold): once the cleanup job cancels a
+  // pending hold, the guest is offered the same dates again.
+  test('offers to book again after a hold expires', NEW_ONLY, async ({ page, request }) => {
+    const guest = createGuest();
+    const booking = await createBooking(request, guest.id);
+    await loginGuest(page, guest);
+    await page.goto('/bookings');
+    await expect(page.locator(`#booking-${booking.id}`)).toContainText('held until');
+
+    expect(expirePendingHold(booking.id)).toBe(1);
+    await page.reload();
+    const card = page.locator(`#booking-${booking.id}`);
+    await expect(page.locator(`#status-badge-${booking.id}`)).toHaveText(/cancelled/i);
+    await expect(card.getByRole('link', { name: 'Book again' })).toHaveAttribute(
+      'href',
+      new RegExp(`check_in=${booking.checkIn}&check_out=${booking.checkOut}`),
+    );
+    await expect(page.locator(`#btn-cancel-${booking.id}`)).toHaveCount(0);
+  });
 });
+

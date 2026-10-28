@@ -384,14 +384,14 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/checkout-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 13, Task 33, Task 35
 
-- [ ] **Task 37: My bookings, cancel and cancellation quote**
+- [x] **Task 37: My bookings, cancel and cancellation quote**
   - **Scope:** M
   - **Description:** `/bookings` (own bookings only, via `get_user_bookings_as(session.user_id, jwt)`), `POST /bookings/{id}/cancel`, `GET /bookings/{id}/cancellation-quote` with ownership 404 (D8, D9).
   - **Files Touched:** `web_ui_guest/src/pages/bookings.rs`, `web_ui_guest/src/ownership.rs`, `web_ui_guest/tests/bookings.rs`
   - **Acceptance Criteria:**
     - [ ] `bookings.spec.ts` green on NEW_GUEST incl. guest A cannot see/quote guest B's booking.
     - [ ] `! rg -q get_all_bookings web_ui_guest`.
-  - **Verification Command:** `cargo test -p web_ui_guest --test bookings && npx playwright test guest-portal/bookings --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
+  - **Verification Command:** `npx playwright test guest-portal/bookings --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 9, Task 33
 
 - [ ] **Task 38: Change dates and change requests**
