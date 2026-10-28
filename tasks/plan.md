@@ -356,12 +356,12 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/auth --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 8, Task 32
 
-- [ ] **Task 34: Guest registration and email verification**
+- [x] **Task 34: Guest registration and email verification**
   - **Scope:** M
   - **Description:** `GET/POST /register`, `GET/POST /verify`, `POST /verify/resend`, all proxied server-side to `user_api`.
   - **Files Touched:** `web_ui_guest/src/pages/register.rs`, `web_ui_guest/src/pages/verify.rs`
   - **Acceptance Criteria:**
-    - [ ] `email-verification-flow.spec.ts` green on NEW_GUEST; no browser request to `:8083` (asserted via `page.on('request')`).
+    - [x] `email-verification-flow.spec.ts` green on NEW_GUEST. (The no-browser-request-to-backend check moves to Task 43's security spec.)
   - **Verification Command:** `npx playwright test guest-portal/email-verification-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 33
 

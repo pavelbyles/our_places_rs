@@ -1,4 +1,4 @@
-use common::models::{CreateSessionRequest, LoginRequest};
+use common::models::LoginRequest;
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -6,12 +6,9 @@ use topcoat::{
     router::{content::Form, error::see_other, page, parse_query_params},
     view::{View, component, view},
 };
-use web_client::{
-    auth::token_hash_to_hex, get_api_client, redirect::safe_redirect, session::GUEST_NAMESPACE,
-};
+use web_client::{auth::token_hash_to_hex, get_api_client, redirect::safe_redirect};
 
-/// Guest sessions last 7 days, refreshed on use (same as the legacy portal).
-const SESSION_TTL_SECONDS: i64 = 604_800;
+use crate::support::start_guest_session;
 
 #[derive(Deserialize, Default)]
 struct LoginQuery {
@@ -132,46 +129,13 @@ pub async fn login_submit(
                 },
             )
         }
-        Ok(user) => {
-            // Drop any previous session before issuing a new token.
-            if let Some(old) = topcoat::session::stop(cx).await.ok().flatten() {
-                let _ = api.delete_session(&token_hash_to_hex(&old)).await;
+        Ok(user) => match start_guest_session(cx, &user).await {
+            Ok(()) => return Err(see_other(safe_redirect(&form.redirect)).into()),
+            Err(e) => {
+                tracing::error!("{e}");
+                Some(LoginError::Unavailable)
             }
-            match topcoat::session::start(cx).await {
-                Ok(session) => {
-                    let name = format!("{} {}", user.first_name, user.last_name)
-                        .trim()
-                        .to_string();
-                    let stored = api
-                        .create_session(&CreateSessionRequest {
-                            token_hash: token_hash_to_hex(&session.token_hash),
-                            user_id: user.id,
-                            email: user.email.clone(),
-                            name: if name.is_empty() {
-                                user.email.clone()
-                            } else {
-                                name
-                            },
-                            role: "guest".to_string(),
-                            namespace: GUEST_NAMESPACE.to_string(),
-                            ttl_seconds: SESSION_TTL_SECONDS,
-                        })
-                        .await;
-                    match stored {
-                        Ok(_) => return Err(see_other(safe_redirect(&form.redirect)).into()),
-                        Err(e) => {
-                            tracing::error!("failed to store guest session: {e}");
-                            let _ = topcoat::session::stop(cx).await;
-                            Some(LoginError::Unavailable)
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("failed to start guest session: {e}");
-                    Some(LoginError::Unavailable)
-                }
-            }
-        }
+        },
     };
     let (email, redirect) = (form.email, form.redirect);
     Ok(view! { login_form(email: email, redirect: redirect, error: error, verified: false) })
