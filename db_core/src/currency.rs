@@ -84,3 +84,35 @@ where
     }
     rates
 }
+
+/// Lists the newest rate for every stored currency pair (the one
+/// [`get_exchange_rate_and_currency`] uses), sorted by base then target
+/// currency. Read-only; one row per pair.
+#[tracing::instrument(skip(executor))]
+pub async fn list_latest_exchange_rates<'e, E>(
+    executor: E,
+) -> Result<Vec<common::exchange_rate::ExchangeRate>>
+where
+    E: PgExecutor<'e>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT DISTINCT ON (base_currency, target_currency)
+               base_currency, target_currency, rate, effective_at
+        FROM currency_exchange_rates
+        ORDER BY base_currency, target_currency, effective_at DESC
+        "#
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| common::exchange_rate::ExchangeRate {
+            base_currency: r.base_currency,
+            target_currency: r.target_currency,
+            rate: r.rate,
+            effective_at: r.effective_at,
+        })
+        .collect())
+}

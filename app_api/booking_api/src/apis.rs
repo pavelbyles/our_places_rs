@@ -1442,6 +1442,36 @@ async fn update_admin_payout_status(
     ))
 }
 
+/// Admin only: the newest rate for every stored currency pair.
+#[tracing::instrument(skip(pool))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/exchange-rates",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Newest rate per currency pair", body = common::exchange_rate::ExchangeRatesResponse),
+        (status = 401, description = "Missing token or not an admin"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_admin_exchange_rates(
+    claims: api_core::auth::Claims,
+    pool: web::Data<PgPool>,
+) -> Result<impl Responder, ApiError> {
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    if !user.roles.contains(&db_core::models::UserRole::Admin) {
+        return Err(ApiError::Unauthorized("Admin role required".to_string()));
+    }
+
+    let rates = db_core::currency::list_latest_exchange_rates(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(HttpResponse::Ok().json(common::exchange_rate::ExchangeRatesResponse { rates }))
+}
+
 async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, new_b: Booking) {
     let pool_clone = pool.clone();
 
@@ -3309,6 +3339,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_user_bookings,
             get_listing_bookings,
             get_unavailable_ranges,
+            get_admin_exchange_rates,
             update_booking,
             delete_booking,
             transfer_booking,
@@ -3335,6 +3366,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 AvailabilityResponse,
                 common::availability::UnavailableRange,
                 common::availability::UnavailableRangesResponse,
+                common::exchange_rate::ExchangeRate,
+                common::exchange_rate::ExchangeRatesResponse,
                 BookingResponse,
                 pagination::Pagination,
                 FeeItem,
@@ -3524,6 +3557,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route("/export", web::get().to(export_host_ledger_csv)),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/admin/exchange-rates")
+            .route("", web::get().to(get_admin_exchange_rates)),
     );
 
     cfg.service(

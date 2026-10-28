@@ -5,6 +5,7 @@ pub mod availability;
 pub mod cancellation;
 pub mod csv;
 pub mod email;
+pub mod exchange_rate;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gcs;
 pub mod geocode;

@@ -1961,4 +1961,80 @@ mod tests {
         .await;
         assert_eq!(resp.status(), 404);
     }
+
+    #[tokio::test]
+    async fn test_admin_exchange_rates_endpoint() {
+        use actix_web::{App, test, web};
+        use rust_decimal_macros::dec;
+        use sqlx_db_tester::TestPg;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let new_user = |id: Uuid, role: db_core::models::UserRole| db_core::models::NewUser {
+            id,
+            email: format!("u_{id}@example.com"),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![role]),
+            default_currency: "USD".to_string(),
+        };
+        let (admin_id, host_id) = (Uuid::now_v7(), Uuid::now_v7());
+        db_core::user::create_user(&pool, &new_user(admin_id, db_core::models::UserRole::Admin))
+            .await
+            .unwrap();
+        db_core::user::create_user(&pool, &new_user(host_id, db_core::models::UserRole::Host))
+            .await
+            .unwrap();
+
+        // A newer USD/JMD rate supersedes the migration's seed.
+        sqlx::query(
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('USD', 'JMD', 157.250000, NOW() + INTERVAL '1 second')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        let get = |jwt: String| {
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates")
+                .insert_header(("Authorization", format!("Bearer {jwt}")))
+                .to_request()
+        };
+
+        let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(admin_id))).await;
+        assert_eq!(resp.status(), 200);
+        let body: common::exchange_rate::ExchangeRatesResponse = test::read_body_json(resp).await;
+        let usd_jmd: Vec<_> = body
+            .rates
+            .iter()
+            .filter(|r| r.base_currency == "USD" && r.target_currency == "JMD")
+            .collect();
+        assert_eq!(usd_jmd.len(), 1, "one row per pair");
+        assert_eq!(usd_jmd[0].rate, dec!(157.25));
+
+        let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(host_id))).await;
+        assert_eq!(resp.status(), 401);
+    }
 }
