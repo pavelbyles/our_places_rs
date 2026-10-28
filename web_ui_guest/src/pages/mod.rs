@@ -1,5 +1,7 @@
 /// Sign in and sign out.
 pub mod auth;
+/// Change dates and respond to change requests.
+pub mod booking_change;
 /// My bookings, cancellation and refund quotes.
 pub mod bookings;
 /// Checkout and legacy per-currency checkout redirects.

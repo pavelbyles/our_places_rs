@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 use common::cancellation::RefundQuote;
-use common::models::{BookingResponse, ListingResponse, UpdatedBookingRequest};
+use common::models::{
+    BookingResponse, ChangeInitiatorRole, ListingResponse, ReservationChangeRequestResponse,
+    ReservationChangeStatus, UpdatedBookingRequest,
+};
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -37,6 +40,7 @@ struct BookingCard {
     listing_name: String,
     listing_slug: Option<String>,
     location: String,
+    pending_change: Option<ReservationChangeRequestResponse>,
 }
 
 #[component]
@@ -93,6 +97,28 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
                     <p class="text-sm">"This reservation is cancelled. " <a href=(href)>"Book again"</a></p>
                 }
             }
+            if let Some(change) = card.pending_change.clone() {
+                let rid = change.id;
+                let by_guest = change.initiated_by_role == ChangeInitiatorRole::Guest;
+                <section id=(format!("pending-change-banner-{id}")) aria-label="Pending reservation change" class="space-y-2 rounded-lg border border-border p-4 text-sm">
+                    <p class="font-medium">(if by_guest { "Change request pending host approval" } else { "Your host proposed a change" })</p>
+                    <p>(format!("{} → {}, {} guest(s) · new total {}", change.proposed_date_from.format("%a %-d %b %Y"), change.proposed_date_to.format("%a %-d %b %Y"), change.proposed_number_of_persons, money(&change.currency, change.proposed_total_price)))</p>
+                    <div class="flex flex-wrap gap-2">
+                        if by_guest {
+                            <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/cancel"))>
+                                <button id=(format!("btn-cancel-change-{rid}")) type="submit" class="h-10 rounded-full border border-border px-4">"Withdraw request"</button>
+                            </form>
+                        } else {
+                            <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/approve"))>
+                                <button id=(format!("btn-approve-change-{rid}")) type="submit" class="h-10 rounded-full bg-primary px-4 text-primary-foreground">"Accept change"</button>
+                            </form>
+                            <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/decline"))>
+                                <button id=(format!("btn-decline-change-{rid}")) type="submit" class="h-10 rounded-full border border-border px-4">"Decline"</button>
+                            </form>
+                        }
+                    </div>
+                </section>
+            }
             <div id=(format!("booking-actions-{id}")) class="flex flex-wrap gap-2">
                 if let Some(slug) = card.listing_slug.clone() {
                     <a href=(format!("/listings/{slug}")) class=(action)>"View Listing"</a>
@@ -145,6 +171,18 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
         listing_index(cx)
     );
     let bookings = bookings.map_err(web_client::app_error)?;
+    let mut pending_changes = HashMap::new();
+    for b in bookings.iter().filter(|b| status_of(b) == "confirmed") {
+        let pending = get_api_client(cx)
+            .list_reservation_change_requests(b.id, Some(&token))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .find(|r| r.status == ReservationChangeStatus::Pending);
+        if let Some(p) = pending {
+            pending_changes.insert(b.id, p);
+        }
+    }
     let cards: Vec<BookingCard> = bookings
         .into_iter()
         .map(|b| {
@@ -160,6 +198,7 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                         None => l.country.clone(),
                     })
                     .unwrap_or_default(),
+                pending_change: pending_changes.remove(&b.id),
                 booking: b,
             }
         })

@@ -394,7 +394,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/bookings --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 9, Task 33
 
-- [ ] **Task 38: Change dates and change requests**
+- [x] **Task 38: Change dates and change requests**
   - **Scope:** M
   - **Description:** `/bookings/{id}/change-dates`, change-quote, create, approve/decline/cancel fragments, all ownership-checked.
   - **Files Touched:** `web_ui_guest/src/pages/booking_change.rs`
