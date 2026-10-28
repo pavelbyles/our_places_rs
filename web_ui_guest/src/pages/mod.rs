@@ -1,3 +1,5 @@
+/// About page.
+pub mod about;
 /// Sign in and sign out.
 pub mod auth;
 /// Change dates and respond to change requests.
@@ -20,5 +22,7 @@ pub mod messages;
 pub mod profile;
 /// Guest registration.
 pub mod register;
+/// Verified reviews.
+pub mod reviews;
 /// Email verification and resend.
 pub mod verify;

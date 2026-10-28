@@ -430,7 +430,7 @@ P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of 
   - **Verification Command:** `npx playwright test guest-portal/profile --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
   - **Dependencies:** Task 33
 
-- [ ] **Task 42: Reviews (token flow) and About page**
+- [x] **Task 42: Reviews (token flow) and About page**
   - **Scope:** S
   - **Description:** `GET/POST /reviews/submit?token=`, `/reviews/success`, `/about`.
   - **Files Touched:** `web_ui_guest/src/pages/{reviews,about}.rs`, `playwright/e2e/guest-portal/reviews.spec.ts`

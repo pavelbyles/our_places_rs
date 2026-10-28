@@ -21,7 +21,9 @@ test.describe('Guest Portal - Verified Reviews', () => {
     const resp = await page.goto(`/reviews/submit?token=${encodeURIComponent(token)}`);
     expect(resp?.status()).toBe(200);
     for (const category of ['cleanliness', 'accuracy', 'location', 'value']) {
-      await page.locator(`input[name="${category}_rating"][value="5"]`).check({ force: true });
+      // People click the visible star label; the radio itself is visually hidden.
+      await page.locator(`label:has(input[name="${category}_rating"][value="5"])`).click();
+      await expect(page.locator(`input[name="${category}_rating"][value="5"]`)).toBeChecked();
     }
     await page.locator('textarea[name="public_review_text"]').fill('Wonderful stay, spotless villa.');
     await page.getByRole('button', { name: /submit/i }).click();
