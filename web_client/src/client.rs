@@ -568,7 +568,7 @@ impl TopcoatApiClient {
         send_json_as(reqwest::Method::PATCH, &url, jwt, req).await
     }
 
-    /// The newest rate per currency pair, as the admin who owns `jwt`.
+    /// The newest rate per currency pair, as the admin or host who owns `jwt`.
     pub async fn get_exchange_rates_as(
         &self,
         jwt: &str,

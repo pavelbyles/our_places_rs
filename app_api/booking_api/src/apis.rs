@@ -1442,7 +1442,7 @@ async fn update_admin_payout_status(
     ))
 }
 
-/// Admin only: the newest rate for every stored currency pair.
+/// Admins and hosts (read-only): the newest rate for every stored currency pair.
 #[tracing::instrument(skip(pool))]
 #[utoipa::path(
     get,
@@ -1450,7 +1450,7 @@ async fn update_admin_payout_status(
     tag = "admin",
     responses(
         (status = 200, description = "Newest rate per currency pair", body = common::exchange_rate::ExchangeRatesResponse),
-        (status = 401, description = "Missing token or not an admin"),
+        (status = 401, description = "Missing token or not an admin or host"),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -1461,8 +1461,16 @@ async fn get_admin_exchange_rates(
     let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
         .await
         .map_err(ApiError::Database)?;
-    if !user.roles.contains(&db_core::models::UserRole::Admin) {
-        return Err(ApiError::Unauthorized("Admin role required".to_string()));
+    let is_staff = user.roles.iter().any(|r| {
+        matches!(
+            r,
+            db_core::models::UserRole::Admin | db_core::models::UserRole::Host
+        )
+    });
+    if !is_staff {
+        return Err(ApiError::Unauthorized(
+            "Admin or host role required".to_string(),
+        ));
     }
 
     let rates = db_core::currency::list_latest_exchange_rates(pool.get_ref())

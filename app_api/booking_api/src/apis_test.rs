@@ -1992,13 +1992,19 @@ mod tests {
             roles: Some(vec![role]),
             default_currency: "USD".to_string(),
         };
-        let (admin_id, host_id) = (Uuid::now_v7(), Uuid::now_v7());
+        let (admin_id, host_id, booker_id) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
         db_core::user::create_user(&pool, &new_user(admin_id, db_core::models::UserRole::Admin))
             .await
             .unwrap();
         db_core::user::create_user(&pool, &new_user(host_id, db_core::models::UserRole::Host))
             .await
             .unwrap();
+        db_core::user::create_user(
+            &pool,
+            &new_user(booker_id, db_core::models::UserRole::Booker),
+        )
+        .await
+        .unwrap();
 
         // A newer USD/JMD rate supersedes the migration's seed.
         sqlx::query(
@@ -2034,7 +2040,12 @@ mod tests {
         assert_eq!(usd_jmd.len(), 1, "one row per pair");
         assert_eq!(usd_jmd[0].rate, dec!(157.25));
 
+        // Hosts get the same read-only view.
         let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(host_id))).await;
+        assert_eq!(resp.status(), 200);
+
+        let resp =
+            test::call_service(&app, get(api_core::auth::generate_test_jwt(booker_id))).await;
         assert_eq!(resp.status(), 401);
     }
 }
