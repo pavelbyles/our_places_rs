@@ -1,5 +1,6 @@
-//! Read-only view of the stored exchange rates (parity A28). The legacy
-//! page showed hardcoded rates; these come from `currency_exchange_rates`.
+//! Read-only view of the stored exchange rates (parity A28), for admins and
+//! hosts. The legacy page showed hardcoded rates; these come from
+//! `currency_exchange_rates`.
 
 use common::exchange_rate::ExchangeRate;
 use rust_decimal::Decimal;
@@ -59,7 +60,7 @@ pub async fn exchange_rates_page(cx: &Cx) -> Result<impl View> {
     let loaded = get_api_client(cx).get_exchange_rates_as(&token).await;
     let error = loaded.as_ref().err().map(|e| {
         tracing::info!("exchange rates unavailable: {e}");
-        "Exchange rates could not be loaded. Only administrators can view them.".to_string()
+        "Exchange rates could not be loaded. Try again shortly.".to_string()
     });
     let table = rows(loaded.map(|r| r.rates).unwrap_or_default());
     Ok(view! {
