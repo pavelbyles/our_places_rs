@@ -10,6 +10,7 @@ use web_client::{
     auth::token_hash_to_hex, get_api_client, redirect::safe_redirect, session::require_admin,
 };
 
+use crate::pages::register::urlencode;
 use crate::support::{portal_role, start_admin_session};
 
 #[derive(Deserialize, Default)]
@@ -30,15 +31,9 @@ pub struct LoginForm {
 }
 
 #[component]
-async fn login_form(
-    email: String,
-    redirect: String,
-    error: Option<String>,
-    unverified: bool,
-) -> Result<impl View> {
+async fn login_form(email: String, redirect: String, error: Option<String>) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
-    let verify_href = format!("/verify?email={}", email.replace('&', "%26"));
     Ok(view! {
         <div class="w-full max-w-md space-y-6 rounded-xl border border-border bg-card p-8 text-card-foreground">
             <div class="space-y-1">
@@ -49,9 +44,6 @@ async fn login_form(
             if let Some(error) = error {
                 <div id="admin-auth-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">
                     <span id="admin-auth-error-text">(error)</span>
-                    if unverified {
-                        " " <a href=(verify_href.clone())>"Verify your account"</a>
-                    }
                 </div>
             }
             <form method="post" action="/login" class="space-y-4">
@@ -77,13 +69,12 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
         .ok()
         .and_then(|q| q.redirect)
         .unwrap_or_default();
-    Ok(
-        view! { login_form(email: String::new(), redirect: redirect, error: None, unverified: false) },
-    )
+    Ok(view! { login_form(email: String::new(), redirect: redirect, error: None) })
 }
 
 /// Signs a host or administrator in. Accounts without either role are
-/// refused with the same message as a wrong password.
+/// refused with the same message as a wrong password. An unverified account
+/// (the password was right) goes to the code prompt instead.
 #[page(POST "/login")]
 pub async fn login_submit(
     cx: &Cx,
@@ -94,29 +85,19 @@ pub async fn login_submit(
         email: form.email.clone(),
         password: form.password,
     };
-    let (error, unverified) = match get_api_client(cx).login_user(&request).await {
+    let error = match get_api_client(cx).login_user(&request).await {
         Err(e) => {
-            let unverified = e.to_string().to_lowercase().contains("not verified");
-            tracing::info!("console sign-in rejected");
-            if unverified {
-                (
-                    "Account not verified. Enter the code we emailed you.".to_string(),
-                    true,
-                )
-            } else {
-                (
-                    "Invalid email or password. Access is restricted to hosts and administrators."
-                        .to_string(),
-                    false,
-                )
+            if e.to_string().to_lowercase().contains("not verified") {
+                let target = format!("/verify?email={}&unverified=1", urlencode(&form.email));
+                return Err(see_other(target).into());
             }
+            tracing::info!("console sign-in rejected");
+            "Invalid email or password. Access is restricted to hosts and administrators."
+                .to_string()
         }
         Ok(user) => match portal_role(&user) {
-            None => (
-                "Invalid email or password. Access is restricted to hosts and administrators."
-                    .to_string(),
-                false,
-            ),
+            None => "Invalid email or password. Access is restricted to hosts and administrators."
+                .to_string(),
             Some(role) => match start_admin_session(cx, &user, role).await {
                 Ok(()) => {
                     let target = match safe_redirect(&form.redirect) {
@@ -127,15 +108,13 @@ pub async fn login_submit(
                 }
                 Err(e) => {
                     tracing::error!("{e}");
-                    ("Sign-in failed. Please try again.".to_string(), false)
+                    "Sign-in failed. Please try again.".to_string()
                 }
             },
         },
     };
     let (email, redirect) = (form.email, form.redirect);
-    Ok(
-        view! { login_form(email: email, redirect: redirect, error: Some(error), unverified: unverified) },
-    )
+    Ok(view! { login_form(email: email, redirect: redirect, error: Some(error)) })
 }
 
 async fn end_session(cx: &Cx) -> Result<()> {

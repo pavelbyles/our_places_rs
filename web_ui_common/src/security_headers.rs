@@ -41,26 +41,38 @@ const HSTS: &str = "max-age=31536000; includeSubDomains";
 ///
 /// Cross-site request forgery is handled by Topcoat's default origin policy,
 /// which rejects cross-origin state-changing requests.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SecurityHeaders {
     hsts: bool,
     admin: bool,
+    storage_origin: Option<String>,
+}
+
+/// `csp` with `origin` allowed wherever Cloud Storage is (`img-src`, and
+/// `connect-src` for the admin portal). Origins that could break out of a
+/// directive are refused.
+pub fn csp_with_storage_origin(csp: &str, origin: &str) -> Option<String> {
+    Some(origin)
+        .filter(|o| !o.is_empty() && !o.contains([';', ',', '\'', ' ', '\n']))
+        .map(|o| {
+            csp.replace(
+                "https://storage.googleapis.com",
+                &format!("https://storage.googleapis.com {o}"),
+            )
+        })
 }
 
 impl SecurityHeaders {
     /// Headers without HSTS (local development over plain HTTP).
     pub fn new() -> Self {
-        Self {
-            hsts: false,
-            admin: false,
-        }
+        Self::default()
     }
 
     /// The admin portal's headers ([`ADMIN_CONTENT_SECURITY_POLICY`]).
     pub fn admin() -> Self {
         Self {
-            hsts: false,
             admin: true,
+            ..Self::default()
         }
     }
 
@@ -69,16 +81,30 @@ impl SecurityHeaders {
         Self { hsts, ..self }
     }
 
+    /// Also allow a local Cloud Storage emulator's origin (development only;
+    /// see [`common::gcs::emulator_endpoint`]). `None` changes nothing.
+    pub fn with_storage_origin(self, origin: Option<String>) -> Self {
+        Self {
+            storage_origin: origin,
+            ..self
+        }
+    }
+
+    fn content_security_policy(&self) -> HeaderValue {
+        let base = if self.admin {
+            ADMIN_CONTENT_SECURITY_POLICY
+        } else {
+            CONTENT_SECURITY_POLICY
+        };
+        self.storage_origin
+            .as_deref()
+            .and_then(|origin| csp_with_storage_origin(base, origin))
+            .and_then(|csp| HeaderValue::from_str(&csp).ok())
+            .unwrap_or_else(|| HeaderValue::from_static(base))
+    }
+
     fn static_headers(&self) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {
         [
-            (
-                "content-security-policy",
-                if self.admin {
-                    ADMIN_CONTENT_SECURITY_POLICY
-                } else {
-                    CONTENT_SECURITY_POLICY
-                },
-            ),
             ("x-content-type-options", "nosniff"),
             ("x-frame-options", "DENY"),
             ("referrer-policy", "strict-origin-when-cross-origin"),
@@ -101,6 +127,10 @@ impl Layer for SecurityHeaders {
     fn handle<'a>(&'a self, cx: &'a Cx, body: Body, next: Next<'a>) -> LayerFuture<'a> {
         Box::pin(async move {
             let queued = response_headers(cx);
+            queued.append(
+                HeaderName::from_static("content-security-policy"),
+                self.content_security_policy(),
+            );
             for (name, value) in self.static_headers() {
                 queued.append(
                     HeaderName::from_static(name),

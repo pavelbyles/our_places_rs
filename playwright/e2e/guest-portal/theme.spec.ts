@@ -23,14 +23,14 @@ test.describe('Guest Portal - Theme', () => {
     const res = await page.goto('/');
     expect(await res?.text()).toMatch(/<html lang="en" class="">/);
 
-    const toggle = page.locator('[data-theme-cycle]');
+    const toggle = page.locator('[data-theme-cycle]').first();
     await expect(toggle).toHaveAttribute('aria-label', 'Switch to dim theme');
     await toggle.click();
     await expect(page.locator('html')).toHaveClass('dim');
 
     const reload = await page.reload();
     expect(await reload?.text()).toContain('<html lang="en" class="dim">');
-    await page.locator('[data-theme-cycle]').click();
+    await page.locator('[data-theme-cycle]').first().click();
     await page.reload();
     expect(await htmlClass(page)).toBe('dark');
   });

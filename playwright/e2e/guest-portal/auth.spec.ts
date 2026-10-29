@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { TEST_USERS } from '../fixtures/test-data.js';
-import { createGuest, loginGuest, psql } from '../fixtures/bookings-data.js';
+import { createGuest, createUnverifiedUser, loginGuest, psql } from '../fixtures/bookings-data.js';
 
 test.describe('Guest Portal - Authentication Flows', () => {
   test.beforeEach(async ({ page }) => {
@@ -83,5 +83,20 @@ test.describe('Guest Portal - Authentication Flows', () => {
     await expect(page.locator('#nav-user-dropdown')).toHaveCount(0);
     expect(psql(`SELECT count(*) FROM sessions WHERE user_id = '${guest.id}';`)).toBe('0');
   });
-});
 
+  test('sends an unverified guest to the code prompt, then signs them in', { tag: '@new-only' }, async ({ page }) => {
+    const guest = createUnverifiedUser('booker');
+    await page.locator('#guest-email').fill(guest.email);
+    await page.locator('#guest-password').fill(guest.password);
+    await page.locator('#btn-guest-login').click();
+
+    await expect(page).toHaveURL(/\/verify\?email=.*&unverified=1$/);
+    await expect(page.locator('#verify-email')).toHaveValue(guest.email);
+    await expect(page.locator('#verify-info-text')).toContainText(/isn't verified yet/);
+
+    await page.locator('#verify-code').fill(guest.code);
+    await page.locator('#btn-verify').click();
+    await expect(page.locator('#nav-user-dropdown')).toBeVisible();
+    expect(psql(`SELECT is_verified FROM "user" WHERE id = '${guest.id}';`)).toBe('t');
+  });
+});

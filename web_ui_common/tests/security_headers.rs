@@ -10,6 +10,7 @@ use topcoat::{
 };
 use web_ui_common::security_headers::{
     ADMIN_CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY, HTML_CACHE_CONTROL, SecurityHeaders,
+    csp_with_storage_origin,
 };
 
 #[page("/__probe")]
@@ -119,4 +120,62 @@ async fn admin_csp_only_adds_cloud_storage_uploads() -> reqwest::Result<()> {
         CONTENT_SECURITY_POLICY
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn a_storage_emulator_origin_is_allowed_alongside_cloud_storage() -> reqwest::Result<()> {
+    let origin = Some("http://localhost:4443".to_string());
+    let admin = serve(SecurityHeaders::admin().with_storage_origin(origin.clone())).await;
+    let guest = serve(SecurityHeaders::new().with_storage_origin(origin)).await;
+    let admin_csp =
+        reqwest::get(format!("{admin}/__probe")).await?.headers()["content-security-policy"]
+            .to_str()
+            .unwrap_or_default()
+            .to_string();
+    let guest_csp =
+        reqwest::get(format!("{guest}/__probe")).await?.headers()["content-security-policy"]
+            .to_str()
+            .unwrap_or_default()
+            .to_string();
+    assert!(
+        admin_csp
+            .contains("connect-src 'self' https://storage.googleapis.com http://localhost:4443;")
+    );
+    assert!(
+        admin_csp
+            .contains("img-src 'self' https://storage.googleapis.com http://localhost:4443 data:")
+    );
+    assert!(
+        guest_csp
+            .contains("img-src 'self' https://storage.googleapis.com http://localhost:4443 data:")
+    );
+    assert!(guest_csp.contains("connect-src 'self';"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn without_a_storage_origin_the_csp_is_unchanged() -> reqwest::Result<()> {
+    let base = serve(SecurityHeaders::admin().with_storage_origin(None)).await;
+    let res = reqwest::get(format!("{base}/__probe")).await?;
+    assert_eq!(
+        res.headers()["content-security-policy"],
+        ADMIN_CONTENT_SECURITY_POLICY
+    );
+    Ok(())
+}
+
+#[test]
+fn storage_origins_that_could_inject_directives_are_refused() {
+    for origin in [
+        "",
+        "http://x; script-src *",
+        "http://a http://b",
+        "'unsafe-inline'",
+    ] {
+        assert_eq!(
+            csp_with_storage_origin(CONTENT_SECURITY_POLICY, origin),
+            None,
+            "{origin}"
+        );
+    }
 }

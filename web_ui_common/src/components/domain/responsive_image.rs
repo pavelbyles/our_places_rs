@@ -36,7 +36,7 @@ pub async fn responsive_image(
     let small = variant_url(&src, 640);
     Ok(view! {
         if variants {
-            <picture>
+            <picture class="block size-full">
                 <source media="(min-width: 1024px)" srcset=(large) type="image/webp" />
                 <source media="(min-width: 640px)" srcset=(medium) type="image/webp" />
                 <source srcset=(small) type="image/webp" />

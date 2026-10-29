@@ -1,16 +1,25 @@
 //! Listing photo uploads: the browser asks for signed URLs here and then
 //! uploads straight to Cloud Storage (no image bytes pass through the
-//! portal). `image_worker` processes the uploads afterwards.
+//! portal). `image_worker` processes the uploads afterwards. Photos can be
+//! removed from the grid on the edit page.
 
-use common::models::{ImagePresignRequest, ImagePresignResponse, PendingImageMetadata};
+use common::models::{
+    ImagePresignRequest, ImagePresignResponse, ListingImageResponse, PendingImageMetadata,
+};
 use serde::Deserialize;
 use topcoat::{
     Result,
     context::Cx,
-    router::{content::Json, error::not_found, path_param, route},
+    router::{
+        content::{Form, Json},
+        error::not_found,
+        page, path_param, route,
+    },
+    view::{View, component, view},
 };
 use uuid::Uuid;
 use web_client::get_api_client;
+use web_ui_common::components::domain::responsive_image::responsive_image;
 
 use super::managed_listing;
 use crate::support::staff;
@@ -84,6 +93,88 @@ pub async fn presign_images(
         .map_err(web_client::app_error)?;
     tracing::info!(listing_id = %listing.id, count = signed.len(), "photo upload URLs issued");
     Ok(Json(signed))
+}
+
+/// Remove-photo form fields.
+#[derive(Deserialize)]
+pub struct RemoveForm {
+    /// The photo to remove.
+    pub image_id: Uuid,
+}
+
+/// A listing's processed photos (empty if the listing cannot be read).
+pub async fn listing_photos(cx: &Cx, listing_id: Uuid) -> Vec<ListingImageResponse> {
+    get_api_client(cx)
+        .get_listing_by_id(&listing_id.to_string(), None)
+        .await
+        .map(|d| d.images)
+        .unwrap_or_default()
+}
+
+/// The photo grid with a remove button per photo. HTMX swaps it (outerHTML)
+/// after a removal, and ui.js re-reads it from the page after an upload.
+#[component]
+pub async fn photo_grid(
+    /// The listing the photos belong to.
+    listing_id: Uuid,
+    /// Listing name, used as alt text.
+    name: String,
+    /// Processed photos in display order.
+    photos: Vec<ListingImageResponse>,
+    /// Why the last removal failed, if it did.
+    error: Option<String>,
+) -> Result<impl View> {
+    let remove = format!("/admin/listings/{listing_id}/images/remove");
+    Ok(view! {
+        <div id="listing-photos-slot" data-photo-count=(photos.len().to_string()) class="space-y-3">
+            if let Some(error) = error {
+                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(error)</p>
+            }
+            if photos.is_empty() {
+                <p class="text-sm text-muted-foreground">"No processed photos yet."</p>
+            } else {
+                <ul id="listing-photos" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    for (i, photo) in photos.into_iter().enumerate() {
+                        <li class="relative">
+                            responsive_image(src: photo.url, alt: name.clone(), attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" })
+                            <form method="post" action=(remove.clone()) hx-post=(remove.clone()) hx-target="#listing-photos-slot" hx-swap="outerHTML" hx-confirm="Delete this photo? This cannot be undone." class="absolute top-2 right-2">
+                                <input type="hidden" name="image_id" value=(photo.id.to_string()) />
+                                <button type="submit" aria-label=(format!("Remove photo {}", i + 1)) class="rounded-md bg-card/90 px-2 py-1 text-xs font-medium text-destructive shadow-xs">"Remove"</button>
+                            </form>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    })
+}
+
+/// Removes a photo from a listing the user may manage and returns the
+/// refreshed grid.
+#[page(POST "/admin/listings/{id}/images/remove")]
+pub async fn remove_image(
+    cx: &Cx,
+    /// The remove form.
+    Form(form): Form<RemoveForm>,
+) -> Result<impl View> {
+    let user = staff(cx).await?;
+    let raw = path_param::<Id>(cx);
+    Uuid::parse_str(raw).map_err(|_| not_found())?;
+    let listing = managed_listing(cx, &user, raw).await?;
+    let error = match common::app_client::delete_listing_image(listing.id, form.image_id).await {
+        Ok(()) => {
+            tracing::info!(listing_id = %listing.id, image_id = %form.image_id, "photo removed");
+            None
+        }
+        Err(e) => {
+            tracing::info!("photo removal rejected: {e}");
+            Some("The photo could not be removed. Try again.".to_string())
+        }
+    };
+    let photos = listing_photos(cx, listing.id).await;
+    Ok(
+        view! { photo_grid(listing_id: listing.id, name: listing.name, photos: photos, error: error) },
+    )
 }
 
 #[cfg(test)]

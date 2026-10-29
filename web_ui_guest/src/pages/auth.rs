@@ -8,6 +8,7 @@ use topcoat::{
 };
 use web_client::{auth::token_hash_to_hex, get_api_client, redirect::safe_redirect};
 
+use crate::pages::register::urlencode;
 use crate::support::start_guest_session;
 
 #[derive(Deserialize, Default)]
@@ -31,7 +32,6 @@ pub struct LoginForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoginError {
     Invalid,
-    NotVerified,
     Unavailable,
 }
 
@@ -39,7 +39,6 @@ impl LoginError {
     fn message(&self) -> &'static str {
         match self {
             Self::Invalid => "Invalid email or password.",
-            Self::NotVerified => "Your account is not verified yet. Enter the code we emailed you.",
             Self::Unavailable => "Sign-in is unavailable right now. Please try again shortly.",
         }
     }
@@ -52,8 +51,6 @@ async fn login_form(
     error: Option<LoginError>,
     verified: bool,
 ) -> Result<impl View> {
-    let not_verified = matches!(error, Some(LoginError::NotVerified));
-    let verify_href = format!("/verify?email={}", email.replace('&', "%26"));
     let field = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     Ok(view! {
@@ -69,9 +66,6 @@ async fn login_form(
             if let Some(err) = error {
                 <div id="guest-login-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">
                     <span id="guest-login-error-text">(err.message())</span>
-                    if not_verified {
-                        " " <a href=(verify_href.clone())>"Verify your account"</a>
-                    }
                 </div>
             }
             <form id="guest-login-form" method="post" action="/login" class="space-y-4">
@@ -105,7 +99,8 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
 
 /// Signs a guest in: verifies the credentials with `user_api`, replaces any
 /// existing session (fixation defence) and stores the new one in the
-/// `guest` namespace, then redirects to a same-origin `redirect`.
+/// `guest` namespace, then redirects to a same-origin `redirect`. An
+/// unverified account (the password was right) goes to the code prompt.
 #[page(POST "/login")]
 pub async fn login_submit(
     cx: &Cx,
@@ -119,15 +114,12 @@ pub async fn login_submit(
     };
     let error = match api.login_user(&login).await {
         Err(e) => {
-            let text = e.to_string();
+            if e.to_string().to_lowercase().contains("not verified") {
+                let target = format!("/verify?email={}&unverified=1", urlencode(&form.email));
+                return Err(see_other(target).into());
+            }
             tracing::info!("guest sign-in rejected");
-            Some(
-                if text.contains("not verified") || text.contains("Not verified") {
-                    LoginError::NotVerified
-                } else {
-                    LoginError::Invalid
-                },
-            )
+            Some(LoginError::Invalid)
         }
         Ok(user) => match start_guest_session(cx, &user).await {
             Ok(()) => return Err(see_other(safe_redirect(&form.redirect)).into()),

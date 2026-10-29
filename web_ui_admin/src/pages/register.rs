@@ -8,7 +8,7 @@ use topcoat::{
     router::{content::Form, error::see_other, page, parse_query_params},
     view::{View, component, view},
 };
-use web_client::{get_api_client, session::AdminRole};
+use web_client::get_api_client;
 
 use crate::support::{portal_role, start_admin_session};
 
@@ -44,9 +44,12 @@ pub struct VerifyForm {
 #[derive(Deserialize, Default)]
 struct EmailQuery {
     email: Option<String>,
+    /// Set when sign-in sent an unverified account here.
+    unverified: Option<String>,
 }
 
-fn urlencode(value: &str) -> String {
+/// Percent-encodes a query-string value.
+pub(crate) fn urlencode(value: &str) -> String {
     value
         .bytes()
         .map(|b| match b {
@@ -185,14 +188,25 @@ fn sent_to(email: &str) -> String {
     }
 }
 
+/// Shown when sign-in finds the account unverified, e.g. one an administrator
+/// created: its code may well have expired by the time they first sign in.
+fn unverified_notice(email: &str) -> String {
+    format!(
+        "Your account isn't verified yet. Enter the 6-character code we emailed to {email}, \
+         or send a new one if it has expired."
+    )
+}
+
 /// The verification page (`?email=` pre-fills the address).
 #[page("/verify")]
 pub async fn verify_page(cx: &Cx) -> Result<impl View> {
-    let email = parse_query_params::<EmailQuery>(cx)
-        .ok()
-        .and_then(|q| q.email)
-        .unwrap_or_default();
-    let info = sent_to(&email);
+    let q = parse_query_params::<EmailQuery>(cx).unwrap_or_default();
+    let email = q.email.unwrap_or_default();
+    let info = if q.unverified.is_some() {
+        unverified_notice(&email)
+    } else {
+        sent_to(&email)
+    };
     Ok(view! { verify_form(email: email, info: info, error: None) })
 }
 
@@ -209,7 +223,11 @@ pub async fn verify_submit(
     };
     let error = match get_api_client(cx).verify_user(&request).await {
         Ok(user) => {
-            let role = portal_role(&user).unwrap_or(AdminRole::Host);
+            // Verified, but only hosts and administrators get a console
+            // session; sign-in then refuses anyone else as usual.
+            let Some(role) = portal_role(&user) else {
+                return Err(see_other("/login").into());
+            };
             if let Err(e) = start_admin_session(cx, &user, role).await {
                 tracing::error!("{e}");
                 return Err(see_other("/login").into());

@@ -24,14 +24,27 @@ test.describe('Guest Portal - Stay Dates Calendar', () => {
     const calendar = page.locator('#booking-dates');
     await expect(calendar).toHaveAttribute('data-enhanced', /.*/);
 
-    // A start date whose next three nights are free (seeded bookings sit
-    // near today).
-    const startIso = await calendar.evaluate((root) => {
-      const free = (iso: string) => root.querySelector(`button[data-date="${iso}"]`)?.getAttribute('data-state') === 'available';
+    // A start date whose next three nights are free and on screen (seeded
+    // bookings sit near today, and a narrow calendar hides its second
+    // month), paging forward until one turns up.
+    const findStart = () => calendar.evaluate((root) => {
+      const shown = (b: Element) => b.getClientRects().length > 0;
+      const free = (iso: string) => {
+        const b = root.querySelector(`button[data-date="${iso}"]`);
+        return !!b && shown(b) && b.getAttribute('data-state') === 'available';
+      };
       const plus = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
       const days = [...root.querySelectorAll('button[data-date]')].map((b) => b.getAttribute('data-date') ?? '');
       return days.find((d) => [0, 1, 2, 3].every((n) => free(plus(d, n)))) ?? '';
     });
+    let startIso = await findStart();
+    for (let attempt = 0; !startIso && attempt < 3; attempt++) {
+      const caption = await calendar.locator('caption').first().textContent();
+      await page.getByRole('button', { name: 'Next month' }).click();
+      await expect(calendar.locator('caption').first()).not.toHaveText(caption ?? '');
+      await expect(calendar).toHaveAttribute('data-enhanced', /.*/);
+      startIso = await findStart();
+    }
     expect(startIso).not.toBe('');
     const start = calendar.locator(`button[data-date="${startIso}"]`);
     await start.focus();

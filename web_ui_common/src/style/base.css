@@ -71,3 +71,9 @@
 [data-calendar]:not([data-enhanced]) [data-calendar-grid] {
   display: none;
 }
+
+/* A photo that failed to load (marked by ui.js): show the placeholder tile
+   behind it, not the broken-image icon and alt text. */
+img[data-broken] {
+  visibility: hidden;
+}

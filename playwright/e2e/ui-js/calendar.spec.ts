@@ -87,4 +87,23 @@ test.describe('ui.js calendar', () => {
     await page.keyboard.press('Enter');
     await expect(checkIn(page)).toHaveValue('2027-02-17');
   });
+
+  // In a narrow booking card the second month is hidden (container query);
+  // its days must not take focus. Moving past the shown month asks the
+  // server for the next one instead.
+  test('keeps keyboard focus on the shown month', async ({ page }) => {
+    await load(page);
+    await page.addStyleTag({ content: '#booking-dates table + table { display: none; }' });
+    await page.evaluate(() => {
+      (window as unknown as { nextClicks: number }).nextClicks = 0;
+      document.querySelector('[aria-label="Next month"]')?.addEventListener('click', () => {
+        (window as unknown as { nextClicks: number }).nextClicks += 1;
+      });
+    });
+    await day(page, '2027-01-31').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(day(page, '2027-02-01')).not.toBeFocused();
+    await expect(day(page, '2027-01-31')).toBeFocused();
+    expect(await page.evaluate(() => (window as unknown as { nextClicks: number }).nextClicks)).toBe(1);
+  });
 });

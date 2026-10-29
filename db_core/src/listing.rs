@@ -141,12 +141,12 @@ where
             FROM listing_image parent_img
             JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
             WHERE parent_img.listing_id = listing.id
-              AND parent_img.is_primary = TRUE
               AND thumb_img.resolution = "#,
     );
     query_builder.push_bind(parsed_res);
     query_builder.push(
         r#"::image_resolution
+            ORDER BY parent_img.is_primary DESC, parent_img.display_order
             LIMIT 1
         ) AS primary_img ON true
         WHERE listing.deleted_at IS NULL AND "user".is_active = TRUE
@@ -234,8 +234,8 @@ where
             FROM listing_image parent_img
             JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
             WHERE parent_img.listing_id = listing.id
-              AND parent_img.is_primary = TRUE
               AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            ORDER BY parent_img.is_primary DESC, parent_img.display_order
             LIMIT 1
         ) AS primary_img ON true
         WHERE listing.user_id = $1 AND listing.deleted_at IS NULL
@@ -270,8 +270,8 @@ where
             FROM listing_image parent_img
             JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
             WHERE parent_img.listing_id = listing.id
-              AND parent_img.is_primary = TRUE
               AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            ORDER BY parent_img.is_primary DESC, parent_img.display_order
             LIMIT 1
         ) AS primary_img ON true
         INNER JOIN "user" ON listing.user_id = "user".id
@@ -333,8 +333,8 @@ where
                 FROM listing_image parent_img
                 JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
                 WHERE parent_img.listing_id = listing.id
-                  AND parent_img.is_primary = TRUE
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+                ORDER BY parent_img.is_primary DESC, parent_img.display_order
                 LIMIT 1
             ) AS primary_img ON true
             INNER JOIN "user" ON listing.user_id = "user".id
@@ -355,8 +355,8 @@ where
                 FROM listing_image parent_img
                 JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
                 WHERE parent_img.listing_id = listing.id
-                  AND parent_img.is_primary = TRUE
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+                ORDER BY parent_img.is_primary DESC, parent_img.display_order
                 LIMIT 1
             ) AS primary_img ON true
             INNER JOIN "user" ON listing.user_id = "user".id
@@ -893,6 +893,47 @@ where
         return Err(crate::error::DbError::ValidationError(
             "Price override not found".to_string(),
         ));
+    }
+
+    Ok(())
+}
+
+/// Deletes a listing photo and its resized variants (they cascade). If it
+/// was the primary photo, the first remaining photo (processed ones first)
+/// becomes primary. A photo that is not on `listing_id` is `RowNotFound`.
+#[tracing::instrument(skip(tx))]
+pub async fn delete_listing_image(
+    tx: &mut sqlx::PgConnection,
+    listing_id: Uuid,
+    image_id: Uuid,
+) -> Result<()> {
+    let was_primary: bool = sqlx::query_scalar(
+        r#"
+        DELETE FROM listing_image
+        WHERE id = $1 AND listing_id = $2 AND parent_id IS NULL
+        RETURNING is_primary
+        "#,
+    )
+    .bind(image_id)
+    .bind(listing_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if was_primary {
+        sqlx::query(
+            r#"
+            UPDATE listing_image SET is_primary = TRUE, updated_at = NOW()
+            WHERE id = (
+                SELECT id FROM listing_image
+                WHERE listing_id = $1 AND parent_id IS NULL
+                ORDER BY (status = 'Processed') DESC, display_order, created_at
+                LIMIT 1
+            )
+            "#,
+        )
+        .bind(listing_id)
+        .execute(&mut *tx)
+        .await?;
     }
 
     Ok(())
@@ -1457,6 +1498,76 @@ mod tests {
             Ok(_) => println!("Successfully updated image"),
             Err(e) => panic!("Database error occurred: {:?}", e),
         }
+    }
+
+    #[tokio::test]
+    async fn test_delete_listing_image_promotes_next_primary() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
+        let listing = NewListing {
+            name: "Test Image Delete Listing".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Testland".to_string(),
+            price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+        };
+        let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
+        let images: Vec<_> = (0..2)
+            .map(|i| {
+                let md = common::models::PendingImageMetadata {
+                    client_file_id: i.to_string(),
+                    content_type: "image/jpeg".to_string(),
+                    size_bytes: 1024,
+                    display_order: i,
+                };
+                (Uuid::now_v7(), md, "https://upload.url".to_string())
+            })
+            .collect();
+        let presigns = create_listing_image_presigns(&mut *tx, created_listing.id, &images)
+            .await
+            .unwrap();
+        let (first, second) = (presigns[0].id, presigns[1].id);
+
+        // Another listing's id never matches.
+        let wrong = delete_listing_image(&mut tx, Uuid::now_v7(), first).await;
+        assert!(matches!(
+            wrong,
+            Err(DbError::Sqlx(sqlx::Error::RowNotFound))
+        ));
+
+        delete_listing_image(&mut tx, created_listing.id, first)
+            .await
+            .unwrap();
+        let primary: bool =
+            sqlx::query_scalar("SELECT is_primary FROM listing_image WHERE id = $1")
+                .bind(second)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert!(primary);
     }
 
     #[tokio::test]

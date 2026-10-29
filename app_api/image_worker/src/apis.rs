@@ -204,10 +204,7 @@ impl ImageTask<Processed> {
                 continue;
             }
 
-            let public_url = format!(
-                "https://storage.googleapis.com/{}/{}",
-                public_bucket, target_name
-            );
+            let public_url = common::gcs::public_object_url(public_bucket, &target_name);
 
             db_variants.push((
                 self.listing_id,
@@ -350,9 +347,7 @@ pub async fn process_image(
     };
 
     // 3. Downloads the original image from the raw GCS bucket.
-    use google_cloud_storage::client::Storage;
-
-    let client = match Storage::builder().build().await {
+    let client = match common::gcs::storage_client().await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Failed to configure GCS client auth: {}", e);
@@ -373,10 +368,7 @@ pub async fn process_image(
         .unwrap_or_else(|_| "our-places-gcs-img-public".to_string());
 
     let raw_url = raw_image_record.upload_url.unwrap_or_else(|| {
-        format!(
-            "https://storage.googleapis.com/{}/{}",
-            object_metadata.bucket, object_metadata.name
-        )
+        common::gcs::public_object_url(&object_metadata.bucket, &object_metadata.name)
     });
 
     processed

@@ -170,7 +170,7 @@ pub async fn date_range_calendar(
                     <input type="date" name="check_out" id=(check_out_id) min=(min) value=(check_out_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
                 </label>
             </div>
-            <div data-calendar-grid="" class="space-y-3">
+            <div data-calendar-grid="" class="@container space-y-3">
                 <div class="flex items-center justify-between">
                     <button
                         type="button"
@@ -191,11 +191,11 @@ pub async fn date_range_calendar(
                         class="size-11 rounded-full border border-border"
                     >"›"</button>
                 </div>
-                <div class="grid gap-6 md:grid-cols-2">
+                <div class="grid gap-6 @2xl:grid-cols-2">
                     for (index, first) in shown.into_iter().enumerate() {
                         let caption = first.format("%B %Y").to_string();
                         let weeks: Vec<Vec<Option<NaiveDate>>> = month_grid(first).chunks(7).map(<[_]>::to_vec).collect();
-                        <table role="grid" aria-label=(caption.clone()) class=(if index > 0 { "hidden w-full md:table" } else { "w-full" })>
+                        <table role="grid" aria-label=(caption.clone()) class=(if index > 0 { "hidden w-full table-fixed @2xl:table" } else { "w-full table-fixed" })>
                             <caption class="pb-2 font-serif text-lg">(caption)</caption>
                             <thead>
                                 <tr>
@@ -225,7 +225,7 @@ pub async fn date_range_calendar(
                                                         aria-label=(day_label(day, state))
                                                         aria-disabled=(disabled.then_some("true"))
                                                         tabindex="-1"
-                                                        class="size-11 rounded-full text-sm tabular-nums aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:line-through data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[in-range]:bg-chip"
+                                                        class="mx-auto block aspect-square w-full max-w-11 rounded-full text-sm tabular-nums aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:line-through data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[in-range]:bg-chip"
                                                     >(day.day())</button>
                                                 </td>
                                             } else {

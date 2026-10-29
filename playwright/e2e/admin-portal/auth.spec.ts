@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { TEST_USERS } from '../fixtures/test-data.js';
 import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
-import { createGuest, psql } from '../fixtures/bookings-data.js';
+import { createGuest, createUnverifiedUser, psql } from '../fixtures/bookings-data.js';
 
 test.describe('Admin Portal - Authentication & Route Guard', () => {
   test.beforeEach(async ({ page }) => {
@@ -67,5 +67,31 @@ test.describe('Admin Portal - Authentication & Route Guard', () => {
       expect(res.headers()['location'], from).toBe(to);
     }
   });
-});
 
+  test('sends an unverified host to the code prompt, then into the console', { tag: '@new-only' }, async ({ page }) => {
+    const host = createUnverifiedUser('host,booker');
+    await page.locator('#admin-login-email').fill(host.email);
+    await page.locator('#admin-login-password').fill(host.password);
+    await page.locator('#btn-admin-login').click();
+
+    await expect(page).toHaveURL(/\/verify\?email=.*&unverified=1$/);
+    await expect(page.locator('#verify-email')).toHaveValue(host.email);
+    await expect(page.locator('#verify-info-text')).toContainText(/isn't verified yet/);
+
+    await page.locator('#verify-code').fill(host.code);
+    await page.locator('#btn-verify').click();
+    await expect(page).toHaveURL(/\/admin$/);
+    expect(psql(`SELECT is_verified FROM "user" WHERE id = '${host.id}';`)).toBe('t');
+  });
+
+  test('verifying a guest-only account opens no console session', { tag: '@new-only' }, async ({ page }) => {
+    const guest = createUnverifiedUser('booker');
+    await page.goto(`/verify?email=${encodeURIComponent(guest.email)}`);
+    await page.locator('#verify-code').fill(guest.code);
+    await page.locator('#btn-verify').click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    expect(psql(`SELECT is_verified FROM "user" WHERE id = '${guest.id}';`)).toBe('t');
+    expect(psql(`SELECT count(*) FROM sessions WHERE user_id = '${guest.id}';`)).toBe('0');
+  });
+});

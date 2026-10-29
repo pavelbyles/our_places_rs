@@ -13,6 +13,8 @@ use crate::support::start_guest_session;
 #[derive(Deserialize, Default)]
 struct VerifyQuery {
     email: Option<String>,
+    /// Set when sign-in sent an unverified account here.
+    unverified: Option<String>,
 }
 
 /// Verification form fields.
@@ -72,14 +74,25 @@ fn sent_to(email: &str) -> String {
     }
 }
 
+/// Shown when sign-in finds the account unverified, e.g. one an administrator
+/// created: its code may well have expired by the time they first sign in.
+fn unverified_notice(email: &str) -> String {
+    format!(
+        "Your account isn't verified yet. Enter the 6-character code we emailed to {email}, \
+         or send a new one if it has expired."
+    )
+}
+
 /// The verification page (`?email=` pre-fills the address).
 #[page("/verify")]
 pub async fn verify_page(cx: &Cx) -> Result<impl View> {
-    let email = parse_query_params::<VerifyQuery>(cx)
-        .ok()
-        .and_then(|q| q.email)
-        .unwrap_or_default();
-    let info = sent_to(&email);
+    let q = parse_query_params::<VerifyQuery>(cx).unwrap_or_default();
+    let email = q.email.unwrap_or_default();
+    let info = if q.unverified.is_some() {
+        unverified_notice(&email)
+    } else {
+        sent_to(&email)
+    };
     Ok(view! { verify_form(email: email, info: info, error: None) })
 }
 

@@ -43,6 +43,31 @@ export function createGuest(): TestGuest {
   return { id, email, password: TEST_USERS.guest.password };
 }
 
+export interface TestUnverifiedUser extends TestGuest {
+  /** The pending verification code. */
+  code: string;
+}
+
+/**
+ * Creates an unverified account with a known, unexpired code, as an admin
+ * creating a user leaves it. Written straight to the database so no email
+ * is queued (a configured SMTP relay would really send it).
+ */
+export function createUnverifiedUser(roles: 'booker' | 'host,booker'): TestUnverifiedUser {
+  const id = crypto.randomUUID();
+  const email = `e2e.unverified.${id.slice(0, 8)}@example.com`;
+  const code = id.replace(/-/g, '').slice(0, 6).toUpperCase();
+  psql(`
+    INSERT INTO "user" (id, email, password_hash, first_name, last_name, roles,
+                        is_active, is_verified, verification_code, verification_code_expires_at,
+                        default_currency, created_at, updated_at)
+    VALUES ('${id}', '${email}', '${GUEST_PASSWORD_HASH}', 'Uma', 'Unverified',
+            '{${roles}}', true, false, '${code}', NOW() + INTERVAL '30 minutes',
+            'USD', NOW(), NOW());
+  `);
+  return { id, email, password: TEST_USERS.guest.password, code };
+}
+
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
 /**

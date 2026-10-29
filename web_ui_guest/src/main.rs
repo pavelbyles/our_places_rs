@@ -49,7 +49,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .app_context(TopcoatApiClient::from_env())
         .app_context(service_jwt)
         .assets(assets)
-        .layer(SecurityHeaders::new().with_hsts(hsts))
+        .layer(
+            SecurityHeaders::new()
+                .with_hsts(hsts)
+                .with_storage_origin(common::gcs::emulator_endpoint()),
+        )
         .build();
 
     let listener = TcpListener::bind((host.as_str(), port)).await?;

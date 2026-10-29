@@ -10,7 +10,7 @@ username = "postgres"
 password = "password"
 port = "5432"
 host = "localhost"
-database_name = "postgres"
+database_name = "our_places"
 cloud = false
 instance_name = ""
 

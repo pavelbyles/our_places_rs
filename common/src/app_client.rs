@@ -265,6 +265,29 @@ pub async fn create_price_override(
         .context("Failed to parse price override response")
 }
 
+/// Deletes a listing photo and its resized variants. Missing photos count as deleted.
+pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid) -> Result<()> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!(
+        "{}/api/v1/listings/{}/images/{}",
+        api_url, listing_id, image_id
+    );
+
+    let res = get_client()
+        .delete(&url, &audience)
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to delete listing image ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
 pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();

@@ -117,6 +117,30 @@ async fn load(cx: &Cx, slug: &str) -> Result<ListingDetails> {
         .map_err(|_| not_found().into())
 }
 
+/// Most photos shown on the page; the rest are in the gallery dialog.
+const GALLERY_TILES: usize = 5;
+
+/// The photo grid for `count` photos: the section's classes and one class
+/// list per tile shown. Phones show only the first photo; from `md` the
+/// grid has a fixed height and the tiles fill it, so no column is left empty.
+fn gallery_layout(count: usize) -> (&'static str, Vec<&'static str>) {
+    const SECTION: &str = "grid gap-3 md:h-[460px] md:grid-cols-4 md:grid-rows-2";
+    const LEAD: &str = "md:col-span-2 md:row-span-2";
+    const HIDDEN_WIDE: &str = "hidden md:block md:col-span-2";
+    const HIDDEN_SMALL: &str = "hidden md:block";
+    let tiles = match count.min(GALLERY_TILES) {
+        0 => Vec::new(),
+        1 => vec!["md:col-span-4 md:row-span-2"],
+        2 => vec![LEAD, "hidden md:block md:col-span-2 md:row-span-2"],
+        3 => vec![LEAD, HIDDEN_WIDE, HIDDEN_WIDE],
+        4 => vec![LEAD, HIDDEN_WIDE, HIDDEN_SMALL, HIDDEN_SMALL],
+        n => std::iter::once(LEAD)
+            .chain(std::iter::repeat_n(HIDDEN_SMALL, n - 1))
+            .collect(),
+    };
+    (SECTION, tiles)
+}
+
 /// Listing detail: gallery, facts, reviews and the booking card.
 #[page("/listings/{slug}")]
 pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
@@ -164,6 +188,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .iter()
         .map(|i| (i.url.clone(), listing.name.clone()))
         .collect();
+    let gallery = gallery_layout(images.len());
     let quote_url = format!("/listings/{}/quote", listing.slug);
     let href = checkout_href(&listing.slug, &q, currency.as_deref());
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
@@ -178,9 +203,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
             </header>
 
             if !images.is_empty() {
-                <section aria-label="Photos" class="grid gap-3 md:grid-cols-4 md:grid-rows-2">
-                    for (i, (src, alt)) in images.iter().take(5).cloned().enumerate() {
-                        <button type="button" data-dialog-open="gallery-dialog" aria-label=(format!("Open photo {} of {}", i + 1, images.len())) class=(if i == 0 { "overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder md:col-span-2 md:row-span-2 aspect-[4/3]" } else { "hidden overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder md:block aspect-[4/3]" })>
+                <section aria-label="Photos" class=(gallery.0)>
+                    for (i, ((src, alt), span)) in images.iter().cloned().zip(gallery.1.iter().copied()).enumerate() {
+                        <button type="button" data-dialog-open="gallery-dialog" aria-label=(format!("Open photo {} of {}", i + 1, images.len())) class=(format!("overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/3] md:aspect-auto {span}"))>
                             responsive_image(src: src, alt: alt)
                         </button>
                     }
@@ -296,4 +321,41 @@ pub async fn listing_calendar(cx: &Cx) -> Result<impl View> {
         .unwrap_or_else(jamaica_today);
     let props = calendar_props(cx, &details, month, &q).await;
     Ok(view! { date_range_calendar(props: props) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gallery_layout;
+
+    /// Grid cells each tile covers from `md` (4 columns x 2 rows).
+    fn cells(tile: &str) -> usize {
+        let span = |prefix: &str| {
+            tile.split_whitespace()
+                .find_map(|c| c.strip_prefix(prefix))
+                .and_then(|n| n.parse::<usize>().ok())
+                .unwrap_or(1)
+        };
+        span("md:col-span-") * span("md:row-span-")
+    }
+
+    #[test]
+    fn every_photo_count_fills_the_grid() {
+        for count in 1..=8 {
+            let (_, tiles) = gallery_layout(count);
+            assert_eq!(tiles.len(), count.min(5), "{count} photos");
+            assert_eq!(
+                tiles.iter().map(|t| cells(t)).sum::<usize>(),
+                8,
+                "{count} photos"
+            );
+        }
+        assert!(gallery_layout(0).1.is_empty());
+    }
+
+    #[test]
+    fn phones_show_only_the_first_photo() {
+        let (_, tiles) = gallery_layout(5);
+        assert!(!tiles[0].contains("hidden"));
+        assert!(tiles[1..].iter().all(|t| t.starts_with("hidden ")));
+    }
 }

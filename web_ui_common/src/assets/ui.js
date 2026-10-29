@@ -169,13 +169,43 @@
       })
       .then(function (results) {
         var ok = results.filter(Boolean).length;
-        say(ok === results.length
-          ? 'Uploaded ' + ok + ' photo(s). They appear here once processing finishes.'
-          : 'Uploaded ' + ok + ' of ' + results.length + ' photo(s). Try the others again.');
         if (input) input.value = '';
+        if (!ok) { say('Upload failed. Try again.'); return; }
+        say((ok === results.length
+          ? 'Uploaded ' + ok + ' photo(s).'
+          : 'Uploaded ' + ok + ' of ' + results.length + ' photo(s). Try the others again.') + ' Processing…');
+        waitForPhotos(ok, say);
       })
       .catch(function () { say('Upload failed. Check the files (JPEG, PNG or WebP, under 15 MB) and try again.'); });
   });
+
+  // Photos appear once image_worker has resized them: re-read the page's
+  // photo slot every few seconds until the new ones are there.
+  function waitForPhotos(added, say) {
+    var slot = document.getElementById('listing-photos-slot');
+    if (!slot) return;
+    var target = Number(slot.getAttribute('data-photo-count') || 0) + added;
+    var tries = 0;
+    var poll = function () {
+      tries += 1;
+      fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } })
+        .then(function (res) { return res.ok ? res.text() : ''; })
+        .then(function (html) {
+          var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('listing-photos-slot');
+          var count = fresh ? Number(fresh.getAttribute('data-photo-count') || 0) : 0;
+          if (fresh && count >= target) {
+            slot.replaceWith(fresh);
+            say('Photos ready.');
+          } else if (tries < 30) {
+            setTimeout(poll, 3000);
+          } else {
+            if (fresh) slot.replaceWith(fresh);
+            say('Still processing. Reload the page in a minute to see the rest.');
+          }
+        }, function () { if (tries < 30) setTimeout(poll, 3000); });
+    };
+    setTimeout(poll, 2000);
+  }
 
   // Clear a form after htmx submits it successfully (e.g. the message box).
   document.addEventListener('htmx:afterRequest', function (event) {
@@ -184,6 +214,19 @@
       form.reset();
     }
   });
+
+  // --- Broken images: hide the <img> so the placeholder tile behind it
+  // shows instead of the browser's broken-image icon and alt text. Error
+  // events do not bubble, so listen in the capture phase; images that failed
+  // before this script ran are caught by the scan below.
+  function markBroken(img) { img.setAttribute('data-broken', ''); }
+  document.addEventListener('error', function (event) {
+    if (event.target instanceof HTMLImageElement) markBroken(event.target);
+  }, true);
+  var settled = document.images;
+  for (var b = 0; b < settled.length; b++) {
+    if (settled[b].complete && settled[b].naturalWidth === 0 && settled[b].getAttribute('src')) markBroken(settled[b]);
+  }
 
   // --- Stay-dates calendar (server-rendered by date_range_calendar). -------
   // A booked night can still be the check-out day: the guest leaves that
@@ -205,6 +248,10 @@
   function dayButton(root, iso) {
     return root.querySelector('button[data-date="' + iso + '"]');
   }
+
+  // The second month is hidden when the calendar is narrow; its buttons
+  // still carry availability but cannot take focus.
+  function isShown(el) { return el.getClientRects().length > 0; }
 
   function rangeIsFree(root, startIso, endIso) {
     for (var t = parseDay(startIso); t < parseDay(endIso); t += DAY_MS) {
@@ -245,8 +292,11 @@
     root.setAttribute('data-enhanced', '');
     var p = calendarParts(root);
     var focusIso = (p.checkIn && p.checkIn.value) || '';
-    var first = (focusIso && dayButton(root, focusIso)) ||
-      root.querySelector('button[data-date][data-state="available"]') || p.buttons[0];
+    var shown = Array.prototype.filter.call(p.buttons, isShown);
+    var picked = focusIso && dayButton(root, focusIso);
+    var first = (picked && isShown(picked) ? picked : null) ||
+      shown.filter(function (b) { return b.getAttribute('data-state') === 'available'; })[0] ||
+      shown[0] || p.buttons[0];
     setRoving(root, first);
     paintCalendar(root);
   }
@@ -289,7 +339,7 @@
 
   function moveFocus(root, fromIso, days) {
     var target = dayButton(root, isoDay(parseDay(fromIso) + days * DAY_MS));
-    if (target) {
+    if (target && isShown(target)) {
       setRoving(root, target);
       target.focus();
       return true;
@@ -323,7 +373,7 @@
     if (step === undefined) return;
     event.preventDefault();
     if (!moveFocus(root, iso, step)) {
-      // Outside the rendered months: ask the server for the next/previous page.
+      // Outside the shown months: ask the server for the next/previous page.
       var nav = root.querySelector(step > 0 ? '[aria-label="Next month"]' : '[aria-label="Previous month"]');
       if (nav && !nav.disabled) nav.click();
     }

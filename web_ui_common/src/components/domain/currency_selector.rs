@@ -28,7 +28,7 @@ pub async fn currency_selector(
         <details data-dismiss-outside="" class=(class!("relative", attrs.remove("class"))) (attrs)>
             <summary
                 aria-label=(format!("Display currency: {active}"))
-                class="flex h-11 cursor-pointer list-none items-center rounded-full border border-border px-4 text-sm font-medium"
+                class="flex h-11 cursor-pointer list-none items-center rounded-full border border-border px-3 text-sm font-medium sm:px-4"
             >(active.clone())</summary>
             <ul class="absolute right-0 z-50 mt-2 w-28 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-sm">
                 for curr in DISPLAY_CURRENCIES {
