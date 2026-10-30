@@ -169,8 +169,10 @@ async fn test_post_loggers_authorized_with_secret_token() {
 
 #[actix_web::test]
 async fn test_post_loggers_authorized_with_admin_jwt() {
+    // Same value as the unset-variable fallback, so tests running in
+    // parallel (auth::tests) never sign and verify with different secrets.
     unsafe {
-        std::env::set_var("JWT_SECRET", "test-jwt-secret");
+        std::env::set_var("JWT_SECRET", "secret");
     }
 
     // Generate JWT token
@@ -191,7 +193,7 @@ async fn test_post_loggers_authorized_with_admin_jwt() {
             exp,
             role: "admin".to_string(),
         },
-        &jsonwebtoken::EncodingKey::from_secret(b"test-jwt-secret"),
+        &jsonwebtoken::EncodingKey::from_secret(b"secret"),
     )
     .unwrap();
 

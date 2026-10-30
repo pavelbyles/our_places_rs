@@ -218,28 +218,46 @@ async fn tax_document_matches_legacy_figures_and_ids() {
     }
 }
 
+/// Not a legacy-parity check: the legacy `_<width>.webp` srcset never
+/// matched what image_worker writes (`optimized/<size>/<name>.webp`), so
+/// every Cloud Storage photo 404'd. The sources must point at real variants.
 #[tokio::test]
-async fn responsive_image_srcset_matches_legacy() {
+async fn responsive_image_sources_point_at_image_worker_variants() {
     let __cx = &Cx::default();
-    let cases: [(&str, &[&str]); 2] = [
+    let gcs = "https://storage.googleapis.com/b/optimized";
+    let emulator = "http://localhost:4443/b/optimized";
+    let cases: [(String, Vec<String>); 4] = [
         (
-            "https://storage.googleapis.com/b/villa",
-            &[
-                "https://storage.googleapis.com/b/villa_1920.webp",
-                "https://storage.googleapis.com/b/villa_1024.webp",
-                "https://storage.googleapis.com/b/villa_640.webp",
+            format!("{gcs}/desktop/l_i.webp"),
+            vec![
+                format!("{gcs}/desktop/l_i.webp"),
+                format!("{gcs}/tablet/l_i.webp"),
+                format!("{gcs}/mobile/l_i.webp"),
             ],
         ),
-        ("/static/local.jpg", &[]),
+        (
+            format!("{emulator}/thumbnail/l_i.webp"),
+            vec![
+                format!("{emulator}/desktop/l_i.webp"),
+                format!("{emulator}/tablet/l_i.webp"),
+                format!("{emulator}/mobile/l_i.webp"),
+            ],
+        ),
+        ("https://storage.googleapis.com/b/villa".into(), vec![]),
+        ("/static/local.jpg".into(), vec![]),
     ];
-    for (src, legacy) in cases {
-        let r = src.to_string();
+    for (src, expected) in cases {
+        let r = src.clone();
         let redesigned = html(view! { responsive_image(src: r, alt: "Pool".into()) }, __cx).await;
         let srcsets = redesigned
             .match_indices("srcset=\"")
             .map(|(i, _)| redesigned[i..].split('"').nth(1).unwrap_or("").to_string())
             .collect::<Vec<_>>();
-        assert_eq!(srcsets, legacy, "{src}");
+        assert_eq!(srcsets, expected, "{src}");
+        assert!(
+            redesigned.contains(&format!(r#"src="{src}""#)),
+            "{redesigned}"
+        );
         assert!(redesigned.contains(r#"alt="Pool""#) && redesigned.contains(r#"loading="lazy""#));
     }
 }

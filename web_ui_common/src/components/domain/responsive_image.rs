@@ -1,24 +1,44 @@
-//! Responsive listing photos. Cloud Storage uploads have `_640`, `_1024`
-//! and `_1920` WebP variants (made by image_worker); other URLs render as a
-//! plain `<img>`.
+//! Responsive listing photos. image_worker writes every upload as
+//! `optimized/<size>/<listing>_<image>.webp` in each size folder, so any one
+//! variant's URL gives the others; other URLs render as a plain `<img>`.
 
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
 };
 
-/// Whether `src` points at Cloud Storage, where resized variants exist.
-pub fn has_variants(src: &str) -> bool {
-    src.contains("storage.googleapis.com") || src.starts_with("https://storage.cloud.google.com")
+/// Size folders image_worker writes (400, 720, 1280, 1920 and 2560 px wide).
+const SIZE_FOLDERS: [&str; 5] = ["thumbnail", "mobile", "tablet", "desktop", "highres"];
+
+/// The `<source>` sizes used, widest first, with the viewport each serves.
+const SOURCES: [(&str, Option<&str>); 3] = [
+    ("desktop", Some("(min-width: 1024px)")),
+    ("tablet", Some("(min-width: 640px)")),
+    ("mobile", None),
+];
+
+/// URL of the `size` variant (a folder in [`SIZE_FOLDERS`]) of an
+/// image_worker photo, or `None` if `src` is not one.
+pub fn variant_url(src: &str, size: &str) -> Option<String> {
+    SIZE_FOLDERS.iter().find_map(|folder| {
+        let marker = format!("/optimized/{folder}/");
+        src.rfind(&marker).map(|at| {
+            format!(
+                "{}/optimized/{size}/{}",
+                &src[..at],
+                &src[at + marker.len()..]
+            )
+        })
+    })
 }
 
-/// `srcset` URL for a resized WebP variant of a Cloud Storage image.
-pub fn variant_url(src: &str, width: u32) -> String {
-    format!("{src}_{width}.webp")
+/// Whether `src` is an image_worker photo, so resized variants exist.
+pub fn has_variants(src: &str) -> bool {
+    variant_url(src, "mobile").is_some()
 }
 
 /// A lazily loaded image, wrapped in `<picture>` with WebP sources when the
-/// image lives in Cloud Storage.
+/// image has resized variants.
 #[component]
 pub async fn responsive_image(
     /// Image URL.
@@ -30,20 +50,24 @@ pub async fn responsive_image(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     let img_class = class!("size-full object-cover", attrs.remove("class"));
-    let variants = has_variants(&src);
-    let large = variant_url(&src, 1920);
-    let medium = variant_url(&src, 1024);
-    let small = variant_url(&src, 640);
+    let sources: Vec<(String, Option<&str>)> = SOURCES
+        .iter()
+        .filter_map(|(size, media)| variant_url(&src, size).map(|url| (url, *media)))
+        .collect();
     Ok(view! {
-        if variants {
+        if sources.is_empty() {
+            <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
+        } else {
             <picture class="block size-full">
-                <source media="(min-width: 1024px)" srcset=(large) type="image/webp" />
-                <source media="(min-width: 640px)" srcset=(medium) type="image/webp" />
-                <source srcset=(small) type="image/webp" />
+                for (srcset, media) in sources {
+                    if let Some(media) = media {
+                        <source media=(media) srcset=(srcset) type="image/webp" />
+                    } else {
+                        <source srcset=(srcset) type="image/webp" />
+                    }
+                }
                 <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
             </picture>
-        } else {
-            <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
         }
     })
 }
