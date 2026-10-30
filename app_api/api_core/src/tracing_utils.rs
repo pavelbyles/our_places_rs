@@ -26,7 +26,7 @@ pub fn init_subscriber() {
     match log_format.to_lowercase().as_str() {
         "json" => {
             let _ = registry
-                .with(tracing_subscriber::fmt::layer().json().with_span_events(
+                .with(common::cloud_logging::layer().with_span_events(
                     tracing_subscriber::fmt::format::FmtSpan::NEW
                         | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
                 ))

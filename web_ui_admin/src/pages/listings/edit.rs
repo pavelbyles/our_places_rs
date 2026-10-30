@@ -11,7 +11,7 @@ use topcoat::{
 use uuid::Uuid;
 use web_client::session::AdminRole;
 
-use super::form::{ListingFields, listing_form};
+use super::form::{ListingFields, api_rejection_messages, listing_form};
 use super::images::{listing_photos, photo_grid};
 use super::managed_listing;
 use crate::support::staff;
@@ -66,7 +66,7 @@ pub async fn update_listing(
     let admin = user.role == AdminRole::Admin;
     let errors = match fields.validate(Some(listing.user_id), admin) {
         Ok(valid) => {
-            let mut request = valid.into_update();
+            let mut request = valid.into_update(listing.listing_details.as_ref());
             if !admin {
                 request.commission_pct = None;
             }
@@ -76,11 +76,13 @@ pub async fn update_listing(
                     return Err(see_other(format!("/admin/listings/{}", listing.id)).into());
                 }
                 Err(e) => {
-                    tracing::info!("listing update rejected: {e}");
-                    vec![
-                        "The listing could not be saved. Check the values and try again."
-                            .to_string(),
-                    ]
+                    tracing::warn!(listing_id = %listing.id, error = %e, "listing update rejected");
+                    api_rejection_messages(&e).unwrap_or_else(|| {
+                        vec![
+                            "The listing could not be saved. Check the values and try again."
+                                .into(),
+                        ]
+                    })
                 }
             }
         }

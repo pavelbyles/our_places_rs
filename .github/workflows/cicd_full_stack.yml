@@ -437,6 +437,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -582,6 +583,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -812,6 +814,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -852,6 +855,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -923,6 +927,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -1045,6 +1050,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             HOST=0.0.0.0
             ENABLE_HSTS=true
@@ -1167,6 +1173,7 @@ jobs:
           region: ${{ env.REGION }}
           env_vars: |
             LOG_FORMAT=json
+            GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
             RUST_LOG=info
             HOST=0.0.0.0
             ENABLE_HSTS=true

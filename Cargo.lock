@@ -776,6 +776,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "utoipa",
  "uuid",
  "validator",

@@ -3,6 +3,8 @@ pub mod app_client;
 pub mod auth;
 pub mod availability;
 pub mod cancellation;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cloud_logging;
 pub mod csv;
 pub mod email;
 pub mod exchange_rate;

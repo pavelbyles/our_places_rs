@@ -207,6 +207,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
             },
         ),
     ];
+    let amenities = form::amenities_of(l.listing_details.as_ref());
     let action = "inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm font-medium no-underline text-foreground";
     Ok(view! {
         <div class="space-y-6">
@@ -229,6 +230,18 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
             if let Some(d) = l.description.clone() {
                 <p class="max-w-3xl text-sm">(d)</p>
             }
+            <section aria-labelledby="amenities-heading" class="space-y-3 rounded-xl border border-border p-6">
+                <h2 id="amenities-heading" class="text-sm font-semibold">"Amenities"</h2>
+                if amenities.is_empty() {
+                    <p class="text-sm text-muted-foreground">"None listed yet. Add them from Edit."</p>
+                } else {
+                    <ul id="listing-amenities-list" class="flex flex-wrap gap-2">
+                        for a in amenities {
+                            <li class="rounded-full border border-border px-3 py-1 text-sm">(a)</li>
+                        }
+                    </ul>
+                }
+            </section>
         </div>
     })
 }

@@ -7,6 +7,7 @@ use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
 use topcoat::cookie::RouterBuilderCookieExt;
 use topcoat::router::{Router, RouterBuilderDiscoverExt};
 use topcoat::session::{RouterBuilderSessionExt, SessionConfig, cookie::CookieTokenStore};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use web_client::{TopcoatApiClient, jwt::ServiceJwt};
 use web_ui_common::security_headers::SecurityHeaders;
 
@@ -15,12 +16,13 @@ use web_ui_guest::DEFAULT_PORT;
 static HOST_ENV: &str = "HOST";
 static PORT_ENV: &str = "PORT";
 static HSTS_ENV: &str = "ENABLE_HSTS";
+static LOG_FORMAT_ENV: &str = "LOG_FORMAT";
 const DEFAULT_HOST: &str = "127.0.0.1";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    init_tracing();
 
     // Link the layout so Topcoat's discovery sees this crate's routes.
     let _ = web_ui_guest::layout::guest_layout;
@@ -60,4 +62,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting web_ui_guest on {host}:{port}");
     topcoat::serve(listener, router).await?;
     Ok(())
+}
+
+/// Plain text locally; Cloud Logging JSON when `LOG_FORMAT=json` (Cloud Run).
+fn init_tracing() {
+    let registry = tracing_subscriber::registry().with(EnvFilter::from_default_env());
+    if env::var(LOG_FORMAT_ENV).is_ok_and(|f| f.eq_ignore_ascii_case("json")) {
+        registry.with(common::cloud_logging::layer()).init();
+    } else {
+        registry.with(tracing_subscriber::fmt::layer()).init();
+    }
 }

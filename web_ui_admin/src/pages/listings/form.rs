@@ -15,6 +15,26 @@ use uuid::Uuid;
 pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "Studio"];
 /// Base currencies a listing can be priced in.
 pub const CURRENCIES: [&str; 5] = ["USD", "JMD", "EUR", "GBP", "CAD"];
+/// Most amenities a listing can list.
+pub const MAX_AMENITIES: usize = 50;
+/// Longest amenity, in characters.
+pub const MAX_AMENITY_CHARS: usize = 60;
+/// Longest description `listing_api` accepts, in characters.
+pub const MAX_DESCRIPTION_CHARS: usize = 2000;
+/// Key of the amenity list inside `listing_details` (the guest listing page
+/// reads the same key).
+const AMENITIES_KEY: &str = "amenities";
+
+/// The amenities stored in a listing's `listing_details`.
+pub fn amenities_of(details: Option<&serde_json::Value>) -> Vec<String> {
+    details
+        .and_then(|d| d.get(AMENITIES_KEY))
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect()
+}
 
 /// Raw form values (strings, so the page can be re-rendered as typed).
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -72,6 +92,8 @@ pub struct ListingFields {
     pub owner_id: String,
     /// "on" when the listing is bookable.
     pub is_active: String,
+    /// Amenities, one per line.
+    pub amenities: String,
 }
 
 fn opt(v: Option<Decimal>) -> String {
@@ -112,6 +134,7 @@ impl ListingFields {
             } else {
                 String::new()
             },
+            amenities: amenities_of(l.listing_details.as_ref()).join("\n"),
         }
     }
 
@@ -165,6 +188,7 @@ pub struct ValidListing {
     latitude: Option<f64>,
     longitude: Option<f64>,
     is_active: bool,
+    amenities: Vec<String>,
 }
 
 struct Parser {
@@ -245,6 +269,39 @@ impl Parser {
                 None
             })
     }
+    /// Browsers submit textarea newlines as CRLF; store LF so the length
+    /// check counts what the user typed.
+    fn description(&mut self, v: &str) -> Option<String> {
+        let v = v.replace("\r\n", "\n").trim().to_string();
+        let len = v.chars().count();
+        if len > MAX_DESCRIPTION_CHARS {
+            self.errors.push(format!(
+                "Description can be at most {MAX_DESCRIPTION_CHARS} characters (it is {len})."
+            ));
+        }
+        Some(v).filter(|d| !d.is_empty())
+    }
+    /// One entry per non-blank line, trimmed, without case-insensitive
+    /// duplicates (the first spelling wins).
+    fn amenities(&mut self, v: &str) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let list: Vec<String> = v
+            .lines()
+            .map(str::trim)
+            .filter(|a| !a.is_empty() && seen.insert(a.to_lowercase()))
+            .map(str::to_string)
+            .collect();
+        if list.len() > MAX_AMENITIES {
+            self.errors
+                .push(format!("List at most {MAX_AMENITIES} amenities."));
+        }
+        if let Some(long) = list.iter().find(|a| a.chars().count() > MAX_AMENITY_CHARS) {
+            self.errors.push(format!(
+                "Amenities can be at most {MAX_AMENITY_CHARS} characters (\"{long}\" is longer)."
+            ));
+        }
+        list
+    }
 }
 
 impl ListingFields {
@@ -273,7 +330,7 @@ impl ListingFields {
         let valid = ValidListing {
             owner_id,
             name,
-            description: Some(self.description.trim().to_string()).filter(|d| !d.is_empty()),
+            description: p.description(&self.description),
             listing_structure: p.one_of("structure", &self.listing_structure, &STRUCTURES),
             country: p.text("Country", &self.country),
             city: Some(self.city.trim().to_string()).filter(|c| !c.is_empty()),
@@ -309,6 +366,7 @@ impl ListingFields {
             latitude: p.coord("Latitude", &self.latitude, 90.0),
             longitude: p.coord("Longitude", &self.longitude, 180.0),
             is_active: self.is_active == "on",
+            amenities: p.amenities(&self.amenities),
         };
         if valid.guests_included > valid.max_guests {
             p.errors
@@ -342,7 +400,10 @@ impl ValidListing {
             square_meters: self.square_meters,
             latitude: self.latitude,
             longitude: self.longitude,
-            listing_details: Some(serde_json::json!({ "is_active": self.is_active })),
+            listing_details: Some(serde_json::json!({
+                "is_active": self.is_active,
+                AMENITIES_KEY: self.amenities,
+            })),
             city: self.city,
             base_currency: self.base_currency,
             minimum_stay: self.minimum_stay,
@@ -355,8 +416,16 @@ impl ValidListing {
         }
     }
 
-    /// The update request (owner is not changed by an edit).
-    pub fn into_update(self) -> UpdatedListingRequest {
+    /// The update request (owner is not changed by an edit). `listing_api`
+    /// replaces `listing_details` as a whole, so the amenities are merged
+    /// into the listing's `current_details` to keep its other keys (Wi-Fi,
+    /// address, check-in instructions).
+    pub fn into_update(self, current_details: Option<&serde_json::Value>) -> UpdatedListingRequest {
+        let mut details = current_details
+            .and_then(|d| d.as_object())
+            .cloned()
+            .unwrap_or_default();
+        details.insert(AMENITIES_KEY.to_string(), serde_json::json!(self.amenities));
         UpdatedListingRequest {
             name: Some(self.name),
             description: self.description,
@@ -375,7 +444,7 @@ impl ValidListing {
             latitude: self.latitude,
             longitude: self.longitude,
             city: self.city,
-            listing_details: None,
+            listing_details: Some(serde_json::Value::Object(details)),
             minimum_stay: Some(self.minimum_stay),
             days_between_bookings: Some(self.days_between_bookings),
             is_active: Some(self.is_active),
@@ -513,7 +582,7 @@ pub async fn listing_form(
                         }
                     </select>
                 </label>
-                <label class=(format!("{label} sm:col-span-2"))>"Description"<textarea name="description" rows="4" class=(format!("{input} h-auto py-2"))>(f.description.clone())</textarea></label>
+                <label class=(format!("{label} sm:col-span-2"))>"Description"<textarea name="description" rows="4" maxlength=(MAX_DESCRIPTION_CHARS.to_string()) class=(format!("{input} h-auto py-2"))>(f.description.clone())</textarea></label>
                 <label class=(label)>"Country"<input name="country" required=(true) value=(f.country.clone()) class=(input) /></label>
                 <label class=(label)>"City"<input name="city" value=(f.city.clone()) class=(input) /></label>
                 <label class=(label)>"Latitude"<input name="latitude" inputmode="decimal" value=(f.latitude.clone()) class=(input) /></label>
@@ -551,7 +620,44 @@ pub async fn listing_form(
                     <label class=(label)>(title)<input name=(name) type="number" min="0" step=(step) value=(value) class=(input) /></label>
                 }
             </fieldset>
+            <fieldset class="grid gap-2 rounded-xl border border-border p-6">
+                <legend class="px-1 text-sm font-semibold">"Amenities"</legend>
+                <label for="listing-amenities" class=(label)>"One per line, e.g. Private pool, Wi-Fi, Air conditioning. Guests see them under “What this place offers”."</label>
+                <textarea id="listing-amenities" name="amenities" rows="6" class=(format!("{input} h-auto py-2"))>(f.amenities.clone())</textarea>
+            </fieldset>
             <button id="btn-save-listing" type="submit" class="h-10 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground">(submit_label)</button>
         </form>
     })
+}
+
+/// The reasons `listing_api` gave for rejecting a create or update, read
+/// from the JSON body `common::app_client` puts in its error. `None` when
+/// the error carries no such body (e.g. the API was unreachable).
+pub fn api_rejection_messages(err: &dyn std::fmt::Display) -> Option<Vec<String>> {
+    let text = err.to_string();
+    let body: serde_json::Value = serde_json::from_str(&text[text.find('{')?..]).ok()?;
+    let obj = body.as_object()?;
+    // `{"error": "..."}` / `{"code": ..., "message": "..."}`
+    if let Some(msg) = ["message", "error"]
+        .iter()
+        .find_map(|k| obj.get(*k).and_then(|v| v.as_str()))
+    {
+        return Some(vec![msg.to_string()]);
+    }
+    // validator's `{"field": [{"code": ..., "message": ...}]}`
+    let messages: Vec<String> = obj
+        .iter()
+        .flat_map(|(field, errs)| {
+            errs.as_array().into_iter().flatten().map(move |e| {
+                match e.get("message").and_then(|m| m.as_str()) {
+                    Some(m) => m.to_string(),
+                    None => format!(
+                        "{field}: {}",
+                        e.get("code").and_then(|c| c.as_str()).unwrap_or("invalid")
+                    ),
+                }
+            })
+        })
+        .collect();
+    Some(messages).filter(|m| !m.is_empty())
 }

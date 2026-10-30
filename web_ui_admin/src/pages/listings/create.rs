@@ -6,7 +6,7 @@ use topcoat::{
 };
 use web_client::{get_api_client, session::AdminRole};
 
-use super::form::{ListingFields, listing_form};
+use super::form::{ListingFields, api_rejection_messages, listing_form};
 use super::{managed_listing, owner_options};
 use crate::support::staff;
 
@@ -65,12 +65,17 @@ pub async fn create_listing(
                 return Err(see_other(format!("/admin/listings/{}", created.id)).into());
             }
             Err(e) => {
-                tracing::info!("listing create rejected: {e}");
-                vec![if e.to_string().contains("host profile") {
-                    "The owner needs a host profile before they can list a property.".to_string()
+                tracing::warn!(error = %e, "listing create rejected");
+                if e.to_string().contains("host profile") {
+                    vec!["The owner needs a host profile before they can list a property.".into()]
                 } else {
-                    "The listing could not be created. Check the values and try again.".to_string()
-                }]
+                    api_rejection_messages(&e).unwrap_or_else(|| {
+                        vec![
+                            "The listing could not be created. Check the values and try again."
+                                .into(),
+                        ]
+                    })
+                }
             }
         },
         Err(errors) => errors,

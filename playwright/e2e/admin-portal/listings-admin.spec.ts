@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/auth.fixture.js';
 import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
 import { psql, SEEDED_LISTING_ID } from '../fixtures/bookings-data.js';
-import { KNOWN_LISTINGS } from '../fixtures/test-data.js';
+import { KNOWN_LISTINGS, TEST_CONFIG } from '../fixtures/test-data.js';
 
 test.describe('Admin Portal - Listings Management', () => {
   test.beforeEach(async ({ authenticatedAdminPage }) => {
@@ -92,6 +92,33 @@ test.describe('Admin Portal - Listings Management', () => {
     await page.locator('#btn-save-listing').click();
     await expect(page).toHaveURL(new RegExp(`/admin/listings/${id}$`));
     expect(psql(`SELECT price_per_night, cleaning_fee, user_id FROM listing WHERE id = '${id}';`)).toBe(`345.75|60.00|${owner}`);
+  });
+
+  test('adds amenities that guests see, keeping the other listing details', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
+    const name = `E2E amenities ${Date.now()}`;
+    await page.goto('/admin/listings/new');
+    await page.locator('#listing-name').fill(name);
+    await page.locator('input[name="price_per_night"]').fill('300');
+    await page.locator('#listing-amenities').fill('Private pool\nWi-Fi\n\nwi-fi');
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(/\/admin\/listings\/[0-9a-f-]{36}$/);
+    const id = page.url().split('/').pop() ?? '';
+    await expect(page.locator('#listing-amenities-list li')).toHaveText(['Private pool', 'Wi-Fi']);
+
+    // Details set elsewhere (pre-arrival email data) must survive an edit.
+    psql(`UPDATE listing SET listing_details = listing_details || '{"wifi_ssid": "E2E-Net"}'::jsonb WHERE id = '${id}';`);
+    await page.goto(`/admin/listings/${id}/edit`);
+    await expect(page.locator('#listing-amenities')).toHaveValue('Private pool\nWi-Fi');
+    await page.locator('#listing-amenities').fill('Private pool\nOcean view');
+    await page.locator('#btn-save-listing').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/listings/${id}$`));
+    await expect(page.locator('#listing-amenities-list li')).toHaveText(['Private pool', 'Ocean view']);
+    expect(psql(`SELECT listing_details->>'wifi_ssid' FROM listing WHERE id = '${id}';`)).toBe('E2E-Net');
+
+    const slug = psql(`SELECT slug FROM listing WHERE id = '${id}';`);
+    await page.goto(`${TEST_CONFIG.guestPortalUrl}/listings/${slug}`);
+    await expect(page.getByText('Ocean view')).toBeVisible();
+    await expect(page.getByText('Private pool')).toBeVisible();
   });
 });
 
