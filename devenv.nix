@@ -354,7 +354,7 @@
 
     # Services status inspection
     services-status.exec = ''
-      scripts/services_status.sh "$@"
+      "$DEVENV_ROOT/scripts/services_status.sh" "$@"
     '';
 
     # Playwright E2E Testing
