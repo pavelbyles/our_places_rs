@@ -22,45 +22,72 @@ fn saved_choice_always_wins() {
 }
 
 #[test]
+fn default_follows_local_time_of_day() {
+    // UTC offset 0, so UTC time is local time.
+    for (h, m, want) in [
+        (0, 0, ThemeChoice::Dark),
+        (5, 59, ThemeChoice::Dark),
+        (6, 0, ThemeChoice::Light),
+        (15, 59, ThemeChoice::Light),
+        (16, 0, ThemeChoice::Dim),
+        (18, 59, ThemeChoice::Dim),
+        (19, 0, ThemeChoice::Dark),
+        (23, 59, ThemeChoice::Dark),
+    ] {
+        assert_eq!(
+            resolve_theme(None, Some("0"), utc(h, m)),
+            want,
+            "{h:02}:{m:02}"
+        );
+    }
+}
+
+#[test]
 fn first_visit_uses_jamaica_time() {
-    // Jamaica is UTC-05:00 with no DST: 22:59 UTC = 17:59, 23:00 UTC = 18:00.
-    assert_eq!(resolve_theme(None, None, utc(22, 59)), ThemeChoice::Light);
-    assert_eq!(resolve_theme(None, None, utc(23, 0)), ThemeChoice::Dark);
-    // 10:59 UTC = 05:59 local: light (only "at or after 18:00" is dark).
-    assert_eq!(resolve_theme(None, None, utc(10, 59)), ThemeChoice::Light);
+    // Jamaica is UTC-05:00 with no DST.
+    // 10:59 UTC = 05:59, 11:00 UTC = 06:00.
+    assert_eq!(resolve_theme(None, None, utc(10, 59)), ThemeChoice::Dark);
+    assert_eq!(resolve_theme(None, None, utc(11, 0)), ThemeChoice::Light);
+    // 20:59 UTC = 15:59, 21:00 UTC = 16:00.
+    assert_eq!(resolve_theme(None, None, utc(20, 59)), ThemeChoice::Light);
+    assert_eq!(resolve_theme(None, None, utc(21, 0)), ThemeChoice::Dim);
+    // 23:59 UTC = 18:59, 00:00 UTC = 19:00.
+    assert_eq!(resolve_theme(None, None, utc(23, 59)), ThemeChoice::Dim);
+    assert_eq!(resolve_theme(None, None, utc(0, 0)), ThemeChoice::Dark);
 }
 
 #[test]
 fn visitor_offset_overrides_jamaica() {
-    // UTC+09:00: 09:00 UTC is 18:00 local.
+    // UTC+09:00: 10:00 UTC is 19:00 local; 09:59 UTC is 18:59.
     assert_eq!(
-        resolve_theme(None, Some("540"), utc(9, 0)),
+        resolve_theme(None, Some("540"), utc(10, 0)),
         ThemeChoice::Dark
     );
     assert_eq!(
-        resolve_theme(None, Some("540"), utc(8, 59)),
+        resolve_theme(None, Some("540"), utc(9, 59)),
+        ThemeChoice::Dim
+    );
+    // 01:00 UTC is 10:00 at UTC+09:00 (light) but 20:00 in Jamaica (dark).
+    assert_eq!(
+        resolve_theme(None, Some("540"), utc(1, 0)),
         ThemeChoice::Light
     );
-    // UTC: 18:00 UTC.
-    assert_eq!(
-        resolve_theme(None, Some("0"), utc(18, 0)),
-        ThemeChoice::Dark
-    );
-    // UTC-14:00 extreme still resolves (wraps to the previous day).
+    // UTC-14:00 extreme still resolves (wraps to the previous day):
+    // 08:00 UTC is 18:00 local.
     assert_eq!(
         resolve_theme(None, Some("-840"), utc(8, 0)),
-        ThemeChoice::Dark
+        ThemeChoice::Dim
     );
 }
 
 #[test]
 fn invalid_cookies_fall_back() {
     assert_eq!(
-        resolve_theme(Some("purple"), Some("9999"), utc(23, 0)),
+        resolve_theme(Some("purple"), Some("9999"), utc(1, 0)),
         ThemeChoice::Dark
     );
     assert_eq!(
-        resolve_theme(Some(""), Some("abc"), utc(12, 0)),
+        resolve_theme(Some(""), Some("abc"), utc(15, 0)),
         ThemeChoice::Light
     );
     assert_eq!(parse_tz_offset("841"), None);

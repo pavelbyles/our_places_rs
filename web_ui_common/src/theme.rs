@@ -13,8 +13,13 @@ pub const TZ_OFFSET_COOKIE: &str = "op_tz_offset";
 const JAMAICA_OFFSET_MINUTES: i32 = -5 * 60;
 /// Widest real-world UTC offsets: -12:00 to +14:00 (allowing ±14:00).
 const MAX_OFFSET_MINUTES: i32 = 14 * 60;
-/// Local hour at or after which the default theme is dark.
-const DARK_FROM_HOUR: u32 = 18;
+/// Local hour the default theme turns light (06:00).
+const LIGHT_FROM_HOUR: u32 = 6;
+/// Local hour the default theme turns dim (16:00).
+const DIM_FROM_HOUR: u32 = 16;
+/// Local hour the default theme turns dark (19:00); it stays dark until
+/// [`LIGHT_FROM_HOUR`].
+const DARK_FROM_HOUR: u32 = 19;
 
 /// One of the three portal themes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,9 +88,10 @@ pub fn parse_tz_offset(raw: &str) -> Option<i32> {
         .filter(|m| m.abs() <= MAX_OFFSET_MINUTES)
 }
 
-/// Picks the theme for a request: a valid saved choice wins; otherwise dark
-/// at or after 18:00 local time, else light. Local time uses the visitor's
-/// stored offset, or Jamaica time on a first visit. Dim is never a default.
+/// Picks the theme for a request: a valid saved choice wins; otherwise by
+/// local time, light 06:00–15:59, dim 16:00–18:59 and dark 19:00–05:59.
+/// Local time uses the visitor's stored offset, or Jamaica time on a first
+/// visit.
 pub fn resolve_theme(
     theme_cookie: Option<&str>,
     tz_offset_cookie: Option<&str>,
@@ -100,12 +106,17 @@ pub fn resolve_theme(
             let local_hour = FixedOffset::east_opt(offset_minutes * 60)
                 .map(|tz| now_utc.with_timezone(&tz).hour())
                 .unwrap_or_else(|| now_utc.hour());
-            if local_hour >= DARK_FROM_HOUR {
-                ThemeChoice::Dark
-            } else {
-                ThemeChoice::Light
-            }
+            theme_for_hour(local_hour)
         })
+}
+
+/// The default theme for a local hour (0–23).
+fn theme_for_hour(hour: u32) -> ThemeChoice {
+    match hour {
+        h if (LIGHT_FROM_HOUR..DIM_FROM_HOUR).contains(&h) => ThemeChoice::Light,
+        h if (DIM_FROM_HOUR..DARK_FROM_HOUR).contains(&h) => ThemeChoice::Dim,
+        _ => ThemeChoice::Dark,
+    }
 }
 
 /// Resolves the theme for the current request from its cookies. Requires

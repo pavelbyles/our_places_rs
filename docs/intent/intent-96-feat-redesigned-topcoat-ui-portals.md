@@ -136,7 +136,7 @@ All new crates depend on `common` for domain models, `Decimal` pricing, and DTOs
   - [ ] `rg 'daisyui' web_ui_* web_client` and `rg '<script>|onclick=' web_ui_*/src` both return nothing.
   - [ ] The e2e suite runs with **zero CSP violations** on both new apps.
   - [ ] A logged-out guest never receives signed-in nav in the HTML. No auth keys in browser storage.
-  - [ ] The light/dim/dark toggle appears on every page and persists. Time-of-day default (dark at or after 18:00, otherwise light): on the **first visit** the server uses `America/Jamaica` time. `ui.js` then stores the visitor's timezone in a cookie, and later defaults use the **visitor's local time**. An explicit toggle choice always overrides the default. No flash of the wrong theme, and no inline script.
+  - [ ] The light/dim/dark toggle appears on every page and persists. Time-of-day default (light 06:00–15:59, dim 16:00–18:59, dark 19:00–05:59): on the **first visit** the server uses `America/Jamaica` time. `ui.js` then stores the visitor's timezone in a cookie, and later defaults use the **visitor's local time**. An explicit toggle choice always overrides the default. No flash of the wrong theme, and no inline script.
   - [ ] `cargo test` passes for all new crates. `CONSTRAINTS.md` has test rows for them. Its panic-prevention gate covers production code in every Rust crate, old and new, and passes. Its `missing_docs` gate covers `web_client/` and `web_ui_*/`.
   - [ ] Cold start and memory are within the Cloud Run budget.
 - **Lagging Indicators**:

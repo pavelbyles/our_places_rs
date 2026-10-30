@@ -71,7 +71,7 @@ Build two new server-rendered portals on **Topcoat UI** (typed, source-owned `#[
    - `data-print` → `window.print()`.
    - Calendar range selection and arrow-key navigation (§Frontend Views).
    - HTMX glue: `htmx.config.includeIndicatorStyles = false` is set via `<meta name="htmx-config">`; toasts from `HX-Trigger: {"toast": …}` events. No `hx-on`.
-6. Theme engine (server): `ThemeChoice::{Light, Dim, Dark}` resolved by `resolve_theme(cookie_theme, cookie_tz_offset, now_utc)`. Precedence: valid `op_theme` → else local hour from `op_tz_offset` (validated −840…840) → else UTC−05:00. Dark if local hour ≥ 18, else light (matches today's rule; `< 6` is **not** dark, per the intent wording "dark at or after 18:00, otherwise light"). Dim is only ever an explicit choice. The shell renders `<html class="dim|dark|">`.
+6. Theme engine (server): `ThemeChoice::{Light, Dim, Dark}` resolved by `resolve_theme(cookie_theme, cookie_tz_offset, now_utc)`. Precedence: valid `op_theme` → else local hour from `op_tz_offset` (validated −840…840) → else UTC−05:00. By local hour: light 06:00–15:59, dim 16:00–18:59, dark 19:00–05:59. The shell renders `<html class="dim|dark|">`.
 7. Shells: `guest_shell` (navbar with server-rendered auth state, footer, mobile `sheet`) and `admin_shell` (`sidebar` + top bar; user-management links rendered only when `AdminRole::Admin`).
 8. `security_headers` middleware (§Security Mitigations), shared by both apps.
 
@@ -365,7 +365,7 @@ The spike page had one `signal(cx, || 0.0)`, a button with `@click=$(|_e| count.
 
 ### Unit Tests
 - `cargo test -p web_client`: `safe_redirect` table (relative ok; `//`, `/\`, `http:`, `javascript:`, overlong → `/`); `GuestSession` from session DTO (missing `user_id` → error, never nil UUID); `ServiceJwt` (missing secret → `Err`; minted token decodes with `sub`, `exp ≤ now+5min`); `AuthUser::initials` (moved tests).
-- `cargo test -p web_ui_common`: `resolve_theme` matrix (each cookie; offset −840/0/840/invalid; hours 17:59/18:00/05:59/06:00 local; Jamaica default); currency/price formatting parity vs. old components for USD/JMD/EUR/GBP/CAD with fixed `Decimal` inputs; calendar month grid (leap Feb 2028, month starting Sunday, blocked/past flags, `aria-label` text); `security_headers` emits exact CSP string per app.
+- `cargo test -p web_ui_common`: `resolve_theme` matrix (each cookie; offset −840/0/840/invalid; hours 05:59/06:00/15:59/16:00/18:59/19:00 local; Jamaica default); currency/price formatting parity vs. old components for USD/JMD/EUR/GBP/CAD with fixed `Decimal` inputs; calendar month grid (leap Feb 2028, month starting Sunday, blocked/past flags, `aria-label` text); `security_headers` emits exact CSP string per app.
 - `cargo test -p common`: `merge_ranges` (empty, disjoint, touching `date_to == date_from`, nested, unsorted input).
 - `cargo test -p web_ui_guest -p web_ui_admin`: view render tests — logged-out shell contains no `nav-user-dropdown`; admin shell hides user-management links for `host`.
 
@@ -378,7 +378,7 @@ The spike page had one `signal(cx, || 0.0)`, a button with `@click=$(|_e| count.
 - **Existing** (selectors migrated): `home`, `listings`, `listing-detail`, `auth`, `checkout-flow`, `email-verification-flow`, `tax-documents` (guest); `auth`, `dashboard`, `listings-admin`, `listing-fees-and-documents`, `bookings-admin`, `payouts-admin` (admin).
 - **New**: `static-pages`, `calendar`, `bookings`, `reservation-changes`, `messaging`, `profile`, `reviews` (guest); `host-signup`, `listing-images`, `pricing-admin`, `booking-messages-admin`, `reservation-changes-admin`, `exchange-rates`, `users-admin` (admin).
 - **Security / auth scenarios** (`@new-only`): logged-out raw HTML has no user nav; `localStorage`/`sessionStorage` contain no auth keys after login; guest A cannot open guest B's booking, messages or document (404); `redirect=//evil.com` lands on `/`; session cookie deleted mid-checkout → login → prefilled checkout → booking succeeds; same with dates taken during re-login → conflict state; CSP fixture reports zero violations across the whole suite.
-- **Theme**: toggle cycles light → dim → dark and persists across reload with no class change after first paint (assert `<html>` class in the initial response); clock mocked to 18:00 and 17:59 in Jamaica for first visit; `op_tz_offset` set to +540 changes the default.
+- **Theme**: toggle cycles light → dim → dark and persists across reload with no class change after first paint (assert `<html>` class in the initial response); first visit follows Jamaica time; local hours 10/17/21/03 give light/dim/dark/dark; `op_tz_offset` set to +540 changes the default.
 - **Accessibility**: `@axe-core/playwright` on each page × 3 themes × both apps, zero serious/critical violations; keyboard-only calendar selection; visible focus ring.
 - **Parity gate command**: `npx playwright test --project=guest-portal-chromium --project=guest-portal-firefox --project=admin-portal-chromium --project=admin-portal-firefox --project=guest-portal-new-chromium --project=guest-portal-new-firefox --project=admin-portal-new-chromium --project=admin-portal-new-firefox`.
 

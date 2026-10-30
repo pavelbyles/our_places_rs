@@ -593,11 +593,11 @@ pub async fn listing_form(
                     </ul>
                 </div>
             }
-            <p id="listing-required-note" class="text-sm text-muted-foreground">"Fields marked "<span class="text-destructive">"*"</span>" are required."</p>
+            <p id="listing-required-note" class="flex items-center gap-1.5 text-xs text-muted-foreground"><span aria-hidden="true" class="inline-block size-1.5 rounded-full bg-primary"></span>"Required"</p>
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-2">
                 <legend class="px-1 text-sm font-semibold">"Basics"</legend>
-                <label class=(label)>"Name"<span aria-hidden="true" class="text-destructive">" *"</span><input id="listing-name" name="name" required=(true) value=(f.name.clone()) class=(input) /></label>
-                <label class=(label)>"Structure"<span aria-hidden="true" class="text-destructive">" *"</span>
+                <label class=(label)>"Name"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span><input id="listing-name" name="name" required=(true) value=(f.name.clone()) class=(input) /></label>
+                <label class=(label)>"Structure"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
                     <select name="listing_structure" required=(true) class=(input)>
                         for s in STRUCTURES {
                             <option value=(s) selected=(f.listing_structure == s)>(s)</option>
@@ -608,12 +608,12 @@ pub async fn listing_form(
                     <label class=(label)>"Description"<textarea id="listing-description" name="description" rows="4" maxlength=(MAX_DESCRIPTION_CHARS.to_string()) aria-describedby="listing-description-count" class=(format!("{input} h-auto py-2"))>(f.description.clone())</textarea></label>
                     <p id="listing-description-count" data-char-count="listing-description" aria-live="polite" class="mt-1 text-right text-xs text-muted-foreground">(format!("{} / {}", f.description.replace("\r\n", "\n").chars().count(), MAX_DESCRIPTION_CHARS))</p>
                 </div>
-                <label class=(label)>"Country"<span aria-hidden="true" class="text-destructive">" *"</span><input name="country" required=(true) value=(f.country.clone()) class=(input) /></label>
+                <label class=(label)>"Country"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span><input name="country" required=(true) value=(f.country.clone()) class=(input) /></label>
                 <label class=(label)>"City"<input name="city" value=(f.city.clone()) class=(input) /></label>
                 <label class=(label)>"Latitude"<input name="latitude" inputmode="decimal" value=(f.latitude.clone()) class=(input) /></label>
                 <label class=(label)>"Longitude"<input name="longitude" inputmode="decimal" value=(f.longitude.clone()) class=(input) /></label>
                 if !owners.is_empty() {
-                    <label class=(label)>"Owner"<span aria-hidden="true" class="text-destructive">" *"</span>
+                    <label class=(label)>"Owner"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
                         <select name="owner_id" required=(true) class=(input)>
                             for (id, owner_label) in owners {
                                 <option value=(id.clone()) selected=(f.owner_id == id)>(owner_label)</option>
@@ -625,7 +625,7 @@ pub async fn listing_form(
             </fieldset>
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
                 <legend class="px-1 text-sm font-semibold">"Pricing & fees"</legend>
-                <label class=(label)>"Base currency"<span aria-hidden="true" class="text-destructive">" *"</span>
+                <label class=(label)>"Base currency"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
                     <select name="base_currency" required=(true) class=(input)>
                         for c in CURRENCIES {
                             <option value=(c) selected=(f.base_currency == c)>(c)</option>
@@ -633,7 +633,7 @@ pub async fn listing_form(
                     </select>
                 </label>
                 for (name, title, value, step, required) in money_fields {
-                    <label class=(label)>(title) if required { <span aria-hidden="true" class="text-destructive">" *"</span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
+                    <label class=(label)>(title) if required { <span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
                 }
                 if can_set_commission {
                     <label class=(label)>"Commission (0–1)"<input name="commission_pct" type="number" min="0" max="1" step="0.0001" value=(f.commission_pct.clone()) class=(input) /></label>
@@ -642,7 +642,7 @@ pub async fn listing_form(
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
                 <legend class="px-1 text-sm font-semibold">"Capacity & stay rules"</legend>
                 for (name, title, value, step, required) in count_fields {
-                    <label class=(label)>(title) if required { <span aria-hidden="true" class="text-destructive">" *"</span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
+                    <label class=(label)>(title) if required { <span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
                 }
             </fieldset>
             <fieldset class="grid gap-2 rounded-xl border border-border p-6">

@@ -142,7 +142,7 @@ Load both fonts via `topcoat-font` (Fontsource), not a Google Fonts `<link>`, so
 
 - Three themes: **light** (default), **dim** (light lowered one shade, easier on the eyes without going dark) and **dark** (the dusky slate-blue palette above).
 - The header theme button (44px pill, moon icon) **cycles light → dim → dark → light**. Its `aria-label` names the next theme, e.g. "Switch to dim theme".
-- Default with no saved choice: today's rule, dark at or after 18:00 local time, otherwise light. Dim is only ever an explicit choice.
+- Default with no saved choice, by local time: light 06:00–15:59, dim 16:00–18:59, dark 19:00–05:59.
 - The choice is remembered in a cookie the server reads, so the right class (`.dim` / `.dark` / none) is rendered into the HTML with no flash and no inline script. `ui.js` handles the button and writes the cookie.
 - In every theme, photography stand-ins and image skeletons use `--photo-placeholder`. Real photos are shown unfiltered.
 

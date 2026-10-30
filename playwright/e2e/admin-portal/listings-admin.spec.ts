@@ -77,7 +77,13 @@ test.describe('Admin Portal - Listings Management', () => {
 
   test('marks required fields and counts description characters', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
     await page.goto('/admin/listings/new');
-    await expect(page.locator('#listing-required-note')).toHaveText('Fields marked * are required.');
+    await expect(page.locator('#listing-required-note')).toHaveText('Required');
+    // Every required control's label carries exactly one dot.
+    const requiredCount = await page.locator('#listing-form [required]').count();
+    expect(requiredCount).toBeGreaterThan(5);
+    await expect(page.locator('#listing-form [data-required-dot]')).toHaveCount(requiredCount);
+    await expect(page.locator('label:has([name="name"]) [data-required-dot]')).toHaveCount(1);
+    await expect(page.locator('label:has([name="city"]) [data-required-dot]')).toHaveCount(0);
     for (const name of ['name', 'country', 'price_per_night', 'max_guests', 'minimum_stay']) {
       await expect(page.locator(`[name="${name}"]`)).toHaveAttribute('required', '');
     }
