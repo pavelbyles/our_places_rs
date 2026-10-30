@@ -75,6 +75,19 @@ test.describe('Admin Portal - Listings Management', () => {
     await context.close();
   });
 
+  test('marks required fields and counts description characters', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
+    await page.goto('/admin/listings/new');
+    await expect(page.locator('#listing-required-note')).toHaveText('Fields marked * are required.');
+    for (const name of ['name', 'country', 'price_per_night', 'max_guests', 'minimum_stay']) {
+      await expect(page.locator(`[name="${name}"]`)).toHaveAttribute('required', '');
+    }
+    await expect(page.locator('[name="cleaning_fee"]')).not.toHaveAttribute('required', '');
+    await expect(page.locator('#listing-description')).toHaveAttribute('maxlength', '2000');
+    await expect(page.locator('#listing-description-count')).toHaveText('0 / 2000');
+    await page.locator('#listing-description').fill('A quiet villa by the sea.');
+    await expect(page.locator('#listing-description-count')).toHaveText('25 / 2000');
+  });
+
   test('edits a listing and keeps its owner', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
     const name = `E2E listing ${Date.now()}`;
     await page.goto('/admin/listings/new');

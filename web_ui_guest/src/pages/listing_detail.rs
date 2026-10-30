@@ -11,8 +11,9 @@ use web_client::get_api_client;
 use web_ui_common::components::{
     date_range_calendar::{CalendarProps, date_range_calendar, first_of_month},
     domain::{
-        listing_card::ListingSummary, price_breakdown::price_breakdown,
-        responsive_image::responsive_image,
+        listing_card::ListingSummary,
+        price_breakdown::price_breakdown,
+        responsive_image::{responsive_image, variant_url},
     },
     star_rating::star_rating,
 };
@@ -210,12 +211,28 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         </button>
                     }
                 </section>
-                <dialog id="gallery-dialog" aria-label="Photo gallery" class="m-auto max-h-[90vh] w-[min(1100px,95vw)] rounded-[var(--radius-surface,16px)] bg-card p-4 text-card-foreground backdrop:bg-black/60">
-                    <div class="flex justify-end"><button type="button" data-dialog-close="" class="h-11 rounded-full border border-border px-4 text-sm">"Close"</button></div>
-                    <div class="mt-3 grid gap-3 overflow-y-auto">
-                        for (src, alt) in images.clone() {
-                            responsive_image(src: src, alt: alt)
+                <dialog id="gallery-dialog" aria-label="Photo gallery" class="m-auto max-h-[90vh] w-[min(1240px,95vw)] rounded-[var(--radius-surface,16px)] bg-card p-4 text-card-foreground backdrop:bg-black/60">
+                    <div class="flex items-center justify-between gap-4">
+                        <p class="text-sm text-muted-foreground">(format!("{} photos · select one to view it full size", images.len()))</p>
+                        <button type="button" data-dialog-close="" class="h-11 rounded-full border border-border px-4 text-sm">"Close"</button>
+                    </div>
+                    <div id="gallery-grid" data-lightbox-group="photo-viewer" class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        for (i, (src, alt)) in images.iter().cloned().enumerate() {
+                            <button type="button" data-lightbox-index=(i.to_string()) data-full-src=(variant_url(&src, "highres").unwrap_or_else(|| src.clone())) data-alt=(alt.clone()) aria-label=(format!("View photo {} of {} full size", i + 1, images.len())) class="block aspect-[4/3] cursor-zoom-in overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
+                                responsive_image(src: src, alt: alt)
+                            </button>
                         }
+                    </div>
+                </dialog>
+                <dialog id="photo-viewer" data-lightbox="" aria-label="Photo viewer" class="m-0 h-dvh max-h-none w-screen max-w-none bg-black/95 p-0 text-white backdrop:bg-black/80">
+                    <div class="relative flex h-full w-full items-center justify-center">
+                        <img id="photo-viewer-img" data-lightbox-img="" alt="" class="max-h-[88dvh] max-w-[92vw] object-contain" />
+                        if images.len() > 1 {
+                            <button type="button" data-lightbox-step="-1" aria-label="Previous photo" class="absolute top-1/2 left-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25">"‹"</button>
+                            <button type="button" data-lightbox-step="1" aria-label="Next photo" class="absolute top-1/2 right-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25">"›"</button>
+                        }
+                        <p id="photo-viewer-counter" data-lightbox-counter="" aria-live="polite" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm"></p>
+                        <button type="button" data-dialog-close="" aria-label="Close photo viewer" class="absolute top-3 right-3 h-11 rounded-full bg-white/15 px-4 text-sm hover:bg-white/25">"Close"</button>
                     </div>
                 </dialog>
             }

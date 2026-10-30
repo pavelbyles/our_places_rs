@@ -479,86 +479,107 @@ pub async fn listing_form(
     let label = "block text-xs font-medium text-muted-foreground";
     let input = "mt-1 block h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     let f = fields;
-    let num = |name: &'static str, title: &'static str, value: String, step: &'static str| {
-        (name, title, value, step)
-    };
+    // (name, label, value, step, required)
+    let num = |name: &'static str,
+               title: &'static str,
+               value: String,
+               step: &'static str,
+               required: bool| (name, title, value, step, required);
     let money_fields = [
         num(
             "price_per_night",
             "Nightly price",
             f.price_per_night.clone(),
             "0.01",
+            true,
         ),
         num(
             "cleaning_fee",
             "Cleaning fee",
             f.cleaning_fee.clone(),
             "0.01",
+            false,
         ),
         num(
             "damage_deposit",
             "Damage deposit",
             f.damage_deposit.clone(),
             "0.01",
+            false,
         ),
         num(
             "extra_guest_fee",
             "Extra guest fee (per night)",
             f.extra_guest_fee.clone(),
             "0.01",
+            false,
         ),
         num(
             "weekly_discount_percentage",
             "Weekly discount (%)",
             f.weekly_discount_percentage.clone(),
             "0.01",
+            false,
         ),
         num(
             "monthly_discount_percentage",
             "Monthly discount (%)",
             f.monthly_discount_percentage.clone(),
             "0.01",
+            false,
         ),
     ];
     let count_fields = [
-        num("max_guests", "Maximum guests", f.max_guests.clone(), "1"),
+        num(
+            "max_guests",
+            "Maximum guests",
+            f.max_guests.clone(),
+            "1",
+            true,
+        ),
         num(
             "guests_included",
             "Guests included",
             f.guests_included.clone(),
             "1",
+            true,
         ),
-        num("bedrooms", "Bedrooms", f.bedrooms.clone(), "1"),
-        num("beds", "Beds", f.beds.clone(), "1"),
+        num("bedrooms", "Bedrooms", f.bedrooms.clone(), "1", true),
+        num("beds", "Beds", f.beds.clone(), "1", true),
         num(
             "full_bathrooms",
             "Full bathrooms",
             f.full_bathrooms.clone(),
             "1",
+            true,
         ),
         num(
             "half_bathrooms",
             "Half bathrooms",
             f.half_bathrooms.clone(),
             "1",
+            true,
         ),
         num(
             "square_meters",
             "Floor area (m²)",
             f.square_meters.clone(),
             "1",
+            false,
         ),
         num(
             "minimum_stay",
             "Minimum stay (nights)",
             f.minimum_stay.clone(),
             "1",
+            true,
         ),
         num(
             "days_between_bookings",
             "Days between bookings",
             f.days_between_bookings.clone(),
             "1",
+            true,
         ),
     ];
     Ok(view! {
@@ -572,24 +593,28 @@ pub async fn listing_form(
                     </ul>
                 </div>
             }
+            <p id="listing-required-note" class="text-sm text-muted-foreground">"Fields marked "<span class="text-destructive">"*"</span>" are required."</p>
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-2">
                 <legend class="px-1 text-sm font-semibold">"Basics"</legend>
-                <label class=(label)>"Name"<input id="listing-name" name="name" required=(true) value=(f.name.clone()) class=(input) /></label>
-                <label class=(label)>"Structure"
-                    <select name="listing_structure" class=(input)>
+                <label class=(label)>"Name"<span aria-hidden="true" class="text-destructive">" *"</span><input id="listing-name" name="name" required=(true) value=(f.name.clone()) class=(input) /></label>
+                <label class=(label)>"Structure"<span aria-hidden="true" class="text-destructive">" *"</span>
+                    <select name="listing_structure" required=(true) class=(input)>
                         for s in STRUCTURES {
                             <option value=(s) selected=(f.listing_structure == s)>(s)</option>
                         }
                     </select>
                 </label>
-                <label class=(format!("{label} sm:col-span-2"))>"Description"<textarea name="description" rows="4" maxlength=(MAX_DESCRIPTION_CHARS.to_string()) class=(format!("{input} h-auto py-2"))>(f.description.clone())</textarea></label>
-                <label class=(label)>"Country"<input name="country" required=(true) value=(f.country.clone()) class=(input) /></label>
+                <div class="sm:col-span-2">
+                    <label class=(label)>"Description"<textarea id="listing-description" name="description" rows="4" maxlength=(MAX_DESCRIPTION_CHARS.to_string()) aria-describedby="listing-description-count" class=(format!("{input} h-auto py-2"))>(f.description.clone())</textarea></label>
+                    <p id="listing-description-count" data-char-count="listing-description" aria-live="polite" class="mt-1 text-right text-xs text-muted-foreground">(format!("{} / {}", f.description.replace("\r\n", "\n").chars().count(), MAX_DESCRIPTION_CHARS))</p>
+                </div>
+                <label class=(label)>"Country"<span aria-hidden="true" class="text-destructive">" *"</span><input name="country" required=(true) value=(f.country.clone()) class=(input) /></label>
                 <label class=(label)>"City"<input name="city" value=(f.city.clone()) class=(input) /></label>
                 <label class=(label)>"Latitude"<input name="latitude" inputmode="decimal" value=(f.latitude.clone()) class=(input) /></label>
                 <label class=(label)>"Longitude"<input name="longitude" inputmode="decimal" value=(f.longitude.clone()) class=(input) /></label>
                 if !owners.is_empty() {
-                    <label class=(label)>"Owner"
-                        <select name="owner_id" class=(input)>
+                    <label class=(label)>"Owner"<span aria-hidden="true" class="text-destructive">" *"</span>
+                        <select name="owner_id" required=(true) class=(input)>
                             for (id, owner_label) in owners {
                                 <option value=(id.clone()) selected=(f.owner_id == id)>(owner_label)</option>
                             }
@@ -600,15 +625,15 @@ pub async fn listing_form(
             </fieldset>
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
                 <legend class="px-1 text-sm font-semibold">"Pricing & fees"</legend>
-                <label class=(label)>"Base currency"
-                    <select name="base_currency" class=(input)>
+                <label class=(label)>"Base currency"<span aria-hidden="true" class="text-destructive">" *"</span>
+                    <select name="base_currency" required=(true) class=(input)>
                         for c in CURRENCIES {
                             <option value=(c) selected=(f.base_currency == c)>(c)</option>
                         }
                     </select>
                 </label>
-                for (name, title, value, step) in money_fields {
-                    <label class=(label)>(title)<input name=(name) type="number" min="0" step=(step) value=(value) class=(input) /></label>
+                for (name, title, value, step, required) in money_fields {
+                    <label class=(label)>(title) if required { <span aria-hidden="true" class="text-destructive">" *"</span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
                 }
                 if can_set_commission {
                     <label class=(label)>"Commission (0–1)"<input name="commission_pct" type="number" min="0" max="1" step="0.0001" value=(f.commission_pct.clone()) class=(input) /></label>
@@ -616,8 +641,8 @@ pub async fn listing_form(
             </fieldset>
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
                 <legend class="px-1 text-sm font-semibold">"Capacity & stay rules"</legend>
-                for (name, title, value, step) in count_fields {
-                    <label class=(label)>(title)<input name=(name) type="number" min="0" step=(step) value=(value) class=(input) /></label>
+                for (name, title, value, step, required) in count_fields {
+                    <label class=(label)>(title) if required { <span aria-hidden="true" class="text-destructive">" *"</span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
                 }
             </fieldset>
             <fieldset class="grid gap-2 rounded-xl border border-border p-6">

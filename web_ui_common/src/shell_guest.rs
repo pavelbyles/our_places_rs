@@ -61,7 +61,7 @@ pub async fn guest_chrome(
             <div class="mx-auto flex max-w-[1240px] items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6">
                 <a href="/" class="shrink-0 whitespace-nowrap font-serif text-[20px] text-foreground no-underline sm:text-[26px]">"Our Places"</a>
                 <nav aria-label="Main" class="hidden items-center gap-6 text-[15px] font-medium md:flex">
-                    <a href="/listings" class="text-foreground">"Villas"</a>
+                    <a href="/listings" class="text-foreground">"Listings"</a>
                     <a href="/about" class="text-foreground">"About"</a>
                 </nav>
                 <div class="flex items-center gap-1 sm:gap-2 [&>*]:shrink-0">
@@ -92,7 +92,7 @@ pub async fn guest_chrome(
                     <details id="mobile-nav" data-dismiss-outside="" class="relative md:hidden">
                         <summary aria-label="Menu" class="flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border">"☰"</summary>
                         <nav aria-label="Mobile" class="absolute right-0 z-50 mt-2 flex w-56 flex-col rounded-xl border border-border bg-popover p-2 shadow-sm">
-                            <a href="/listings" class="rounded-lg px-3 py-2 text-sm">"Villas"</a>
+                            <a href="/listings" class="rounded-lg px-3 py-2 text-sm">"Listings"</a>
                             <a href="/about" class="rounded-lg px-3 py-2 text-sm">"About"</a>
                             <div class="flex items-center justify-between px-3 py-1 text-sm min-[380px]:hidden">
                                 <span>"Theme"</span>
@@ -113,7 +113,7 @@ pub async fn guest_chrome(
             <div class="mx-auto flex max-w-[1240px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between">
                 <p class="font-serif text-xl text-foreground">"Our Places"</p>
                 <nav aria-label="Footer" class="flex flex-wrap gap-6">
-                    <a href="/register">"List your villa"</a>
+                    <a href="/register">"List your property"</a>
                     <a href="/about">"About"</a>
                 </nav>
             </div>

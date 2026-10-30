@@ -88,9 +88,52 @@
     window.setTimeout(function () { toast.remove(); }, 5000);
   }
 
+  // --- Photo viewer: a [data-lightbox-index] inside a [data-lightbox-group]
+  // opens the group's viewer <dialog data-lightbox> (its id is the group's
+  // attribute value) on that photo. [data-lightbox-step] buttons and the
+  // left/right arrow keys move through the group, wrapping at the ends.
+  function viewerItems(viewer) {
+    var group = document.querySelector('[data-lightbox-group="' + viewer.id + '"]');
+    return group ? group.querySelectorAll('[data-lightbox-index]') : [];
+  }
+
+  function showPhoto(viewer, index) {
+    var items = viewerItems(viewer);
+    if (!items.length) return;
+    var i = ((index % items.length) + items.length) % items.length;
+    var img = viewer.querySelector('[data-lightbox-img]');
+    var counter = viewer.querySelector('[data-lightbox-counter]');
+    viewer.setAttribute('data-index', String(i));
+    if (img) {
+      img.src = items[i].getAttribute('data-full-src') || '';
+      img.alt = items[i].getAttribute('data-alt') || '';
+    }
+    if (counter) counter.textContent = (i + 1) + ' / ' + items.length;
+  }
+
+  function stepPhoto(viewer, delta) {
+    showPhoto(viewer, Number(viewer.getAttribute('data-index') || 0) + delta);
+  }
+
   document.addEventListener('click', function (event) {
     var target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+
+    var thumb = target.closest('[data-lightbox-index]');
+    var group = thumb && thumb.closest('[data-lightbox-group]');
+    var viewer = group && document.getElementById(group.getAttribute('data-lightbox-group'));
+    if (viewer) {
+      event.preventDefault();
+      showPhoto(viewer, Number(thumb.getAttribute('data-lightbox-index')));
+      if (typeof viewer.showModal === 'function' && !viewer.open) viewer.showModal();
+      return;
+    }
+    var stepper = target.closest('[data-lightbox-step]');
+    if (stepper) {
+      var current = stepper.closest('dialog[data-lightbox]');
+      if (current) stepPhoto(current, Number(stepper.getAttribute('data-lightbox-step')));
+      return;
+    }
 
     var opener = target.closest('[data-dialog-open]');
     if (opener) {
@@ -402,6 +445,23 @@
     for (var i = 0; i < dialogs.length; i++) {
       if (!dialogs[i].open && typeof dialogs[i].showModal === 'function') dialogs[i].showModal();
     }
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    var viewer = document.querySelector('dialog[data-lightbox][open]');
+    if (!viewer) return;
+    event.preventDefault();
+    stepPhoto(viewer, event.key === 'ArrowLeft' ? -1 : 1);
+  });
+
+  // --- Character counters: <p data-char-count="<field id>"> shows
+  // "used / maxlength" as the user types (the server renders the first one).
+  document.addEventListener('input', function (event) {
+    var field = event.target instanceof Element ? event.target : null;
+    if (!field || !field.id || !field.hasAttribute('maxlength')) return;
+    var counter = document.querySelector('[data-char-count="' + field.id + '"]');
+    if (counter) counter.textContent = field.value.length + ' / ' + field.getAttribute('maxlength');
   });
 
   function init() {

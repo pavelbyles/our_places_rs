@@ -115,3 +115,61 @@ test.describe('ui.js cookies', () => {
     expect(cookies.op_tz_offset?.value).toBe(expectedOffset);
   });
 });
+
+const GALLERY = `
+<html><body>
+  <div data-lightbox-group="viewer">
+    <button id="p0" data-lightbox-index="0" data-full-src="/a.webp" data-alt="Pool">A</button>
+    <button id="p1" data-lightbox-index="1" data-full-src="/b.webp" data-alt="Deck">B</button>
+    <button id="p2" data-lightbox-index="2" data-full-src="/c.webp" data-alt="Bedroom">C</button>
+  </div>
+  <dialog id="viewer" data-lightbox>
+    <img id="img" data-lightbox-img alt="">
+    <button id="prev" data-lightbox-step="-1">Prev</button>
+    <button id="next" data-lightbox-step="1">Next</button>
+    <p id="counter" data-lightbox-counter></p>
+    <button id="close" data-dialog-close>Close</button>
+  </dialog>
+  <textarea id="desc" maxlength="20"></textarea>
+  <p id="desc-count" data-char-count="desc">0 / 20</p>
+</body></html>`;
+
+test.describe('ui.js photo viewer and counters', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('about:blank');
+    await page.setContent(GALLERY);
+    await page.addScriptTag({ path: UI_JS });
+  });
+
+  test('opens the clicked photo full size and steps through, wrapping', async ({ page }) => {
+    const img = page.locator('#img');
+    await page.locator('#p1').click();
+    await expect(page.locator('#viewer')).toHaveAttribute('open', '');
+    await expect(img).toHaveAttribute('src', '/b.webp');
+    await expect(img).toHaveAttribute('alt', 'Deck');
+    await expect(page.locator('#counter')).toHaveText('2 / 3');
+
+    await page.locator('#next').click();
+    await expect(img).toHaveAttribute('src', '/c.webp');
+    await page.locator('#next').click();
+    await expect(img).toHaveAttribute('src', '/a.webp');
+    await expect(page.locator('#counter')).toHaveText('1 / 3');
+    await page.locator('#prev').click();
+    await expect(img).toHaveAttribute('src', '/c.webp');
+
+    await page.keyboard.press('ArrowLeft');
+    await expect(img).toHaveAttribute('src', '/b.webp');
+    await page.keyboard.press('ArrowRight');
+    await expect(img).toHaveAttribute('src', '/c.webp');
+
+    await page.locator('#close').click();
+    await expect(page.locator('#viewer')).not.toHaveAttribute('open', '');
+  });
+
+  test('counts characters against maxlength as the user types', async ({ page }) => {
+    await page.locator('#desc').fill('Ocean view');
+    await expect(page.locator('#desc-count')).toHaveText('10 / 20');
+    await page.locator('#desc').pressSequentially('0123456789ABC');
+    await expect(page.locator('#desc-count')).toHaveText('20 / 20');
+  });
+});
