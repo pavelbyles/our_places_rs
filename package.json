@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "description": "Our Places Monorepo Workspace",
-  "dependencies": {
-    "daisyui": "^5.7.42"
-  },
   "scripts": {
     "test:e2e": "playwright test --config=playwright/playwright.config.ts",
     "test:e2e:guest": "playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium --project=guest-portal-firefox",

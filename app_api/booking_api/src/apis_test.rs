@@ -350,6 +350,24 @@ mod tests {
     }
 
     #[test]
+    fn test_stay_completion_cutoff_waits_for_noon_in_jamaica() {
+        use crate::apis::stay_completion_cutoff;
+        use chrono::{NaiveDate, TimeZone, Utc};
+
+        let at = |h, m| Utc.with_ymd_and_hms(2026, 11, 10, h, m, 0).unwrap();
+        let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
+
+        // 11:59 Jamaica (16:59 UTC): today's checkouts are still in the villa.
+        assert_eq!(stay_completion_cutoff(at(16, 59)), day(9));
+        // 12:00 Jamaica (17:00 UTC): today's checkouts complete.
+        assert_eq!(stay_completion_cutoff(at(17, 0)), day(10));
+        // 00:30 UTC is 19:30 the previous evening in Jamaica.
+        assert_eq!(stay_completion_cutoff(at(0, 30)), day(9));
+        // 05:30 UTC is 00:30 Jamaica: only yesterday's checkouts.
+        assert_eq!(stay_completion_cutoff(at(5, 30)), day(9));
+    }
+
+    #[test]
     fn test_statutory_tax_resolution_for_jamaican_and_fallback_countries() {
         use common::reference::SupportedCountry;
 
@@ -1655,6 +1673,33 @@ mod tests {
         assert_eq!(resp2.status(), 200);
         let cron_resp2: crate::apis::CompleteStaysResponse = test::read_body_json(resp2).await;
         assert!(!cron_resp2.booking_ids.contains(&booking.id));
+
+        // F. The hourly run-sweeps endpoint needs the cron secret too, and
+        // reports both sweeps (the booking is already completed).
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/internal/cron/run-sweeps")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 401);
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/internal/cron/run-sweeps")
+                .insert_header(("x-cron-secret", "test-complete-stays-secret"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let sweeps: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(sweeps["notifications"]["status"], "success");
+        assert!(
+            !sweeps["stays"]["booking_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| id == &serde_json::json!(booking.id)))
+        );
 
         let docs_after = db_core::tax_document::list_for_booking(&pool, booking.id)
             .await

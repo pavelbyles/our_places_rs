@@ -1,6 +1,4 @@
-use crate::get_api_client;
 use serde::{Deserialize, Serialize};
-use topcoat::context::{Cx, try_request_context};
 use uuid::Uuid;
 
 /// Strongly-typed authenticated user context for server-side rendering (SSR).
@@ -92,109 +90,7 @@ impl AuthUser {
     }
 }
 
-/// Why an admin-portal route guard rejected a request.
-#[derive(Debug, thiserror::Error)]
-pub enum AdminAuthError {
-    /// No valid admin session; carries the login path to redirect to.
-    #[error("Authentication required")]
-    Unauthenticated(String),
-
-    /// Signed in, but the role is not allowed; carries the reason.
-    #[error("Forbidden: Insufficient privileges for admin portal")]
-    Forbidden(String),
-
-    /// The session service failed.
-    #[error("Service error: {0}")]
-    Service(String),
-}
-
 /// Helper to convert TokenHash to standard 64-char lowercase hex string.
 pub fn token_hash_to_hex(hash: &topcoat::session::TokenHash) -> String {
     hash.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-/// Fetches and touches active admin session, refreshing client cookie and extending DB TTL.
-pub async fn get_admin_session(cx: &Cx) -> Option<AuthUser> {
-    try_request_context::<topcoat::session::SessionState>(cx)?;
-    if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
-        let hash_hex = token_hash_to_hex(&token_hash);
-        let api = get_api_client(cx);
-        if let Ok(Some(session)) = api.get_session(&hash_hex, Some("admin")).await {
-            // Sliding expiration: refresh client cookie in Topcoat
-            let _ = topcoat::session::refresh(cx).await;
-            return Some(AuthUser {
-                id: Some(session.user_id),
-                name: session.name,
-                email: session.email,
-                role: session.role,
-                namespace: session.namespace,
-            });
-        }
-    }
-    None
-}
-
-/// Fetches and touches active guest session, refreshing client cookie and extending DB TTL.
-pub async fn get_guest_session(cx: &Cx) -> Option<AuthUser> {
-    try_request_context::<topcoat::session::SessionState>(cx)?;
-    if let Ok(Some(token_hash)) = topcoat::session::token_hash(cx).await {
-        let hash_hex = token_hash_to_hex(&token_hash);
-        let api = get_api_client(cx);
-        if let Ok(Some(session)) = api.get_session(&hash_hex, Some("guest")).await {
-            // Sliding expiration: refresh client cookie in Topcoat
-            let _ = topcoat::session::refresh(cx).await;
-            return Some(AuthUser {
-                id: Some(session.user_id),
-                name: session.name,
-                email: session.email,
-                role: session.role,
-                namespace: session.namespace,
-            });
-        }
-    }
-    None
-}
-
-/// Route guard: requires active admin session.
-pub async fn require_admin_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError> {
-    match get_admin_session(cx).await {
-        Some(user) => {
-            if user.is_authorized_for_admin_portal() {
-                Ok(user)
-            } else {
-                Err(AdminAuthError::Forbidden(
-                    "User does not possess administrative privileges".to_string(),
-                ))
-            }
-        }
-        None => Err(AdminAuthError::Unauthenticated("/login".to_string())),
-    }
-}
-
-/// Route guard: requires active admin session WITH Admin role strictly (excludes Host).
-pub async fn require_admin_role_auth(cx: &Cx) -> Result<AuthUser, AdminAuthError> {
-    match get_admin_session(cx).await {
-        Some(user) => {
-            if user.is_admin() {
-                Ok(user)
-            } else {
-                Err(AdminAuthError::Forbidden(
-                    "User does not possess administrative privileges to manage users".to_string(),
-                ))
-            }
-        }
-        None => Err(AdminAuthError::Unauthenticated("/login".to_string())),
-    }
-}
-
-/// Legacy placeholder used by `web_app_admin_tc`: always returns a fixed
-/// administrator. New crates must use the session guards instead.
-pub fn get_authenticated_admin(_cx: &Cx) -> AuthUser {
-    AuthUser::with_namespace("Administrator", "admin@ourplaces.io", "admin", "admin")
-}
-
-/// Legacy placeholder used by `web_app_tc`: always returns `None`. New crates
-/// must use [`get_guest_session`] or the session guards instead.
-pub fn get_authenticated_guest(_cx: &Cx) -> Option<AuthUser> {
-    None
 }

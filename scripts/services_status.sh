@@ -109,7 +109,7 @@ collect_pids() {
         LISTEN_PIDS["$port"]="$pid"
         LISTEN_CMDS["$port"]="$cmd"
       fi
-    done < <(lsof -iTCP:3000,3002,3010,3012,4443,5432,8080,8081,8082,8083,8084,8085 -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 || true)
+    done < <(lsof -iTCP:3010,3012,4443,5432,8080,8081,8082,8083,8084,8085 -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 || true)
   fi
 }
 
@@ -166,8 +166,6 @@ run_check() {
     "API|Listing API|8082|api"
     "API|User API|8083|api"
     "API|Image Worker|8084|api"
-    "Frontend|Guest Portal (web_app_tc)|3000|frontend"
-    "Frontend|Admin Portal (web_app_admin_tc)|3002|frontend"
     "Frontend|Guest Portal (web_ui_guest)|3010|frontend"
     "Frontend|Admin Portal (web_ui_admin)|3012|frontend"
   )
@@ -378,8 +376,7 @@ run_check() {
     printf "${C_BOLD}Service Recovery Helpers:${C_RESET}\n"
     printf "  • Start everything (APIs + Frontends + DB): ${C_CYAN}fullstack${C_RESET}\n"
     printf "  • Start APIs + DB in background:           ${C_CYAN}apis-start${C_RESET} (or ${C_CYAN}apis${C_RESET} for foreground)\n"
-    printf "  • Start Topcoat frontends:                 ${C_CYAN}frontends${C_RESET}\n"
-    printf "  • Start redesigned Topcoat UI portals:     ${C_CYAN}frontends-new${C_RESET}\n"
+    printf "  • Start Topcoat UI portals:                ${C_CYAN}frontends${C_RESET}\n"
     printf "  • Start Pub/Sub emulator:                  ${C_CYAN}pubsub-start${C_RESET}\n"
     printf "  • Start Cloud Storage emulator:            ${C_CYAN}gcs-start${C_RESET} (after pubsub-start)\n"
     printf "  • Start PostgreSQL database:               ${C_CYAN}db-start${C_RESET}\n"

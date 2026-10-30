@@ -32,7 +32,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 
 ### 👤 User Features
 
-#### 🏖️ Guest Experience ([`web_app_tc`](web_app_tc))
+#### 🏖️ Guest Experience ([`web_ui_guest`](web_ui_guest))
 - **Luxury Villa Catalog & Search**: Browse curated Jamaican luxury villas and apartments with real-time HTMX filtering by destination, guest capacity, and amenities.
 - **Rich Property Detail Pages**: View responsive multi-resolution photo galleries, location information, detailed amenity checklists, and host descriptions.
 - **Dynamic Pricing & Multi-Currency Quotes**: Instant rate computation supporting multiple guest checkout currencies (USD, JMD, EUR, GBP, CAD) with statutory tax breakdowns (Jamaican GCT 15%).
@@ -43,7 +43,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 - **Verified Stay Reviews**: Submit post-stay reviews, ratings, and feedback via secure, single-use, 15-day invitation tokens issued upon stay completion.
 - **Self-Service Account & Security**: Guest registration, login, profile management, email verification, password reset flows, and account deactivation.
 
-#### 💼 Host & Administrator Experience ([`web_app_admin_tc`](web_app_admin_tc))
+#### 💼 Host & Administrator Experience ([`web_ui_admin`](web_ui_admin))
 - **Executive Operations Dashboard**: High-level KPI monitoring, real-time booking statistics, and operational health summaries.
 - **Property Catalog Management**: Create, edit, clone from existing templates, and manage villa listings, descriptions, and amenities.
 - **Seasonal Rates & Price Overrides**: Configure custom seasonal pricing rules, holiday surcharges, and promotional rate adjustments with automated priority resolution.
@@ -60,7 +60,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 #### 🏗️ Architecture & Performance
 - **Isomorphic Rust Monorepo**: Shared domain models, validation logic, and pricing math in [`common`](common) compiled across backend Actix-web services and Topcoat SSR frontends.
 - **GCP Cloud Run Scale-to-Zero**: Tailored for minimal resource profiles ($0.25\text{ vCPU}$, $256\text{MB RAM}$) with cold start targets $< 300\text{ms}$ (p50) and $< 1\text{s}$ (p95).
-- **Topcoat SSR + HTMX Frontend**: Ultra-fast server-side rendering with reactive micro-interactions, DaisyUI v5 components, and TailwindCSS v4 styling—eliminating heavy client-side JavaScript SPA bundles.
+- **Topcoat SSR + HTMX Frontend**: Ultra-fast server-side rendering with reactive micro-interactions, Topcoat UI components, and TailwindCSS v4 styling—eliminating heavy client-side JavaScript SPA bundles.
 
 #### 🧮 Financial Precision & "Tri-Currency" Engine
 - **Arbitrary-Precision Arithmetic**: Strict usage of `rust_decimal::Decimal` across all monetary amounts, commission percentages, and tax rates; zero floating-point (`f32`/`f64`) operations.
@@ -123,6 +123,7 @@ flowchart TD
 
 * **System Architecture**: See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for monorepo crate taxonomies, database locking, and tri-currency pricing flows.
 * **Agent Rules & Invariants**: See [`.agents/AGENTS.md`](.agents/AGENTS.md) for hard monorepo rules, performance budgets (<300ms), and token efficiency directives.
+* **Environment & Deployment Config**: See [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) for every environment variable per service and the GitHub Actions variables and secrets the deploy workflow needs.
 
 ---
 
@@ -295,68 +296,52 @@ Event-driven background worker handling image optimization and thumbnail generat
 
 ---
 
-### 6. `web_app_tc` (Guest-Facing Web App)
+### 6. `web_ui_guest` (Guest Portal)
 
-Public-facing Topcoat SSR & HTMX frontend (default port `3000`):
+Public-facing Topcoat SSR & HTMX portal (default port `3010`). Sessions are server-side (`op_guest_session` cookie); the portal calls the APIs on the signed-in guest's behalf.
 
 | Method | Path | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/` | Page | Homepage with hero section, search form, and featured luxury villas |
-| `GET` | `/htmx/welcome` | HTMX | Dynamic welcome partial |
-| `GET` | `/about` | Page | About Our Places platform and team |
-| `GET` | `/listings` | Page | Villa listings catalog with filter controls |
-| `GET` | `/listings/filter` | HTMX | Filtered villa cards partial |
-| `GET` | `/listings/{slug}` | Page | Detailed villa view with gallery, amenities, and booking widget |
-| `GET` | `/listings/{slug}/quote` | HTMX | Dynamic pricing quote calculation for selected dates and currency |
-| `GET` | `/checkout/{slug}` | Page | Reservation checkout flow for selected property |
-| `GET` | `/checkout-jmd/{id}` | Page | Checkout flow with Jamaican Dollar (JMD) currency preset |
-| `GET` | `/checkout-eur/{id}` | Page | Checkout flow with Euro (EUR) currency preset |
-| `GET` | `/checkout-gbp/{id}` | Page | Checkout flow with British Pound (GBP) currency preset |
-| `GET` | `/checkout-cad/{id}` | Page | Checkout flow with Canadian Dollar (CAD) currency preset |
-| `GET` | `/bookings` | Page | Guest booking history and reservation status overview |
-| `PATCH` | `/api/bookings/{id}` | Route | Modify or cancel a reservation |
-| `GET` | `/bookings/{code}/messages` | Page | Guest messaging thread with host for a reservation |
-| `POST` | `/bookings/{code}/messages` | Page | Submit a message on the guest reservation thread |
-| `GET` | `/login` | Page | Guest login portal |
-| `POST` | `/api/auth/login` | Route | Guest authentication handler |
-| `GET` | `/logout` | Page | User logout and session termination |
-| `GET` | `/register` | Page | Guest account registration |
-| `GET` | `/verify` | Page | Account email verification confirmation |
-| `GET` | `/profile` | Page | Guest profile details and settings |
-| `GET` | `/reviews/submit` | Page | Guest review submission form via invitation token |
-| `GET` | `/reviews/success` | Page | Review submission confirmation |
+| `GET` | `/` | Page | Homepage with hero, search and featured villas |
+| `GET` | `/about` | Page | About Our Places |
+| `GET` | `/listings` | Page | Villa catalog with filters |
+| `GET` | `/listings/{slug}` | Page | Villa detail with gallery, amenities and booking widget |
+| `GET` | `/listings/{slug}/quote` | HTMX | Price quote for the chosen dates and currency |
+| `GET` | `/listings/{slug}/calendar` | HTMX | Availability calendar month |
+| `GET`, `POST` | `/checkout/{slug}` | Page | Checkout (sign-in required); places the 15-minute hold |
+| `GET` | `/checkout-{jmd,eur,gbp,cad}/{id}` | Redirect | Legacy per-currency links → `/checkout/{id}?currency=` |
+| `GET` | `/bookings` | Page | The signed-in guest's bookings |
+| `GET`, `POST` | `/bookings/{id}/cancel` | HTMX | Cancellation dialog and submit |
+| `GET` | `/bookings/{id}/cancellation-quote` | HTMX | Refund quote |
+| `GET` | `/bookings/{id}/change-dates` | Page | Reservation change (dates / guests) |
+| `POST` | `/bookings/{id}/change-quote`, `/bookings/{id}/change-requests[/{rid}/{approve,decline,cancel}]` | HTMX | Reservation change quotes and requests |
+| `GET`, `POST` | `/bookings/{code}/messages` | Page | Messaging thread with the host |
+| `GET` | `/bookings/{id}/documents/{number}` | Page | Receipt / tax invoice / refund receipt |
+| `GET`, `POST` | `/login`, `/register`, `/verify`, `/verify/resend` | Page | Sign in, sign up and email verification |
+| `GET`, `POST` | `/logout` | Page | Sign out |
+| `GET`, `POST` | `/profile` | Page | Profile details |
+| `GET`, `POST` | `/reviews/submit` | Page | Review form (invitation token) |
+| `GET` | `/reviews/success` | Page | Review confirmation |
 
 ---
 
-### 7. `web_app_admin_tc` (Internal Admin Dashboard)
+### 7. `web_ui_admin` (Admin & Host Portal)
 
-Administrative Topcoat SSR & HTMX portal (default port `3002`):
+Administrative Topcoat SSR & HTMX portal (default port `3012`). Short aliases (`/listings`, `/bookings`, `/payouts`, `/users`) redirect to their `/admin/...` routes.
 
 | Method | Path | Type | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/admin`, `/` | Page | Admin dashboard with KPI metrics and recent booking activities |
-| `GET` | `/admin/htmx/stats` | HTMX | Real-time analytics stats partial |
-| `GET` | `/admin/listings`, `/listings` | Page | Property listings management table |
-| `GET` | `/admin/listings/new` | Page | Create property form |
-| `POST` | `/admin/listings`, `/api/admin/listings/create` | Route | Create property form submission handler |
-| `GET` | `/admin/listings/{id}`, `/listings/{id}` | Page | Admin property details view |
-| `GET` | `/admin/listings/{id}/edit`, `/listings/{id}/edit` | Page | Property edit form |
-| `GET` | `/admin/listings/clone/{slug}` | Page | Clone property template form |
-| `GET` | `/admin/listings/{id}/pricing`, `/listings/{id}/pricing` | Page | Seasonal rates and price overrides management |
-| `GET` | `/admin/listings/{id}/pricing/add`, `/listings/{id}/pricing/add` | Page | Add seasonal price override rule |
-| `GET` | `/admin/listings/{id}/pricing/remove` | Page | Remove price override rule |
-| `GET` | `/admin/bookings`, `/bookings` | Page | Centralized bookings management pipeline |
-| `PATCH` | `/api/bookings/{id}` | Route | Admin booking status or details update |
-| `GET` | `/api/bookings/{id}/messages` | Route | Fetch booking message history |
-| `POST` | `/api/bookings/{id}/messages` | Route | Send admin response message to guest |
-| `PATCH` | `/api/bookings/{id}/messages/read` | Route | Mark booking messages as read |
-| `GET` | `/admin/bookings/{code}/messages` | Page | Dedicated admin messaging thread |
-| `POST` | `/admin/bookings/{code}/messages` | Page | Post message to guest on booking thread |
-| `GET` | `/admin/users`, `/users` | Page | User management directory |
-| `GET` | `/admin/users/new` | Page | Create user form |
-| `POST` | `/api/admin/users/create` | Route | User creation API handler |
-| `POST` | `/api/admin/users/update` | Route | Update user roles or account details |
-| `GET` | `/admin/exchange-rates` | Page | Foreign currency exchange rate management & sync |
-| `GET` | `/login` | Page | Admin login portal |
-| `POST` | `/api/auth/login` | Route | Admin authentication handler |
-| `GET` | `/logout` | Page | Admin logout and session termination |
+| `GET` | `/admin` (`/` redirects) | Page | Dashboard with KPIs and recent bookings |
+| `GET`, `POST` | `/login`, `/register`, `/verify`, `/verify/resend`, `/logout` | Page | Sign in, host sign-up, verification, sign out |
+| `GET`, `POST` | `/admin/listings`, `/admin/listings/new`, `/admin/listings/clone/{slug}` | Page | Listing table, create and clone |
+| `GET`, `POST` | `/admin/listings/{id}`, `/admin/listings/{id}/edit` | Page | Listing detail and edit |
+| `POST` | `/admin/listings/{id}/images/presign`, `/admin/listings/{id}/images/remove` | HTMX | Photo upload (signed URL, browser PUT to Cloud Storage) and removal |
+| `GET`, `POST` | `/admin/listings/{id}/pricing[/add,/remove]` | Page | Seasonal rates and price overrides |
+| `GET` | `/admin/bookings`, `/admin/bookings/export.csv` | Page | Bookings pipeline and CSV export |
+| `GET` | `/admin/bookings/{id}`, `/admin/bookings/{id}/cancellation-quote`, `/admin/bookings/{id}/documents/{number}` | HTMX / Page | Booking detail dialog, refund quote, tax documents |
+| `POST` | `/admin/bookings/{id}/status`, `/admin/bookings/{id}/door-code` | HTMX | Status changes and door codes |
+| `POST` | `/admin/bookings/{id}/change-requests[/{rid}/{approve,decline,cancel}]` | HTMX | Reservation change requests |
+| `GET`, `POST` | `/admin/bookings/{code}/messages` | Page | Messaging thread with the guest |
+| `GET`, `POST` | `/admin/payouts`, `/admin/payouts/export.csv`, `/admin/payouts/{id}/status` | Page | Payout ledger (status changes: admin only) |
+| `GET` | `/admin/exchange-rates` | Page | Exchange rate table (read-only) |
+| `GET`, `POST` | `/admin/users`, `/admin/users/new`, `/admin/users/{id}/edit`, `/admin/users/{id}[/delete,/restore]` | Page | User administration (admin only) |

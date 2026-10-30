@@ -1,5 +1,7 @@
 //! The redesigned price breakdown must show exactly the same figures as the
-//! legacy component (spec: tri-currency display stays identical).
+//! legacy component did (spec: tri-currency display stays identical). The
+//! expected texts were captured from the legacy `web_app_common_tc`
+//! component before that crate was removed.
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -34,38 +36,20 @@ const IDS: [&str; 6] = [
     "breakdown-total",
 ];
 
-async fn compare(q: PriceBreakdown) {
+async fn compare(q: PriceBreakdown, legacy: [Option<&str>; 6], legacy_discount: bool) {
     let __cx = &Cx::default();
-    let l = q.clone();
-    let legacy = html(
-        view! {
-            web_app_common_tc::components::price_breakdown::price_breakdown(
-                nights: l.nights,
-                effective_nightly_rate: l.effective_nightly_rate,
-                subtotal: l.subtotal,
-                discount_amount: l.discount_amount,
-                cleaning_fee: l.cleaning_fee,
-                damage_deposit: l.damage_deposit,
-                tax_amount: l.tax_amount,
-                total_amount: l.total_amount,
-                currency: l.currency,
-            )
-        },
-        __cx,
-    )
-    .await;
     let r = q.clone();
     let redesigned = html(view! { price_breakdown(quote: r) }, __cx).await;
-    for id in IDS {
+    for (id, expected) in IDS.into_iter().zip(legacy) {
         assert_eq!(
-            text_of(&redesigned, id),
-            text_of(&legacy, id),
+            text_of(&redesigned, id).as_deref(),
+            expected,
             "{id} differs for {}",
             q.currency
         );
     }
-    let discount = |h: &str| h.contains(&format!("-{} ", q.currency));
-    assert_eq!(discount(&redesigned), discount(&legacy), "discount row");
+    let discount = redesigned.contains(&format!("-{} ", q.currency));
+    assert_eq!(discount, legacy_discount, "discount row");
 }
 
 fn quote(currency: &str, scale: Decimal) -> PriceBreakdown {
@@ -84,25 +68,92 @@ fn quote(currency: &str, scale: Decimal) -> PriceBreakdown {
 
 #[tokio::test]
 async fn matches_legacy_for_every_display_currency() {
-    for (currency, rate) in [
-        ("USD", dec!(1)),
-        ("JMD", dec!(157.3245)),
-        ("EUR", dec!(0.9213)),
-        ("GBP", dec!(0.7891)),
-        ("CAD", dec!(1.3602)),
-    ] {
-        compare(quote(currency, rate)).await;
+    let cases = [
+        (
+            "USD",
+            dec!(1),
+            [
+                "5 night(s) × USD 650.00",
+                "USD 3250.00",
+                "USD 75.00",
+                "USD 498.75",
+                "USD 150.00",
+                "USD 3648.62",
+            ],
+        ),
+        (
+            "JMD",
+            dec!(157.3245),
+            [
+                "5 night(s) × JMD 102260.92",
+                "JMD 511304.62",
+                "JMD 11799.33",
+                "JMD 78465.59",
+                "JMD 23598.67",
+                "JMD 574018.10",
+            ],
+        ),
+        (
+            "EUR",
+            dec!(0.9213),
+            [
+                "5 night(s) × EUR 598.84",
+                "EUR 2994.22",
+                "EUR 69.09",
+                "EUR 459.49",
+                "EUR 138.19",
+                "EUR 3361.47",
+            ],
+        ),
+        (
+            "GBP",
+            dec!(0.7891),
+            [
+                "5 night(s) × GBP 512.91",
+                "GBP 2564.57",
+                "GBP 59.18",
+                "GBP 393.56",
+                "GBP 118.36",
+                "GBP 2879.12",
+            ],
+        ),
+        (
+            "CAD",
+            dec!(1.3602),
+            [
+                "5 night(s) × CAD 884.13",
+                "CAD 4420.65",
+                "CAD 102.01",
+                "CAD 678.39",
+                "CAD 204.03",
+                "CAD 4962.85",
+            ],
+        ),
+    ];
+    for (currency, rate, legacy) in cases {
+        compare(quote(currency, rate), legacy.map(Some), true).await;
     }
 }
 
 #[tokio::test]
 async fn matches_legacy_when_optional_fees_are_absent_or_zero() {
-    compare(PriceBreakdown {
-        discount_amount: None,
-        cleaning_fee: Some(Decimal::ZERO),
-        damage_deposit: None,
-        ..quote("USD", dec!(1))
-    })
+    compare(
+        PriceBreakdown {
+            discount_amount: None,
+            cleaning_fee: Some(Decimal::ZERO),
+            damage_deposit: None,
+            ..quote("USD", dec!(1))
+        },
+        [
+            Some("5 night(s) × USD 650.00"),
+            Some("USD 3250.00"),
+            None,
+            Some("USD 498.75"),
+            None,
+            Some("USD 3648.62"),
+        ],
+        false,
+    )
     .await;
 }
 

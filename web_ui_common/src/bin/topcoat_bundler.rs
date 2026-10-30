@@ -1,3 +1,7 @@
+//! Writes the asset bundle for a compiled portal binary, next to where
+//! `AssetBundle::load` looks for it. Used by the portal Docker builds:
+//! `topcoat_bundler <binary_path> <out_dir> [target_dir]`.
+
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

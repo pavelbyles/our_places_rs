@@ -22,9 +22,10 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 │   ├── booking_api/    # Booking state machine, availability locking, payment orchestration
 │   ├── user_api/       # JWT authentication, host profiles, shadow user promotion
 │   └── image_worker/   # Pub/Sub background worker for image processing
-├── web_app_tc/         # Public-facing Topcoat SSR & HTMX frontend application
-├── web_app_admin_tc/   # Internal admin dashboard (listings, bookings, messaging, rates)
-├── web_app_common_tc/  # Shared Topcoat UI components, themes, layouts & API client logic
+├── web_client/         # UI-free backend API client, sessions & auth guards shared by the portals
+├── web_ui_common/      # Shared Topcoat UI components, theme, shells & security headers
+├── web_ui_guest/       # Public-facing guest portal (Topcoat SSR & HTMX)
+├── web_ui_admin/       # Admin & host dashboard (listings, bookings, messaging, rates, payouts)
 └── infra/              # Terraform / Pulumi GCP infrastructure definitions
 ```
 

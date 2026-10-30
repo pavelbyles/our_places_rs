@@ -2,8 +2,8 @@
  * Shared test data and constants across E2E test suites.
  */
 export const TEST_CONFIG = {
-  guestPortalUrl: process.env.GUEST_PORTAL_URL || 'http://localhost:3000',
-  adminPortalUrl: process.env.ADMIN_PORTAL_URL || 'http://localhost:3002',
+  guestPortalUrl: process.env.GUEST_PORTAL_URL || 'http://localhost:3010',
+  adminPortalUrl: process.env.ADMIN_PORTAL_URL || 'http://localhost:3012',
 };
 
 export const TEST_USERS = {

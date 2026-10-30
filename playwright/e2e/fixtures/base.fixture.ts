@@ -1,21 +1,16 @@
 import { test as base, expect } from '@playwright/test';
 import * as path from 'node:path';
-import { isNewPortal } from './portal.js';
 
 const CSP_LISTENER = path.resolve(__dirname, 'csp-listener.js');
 
 /**
- * Base test for all portal specs. On the redesigned-portal projects it fails
- * any test during which the browser reports a Content-Security-Policy
+ * Base test for all portal specs. It fails any test during which the
+ * browser reports a Content-Security-Policy
  * violation (spec acceptance criterion: zero CSP violations).
  */
 export const test = base.extend<{ cspGuard: void }>({
   cspGuard: [
-    async ({ page }, use, testInfo) => {
-      if (!isNewPortal(testInfo)) {
-        await use();
-        return;
-      }
+    async ({ page }, use) => {
       const violations: string[] = [];
       await page.exposeFunction('__reportCspViolation', (v: string) => violations.push(v));
       page.on('console', (msg) => {

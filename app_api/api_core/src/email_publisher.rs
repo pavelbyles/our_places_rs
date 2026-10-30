@@ -17,12 +17,27 @@ use uuid::Uuid;
 /// - `PUBSUB_EMULATOR_HOST`: When present, targets the local Pub/Sub emulator instead of Google Cloud.
 /// - `DISABLE_PUBSUB_PUBLISH`: If set to `"true"` or `"1"`, publishing becomes a no-op (useful for local dev and unit tests).
 /// - `PUBSUB_AUTH_TOKEN`: Optional Bearer authentication token for authenticated endpoints.
+///
+/// Against real Google Cloud (no emulator, no `PUBSUB_AUTH_TOKEN`), each publish
+/// fetches an OAuth access token for the service account from the metadata
+/// server, so the Cloud Run service account needs `roles/pubsub.publisher`
+/// on the topic.
 #[derive(Clone, Debug)]
 pub struct EmailPublisher {
     http_client: Client,
     topic_url: String,
     auth_token: Option<String>,
+    use_metadata_token: bool,
     disabled: bool,
+}
+
+/// Metadata server endpoint for the default service account's access token.
+static METADATA_TOKEN_URL: &str =
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
+
+#[derive(serde::Deserialize)]
+struct MetadataToken {
+    access_token: String,
 }
 
 impl EmailPublisher {
@@ -40,7 +55,8 @@ impl EmailPublisher {
         dotenvy::dotenv().ok();
         let gcp_project =
             std::env::var(GCP_PROJECT_ID_ENV).unwrap_or_else(|_| "our-places-dev".to_string());
-        let topic_url = if let Ok(emulator_host) = std::env::var(PUBSUB_EMULATOR_HOST_ENV) {
+        let emulator = std::env::var(PUBSUB_EMULATOR_HOST_ENV).ok();
+        let topic_url = if let Some(emulator_host) = &emulator {
             format!(
                 "http://{}/v1/projects/{}/topics/{}:publish",
                 emulator_host, gcp_project, topic_id
@@ -54,6 +70,7 @@ impl EmailPublisher {
         let disabled = std::env::var(DISABLE_PUBSUB_PUBLISH_ENV)
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+        let auth_token = std::env::var(PUBSUB_AUTH_TOKEN_ENV).ok();
 
         Self {
             http_client: Client::builder()
@@ -61,7 +78,8 @@ impl EmailPublisher {
                 .build()
                 .unwrap_or_else(|_| Client::new()),
             topic_url,
-            auth_token: std::env::var(PUBSUB_AUTH_TOKEN_ENV).ok(),
+            use_metadata_token: emulator.is_none() && auth_token.is_none(),
+            auth_token,
             disabled,
         }
     }
@@ -89,6 +107,7 @@ impl EmailPublisher {
             http_client: Client::new(),
             topic_url: String::new(),
             auth_token: None,
+            use_metadata_token: false,
             disabled: true,
         }
     }
@@ -128,6 +147,8 @@ impl EmailPublisher {
         let mut req = self.http_client.post(&self.topic_url).json(&pubsub_body);
         if let Some(token) = &self.auth_token {
             req = req.bearer_auth(token);
+        } else if self.use_metadata_token {
+            req = req.bearer_auth(self.metadata_access_token().await?);
         }
 
         let res = req.send().await.map_err(|e| {
@@ -150,6 +171,39 @@ impl EmailPublisher {
             );
             Err(crate::error::ApiError::Internal)
         }
+    }
+}
+
+impl EmailPublisher {
+    /// The service account's OAuth access token, from the metadata server.
+    async fn metadata_access_token(&self) -> Result<String, crate::error::ApiError> {
+        let res = self
+            .http_client
+            .get(METADATA_TOKEN_URL)
+            .header("Metadata-Flavor", "Google")
+            .send()
+            .await
+            .map_err(|e| {
+                error!(
+                    "Failed to reach the metadata server for a Pub/Sub token: {}",
+                    e
+                );
+                crate::error::ApiError::Internal
+            })?;
+        if !res.status().is_success() {
+            error!(
+                "Metadata server returned {} for a Pub/Sub token",
+                res.status()
+            );
+            return Err(crate::error::ApiError::Internal);
+        }
+        res.json::<MetadataToken>()
+            .await
+            .map(|token| token.access_token)
+            .map_err(|e| {
+                error!("Failed to decode the metadata server token: {}", e);
+                crate::error::ApiError::Internal
+            })
     }
 }
 

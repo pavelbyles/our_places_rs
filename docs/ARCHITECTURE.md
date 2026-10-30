@@ -19,9 +19,10 @@ The following diagram illustrates the crate boundaries, data access layers, and 
 ```mermaid
 flowchart TB
     subgraph s1["Server-Side Rendered Frontend - Topcoat & HTMX"]
-        WA["web_app_tc - Guest Portal"]
-        WAA["web_app_admin_tc - Admin Dashboard"]
-        WAC["web_app_common_tc - Shared UI & API Client"]
+        WA["web_ui_guest - Guest Portal"]
+        WAA["web_ui_admin - Admin & Host Portal"]
+        WUC["web_ui_common - Shared UI Components"]
+        WAC["web_client - API Client & Sessions"]
     end
     subgraph s2["Shared Isomorphic Crates"]
         COM["common - Isomorphic Pricing & Ref Data"]
@@ -38,10 +39,15 @@ flowchart TB
         GCS[("Google Cloud Storage")]
         PS["GCP Pub/Sub Event Bus"]
     end
+    WA --> WUC
+    WAA --> WUC
+    WUC --> WAC
     WA --> WAC
     WAA --> WAC
-    WA -.-> COM
-    WAA -.-> COM
+    WAC -.-> COM
+    WAC -- "ID token + X-Forwarded-Authorization" --> LA
+    WAC --> BA
+    WAC --> UA
     LA --> COM
     LA --> DBC
     BA --> COM
@@ -68,9 +74,10 @@ flowchart TB
 | **`app_api/booking_api`** | Native | Availability checking, `SELECT FOR UPDATE` locking, 15-min reservation holds, payment orchestration. | `common`, `db_core` |
 | **`app_api/user_api`** | Native | JWT authentication, bcrypt password hashing, shadow user registration and promotion. | `common`, `db_core` |
 | **`app_api/image_worker`** | Native | Event-driven background service processing GCS image upload events to multi-resolution WebP. | `db_core` |
-| **`web_app_tc/`** | Native / SSR | Public guest-facing Topcoat SSR & HTMX application (villas, search, booking checkout, messaging). | `common`, `web_app_common_tc` |
-| **`web_app_admin_tc/`** | Native / SSR | Internal administration dashboard (exchanges rates, listings, bookings, messaging, audits). | `common`, `web_app_common_tc` |
-| **`web_app_common_tc/`** | Native / SSR | Shared Topcoat UI components, layouts, theme engine, and centralized HTTP client. | `common` |
+| **`web_ui_guest/`** | Native / SSR | Public guest portal on Topcoat UI (villas, search, checkout, bookings, messaging, reviews). | `web_ui_common`, `web_client`, `common` |
+| **`web_ui_admin/`** | Native / SSR | Admin & host portal (listings and photos, pricing, bookings, messaging, payouts, exchange rates, users). | `web_ui_common`, `web_client`, `common` |
+| **`web_ui_common/`** | Native / SSR | Shared Topcoat UI components, theme, portal shells, security headers (CSP) and the asset bundler used by the Docker builds. | `web_client`, `common` |
+| **`web_client/`** | Native | UI-free backend client, typed sessions and route guards. Calls the APIs with the service account's Google ID token (Cloud Run IAM) and the user's JWT in `X-Forwarded-Authorization`. | `common` |
 
 ---
 

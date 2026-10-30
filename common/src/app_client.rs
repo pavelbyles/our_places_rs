@@ -401,11 +401,15 @@ pub async fn update_booking_with_auth(
     let api_url = booking_api_url();
     let url = format!("{}/api/v1/bookings/{}", api_url, id);
 
-    let client = reqwest::Client::new();
-    let mut request = client.patch(&url).json(req);
-    if let Some(token) = user_jwt {
-        request = request.header("Authorization", format!("Bearer {}", token));
-    }
+    let request = get_client()
+        .user_request(
+            reqwest::Method::PATCH,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?
+        .json(req);
 
     let res = request
         .send()
@@ -651,11 +655,14 @@ pub async fn get_booking_document_by_number(
         "{}/api/v1/bookings/{}/documents/{}",
         api_url, booking_id, document_number
     );
-    let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?;
     let res = req
         .send()
         .await
@@ -676,11 +683,14 @@ pub async fn list_booking_documents(
 ) -> Result<Vec<TaxDocumentResponse>> {
     let api_url = booking_api_url();
     let url = format!("{}/api/v1/bookings/{}/documents", api_url, booking_id);
-    let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?;
     let res = req
         .send()
         .await
@@ -715,11 +725,15 @@ pub async fn quote_reservation_change(
 ) -> Result<crate::models::ReservationChangeQuoteResponse> {
     let api_url = booking_api_url();
     let url = format!("{}/api/v1/bookings/{}/change-quote", api_url, booking_id);
-    let client = reqwest::Client::new();
-    let mut req = client.post(&url).json(body);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?
+        .json(body);
     let res = req
         .send()
         .await
@@ -741,11 +755,15 @@ pub async fn create_reservation_change_request(
 ) -> Result<crate::models::ReservationChangeRequestResponse> {
     let api_url = booking_api_url();
     let url = format!("{}/api/v1/bookings/{}/change-requests", api_url, booking_id);
-    let client = reqwest::Client::new();
-    let mut req = client.post(&url).json(body);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?
+        .json(body);
     let res = req
         .send()
         .await
@@ -766,11 +784,14 @@ pub async fn list_reservation_change_requests(
 ) -> Result<Vec<crate::models::ReservationChangeRequestResponse>> {
     let api_url = booking_api_url();
     let url = format!("{}/api/v1/bookings/{}/change-requests", api_url, booking_id);
-    let client = reqwest::Client::new();
-    let mut req = client.get(&url);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?;
     let res = req
         .send()
         .await
@@ -796,11 +817,15 @@ pub async fn approve_reservation_change_request(
         "{}/api/v1/bookings/{}/change-requests/{}/approve",
         api_url, booking_id, request_id
     );
-    let client = reqwest::Client::new();
-    let mut req = client.post(&url).json(body);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?
+        .json(body);
     let res = req
         .send()
         .await
@@ -826,11 +851,15 @@ pub async fn decline_reservation_change_request(
         "{}/api/v1/bookings/{}/change-requests/{}/decline",
         api_url, booking_id, request_id
     );
-    let client = reqwest::Client::new();
-    let mut req = client.post(&url).json(body);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?
+        .json(body);
     let res = req
         .send()
         .await
@@ -855,11 +884,14 @@ pub async fn cancel_reservation_change_request(
         "{}/api/v1/bookings/{}/change-requests/{}/cancel",
         api_url, booking_id, request_id
     );
-    let client = reqwest::Client::new();
-    let mut req = client.post(&url);
-    if let Some(token) = user_jwt {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
+    let req = get_client()
+        .user_request(
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            user_jwt,
+        )
+        .await?;
     let res = req
         .send()
         .await

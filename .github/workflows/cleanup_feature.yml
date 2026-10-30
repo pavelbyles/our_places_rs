@@ -13,6 +13,11 @@ env:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    # Long-lived environments are never torn down: merging dev -> main through
+    # a PR closes a PR whose head is `dev`.
+    if: >-
+      (github.event_name == 'delete' && github.event.ref_type == 'branch' && !contains(fromJSON('["main","dev"]'), github.event.ref)) ||
+      (github.event_name == 'pull_request' && !contains(fromJSON('["main","dev"]'), github.head_ref))
     permissions:
       contents: "read"
       id-token: "write"
@@ -67,6 +72,9 @@ jobs:
             "user-api-$SUFFIX"
             "our-places-image-worker-$SUFFIX"
             "our-places-email-worker-$SUFFIX"
+            "our-places-web-ui-guest-$SUFFIX"
+            "our-places-web-ui-admin-$SUFFIX"
+            # Retired portals, still deleted for branches deployed before the switch
             "our-places-web-app-tc-$SUFFIX"
             "our-places-web-app-admin-tc-$SUFFIX"
           )

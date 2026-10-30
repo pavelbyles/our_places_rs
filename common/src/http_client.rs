@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use reqwest::header::AUTHORIZATION;
 
+use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,20 +14,39 @@ pub trait TokenProvider: Send + Sync {
     async fn get_token(&self, audience: &str) -> Result<String>;
 }
 
+/// Header carrying the signed-in user's JWT on service-to-service calls.
+///
+/// `Authorization` is taken by the Google ID token that Cloud Run IAM checks,
+/// so the user token travels here instead. API Gateway (ESPv2) moves a
+/// client's `Authorization` header to this same header, so the backends read
+/// the user token from one place either way.
+pub const USER_AUTHORIZATION_HEADER: &str = "x-forwarded-authorization";
+
 struct CachedToken {
     token: String,
     expires_at: Instant,
 }
 
+/// ID tokens are minted per audience (one per backend service), so they are
+/// cached per audience too.
+type TokenCache = Mutex<HashMap<String, CachedToken>>;
+
+fn cached_token(cache: &HashMap<String, CachedToken>, audience: &str) -> Option<String> {
+    cache
+        .get(audience)
+        .filter(|cached| cached.expires_at > Instant::now())
+        .map(|cached| cached.token.clone())
+}
+
 /// Fetches tokens from the Google Cloud Metadata Server (for Cloud Run).
 pub struct GoogleMetadataTokenProvider {
-    cache: Mutex<Option<CachedToken>>,
+    cache: TokenCache,
 }
 
 impl GoogleMetadataTokenProvider {
     pub fn new() -> Self {
         Self {
-            cache: Mutex::new(None),
+            cache: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -42,10 +62,8 @@ impl TokenProvider for GoogleMetadataTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
         let mut cache = self.cache.lock().await;
 
-        if let Some(cached) = &*cache
-            && cached.expires_at > Instant::now()
-        {
-            return Ok(cached.token.clone());
+        if let Some(token) = cached_token(&cache, audience) {
+            return Ok(token);
         }
 
         let client = Client::new();
@@ -78,10 +96,13 @@ impl TokenProvider for GoogleMetadataTokenProvider {
             .to_string();
 
         // Cache for 50 minutes (tokens usually last 1 hour)
-        *cache = Some(CachedToken {
-            token: token.clone(),
-            expires_at: Instant::now() + Duration::from_secs(50 * 60),
-        });
+        cache.insert(
+            audience.to_string(),
+            CachedToken {
+                token: token.clone(),
+                expires_at: Instant::now() + Duration::from_secs(50 * 60),
+            },
+        );
 
         Ok(token)
     }
@@ -89,13 +110,13 @@ impl TokenProvider for GoogleMetadataTokenProvider {
 
 /// Fetches tokens using the `gcloud` CLI (for local development).
 pub struct LocalGcloudTokenProvider {
-    cache: Mutex<Option<CachedToken>>,
+    cache: TokenCache,
 }
 
 impl LocalGcloudTokenProvider {
     pub fn new() -> Self {
         Self {
-            cache: Mutex::new(None),
+            cache: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -111,12 +132,11 @@ impl TokenProvider for LocalGcloudTokenProvider {
     async fn get_token(&self, audience: &str) -> Result<String> {
         let mut cache = self.cache.lock().await;
 
-        if let Some(cached) = &*cache
-            && cached.expires_at > Instant::now()
-        {
-            return Ok(cached.token.clone());
+        if let Some(token) = cached_token(&cache, audience) {
+            return Ok(token);
         }
 
+        let cache_key = audience.to_string();
         let audience = audience.to_string();
         let output_result = tokio::task::spawn_blocking(move || {
             // Runs: gcloud auth print-identity-token --audiences=...
@@ -169,10 +189,13 @@ impl TokenProvider for LocalGcloudTokenProvider {
                 .to_string();
 
             // Cache for 50 minutes
-            *cache = Some(CachedToken {
-                token: token.clone(),
-                expires_at: Instant::now() + Duration::from_secs(50 * 60),
-            });
+            cache.insert(
+                cache_key,
+                CachedToken {
+                    token: token.clone(),
+                    expires_at: Instant::now() + Duration::from_secs(50 * 60),
+                },
+            );
 
             return Ok(token);
         }
@@ -201,6 +224,12 @@ impl AuthenticatedClient {
             Arc::new(LocalGcloudTokenProvider::new())
         };
 
+        Self::with_token_provider(token_provider)
+    }
+
+    /// Creates a client that gets its ID tokens from `token_provider` (tests
+    /// use a fixed one). The API key still comes from `GATEWAY_API_KEY`.
+    pub fn with_token_provider(token_provider: Arc<dyn TokenProvider>) -> Self {
         // Read API Key from environment (if available)
         let api_key = std::env::var("GATEWAY_API_KEY").ok();
 
@@ -218,6 +247,27 @@ impl AuthenticatedClient {
         } else {
             builder
         }
+    }
+
+    /// Creates a request builder with OIDC Authorization (for Cloud Run IAM),
+    /// the API key, and, when given, the signed-in user's JWT in
+    /// [`USER_AUTHORIZATION_HEADER`].
+    pub async fn user_request(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        audience: &str,
+        user_jwt: Option<&str>,
+    ) -> Result<reqwest::RequestBuilder> {
+        let token = self.token_provider.get_token(audience).await?;
+        let mut builder = self.client.request(method, url);
+        if !token.trim().is_empty() {
+            builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
+        }
+        if let Some(jwt) = user_jwt {
+            builder = builder.header(USER_AUTHORIZATION_HEADER, format!("Bearer {}", jwt));
+        }
+        Ok(self.add_api_key(builder))
     }
 
     /// Creates a GET request builder with OIDC Authorization and API Key.

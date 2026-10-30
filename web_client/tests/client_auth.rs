@@ -1,16 +1,29 @@
 //! Tests for backend calls made on behalf of a signed-in user.
 
-use common::http_client::AuthenticatedClient;
+use std::sync::Arc;
+
+use common::http_client::{AuthenticatedClient, TokenProvider};
 use uuid::Uuid;
 use web_client::client::{TopcoatApiClient, UserCallError};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const JWT: &str = "user-token";
+const ID_TOKEN: &str = "service-id-token";
+
+/// Stands in for the metadata server / gcloud.
+struct FixedIdToken;
+
+#[async_trait::async_trait]
+impl TokenProvider for FixedIdToken {
+    async fn get_token(&self, _audience: &str) -> anyhow::Result<String> {
+        Ok(ID_TOKEN.to_string())
+    }
+}
 
 fn client_for(server: &MockServer) -> TopcoatApiClient {
     TopcoatApiClient::new(
-        AuthenticatedClient::new(false),
+        AuthenticatedClient::with_token_provider(Arc::new(FixedIdToken)),
         server.uri(),
         server.uri(),
         server.uri(),
@@ -18,12 +31,19 @@ fn client_for(server: &MockServer) -> TopcoatApiClient {
 }
 
 #[tokio::test]
-async fn user_bookings_send_bearer_to_user_path() -> Result<(), UserCallError> {
+async fn user_bookings_send_both_tokens_to_user_path() -> Result<(), UserCallError> {
     let server = MockServer::start().await;
     let user = Uuid::now_v7();
     Mock::given(method("GET"))
         .and(path(format!("/api/v1/bookings/user/{user}")))
-        .and(header("authorization", format!("Bearer {JWT}").as_str()))
+        .and(header(
+            "authorization",
+            format!("Bearer {ID_TOKEN}").as_str(),
+        ))
+        .and(header(
+            "x-forwarded-authorization",
+            format!("Bearer {JWT}").as_str(),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
         .expect(1)
         .mount(&server)
@@ -35,7 +55,7 @@ async fn user_bookings_send_bearer_to_user_path() -> Result<(), UserCallError> {
 }
 
 #[tokio::test]
-async fn cancellation_quote_sends_bearer_and_decodes() -> Result<(), UserCallError> {
+async fn cancellation_quote_sends_both_tokens_and_decodes() -> Result<(), UserCallError> {
     let server = MockServer::start().await;
     let id = Uuid::now_v7();
     let body = serde_json::json!({
@@ -45,7 +65,14 @@ async fn cancellation_quote_sends_bearer_and_decodes() -> Result<(), UserCallErr
     });
     Mock::given(method("GET"))
         .and(path(format!("/api/v1/bookings/{id}/cancellation-quote")))
-        .and(header("authorization", format!("Bearer {JWT}").as_str()))
+        .and(header(
+            "authorization",
+            format!("Bearer {ID_TOKEN}").as_str(),
+        ))
+        .and(header(
+            "x-forwarded-authorization",
+            format!("Bearer {JWT}").as_str(),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
         .expect(1)
         .mount(&server)
@@ -64,7 +91,14 @@ async fn booking_lookup_maps_404_to_not_found() {
     let id = Uuid::now_v7();
     Mock::given(method("GET"))
         .and(path(format!("/api/v1/bookings/{id}")))
-        .and(header("authorization", format!("Bearer {JWT}").as_str()))
+        .and(header(
+            "authorization",
+            format!("Bearer {ID_TOKEN}").as_str(),
+        ))
+        .and(header(
+            "x-forwarded-authorization",
+            format!("Bearer {JWT}").as_str(),
+        ))
         .respond_with(ResponseTemplate::new(404))
         .expect(1)
         .mount(&server)
@@ -110,6 +144,10 @@ async fn unavailable_ranges_are_public_and_decoded() -> Result<(), UserCallError
         )))
         .and(wiremock::matchers::query_param("from", "2027-01-01"))
         .and(wiremock::matchers::query_param("to", "2027-03-01"))
+        .and(header(
+            "authorization",
+            format!("Bearer {ID_TOKEN}").as_str(),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "ranges": [{"date_from": "2027-01-10", "date_to": "2027-01-14"}]
         })))
@@ -135,6 +173,10 @@ async fn user_profile_uses_the_user_route() -> Result<(), UserCallError> {
     let id = Uuid::now_v7();
     Mock::given(method("GET"))
         .and(path(format!("/api/v1/users/user/{id}")))
+        .and(header(
+            "authorization",
+            format!("Bearer {ID_TOKEN}").as_str(),
+        ))
         .respond_with(ResponseTemplate::new(404))
         .expect(1)
         .mount(&server)

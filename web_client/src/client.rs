@@ -8,6 +8,8 @@ use common::models::{
 };
 
 pub use common::app_client::ListingSearchParams;
+use common::app_client::{booking_api_audience, user_api_audience};
+use common::http_client::AuthenticatedClient;
 use std::sync::Arc;
 use topcoat::context::{Cx, try_app_context};
 use uuid::Uuid;
@@ -422,9 +424,6 @@ pub fn get_api_client(cx: &Cx) -> &TopcoatApiClient {
     }
 }
 
-static GATEWAY_API_KEY_ENV: &str = "GATEWAY_API_KEY";
-static USER_CALL_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-
 /// Why a backend call made on behalf of a user failed.
 #[derive(Debug, thiserror::Error)]
 pub enum UserCallError {
@@ -441,6 +440,9 @@ pub enum UserCallError {
     /// The request could not be sent or the body could not be decoded.
     #[error("backend request failed: {0}")]
     Transport(#[from] reqwest::Error),
+    /// No Google ID token could be obtained for the backend (Cloud Run IAM).
+    #[error("could not get a service identity token: {0}")]
+    Identity(anyhow::Error),
 }
 
 impl TopcoatApiClient {
@@ -451,7 +453,7 @@ impl TopcoatApiClient {
         jwt: &str,
     ) -> Result<Vec<BookingResponse>, UserCallError> {
         let url = format!("{}/api/v1/bookings/user/{user_id}", self.booking_api_url);
-        get_json_as(&url, jwt).await
+        get_json_as(&self.client, &url, &booking_api_audience(), jwt).await
     }
 
     /// Fetches one booking, authenticated as the user who owns `jwt`.
@@ -461,7 +463,7 @@ impl TopcoatApiClient {
         jwt: &str,
     ) -> Result<BookingResponse, UserCallError> {
         let url = format!("{}/api/v1/bookings/{id}", self.booking_api_url);
-        get_json_as(&url, jwt).await
+        get_json_as(&self.client, &url, &booking_api_audience(), jwt).await
     }
 
     /// Fetches a booking's cancellation refund quote, authenticated as the
@@ -475,7 +477,7 @@ impl TopcoatApiClient {
             "{}/api/v1/bookings/{id}/cancellation-quote",
             self.booking_api_url
         );
-        get_json_as(&url, jwt).await
+        get_json_as(&self.client, &url, &booking_api_audience(), jwt).await
     }
 }
 
@@ -488,7 +490,7 @@ impl TopcoatApiClient {
         jwt: &str,
     ) -> Result<BookingMessagesWrapper, UserCallError> {
         let url = format!("{}/api/v1/bookings/{id}/messages", self.booking_api_url);
-        get_json_as(&url, jwt).await
+        get_json_as(&self.client, &url, &booking_api_audience(), jwt).await
     }
 
     /// Posts a message to a booking's thread as the user who owns `jwt`.
@@ -502,7 +504,15 @@ impl TopcoatApiClient {
         let body = CreateBookingMessageRequest {
             message_text: text.to_string(),
         };
-        send_json_as(reqwest::Method::POST, &url, jwt, &body).await
+        send_json_as(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            jwt,
+            &body,
+        )
+        .await
     }
 
     /// Marks the other party's messages read, as the user who owns `jwt`.
@@ -515,21 +525,30 @@ impl TopcoatApiClient {
             "{}/api/v1/bookings/{id}/messages/read",
             self.booking_api_url
         );
-        send_json_as(reqwest::Method::PATCH, &url, jwt, &serde_json::json!({})).await
+        send_json_as(
+            &self.client,
+            reqwest::Method::PATCH,
+            &url,
+            &booking_api_audience(),
+            jwt,
+            &serde_json::json!({}),
+        )
+        .await
     }
 }
 
 impl TopcoatApiClient {
-    /// One user's account, from `user_api`'s `/api/v1/users/user/{id}`. (The
-    /// legacy `get_user_by_id` calls `/api/v1/users/{id}`, which does not
-    /// exist; it is kept unchanged for the old portals.)
+    /// One user's account, from `user_api`'s `/api/v1/users/user/{id}`.
     pub async fn get_user_profile(&self, id: Uuid) -> Result<UserResponse, UserCallError> {
         let url = format!("{}/api/v1/users/user/{id}", self.user_api_url);
-        let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
-        let mut request = client.get(&url);
-        if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
-            request = request.header("x-api-key", key);
-        }
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &user_api_audience(),
+            None,
+        )
+        .await?;
         decode(request.send().await?).await
     }
 }
@@ -565,7 +584,15 @@ impl TopcoatApiClient {
         jwt: &str,
     ) -> Result<common::payout::PayoutLedgerEntry, UserCallError> {
         let url = format!("{}/api/v1/admin/ledger/{id}/status", self.booking_api_url);
-        send_json_as(reqwest::Method::PATCH, &url, jwt, req).await
+        send_json_as(
+            &self.client,
+            reqwest::Method::PATCH,
+            &url,
+            &booking_api_audience(),
+            jwt,
+            req,
+        )
+        .await
     }
 
     /// The newest rate per currency pair, as the admin or host who owns `jwt`.
@@ -574,24 +601,36 @@ impl TopcoatApiClient {
         jwt: &str,
     ) -> Result<common::exchange_rate::ExchangeRatesResponse, UserCallError> {
         let url = format!("{}/api/v1/admin/exchange-rates", self.booking_api_url);
-        get_json_as(&url, jwt).await
+        get_json_as(&self.client, &url, &booking_api_audience(), jwt).await
     }
 }
 
-/// Sends a JSON body with the user's bearer token (and the gateway API key,
-/// if configured) and decodes a JSON response.
-async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
+/// A request carrying the service identity token (Cloud Run IAM), the gateway
+/// API key if configured, and the user's JWT when given.
+async fn service_request(
+    client: &AuthenticatedClient,
     method: reqwest::Method,
     url: &str,
+    audience: &str,
+    jwt: Option<&str>,
+) -> Result<reqwest::RequestBuilder, UserCallError> {
+    client
+        .user_request(method, url, audience, jwt)
+        .await
+        .map_err(UserCallError::Identity)
+}
+
+/// Sends a JSON body as the user who owns `jwt` and decodes a JSON response.
+async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
+    client: &AuthenticatedClient,
+    method: reqwest::Method,
+    url: &str,
+    audience: &str,
     jwt: &str,
     body: &B,
 ) -> Result<T, UserCallError> {
-    let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
-    let mut request = client.request(method, url).bearer_auth(jwt).json(body);
-    if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
-        request = request.header("x-api-key", key);
-    }
-    decode(request.send().await?).await
+    let request = service_request(client, method, url, audience, Some(jwt)).await?;
+    decode(request.json(body).send().await?).await
 }
 
 async fn decode<T: serde::de::DeserializeOwned>(
@@ -605,24 +644,15 @@ async fn decode<T: serde::de::DeserializeOwned>(
     }
 }
 
-/// Sends a GET with the user's bearer token (and the gateway API key, if
-/// configured) and decodes a JSON body.
+/// Sends a GET as the user who owns `jwt` and decodes a JSON body.
 async fn get_json_as<T: serde::de::DeserializeOwned>(
+    client: &AuthenticatedClient,
     url: &str,
+    audience: &str,
     jwt: &str,
 ) -> Result<T, UserCallError> {
-    let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
-    let mut request = client.get(url).bearer_auth(jwt);
-    if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
-        request = request.header("x-api-key", key);
-    }
-    let response = request.send().await?;
-    match response.status().as_u16() {
-        200..=299 => Ok(response.json::<T>().await?),
-        404 => Err(UserCallError::NotFound),
-        401 | 403 => Err(UserCallError::Unauthorized),
-        status => Err(UserCallError::Status(status)),
-    }
+    let request = service_request(client, reqwest::Method::GET, url, audience, Some(jwt)).await?;
+    decode(request.send().await?).await
 }
 
 impl TopcoatApiClient {
@@ -638,21 +668,17 @@ impl TopcoatApiClient {
             "{}/api/v1/bookings/listing/{listing_id}/unavailable-ranges?from={from}&to={to}",
             self.booking_api_url
         );
-        let client = USER_CALL_CLIENT.get_or_init(reqwest::Client::new);
-        let mut request = client.get(&url);
-        if let Ok(key) = std::env::var(GATEWAY_API_KEY_ENV) {
-            request = request.header("x-api-key", key);
-        }
-        let response = request.send().await?;
-        match response.status().as_u16() {
-            200..=299 => Ok(response
-                .json::<common::availability::UnavailableRangesResponse>()
-                .await?
-                .ranges),
-            404 => Err(UserCallError::NotFound),
-            401 | 403 => Err(UserCallError::Unauthorized),
-            status => Err(UserCallError::Status(status)),
-        }
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            None,
+        )
+        .await?;
+        decode::<common::availability::UnavailableRangesResponse>(request.send().await?)
+            .await
+            .map(|body| body.ranges)
     }
 }
 

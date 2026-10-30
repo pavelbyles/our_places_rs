@@ -56,7 +56,7 @@ flowchart TD
   - `common/`: Domain models, pricing math (`Decimal`), error variants, validation rules.
   - `db_core/`: Schema tables, migrations, SQLx entity queries, row-level locks.
   - `app_api/`: Actix-web route handlers, DTO validation, auth extractors (`Claims`).
-  - `web_app_tc` / `web_app_admin_tc`: Topcoat SSR pages, HTMX endpoints, DaisyUI views.
+  - `web_ui_guest` / `web_ui_admin` (+ `web_ui_common`, `web_client`): Topcoat SSR pages, HTMX endpoints, Topcoat UI components.
   - Background workers: `email_worker`, `image_worker`.
 - Inspect existing specifications in `docs/specs/` for baseline formatting and depth.
 

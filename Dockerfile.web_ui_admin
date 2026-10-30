@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+# Builds the redesigned admin portal (web_ui_admin) for Cloud Run.
+ARG RELEASE_FLAG=--release
+
+FROM rust:1.99.1-slim-bookworm AS builder
+RUN apt-get update \
+&& apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates \
+&& rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+ENV SQLX_OFFLINE=true
+
+# The build scripts download the Tailwind CLI, Iconify icons and fonts, and
+# the bundler writes the asset bundle next to the binary, which is where
+# AssetBundle::load looks for it at runtime. Binary and bundle must come
+# from the same build.
+ARG RELEASE_FLAG
+RUN PROFILE=$([ "$RELEASE_FLAG" = "--release" ] && echo release || echo debug) \
+&& cargo build ${RELEASE_FLAG} -p web_ui_admin --bin web_ui_admin \
+&& cargo build ${RELEASE_FLAG} -p web_ui_common --bin topcoat_bundler \
+&& mkdir -p /out/assets \
+&& cp target/$PROFILE/web_ui_admin /out/web_ui_admin \
+&& target/$PROFILE/topcoat_bundler target/$PROFILE/web_ui_admin /out/assets target
+
+FROM debian:bookworm-slim AS runtime
+WORKDIR /app
+
+RUN apt-get update \
+&& apt-get install -y --no-install-recommends ca-certificates \
+&& rm -rf /var/lib/apt/lists/* \
+&& groupadd -r nonroot \
+&& useradd -r -g nonroot nonroot
+
+COPY --from=builder --chown=nonroot:nonroot --chmod=755 /out/web_ui_admin /app/web_ui_admin
+COPY --from=builder --chown=nonroot:nonroot /out/assets /app/assets
+
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
+USER nonroot
+
+EXPOSE 8080
+
+ENTRYPOINT ["./web_ui_admin"]

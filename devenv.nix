@@ -15,8 +15,13 @@
   env.GCS_RAW_BUCKET = "our-places-gcs-img-raw-local";
   env.GCS_PUBLIC_BUCKET = "our-places-gcs-img-public-local";
 
-  # Rust Toolchain (rustc 1.98+, cargo, clippy, rustfmt, rust-analyzer)
-  languages.rust.enable = true;
+  # Rust Toolchain pinned to match the Dockerfiles (rustc, cargo, clippy,
+  # rustfmt, rust-analyzer). Topcoat 0.11 requires rustc 1.99.
+  languages.rust = {
+    enable = true;
+    channel = "stable";
+    version = "1.99.1";
+  };
 
   # JavaScript/Node.js Toolchain (node & npm for DaisyUI / Tailwind)
   languages.javascript = {
@@ -151,11 +156,9 @@
     test-ci-matrix.exec = ''
       set -e
       echo "--> Running Backend & Shared Domain Tests (mirrors test-api)..."
-      cargo test --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
-      echo "--> Running Topcoat Web & Common Tests (mirrors test-web-tc)..."
-      cargo test -p web_app_tc -p web_app_common_tc
-      echo "--> Running Topcoat Admin Tests (mirrors test-web-admin-tc)..."
-      cargo test -p web_app_admin_tc
+      cargo test --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+      echo "--> Running Web UI Tests (mirrors test-web-ui)..."
+      cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin
     '';
 
     # Float-Ban & Booking Logic Audit (.agents/workflows/audit-booking-flow.md)
@@ -317,28 +320,15 @@
       pubsub-stop
     '';
 
-    # Launch Topcoat frontends with topcoat dev
+    # Launch the Topcoat UI portals with topcoat dev
     frontends.exec = ''
-      echo "Starting Topcoat frontends (web_app_tc on :3000, web_app_admin_tc on :3002)..."
-      devenv up web_app_tc web_app_admin_tc "$@"
-    '';
-
-    # Stop Topcoat frontends
-    frontends-stop.exec = ''
-      echo "Stopping Topcoat frontends..."
-      devenv processes stop web_app_tc || true
-      devenv processes stop web_app_admin_tc || true
-    '';
-
-    # Launch the redesigned Topcoat UI portals with topcoat dev
-    frontends-new.exec = ''
-      echo "Starting redesigned portals (web_ui_guest on :3010, web_ui_admin on :3012)..."
+      echo "Starting portals (web_ui_guest on :3010, web_ui_admin on :3012)..."
       devenv up web_ui_guest web_ui_admin "$@"
     '';
 
-    # Stop the redesigned Topcoat UI portals
-    frontends-new-stop.exec = ''
-      echo "Stopping redesigned portals..."
+    # Stop the Topcoat UI portals
+    frontends-stop.exec = ''
+      echo "Stopping portals..."
       devenv processes stop web_ui_guest || true
       devenv processes stop web_ui_admin || true
     '';
@@ -349,7 +339,7 @@
       db-start
       pubsub-start
       gcs-start
-      devenv up listing_api booking_api user_api email_worker image_worker web_app_tc web_app_admin_tc "$@"
+      devenv up listing_api booking_api user_api email_worker image_worker web_ui_guest web_ui_admin "$@"
     '';
 
     # Services status inspection
@@ -439,23 +429,13 @@
     '';
 
 
-    # Guest Portal Frontend (Topcoat SSR & HTMX)
-    web_app_tc.exec = ''
-      cd web_app_tc && CARGO_TARGET_DIR=../target/guest topcoat dev
-    '';
-
-    # Admin Portal Frontend (Topcoat SSR & HTMX)
-    web_app_admin_tc.exec = ''
-      cd web_app_admin_tc && CARGO_TARGET_DIR=../target/admin topcoat dev
-    '';
-
-    # Redesigned Guest Portal (Topcoat UI). It refuses to start without
-    # JWT_SECRET; local backends fall back to "secret", so match that.
+    # Guest Portal (Topcoat UI). It refuses to start without JWT_SECRET;
+    # local backends fall back to "secret", so match that.
     web_ui_guest.exec = ''
       cd web_ui_guest && PORT=3010 JWT_SECRET="''${JWT_SECRET:-secret}" CARGO_TARGET_DIR=../target/ui_guest topcoat dev
     '';
 
-    # Redesigned Admin Portal (Topcoat UI)
+    # Admin Portal (Topcoat UI)
     web_ui_admin.exec = ''
       cd web_ui_admin && PORT=3012 JWT_SECRET="''${JWT_SECRET:-secret}" CARGO_TARGET_DIR=../target/ui_admin topcoat dev
     '';
@@ -485,14 +465,10 @@
     echo "       • pubsub-stop    (stop Pub/Sub emulator)"
     echo "       • gcs-start      (start Cloud Storage emulator + create photo buckets)"
     echo "       • gcs-stop       (stop Cloud Storage emulator)"
-    echo "       • frontends      (launch Topcoat frontends):"
-    echo "           - web_app_tc:       :3000 (guest)"
-    echo "           - web_app_admin_tc: :3002 (admin)"
-    echo "       • frontends-stop (stop Topcoat frontends)"
-    echo "       • frontends-new  (launch redesigned Topcoat UI portals):"
+    echo "       • frontends      (launch Topcoat UI portals):"
     echo "           - web_ui_guest:     :3010 (guest)"
     echo "           - web_ui_admin:     :3012 (admin)"
-    echo "       • frontends-new-stop (stop redesigned portals)"
+    echo "       • frontends-stop (stop portals)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • services-status(inspect status of APIs, Frontends, Database, and Pub/Sub)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"

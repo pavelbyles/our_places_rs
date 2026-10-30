@@ -1,5 +1,7 @@
 //! The redesigned domain components must show the same figures and keep the
-//! element IDs of the legacy components.
+//! element IDs of the legacy components. The expected texts were captured
+//! from the legacy `web_app_common_tc` components before that crate was
+//! removed.
 
 use chrono::{TimeZone, Utc};
 use common::tax_document::{
@@ -124,57 +126,89 @@ fn doc(kind: TaxDocumentType, status: TaxDocumentStatus, currency: &str) -> TaxD
     }
 }
 
+/// Legacy texts for `DOC_IDS`, in order, for a document in `currency`.
+fn legacy_doc_texts(title: &str, status: &str, currency: &str) -> Vec<String> {
+    let money = |amount: &str| format!("{currency} {amount}");
+    let mut texts = vec![
+        title.to_string(),
+        status.to_string(),
+        "REC-2026-OP-E2E-7788".into(),
+        "September 12, 2026".into(),
+        "Our Places Jamaica Limited".into(),
+        "Main Street, Ocho Rios".into(),
+        "000-111-222".into(),
+        "Jordan Tester".into(),
+        "guest.tester@example.com".into(),
+        "Company: Tester &amp; Co".into(),
+        "Recipient TRN: 123-456-789".into(),
+        format!("1 {currency} = 160.1234 JMD"),
+        "JMD 48637.68".into(),
+        "JMD 404912.04".into(),
+    ];
+    texts.extend(["1950.00", "75.00", "2025.00", "303.75", "50.00", "2528.75"].map(money));
+    texts
+}
+
 #[tokio::test]
 async fn tax_document_matches_legacy_figures_and_ids() {
     let __cx = &Cx::default();
-    for d in [
-        doc(
-            TaxDocumentType::PaymentReceipt,
-            TaxDocumentStatus::Issued,
-            "USD",
+    let cases = [
+        (
+            doc(
+                TaxDocumentType::PaymentReceipt,
+                TaxDocumentStatus::Issued,
+                "USD",
+            ),
+            legacy_doc_texts("Payment Receipt", "Issued", "USD"),
+            [true, true, true, true, false],
         ),
-        doc(
-            TaxDocumentType::TaxInvoice,
-            TaxDocumentStatus::Superseded,
-            "EUR",
+        (
+            doc(
+                TaxDocumentType::TaxInvoice,
+                TaxDocumentStatus::Superseded,
+                "EUR",
+            ),
+            legacy_doc_texts("Statutory Tax Invoice", "Superseded", "EUR"),
+            [true, false, true, true, true],
         ),
-        doc(
-            TaxDocumentType::RefundReceipt,
-            TaxDocumentStatus::Issued,
-            "GBP",
+        (
+            doc(
+                TaxDocumentType::RefundReceipt,
+                TaxDocumentStatus::Issued,
+                "GBP",
+            ),
+            legacy_doc_texts("Refund Receipt", "Issued", "GBP"),
+            [true, false, true, true, false],
         ),
-    ] {
-        let l = d.clone();
-        let legacy = html(
-            view! { web_app_common_tc::components::tax_document_view::tax_document_view(doc: l) },
-            __cx,
-        )
-        .await;
+    ];
+    for (d, legacy, legacy_phrases) in cases {
         let r = d.clone();
         let redesigned = html(view! { tax_document_view(doc: r) }, __cx).await;
-        for id in DOC_IDS {
-            assert!(text_of(&redesigned, id).is_some(), "#{id} missing");
+        for (id, expected) in DOC_IDS.into_iter().zip(&legacy) {
             assert_eq!(
-                text_of(&redesigned, id),
-                text_of(&legacy, id),
+                text_of(&redesigned, id).as_deref(),
+                Some(expected.as_str()),
                 "#{id} for {:?}",
                 d.document_type
             );
         }
-        let line_cells = |h: &str| text_of(h, "tax-line-items");
-        assert_eq!(line_cells(&redesigned), line_cells(&legacy), "line items");
-        for phrase in [
+        let c = &d.currency;
+        assert_eq!(
+            text_of(&redesigned, "tax-line-items"),
+            Some(format!(
+                "Accommodation (3 nights)3{c} 650.00GCT15.0%{c} 292.50{c} 1950.00"
+            )),
+            "line items"
+        );
+        let phrases = [
             "Refund Due:",
             "USD 71.25",
             "50%",
             "Amount Retained by Host:",
             "SUPERSEDED DOCUMENT",
-        ] {
-            assert_eq!(
-                redesigned.contains(phrase),
-                legacy.contains(phrase),
-                "{phrase:?}"
-            );
+        ];
+        for (phrase, expected) in phrases.into_iter().zip(legacy_phrases) {
+            assert_eq!(redesigned.contains(phrase), expected, "{phrase:?}");
         }
         assert!(redesigned.contains("tax-document-container"));
         assert!(
@@ -187,20 +221,25 @@ async fn tax_document_matches_legacy_figures_and_ids() {
 #[tokio::test]
 async fn responsive_image_srcset_matches_legacy() {
     let __cx = &Cx::default();
-    for src in [
-        "https://storage.googleapis.com/b/villa",
-        "/static/local.jpg",
-    ] {
-        let l = src.to_string();
-        let legacy = html(view! { web_app_common_tc::components::responsive_image::responsive_image(src: l, alt: "Pool".into(), class: None) }, __cx).await;
+    let cases: [(&str, &[&str]); 2] = [
+        (
+            "https://storage.googleapis.com/b/villa",
+            &[
+                "https://storage.googleapis.com/b/villa_1920.webp",
+                "https://storage.googleapis.com/b/villa_1024.webp",
+                "https://storage.googleapis.com/b/villa_640.webp",
+            ],
+        ),
+        ("/static/local.jpg", &[]),
+    ];
+    for (src, legacy) in cases {
         let r = src.to_string();
         let redesigned = html(view! { responsive_image(src: r, alt: "Pool".into()) }, __cx).await;
-        let srcsets = |h: &str| {
-            h.match_indices("srcset=\"")
-                .map(|(i, _)| h[i..].split('"').nth(1).unwrap_or("").to_string())
-                .collect::<Vec<_>>()
-        };
-        assert_eq!(srcsets(&redesigned), srcsets(&legacy), "{src}");
+        let srcsets = redesigned
+            .match_indices("srcset=\"")
+            .map(|(i, _)| redesigned[i..].split('"').nth(1).unwrap_or("").to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(srcsets, legacy, "{src}");
         assert!(redesigned.contains(r#"alt="Pool""#) && redesigned.contains(r#"loading="lazy""#));
     }
 }
