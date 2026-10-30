@@ -211,12 +211,12 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         </button>
                     }
                 </section>
-                <dialog id="gallery-dialog" aria-label="Photo gallery" class="m-auto max-h-[90vh] w-[min(1240px,95vw)] rounded-[var(--radius-surface,16px)] bg-card p-4 text-card-foreground backdrop:bg-black/60">
+                <dialog id="gallery-dialog" aria-label="Photo gallery" class="m-auto h-[94dvh] max-h-none w-[96vw] max-w-none overflow-y-auto rounded-[var(--radius-surface,16px)] bg-card p-4 text-card-foreground backdrop:bg-black/70 sm:p-6">
                     <div class="flex items-center justify-between gap-4">
                         <p class="text-sm text-muted-foreground">(format!("{} photos · select one to view it full size", images.len()))</p>
                         <button type="button" data-dialog-close="" class="h-11 rounded-full border border-border px-4 text-sm">"Close"</button>
                     </div>
-                    <div id="gallery-grid" data-lightbox-group="photo-viewer" class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div id="gallery-grid" data-lightbox-group="photo-viewer" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                         for (i, (src, alt)) in images.iter().cloned().enumerate() {
                             <button type="button" data-lightbox-index=(i.to_string()) data-full-src=(variant_url(&src, "highres").unwrap_or_else(|| src.clone())) data-alt=(alt.clone()) aria-label=(format!("View photo {} of {} full size", i + 1, images.len())) class="block aspect-[4/3] cursor-zoom-in overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
                                 responsive_image(src: src, alt: alt)
