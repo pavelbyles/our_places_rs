@@ -124,7 +124,7 @@ Load both fonts via `topcoat-font` (Fontsource), not a Google Fonts `<link>`, so
 | Nav pills: Sign in, currency, theme toggle | 999px (full pill) |
 | Inputs inside the search bar | borderless, separated by 1px `--divider` |
 
-- Content max-width **1240px**, side gutter **24px**.
+- Content max-width **1540px**, side gutter **24px**.
 - Vertical rhythm between sections: **112px** (128px before the trust strip and footer).
 - Grids use `repeat(auto-fit, minmax(…, 1fr))`: villa cards min 300px, destination tiles min 190px, trust items min 260px. They stack at phone width.
 - Touch targets ≥ 44px. Shadows are minimal (the search bar only: `0 1px 2px rgb(15 42 51 / 0.08)`).

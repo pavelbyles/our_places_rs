@@ -26,7 +26,7 @@ pub async fn hero(
     child: Child<'_>,
 ) -> Result<impl View> {
     Ok(view! {
-        <section class=(class!("mx-auto w-full max-w-[1240px] px-6", attrs.remove("class"))) (attrs)>
+        <section class=(class!("mx-auto w-full max-w-[1540px] px-6", attrs.remove("class"))) (attrs)>
             <div class="grid gap-6 py-12 md:grid-cols-2 md:items-end">
                 <h1 class="font-serif text-[clamp(48px,7vw,96px)] leading-[1.02] font-light tracking-[-0.025em]">
                     (headline)

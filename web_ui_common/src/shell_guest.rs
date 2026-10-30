@@ -58,7 +58,7 @@ pub async fn guest_chrome(
     Ok(view! {
         <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-full focus:bg-card focus:px-4 focus:py-2">"Skip to content"</a>
         <header class="border-b border-border">
-            <div class="mx-auto flex max-w-[1240px] items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6">
+            <div class="mx-auto flex max-w-[1540px] items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6">
                 <a href="/" class="shrink-0 whitespace-nowrap font-serif text-[20px] text-foreground no-underline sm:text-[26px]">"Our Places"</a>
                 <nav aria-label="Main" class="hidden items-center gap-6 text-[15px] font-medium md:flex">
                     <a href="/listings" class="text-foreground">"Listings"</a>
@@ -108,9 +108,9 @@ pub async fn guest_chrome(
                 </div>
             </div>
         </header>
-        <main id="main" class="mx-auto w-full max-w-[1240px] px-6 py-12">(child)</main>
+        <main id="main" class="mx-auto w-full max-w-[1540px] px-6 py-12">(child)</main>
         <footer class="mt-32 border-t border-border">
-            <div class="mx-auto flex max-w-[1240px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between">
+            <div class="mx-auto flex max-w-[1540px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between">
                 <p class="font-serif text-xl text-foreground">"Our Places"</p>
                 <nav aria-label="Footer" class="flex flex-wrap gap-6">
                     <a href="/register">"List your property"</a>
