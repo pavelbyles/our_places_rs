@@ -42,6 +42,21 @@ test.describe('Admin Portal - User Administration', () => {
     await expect.poll(() => psql(`SELECT first_name FROM "user" WHERE id = '${host.id}';`), { timeout: 10_000 }).toBe('Quinn');
   });
 
+  test('changes a user\'s profile URL', { tag: '@new-only' }, async ({ page }) => {
+    const host = createHost();
+    const current = psql(`SELECT slug FROM "user" WHERE id = '${host.id}';`);
+    await loginAdminAs(page, TEST_USERS.admin);
+    await page.goto(`/admin/users?q=${encodeURIComponent(host.email)}`);
+
+    await page.getByRole('row', { name: new RegExp(host.email) }).getByRole('button', { name: /edit/i }).click();
+    await expect(page.locator('#edit-user-slug')).toHaveValue(current);
+    const wanted = `admin-set-${Date.now()}`;
+    await page.locator('#edit-user-slug').fill(wanted);
+    await page.locator('#edit-user-save-btn').click();
+
+    await expect.poll(() => psql(`SELECT slug FROM "user" WHERE id = '${host.id}';`), { timeout: 10_000 }).toBe(wanted);
+  });
+
   test('keeps hosts out of user administration', async ({ page }) => {
     await loginAdminAs(page, createHost());
     await page.goto('/admin/users/new');

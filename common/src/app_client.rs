@@ -85,6 +85,8 @@ pub struct ListingSearchParams {
     pub currency: Option<String>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
+    /// Only this host's listings (their public slug).
+    pub host: Option<String>,
 }
 
 pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingResponse>> {
@@ -105,6 +107,14 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
         }
         if let Some(s) = params.name.filter(|s| !s.is_empty()) {
             query.append_pair("name", &s);
+        }
+        if let Some(h) = params
+            .host
+            .as_deref()
+            .map(str::trim)
+            .filter(|h| !h.is_empty())
+        {
+            query.append_pair("host", h);
         }
         if let Some(s) = params.owner_email.filter(|s| !s.is_empty()) {
             query.append_pair("owner", s.trim());

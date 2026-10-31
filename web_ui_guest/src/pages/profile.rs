@@ -24,6 +24,9 @@ pub struct ProfileForm {
     /// Preferred display currency.
     #[serde(default)]
     pub default_currency: String,
+    /// Public handle used in `/listings?host={slug}`.
+    #[serde(default)]
+    pub slug: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -62,6 +65,14 @@ async fn profile_view(user: UserResponse, saved: bool, error: Option<String>) ->
                 <div>
                     <label class=(label) for="profile-phone">"Phone"</label>
                     <input id="profile-phone" name="phone_number" type="tel" autocomplete="tel" value=(user.phone_number.clone().unwrap_or_default()) class=(input) />
+                </div>
+                <div>
+                    <label class=(label) for="profile-slug">"Profile URL"</label>
+                    <div class="mt-1 flex items-center overflow-hidden rounded-lg border border-border bg-card text-sm focus-within:ring-2 focus-within:ring-primary">
+                        <span class="shrink-0 pl-3 text-muted-foreground">"/listings?host="</span>
+                        <input id="profile-slug" name="slug" required=(true) maxlength=(common::slug::MAX_SLUG_CHARS.to_string()) autocapitalize="none" spellcheck="false" aria-describedby="profile-slug-hint" value=(user.slug.clone()) class="h-11 min-w-0 flex-1 bg-transparent pr-3 text-foreground outline-none" />
+                    </div>
+                    <p id="profile-slug-hint" class="mt-1 text-xs text-muted-foreground">"Letters, numbers and hyphens. Links to your listings use it."</p>
                 </div>
                 <div>
                     <label class=(label) for="profile-currency">"Preferred currency"</label>
@@ -103,9 +114,13 @@ pub async fn profile_submit(
     let api = get_api_client(cx);
     let first = form.first_name.trim().to_string();
     let last = form.last_name.trim().to_string();
+    let slug = common::slug::user_slug(&form.slug);
     let error = if first.is_empty() || last.is_empty() {
         Some("First and last name are required.".to_string())
+    } else if let Err(message) = &slug {
+        Some(message.clone())
     } else {
+        let slug = slug.ok();
         let request = UpdateUserRequest {
             first_name: Some(first),
             last_name: Some(last),
@@ -121,9 +136,14 @@ pub async fn profile_submit(
             roles: None,
             booker_profile: None,
             host_profile: None,
+            slug: slug.clone(),
         };
         match api.update_user(guest.user_id, &request).await {
             Ok(_) => return Err(see_other("/profile?saved=1").into()),
+            Err(e) if e.to_string().contains("already taken") => Some(format!(
+                "“{}” is already taken. Try another profile URL.",
+                slug.unwrap_or_default()
+            )),
             Err(e) => {
                 tracing::info!("profile update rejected: {e}");
                 Some("Your profile could not be saved. Please try again.".to_string())

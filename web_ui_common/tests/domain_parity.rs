@@ -260,6 +260,22 @@ async fn responsive_image_sources_point_at_image_worker_variants() {
         );
         assert!(redesigned.contains(r#"alt="Pool""#) && redesigned.contains(r#"loading="lazy""#));
     }
+
+    // `widest` drops the larger variants; the rest still cover wide screens.
+    let src = format!("{emulator}/thumbnail/l_i.webp");
+    let capped = html(
+        view! { responsive_image(src: src, alt: "Pool".into(), widest: Some("mobile".into())) },
+        __cx,
+    )
+    .await;
+    assert!(
+        !capped.contains("/desktop/") && !capped.contains("/tablet/"),
+        "{capped}"
+    );
+    assert!(
+        capped.contains(&format!(r#"<source srcset="{emulator}/mobile/l_i.webp""#)),
+        "{capped}"
+    );
 }
 
 #[tokio::test]
@@ -278,6 +294,7 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
         full_bathrooms: 2,
         rating: None,
         review_count: None,
+        host: None,
     };
     let out = html(view! { listing_card(listing: listing) }, __cx).await;
     for text in [

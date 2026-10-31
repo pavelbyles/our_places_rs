@@ -52,6 +52,8 @@ pub struct User {
     pub roles: Vec<UserRole>,
     pub default_currency: String,
     pub deleted_at: Option<DateTime<Utc>>,
+    /// Unique public handle, e.g. `jane-brown` (see `common::slug`).
+    pub slug: String,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -107,6 +109,8 @@ pub struct UpdatedUser {
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<UserRole>>,
     pub default_currency: Option<String>,
+    /// New slug, already cleaned up with `common::slug::user_slug`.
+    pub slug: Option<String>,
 }
 
 pub use common::models::UserRole;
@@ -565,6 +569,7 @@ pub struct ListingWithOwner {
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub owner_name: Option<String>,
+    pub owner_slug: Option<String>,
     pub primary_image_url: Option<String>,
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,

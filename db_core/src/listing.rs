@@ -133,6 +133,7 @@ where
         r#"
         SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee,
         "user".first_name || ' ' || "user".last_name as owner_name,
+        "user".slug as owner_slug,
         primary_img.upload_url as primary_image_url
         FROM listing
         INNER JOIN "user" ON listing.user_id = "user".id
@@ -187,6 +188,11 @@ where
                 query_builder.push_bind(ids);
                 query_builder.push(")");
             }
+        }
+
+        if let Some(host) = f.host.as_deref().map(str::trim).filter(|h| !h.is_empty()) {
+            query_builder.push(" AND \"user\".slug = ");
+            query_builder.push_bind(host.to_lowercase());
         }
 
         if let Some(uid) = f.user_id {
@@ -1390,6 +1396,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -1412,6 +1419,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -1432,6 +1440,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
@@ -1720,6 +1729,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results1 = get_listings(&mut *tx, 1, 10, Some(filter1)).await.unwrap();
         assert_eq!(results1.len(), 1);
@@ -1736,6 +1746,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results2 = get_listings(&mut *tx, 1, 10, Some(filter2)).await.unwrap();
         assert_eq!(results2.len(), 1);
@@ -1752,6 +1763,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: Some(u1.id),
+            host: None,
         };
         let results_uid1 = get_listings(&mut *tx, 1, 10, Some(filter_uid1))
             .await
@@ -1770,12 +1782,32 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: Some(u2.id),
+            host: None,
         };
         let results_uid2 = get_listings(&mut *tx, 1, 10, Some(filter_uid2))
             .await
             .unwrap();
         assert_eq!(results_uid2.len(), 1);
         assert_eq!(results_uid2[0].name, "Host 2 Listing");
+
+        // Public host filter: by slug only, and each result carries it.
+        let by_host = |host: &str| common::models::ListingFilter {
+            host: Some(host.to_string()),
+            ..Default::default()
+        };
+        let results_host1 = get_listings(&mut *tx, 1, 10, Some(by_host(&u1.slug)))
+            .await
+            .unwrap();
+        assert_eq!(results_host1.len(), 1);
+        assert_eq!(results_host1[0].name, "Host 1 Listing");
+        assert_eq!(
+            results_host1[0].owner_slug.as_deref(),
+            Some(u1.slug.as_str())
+        );
+        let results_unknown = get_listings(&mut *tx, 1, 10, Some(by_host("no-such-host-xyz")))
+            .await
+            .unwrap();
+        assert!(results_unknown.is_empty());
     }
 
     #[tokio::test]

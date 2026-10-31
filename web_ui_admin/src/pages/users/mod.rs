@@ -56,6 +56,9 @@ pub struct UserForm {
     pub is_active: Option<String>,
     /// Email is verified (edit only).
     pub is_verified: Option<String>,
+    /// Public handle (edit only; new accounts get the database default).
+    #[serde(default)]
+    pub slug: String,
 }
 
 /// A form that passed [`UserForm::validate`].
@@ -81,6 +84,8 @@ pub struct ValidUser {
     pub is_active: bool,
     /// Email is verified.
     pub is_verified: bool,
+    /// Cleaned-up slug, if one was entered.
+    pub slug: Option<String>,
 }
 
 /// Minimum password length for accounts created here.
@@ -125,6 +130,7 @@ impl UserForm {
             can_manage_users: attr("can_manage_users"),
             is_active: flag(user.is_active),
             is_verified: flag(user.is_verified),
+            slug: user.slug.clone(),
         }
     }
 
@@ -155,6 +161,13 @@ impl UserForm {
         if !DISPLAY_CURRENCIES.contains(&self.default_currency.as_str()) {
             errors.push("Choose a supported currency.".to_string());
         }
+        let slug = Some(self.slug.trim())
+            .filter(|s| !s.is_empty())
+            .and_then(|s| {
+                common::slug::user_slug(s)
+                    .map_err(|message| errors.push(message))
+                    .ok()
+            });
         let (admin, host, booker) = (
             self.role_admin.is_some(),
             self.role_host.is_some(),
@@ -211,6 +224,7 @@ impl UserForm {
             permissions,
             is_active: self.is_active.is_some(),
             is_verified: self.is_verified.is_some(),
+            slug,
         })
     }
 }

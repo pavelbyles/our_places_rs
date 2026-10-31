@@ -96,6 +96,13 @@ async fn user_fields(
                 <input id=(id("phone")) name="phone_number" type="tel" value=(form.phone_number.clone()) class=(INPUT) /></div>
             <div><label class=(LABEL) for=(id("password"))>(password_hint)</label>
                 <input id=(id("password")) name="password" type="password" minlength="8" required=(creating) autocomplete="new-password" class=(INPUT) /></div>
+            if !creating {
+                <div class="sm:col-span-2"><label class=(LABEL) for=(id("slug"))>"Profile URL"</label>
+                    <div class="mt-1 flex items-center overflow-hidden rounded-lg border border-border bg-card text-sm focus-within:ring-2 focus-within:ring-primary">
+                        <span class="shrink-0 pl-3 text-muted-foreground">"/listings?host="</span>
+                        <input id=(id("slug")) name="slug" required=(true) maxlength=(common::slug::MAX_SLUG_CHARS.to_string()) autocapitalize="none" spellcheck="false" value=(form.slug.clone()) class="h-10 min-w-0 flex-1 bg-transparent pr-3 text-foreground outline-none" />
+                    </div></div>
+            }
             <div><label class=(LABEL) for=(id("currency"))>"Display currency"</label>
                 <select id=(id("currency")) name="default_currency" class=(INPUT)>
                     for c in DISPLAY_CURRENCIES {
@@ -312,6 +319,7 @@ pub async fn update_user(
                 booker_profile: None,
                 host_profile: None,
                 default_currency: Some(valid.default_currency.clone()),
+                slug: valid.slug.clone(),
             };
             match api.update_user(id, &request).await {
                 Ok(_) => {
@@ -326,6 +334,10 @@ pub async fn update_user(
                     );
                     Vec::new()
                 }
+                Err(e) if e.to_string().contains("already taken") => vec![format!(
+                    "The profile URL “{}” is already taken.",
+                    valid.slug.clone().unwrap_or_default()
+                )],
                 Err(e) => {
                     tracing::info!(user_id = %id, "user update rejected: {e}");
                     vec!["The account could not be saved. Administrator roles cannot be removed, and emails must be unique.".to_string()]

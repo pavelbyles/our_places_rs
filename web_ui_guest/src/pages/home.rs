@@ -6,7 +6,7 @@ use topcoat::{
 };
 use web_client::{client::ListingSearchParams, get_api_client};
 use web_ui_common::assets::HERO_IMAGE;
-use web_ui_common::components::domain::listing_card::{ListingSummary, listing_card};
+use web_ui_common::components::domain::{listing_card::ListingSummary, villa_card::villa_carousel};
 
 /// Trust strip items (docs/design/guest-theme.md §4).
 const PERKS: [(&str, &str); 3] = [
@@ -29,7 +29,7 @@ const PERKS: [(&str, &str); 3] = [
 pub async fn home_page(cx: &Cx) -> Result<impl View> {
     let featured: Vec<ListingSummary> = get_api_client(cx)
         .search_listings(ListingSearchParams {
-            per_page: Some(3),
+            per_page: Some(8),
             ..Default::default()
         })
         .await
@@ -60,11 +60,7 @@ pub async fn home_page(cx: &Cx) -> Result<impl View> {
                 <h2 id="season-heading" class="font-serif text-[40px] tracking-[-0.015em]">"This season's stays"</h2>
                 <a href="/listings" class="text-sm font-medium">"View all villas →"</a>
             </div>
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-8">
-                for listing in featured {
-                    listing_card(listing: listing)
-                }
-            </div>
+            villa_carousel(listings: featured, track_id: "featured-villas".to_string(), label: "This season's stays".to_string())
         </section>
 
         <section class="mt-32 border-t border-border pt-12" aria-labelledby="trust-heading">

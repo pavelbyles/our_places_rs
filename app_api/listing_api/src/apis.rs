@@ -32,6 +32,7 @@ use validator::Validate;
         (status = 500, description = "Internal server error")
     )
 )]
+#[tracing::instrument(skip(pool, req))]
 pub async fn get_listings(
     pool: web::Data<sqlx::PgPool>,
     query: web::Query<common::models::ListingQueryParams>,
@@ -71,6 +72,7 @@ pub async fn get_listings(
         resolution: query.resolution.clone(),
         currency: query.currency.clone(),
         user_id: query.user_id,
+        host: query.host.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -114,7 +116,7 @@ pub struct CurrencyQuery {
     pub currency: Option<String>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}",
@@ -168,7 +170,7 @@ async fn get_listing_by_id(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings",
@@ -286,7 +288,7 @@ async fn create_listing(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/listings/{id}",
@@ -381,7 +383,7 @@ pub struct DeleteListingParams {
     pub hard_delete: Option<bool>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}",
@@ -397,7 +399,7 @@ pub struct DeleteListingParams {
     )
 )]
 async fn delete_listing(
-    req: HttpRequest,
+    _req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     query: web::Query<DeleteListingParams>,
@@ -416,7 +418,7 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/images/presign",
@@ -666,7 +668,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     crate::reviews::configure_routes(cfg);
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -725,7 +727,7 @@ async fn create_price_override(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -756,7 +758,7 @@ async fn get_price_overrides(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     put,
     path = "/api/v1/listings/{id}/price-overrides/{override_id}",

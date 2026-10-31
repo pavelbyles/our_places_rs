@@ -8,6 +8,22 @@ use topcoat::{
 use super::responsive_image::responsive_image;
 use crate::components::star_rating::star_rating;
 
+/// A listing's host, for "Hosted by" links to `/listings?host={slug}`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HostLink {
+    /// Display name.
+    pub name: String,
+    /// Unique public handle.
+    pub slug: String,
+}
+
+impl HostLink {
+    /// `/listings?host={slug}`.
+    pub fn href(&self) -> String {
+        format!("/listings?host={}", self.slug)
+    }
+}
+
 /// What a [`listing_card`] shows.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListingSummary {
@@ -35,6 +51,8 @@ pub struct ListingSummary {
     pub rating: Option<f64>,
     /// Number of reviews.
     pub review_count: Option<i64>,
+    /// The host, when known.
+    pub host: Option<HostLink>,
 }
 
 impl ListingSummary {
@@ -119,6 +137,11 @@ impl From<&common::models::ListingResponse> for ListingSummary {
             full_bathrooms: l.full_bathrooms,
             rating: l.overall_rating,
             review_count: None,
+            host: l
+                .owner_name
+                .clone()
+                .zip(l.owner_slug.clone())
+                .map(|(name, slug)| HostLink { name, slug }),
         }
     }
 }

@@ -253,6 +253,9 @@ export async function seedTestData(): Promise<void> {
         NOW()
     ) ON CONFLICT (id) DO UPDATE SET
         status = 'confirmed',
+        -- Keep the stay in the future on every run (cancel/change tests need it).
+        date_from = EXCLUDED.date_from,
+        date_to = EXCLUDED.date_to,
         total_price = EXCLUDED.total_price,
         fee_breakdown = EXCLUDED.fee_breakdown,
         metadata = EXCLUDED.metadata;

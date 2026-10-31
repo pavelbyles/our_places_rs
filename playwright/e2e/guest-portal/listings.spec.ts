@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { KNOWN_LISTINGS } from '../fixtures/test-data.js';
+import { psql } from '../fixtures/bookings-data.js';
 
 test.describe('Guest Portal - Listings Exploration Page', () => {
   const targetVilla = KNOWN_LISTINGS.courtyardStudio;
@@ -38,5 +39,36 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
     await viewBtn.click();
     await expect(page).toHaveURL(`/listings/${targetVilla.slug}`);
     await expect(page.locator('h1')).toHaveText(targetVilla.name);
+  });
+
+  test('links each card to its host\'s listings', async ({ page }) => {
+    const [hostSlug, hostName] = psql(`
+      SELECT u.slug || '|' || u.first_name || ' ' || u.last_name
+      FROM listing l JOIN "user" u ON u.id = l.user_id
+      WHERE l.slug = '${targetVilla.slug}';`).split('|');
+
+    await page.goto('/listings');
+    const hostLink = page.locator(`#listing-card-${targetVilla.slug} [data-host-link]`);
+    await expect(hostLink).toHaveText(hostName);
+    await expect(hostLink).toHaveAttribute('href', `/listings?host=${hostSlug}`);
+
+    await hostLink.click();
+    await expect(page).toHaveURL(new RegExp(`/listings\\?host=${hostSlug}$`));
+    await expect(page.locator('h1')).toHaveText(`Listings by ${hostName}`);
+    await expect(page.locator(`#listing-card-${targetVilla.slug}`)).toBeVisible();
+    const hosts = await page.locator('#listings-grid [data-host-link]').evaluateAll(
+      (links) => [...new Set(links.map((a) => a.getAttribute('href')))],
+    );
+    expect(hosts).toEqual([`/listings?host=${hostSlug}`]);
+
+    await page.locator('#clear-host-filter').click();
+    await expect(page).toHaveURL(/\/listings$/);
+    await expect(page.locator('h1')).toHaveText('Explore All Listings');
+  });
+
+  test('says so when a host slug has no listings', async ({ page }) => {
+    await page.goto('/listings?host=no-such-host-e2e');
+    await expect(page.locator('h1')).toHaveText('Host listings');
+    await expect(page.getByText('This host has no listings yet')).toBeVisible();
   });
 });

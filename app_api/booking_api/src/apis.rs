@@ -169,7 +169,7 @@ async fn get_unavailable_ranges(
     )
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/availability",
@@ -202,7 +202,7 @@ async fn check_availability(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/bookings",
@@ -477,7 +477,7 @@ pub struct CurrencyQuery {
     pub currency: Option<String>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings",
@@ -534,7 +534,7 @@ async fn get_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/booking/{id}",
@@ -583,7 +583,7 @@ async fn get_booking_by_id(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/bookings/booking/{id}",
@@ -935,7 +935,7 @@ async fn delete_booking(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/bookings/bookings/{id}/transfer",
@@ -967,7 +967,7 @@ async fn transfer_booking(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/user/{id}",
@@ -1011,7 +1011,7 @@ async fn get_user_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/listing/{id}",
@@ -1049,7 +1049,7 @@ async fn get_listing_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/messages",
@@ -1110,7 +1110,7 @@ async fn get_booking_messages(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/bookings/{id}/messages",
@@ -1248,7 +1248,7 @@ async fn send_booking_message(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/bookings/{id}/messages/read",
@@ -3303,7 +3303,7 @@ async fn cancel_reservation_change_request(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/cancellation-quote",
@@ -3349,7 +3349,7 @@ async fn get_cancellation_quote(
     Ok(HttpResponse::Ok().json(quote))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/documents",
@@ -3377,7 +3377,7 @@ async fn get_booking_documents(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/documents/{number}",

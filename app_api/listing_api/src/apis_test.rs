@@ -422,6 +422,7 @@ async fn test_xml_serialization_of_vec() {
         is_active: true,
         added_at: Utc::now(),
         owner_name: None,
+        owner_slug: None,
         primary_image_url: None,
         max_guests: 2,
         bedrooms: 1,

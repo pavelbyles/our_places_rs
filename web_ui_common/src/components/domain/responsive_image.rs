@@ -45,12 +45,20 @@ pub async fn responsive_image(
     src: String,
     /// Alternative text.
     alt: String,
+    /// Largest variant to load (a size in [`SOURCES`], e.g. `"mobile"`), for
+    /// images shown small on wide screens such as fixed-width cards.
+    #[default]
+    widest: Option<String>,
     /// Extra HTML attributes for the `<img>`; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
     let img_class = class!("size-full object-cover", attrs.remove("class"));
-    let sources: Vec<(String, Option<&str>)> = SOURCES
+    let start = widest
+        .and_then(|w| SOURCES.iter().position(|(size, _)| *size == w))
+        .unwrap_or(0);
+    // Dropping the wider sources leaves the next one matching wide viewports.
+    let sources: Vec<(String, Option<&str>)> = SOURCES[start..]
         .iter()
         .filter_map(|(size, media)| variant_url(&src, size).map(|url| (url, *media)))
         .collect();

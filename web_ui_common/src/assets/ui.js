@@ -464,9 +464,75 @@
     if (counter) counter.textContent = field.value.length + ' / ' + field.getAttribute('maxlength');
   });
 
+  // --- Carousels: [data-carousel] holds a scrolling [data-carousel-track]
+  // and [data-carousel-step="-1"|"1"] arrows (server-rendered hidden). The
+  // arrows show only when the track overflows, scroll one card per click,
+  // and are disabled at either end.
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  function carouselParts(root) {
+    return {
+      track: root.querySelector('[data-carousel-track]'),
+      arrows: root.querySelectorAll('[data-carousel-step]')
+    };
+  }
+
+  function updateCarousel(root) {
+    var p = carouselParts(root);
+    if (!p.track) return;
+    var max = p.track.scrollWidth - p.track.clientWidth;
+    var overflows = max > 1;
+    for (var i = 0; i < p.arrows.length; i++) {
+      var back = Number(p.arrows[i].getAttribute('data-carousel-step')) < 0;
+      p.arrows[i].hidden = !overflows;
+      p.arrows[i].disabled = back ? p.track.scrollLeft <= 1 : p.track.scrollLeft >= max - 1;
+    }
+  }
+
+  function updateCarousels() {
+    var roots = document.querySelectorAll('[data-carousel]');
+    for (var i = 0; i < roots.length; i++) updateCarousel(roots[i]);
+  }
+
+  function stepCarousel(root, dir) {
+    var track = carouselParts(root).track;
+    if (!track) return;
+    var card = track.firstElementChild;
+    var gap = parseFloat(window.getComputedStyle(track).columnGap) || 0;
+    var distance = card ? card.getBoundingClientRect().width + gap : track.clientWidth;
+    track.scrollBy({ left: dir * distance, behavior: reduceMotion && reduceMotion.matches ? 'auto' : 'smooth' });
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    var arrow = target && target.closest('[data-carousel-step]');
+    var root = arrow && arrow.closest('[data-carousel]');
+    if (root) stepCarousel(root, Number(arrow.getAttribute('data-carousel-step')));
+  });
+
+  // Scroll events do not bubble; catch track scrolls in the capture phase.
+  // Measure at most once per frame per carousel.
+  var pendingCarousels = [];
+  document.addEventListener('scroll', function (event) {
+    var track = event.target instanceof Element ? event.target : null;
+    var root = track && track.matches('[data-carousel-track]') && track.closest('[data-carousel]');
+    if (!root || pendingCarousels.indexOf(root) !== -1) return;
+    pendingCarousels.push(root);
+    if (pendingCarousels.length > 1) return;
+    window.requestAnimationFrame(function () {
+      var roots = pendingCarousels;
+      pendingCarousels = [];
+      for (var i = 0; i < roots.length; i++) updateCarousel(roots[i]);
+    });
+  }, true);
+  window.addEventListener('resize', updateCarousels);
+  // Lazy photos can change card widths after first paint.
+  window.addEventListener('load', updateCarousels);
+
   function init() {
     applyTheme(currentTheme());
     enhanceCalendars(document);
+    updateCarousels();
     storeTimezoneOffset();
   }
 

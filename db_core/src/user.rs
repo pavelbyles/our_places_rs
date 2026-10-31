@@ -17,7 +17,7 @@ where
         r#"
             INSERT INTO "user" (id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(new_user_request.id)
@@ -41,6 +41,16 @@ where
     Ok(user)
 }
 
+/// Turns a clash on the unique slug into a message for the user.
+fn slug_taken(err: sqlx::Error) -> DbError {
+    match err.as_database_error() {
+        Some(db) if db.constraint() == Some("user_slug_unique") => {
+            DbError::ValidationError("That profile URL is already taken.".to_string())
+        }
+        _ => DbError::Sqlx(err),
+    }
+}
+
 /// Retrieves user specified by id
 #[tracing::instrument(skip(executor))]
 pub async fn get_user_by_id<'e, E>(executor: E, id: Uuid) -> Result<User>
@@ -50,7 +60,7 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at
+            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug
             FROM "user" WHERE id = $1
         "#,
         id,
@@ -70,7 +80,7 @@ where
     let user = sqlx::query_as!(
         User,
         r#"
-            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at
+            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug
             FROM "user" WHERE email = $1
         "#,
         email,
@@ -85,7 +95,7 @@ where
 pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -127,9 +137,10 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
             attributes = COALESCE($11, attributes),
             roles = COALESCE($12, roles),
             default_currency = COALESCE($13, default_currency),
+            slug = COALESCE($14, slug),
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -145,8 +156,10 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     .bind(&updated_user.attributes)
     .bind(updated_user.roles.as_deref())
     .bind(&updated_user.default_currency)
+    .bind(&updated_user.slug)
     .fetch_one(&mut *tx)
-    .await?;
+    .await
+    .map_err(slug_taken)?;
 
     tx.commit().await?;
 
@@ -209,7 +222,7 @@ where
 pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -244,7 +257,7 @@ pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User>
             verification_code_expires_at = NULL,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -265,7 +278,7 @@ pub async fn regenerate_verification_code(
 ) -> Result<Option<User>> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at FROM "user" WHERE email = $1 FOR UPDATE"#)
+    let current = sqlx::query_as::<_, User>(r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug FROM "user" WHERE email = $1 FOR UPDATE"#)
         .bind(email)
         .fetch_optional(&mut *tx)
         .await?;
@@ -301,7 +314,7 @@ pub async fn regenerate_verification_code(
                 verification_code_expires_at = $3,
                 updated_at = now()
             WHERE id = $1
-            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+            RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
             "#,
         )
         .bind(current.id)
@@ -334,7 +347,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         FROM "user"
         WHERE 1 = 1
         "#,
@@ -444,7 +457,7 @@ pub async fn update_user_password(
 ) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -479,7 +492,7 @@ pub async fn update_user_password(
             verification_code_expires_at = NULL,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -503,7 +516,7 @@ pub async fn update_user_email(
 ) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -539,7 +552,7 @@ pub async fn update_user_email(
             verification_code_expires_at = $4,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -559,7 +572,7 @@ pub async fn update_user_email(
 pub async fn deactivate_user(pool: &PgPool, id: Uuid) -> Result<User> {
     let mut tx = pool.begin().await?;
 
-    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#, id)
+    let current = sqlx::query_as!(User, r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#, id)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -592,7 +605,7 @@ pub async fn deactivate_user(pool: &PgPool, id: Uuid) -> Result<User> {
             is_active = FALSE,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -611,7 +624,7 @@ pub async fn soft_delete_user(pool: &PgPool, id: Uuid) -> Result<User> {
 
     let current = sqlx::query_as!(
         User,
-        r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -647,7 +660,7 @@ pub async fn soft_delete_user(pool: &PgPool, id: Uuid) -> Result<User> {
             deleted_at = now(),
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -665,7 +678,7 @@ pub async fn restore_user(pool: &PgPool, id: Uuid) -> Result<User> {
 
     let current = sqlx::query_as!(
         User,
-        r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at FROM "user" WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as "roles: Vec<UserRole>", default_currency, deleted_at, slug FROM "user" WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -701,7 +714,7 @@ pub async fn restore_user(pool: &PgPool, id: Uuid) -> Result<User> {
             deleted_at = NULL,
             updated_at = now()
         WHERE id = $1
-        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at
+        RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles, default_currency, deleted_at, slug
         "#,
     )
     .bind(id)
@@ -729,4 +742,115 @@ pub async fn hard_delete_user(pool: &PgPool, id: Uuid) -> Result<()> {
             DbError::Sqlx(err)
         })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod slug_tests {
+    use super::*;
+    use crate::models::NewUser;
+    use sqlx::postgres::PgPoolOptions;
+
+    async fn pool() -> PgPool {
+        dotenvy::dotenv().ok();
+        let url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".into());
+        PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&url)
+            .await
+            .expect("Failed to connect to Postgres")
+    }
+
+    async fn user(pool: &PgPool, first: &str, last: &str) -> User {
+        let id = Uuid::now_v7();
+        create_user(
+            pool,
+            &NewUser {
+                id,
+                email: format!("slug_{id}@example.com"),
+                password_hash: "secret".into(),
+                first_name: first.into(),
+                last_name: last.into(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: None,
+                default_currency: "USD".into(),
+            },
+        )
+        .await
+        .expect("create user")
+    }
+
+    async fn cleanup(pool: &PgPool, ids: &[Uuid]) {
+        let _ = sqlx::query("DELETE FROM \"user\" WHERE id = ANY($1)")
+            .bind(ids)
+            .execute(pool)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn new_users_get_unique_first_last_slugs() {
+        let pool = pool().await;
+        // A random surname keeps reruns independent of other test data.
+        let last = format!("Slugtest{}", Uuid::now_v7().simple());
+        let a = user(&pool, "Zoë", &last).await;
+        let b = user(&pool, "Zoë", &last).await;
+        let expected = common::slug::slugify(&format!("zoe-{last}"));
+        assert_eq!(a.slug, expected);
+        assert_eq!(b.slug, format!("{expected}-2"));
+        cleanup(&pool, &[a.id, b.id]).await;
+    }
+
+    #[tokio::test]
+    async fn a_slug_can_be_changed_but_not_to_a_taken_one() {
+        let pool = pool().await;
+        let tag = Uuid::now_v7().simple().to_string();
+        let a = user(&pool, "Ann", &format!("Slugone{tag}")).await;
+        let b = user(&pool, "Ben", &format!("Slugtwo{tag}")).await;
+        let wanted = format!("ann-villas-{tag}");
+
+        let renamed = update_user(
+            &pool,
+            a.id,
+            &UpdatedUser {
+                slug: Some(wanted.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("rename");
+        assert_eq!(renamed.slug, wanted);
+
+        // A name change keeps the slug, so links keep working.
+        let renamed_again = update_user(
+            &pool,
+            a.id,
+            &UpdatedUser {
+                first_name: Some("Annie".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("name change");
+        assert_eq!(renamed_again.slug, wanted);
+
+        let clash = update_user(
+            &pool,
+            b.id,
+            &UpdatedUser {
+                slug: Some(wanted.clone()),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(
+            matches!(&clash, Err(DbError::ValidationError(m)) if m.contains("already taken")),
+            "{clash:?}"
+        );
+        cleanup(&pool, &[a.id, b.id]).await;
+    }
 }
