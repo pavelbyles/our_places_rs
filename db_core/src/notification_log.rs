@@ -51,7 +51,7 @@ pub struct PreArrivalCandidate {
     pub estimated_arrival_time: Option<String>,
 }
 
-/// Candidate record for 15-minute expiring payment reservation holds.
+/// Candidate record for a pending reservation hold that is about to expire.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct ExpiringHoldCandidate {
     /// Unique booking identifier.
@@ -74,6 +74,8 @@ pub struct ExpiringHoldCandidate {
     pub total_price: Decimal,
     /// Timestamp when the reservation hold was created.
     pub created_at: DateTime<Utc>,
+    /// Timestamp when the reservation hold releases its dates.
+    pub expires_at: DateTime<Utc>,
 }
 
 /// Atomically claims and logs a notification for a booking and recipient.
@@ -172,8 +174,8 @@ pub async fn get_48h_pre_arrival_candidates(pool: &PgPool) -> Result<Vec<PreArri
     Ok(candidates)
 }
 
-/// Retrieves all active pending holds approaching expiration (between 75 and 105 minutes old)
-/// that have not yet received a payment hold reminder.
+/// Retrieves all active pending holds that expire in 15 to 45 minutes and have
+/// not yet received a payment hold reminder.
 pub async fn get_expiring_hold_candidates(pool: &PgPool) -> Result<Vec<ExpiringHoldCandidate>> {
     let candidates = sqlx::query_as!(
         ExpiringHoldCandidate,
@@ -188,13 +190,14 @@ pub async fn get_expiring_hold_candidates(pool: &PgPool) -> Result<Vec<ExpiringH
             l.name AS listing_name,
             b.currency,
             b.total_price,
-            b.created_at
+            b.created_at,
+            b.expires_at AS "expires_at!"
         FROM booking b
         JOIN "user" g ON b.guest_id = g.id
         JOIN listing l ON b.listing_id = l.id
         WHERE b.status = 'pending'
-          AND b.created_at >= NOW() - INTERVAL '105 minutes'
-          AND b.created_at <= NOW() - INTERVAL '75 minutes'
+          AND b.expires_at > NOW() + INTERVAL '15 minutes'
+          AND b.expires_at <= NOW() + INTERVAL '45 minutes'
           AND NOT EXISTS (
               SELECT 1 FROM booking_notification_log 
               WHERE booking_id = b.id AND notification_type = 'payment_hold_reminder'

@@ -27,6 +27,17 @@ async fn main() -> anyhow::Result<()> {
     // Get settings
     let config = settings::get_settings().context("Could not load settings")?;
 
+    if config.application.pending_hold_minutes <= 0 {
+        anyhow::bail!(
+            "application.pending_hold_minutes must be positive, got {}",
+            config.application.pending_hold_minutes
+        );
+    }
+    tracing::info!(
+        hold_minutes = config.application.pending_hold_minutes,
+        "Pending booking hold window"
+    );
+
     // Validate statutory tax configuration fast-fail (Spec §1.7)
     let _tax_settings =
         booking_api::settings::TaxSettings::from_env().map_err(|e| anyhow::anyhow!(e))?;

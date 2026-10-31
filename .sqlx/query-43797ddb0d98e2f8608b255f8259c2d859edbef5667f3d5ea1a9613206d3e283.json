@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO booking (\n            id, confirmation_code, guest_id, listing_id, status,\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown,\n            total_price, cancellation_policy, metadata, door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        ",
+  "query": "\n        WITH due AS (\n            SELECT id FROM booking\n            WHERE status = 'pending' AND expires_at <= NOW()\n            FOR UPDATE SKIP LOCKED\n        )\n        UPDATE booking b\n        SET status = 'cancelled', updated_at = NOW()\n        FROM due\n        WHERE b.id = due.id\n        RETURNING b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\",\n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            b.door_access_code,\n            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,\n            b.created_at, b.updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -160,59 +160,7 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Uuid",
-        "Varchar",
-        "Uuid",
-        "Uuid",
-        {
-          "Custom": {
-            "name": "booking_status",
-            "kind": {
-              "Enum": [
-                "pending",
-                "confirmed",
-                "cancelled",
-                "completed"
-              ]
-            }
-          }
-        },
-        "Date",
-        "Date",
-        "Bpchar",
-        "Numeric",
-        "Int4",
-        "Int4",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Jsonb",
-        "Numeric",
-        {
-          "Custom": {
-            "name": "cancellation_policy",
-            "kind": {
-              "Enum": [
-                "flexible",
-                "moderate",
-                "strict",
-                "firm",
-                "limited"
-              ]
-            }
-          }
-        },
-        "Jsonb",
-        "Text",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Timestamptz",
-        "Timestamptz"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -243,5 +191,5 @@
       false
     ]
   },
-  "hash": "b8673c6a03d0ed20a07ba7a61b608736f151f30b0d29a35abf91da743a78039e"
+  "hash": "43797ddb0d98e2f8608b255f8259c2d859edbef5667f3d5ea1a9613206d3e283"
 }

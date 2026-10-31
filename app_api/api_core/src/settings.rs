@@ -21,10 +21,21 @@ pub struct FeatureFlags {
     pub enable_hard_deletes: bool,
 }
 
+/// How long a `pending` booking holds its dates when no setting is given.
+pub const DEFAULT_PENDING_HOLD_MINUTES: i32 = 120;
+
 // Application settings model
 #[derive(Debug, Deserialize, Clone)]
 pub struct Application {
     pub max_attempts: u32,
+    /// How long a new `pending` booking holds its dates, in minutes. Set via
+    /// `[application] pending_hold_minutes` or `EA__APPLICATION__PENDING_HOLD_MINUTES`.
+    #[serde(default = "default_pending_hold_minutes")]
+    pub pending_hold_minutes: i32,
+}
+
+fn default_pending_hold_minutes() -> i32 {
+    DEFAULT_PENDING_HOLD_MINUTES
 }
 
 // Server model

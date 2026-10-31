@@ -97,7 +97,12 @@ features = ["v7", "serde"]
 version = "0.21.0"
 features = ["derive"]
 
+# Tuned for request throughput and cold start on Cloud Run, not binary size:
+# full optimisation, whole-program LTO, and no symbol tables to map at exec.
 [profile.release]
-opt-level = "z"
-lto = true
+opt-level = 3
+lto = "fat"
 codegen-units = 1
+strip = "symbols"
+debug = false
+incremental = false

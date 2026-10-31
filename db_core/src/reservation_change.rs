@@ -16,7 +16,7 @@ use crate::models::{
 pub struct BookingPayoutContext {
     /// Whether the booking's host payout has already been processed or paid.
     pub is_payout_processed: bool,
-    /// Exchange rate from the listing's base currency to the host's default currency.
+    /// Exchange rate from the booking currency to the host's default currency.
     pub host_exchange_rate: rust_decimal::Decimal,
     /// Existing pending net payout amount if a `host_payout_ledger` row exists.
     pub existing_net_payout: Option<rust_decimal::Decimal>,
@@ -28,7 +28,7 @@ pub async fn get_booking_payout_context(
     pool: &PgPool,
     booking_id: Uuid,
     host_id: Uuid,
-    listing_base_currency: &str,
+    booking_currency: &str,
 ) -> Result<BookingPayoutContext> {
     let existing = sqlx::query!(
         r#"
@@ -58,24 +58,21 @@ pub async fn get_booking_payout_context(
         r#"SELECT default_currency FROM "user" WHERE id = $1"#,
         host_id
     )
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| listing_base_currency.to_string());
+    .fetch_one(pool)
+    .await?;
 
-    let host_exchange_rate = if listing_base_currency == host_currency {
-        rust_decimal::Decimal::ONE
-    } else {
-        sqlx::query_scalar!(
-            r#"SELECT rate FROM currency_exchange_rates 
-               WHERE base_currency = $1 AND target_currency = $2 
-               ORDER BY effective_at DESC, updated_at DESC LIMIT 1"#,
-            listing_base_currency,
-            host_currency
-        )
-        .fetch_optional(pool)
-        .await?
-        .unwrap_or(rust_decimal::Decimal::ONE)
-    };
+    let host_exchange_rate =
+        crate::exchange_rate::get_rate_pool(pool, booking_currency, &host_currency, Utc::now())
+            .await
+            .inspect_err(|e| {
+                tracing::error!(
+                    %booking_id,
+                    from = booking_currency,
+                    to = %host_currency,
+                    error = %e,
+                    "host payout currency conversion failed"
+                )
+            })?;
 
     Ok(BookingPayoutContext {
         is_payout_processed: false,
@@ -1132,6 +1129,7 @@ mod tests {
                 tax_rate: dec!(0.1500),
                 exchange_rate: Decimal::ONE,
             },
+            120,
         )
         .await
         .unwrap();

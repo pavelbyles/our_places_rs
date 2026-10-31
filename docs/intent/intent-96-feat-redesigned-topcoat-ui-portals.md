@@ -112,7 +112,7 @@ All new crates depend on `common` for domain models, `Decimal` pricing, and DTOs
 ## 5. Constraints & Non-Negotiable Invariants
 - **Stack**: Topcoat **0.10** SSR + HTMX + Tailwind v4. State lives on the server. **No** WASM, SPA framework, or Alpine.
 - **No daisyUI** in any new crate. Components use only theme tokens (no raw hex).
-- **Domain**: `Decimal` for all money; tri-currency display must render identically to the old portals. The 15-minute checkout hold behavior is unchanged.
+- **Domain**: `Decimal` for all money; tri-currency display must render identically to the old portals. The checkout hold behavior is unchanged.
 - **Session expiry mid-checkout** (decided): If the guest session expires during checkout, the guest is asked to log in again. The `pending_payment` hold is **not** extended or re-created; it keeps running on its original `expires_at`. If they log in again before it expires, checkout resumes. If the hold has also expired, checkout must restart from availability.
 - **Panic-free**: no `.unwrap()` / `.expect()` in production paths. Monadic error handling. `///` docs on all public items (`RS-D1001`). No `todo!()` stubs.
 - **Backwards compatibility**: The old portals must keep working, unchanged at the source level, throughout.

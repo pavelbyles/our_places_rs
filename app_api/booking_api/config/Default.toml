@@ -18,6 +18,9 @@ env = "Development"
 
 [application]
 max_attempts = 5
+# How long a pending booking holds its dates. Override per deploy without a
+# rebuild: EA__APPLICATION__PENDING_HOLD_MINUTES=60
+pending_hold_minutes = 120
 
 [feature_flags]
 enable_hard_deletes = false

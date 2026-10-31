@@ -72,6 +72,7 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 | `BASE_URL` | booking | yes in cloud | Guest portal URL for links in emails. Set by CI after the portals deploy. Local default `http://localhost:3010`. |
 | `ADMIN_BASE_URL` | booking | yes in cloud | Admin portal URL for host links in emails. Set by CI. Local default `http://localhost:3012`. |
 | `CRON_SECRET` | booking | yes | Required by the cron endpoints; no fallback. |
+| `EA__APPLICATION__PENDING_HOLD_MINUTES` | booking | no | Minutes a new `pending` booking holds its dates. Default `120` (`config/Default.toml`). Must be positive or booking_api will not start. Not set by CI. Change it with `gcloud run services update booking-api-<branch> --update-env-vars EA__APPLICATION__PENDING_HOLD_MINUTES=60`: that makes a new revision, not a rebuild, and later CI deploys keep it because `deploy-cloudrun` merges env vars. Existing holds keep their `expires_at`. |
 | `TAJ_SUPPLIER_TRN`, `TAJ_SUPPLIER_NAME`, `TAJ_SUPPLIER_ADDRESS` | booking | yes | Tax document supplier block. |
 | `ACTUATOR_SECRET` (or `ADMIN_SECRET`) | all | recommended | `X-Actuator-Token` for `/loggers`. Falls back to `secret`. Not set by CI today. Never set it to an empty string. |
 

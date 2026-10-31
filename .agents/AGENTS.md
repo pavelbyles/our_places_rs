@@ -58,7 +58,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 
 ### Booking Engine & Concurrency
 - **Zero Double-Bookings**: Availability locking relies on PostgreSQL row-level locks (`SELECT ... FOR UPDATE`), not volatile caches.
-- **Reservation Holds**: Initiating checkout creates a `pending_payment` record with a 15-minute `expires_at` window.
+- **Reservation Holds**: Initiating checkout creates a `pending` record whose `expires_at` window comes from `application.pending_hold_minutes` (default 120, override with `EA__APPLICATION__PENDING_HOLD_MINUTES`; no rebuild needed).
 - **Audit Logging**: Every status transition (`pending_payment` $\rightarrow$ `confirmed` $\rightarrow$ `completed` / `refunded`) is logged immutably in `booking_status_history`.
 
 ### Image Pipeline
@@ -94,7 +94,7 @@ The application is structured as an **Isomorphic Rust Monorepo** targeting **GCP
 
 - **JWT Authentication**: Auth endpoints issue signed JWTs validated via `jsonwebtoken`.
 - **Actix Auth Extractors**: Route handlers extract user identity via custom Actix extractors or `web::ReqData<Claims>`.
-- **Shadow User Promotion**: Guest checkouts create a temporary "shadow user" tied to the 15-minute `pending_payment` hold. Post-payment, guests are promoted to full users without invalidating date holds.
+- **Shadow User Promotion**: Guest checkouts create a temporary "shadow user" tied to the `pending` hold. Post-payment, guests are promoted to full users without invalidating date holds.
 
 ---
 

@@ -115,7 +115,7 @@ impl TopcoatApiClient {
         common::app_client::get_pricing_quote(listing_id, check_in, check_out, currency).await
     }
 
-    /// Create a 15-minute booking hold
+    /// Create a pending booking hold
     pub async fn create_booking(&self, req: &NewBookingRequest) -> anyhow::Result<BookingResponse> {
         common::app_client::create_booking(req).await
     }

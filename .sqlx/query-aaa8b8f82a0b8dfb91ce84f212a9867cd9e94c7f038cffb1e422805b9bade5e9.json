@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE booking SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aaa8b8f82a0b8dfb91ce84f212a9867cd9e94c7f038cffb1e422805b9bade5e9"
+}

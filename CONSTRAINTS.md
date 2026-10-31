@@ -52,7 +52,7 @@ Metrics that are tracked continuously and must not degrade:
 | :--- | :--- | :--- | :--- |
 | **Cloud Run Cold Start (p50)** | $< 300\text{ms}$ | Must not degrade | Performance audit (`/cloudrun-perf-audit`) |
 | **Cloud Run Cold Start (p95)** | $< 1\text{s}$ | Must not degrade | Performance audit (`/cloudrun-perf-audit`) |
-| **Reservation Hold TTL** | 15 minutes (`expires_at`) | Invariant | Booking audit (`/audit-booking-flow`) |
+| **Reservation Hold TTL** | `application.pending_hold_minutes` (default 120), stored as `expires_at` at insert | Configurable per deploy; must be positive; availability honours `expires_at` | Booking audit (`/audit-booking-flow`) |
 | **Local Sanity Check Runtime** | $\le 90\text{s}$ total | Must not exceed 120s | Developer workflow feedback |
 
 ---

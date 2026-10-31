@@ -542,7 +542,6 @@ dependencies = [
  "api_core",
  "chrono",
  "common",
- "config",
  "db_core",
  "dotenvy",
  "rand 0.10.3",

@@ -46,6 +46,10 @@ pub enum ApiError {
     /// Payment or refund settlement with payment gateway failed.
     #[error("Payment settlement failed: {0}")]
     PaymentSettlementFailed(String),
+
+    /// A transient condition the client can resolve by retrying.
+    #[error("Service temporarily unavailable: {0}")]
+    ServiceUnavailable(String),
 }
 
 // Implement Debug manually to avoid printing the source error in production.
@@ -74,6 +78,8 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::ChangeRequestAlreadyPending)
             | ApiError::ChangeRequestAlreadyPending => StatusCode::CONFLICT,
             ApiError::PaymentSettlementFailed(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::Database(DbError::HoldExpired) => StatusCode::CONFLICT,
+            ApiError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -86,7 +92,24 @@ impl ResponseError for ApiError {
     }
 
     fn error_response(&self) -> HttpResponse {
+        // Server-side failures return a bare body, so the log line is the only
+        // record of what went wrong. `Debug` prints the full cause chain.
+        if self.status_code().is_server_error() {
+            tracing::error!(status = %self.status_code(), error = ?self, "request failed");
+        }
         match self {
+            ApiError::Database(DbError::HoldExpired) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "HOLD_EXPIRED",
+                    "message": "The reservation hold has expired. Please start a new booking."
+                }))
+            }
+            ApiError::ServiceUnavailable(msg) => HttpResponse::ServiceUnavailable()
+                .insert_header(("Retry-After", "1"))
+                .json(serde_json::json!({
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": msg
+                })),
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))

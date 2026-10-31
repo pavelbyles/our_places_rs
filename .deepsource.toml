@@ -3,6 +3,7 @@ version = 1
 test_patterns = [
   "**/tests/**",
   "**/tests.rs",
+  "**/*_tests.rs",
   "**/test_*.rs"
 ]
 

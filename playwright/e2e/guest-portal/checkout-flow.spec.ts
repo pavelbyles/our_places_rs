@@ -6,7 +6,7 @@ import { createGuest, loginGuest, psql } from '../fixtures/bookings-data.js';
 // decisions D1/D2) stay tagged @new-only.
 const NEW_ONLY = { tag: '@new-only' };
 
-test.describe('Guest Portal - Checkout Flow & 15-Minute Hold', () => {
+test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
   const targetVilla = KNOWN_LISTINGS.courtyardStudio;
 
   /** A random 5-night stay far enough ahead to be free of other bookings. */

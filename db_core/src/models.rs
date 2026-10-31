@@ -206,7 +206,7 @@ pub struct BookingWithEligibility {
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum BookingStatus {
-    /// Initial payment pending state (15-minute hold).
+    /// Initial payment pending state; holds its dates until `expires_at`.
     Pending,
     /// Payment confirmed and reservation secured.
     Confirmed,

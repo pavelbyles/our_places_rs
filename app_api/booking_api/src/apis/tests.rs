@@ -1,8 +1,8 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use crate::apis::BookingCalculator;
     use crate::settings::{CronSettings, TaxSettings};
+    use common::pricing::BookingCalculator;
     use rust_decimal::Decimal;
 
     #[test]
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_user_bookings_response_mapping() {
-        use crate::apis::map_booking_to_response;
+        use api_core::models::map_booking_to_response;
         use chrono::Utc;
         use db_core::models::{Booking, BookingMetadata, BookingStatus, CancellationPolicy};
         use rust_decimal::Decimal;
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_listing_bookings_response_mapping_all_statuses() {
-        use crate::apis::map_booking_to_response;
+        use api_core::models::map_booking_to_response;
         use chrono::Utc;
         use db_core::models::{Booking, BookingMetadata, BookingStatus, CancellationPolicy};
         use rust_decimal::Decimal;
@@ -1959,6 +1959,7 @@ mod tests {
                     tax_rate: dec!(0.1000),
                     exchange_rate: Decimal::ONE,
                 },
+                api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             )
             .await
             .unwrap();
@@ -2092,5 +2093,349 @@ mod tests {
         let resp =
             test::call_service(&app, get(api_core::auth::generate_test_jwt(booker_id))).await;
         assert_eq!(resp.status(), 401);
+    }
+
+    /// Checkout pricing must use a real rate, reject unknown policies, convert
+    /// every money field for display, and refuse to confirm an expired hold.
+    #[tokio::test]
+    async fn test_create_booking_currency_policy_and_hold_expiry() {
+        use actix_web::{App, test, web};
+        use rust_decimal_macros::dec;
+        use sqlx_db_tester::TestPg;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let new_user = |id: Uuid, role: db_core::models::UserRole| db_core::models::NewUser {
+            id,
+            email: format!("u_{id}@example.com"),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![role]),
+            default_currency: "USD".to_string(),
+        };
+        let host_id = Uuid::now_v7();
+        db_core::user::create_user(&pool, &new_user(host_id, db_core::models::UserRole::Host))
+            .await
+            .unwrap();
+        db_core::user::create_host_profile(
+            &pool,
+            host_id,
+            &db_core::models::NewHostProfile {
+                description: None,
+                verified_status: Some("pending".to_string()),
+                payout_details: None,
+            },
+        )
+        .await
+        .unwrap();
+        let guest_id = Uuid::now_v7();
+        db_core::user::create_user(
+            &pool,
+            &new_user(guest_id, db_core::models::UserRole::Booker),
+        )
+        .await
+        .unwrap();
+        let listing = db_core::listing::create_listing(
+            &pool,
+            &db_core::models::NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: Some(dec!(50.00)),
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let settings = api_core::settings::Settings {
+            server: api_core::settings::Server {
+                host: "127.0.0.1".to_string(),
+                port: 0,
+            },
+            database: api_core::settings::DatabaseSettings {
+                username: String::new(),
+                password: String::new(),
+                port: 0,
+                host: String::new(),
+                database_name: String::new(),
+                cloud: false,
+                instance_name: String::new(),
+                database_url: None,
+            },
+            log: api_core::settings::Log {
+                level: "info".to_string(),
+            },
+            env: api_core::settings::Env::Testing,
+            application: api_core::settings::Application {
+                max_attempts: 3,
+                pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            },
+            feature_flags: api_core::settings::FeatureFlags {
+                enable_hard_deletes: false,
+            },
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(settings))
+                .app_data(web::Data::new(crate::settings::TaxSettings {
+                    taj_supplier_trn: "000-111-222".to_string(),
+                    supplier_name: "Our Places Jamaica Limited".to_string(),
+                    supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+                }))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        let request = |currency: &str, policy: &str| {
+            serde_json::json!({
+                "guest_id": guest_id,
+                "listing_id": listing.id,
+                "check_in": "2030-07-01",
+                "check_out": "2030-07-03",
+                "num_adults": 2,
+                "num_children": 0,
+                "num_infants": 0,
+                "num_pets": 0,
+                "is_business_trip": false,
+                "currency": currency,
+                "agreed_cancellation_policy": policy,
+            })
+        };
+        let post = |body: serde_json::Value| {
+            test::TestRequest::post()
+                .uri("/api/v1/bookings")
+                .insert_header(("Accept", "application/json"))
+                .set_json(body)
+                .to_request()
+        };
+
+        // No CAD rate is seeded: refuse rather than price in USD under a CAD label.
+        let resp = test::call_service(&app, post(request("CAD", "flexible"))).await;
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "FX_RATE_UNAVAILABLE");
+
+        // Unknown policy is a 400, not a silent downgrade to flexible.
+        let resp = test::call_service(&app, post(request("USD", "lenient"))).await;
+        assert_eq!(resp.status(), 400);
+
+        // JMD checkout: every amount converted at the seeded 160 rate.
+        let resp = test::call_service(&app, post(request("jmd", "Flexible"))).await;
+        assert_eq!(resp.status(), 201);
+        let booking: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(booking["currency"], "JMD");
+        assert_eq!(booking["daily_rate"], "32000.00");
+        assert_eq!(booking["cleaning_fee"], "8000.00");
+        let id = booking["id"].as_str().unwrap().to_string();
+
+        // Display conversion back to USD covers the fees, not just the totals.
+        let get = |uri: String| {
+            test::TestRequest::get()
+                .uri(&uri)
+                .insert_header(("Accept", "application/json"))
+                .to_request()
+        };
+        let resp =
+            test::call_service(&app, get(format!("/api/v1/bookings/{id}?currency=USD"))).await;
+        assert_eq!(resp.status(), 200);
+        let shown: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(shown["currency"], "USD");
+        assert_eq!(shown["daily_rate"], "200.00");
+        assert_eq!(shown["cleaning_fee"], "50.00");
+
+        let resp =
+            test::call_service(&app, get(format!("/api/v1/bookings/{id}?currency=CAD"))).await;
+        assert_eq!(resp.status(), 422);
+
+        // Once the hold lapses it cannot be confirmed.
+        sqlx::query(
+            "UPDATE booking SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1::uuid",
+        )
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/bookings/{id}"))
+                .insert_header(("Accept", "application/json"))
+                .set_json(serde_json::json!({ "status": "confirmed" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "HOLD_EXPIRED");
+    }
+
+    #[tokio::test]
+    async fn test_confirmation_code_collision_is_detected() {
+        use rust_decimal::Decimal;
+        use rust_decimal_macros::dec;
+        use sqlx_db_tester::TestPg;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let user = |id: Uuid, role| db_core::models::NewUser {
+            id,
+            email: format!("u_{id}@example.com"),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![role]),
+            default_currency: "USD".to_string(),
+        };
+        let host_id = Uuid::now_v7();
+        db_core::user::create_user(&pool, &user(host_id, db_core::models::UserRole::Host))
+            .await
+            .unwrap();
+        db_core::user::create_host_profile(
+            &pool,
+            host_id,
+            &db_core::models::NewHostProfile {
+                description: None,
+                verified_status: Some("pending".to_string()),
+                payout_details: None,
+            },
+        )
+        .await
+        .unwrap();
+        let listing = db_core::listing::create_listing(
+            &pool,
+            &db_core::models::NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let booking = |guest_id: Uuid, month: u32| db_core::models::NewBooking {
+            confirmation_code: "DUPLICATE1".to_string(),
+            guest_id,
+            listing_id: listing.id,
+            date_from: chrono::NaiveDate::from_ymd_opt(2030, month, 1).unwrap(),
+            date_to: chrono::NaiveDate::from_ymd_opt(2030, month, 3).unwrap(),
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 2,
+            sub_total_price: dec!(400.00),
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: vec![],
+            total_price: dec!(400.00),
+            cancellation_policy: db_core::models::CancellationPolicy::Flexible,
+            metadata: db_core::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::ZERO,
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+        };
+        let (first, second) = (Uuid::now_v7(), Uuid::now_v7());
+        for id in [first, second] {
+            db_core::user::create_user(&pool, &user(id, db_core::models::UserRole::Booker))
+                .await
+                .unwrap();
+        }
+        db_core::booking::create_booking(
+            &pool,
+            &booking(first, 8),
+            api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+        )
+        .await
+        .unwrap();
+        let err = db_core::booking::create_booking(
+            &pool,
+            &booking(second, 9),
+            api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(crate::apis::is_confirmation_code_collision(&err), "{err:?}");
+        assert!(!crate::apis::is_confirmation_code_collision(
+            &db_core::error::DbError::DateUnavailable
+        ));
     }
 }

@@ -449,7 +449,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCS_PUBLIC_BUCKET=${{ env.GCS_PUBLIC_BUCKET_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --memory=1Gi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_IMAGE_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=4 --memory=1Gi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Grant Pub/Sub Service Account Invoker Permission
         run: |
@@ -602,7 +602,7 @@ jobs:
             SMTP_PASS=${{ env.SMTP_PASS }}
             SMTP_FROM=${{ env.SMTP_FROM }}
             USE_MOCK_EMAIL_PROVIDER=false
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_EMAIL_WORKER }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=internal --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       - name: Grant Pub/Sub Service Account Invoker Permission
         run: |
@@ -831,7 +831,7 @@ jobs:
             TAJ_SUPPLIER_ADDRESS=${{ env.TAJ_SUPPLIER_ADDRESS_ESCAPED }}
             CRON_SECRET=${{ env.CRON_SECRET }}
             JWT_SECRET=${{ env.JWT_SECRET }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_BOOKING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # Listing API
       - name: Build and Push Listing API
@@ -867,7 +867,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             JWT_SECRET=${{ env.JWT_SECRET }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
       # One hourly Cloud Scheduler job per long-lived environment (dev, main):
       # 2 jobs in total, inside the free tier of 3 jobs per billing account.
@@ -940,7 +940,7 @@ jobs:
             EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
             JWT_SECRET=${{ env.JWT_SECRET }}
-          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=1 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
+          flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
 
   # =========================================================
@@ -1061,7 +1061,7 @@ jobs:
             LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --quiet"
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
 
       - name: Show Deployed URL for the Web UI Guest
         run: echo "Deployed Web UI Guest URL ${{ steps.deploy.outputs.url }}"
@@ -1184,7 +1184,7 @@ jobs:
             LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
-          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=1 --memory=512Mi --quiet"
+          flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
 
       # The admin portal uploads listing photos from the browser straight to
       # the raw bucket with signed URLs, so the bucket must allow its origin.

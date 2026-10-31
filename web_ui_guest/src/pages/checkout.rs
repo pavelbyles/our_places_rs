@@ -399,6 +399,9 @@ async fn place_booking(
                         .to_string()
                 } else if text.contains("max_guests") {
                     format!("This stay allows 1 to {max_guests} guests.")
+                } else if text.contains("FX_RATE_UNAVAILABLE") {
+                    "We can't take payment in this currency right now. Please choose another currency."
+                        .to_string()
                 } else {
                     "We couldn't place your booking. Please try again.".to_string()
                 },

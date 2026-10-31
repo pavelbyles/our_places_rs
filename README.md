@@ -36,7 +36,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 - **Luxury Villa Catalog & Search**: Browse curated Jamaican luxury villas and apartments with real-time HTMX filtering by destination, guest capacity, and amenities.
 - **Rich Property Detail Pages**: View responsive multi-resolution photo galleries, location information, detailed amenity checklists, and host descriptions.
 - **Dynamic Pricing & Multi-Currency Quotes**: Instant rate computation supporting multiple guest checkout currencies (USD, JMD, EUR, GBP, CAD) with statutory tax breakdowns (Jamaican GCT 15%).
-- **Frictionless Checkout & Temporary Holds**: Reserve dates with an automatic 15-minute lock (`pending_payment`), preventing dates from being taken during checkout.
+- **Frictionless Checkout & Temporary Holds**: Reserve dates with a `pending` hold (2 hours by default, configurable per deploy), preventing dates from being taken during checkout.
 - **Shadow User Guest Checkouts**: Guests can book immediately without prior account registration; temporary shadow accounts can be promoted post-checkout without losing booking state.
 - **Booking Management Hub**: Track upcoming, active, and past reservations, review booking confirmations, and request date changes or cancellations.
 - **Two-Way Direct Messaging**: Built-in messaging thread between guest and host linked directly to specific reservation codes.
@@ -69,7 +69,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 
 #### 🔒 Concurrency, Data Integrity & State Machines
 - **Zero Double-Booking Guarantee**: PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) during reservation creation ensure serialized availability checks without external distributed lock managers.
-- **Self-Expiring Hold Lifecycle**: 15-minute `pending_payment` holds automatically expire and release dates back to inventory via timestamp comparisons, eliminating mandatory cron cleanup workers.
+- **Self-Expiring Hold Lifecycle**: `pending` holds carry an `expires_at` timestamp and release their dates the moment it passes; availability never depends on a cleanup job running.
 - **Immutable Status Audit Trail**: Every booking and payout status transition is immutably recorded in historical audit tables (`booking_status_history`, `host_payout_ledger`).
 - **Compile-Time Verified Queries**: SQLx queries validated at compile time against PostgreSQL schema for static type safety and query correctness in [`db_core`](db_core).
 
@@ -214,7 +214,7 @@ Core reservation state machine, availability locking, and guest messaging:
 | `GET` | `/api-docs/openapi.json` | OpenAPI 3.0 specification JSON |
 | `GET` | `/api/v1/bookings/availability` | Check date availability and compute tri-currency pricing quotes with statutory taxes |
 | `GET` | `/api/v1/bookings` | List all bookings with pagination and status filters |
-| `POST` | `/api/v1/bookings` | Create a new reservation hold (`pending_payment` with 15-minute lock) |
+| `POST` | `/api/v1/bookings` | Create a new reservation hold (`pending`, expires after `application.pending_hold_minutes`) |
 | `GET` | `/api/v1/bookings/{id}` | Fetch booking details by booking UUID |
 | `PATCH` | `/api/v1/bookings/{id}` | Update booking details or transition status |
 | `DELETE` | `/api/v1/bookings/{id}` | Cancel or delete a reservation |
@@ -308,7 +308,7 @@ Public-facing Topcoat SSR & HTMX portal (default port `3010`). Sessions are serv
 | `GET` | `/listings/{slug}` | Page | Villa detail with gallery, amenities and booking widget |
 | `GET` | `/listings/{slug}/quote` | HTMX | Price quote for the chosen dates and currency |
 | `GET` | `/listings/{slug}/calendar` | HTMX | Availability calendar month |
-| `GET`, `POST` | `/checkout/{slug}` | Page | Checkout (sign-in required); places the 15-minute hold |
+| `GET`, `POST` | `/checkout/{slug}` | Page | Checkout (sign-in required); places the date hold |
 | `GET` | `/checkout-{jmd,eur,gbp,cad}/{id}` | Redirect | Legacy per-currency links → `/checkout/{id}?currency=` |
 | `GET` | `/bookings` | Page | The signed-in guest's bookings |
 | `GET`, `POST` | `/bookings/{id}/cancel` | HTMX | Cancellation dialog and submit |

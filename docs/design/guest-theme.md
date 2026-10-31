@@ -135,7 +135,7 @@ Load both fonts via `topcoat-font` (Fontsource), not a Google Fonts `<link>`, so
 2. **Hero:** two-part intro (large serif headline left, lead paragraph right), then a full-width landscape photo (560px tall, 16px radius) with the **search bar overlaid** at the bottom. Fields: Where · Check in · Check out · Guests · [Search villas].
 3. **"Where would you like to wake up?":** square destination tiles (12px radius) with serif names: Ocho Rios, Montego Bay, Negril, Port Antonio, Kingston.
 4. **"This season's stays":** three portrait villa cards (4:5 photo, 12px radius). Below each: serif name, `location · bedrooms · guests` in muted text, and "from [rate] per night" on the right. A "View all villas →" link sits top right.
-5. **Trust strip "Booking, without the noise.":** a hairline rule above, then three items: verified reviews, the 15-minute date hold, prices in your currency.
+5. **Trust strip "Booking, without the noise.":** a hairline rule above, then three items: verified reviews, the checkout date hold, prices in your currency.
 6. **Footer:** a hairline rule, the wordmark, and links: List your villa, Help, Terms, Privacy.
 
 ## 5. Theme behaviour (light / dim / dark)

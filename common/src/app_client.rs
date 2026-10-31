@@ -12,6 +12,7 @@ use crate::tax_document::TaxDocumentResponse;
 use anyhow::{Context, Result, bail};
 use chrono::NaiveDate;
 use reqwest::Response;
+use rust_decimal::Decimal;
 use std::env;
 use std::sync::OnceLock;
 use uuid::Uuid;
@@ -81,7 +82,7 @@ pub struct ListingSearchParams {
     /// Optional canonical user ID to query listings belonging strictly to a specific host.
     pub user_id: Option<Uuid>,
     pub listing_structure: Option<Vec<String>>,
-    pub max_price: Option<f64>,
+    pub max_price: Option<Decimal>,
     pub currency: Option<String>,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
@@ -122,7 +123,7 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
         if let Some(structures) = params.listing_structure.filter(|s| !s.is_empty()) {
             query.append_pair("structure_type", &structures.join(","));
         }
-        if let Some(s) = params.max_price.filter(|&s| s > 0.0) {
+        if let Some(s) = params.max_price.filter(|s| *s > Decimal::ZERO) {
             query.append_pair("max_price", &s.to_string());
         }
         if let Some(c) = params.currency.filter(|c| !c.is_empty()) {

@@ -1,0 +1,234 @@
+//! HTTP handlers for booking_api, grouped by resource.
+//!
+//! Shared helpers (portal URLs, pricing errors, confirmation codes, display
+//! currency, email enqueueing, booking authorization) live here; each
+//! submodule owns one route group and `routes` wires them together.
+
+use actix_web::{FromRequest, HttpRequest};
+use api_core::{error::ApiError, models::BookingResponse};
+use chrono::Utc;
+use db_core::booking_message as db_booking_message;
+use rand::RngExt;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+mod availability;
+mod booking_updates;
+mod bookings;
+mod cron;
+mod documents;
+mod ledger;
+mod messages;
+mod notifications;
+mod reservation_changes;
+mod routes;
+
+pub use availability::{AvailabilityParams, AvailabilityResponse, UnavailableRangesParams};
+pub use booking_updates::UpdatedBookingRequest;
+pub use cron::{
+    CompleteStaysResponse, CronSweepResponse, CronSweepsResponse, complete_stays_cron,
+    process_scheduled_notifications, run_sweeps, stay_completion_cutoff,
+};
+pub use routes::configure_routes;
+
+static BASE_URL_ENV: &str = "BASE_URL";
+
+static ADMIN_BASE_URL_ENV: &str = "ADMIN_BASE_URL";
+
+/// Public URL of the guest portal, for links in emails (`BASE_URL`).
+fn guest_base_url() -> String {
+    std::env::var(BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3010".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// Public URL of the admin portal, for host links in emails
+/// (`ADMIN_BASE_URL`).
+fn admin_base_url() -> String {
+    std::env::var(ADMIN_BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3012".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn map_pricing_error(err: common::pricing::PricingError) -> ApiError {
+    match err {
+        common::pricing::PricingError::InvalidDateRange => {
+            ApiError::Database(db_core::error::DbError::ValidationError(
+                "Check-out date must be after check-in date".to_string(),
+            ))
+        }
+        common::pricing::PricingError::MinNightsNotMet { required, provided } => {
+            ApiError::Database(db_core::error::DbError::ValidationError(format!(
+                "Minimum night stay requirement not met for seasonal period: required {}, provided {}",
+                required, provided
+            )))
+        }
+    }
+}
+
+/// The listing's base nightly price. A listing without one cannot be priced,
+/// so this is a 400 rather than a silent zero.
+fn nightly_price(listing: &db_core::models::Listing) -> Result<Decimal, ApiError> {
+    listing.price_per_night.ok_or_else(|| {
+        tracing::warn!(listing_id = %listing.id, "listing has no nightly price");
+        ApiError::Database(db_core::error::DbError::ValidationError(
+            "This listing has no nightly price and cannot be booked".to_string(),
+        ))
+    })
+}
+
+/// Whether `err` is a unique violation on `booking.confirmation_code`.
+fn is_confirmation_code_collision(err: &db_core::error::DbError) -> bool {
+    matches!(err, db_core::error::DbError::Sqlx(e)
+    if e.as_database_error().is_some_and(|db| {
+        db.is_unique_violation() && db.constraint() == Some("booking_confirmation_code_key")
+    }))
+}
+
+pub fn generate_confirmation_code() -> String {
+    const CHARSET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+    const LENGTH: usize = 8;
+    let mut rng = rand::rng();
+
+    (0..LENGTH)
+        .map(|_| {
+            let idx = rng.random_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect()
+}
+
+/// Rate for showing a booking's amounts in `target`. A missing pair is a 422
+/// (`FX_RATE_UNAVAILABLE`) so amounts are never shown under the wrong label.
+async fn display_rate(pool: &PgPool, from: &str, target: &str) -> Result<Decimal, ApiError> {
+    db_core::exchange_rate::get_rate_pool(pool, from, target, Utc::now())
+        .await
+        .map_err(|e| {
+            tracing::warn!(from, to = target, error = %e, "booking display currency conversion failed");
+            ApiError::Database(e)
+        })
+}
+
+/// Restates a booking's money fields in `target` at `rate`.
+fn convert_booking_amounts(booking: &mut BookingResponse, rate: Decimal, target: &str) {
+    booking.daily_rate = (booking.daily_rate * rate).round_dp(2);
+    booking.sub_total_price = (booking.sub_total_price * rate).round_dp(2);
+    booking.total_price = (booking.total_price * rate).round_dp(2);
+    booking.discount_value = booking.discount_value.map(|d| (d * rate).round_dp(2));
+    booking.tax_value = booking.tax_value.map(|t| (t * rate).round_dp(2));
+    booking.cleaning_fee = booking.cleaning_fee.map(|f| (f * rate).round_dp(2));
+    booking.damage_deposit = booking.damage_deposit.map(|f| (f * rate).round_dp(2));
+    booking.platform_fee = booking.platform_fee.map(|f| (f * rate).round_dp(2));
+    booking.currency = target.trim().to_ascii_uppercase();
+}
+
+/// Queues a transactional email and hands it to the email worker.
+///
+/// Best-effort: a failure never fails the caller, but is logged with the
+/// template and subject (and outbox id once queued) so it can be traced or
+/// replayed. Returns whether the email was queued.
+async fn enqueue_email(
+    pool: &PgPool,
+    recipient: &str,
+    subject: &str,
+    template: &str,
+    payload: &impl Serialize,
+) -> bool {
+    let payload = match serde_json::to_value(payload) {
+        Ok(payload) => payload,
+        Err(e) => {
+            tracing::error!(template, subject, error = %e, "email not queued: payload failed to serialize");
+            return false;
+        }
+    };
+    let outbox = match db_core::email_outbox::insert_email_outbox(
+        pool, recipient, subject, template, &payload, 3,
+    )
+    .await
+    {
+        Ok(outbox) => outbox,
+        Err(e) => {
+            tracing::error!(template, subject, error = ?e, "email not queued: outbox insert failed");
+            return false;
+        }
+    };
+    let email_id = outbox.id;
+    let template = template.to_string();
+    tokio::spawn(async move {
+        let publisher = api_core::email_publisher::EmailPublisher::from_env();
+        if let Err(e) = publisher.publish_email_event(email_id).await {
+            tracing::error!(%email_id, %template, error = ?e, "email queued but not published; it will not be sent until the event is republished");
+        }
+    });
+    true
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CurrencyQuery {
+    pub currency: Option<String>,
+}
+
+/// Helper function enforcing that only booking guest, listing host, or administrator can view tax documents.
+/// Non-authenticated callers or unauthorized users receive 404 (do not leak existence).
+async fn check_booking_authorization(
+    req: &HttpRequest,
+    pool: &PgPool,
+    booking_id: Uuid,
+) -> Result<(), ApiError> {
+    let _ = authorize_booking_party(req, pool, booking_id).await?;
+    Ok(())
+}
+
+/// Validates that the request carries a valid JWT for the booking guest, listing host, or an administrator.
+/// Returns `404 Not Found` for unauthenticated callers or strangers to prevent IDOR enumeration.
+async fn authorize_booking_party(
+    req: &HttpRequest,
+    pool: &PgPool,
+    booking_id: Uuid,
+) -> Result<(db_core::models::BookingParties, db_core::models::User), ApiError> {
+    let parties = db_booking_message::get_booking_parties(pool, booking_id)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+
+    let mut dev_payload = actix_web::dev::Payload::None;
+    let claims = match api_core::auth::Claims::from_request(req, &mut dev_payload).into_inner() {
+        Ok(c) => c,
+        Err(_) => {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    };
+
+    let user = match db_core::user::get_user_by_id(pool, claims.sub).await {
+        Ok(u) => u,
+        Err(_) => {
+            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+                sqlx::Error::RowNotFound,
+            )));
+        }
+    };
+
+    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
+    let is_guest = claims.sub == parties.guest_id;
+    let is_host = claims.sub == parties.host_id;
+
+    if !is_admin && !is_guest && !is_host {
+        return Err(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )));
+    }
+
+    Ok((parties, user))
+}
+
+#[cfg(test)]
+mod tests;

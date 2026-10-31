@@ -21,6 +21,9 @@ pub enum DbError {
     /// A pending reservation change request already exists for this booking.
     #[error("A reservation change request is already pending for this booking")]
     ChangeRequestAlreadyPending,
+    /// The pending hold lapsed before the booking was confirmed.
+    #[error("The reservation hold has expired")]
+    HoldExpired,
 }
 
 // A custom `Result` type that defaults to using our `DbError`.

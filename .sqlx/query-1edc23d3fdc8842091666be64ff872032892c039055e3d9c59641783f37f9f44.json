@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency, deleted_at, slug\n            FROM \"user\" WHERE email = $1\n        ",
+  "query": "SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency, deleted_at, slug FROM \"user\" WHERE email = $1",
   "describe": {
     "columns": [
       {
@@ -132,5 +132,5 @@
       false
     ]
   },
-  "hash": "584e9f393f64c0faefb86a8297f7f3aab91ee91d9690c5e36ee49231d4a0f2a0"
+  "hash": "1edc23d3fdc8842091666be64ff872032892c039055e3d9c59641783f37f9f44"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency, deleted_at, slug\n            FROM \"user\" WHERE id = $1\n        ",
+  "query": "\n        UPDATE \"user\"\n        SET\n            is_verified = TRUE,\n            verification_code = NULL,\n            verification_code_expires_at = NULL,\n            updated_at = now()\n        WHERE id = $1 RETURNING id, email, password_hash, first_name, last_name, phone_number, is_active, is_verified, verification_code, verification_code_expires_at, created_at, updated_at, attributes, roles as \"roles: Vec<UserRole>\", default_currency, deleted_at, slug",
   "describe": {
     "columns": [
       {
@@ -132,5 +132,5 @@
       false
     ]
   },
-  "hash": "3e873fa993b6ccbb193fa1939f48cc0a18df134d4f0a03a849e23193c9cfe084"
+  "hash": "73d49e988da503abe6ab37f1ca1dfec9c91ff3af330e9790357a702f0866f5b3"
 }
