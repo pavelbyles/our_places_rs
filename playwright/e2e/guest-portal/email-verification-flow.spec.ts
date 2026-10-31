@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/base.fixture.js';
 import { execSync } from 'node:child_process';
 
 const DB_URL =
@@ -163,12 +163,9 @@ test.describe('Guest Portal - Email Pub/Sub & Verification Flow', () => {
       })
       .toBe(true);
 
-    // 10. Verify authenticated guest session in localStorage
-    const authUserJson = await page.evaluate(() => localStorage.getItem('op_auth_user'));
-    expect(authUserJson).not.toBeNull();
-    const authUser = JSON.parse(authUserJson!);
-    expect(authUser.email).toBe(testEmail);
-    expect(authUser.role).toBe('booker');
+    // 10. The navbar shows the signed-in guest menu
+    await expect(page.locator('#nav-user-dropdown')).toBeVisible();
+
   });
 
   test('should reject invalid 6-digit verification code', async ({ page }) => {

@@ -133,6 +133,7 @@ where
         r#"
         SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee,
         "user".first_name || ' ' || "user".last_name as owner_name,
+        "user".slug as owner_slug,
         primary_img.upload_url as primary_image_url
         FROM listing
         INNER JOIN "user" ON listing.user_id = "user".id
@@ -141,12 +142,12 @@ where
             FROM listing_image parent_img
             JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
             WHERE parent_img.listing_id = listing.id
-              AND parent_img.is_primary = TRUE
               AND thumb_img.resolution = "#,
     );
     query_builder.push_bind(parsed_res);
     query_builder.push(
         r#"::image_resolution
+            ORDER BY parent_img.is_primary DESC, parent_img.display_order
             LIMIT 1
         ) AS primary_img ON true
         WHERE listing.deleted_at IS NULL AND "user".is_active = TRUE
@@ -187,6 +188,11 @@ where
                 query_builder.push_bind(ids);
                 query_builder.push(")");
             }
+        }
+
+        if let Some(host) = f.host.as_deref().map(str::trim).filter(|h| !h.is_empty()) {
+            query_builder.push(" AND \"user\".slug = ");
+            query_builder.push_bind(host.to_lowercase());
         }
 
         if let Some(uid) = f.user_id {
@@ -234,8 +240,8 @@ where
             FROM listing_image parent_img
             JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
             WHERE parent_img.listing_id = listing.id
-              AND parent_img.is_primary = TRUE
               AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            ORDER BY parent_img.is_primary DESC, parent_img.display_order
             LIMIT 1
         ) AS primary_img ON true
         WHERE listing.user_id = $1 AND listing.deleted_at IS NULL
@@ -270,8 +276,8 @@ where
             FROM listing_image parent_img
             JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
             WHERE parent_img.listing_id = listing.id
-              AND parent_img.is_primary = TRUE
               AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+            ORDER BY parent_img.is_primary DESC, parent_img.display_order
             LIMIT 1
         ) AS primary_img ON true
         INNER JOIN "user" ON listing.user_id = "user".id
@@ -333,8 +339,8 @@ where
                 FROM listing_image parent_img
                 JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
                 WHERE parent_img.listing_id = listing.id
-                  AND parent_img.is_primary = TRUE
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+                ORDER BY parent_img.is_primary DESC, parent_img.display_order
                 LIMIT 1
             ) AS primary_img ON true
             INNER JOIN "user" ON listing.user_id = "user".id
@@ -355,8 +361,8 @@ where
                 FROM listing_image parent_img
                 JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id
                 WHERE parent_img.listing_id = listing.id
-                  AND parent_img.is_primary = TRUE
                   AND thumb_img.resolution = 'Thumbnail400w'::image_resolution
+                ORDER BY parent_img.is_primary DESC, parent_img.display_order
                 LIMIT 1
             ) AS primary_img ON true
             INNER JOIN "user" ON listing.user_id = "user".id
@@ -898,6 +904,47 @@ where
     Ok(())
 }
 
+/// Deletes a listing photo and its resized variants (they cascade). If it
+/// was the primary photo, the first remaining photo (processed ones first)
+/// becomes primary. A photo that is not on `listing_id` is `RowNotFound`.
+#[tracing::instrument(skip(tx))]
+pub async fn delete_listing_image(
+    tx: &mut sqlx::PgConnection,
+    listing_id: Uuid,
+    image_id: Uuid,
+) -> Result<()> {
+    let was_primary: bool = sqlx::query_scalar(
+        r#"
+        DELETE FROM listing_image
+        WHERE id = $1 AND listing_id = $2 AND parent_id IS NULL
+        RETURNING is_primary
+        "#,
+    )
+    .bind(image_id)
+    .bind(listing_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if was_primary {
+        sqlx::query(
+            r#"
+            UPDATE listing_image SET is_primary = TRUE, updated_at = NOW()
+            WHERE id = (
+                SELECT id FROM listing_image
+                WHERE listing_id = $1 AND parent_id IS NULL
+                ORDER BY (status = 'Processed') DESC, display_order, created_at
+                LIMIT 1
+            )
+            "#,
+        )
+        .bind(listing_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::explicit_auto_deref)]
 mod tests {
@@ -1349,6 +1396,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
             .await
@@ -1371,6 +1419,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
             .await
@@ -1391,6 +1440,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
             .await
@@ -1457,6 +1507,76 @@ mod tests {
             Ok(_) => println!("Successfully updated image"),
             Err(e) => panic!("Database error occurred: {:?}", e),
         }
+    }
+
+    #[tokio::test]
+    async fn test_delete_listing_image_promotes_next_primary() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.expect("Failed to begin transaction");
+
+        let user_id = create_test_user_with_host_profile(&mut *tx).await;
+        let listing = NewListing {
+            name: "Test Image Delete Listing".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Testland".to_string(),
+            price_per_night: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+        };
+        let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
+        let images: Vec<_> = (0..2)
+            .map(|i| {
+                let md = common::models::PendingImageMetadata {
+                    client_file_id: i.to_string(),
+                    content_type: "image/jpeg".to_string(),
+                    size_bytes: 1024,
+                    display_order: i,
+                };
+                (Uuid::now_v7(), md, "https://upload.url".to_string())
+            })
+            .collect();
+        let presigns = create_listing_image_presigns(&mut *tx, created_listing.id, &images)
+            .await
+            .unwrap();
+        let (first, second) = (presigns[0].id, presigns[1].id);
+
+        // Another listing's id never matches.
+        let wrong = delete_listing_image(&mut tx, Uuid::now_v7(), first).await;
+        assert!(matches!(
+            wrong,
+            Err(DbError::Sqlx(sqlx::Error::RowNotFound))
+        ));
+
+        delete_listing_image(&mut tx, created_listing.id, first)
+            .await
+            .unwrap();
+        let primary: bool =
+            sqlx::query_scalar("SELECT is_primary FROM listing_image WHERE id = $1")
+                .bind(second)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert!(primary);
     }
 
     #[tokio::test]
@@ -1609,6 +1729,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results1 = get_listings(&mut *tx, 1, 10, Some(filter1)).await.unwrap();
         assert_eq!(results1.len(), 1);
@@ -1625,6 +1746,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: None,
+            host: None,
         };
         let results2 = get_listings(&mut *tx, 1, 10, Some(filter2)).await.unwrap();
         assert_eq!(results2.len(), 1);
@@ -1641,6 +1763,7 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: Some(u1.id),
+            host: None,
         };
         let results_uid1 = get_listings(&mut *tx, 1, 10, Some(filter_uid1))
             .await
@@ -1659,12 +1782,32 @@ mod tests {
             resolution: None,
             currency: None,
             user_id: Some(u2.id),
+            host: None,
         };
         let results_uid2 = get_listings(&mut *tx, 1, 10, Some(filter_uid2))
             .await
             .unwrap();
         assert_eq!(results_uid2.len(), 1);
         assert_eq!(results_uid2[0].name, "Host 2 Listing");
+
+        // Public host filter: by slug only, and each result carries it.
+        let by_host = |host: &str| common::models::ListingFilter {
+            host: Some(host.to_string()),
+            ..Default::default()
+        };
+        let results_host1 = get_listings(&mut *tx, 1, 10, Some(by_host(&u1.slug)))
+            .await
+            .unwrap();
+        assert_eq!(results_host1.len(), 1);
+        assert_eq!(results_host1[0].name, "Host 1 Listing");
+        assert_eq!(
+            results_host1[0].owner_slug.as_deref(),
+            Some(u1.slug.as_str())
+        );
+        let results_unknown = get_listings(&mut *tx, 1, 10, Some(by_host("no-such-host-xyz")))
+            .await
+            .unwrap();
+        assert!(results_unknown.is_empty());
     }
 
     #[tokio::test]

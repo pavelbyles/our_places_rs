@@ -24,13 +24,10 @@ pub fn init_subscriber() {
     let registry = tracing_subscriber::registry().with(filter_layer);
 
     match log_format.to_lowercase().as_str() {
+        // Cloud Logging format; no span open/close lines, since each event
+        // already carries its spans' fields (Cloud Run logs request latency).
         "json" => {
-            let _ = registry
-                .with(tracing_subscriber::fmt::layer().json().with_span_events(
-                    tracing_subscriber::fmt::format::FmtSpan::NEW
-                        | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
-                ))
-                .try_init();
+            let _ = registry.with(common::cloud_logging::layer()).try_init();
         }
         _ => {
             let _ = registry

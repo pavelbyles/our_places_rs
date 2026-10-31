@@ -9,9 +9,10 @@ members = [
     "common",
     "db_core",
     "protoproj",
-    "web_app_common_tc",
-    "web_app_tc",
-    "web_app_admin_tc",
+    "web_client",
+    "web_ui_common",
+    "web_ui_guest",
+    "web_ui_admin",
 ]
 resolver = "2"
 
@@ -20,9 +21,10 @@ actix-web = "4.13.0"
 api_core = { path = "app_api/api_core" }
 common = { path = "common" }
 db_core = { path = "db_core" }
-topcoat = { version = "0.10.0", features = ["htmx", "tailwind", "session"] }
+topcoat = { version = "0.11.0", features = ["htmx", "tailwind", "session"] }
 
-web_app_common_tc = { path = "web_app_common_tc" }
+web_client = { path = "web_client" }
+web_ui_common = { path = "web_ui_common" }
 anyhow = "1.0.102"
 dotenvy = "0.15.7"
 rust_decimal_macros = "1.40.0"
@@ -36,15 +38,15 @@ tracing-subscriber = "0.3.23"
 reqwest = { version = "0.13.5", features = ["json"] }
 metrics = "0.24.1"
 metrics-exporter-prometheus = { version = "0.18.3", default-features = false }
-jsonwebtoken = "9.3.0"
+jsonwebtoken = { version = "11.1.0", features = ["aws_lc_rs"] }
 rand = "0.10.3"
 google-cloud-storage = "1.20.0"
-topcoat-asset = { version = "0.10.0", features = ["bundler"] }
+topcoat-asset = { version = "0.11.0", features = ["bundler"] }
 async-trait = "0.1.89"
 bcrypt = "0.19.0"
 base64 = "0.23.1"
 subtle = "2.6.1"
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 
 [workspace.dependencies.chrono]
 version = "0.4.44"

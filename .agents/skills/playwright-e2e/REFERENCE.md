@@ -4,10 +4,10 @@
 
 | Project Name | Portal | Base URL | Primary Test Specs |
 | :--- | :--- | :--- | :--- |
-| `guest-portal-chromium` | Guest Portal | `http://localhost:3000` | `playwright/e2e/guest-portal/*.spec.ts` |
-| `guest-portal-firefox` | Guest Portal | `http://localhost:3000` | `playwright/e2e/guest-portal/*.spec.ts` |
-| `admin-portal-chromium` | Admin Portal | `http://localhost:3002` | `playwright/e2e/admin-portal/*.spec.ts` |
-| `admin-portal-firefox` | Admin Portal | `http://localhost:3002` | `playwright/e2e/admin-portal/*.spec.ts` |
+| `guest-portal-chromium` | Guest Portal | `http://localhost:3010` | `playwright/e2e/guest-portal/*.spec.ts` |
+| `guest-portal-firefox` | Guest Portal | `http://localhost:3010` | `playwright/e2e/guest-portal/*.spec.ts` |
+| `admin-portal-chromium` | Admin Portal | `http://localhost:3012` | `playwright/e2e/admin-portal/*.spec.ts` |
+| `admin-portal-firefox` | Admin Portal | `http://localhost:3012` | `playwright/e2e/admin-portal/*.spec.ts` |
 | `backend-api` | Backend APIs | `http://localhost:8082` | `playwright/e2e/api/*.spec.ts` |
 
 ## 2. Infrastructure Dependencies
@@ -25,8 +25,8 @@ Playwright `globalSetup` in `playwright/e2e/setup/global-setup.ts` automatically
 ## 3. Topcoat Dev Server Orchestration
 
 Handled proactively by `stack-start` / `frontends-start`:
-- **Guest Portal (`:3000`)**: `cd web_app_tc && PORT=3000 topcoat dev`
-- **Admin Portal (`:3002`)**: `cd web_app_admin_tc && PORT=3002 topcoat dev`
+- **Guest Portal (`:3010`)**: `cd web_ui_guest && PORT=3010 JWT_SECRET=secret topcoat dev`
+- **Admin Portal (`:3012`)**: `cd web_ui_admin && PORT=3012 JWT_SECRET=secret topcoat dev`
 - `playwright/playwright.config.ts` configures `reuseExistingServer: true` to attach immediately to the running instances with zero startup latency.
 
 ## 4. Authentication Fixture Guidelines

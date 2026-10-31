@@ -129,75 +129,23 @@ services:
       listing_api:
         condition: service_healthy
 
-  web_app:
+  web_ui_guest:
     build:
       context: .
-      dockerfile: web_app/Dockerfile.web_app
+      dockerfile: Dockerfile.web_ui_guest
       args:
-        RELEASE_FLAG: ${WEB_APP_RELEASE_FLAG:-}
-        LEPTOS_ENV: ${WEB_APP_LEPTOS_ENV:-DEV}
+        RELEASE_FLAG: ${WEB_UI_GUEST_RELEASE_FLAG:-}
     ports:
-      - "8080:8080"
+      - "3010:8080"
     environment:
-      - RUST_LOG=info,web_app=debug
-      - LISTING_API_URL=http://listing_api:8080
-      - USER_API_URL=http://user_api:8080
-      - BOOKING_API_URL=http://booking_api:8080
-      - LEPTOS_SITE_ADDR=0.0.0.0:8080
-    depends_on:
-      db:
-        condition: service_healthy
-      listing_api:
-        condition: service_healthy
-      user_api:
-        condition: service_healthy
-      booking_api:
-        condition: service_healthy
-
-  web_app_admin:
-    build:
-      context: .
-      dockerfile: web_app_admin/Dockerfile.web_app_admin
-      args:
-        RELEASE_FLAG: ${WEB_APP_ADMIN_RELEASE_FLAG:-}
-        LEPTOS_ENV: ${WEB_APP_ADMIN_LEPTOS_ENV:-DEV}
-    ports:
-      - "8085:8080"
-    environment:
-      - RUST_LOG=info,web_app_admin=debug
-      - LISTING_API_URL=http://listing_api:8080
-      - USER_API_URL=http://user_api:8080
-      - BOOKING_API_URL=http://booking_api:8080
-      - LEPTOS_SITE_ADDR=0.0.0.0:8080
-      - DATABASE_URL=postgres://postgres:password@db:5432/our_places
-    depends_on:
-      db:
-        condition: service_healthy
-      listing_api:
-        condition: service_healthy
-      user_api:
-        condition: service_healthy
-      booking_api:
-        condition: service_healthy
-
-  web_app_tc:
-    build:
-      context: .
-      dockerfile: web_app_tc/Dockerfile.web_app_tc
-      args:
-        RELEASE_FLAG: ${WEB_APP_TC_RELEASE_FLAG:-}
-    ports:
-      - "3000:8080"
-    environment:
-      - RUST_LOG=info,web_app_tc=debug
+      - RUST_LOG=info,web_ui_guest=debug
       - HOST=0.0.0.0
       - PORT=8080
+      - JWT_SECRET=${JWT_SECRET:-secret}
       - LISTING_API_URL=http://listing_api:8080
       - USER_API_URL=http://user_api:8080
       - BOOKING_API_URL=http://booking_api:8080
     depends_on:
-      db:
-        condition: service_healthy
       listing_api:
         condition: service_healthy
       user_api:
@@ -205,25 +153,23 @@ services:
       booking_api:
         condition: service_healthy
 
-  web_app_admin_tc:
+  web_ui_admin:
     build:
       context: .
-      dockerfile: web_app_admin_tc/Dockerfile.web_app_admin_tc
+      dockerfile: Dockerfile.web_ui_admin
       args:
-        RELEASE_FLAG: ${WEB_APP_ADMIN_TC_RELEASE_FLAG:-}
+        RELEASE_FLAG: ${WEB_UI_ADMIN_RELEASE_FLAG:-}
     ports:
-      - "3002:8080"
+      - "3012:8080"
     environment:
-      - RUST_LOG=info,web_app_admin_tc=debug
+      - RUST_LOG=info,web_ui_admin=debug
       - HOST=0.0.0.0
       - PORT=8080
+      - JWT_SECRET=${JWT_SECRET:-secret}
       - LISTING_API_URL=http://listing_api:8080
       - USER_API_URL=http://user_api:8080
       - BOOKING_API_URL=http://booking_api:8080
-      - DATABASE_URL=postgres://postgres:password@db:5432/our_places
     depends_on:
-      db:
-        condition: service_healthy
       listing_api:
         condition: service_healthy
       user_api:

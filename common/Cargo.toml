@@ -25,6 +25,7 @@ sqlx = { workspace = true, optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 google-cloud-storage = { workspace = true }
 google-cloud-auth = "1.6.0"
+tracing-subscriber = { workspace = true, features = ["json"] }
 
 [dev-dependencies]
 rand = { workspace = true }

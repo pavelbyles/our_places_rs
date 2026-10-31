@@ -141,6 +141,9 @@ pub struct UpdateUserRequest {
     pub host_profile: Option<NewHostProfile>,
     /// User's preferred default display currency.
     pub default_currency: Option<String>,
+    /// New public handle; cleaned up with [`crate::slug::user_slug`].
+    #[serde(default)]
+    pub slug: Option<String>,
 }
 
 /// DTO representing a property listing in API responses.
@@ -170,6 +173,9 @@ pub struct ListingResponse {
     pub added_at: DateTime<Utc>,
     /// Display name of the owner/host.
     pub owner_name: Option<String>,
+    /// Slug of the owner/host, for `/listings?host={slug}` links.
+    #[serde(default)]
+    pub owner_slug: Option<String>,
     /// Primary hero image URL.
     pub primary_image_url: Option<String>,
     /// Maximum allowed guest count.
@@ -357,6 +363,9 @@ pub struct ListingFilter {
     /// Optional owner user identifier filter for exact host scoping.
     #[serde(default)]
     pub user_id: Option<Uuid>,
+    /// Optional host slug filter (public; matches `user.slug` exactly).
+    #[serde(default)]
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
@@ -374,6 +383,8 @@ pub struct ListingQueryParams {
     pub currency: Option<String>,
     /// Optional owner user identifier query parameter for host listings scoping.
     pub user_id: Option<Uuid>,
+    /// Optional host slug: only that host's listings.
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -392,6 +403,9 @@ pub struct UserResponse {
     pub roles: Vec<String>,
     pub default_currency: String,
     pub deleted_at: Option<DateTime<Utc>>,
+    /// Unique public handle, e.g. `jane-brown`.
+    #[serde(default)]
+    pub slug: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]

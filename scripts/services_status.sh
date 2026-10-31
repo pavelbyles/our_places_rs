@@ -109,7 +109,7 @@ collect_pids() {
         LISTEN_PIDS["$port"]="$pid"
         LISTEN_CMDS["$port"]="$cmd"
       fi
-    done < <(lsof -iTCP:3000,3002,5432,8080,8081,8082,8083,8084,8085 -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 || true)
+    done < <(lsof -iTCP:3010,3012,4443,5432,8080,8081,8082,8083,8084,8085 -sTCP:LISTEN -n -P 2>/dev/null | tail -n +2 || true)
   fi
 }
 
@@ -156,22 +156,19 @@ get_http_code() {
 run_check() {
   collect_pids
 
-  # Define core services: Category | Service Name | Port | Type (db, pubsub, api, frontend)
+  # Define core services: Category | Service Name | Port | Type (db, pubsub, gcs, api, frontend)
   local services=(
     "Database|PostgreSQL|5432|db"
     "Pub/Sub|Pub/Sub Emulator|8085|pubsub"
+    "Storage|GCS Emulator (fake-gcs)|4443|gcs"
     "API|Email Worker|8080|api"
     "API|Booking API|8081|api"
     "API|Listing API|8082|api"
     "API|User API|8083|api"
-    "Frontend|Guest Portal (web_app_tc)|3000|frontend"
-    "Frontend|Admin Portal (web_app_admin_tc)|3002|frontend"
+    "API|Image Worker|8084|api"
+    "Frontend|Guest Portal (web_ui_guest)|3010|frontend"
+    "Frontend|Admin Portal (web_ui_admin)|3012|frontend"
   )
-
-  # Include Image Worker if active or --all requested
-  if [[ "$SHOW_ALL" == true ]] || is_port_open 8084; then
-    services+=("API|Image Worker|8084|api")
-  fi
 
   local count_total=${#services[@]}
   local count_up=0
@@ -236,6 +233,22 @@ run_check() {
           fi
           ;;
 
+        gcs)
+          local code
+          code=$(get_http_code "http://localhost:${port}/storage/v1/b")
+          if [[ "$code" == "200" ]]; then
+            status="UP"
+            local buckets
+            buckets=$(curl -s --connect-timeout 2 --max-time 3 "http://localhost:${port}/storage/v1/b" 2>/dev/null | jq -r '.items // [] | length' 2>/dev/null || echo "0")
+            details="Emulator active ($buckets bucket$([[ $buckets -ne 1 ]] && echo "s"))"
+            count_up=$((count_up + 1))
+          else
+            status="DEGRADED"
+            details="HTTP $code"
+            count_degraded=$((count_degraded + 1))
+          fi
+          ;;
+
         api)
           local code
           code=$(get_http_code "http://127.0.0.1:${port}/health")
@@ -271,7 +284,8 @@ run_check() {
         frontend)
           local code
           code=$(get_http_code "http://127.0.0.1:${port}/")
-          if [[ "$code" == "200" || "$code" == "302" || "$code" == "301" ]]; then
+          # Redirects count as serving (web_ui_admin answers / with 308 to /admin).
+          if [[ "$code" == "200" || "$code" =~ ^30[1278]$ ]]; then
             status="UP"
             details="Serving (HTTP $code OK)"
             count_up=$((count_up + 1))
@@ -362,8 +376,9 @@ run_check() {
     printf "${C_BOLD}Service Recovery Helpers:${C_RESET}\n"
     printf "  • Start everything (APIs + Frontends + DB): ${C_CYAN}fullstack${C_RESET}\n"
     printf "  • Start APIs + DB in background:           ${C_CYAN}apis-start${C_RESET} (or ${C_CYAN}apis${C_RESET} for foreground)\n"
-    printf "  • Start Topcoat frontends:                 ${C_CYAN}frontends${C_RESET}\n"
+    printf "  • Start Topcoat UI portals:                ${C_CYAN}frontends${C_RESET}\n"
     printf "  • Start Pub/Sub emulator:                  ${C_CYAN}pubsub-start${C_RESET}\n"
+    printf "  • Start Cloud Storage emulator:            ${C_CYAN}gcs-start${C_RESET} (after pubsub-start)\n"
     printf "  • Start PostgreSQL database:               ${C_CYAN}db-start${C_RESET}\n"
   fi
 

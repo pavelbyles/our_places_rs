@@ -4,8 +4,24 @@
   # Automatically load .env (DATABASE_URL, JWT_SECRET, etc.)
   dotenv.enable = true;
 
-  # Rust Toolchain (rustc 1.98+, cargo, clippy, rustfmt, rust-analyzer)
-  languages.rust.enable = true;
+  # Publish outbox emails to the local emulator started by `pubsub-start`,
+  # not Google Cloud (which rejects unauthenticated local publishes with 403).
+  env.PUBSUB_EMULATOR_HOST = "127.0.0.1:8085";
+
+  # Store listing photos in the local Cloud Storage emulator started by
+  # `gcs-start` (fake-gcs-server), not Google Cloud. Uploads there publish to
+  # the Pub/Sub emulator, which pushes them to the local image_worker.
+  env.STORAGE_EMULATOR_HOST = "http://localhost:4443";
+  env.GCS_RAW_BUCKET = "our-places-gcs-img-raw-local";
+  env.GCS_PUBLIC_BUCKET = "our-places-gcs-img-public-local";
+
+  # Rust Toolchain pinned to match the Dockerfiles (rustc, cargo, clippy,
+  # rustfmt, rust-analyzer). Topcoat 0.11 requires rustc 1.99.
+  languages.rust = {
+    enable = true;
+    channel = "stable";
+    version = "1.99.1";
+  };
 
   # JavaScript/Node.js Toolchain (node & npm for DaisyUI / Tailwind)
   languages.javascript = {
@@ -38,6 +54,7 @@
     pkgs.curl
     pkgs.jq
     (pkgs.google-cloud-sdk.withExtraComponents [ pkgs.google-cloud-sdk.components.pubsub-emulator ])
+    pkgs.fake-gcs-server
   ];
 
   # Fast git pre-commit formatting check
@@ -139,11 +156,9 @@
     test-ci-matrix.exec = ''
       set -e
       echo "--> Running Backend & Shared Domain Tests (mirrors test-api)..."
-      cargo test --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
-      echo "--> Running Topcoat Web & Common Tests (mirrors test-web-tc)..."
-      cargo test -p web_app_tc -p web_app_common_tc
-      echo "--> Running Topcoat Admin Tests (mirrors test-web-admin-tc)..."
-      cargo test -p web_app_admin_tc
+      cargo test --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+      echo "--> Running Web UI Tests (mirrors test-web-ui)..."
+      cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin
     '';
 
     # Float-Ban & Booking Logic Audit (.agents/workflows/audit-booking-flow.md)
@@ -190,8 +205,15 @@
         curl -s -X PUT http://127.0.0.1:8085/v1/projects/our-places-dev/topics/email-notifications-topic >/dev/null 2>&1 || true
         curl -s -X PUT http://127.0.0.1:8085/v1/projects/our-places-dev/subscriptions/email-worker-sub \
           -H "Content-Type: application/json" \
-          -d '{"topic":"projects/our-places-dev/topics/email-notifications-topic","pushConfig":{"pushEndpoint":"http://127.0.0.1:8080/pubsub/email-events"}}' >/dev/null 2>&1 || true
+          -d '{"topic":"projects/our-places-dev/topics/email-notifications-topic","ackDeadlineSeconds":60,"pushConfig":{"pushEndpoint":"http://127.0.0.1:8080/pubsub/email-events"}}' >/dev/null 2>&1 || true
         echo "✓ Pub/Sub topic [email-notifications-topic] and push subscription [email-worker-sub -> :8080] ready."
+        # Raw photo uploads (published by fake-gcs-server). Resizing a photo
+        # in a debug build can take a while, hence the long ack deadline.
+        curl -s -X PUT http://127.0.0.1:8085/v1/projects/our-places-dev/topics/gcs-image-uploads >/dev/null 2>&1 || true
+        curl -s -X PUT http://127.0.0.1:8085/v1/projects/our-places-dev/subscriptions/image-worker-sub \
+          -H "Content-Type: application/json" \
+          -d '{"topic":"projects/our-places-dev/topics/gcs-image-uploads","ackDeadlineSeconds":300,"pushConfig":{"pushEndpoint":"http://127.0.0.1:8084/api/v1/internal/image/process_image"}}' >/dev/null 2>&1 || true
+        echo "✓ Pub/Sub topic [gcs-image-uploads] and push subscription [image-worker-sub -> :8084] ready."
       else
         echo "❌ Failed to start Pub/Sub emulator. Check /tmp/pubsub_emulator.log"
       fi
@@ -208,12 +230,72 @@
       echo "✓ Pub/Sub emulator stopped."
     '';
 
+    # Local Cloud Storage emulator (fake-gcs-server) on localhost:4443. Data
+    # persists under .devenv/state/fake-gcs. Run after `pubsub-start`: raw
+    # uploads publish to the [gcs-image-uploads] topic.
+    gcs-start.exec = ''
+      GCS_DIR="$DEVENV_STATE/fake-gcs"
+      mkdir -p "$GCS_DIR/data"
+      # Throwaway key for signing upload URLs locally. The emulator doesn't
+      # check signatures, so no real service-account key is needed.
+      if [ ! -f "$GCS_DIR/signing-key.json" ]; then
+        openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$GCS_DIR/signing-key.pem" 2>/dev/null
+        jq -n --rawfile key "$GCS_DIR/signing-key.pem" '{
+          type: "service_account",
+          project_id: "our-places-dev",
+          private_key_id: "local-fake-gcs",
+          private_key: $key,
+          client_email: "local-dev@our-places-dev.iam.gserviceaccount.com",
+          client_id: "0",
+          token_uri: "https://oauth2.googleapis.com/token"
+        }' > "$GCS_DIR/signing-key.json"
+        chmod 600 "$GCS_DIR/signing-key.json"
+        rm -f "$GCS_DIR/signing-key.pem"
+      fi
+      if ! (echo > /dev/tcp/127.0.0.1/4443) >/dev/null 2>&1; then
+        echo "Starting Cloud Storage emulator (fake-gcs-server) on localhost:4443..."
+        nohup fake-gcs-server -scheme http -host 127.0.0.1 -port 4443 \
+          -public-host localhost:4443 -external-url http://localhost:4443 \
+          -backend filesystem -filesystem-root "$GCS_DIR/data" \
+          -event.pubsub-project-id our-places-dev -event.pubsub-topic gcs-image-uploads \
+          -event.bucket "$GCS_RAW_BUCKET" -cors-headers content-type \
+          > /tmp/fake_gcs.log 2>&1 &
+        echo $! > /tmp/fake_gcs.pid
+      fi
+      retries=15
+      until (echo > /dev/tcp/127.0.0.1/4443) >/dev/null 2>&1 || [ $retries -eq 0 ]; do
+        sleep 1
+        retries=$((retries - 1))
+      done
+      if (echo > /dev/tcp/127.0.0.1/4443) >/dev/null 2>&1; then
+        echo "✓ Cloud Storage emulator is listening on localhost:4443"
+        for bucket in "$GCS_RAW_BUCKET" "$GCS_PUBLIC_BUCKET"; do
+          curl -s -X POST "http://localhost:4443/storage/v1/b?project=our-places-dev" \
+            -H "Content-Type: application/json" -d "{\"name\":\"$bucket\"}" >/dev/null 2>&1 || true
+        done
+        echo "✓ Buckets [$GCS_RAW_BUCKET] and [$GCS_PUBLIC_BUCKET] ready."
+      else
+        echo "❌ Failed to start Cloud Storage emulator. Check /tmp/fake_gcs.log"
+      fi
+    '';
+
+    gcs-stop.exec = ''
+      echo "Stopping Cloud Storage emulator..."
+      if [ -f /tmp/fake_gcs.pid ]; then
+        kill "$(cat /tmp/fake_gcs.pid)" 2>/dev/null || true
+        rm -f /tmp/fake_gcs.pid
+      fi
+      pkill -f "fake-gcs-server.*4443" 2>/dev/null || true
+      echo "✓ Cloud Storage emulator stopped."
+    '';
+
     # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
       db-start
       pubsub-start
-      echo "Starting API microservices (listing_api, booking_api, user_api, email_worker)..."
-      devenv up listing_api booking_api user_api email_worker "$@"
+      gcs-start
+      echo "Starting API microservices (listing_api, booking_api, user_api, email_worker, image_worker)..."
+      devenv up listing_api booking_api user_api email_worker image_worker "$@"
     '';
 
     # Ensure database and API microservices are active in background (detached)
@@ -221,8 +303,9 @@
       db-start
       db-migrate
       pubsub-start
-      echo "Starting API microservices in background (listing_api, booking_api, user_api, email_worker)..."
-      devenv up -d listing_api booking_api user_api email_worker "$@"
+      gcs-start
+      echo "Starting API microservices in background (listing_api, booking_api, user_api, email_worker, image_worker)..."
+      devenv up -d listing_api booking_api user_api email_worker image_worker "$@"
     '';
 
     # Stop API microservices
@@ -232,33 +315,36 @@
       devenv processes stop booking_api || true
       devenv processes stop user_api || true
       devenv processes stop email_worker || true
+      devenv processes stop image_worker || true
+      gcs-stop
       pubsub-stop
     '';
 
-    # Launch Topcoat frontends with topcoat dev
+    # Launch the Topcoat UI portals with topcoat dev
     frontends.exec = ''
-      echo "Starting Topcoat frontends (web_app_tc on :3000, web_app_admin_tc on :3002)..."
-      devenv up web_app_tc web_app_admin_tc "$@"
+      echo "Starting portals (web_ui_guest on :3010, web_ui_admin on :3012)..."
+      devenv up web_ui_guest web_ui_admin "$@"
     '';
 
-    # Stop Topcoat frontends
+    # Stop the Topcoat UI portals
     frontends-stop.exec = ''
-      echo "Stopping Topcoat frontends..."
-      devenv processes stop web_app_tc || true
-      devenv processes stop web_app_admin_tc || true
+      echo "Stopping portals..."
+      devenv processes stop web_ui_guest || true
+      devenv processes stop web_ui_admin || true
     '';
 
     # Launch full application stack (APIs + Topcoat frontends, DB kept running continuously)
     fullstack.exec = ''
-      echo "Starting full development stack (APIs, Frontends, Pub/Sub emulator, database)..."
+      echo "Starting full development stack (APIs, Frontends, Pub/Sub and Cloud Storage emulators, database)..."
       db-start
       pubsub-start
-      devenv up listing_api booking_api user_api email_worker web_app_tc web_app_admin_tc "$@"
+      gcs-start
+      devenv up listing_api booking_api user_api email_worker image_worker web_ui_guest web_ui_admin "$@"
     '';
 
     # Services status inspection
     services-status.exec = ''
-      scripts/services_status.sh "$@"
+      "$DEVENV_ROOT/scripts/services_status.sh" "$@"
     '';
 
     # Playwright E2E Testing
@@ -337,15 +423,21 @@
       cd app_api/email_worker && ./run_local.sh
     '';
 
-
-    # Guest Portal Frontend (Topcoat SSR & HTMX)
-    web_app_tc.exec = ''
-      cd web_app_tc && CARGO_TARGET_DIR=../target/guest topcoat dev
+    # Image Worker (Port 8084): resizes photos pushed from the raw bucket
+    image_worker.exec = ''
+      cd app_api/image_worker && ./run_local.sh
     '';
 
-    # Admin Portal Frontend (Topcoat SSR & HTMX)
-    web_app_admin_tc.exec = ''
-      cd web_app_admin_tc && CARGO_TARGET_DIR=../target/admin topcoat dev
+
+    # Guest Portal (Topcoat UI). It refuses to start without JWT_SECRET;
+    # local backends fall back to "secret", so match that.
+    web_ui_guest.exec = ''
+      cd web_ui_guest && PORT=3010 JWT_SECRET="''${JWT_SECRET:-secret}" CARGO_TARGET_DIR=../target/ui_guest topcoat dev
+    '';
+
+    # Admin Portal (Topcoat UI)
+    web_ui_admin.exec = ''
+      cd web_ui_admin && PORT=3012 JWT_SECRET="''${JWT_SECRET:-secret}" CARGO_TARGET_DIR=../target/ui_admin topcoat dev
     '';
   };
 
@@ -364,15 +456,19 @@
     echo "           - booking_api:      :8081"
     echo "           - listing_api:      :8082"
     echo "           - user_api:         :8083"
+    echo "           - image_worker:     :8084"
     echo "           - pubsub_emulator:  :8085"
+    echo "           - gcs_emulator:     :4443"
     echo "       • apis-start     (launch DB + Pub/Sub + APIs in background / detached)"
     echo "       • apis-stop      (stop background APIs & Pub/Sub)"
     echo "       • pubsub-start   (start Pub/Sub emulator + init topic & push subscription)"
     echo "       • pubsub-stop    (stop Pub/Sub emulator)"
-    echo "       • frontends      (launch Topcoat frontends):"
-    echo "           - web_app_tc:       :3000 (guest)"
-    echo "           - web_app_admin_tc: :3002 (admin)"
-    echo "       • frontends-stop (stop Topcoat frontends)"
+    echo "       • gcs-start      (start Cloud Storage emulator + create photo buckets)"
+    echo "       • gcs-stop       (stop Cloud Storage emulator)"
+    echo "       • frontends      (launch Topcoat UI portals):"
+    echo "           - web_ui_guest:     :3010 (guest)"
+    echo "           - web_ui_admin:     :3012 (admin)"
+    echo "       • frontends-stop (stop portals)"
     echo "       • fullstack      (launch full stack: DB + APIs + Frontends)"
     echo "       • services-status(inspect status of APIs, Frontends, Database, and Pub/Sub)"
     echo "       • test-e2e       (run Playwright end-to-end tests across Chromium & Firefox)"

@@ -1,0 +1,106 @@
+/* "Shoreline Mist", the guest portal theme. Token values are copied verbatim
+   from docs/design/guest-theme.md §1; tests/theme_tokens.rs fails if they
+   drift. Light is `:root`; `.dim` and `.dark` go on <html>. */
+
+@import "./base.css";
+
+@theme inline {
+  --font-sans: "Inter", sans-serif;
+  --font-serif: "Newsreader", serif;
+  --radius-control: 10px;
+  --radius-surface: 16px;
+  --radius-media: 12px;
+}
+
+:root {
+  --background: #EEF3F4;
+  --foreground: #0F2A33;
+  --card: #FFFFFF;
+  --card-foreground: #0F2A33;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F2A33;
+  --muted-foreground: #4E6670;
+  --primary: #245A6D;
+  --primary-foreground: #FFFFFF;
+  --destructive: #B42318;
+  --destructive-foreground: #FFFFFF;
+  --border: #D3DEE2;
+  --ring: #245A6D;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0F2A33;
+  --sidebar-primary: #245A6D;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #E3EEF1;
+  --sidebar-accent-foreground: #0F2A33;
+  --sidebar-border: #D3DEE2;
+  --sidebar-ring: #245A6D;
+
+  --divider: #E3EAEC;
+  --chip: #E3EEF1;
+  --photo-placeholder: #D4E3E7;
+
+  --link: var(--primary);
+  --shadow-xs: 0 1px 2px rgb(15 42 51 / 0.08);
+  --shadow-sm: 0 1px 2px rgb(15 42 51 / 0.08);
+}
+
+.dim {
+  --background: #D9E2E5;
+  --foreground: #0F2A33;
+  --card: #EAF0F2;
+  --card-foreground: #0F2A33;
+  --popover: #EAF0F2;
+  --popover-foreground: #0F2A33;
+  --muted-foreground: #41575F;
+  --primary: #1E5062;
+  --primary-foreground: #FFFFFF;
+  --destructive: #A11F15;
+  --destructive-foreground: #FFFFFF;
+  --border: #BBC9CF;
+  --ring: #1E5062;
+  --sidebar: #EAF0F2;
+  --sidebar-foreground: #0F2A33;
+  --sidebar-primary: #1E5062;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #CCDCE1;
+  --sidebar-accent-foreground: #0F2A33;
+  --sidebar-border: #BBC9CF;
+  --sidebar-ring: #1E5062;
+
+  --divider: #CDD8DC;
+  --chip: #CCDCE1;
+  --photo-placeholder: #BFD2D8;
+}
+
+.dark {
+  --background: #34404F;
+  --foreground: #EEF2F6;
+  --card: #3E4A5B;
+  --card-foreground: #EEF2F6;
+  --popover: #3E4A5B;
+  --popover-foreground: #EEF2F6;
+  --muted-foreground: #BAC4D0;
+  --primary: #AECBEB;
+  --primary-foreground: #1E2A38;
+  --destructive: #F4A79D;
+  --destructive-foreground: #3A1410;
+  --border: #4D5A6C;
+  --ring: #AECBEB;
+  --sidebar: #3E4A5B;
+  --sidebar-foreground: #EEF2F6;
+  --sidebar-primary: #AECBEB;
+  --sidebar-primary-foreground: #1E2A38;
+  --sidebar-accent: #465365;
+  --sidebar-accent-foreground: #EEF2F6;
+  --sidebar-border: #4D5A6C;
+  --sidebar-ring: #AECBEB;
+
+  --divider: #465365;
+  --chip: #465365;
+  --photo-placeholder: #4A5970;
+
+  /* A step lighter than --primary for reading on --background (§1). */
+  --link: #BCD5F0;
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+}

@@ -32,6 +32,7 @@ use validator::Validate;
         (status = 500, description = "Internal server error")
     )
 )]
+#[tracing::instrument(skip(pool, req))]
 pub async fn get_listings(
     pool: web::Data<sqlx::PgPool>,
     query: web::Query<common::models::ListingQueryParams>,
@@ -71,6 +72,7 @@ pub async fn get_listings(
         resolution: query.resolution.clone(),
         currency: query.currency.clone(),
         user_id: query.user_id,
+        host: query.host.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -114,7 +116,7 @@ pub struct CurrencyQuery {
     pub currency: Option<String>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}",
@@ -168,7 +170,7 @@ async fn get_listing_by_id(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings",
@@ -286,7 +288,7 @@ async fn create_listing(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/listings/{id}",
@@ -381,7 +383,7 @@ pub struct DeleteListingParams {
     pub hard_delete: Option<bool>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}",
@@ -397,7 +399,7 @@ pub struct DeleteListingParams {
     )
 )]
 async fn delete_listing(
-    req: HttpRequest,
+    _req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     query: web::Query<DeleteListingParams>,
@@ -416,7 +418,7 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/images/presign",
@@ -508,6 +510,39 @@ async fn presign_batch(
     ))
 }
 
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/listings/{id}/images/{image_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("image_id" = String, Path, description = "Photo UUID (the original upload, not a resized variant)")
+    ),
+    responses(
+        (status = 204, description = "Photo and its resized variants deleted"),
+        (status = 404, description = "Photo not found on this listing"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn delete_listing_image(
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, image_id) = path.into_inner();
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| ApiError::Database(e.into()))?;
+    db_listing::delete_listing_image(&mut tx, listing_id, image_id).await?;
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::Database(e.into()))?;
+    tracing::info!(%listing_id, %image_id, "listing photo deleted");
+
+    Ok(HttpResponse::NoContent().finish())
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
@@ -518,6 +553,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             update_listing,
             delete_listing,
             presign_batch,
+            delete_listing_image,
             crate::reviews::get_review_token_info,
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
@@ -592,6 +628,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
+                "/{id}/images/{image_id}",
+                web::delete()
+                    .to(delete_listing_image)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
                 "/{id}/reviews",
                 web::get()
                     .to(crate::reviews::get_listing_reviews_handler)
@@ -626,7 +668,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     crate::reviews::configure_routes(cfg);
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -685,7 +727,7 @@ async fn create_price_override(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -716,7 +758,7 @@ async fn get_price_overrides(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     put,
     path = "/api/v1/listings/{id}/price-overrides/{override_id}",

@@ -33,6 +33,24 @@ use uuid::Uuid;
 use validator::Validate;
 
 static BASE_URL_ENV: &str = "BASE_URL";
+static ADMIN_BASE_URL_ENV: &str = "ADMIN_BASE_URL";
+
+/// Public URL of the guest portal, for links in emails (`BASE_URL`).
+fn guest_base_url() -> String {
+    std::env::var(BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3010".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// Public URL of the admin portal, for host links in emails
+/// (`ADMIN_BASE_URL`).
+fn admin_base_url() -> String {
+    std::env::var(ADMIN_BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3012".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
 
 fn map_pricing_error(err: common::pricing::PricingError) -> ApiError {
     match err {
@@ -93,7 +111,65 @@ pub struct AvailabilityResponse {
     pub available: bool,
 }
 
+/// Longest window `unavailable-ranges` accepts, in days.
+const MAX_UNAVAILABLE_RANGE_DAYS: i64 = 366;
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct UnavailableRangesParams {
+    /// First day of the window (inclusive).
+    pub from: NaiveDate,
+    /// Last day of the window (exclusive).
+    pub to: NaiveDate,
+}
+
+/// Public: returns only merged date ranges (no booking IDs, guest data or
+/// statuses), so the guest calendar can grey out booked nights.
 #[tracing::instrument]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/listing/{id}/unavailable-ranges",
+    tag = "bookings",
+    params(
+        ("id" = Uuid, Path, description = "Listing UUID"),
+        UnavailableRangesParams
+    ),
+    responses(
+        (status = 200, description = "Booked date ranges in the window", body = common::availability::UnavailableRangesResponse),
+        (status = 400, description = "Window is empty, reversed, or longer than 366 days"),
+        (status = 404, description = "Listing not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_unavailable_ranges(
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    query: web::Query<UnavailableRangesParams>,
+) -> Result<impl Responder, ApiError> {
+    let span_days = (query.to - query.from).num_days();
+    if span_days <= 0 || span_days > MAX_UNAVAILABLE_RANGE_DAYS {
+        return Err(ApiError::Database(
+            db_core::error::DbError::ValidationError(format!(
+                "`to` must be after `from` and at most {MAX_UNAVAILABLE_RANGE_DAYS} days later"
+            )),
+        ));
+    }
+
+    db_listing::get_listing_by_id(pool.get_ref(), *id)
+        .await
+        .map_err(ApiError::Database)?;
+
+    let ranges = db_booking::get_unavailable_ranges(pool.get_ref(), *id, query.from, query.to)
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(
+        HttpResponse::Ok().json(common::availability::UnavailableRangesResponse {
+            ranges: common::availability::merge_ranges(ranges),
+        }),
+    )
+}
+
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/availability",
@@ -126,7 +202,7 @@ async fn check_availability(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/bookings",
@@ -401,7 +477,7 @@ pub struct CurrencyQuery {
     pub currency: Option<String>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings",
@@ -458,7 +534,7 @@ async fn get_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/booking/{id}",
@@ -507,7 +583,7 @@ async fn get_booking_by_id(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/bookings/booking/{id}",
@@ -859,7 +935,7 @@ async fn delete_booking(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/bookings/bookings/{id}/transfer",
@@ -891,7 +967,7 @@ async fn transfer_booking(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/user/{id}",
@@ -935,7 +1011,7 @@ async fn get_user_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/listing/{id}",
@@ -973,7 +1049,7 @@ async fn get_listing_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/messages",
@@ -1034,7 +1110,7 @@ async fn get_booking_messages(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/bookings/{id}/messages",
@@ -1172,7 +1248,7 @@ async fn send_booking_message(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/bookings/{id}/messages/read",
@@ -1384,6 +1460,44 @@ async fn update_admin_payout_status(
     ))
 }
 
+/// Admins and hosts (read-only): the newest rate for every stored currency pair.
+#[tracing::instrument(skip(pool))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/exchange-rates",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Newest rate per currency pair", body = common::exchange_rate::ExchangeRatesResponse),
+        (status = 401, description = "Missing token or not an admin or host"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn get_admin_exchange_rates(
+    claims: api_core::auth::Claims,
+    pool: web::Data<PgPool>,
+) -> Result<impl Responder, ApiError> {
+    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    let is_staff = user.roles.iter().any(|r| {
+        matches!(
+            r,
+            db_core::models::UserRole::Admin | db_core::models::UserRole::Host
+        )
+    });
+    if !is_staff {
+        return Err(ApiError::Unauthorized(
+            "Admin or host role required".to_string(),
+        ));
+    }
+
+    let rates = db_core::currency::list_latest_exchange_rates(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?;
+
+    Ok(HttpResponse::Ok().json(common::exchange_rate::ExchangeRatesResponse { rates }))
+}
+
 async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, new_b: Booking) {
     let pool_clone = pool.clone();
 
@@ -1411,13 +1525,10 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 &new_b.confirmation_code,
                 1,
             );
-            let base_url =
-                std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let base_url = guest_base_url();
             let receipt_url = format!(
                 "{}/bookings/{}/documents/{}",
-                base_url.trim_end_matches('/'),
-                new_b.id,
-                doc_number
+                base_url, new_b.id, doc_number
             );
 
             // Guest confirmation
@@ -1608,15 +1719,12 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                 .ok()
                 .flatten();
 
-                let base_url = std::env::var(BASE_URL_ENV)
-                    .unwrap_or_else(|_| "http://localhost:8080".to_string());
+                let base_url = guest_base_url();
                 let (receipt_url, balance_due) = match active_receipt {
                     Some(doc) => (
                         Some(format!(
                             "{}/bookings/{}/documents/{}",
-                            base_url.trim_end_matches('/'),
-                            new_b.id,
-                            doc.document_number
+                            base_url, new_b.id, doc.document_number
                         )),
                         doc.balance_due,
                     ),
@@ -1692,15 +1800,12 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
             .ok()
             .flatten();
 
-            let base_url =
-                std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
+            let base_url = guest_base_url();
             let (invoice_url, invoice_number) = match active_invoice {
                 Some(doc) => (
                     format!(
                         "{}/bookings/{}/documents/{}",
-                        base_url.trim_end_matches('/'),
-                        new_b.id,
-                        doc.document_number
+                        base_url, new_b.id, doc.document_number
                     ),
                     doc.document_number,
                 ),
@@ -1712,12 +1817,7 @@ async fn dispatch_booking_status_notifications(pool: &PgPool, old_b: Booking, ne
                         1,
                     );
                     (
-                        format!(
-                            "{}/bookings/{}/documents/{}",
-                            base_url.trim_end_matches('/'),
-                            new_b.id,
-                            doc_num
-                        ),
+                        format!("{}/bookings/{}/documents/{}", base_url, new_b.id, doc_num),
                         doc_num,
                     )
                 }
@@ -1825,19 +1925,27 @@ pub async fn process_scheduled_notifications(
 ) -> Result<HttpResponse, ApiError> {
     verify_cron_secret(&req, cron_settings.as_ref())?;
 
+    run_notification_sweep(pool.get_ref())
+        .await
+        .map(|sweep| HttpResponse::Ok().json(sweep))
+}
+
+/// Sends the due pre-arrival guides, host arrival reminders and expiring-hold
+/// warnings. Each notification is claimed in `notification_log` first, so
+/// repeated runs never send one twice.
+async fn run_notification_sweep(pool: &PgPool) -> Result<CronSweepResponse, ApiError> {
     let publisher = api_core::email_publisher::EmailPublisher::from_env();
     let mut pre_arrival_count = 0;
     let mut hold_reminders_count = 0;
 
     // Sweep 48h Pre-Arrival Candidates
-    let pre_arrival_candidates =
-        db_core::notification_log::get_48h_pre_arrival_candidates(pool.get_ref())
-            .await
-            .map_err(ApiError::Database)?;
+    let pre_arrival_candidates = db_core::notification_log::get_48h_pre_arrival_candidates(pool)
+        .await
+        .map_err(ApiError::Database)?;
 
     for candidate in pre_arrival_candidates {
         let claimed_guest = db_core::notification_log::claim_and_log_notification(
-            pool.get_ref(),
+            pool,
             candidate.booking_id,
             "pre_arrival_guide_guest",
             candidate.guest_id,
@@ -1895,7 +2003,7 @@ pub async fn process_scheduled_notifications(
             };
 
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
-                pool.get_ref(),
+                pool,
                 &candidate.guest_email,
                 &format!(
                     "Pre-Arrival Guide for Your Stay at {}",
@@ -1913,7 +2021,7 @@ pub async fn process_scheduled_notifications(
         }
 
         let claimed_host = db_core::notification_log::claim_and_log_notification(
-            pool.get_ref(),
+            pool,
             candidate.booking_id,
             "host_upcoming_arrival",
             candidate.host_id,
@@ -1937,7 +2045,7 @@ pub async fn process_scheduled_notifications(
             };
 
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
-                pool.get_ref(),
+                pool,
                 &candidate.host_email,
                 &format!("Guest Arrival in 48 Hours: {}", candidate.listing_name),
                 common::email::EmailTemplate::HostUpcomingArrival.as_str(),
@@ -1953,13 +2061,13 @@ pub async fn process_scheduled_notifications(
     }
 
     // Sweep Expiring 2-Hour Holds
-    let hold_candidates = db_core::notification_log::get_expiring_hold_candidates(pool.get_ref())
+    let hold_candidates = db_core::notification_log::get_expiring_hold_candidates(pool)
         .await
         .map_err(ApiError::Database)?;
 
     for candidate in hold_candidates {
         let claimed_hold = db_core::notification_log::claim_and_log_notification(
-            pool.get_ref(),
+            pool,
             candidate.booking_id,
             "payment_hold_expiry_reminder",
             candidate.guest_id,
@@ -1976,14 +2084,11 @@ pub async fn process_scheduled_notifications(
                 expires_at: expires_at.format("%Y-%m-%d %H:%M UTC").to_string(),
                 total_price: candidate.total_price,
                 currency: candidate.currency.clone(),
-                checkout_url: format!(
-                    "https://ourplaces.co/checkout/{}",
-                    candidate.confirmation_code
-                ),
+                checkout_url: format!("{}/bookings", guest_base_url()),
             };
 
             if let Ok(outbox) = db_core::email_outbox::insert_email_outbox(
-                pool.get_ref(),
+                pool,
                 &candidate.guest_email,
                 &format!(
                     "Reminder: Your Reservation Hold for {} is Expiring Soon",
@@ -2001,11 +2106,11 @@ pub async fn process_scheduled_notifications(
         }
     }
 
-    Ok(HttpResponse::Ok().json(CronSweepResponse {
+    Ok(CronSweepResponse {
         status: "success".to_string(),
         pre_arrival_processed: pre_arrival_count,
         hold_reminders_processed: hold_reminders_count,
-    }))
+    })
 }
 
 /// Summary response returned by the scheduled complete stays cron job.
@@ -2039,16 +2144,28 @@ pub async fn complete_stays_cron(
     verify_cron_secret(&req, cron_settings.as_ref())?;
 
     let today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    complete_stays_through(pool.get_ref(), tax_settings.as_ref(), today)
+        .await
+        .map(|stays| HttpResponse::Ok().json(stays))
+}
 
+/// Expires overdue change requests, then marks confirmed bookings that
+/// checked out on or before `cutoff` as Completed (issuing their tax invoices
+/// and notifying the guest). Completed bookings drop out of the query, so
+/// repeated runs are no-ops.
+async fn complete_stays_through(
+    pool: &PgPool,
+    tax_settings: Option<&web::Data<TaxSettings>>,
+    today: NaiveDate,
+) -> Result<CompleteStaysResponse, ApiError> {
     // Auto-expire any pending reservation change requests whose cutoff date has arrived
     if let Err(e) =
-        db_core::reservation_change::expire_past_due_change_requests(pool.get_ref(), None, today)
-            .await
+        db_core::reservation_change::expire_past_due_change_requests(pool, None, today).await
     {
         tracing::error!(error = %e, "Failed to expire past-due reservation change requests in cron");
     }
 
-    let eligible = db_booking::get_confirmed_bookings_past_checkout(pool.get_ref(), today)
+    let eligible = db_booking::get_confirmed_bookings_past_checkout(pool, today)
         .await
         .map_err(ApiError::Database)?;
 
@@ -2085,12 +2202,10 @@ pub async fn complete_stays_cron(
             exchange_rate: None,
         };
 
-        match db_booking::update_booking(pool.get_ref(), booking.id, &update_params, &supplier)
-            .await
-        {
+        match db_booking::update_booking(pool, booking.id, &update_params, &supplier).await {
             Ok(updated_b) => {
                 completed_ids.push(updated_b.id);
-                dispatch_booking_status_notifications(pool.get_ref(), old_booking, updated_b).await;
+                dispatch_booking_status_notifications(pool, old_booking, updated_b).await;
             }
             Err(e) => {
                 tracing::error!(booking_id = %booking.id, error = %e, "Failed to complete stay in cron");
@@ -2098,9 +2213,67 @@ pub async fn complete_stays_cron(
         }
     }
 
-    Ok(HttpResponse::Ok().json(CompleteStaysResponse {
+    Ok(CompleteStaysResponse {
         completed_count: completed_ids.len(),
         booking_ids: completed_ids,
+    })
+}
+
+/// Combined summary returned by the hourly sweeps endpoint.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CronSweepsResponse {
+    /// Result of the scheduled notification sweep.
+    pub notifications: CronSweepResponse,
+    /// Result of the stay completion sweep.
+    pub stays: CompleteStaysResponse,
+}
+
+/// Last checkout date whose stays may be completed at `now`.
+///
+/// Stays complete at noon Jamaica time (UTC-5, no DST) on the checkout day,
+/// after the guest has left. Before noon only earlier checkouts qualify, so
+/// an hourly trigger keeps the noon semantics and catches up after a missed
+/// run.
+pub fn stay_completion_cutoff(now: chrono::DateTime<Utc>) -> NaiveDate {
+    let jamaica = now - chrono::Duration::hours(5);
+    let today = jamaica.date_naive();
+    if chrono::Timelike::hour(&jamaica) >= 12 {
+        today
+    } else {
+        today - chrono::Duration::days(1)
+    }
+}
+
+#[tracing::instrument(skip(req, pool, tax_settings, cron_settings))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/internal/cron/run-sweeps",
+    tag = "bookings",
+    responses(
+        (status = 200, description = "Notification and stay completion sweeps completed", body = CronSweepsResponse),
+        (status = 401, description = "Unauthorized - invalid or missing cron secret"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+/// Hourly cron endpoint for a single Cloud Scheduler job: runs the
+/// notification sweep, then completes stays up to [`stay_completion_cutoff`].
+pub async fn run_sweeps(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    tax_settings: Option<web::Data<TaxSettings>>,
+    cron_settings: Option<web::Data<CronSettings>>,
+) -> Result<HttpResponse, ApiError> {
+    verify_cron_secret(&req, cron_settings.as_ref())?;
+    let notifications = run_notification_sweep(pool.get_ref()).await?;
+    let stays = complete_stays_through(
+        pool.get_ref(),
+        tax_settings.as_ref(),
+        stay_completion_cutoff(Utc::now()),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(CronSweepsResponse {
+        notifications,
+        stays,
     }))
 }
 
@@ -2857,8 +3030,7 @@ async fn dispatch_reservation_change_requested_notification(
         Err(_) => return,
     };
 
-    let base_url =
-        std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url = guest_base_url();
     let guest_name = format!("{} {}", guest.first_name, guest.last_name);
     let host_name = format!("{} {}", host.first_name, host.last_name);
 
@@ -2867,26 +3039,26 @@ async fn dispatch_reservation_change_requested_notification(
             host.email.as_str(),
             host_name,
             guest_name,
-            format!("{}/admin/bookings", base_url.trim_end_matches('/')),
+            format!("{}/admin/bookings", admin_base_url()),
         )],
         common::models::ChangeInitiatorRole::Host => vec![(
             guest.email.as_str(),
             guest_name,
             host_name,
-            format!("{}/bookings", base_url.trim_end_matches('/')),
+            format!("{}/bookings", base_url),
         )],
         common::models::ChangeInitiatorRole::Admin => vec![
             (
                 guest.email.as_str(),
                 guest_name,
                 "Our Places Admin".to_string(),
-                format!("{}/bookings", base_url.trim_end_matches('/')),
+                format!("{}/bookings", base_url),
             ),
             (
                 host.email.as_str(),
                 host_name,
                 "Our Places Admin".to_string(),
-                format!("{}/admin/bookings", base_url.trim_end_matches('/')),
+                format!("{}/admin/bookings", admin_base_url()),
             ),
         ],
     };
@@ -2962,14 +3134,11 @@ async fn dispatch_reservation_change_approved_notification(
     .ok()
     .flatten();
 
-    let base_url =
-        std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url = guest_base_url();
     let receipt_url = active_receipt.map(|doc| {
         format!(
             "{}/bookings/{}/documents/{}",
-            base_url.trim_end_matches('/'),
-            booking.id,
-            doc.document_number
+            base_url, booking.id, doc.document_number
         )
     });
 
@@ -3039,14 +3208,13 @@ async fn dispatch_reservation_change_declined_notification(
         Err(_) => return,
     };
 
-    let base_url =
-        std::env::var(BASE_URL_ENV).unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url = guest_base_url();
     let booking_url = match change_req.initiated_by_role {
         common::models::ChangeInitiatorRole::Guest => {
-            format!("{}/bookings", base_url.trim_end_matches('/'))
+            format!("{}/bookings", base_url)
         }
         common::models::ChangeInitiatorRole::Host | common::models::ChangeInitiatorRole::Admin => {
-            format!("{}/admin/bookings", base_url.trim_end_matches('/'))
+            format!("{}/admin/bookings", admin_base_url())
         }
     };
 
@@ -3135,7 +3303,7 @@ async fn cancel_reservation_change_request(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/cancellation-quote",
@@ -3181,7 +3349,7 @@ async fn get_cancellation_quote(
     Ok(HttpResponse::Ok().json(quote))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/documents",
@@ -3209,7 +3377,7 @@ async fn get_booking_documents(
     Ok(HttpResponse::Ok().json(response))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/bookings/{id}/documents/{number}",
@@ -3250,6 +3418,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_booking_by_id,
             get_user_bookings,
             get_listing_bookings,
+            get_unavailable_ranges,
+            get_admin_exchange_rates,
             update_booking,
             delete_booking,
             transfer_booking,
@@ -3267,6 +3437,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_booking_documents,
             get_booking_document_by_number,
             complete_stays_cron,
+            run_sweeps,
         ),
         components(
             schemas(
@@ -3274,6 +3445,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 UpdatedBookingRequest,
                 common::models::TransferBookingRequest,
                 AvailabilityResponse,
+                common::availability::UnavailableRange,
+                common::availability::UnavailableRangesResponse,
+                common::exchange_rate::ExchangeRate,
+                common::exchange_rate::ExchangeRatesResponse,
                 BookingResponse,
                 pagination::Pagination,
                 FeeItem,
@@ -3285,6 +3460,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::MarkMessagesReadResponse,
                 CronSweepResponse,
                 CompleteStaysResponse,
+                CronSweepsResponse,
                 common::cancellation::RefundQuote,
                 common::models::ReservationChangeStatus,
                 common::models::ChangeInitiatorRole,
@@ -3345,6 +3521,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get()
                     .to(get_listing_bookings)
                     .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/listing/{id}/unavailable-ranges",
+                web::get().to(get_unavailable_ranges),
             )
             .route(
                 "/{id}",
@@ -3462,6 +3642,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     );
 
     cfg.service(
+        web::scope("/api/v1/admin/exchange-rates")
+            .route("", web::get().to(get_admin_exchange_rates)),
+    );
+
+    cfg.service(
         web::scope("/api/v1/admin/ledger").route(
             "/{id}/status",
             web::patch()
@@ -3476,7 +3661,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/process-scheduled-notifications",
                 web::post().to(process_scheduled_notifications),
             )
-            .route("/complete-stays", web::patch().to(complete_stays_cron)),
+            .route("/complete-stays", web::patch().to(complete_stays_cron))
+            .route("/run-sweeps", web::post().to(run_sweeps)),
     );
 }
 

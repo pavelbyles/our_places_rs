@@ -89,12 +89,24 @@ pub struct UserResponse {
     pub roles: Vec<String>,
     pub default_currency: String,
     pub deleted_at: Option<DateTime<Utc>>,
+    /// Unique public handle, e.g. `jane-brown`.
+    pub slug: String,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct UsersWrapper {
     #[schema(xml(name = "user", wrapped))]
     pub user: Vec<UserResponse>,
+}
+
+/// A 400 with one validation message for `field`.
+fn field_error(field: &'static str, message: String) -> ApiError {
+    let mut errors = validator::ValidationErrors::new();
+    errors.add(
+        field,
+        validator::ValidationError::new("invalid").with_message(message.into()),
+    );
+    ApiError::ValidationError(errors)
 }
 
 fn map_user_to_response(user: User) -> UserResponse {
@@ -113,10 +125,11 @@ fn map_user_to_response(user: User) -> UserResponse {
         roles: user.roles.into_iter().map(|r| r.to_string()).collect(),
         default_currency: user.default_currency,
         deleted_at: user.deleted_at,
+        slug: user.slug,
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users",
@@ -324,7 +337,7 @@ async fn create_user(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/login",
@@ -386,7 +399,7 @@ async fn login(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/verify",
@@ -445,7 +458,7 @@ async fn verify_user(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/resend-verification",
@@ -523,7 +536,7 @@ async fn resend_verification(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/users/user/{id}",
@@ -543,6 +556,12 @@ async fn update_user(
 ) -> Result<impl Responder, ApiError> {
     let req_data = updated_user.into_inner();
     req_data.validate()?;
+    let slug = req_data
+        .slug
+        .as_deref()
+        .map(common::slug::user_slug)
+        .transpose()
+        .map_err(|msg| field_error("slug", msg))?;
 
     let mut attempts = 0;
     const MAX_ATTEMPTS: u32 = 5;
@@ -610,6 +629,7 @@ async fn update_user(
                     .collect()
             }),
             default_currency: req_data.default_currency.clone(),
+            slug: slug.clone(),
         };
 
         match db_core::user::update_user(pool.get_ref(), id, &updated).await {
@@ -669,7 +689,7 @@ async fn update_user(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/users/user/{email}",
@@ -741,7 +761,7 @@ async fn get_user_listings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/users/{email}/bookings",
@@ -784,7 +804,7 @@ async fn get_user_bookings(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/users",
@@ -833,7 +853,7 @@ async fn get_all_users(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     delete,
     path = "/api/v1/users/user/{id}",
@@ -885,7 +905,7 @@ async fn soft_delete_user(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/user/{id}/restore",
@@ -916,7 +936,7 @@ async fn restore_user(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     delete,
     path = "/api/v1/users/user/{id}/hard",
@@ -931,7 +951,7 @@ async fn restore_user(
     )
 )]
 async fn hard_delete_user(
-    req: HttpRequest,
+    _req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
 ) -> Result<impl Responder, ApiError> {
@@ -965,7 +985,7 @@ async fn hard_delete_user(
 
 // --- Profile Endpoints ---
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/profile/password/request",
@@ -1050,7 +1070,7 @@ async fn request_password_change(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/profile/password/confirm",
@@ -1104,7 +1124,7 @@ async fn confirm_password_change(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/profile/email",
@@ -1181,7 +1201,7 @@ async fn change_email(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/users/profile/deactivate",
@@ -1235,7 +1255,7 @@ async fn deactivate_account(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/sessions",
@@ -1291,7 +1311,7 @@ async fn create_session_handler(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/sessions/{token_hash}",

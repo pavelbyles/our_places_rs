@@ -1,9 +1,13 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub mod app_client;
 pub mod auth;
+pub mod availability;
 pub mod cancellation;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cloud_logging;
 pub mod csv;
 pub mod email;
+pub mod exchange_rate;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gcs;
 pub mod geocode;
@@ -13,4 +17,5 @@ pub mod models;
 pub mod payout;
 pub mod pricing;
 pub mod reference;
+pub mod slug;
 pub mod tax_document;

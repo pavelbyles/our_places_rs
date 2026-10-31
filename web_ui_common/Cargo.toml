@@ -1,0 +1,31 @@
+[package]
+name = "web_ui_common"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+# Writes a portal binary's asset bundle (used by the Docker builds).
+[[bin]]
+name = "topcoat_bundler"
+path = "src/bin/topcoat_bundler.rs"
+
+[dependencies]
+topcoat = { workspace = true, features = ["htmx", "tailwind", "session", "ui", "icon-iconify", "font-fontsource", "asset"] }
+web_client = { workspace = true }
+common = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+topcoat-asset = { workspace = true }
+
+[build-dependencies]
+topcoat = { version = "0.10.0", default-features = false, features = [
+    "icon-iconify",
+] }
+
+[dev-dependencies]
+uuid = { workspace = true }
+rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
+reqwest = { workspace = true }

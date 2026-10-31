@@ -350,6 +350,24 @@ mod tests {
     }
 
     #[test]
+    fn test_stay_completion_cutoff_waits_for_noon_in_jamaica() {
+        use crate::apis::stay_completion_cutoff;
+        use chrono::{NaiveDate, TimeZone, Utc};
+
+        let at = |h, m| Utc.with_ymd_and_hms(2026, 11, 10, h, m, 0).unwrap();
+        let day = |d| NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
+
+        // 11:59 Jamaica (16:59 UTC): today's checkouts are still in the villa.
+        assert_eq!(stay_completion_cutoff(at(16, 59)), day(9));
+        // 12:00 Jamaica (17:00 UTC): today's checkouts complete.
+        assert_eq!(stay_completion_cutoff(at(17, 0)), day(10));
+        // 00:30 UTC is 19:30 the previous evening in Jamaica.
+        assert_eq!(stay_completion_cutoff(at(0, 30)), day(9));
+        // 05:30 UTC is 00:30 Jamaica: only yesterday's checkouts.
+        assert_eq!(stay_completion_cutoff(at(5, 30)), day(9));
+    }
+
+    #[test]
     fn test_statutory_tax_resolution_for_jamaican_and_fallback_countries() {
         use common::reference::SupportedCountry;
 
@@ -1656,6 +1674,33 @@ mod tests {
         let cron_resp2: crate::apis::CompleteStaysResponse = test::read_body_json(resp2).await;
         assert!(!cron_resp2.booking_ids.contains(&booking.id));
 
+        // F. The hourly run-sweeps endpoint needs the cron secret too, and
+        // reports both sweeps (the booking is already completed).
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/internal/cron/run-sweeps")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 401);
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/internal/cron/run-sweeps")
+                .insert_header(("x-cron-secret", "test-complete-stays-secret"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let sweeps: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(sweeps["notifications"]["status"], "success");
+        assert!(
+            !sweeps["stays"]["booking_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.iter().any(|id| id == &serde_json::json!(booking.id)))
+        );
+
         let docs_after = db_core::tax_document::list_for_booking(&pool, booking.id)
             .await
             .unwrap();
@@ -1787,5 +1832,265 @@ mod tests {
             Some(dec!(1000.00)),
             "accommodation_net without discount must equal subtotal"
         );
+    }
+
+    #[tokio::test]
+    async fn test_unavailable_ranges_endpoint() {
+        use actix_web::{App, test, web};
+        use chrono::NaiveDate;
+        use rust_decimal::Decimal;
+        use rust_decimal_macros::dec;
+        use sqlx_db_tester::TestPg;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let new_user = |id: Uuid, role: db_core::models::UserRole| db_core::models::NewUser {
+            id,
+            email: format!("u_{id}@example.com"),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![role]),
+            default_currency: "USD".to_string(),
+        };
+
+        let host_id = Uuid::now_v7();
+        db_core::user::create_user(&pool, &new_user(host_id, db_core::models::UserRole::Host))
+            .await
+            .unwrap();
+        db_core::user::create_host_profile(
+            &pool,
+            host_id,
+            &db_core::models::NewHostProfile {
+                description: None,
+                verified_status: Some("pending".to_string()),
+                payout_details: None,
+            },
+        )
+        .await
+        .unwrap();
+        let listing = db_core::listing::create_listing(
+            &pool,
+            &db_core::models::NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let day = |m: u32, d: u32| NaiveDate::from_ymd_opt(2030, m, d).unwrap();
+        // Back-to-back stays (merged in the response) and one separate stay.
+        for (from, to) in [
+            (day(5, 1), day(5, 4)),
+            (day(5, 4), day(5, 6)),
+            (day(5, 20), day(5, 22)),
+        ] {
+            let guest_id = Uuid::now_v7();
+            db_core::user::create_user(
+                &pool,
+                &new_user(guest_id, db_core::models::UserRole::Booker),
+            )
+            .await
+            .unwrap();
+            db_core::booking::create_booking(
+                &pool,
+                &db_core::models::NewBooking {
+                    confirmation_code: Uuid::now_v7().simple().to_string()[22..].to_uppercase(),
+                    guest_id,
+                    listing_id: listing.id,
+                    date_from: from,
+                    date_to: to,
+                    currency: "USD".to_string(),
+                    daily_rate: dec!(200.00),
+                    number_of_persons: 2,
+                    total_days: (to - from).num_days() as i32,
+                    sub_total_price: dec!(400.00),
+                    discount_value: None,
+                    tax_value: None,
+                    fee_breakdown: vec![],
+                    total_price: dec!(400.00),
+                    cancellation_policy: db_core::models::CancellationPolicy::Flexible,
+                    metadata: db_core::models::BookingMetadata {
+                        num_adults: 2,
+                        ..Default::default()
+                    },
+                    door_access_code: None,
+                    cleaning_fee: Decimal::ZERO,
+                    damage_deposit: Decimal::ZERO,
+                    platform_fee: Decimal::ZERO,
+                    tax_rate: dec!(0.1000),
+                    exchange_rate: Decimal::ONE,
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+        let get = |uri: String| test::TestRequest::get().uri(&uri).to_request();
+        let base = format!("/api/v1/bookings/listing/{}/unavailable-ranges", listing.id);
+
+        // Public, merged, sorted, and dates only.
+        let resp =
+            test::call_service(&app, get(format!("{base}?from=2030-05-01&to=2030-06-01"))).await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(
+            body,
+            serde_json::json!({"ranges": [
+                {"date_from": "2030-05-01", "date_to": "2030-05-06"},
+                {"date_from": "2030-05-20", "date_to": "2030-05-22"}
+            ]})
+        );
+
+        // Bad windows -> 400.
+        for query in [
+            "from=2030-05-10&to=2030-05-10",
+            "from=2030-01-01&to=2031-01-03",
+        ] {
+            let resp = test::call_service(&app, get(format!("{base}?{query}"))).await;
+            assert_eq!(resp.status(), 400, "{query}");
+        }
+
+        // Unknown listing -> 404.
+        let resp = test::call_service(
+            &app,
+            get(format!(
+                "/api/v1/bookings/listing/{}/unavailable-ranges?from=2030-05-01&to=2030-06-01",
+                Uuid::now_v7()
+            )),
+        )
+        .await;
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn test_admin_exchange_rates_endpoint() {
+        use actix_web::{App, test, web};
+        use rust_decimal_macros::dec;
+        use sqlx_db_tester::TestPg;
+        use std::path::Path;
+        use uuid::Uuid;
+
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let new_user = |id: Uuid, role: db_core::models::UserRole| db_core::models::NewUser {
+            id,
+            email: format!("u_{id}@example.com"),
+            password_hash: "hash".to_string(),
+            first_name: "Test".to_string(),
+            last_name: "User".to_string(),
+            phone_number: None,
+            is_active: true,
+            is_verified: true,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![role]),
+            default_currency: "USD".to_string(),
+        };
+        let (admin_id, host_id, booker_id) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+        db_core::user::create_user(&pool, &new_user(admin_id, db_core::models::UserRole::Admin))
+            .await
+            .unwrap();
+        db_core::user::create_user(&pool, &new_user(host_id, db_core::models::UserRole::Host))
+            .await
+            .unwrap();
+        db_core::user::create_user(
+            &pool,
+            &new_user(booker_id, db_core::models::UserRole::Booker),
+        )
+        .await
+        .unwrap();
+
+        // A newer USD/JMD rate supersedes the migration's seed.
+        sqlx::query(
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('USD', 'JMD', 157.250000, NOW() + INTERVAL '1 second')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        let get = |jwt: String| {
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates")
+                .insert_header(("Authorization", format!("Bearer {jwt}")))
+                .to_request()
+        };
+
+        let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(admin_id))).await;
+        assert_eq!(resp.status(), 200);
+        let body: common::exchange_rate::ExchangeRatesResponse = test::read_body_json(resp).await;
+        let usd_jmd: Vec<_> = body
+            .rates
+            .iter()
+            .filter(|r| r.base_currency == "USD" && r.target_currency == "JMD")
+            .collect();
+        assert_eq!(usd_jmd.len(), 1, "one row per pair");
+        assert_eq!(usd_jmd[0].rate, dec!(157.25));
+
+        // Hosts get the same read-only view.
+        let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(host_id))).await;
+        assert_eq!(resp.status(), 200);
+
+        let resp =
+            test::call_service(&app, get(api_core::auth::generate_test_jwt(booker_id))).await;
+        assert_eq!(resp.status(), 401);
     }
 }

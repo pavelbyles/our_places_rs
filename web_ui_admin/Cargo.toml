@@ -1,0 +1,35 @@
+[package]
+name = "web_ui_admin"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "web_ui_admin"
+path = "src/lib.rs"
+
+[[bin]]
+name = "web_ui_admin"
+path = "src/main.rs"
+
+[dependencies]
+topcoat = { workspace = true, features = ["htmx", "tailwind", "session"] }
+web_client = { workspace = true }
+web_ui_common = { workspace = true }
+common = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+dotenvy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+uuid = { workspace = true }
+
+[build-dependencies]
+topcoat = { version = "0.10.0", default-features = false, features = [
+    "tailwind",
+] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

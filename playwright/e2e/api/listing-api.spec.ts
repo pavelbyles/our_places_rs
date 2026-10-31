@@ -38,6 +38,7 @@ test.describe('Backend API Validation - Listing Service', () => {
     // Verify images array
     expect(Array.isArray(data.images)).toBe(true);
     expect(data.images.length).toBeGreaterThan(0);
-    expect(data.images[0].url).toContain('https://images.unsplash.com/');
+    // Listing photos live in Cloud Storage (the only image host the portals' CSP allows).
+    expect(data.images[0].url).toContain('https://storage.googleapis.com/');
   });
 });
