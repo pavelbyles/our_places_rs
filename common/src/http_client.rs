@@ -240,8 +240,14 @@ impl AuthenticatedClient {
         }
     }
 
-    /// Helper to add API Key header if present
-    fn add_api_key(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    /// Adds the API key, if configured, and the current trace context, so
+    /// the called service continues this request's trace.
+    fn add_common_headers(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let builder = crate::telemetry::current_trace_headers()
+            .into_iter()
+            .fold(builder, |builder, (name, value)| {
+                builder.header(name, value)
+            });
         if let Some(ref key) = self.api_key {
             builder.header("x-api-key", key)
         } else {
@@ -267,7 +273,7 @@ impl AuthenticatedClient {
         if let Some(jwt) = user_jwt {
             builder = builder.header(USER_AUTHORIZATION_HEADER, format!("Bearer {}", jwt));
         }
-        Ok(self.add_api_key(builder))
+        Ok(self.add_common_headers(builder))
     }
 
     /// Creates a GET request builder with OIDC Authorization and API Key.
@@ -277,7 +283,7 @@ impl AuthenticatedClient {
         if !token.trim().is_empty() {
             builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
         }
-        Ok(self.add_api_key(builder))
+        Ok(self.add_common_headers(builder))
     }
 
     /// Sends a GET request with OIDC Authorization.
@@ -302,7 +308,7 @@ impl AuthenticatedClient {
             builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
         }
         let builder = builder.json(json);
-        Ok(self.add_api_key(builder))
+        Ok(self.add_common_headers(builder))
     }
 
     /// Sends a POST request with OIDC Authorization.
@@ -332,7 +338,7 @@ impl AuthenticatedClient {
             builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
         }
         let builder = builder.json(json);
-        Ok(self.add_api_key(builder))
+        Ok(self.add_common_headers(builder))
     }
 
     /// Sends a PATCH request with OIDC Authorization.
@@ -360,7 +366,7 @@ impl AuthenticatedClient {
         if !token.trim().is_empty() {
             builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
         }
-        Ok(self.add_api_key(builder))
+        Ok(self.add_common_headers(builder))
     }
 
     /// Sends a DELETE request with OIDC Authorization.
@@ -385,7 +391,7 @@ impl AuthenticatedClient {
             builder = builder.header(AUTHORIZATION, format!("Bearer {}", token));
         }
         let builder = builder.json(json);
-        Ok(self.add_api_key(builder))
+        Ok(self.add_common_headers(builder))
     }
 
     /// Sends a PUT request with OIDC Authorization.

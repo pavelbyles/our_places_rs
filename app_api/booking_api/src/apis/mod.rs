@@ -15,6 +15,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 mod availability;
+mod booking_policy;
 mod booking_updates;
 mod bookings;
 mod cron;

@@ -248,6 +248,7 @@ async fn test_pubsub_endpoint_authentication_and_dispatch() {
     let push_payload = PubSubPushEnvelope {
         message: PubSubMessage {
             data: b64_data,
+            attributes: Default::default(),
             _message_id: Some("msg-123".into()),
             _publish_time: None,
         },

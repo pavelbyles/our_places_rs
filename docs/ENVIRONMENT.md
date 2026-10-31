@@ -32,6 +32,7 @@ Every variable the services read, where it comes from in each environment, and t
 | `DB_USER_*`, `DB_NAME_*`, `DB_INSTANCE_NAME_*` | yes | Cloud SQL user, database and instance. |
 | `SMTP_HOST_*`, `SMTP_USER_*`, `SMTP_FROM_*` | yes | SMTP relay for email_worker (port 587, STARTTLS). |
 | `TAJ_SUPPLIER_TRN_*`, `TAJ_SUPPLIER_NAME_*`, `TAJ_SUPPLIER_ADDRESS_*` | yes | Supplier block on tax documents. Commas are allowed (the workflow escapes them). |
+| `TRACE_SAMPLE_RATIO` | optional | Fraction of traces exported to Cloud Trace, `0.0`–`1.0`. Default `1.0`. |
 | `GUEST_PORTAL_URL_*`, `ADMIN_PORTAL_URL_*` | optional | Custom domains (e.g. `https://ourplaces.io`). Used for email links and the bucket CORS rule instead of the `run.app` URLs. |
 
 No longer read by the workflow: `INFRA_GATEWAY_API_KEY_*`, `INFRA_*_API_URL_DEV`, `POSTGRES_DB_DEV`. The portals now call the APIs' Cloud Run URLs directly, because the API Gateway spec (`openapi.yaml`) does not cover the routes they use.
@@ -52,6 +53,7 @@ No longer read by the workflow: `INFRA_GATEWAY_API_KEY_*`, `INFRA_*_API_URL_DEV`
 | `STORAGE_EMULATOR_HOST` | local only | `http://localhost:4443` (devenv) | unset |
 | `GATEWAY_API_KEY` | no | unset | unset (only sent if present) |
 | `RUST_LOG`, `LOG_FORMAT` | no | | `info`, `json` |
+| `TRACE_EXPORTER`, `TRACE_SAMPLE_RATIO`, `GOOGLE_CLOUD_PROJECT` | no | unset (no export) | `gcp`, `1.0`, the project (set by CI). See §4. |
 
 The portals call the APIs with two credentials: the service account's Google ID token in `Authorization` (Cloud Run IAM) and the signed-in user's JWT in `X-Forwarded-Authorization`. On Cloud Run the ID token comes from the metadata server; locally `gcloud auth print-identity-token` is tried and skipped if unavailable.
 
@@ -76,7 +78,7 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 | `CRON_SECRET` | booking | yes | Required by the cron endpoints; no fallback. |
 | `EA__APPLICATION__PENDING_HOLD_MINUTES` | booking | no | Minutes a new `pending` booking holds its dates. Default `120` (`config/Default.toml`). Must be positive or booking_api will not start. Not set by CI. Change it with `gcloud run services update booking-api-<branch> --update-env-vars EA__APPLICATION__PENDING_HOLD_MINUTES=60`: that makes a new revision, not a rebuild, and later CI deploys keep it because `deploy-cloudrun` merges env vars. Existing holds keep their `expires_at`. |
 | `TAJ_SUPPLIER_TRN`, `TAJ_SUPPLIER_NAME`, `TAJ_SUPPLIER_ADDRESS` | booking | yes | Tax document supplier block. |
-| `ACTUATOR_SECRET` (or `ADMIN_SECRET`) | all | recommended | `X-Actuator-Token` for `/loggers`. Falls back to `secret`. Not set by CI today. Never set it to an empty string. |
+| `ACTUATOR_SECRET` (or `ADMIN_SECRET`) | all | recommended | `X-Actuator-Token` for `/loggers`. No fallback: unset or blank disables token access (admin JWTs still work). Not set by CI today. |
 
 ### Workers
 
@@ -100,3 +102,25 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 - **Browser uploads**: the admin job sets a CORS rule on the raw bucket that allows `PUT` from the admin portal's origin (and `ADMIN_PORTAL_URL_*` if set). Signed URLs are created by `INFRA_SA_LISTING_API`, which needs `roles/iam.serviceAccountTokenCreator` on itself and `roles/storage.objectCreator` on the raw bucket. The bucket-setup job grants both (the prod service account had neither).
 - **Email pipeline**: booking/user API write an outbox row → publish to `our-places-email-notifications-<branch>` (the API service accounts get `pubsub.publisher` on the topic) → push subscription (OIDC, `INFRA_SA_EMAIL_WORKER`) → email worker `/pubsub/email-events` → SMTP.
 - **Scheduled sweeps**: on `dev` and `main` only, the API job creates or updates one Cloud Scheduler job, `our-places-sweeps-<branch>`. It fires hourly at :05 and calls booking_api's `POST /api/v1/internal/cron/run-sweeps` with `x-cron-secret` and an OIDC token for `INFRA_SA_BOOKING_API` (granted `run.invoker` on booking_api). Each run sends the due pre-arrival guides, host arrival reminders and expiring-hold warnings, and completes stays from noon Jamaica time on their checkout day. That makes 2 jobs in total, within the free tier of 3 jobs per billing account; feature branches get none. The older `process-scheduled-notifications` and `complete-stays` endpoints still exist for manual runs.
+
+## 4. Distributed tracing
+
+Every service (portals, APIs, workers) runs the same setup from `common::telemetry`, so one trace ID follows a request across services:
+
+| Hop | How the trace context travels |
+| :--- | :--- |
+| Browser → portal | Cloud Run's front end adds `traceparent` / `X-Cloud-Trace-Context`; the portal's `RequestTracing` layer continues it. |
+| Portal → API | `AuthenticatedClient` sends `traceparent` and `X-Cloud-Trace-Context` on every call; `CustomRootSpanBuilder` continues it. |
+| API → `email_worker` | The Pub/Sub message carries them as attributes. |
+| listing_api → browser upload → `image_worker` | The signed upload URL requires an `x-goog-meta-traceparent` header, which GCS stores as object metadata and sends with the upload notification. The raw bucket's CORS rule allows that header. |
+
+Every log line inside a request carries `logging.googleapis.com/trace` and `spanId`, so Cloud Logging's "show entries for this trace" covers all services.
+
+| Variable | Default | Effect |
+| :--- | :--- | :--- |
+| `TRACE_EXPORTER` | unset | `gcp` exports spans to Cloud Trace via the Telemetry API's OTLP endpoint (`telemetry.googleapis.com`). Unset: IDs are still generated and propagated, nothing is exported. |
+| `TRACE_SAMPLE_RATIO` | `1.0` | Fraction of traces exported. Decided from the trace ID, so every service agrees. |
+| `GOOGLE_CLOUD_PROJECT` | — | Required for export and for log-to-trace links. |
+
+Requirements in the cloud: `telemetry.googleapis.com` enabled (it is), and `roles/telemetry.tracesWriter` on each runtime service account. Spans are sent in batches every few seconds from a background thread; with Cloud Run's request-based CPU, a batch can wait until the next request, and is flushed when the instance shuts down.
+

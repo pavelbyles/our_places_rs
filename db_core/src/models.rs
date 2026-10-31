@@ -216,6 +216,23 @@ pub enum BookingStatus {
     Completed,
 }
 
+impl BookingStatus {
+    /// Whether a booking may move from `self` to `to`. Staying put is always
+    /// allowed. Cancelled and completed are final: reviving one would skip
+    /// the availability check and could double-book its dates.
+    pub fn can_transition_to(self, to: BookingStatus) -> bool {
+        use BookingStatus::*;
+        self == to
+            || matches!(
+                (self, to),
+                (Pending, Confirmed)
+                    | (Pending, Cancelled)
+                    | (Confirmed, Cancelled)
+                    | (Confirmed, Completed)
+            )
+    }
+}
+
 /// Parameters for creating a new booking hold.
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewBooking {
@@ -1214,5 +1231,23 @@ mod tests {
         // With zero discount
         booking.discount_value = Some(Decimal::ZERO);
         assert_eq!(booking.accommodation_net(), dec!(1000.00));
+    }
+
+    #[test]
+    fn booking_status_transitions_are_one_way() {
+        use BookingStatus::*;
+        let all = [Pending, Confirmed, Cancelled, Completed];
+        let allowed = [
+            (Pending, Confirmed),
+            (Pending, Cancelled),
+            (Confirmed, Cancelled),
+            (Confirmed, Completed),
+        ];
+        for from in all {
+            for to in all {
+                let expected = from == to || allowed.contains(&(from, to));
+                assert_eq!(from.can_transition_to(to), expected, "{from:?} -> {to:?}");
+            }
+        }
     }
 }

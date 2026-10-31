@@ -3,6 +3,7 @@ use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
 use google_cloud_storage::client::Storage;
 use serde::Deserialize;
+use tracing::Instrument;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -51,6 +52,10 @@ pub struct GcsObjectMetadata {
     pub _media_link: Option<String>,
     pub _crc32c: Option<String>,
     pub _etag: Option<String>,
+    /// Custom object metadata; `traceparent` holds the uploader's trace
+    /// context (see `common::gcs::TRACEPARENT_METADATA_HEADER`).
+    #[serde(default)]
+    pub metadata: std::collections::HashMap<String, String>,
 }
 
 use base64::Engine;
@@ -279,6 +284,18 @@ pub async fn process_image(
         }
     };
 
+    // Process the upload inside the trace of the request that presigned it.
+    let span = tracing::info_span!(
+        "process uploaded image",
+        otel.kind = "consumer",
+        object = %object_metadata.name,
+        trace_id = tracing::field::Empty,
+        span_id = tracing::field::Empty,
+        trace_sampled = tracing::field::Empty,
+    );
+    common::telemetry::continue_trace(&span, |name| object_metadata.metadata.get(name).cloned());
+
+    async move {
     tracing::info!(
         "Received PubSub notification for object: {} (bucket: {}, {:?})",
         object_metadata.name,
@@ -381,7 +398,10 @@ pub async fn process_image(
         )
         .await?;
 
-    Ok(HttpResponse::Ok().finish())
+        Ok::<HttpResponse, Error>(HttpResponse::Ok().finish())
+    }
+    .instrument(span)
+    .await
 }
 
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {

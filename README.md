@@ -162,7 +162,7 @@ Mutating log levels requires authentication via either **Method 1 (Pre-Shared To
    ```bash
    ACTUATOR_SECRET="<your-generated-token>"
    ```
-   *(Note: Defaults to `"secret"` in local development if omitted).*
+   *(Note: There is no default. If it is unset, `X-Actuator-Token` is rejected and only admin JWTs work.)*
 3. **Execute POST Request**:
    ```bash
    curl -X POST http://localhost:8081/loggers/booking_api::apis \
@@ -172,12 +172,15 @@ Mutating log levels requires authentication via either **Method 1 (Pre-Shared To
    ```
 
 ##### Method 2: Admin JWT Bearer Token (`Authorization: Bearer <token>`)
-1. **Obtain / Generate an Admin JWT** (signed with `JWT_SECRET` from `.env`):
+The token's `sub` must be a user whose stored roles include `admin`; claims in
+the token (such as `role`) are ignored. Behind Cloud Run, send the user token in
+`X-Forwarded-Authorization` (the `Authorization` header carries the Google ID token).
+1. **Generate a JWT for an existing admin user** (signed with `JWT_SECRET`):
    ```bash
    python3 -c "
-   import jwt, time, os, uuid
-   secret = os.getenv('JWT_SECRET', 'secret')
-   payload = {'sub': str(uuid.uuid4()), 'role': 'admin', 'exp': int(time.time()) + 3600}
+   import jwt, time, os
+   secret = os.environ['JWT_SECRET']
+   payload = {'sub': '<admin-user-uuid>', 'exp': int(time.time()) + 3600}
    print(jwt.encode(payload, secret, algorithm='HS256'))
    "
    ```

@@ -62,10 +62,19 @@ pub async fn storage_client() -> Result<Storage, Box<dyn std::error::Error>> {
     Ok(client)
 }
 
+/// Object metadata header that carries the uploader's trace context. GCS
+/// stores it as the object's `traceparent` metadata, which arrives in the
+/// upload notification, so the image worker can join the same trace.
+pub const TRACEPARENT_METADATA_HEADER: &str = "x-goog-meta-traceparent";
+
+/// Signs a 15-minute PUT URL for `object_path`. When `traceparent` is given,
+/// the URL also requires [`TRACEPARENT_METADATA_HEADER`] with that value, so
+/// the client must send it.
 #[tracing::instrument]
 pub async fn generate_v4_signed_url(
     object_path: &str,
     content_type: &str,
+    traceparent: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let bucket_name =
         env::var("GCS_RAW_BUCKET").unwrap_or_else(|_| "our-places-gcs-img-raw".to_string());
@@ -77,6 +86,10 @@ pub async fn generate_v4_signed_url(
             .with_method(Method::PUT)
             .with_expiration(std::time::Duration::from_secs(15 * 60))
             .with_header("content-type", content_type);
+    let builder = match traceparent {
+        Some(value) => builder.with_header(TRACEPARENT_METADATA_HEADER, value),
+        None => builder,
+    };
     // The emulator accepts signed-URL uploads but does not verify signatures.
     let builder = match emulator_endpoint() {
         Some(endpoint) => builder.with_endpoint(endpoint),

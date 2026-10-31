@@ -2276,10 +2276,14 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
     let resp = test::call_service(&app, get(format!("/api/v1/bookings/{id}?currency=CAD"))).await;
     assert_eq!(resp.status(), 422);
 
-    // Once the hold lapses it cannot be confirmed.
+    // Once the hold lapses it cannot be confirmed, even by an admin.
     sqlx::query("UPDATE booking SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1::uuid")
         .bind(&id)
         .execute(&pool)
+        .await
+        .unwrap();
+    let admin_id = Uuid::now_v7();
+    db_core::user::create_user(&pool, &new_user(admin_id, db_core::models::UserRole::Admin))
         .await
         .unwrap();
     let resp = test::call_service(
@@ -2287,7 +2291,10 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
         test::TestRequest::patch()
             .uri(&format!("/api/v1/bookings/{id}"))
             .insert_header(("Accept", "application/json"))
-            .insert_header(guest_auth.clone())
+            .insert_header((
+                "Authorization",
+                format!("Bearer {}", api_core::auth::generate_test_jwt(admin_id)),
+            ))
             .set_json(serde_json::json!({ "status": "confirmed" }))
             .to_request(),
     )

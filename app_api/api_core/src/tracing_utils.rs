@@ -12,7 +12,10 @@ use tracing_subscriber::{
 static RELOAD_HANDLE: OnceCell<Handle<EnvFilter, Registry>> = OnceCell::new();
 static CURRENT_FILTER: OnceCell<RwLock<String>> = OnceCell::new();
 
-pub fn init_subscriber() {
+/// Installs logging and tracing for `service_name` (the crate name). Spans
+/// are propagated and, with `TRACE_EXPORTER=gcp`, exported to Cloud Trace;
+/// see [`common::telemetry`].
+pub fn init_subscriber(service_name: &'static str) {
     let default_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
     let env_filter = EnvFilter::try_new(&default_filter).unwrap_or_else(|_| EnvFilter::new("info"));
     let (filter_layer, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter);
@@ -21,7 +24,9 @@ pub fn init_subscriber() {
     let _ = CURRENT_FILTER.set(RwLock::new(default_filter));
 
     let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "text".to_string());
-    let registry = tracing_subscriber::registry().with(filter_layer);
+    let registry = tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(common::telemetry::layer(service_name));
 
     match log_format.to_lowercase().as_str() {
         // Cloud Logging format; no span open/close lines, since each event
@@ -38,12 +43,20 @@ pub fn init_subscriber() {
                 .try_init();
         }
     }
+    common::telemetry::log_status();
+}
+
+/// Flushes buffered spans to Cloud Trace. Call once, after the server stops.
+pub async fn shutdown_telemetry() {
+    if let Err(e) = tokio::task::spawn_blocking(common::telemetry::shutdown).await {
+        tracing::warn!(error = %e, "Trace exporter shutdown task failed");
+    }
 }
 
 /// Dynamically updates the global tracing subscriber filter at runtime.
 pub fn reload_filter(filter_directive: &str) -> Result<(), String> {
     if RELOAD_HANDLE.get().is_none() {
-        init_subscriber();
+        init_subscriber(env!("CARGO_PKG_NAME"));
     }
 
     let handle = RELOAD_HANDLE
@@ -71,47 +84,23 @@ pub fn get_current_filter() -> String {
 pub struct CustomRootSpanBuilder;
 
 impl RootSpanBuilder for CustomRootSpanBuilder {
+    /// Continues the caller's trace from `traceparent` (portals, other
+    /// services) or `X-Cloud-Trace-Context` (Cloud Run's front end), or
+    /// starts a new one, and records its IDs on the root span for logs.
     fn on_request_start(request: &ServiceRequest) -> Span {
-        // 1. Google Cloud Run header: X-Cloud-Trace-Context: TRACE_ID/SPAN_ID;o=TRACE_TRUE
-        let cloud_trace_id = request
-            .headers()
-            .get("x-cloud-trace-context")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|val| val.split('/').next())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-
-        // 2. W3C Trace Context: traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
-        let w3c_trace_id = request
-            .headers()
-            .get("traceparent")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|val| {
-                let parts: Vec<&str> = val.split('-').collect();
-                if parts.len() >= 4 {
-                    Some(parts[1].to_string())
-                } else {
-                    None
-                }
-            });
-
-        // 3. Custom trace-id header or random UUID fallback
-        let trace_id = cloud_trace_id
-            .or(w3c_trace_id)
-            .or_else(|| {
-                request
-                    .headers()
-                    .get("trace-id")
-                    .and_then(|h| h.to_str().ok())
-                    .map(|s| s.to_string())
-            })
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-
-        if !trace_id.is_empty() {
-            tracing_actix_web::root_span!(request, trace_id = trace_id)
-        } else {
-            tracing_actix_web::root_span!(request)
-        }
+        let span = tracing_actix_web::root_span!(
+            request,
+            span_id = tracing::field::Empty,
+            trace_sampled = tracing::field::Empty
+        );
+        common::telemetry::continue_trace(&span, |name| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned)
+        });
+        span
     }
 
     fn on_request_end<B: MessageBody>(span: Span, outcome: &Result<ServiceResponse<B>, Error>) {

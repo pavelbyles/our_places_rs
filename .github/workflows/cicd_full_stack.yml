@@ -438,6 +438,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -584,6 +586,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -824,6 +828,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -865,6 +871,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -937,6 +945,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             EA__SERVER__HOST=0.0.0.0
             EA__SERVER__PORT=8080
@@ -1061,6 +1071,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             HOST=0.0.0.0
             ENABLE_HSTS=true
@@ -1184,6 +1196,8 @@ jobs:
           env_vars: |
             LOG_FORMAT=json
             GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
+            TRACE_EXPORTER=gcp
+            TRACE_SAMPLE_RATIO=${{ vars.TRACE_SAMPLE_RATIO || '1.0' }}
             RUST_LOG=info
             HOST=0.0.0.0
             ENABLE_HSTS=true
@@ -1204,7 +1218,7 @@ jobs:
           RAW_BUCKET: ${{ env.GCS_RAW_BUCKET_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
         run: |
           ORIGINS=$(jq -cn --arg a "$PORTAL_URL" --arg b "$PUBLIC_URL" '[$a, $b] | map(select(. != "")) | unique')
-          jq -n --argjson origins "$ORIGINS" '[{origin: $origins, method: ["PUT"], responseHeader: ["Content-Type"], maxAgeSeconds: 3600}]' > cors.json
+          jq -n --argjson origins "$ORIGINS" '[{origin: $origins, method: ["PUT"], responseHeader: ["Content-Type", "x-goog-meta-traceparent"], maxAgeSeconds: 3600}]' > cors.json
           cat cors.json
           gcloud storage buckets update "gs://$RAW_BUCKET" --cors-file=cors.json
 

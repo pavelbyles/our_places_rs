@@ -224,6 +224,15 @@ stateDiagram-v2
 
 ---
 
+### 4.6. Distributed Tracing
+
+One trace follows a request from the browser through the portal, the APIs and the workers (`common::telemetry`, OpenTelemetry):
+
+- **HTTP:** the portals (`web_ui_common::request_tracing::RequestTracing`) and APIs (`api_core::tracing_utils::CustomRootSpanBuilder`) continue an incoming `traceparent` or Cloud Run's `X-Cloud-Trace-Context`; `AuthenticatedClient` forwards both on every API call.
+- **Async hops:** email events carry the trace context as Pub/Sub attributes. Image uploads carry it as `x-goog-meta-traceparent` object metadata, required by the signed URL and delivered in the GCS notification.
+- **Logs:** each Cloud Logging entry gets `logging.googleapis.com/trace` and `spanId`, so one filter shows every service's logs for a request.
+- **Export:** with `TRACE_EXPORTER=gcp`, spans go to Cloud Trace over OTLP (`telemetry.googleapis.com`), sampled by `TRACE_SAMPLE_RATIO`. Configuration and IAM are in [ENVIRONMENT.md §4](ENVIRONMENT.md).
+
 ## 5. Security
 
 - **User auth**: the portals mint short-lived HS256 JWTs (`web_client::jwt`) after login, and `api_core::auth` verifies them. Both sides share `JWT_SECRET`.

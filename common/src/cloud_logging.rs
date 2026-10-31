@@ -18,8 +18,10 @@ use tracing_subscriber::registry::LookupSpan;
 
 static PROJECT_ENV: &str = "GOOGLE_CLOUD_PROJECT";
 static TRACE_KEY: &str = "logging.googleapis.com/trace";
-/// Span field holding the Cloud Trace id (see `api_core::tracing_utils`).
-static TRACE_ID_FIELD: &str = "trace_id";
+static SPAN_ID_KEY: &str = "logging.googleapis.com/spanId";
+static TRACE_SAMPLED_KEY: &str = "logging.googleapis.com/trace_sampled";
+/// Span fields set by [`crate::telemetry::continue_trace`].
+use crate::telemetry::{SPAN_ID_FIELD, TRACE_ID_FIELD, TRACE_SAMPLED_FIELD};
 
 /// Formats events as single-line Cloud Logging JSON.
 #[derive(Debug, Clone, Default)]
@@ -124,6 +126,12 @@ where
         entry.insert("target".into(), meta.target().into());
         if let Some(trace) = trace {
             entry.insert(TRACE_KEY.into(), trace.into());
+            if let Some(span_id) = span.get(SPAN_ID_FIELD) {
+                entry.insert(SPAN_ID_KEY.into(), span_id.clone());
+            }
+            if let Some(sampled) = span.get(TRACE_SAMPLED_FIELD) {
+                entry.insert(TRACE_SAMPLED_KEY.into(), sampled.clone());
+            }
         }
         if !span.is_empty() {
             entry.insert("span".into(), Value::Object(span));

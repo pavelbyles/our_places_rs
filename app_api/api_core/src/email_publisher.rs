@@ -138,9 +138,13 @@ impl EmailPublisher {
 
         let base64_data = base64::engine::general_purpose::STANDARD.encode(payload_bytes);
 
+        // Trace context rides along as attributes, so the worker's handling
+        // of this email joins the trace of the request that queued it.
+        let attributes = common::telemetry::current_trace_headers();
         let pubsub_body = serde_json::json!({
             "messages": [{
-                "data": base64_data
+                "data": base64_data,
+                "attributes": attributes
             }]
         });
 

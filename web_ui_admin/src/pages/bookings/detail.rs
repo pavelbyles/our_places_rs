@@ -103,6 +103,21 @@ struct DialogData {
     documents: Vec<TaxDocumentResponse>,
     pending_change: Option<ReservationChangeRequestResponse>,
     show_quote: bool,
+    status_options: Vec<&'static str>,
+}
+
+/// Statuses `role` may pick for a booking currently in `current`. Mirrors
+/// booking_api: hosts may only cancel; confirming and completing are for
+/// admins (and the stay-completion job).
+fn status_options(role: AdminRole, current: &str) -> Vec<&'static str> {
+    STATUSES
+        .into_iter()
+        .filter(|s| {
+            *s == current
+                || role == AdminRole::Admin
+                || (*s == "cancelled" && matches!(current, "pending" | "confirmed"))
+        })
+        .collect()
 }
 
 #[component]
@@ -197,8 +212,8 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
                     <form method="post" action=(status_action) class="flex gap-2">
                         <label for="detail-status" class="sr-only">"Booking status"</label>
                         <select id="detail-status" name="status" class="h-10 rounded-lg border border-border bg-card px-3 text-sm">
-                            for s in STATUSES {
-                                <option value=(s) selected=(current == s)>(s)</option>
+                            for s in data.status_options.iter() {
+                                <option value=(s) selected=(current == *s)>(s)</option>
                             }
                         </select>
                         <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Update status"</button>
@@ -244,11 +259,13 @@ pub async fn booking_dialog(cx: &Cx) -> Result<impl View> {
         .unwrap_or_default()
         .into_iter()
         .find(|r| r.status == ReservationChangeStatus::Pending);
+    let status_options = status_options(user.role, &booking.status.to_lowercase());
     let data = DialogData {
         booking,
         documents,
         pending_change,
         show_quote: user.role == AdminRole::Admin,
+        status_options,
     };
     Ok(view! { dialog_view(data: data) })
 }
@@ -451,4 +468,23 @@ pub async fn decline_change(cx: &Cx) -> Result<()> {
 #[page(POST "/admin/bookings/{id}/change-requests/{request_id}/cancel")]
 pub async fn withdraw_change(cx: &Cx) -> Result<()> {
     respond(cx, ChangeAction::Withdraw).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hosts_are_only_offered_cancellation() {
+        assert_eq!(
+            status_options(AdminRole::Host, "pending"),
+            ["pending", "cancelled"]
+        );
+        assert_eq!(
+            status_options(AdminRole::Host, "confirmed"),
+            ["confirmed", "cancelled"]
+        );
+        assert_eq!(status_options(AdminRole::Host, "cancelled"), ["cancelled"]);
+        assert_eq!(status_options(AdminRole::Admin, "pending"), STATUSES);
+    }
 }

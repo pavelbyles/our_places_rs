@@ -50,6 +50,19 @@ pub async fn update_booking(
     .fetch_one(&mut *tx)
     .await?;
 
+    // Checked under the row lock so concurrent requests cannot, say, confirm
+    // a booking that another request has just cancelled.
+    if let Some(to) = updated_booking.status
+        && !current.status.can_transition_to(to)
+    {
+        tracing::warn!(booking_id = %id, from = ?current.status, to = ?to, "rejected invalid booking status change");
+        return Err(crate::error::DbError::BookingNotModifiable(format!(
+            "A {} booking cannot be changed to {}",
+            format!("{:?}", current.status).to_lowercase(),
+            format!("{to:?}").to_lowercase()
+        )));
+    }
+
     if updated_booking.status == Some(BookingStatus::Confirmed)
         && current.status == BookingStatus::Pending
         && !current.hold_active
@@ -369,10 +382,22 @@ async fn host_payout_terms(
 /// Deletes a booking (Hard Delete).
 #[tracing::instrument(skip(pool))]
 pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
+    // Tax documents and payout ledger rows reference the booking with
+    // ON DELETE RESTRICT: statutory records must outlive it. Refuse clearly.
     let result: sqlx::postgres::PgQueryResult =
         sqlx::query!("DELETE FROM booking WHERE id = $1", id)
             .execute(pool)
-            .await?;
+            .await
+            .map_err(|e| match e.as_database_error() {
+                // 23001 restrict_violation (ON DELETE RESTRICT), 23503 foreign_key_violation.
+                Some(db) if matches!(db.code().as_deref(), Some("23001" | "23503")) => {
+                    tracing::warn!(booking_id = %id, constraint = ?db.constraint(), "hard delete refused: booking has retained records");
+                    crate::error::DbError::BookingNotModifiable(
+                        "This booking has tax documents or payout records and cannot be deleted; cancel it instead".to_string(),
+                    )
+                }
+                _ => e.into(),
+            })?;
 
     if result.rows_affected() == 0 {
         return Err(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound));

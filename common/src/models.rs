@@ -431,6 +431,10 @@ pub struct ImagePresignResponse {
     pub client_file_id: String, // Mirrored back to the client
     pub file_id: uuid::Uuid,
     pub upload_url: String, // The GCS v4 Signed URL
+    /// Extra headers the upload must send because they are part of the
+    /// signature (the trace context for the image worker).
+    #[serde(default)]
+    pub upload_headers: std::collections::HashMap<String, String>,
 }
 
 /// Parameters required to create a new reservation checkout hold.

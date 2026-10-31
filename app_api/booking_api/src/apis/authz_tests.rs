@@ -115,6 +115,14 @@ fn settings() -> api_core::settings::Settings {
     }
 }
 
+fn tax_settings() -> crate::settings::TaxSettings {
+    crate::settings::TaxSettings {
+        taj_supplier_trn: "000-111-222".to_string(),
+        supplier_name: "Our Places Jamaica Limited".to_string(),
+        supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+    }
+}
+
 fn booking_request(guest_id: Uuid, listing_id: Uuid) -> serde_json::Value {
     serde_json::json!({
         "guest_id": guest_id,
@@ -151,6 +159,7 @@ async fn test_booking_routes_enforce_user_and_booking_authorization() {
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings()))
+            .app_data(web::Data::new(tax_settings()))
             .configure(crate::apis::configure_routes),
     )
     .await;
@@ -319,6 +328,30 @@ async fn test_booking_routes_enforce_user_and_booking_authorization() {
         assert_eq!(found, sees_it, "booking list as {who}");
     }
 
+    // Status changes by role. Only admins confirm or complete; anyone on the
+    // booking may cancel; a cancelled booking can never be revived.
+    let patch = |who: Uuid, body: serde_json::Value| {
+        call(test::TestRequest::patch(), one.clone(), Some(who)).set_json(body)
+    };
+    let to = |s: &str| serde_json::json!({ "status": s });
+    assert_eq!(status!(patch(guest, to("confirmed"))), 403);
+    assert_eq!(status!(patch(host, to("confirmed"))), 403);
+    assert_eq!(status!(patch(host, to("completed"))), 403);
+    assert_eq!(status!(patch(guest, to("pending"))), 403);
+    assert_eq!(
+        status!(patch(
+            guest,
+            serde_json::json!({ "door_access_code": "1234" })
+        )),
+        403
+    );
+    assert_eq!(status!(patch(admin, to("confirmed"))), 200);
+    assert_eq!(status!(patch(guest, to("cancelled"))), 200);
+    let resp = test::call_service(&app, patch(admin, to("confirmed")).to_request()).await;
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], "BOOKING_NOT_MODIFIABLE");
+
     // Transfer and hard delete are admin-only.
     let transfer = format!("{one}/transfer");
     for who in [guest, host] {
@@ -338,8 +371,112 @@ async fn test_booking_routes_enforce_user_and_booking_authorization() {
         status!(call(test::TestRequest::delete(), one.clone(), None)),
         401
     );
+    // Hard delete also needs the feature flag (off by default).
     assert_eq!(
         status!(call(test::TestRequest::delete(), one.clone(), Some(admin))),
+        403
+    );
+    let mut hard_deletes_on = settings();
+    hard_deletes_on.feature_flags.enable_hard_deletes = true;
+    let flagged_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(hard_deletes_on))
+            .app_data(web::Data::new(tax_settings()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+    let delete = |path: &str, who: Uuid| {
+        call(test::TestRequest::delete(), path.to_string(), Some(who)).to_request()
+    };
+    assert_eq!(
+        test::call_service(&flagged_app, delete(&one, host))
+            .await
+            .status(),
+        403
+    );
+    // `one` was confirmed, so it has statutory records: refused, not a 500.
+    let resp = test::call_service(&flagged_app, delete(&one, admin)).await;
+    assert_eq!(resp.status(), 409);
+    // A hold that never got that far can be removed.
+    let mut fresh = booking_request(guest, villa);
+    fresh["check_in"] = "2030-09-01".into();
+    fresh["check_out"] = "2030-09-03".into();
+    let resp = test::call_service(
+        &flagged_app,
+        call(
+            test::TestRequest::post(),
+            "/api/v1/bookings".into(),
+            Some(guest),
+        )
+        .set_json(fresh)
+        .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let hold: serde_json::Value = test::read_body_json(resp).await;
+    let hold = format!("/api/v1/bookings/{}", hold["id"].as_str().unwrap());
+    assert_eq!(
+        test::call_service(&flagged_app, delete(&hold, admin))
+            .await
+            .status(),
         204
     );
+}
+
+/// Changing log levels needs an admin *according to the database*: a valid
+/// token for any other user is refused, whichever header carries it.
+#[tokio::test]
+async fn test_actuator_log_level_changes_require_a_stored_admin_role() {
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+
+    let guest = user(&pool, UserRole::Booker).await;
+    let host = user(&pool, UserRole::Host).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let unknown = Uuid::now_v7();
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .configure(api_core::actuator::configure_actuator),
+    )
+    .await;
+
+    let bearer = |id: Uuid| format!("Bearer {}", api_core::auth::generate_test_jwt(id));
+    let post = || {
+        test::TestRequest::post()
+            .uri("/loggers/booking_api")
+            .set_json(serde_json::json!({ "configuredLevel": "INFO" }))
+    };
+    let status = |resp: actix_web::dev::ServiceResponse| resp.status().as_u16();
+
+    assert_eq!(
+        status(test::call_service(&app, post().to_request()).await),
+        401
+    );
+    for (who, expected) in [(guest, 403), (host, 403), (unknown, 401), (admin, 200)] {
+        // Called directly: the user token is in `Authorization`.
+        let resp = test::call_service(
+            &app,
+            post()
+                .insert_header(("Authorization", bearer(who)))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status(resp), expected, "direct call as {who}");
+        // Behind Cloud Run: service identity in `Authorization`, user token forwarded.
+        let resp = test::call_service(
+            &app,
+            post()
+                .insert_header(("Authorization", "Bearer google-id-token"))
+                .insert_header(("X-Forwarded-Authorization", bearer(who)))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status(resp), expected, "forwarded call as {who}");
+    }
 }

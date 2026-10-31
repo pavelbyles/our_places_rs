@@ -19,12 +19,15 @@ async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     // Initialize tracing
-    api_core::tracing_utils::init_subscriber();
+    api_core::tracing_utils::init_subscriber(env!("CARGO_PKG_NAME"));
 
     tracing::info!("Starting application");
 
     // Get settings
     let config = settings::get_settings().context("Could not load settings")?;
+
+    // User tokens cannot be verified without it, and there is no fallback.
+    api_core::auth::jwt_secret().context("Refusing to start")?;
 
     // Create database connection pool
     tracing::info!("Connecting to database");
@@ -49,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind(&address)
         .context(format!("Failed to bind to random port {}", address))?;
-    let _ = run(
+    let served = run(
         listener,
         db_connection_pool,
         apis::configure_routes,
@@ -58,5 +61,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Server error");
 
-    Ok(())
+    // Send any buffered spans before the instance goes away.
+    api_core::tracing_utils::shutdown_telemetry().await;
+    served
 }

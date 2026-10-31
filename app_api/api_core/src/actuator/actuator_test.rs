@@ -167,8 +167,10 @@ async fn test_post_loggers_authorized_with_secret_token() {
     assert_eq!(body.configured_level, "DEBUG");
 }
 
+/// A signed token that merely *claims* admin is not enough: the role comes
+/// from the database (see booking_api's authz tests for the admin path).
 #[actix_web::test]
-async fn test_post_loggers_authorized_with_admin_jwt() {
+async fn test_post_loggers_role_claim_alone_is_not_admin() {
     // Same value as the unset-variable fallback, so tests running in
     // parallel (auth::tests) never sign and verify with different secrets.
     unsafe {
@@ -208,9 +210,8 @@ async fn test_post_loggers_authorized_with_admin_jwt() {
         .to_request();
     let resp = test::call_service(&app, req).await;
 
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: UpdateLoggerResponse = test::read_body_json(resp).await;
-    assert_eq!(body.configured_level, "WARN");
+    // No database to confirm the role, so access is refused (not granted).
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[actix_web::test]

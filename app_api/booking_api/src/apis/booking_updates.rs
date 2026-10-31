@@ -1,11 +1,13 @@
 //! Booking status changes, deletion and guest transfer.
 
+use super::booking_policy::{BookingRole, authorize_update};
 use super::notifications::dispatch_booking_status_notifications;
 use super::{authorize_booking_party, is_admin, map_pricing_error, nightly_price, require_admin};
 use crate::settings::TaxSettings;
 use actix_web::{HttpRequest, HttpResponse, Responder, web};
 use api_core::auth::Claims;
 use api_core::response::{Payload, respond};
+use api_core::settings::Settings;
 use api_core::{
     error::ApiError,
     models::{BookingResponse, map_booking_to_response},
@@ -23,7 +25,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 /// Request payload for updating booking details, status, or door access code.
-#[derive(Debug, Deserialize, Validate, ToSchema)]
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
 pub struct UpdatedBookingRequest {
     /// Optional updated booking status.
     pub status: Option<BookingStatus>,
@@ -63,23 +65,23 @@ pub(super) async fn update_booking(
 ) -> Result<impl Responder, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
 
-    // Only the booking's guest, its host or an admin may touch it (404 otherwise).
+    // Only the booking's guest, its host or an admin may touch it (404 otherwise),
+    // and each may only change what their role allows (403).
     let (parties, user) = authorize_booking_party(&req, pool.get_ref(), *id).await?;
-    let caller_is_admin = is_admin(&user);
-
-    if body.door_access_code.is_some() && !caller_is_admin && user.id != parties.host_id {
-        return Err(ApiError::Forbidden(
-            "Only hosts and administrators can configure property door access codes".to_string(),
-        ));
-    }
+    let role = if is_admin(&user) {
+        BookingRole::Admin
+    } else if user.id == parties.host_id {
+        BookingRole::Host
+    } else {
+        BookingRole::Guest
+    };
+    authorize_update(role, &body).map_err(|reason| {
+        tracing::warn!(booking_id = %id, user_id = %user.id, ?role, reason, "booking update refused");
+        ApiError::Forbidden(reason.to_string())
+    })?;
 
     let terms_requested =
         body.date_from.is_some() || body.date_to.is_some() || body.number_of_persons.is_some();
-    if terms_requested && !caller_is_admin {
-        return Err(ApiError::Forbidden(
-            "Direct reservation date or guest count changes require administrator privileges; submit a reservation change request instead".to_string(),
-        ));
-    }
 
     let old_booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
         .await
@@ -320,9 +322,14 @@ pub(super) async fn update_booking(
 pub(super) async fn delete_booking(
     claims: Claims,
     pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
     id: web::Path<Uuid>,
 ) -> Result<impl Responder, ApiError> {
     require_admin(pool.get_ref(), &claims, "delete bookings").await?;
+    if !settings.feature_flags.enable_hard_deletes {
+        tracing::warn!(booking_id = %id, admin_id = %claims.sub, "hard delete refused: feature flag is off");
+        return Err(ApiError::FeatureDisabled("hard_delete".to_string()));
+    }
     tracing::info!(booking_id = %id, admin_id = %claims.sub, "hard-deleting booking");
     db_booking::delete_booking(pool.get_ref(), *id)
         .await

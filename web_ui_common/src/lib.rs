@@ -25,3 +25,7 @@ pub mod shell_admin;
 
 /// Guard failure → 303 / HX-Redirect / 403 / 503.
 pub mod guard;
+
+/// Logging setup and the per-request tracing layer that joins page loads
+/// and API calls into one trace.
+pub mod request_tracing;

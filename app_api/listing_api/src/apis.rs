@@ -457,21 +457,39 @@ async fn presign_batch(
         return Err(ApiError::ValidationError(errors));
     }
 
+    // The upload carries this request's trace context as object metadata, so
+    // the image worker's processing joins this trace.
+    let traceparent =
+        common::telemetry::current_trace_headers().remove(common::telemetry::TRACEPARENT);
+    let upload_headers: std::collections::HashMap<String, String> = traceparent
+        .iter()
+        .map(|value| {
+            (
+                common::gcs::TRACEPARENT_METADATA_HEADER.to_owned(),
+                value.clone(),
+            )
+        })
+        .collect();
+
     // Generate the IDs and upload URLs first so they can be saved to the database.
     let mut db_payload = Vec::new();
     for image in &img_metadata_req.images {
         let file_id = Uuid::new_v4();
         let object_path = format!("listing_{}/image_{}", listing_id, file_id);
-        let upload_url = common::gcs::generate_v4_signed_url(&object_path, &image.content_type)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "Failed to generate presigned URL for listing_id: {}: {:?}",
-                    listing_id,
-                    e
-                );
-                ApiError::Internal
-            })?;
+        let upload_url = common::gcs::generate_v4_signed_url(
+            &object_path,
+            &image.content_type,
+            traceparent.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to generate presigned URL for listing_id: {}: {:?}",
+                listing_id,
+                e
+            );
+            ApiError::Internal
+        })?;
 
         db_payload.push((file_id, image.clone(), upload_url));
     }
@@ -500,6 +518,7 @@ async fn presign_batch(
             file_id: img.id,
             // Safe to unwrap here because we literally just inserted these URLs in the DB ourselves
             upload_url: img.upload_url.unwrap_or_default(),
+            upload_headers: upload_headers.clone(),
         });
     }
 

@@ -19,3 +19,5 @@ pub mod pricing;
 pub mod reference;
 pub mod slug;
 pub mod tax_document;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod telemetry;

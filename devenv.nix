@@ -258,7 +258,7 @@
           -public-host localhost:4443 -external-url http://localhost:4443 \
           -backend filesystem -filesystem-root "$GCS_DIR/data" \
           -event.pubsub-project-id our-places-dev -event.pubsub-topic gcs-image-uploads \
-          -event.bucket "$GCS_RAW_BUCKET" -cors-headers content-type \
+          -event.bucket "$GCS_RAW_BUCKET" -cors-headers content-type,x-goog-meta-traceparent \
           > /tmp/fake_gcs.log 2>&1 &
         echo $! > /tmp/fake_gcs.pid
       fi

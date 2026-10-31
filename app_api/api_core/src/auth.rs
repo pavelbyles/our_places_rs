@@ -9,6 +9,23 @@ use std::env;
 use std::future::{Ready, ready};
 use uuid::Uuid;
 
+static JWT_SECRET_ENV: &str = "JWT_SECRET";
+
+/// `JWT_SECRET` is unset or blank. There is deliberately no fallback secret:
+/// a well-known default would let anyone mint valid user tokens.
+#[derive(Debug, thiserror::Error)]
+#[error("JWT_SECRET is not set; refusing to sign or verify user tokens without it")]
+pub struct MissingJwtSecret;
+
+/// The HS256 secret for user JWTs. APIs call this at startup so a missing
+/// secret stops the service instead of surfacing on the first request.
+pub fn jwt_secret() -> Result<String, MissingJwtSecret> {
+    env::var(JWT_SECRET_ENV)
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or(MissingJwtSecret)
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub sub: Uuid,
@@ -38,7 +55,11 @@ impl FromRequest for Claims {
                 })
             })
             .and_then(|token| {
-                let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
+                // A server misconfiguration, not the caller's fault: 500, logged.
+                let secret = jwt_secret().map_err(|e| {
+                    tracing::error!(error = %e, "cannot verify user token");
+                    ApiError::Internal
+                })?;
                 let mut validation = Validation::new(Algorithm::HS256);
                 validation.validate_exp = true;
 
@@ -89,7 +110,7 @@ pub fn generate_test_jwt(user_id: Uuid) -> String {
         exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
     };
 
-    let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
+    let secret = jwt_secret().unwrap_or_default();
     encode(
         &Header::default(),
         &claims,

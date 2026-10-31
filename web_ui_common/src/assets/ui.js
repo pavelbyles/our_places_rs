@@ -206,7 +206,9 @@
       .then(function (signed) {
         return Promise.all(signed.map(function (s) {
           var file = files[Number(s.client_file_id)];
-          return fetch(s.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+          // upload_headers are part of the signature (trace context), so send them too.
+          var headers = Object.assign({ 'Content-Type': file.type }, s.upload_headers || {});
+          return fetch(s.upload_url, { method: 'PUT', headers: headers, body: file })
             .then(function (r) { return r.ok; }, function () { return false; });
         }));
       })

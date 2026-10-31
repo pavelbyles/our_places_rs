@@ -6,8 +6,10 @@ use base64::Engine;
 use common::email::EmailNotificationEvent;
 use db_core::PgPool;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::field::Empty;
+use tracing::{Instrument, error, info, warn};
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -20,6 +22,9 @@ pub struct PubSubPushEnvelope {
 #[serde(rename_all = "camelCase")]
 pub struct PubSubMessage {
     pub data: String,
+    /// Includes the publisher's trace context (`traceparent`, ...).
+    #[serde(default)]
+    pub attributes: HashMap<String, String>,
     #[serde(default)]
     pub _message_id: Option<String>,
     #[serde(default)]
@@ -43,74 +48,90 @@ pub async fn handle_pubsub_email_event(
     provider: web::Data<Arc<dyn EmailProvider>>,
     config: web::Data<WorkerConfig>,
 ) -> impl Responder {
-    // 1. Verify Secret Token if configured
-    if let Some(expected_token) = &config.pubsub_secret_token {
-        let auth_header = req
-            .headers()
-            .get("X-PubSub-Secret-Token")
-            .and_then(|v| v.to_str().ok())
-            .or_else(|| {
-                req.headers()
-                    .get("Authorization")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.strip_prefix("Bearer "))
-            });
+    // Handle the message inside the trace of the request that queued it.
+    let span = tracing::info_span!(
+        "pubsub email event",
+        otel.kind = "consumer",
+        trace_id = Empty,
+        span_id = Empty,
+        trace_sampled = Empty,
+    );
+    common::telemetry::continue_trace(&span, |name| body.message.attributes.get(name).cloned());
 
-        match auth_header {
-            Some(token) if token == expected_token => {}
-            _ => {
-                warn!("Unauthorized Pub/Sub push request received");
-                return HttpResponse::Unauthorized()
-                    .json(serde_json::json!({ "error": "Unauthorized" }));
+    async move {
+        // 1. Verify Secret Token if configured
+        if let Some(expected_token) = &config.pubsub_secret_token {
+            let auth_header = req
+                .headers()
+                .get("X-PubSub-Secret-Token")
+                .and_then(|v| v.to_str().ok())
+                .or_else(|| {
+                    req.headers()
+                        .get("Authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.strip_prefix("Bearer "))
+                });
+
+            match auth_header {
+                Some(token) if token == expected_token => {}
+                _ => {
+                    warn!("Unauthorized Pub/Sub push request received");
+                    return HttpResponse::Unauthorized()
+                        .json(serde_json::json!({ "error": "Unauthorized" }));
+                }
             }
         }
-    }
 
-    // 2. Decode Base64 Pub/Sub Message Data
-    let decoded_bytes = match base64::engine::general_purpose::STANDARD.decode(&body.message.data) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            error!("Failed to decode base64 Pub/Sub payload: {}", e);
-            // Return 200 OK to consume malformed payload and prevent infinite Pub/Sub redelivery
-            return HttpResponse::Ok()
-                .json(serde_json::json!({ "error": "Malformed base64 payload" }));
-        }
-    };
+        // 2. Decode Base64 Pub/Sub Message Data
+        let decoded_bytes =
+            match base64::engine::general_purpose::STANDARD.decode(&body.message.data) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    error!("Failed to decode base64 Pub/Sub payload: {}", e);
+                    // Return 200 OK to consume malformed payload and prevent infinite Pub/Sub redelivery
+                    return HttpResponse::Ok()
+                        .json(serde_json::json!({ "error": "Malformed base64 payload" }));
+                }
+            };
 
-    // 3. Deserialize JSON EmailNotificationEvent
-    let event: EmailNotificationEvent = match serde_json::from_slice(&decoded_bytes) {
-        Ok(evt) => evt,
-        Err(e) => {
-            error!("Failed to deserialize EmailNotificationEvent: {}", e);
-            // Return 200 OK to consume malformed JSON and prevent infinite Pub/Sub redelivery
-            return HttpResponse::Ok().json(serde_json::json!({ "error": "Invalid event JSON" }));
-        }
-    };
+        // 3. Deserialize JSON EmailNotificationEvent
+        let event: EmailNotificationEvent = match serde_json::from_slice(&decoded_bytes) {
+            Ok(evt) => evt,
+            Err(e) => {
+                error!("Failed to deserialize EmailNotificationEvent: {}", e);
+                // Return 200 OK to consume malformed JSON and prevent infinite Pub/Sub redelivery
+                return HttpResponse::Ok()
+                    .json(serde_json::json!({ "error": "Invalid event JSON" }));
+            }
+        };
 
-    info!(
-        "Received email notification event for email_id: {}",
-        event.email_id
-    );
-
-    // 4. Process Email via State Machine & Decoupled I/O
-    if let Err(e) = process_email_event(
-        pool.get_ref(),
-        provider.as_ref().as_ref(),
-        event.email_id,
-        config.max_retries,
-    )
-    .await
-    {
-        error!(
-            "Unexpected error processing email_id {}: {}",
-            event.email_id, e
+        info!(
+            "Received email notification event for email_id: {}",
+            event.email_id
         );
-    }
 
-    HttpResponse::Ok().json(serde_json::json!({
-        "status": "processed",
-        "email_id": event.email_id
-    }))
+        // 4. Process Email via State Machine & Decoupled I/O
+        if let Err(e) = process_email_event(
+            pool.get_ref(),
+            provider.as_ref().as_ref(),
+            event.email_id,
+            config.max_retries,
+        )
+        .await
+        {
+            error!(
+                "Unexpected error processing email_id {}: {}",
+                event.email_id, e
+            );
+        }
+
+        HttpResponse::Ok().json(serde_json::json!({
+            "status": "processed",
+            "email_id": event.email_id
+        }))
+    }
+    .instrument(span)
+    .await
 }
 
 #[utoipa::path(
