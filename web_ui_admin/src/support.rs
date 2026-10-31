@@ -124,10 +124,21 @@ pub async fn scoped_bookings(
     user: &AdminSession,
     listings: &[ListingResponse],
 ) -> Vec<BookingResponse> {
-    let all = get_api_client(cx)
-        .get_all_bookings(Some(1), Some(100))
-        .await
-        .unwrap_or_default();
+    // booking_api already scopes the list to the caller; the host filter
+    // below is defence in depth.
+    let all = match service_token(cx, user) {
+        Ok(token) => get_api_client(cx)
+            .get_all_bookings(Some(1), Some(100), &token)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!(user_id = %user.user_id, error = ?e, "failed to load bookings");
+                Vec::new()
+            }),
+        Err(_) => {
+            tracing::error!(user_id = %user.user_id, "failed to load bookings: could not mint API token");
+            Vec::new()
+        }
+    };
     match user.role {
         AdminRole::Admin => all,
         AdminRole::Host => {

@@ -26,7 +26,7 @@ use web_ui_common::guard::guard_failure;
 
 use crate::pages::register::urlencode;
 use crate::quote::quote_for;
-use crate::support::{display_currency, jamaica_today};
+use crate::support::{display_currency, jamaica_today, service_token};
 
 path_param!(slug);
 path_param!(id);
@@ -382,7 +382,11 @@ async fn place_booking(
         },
         agreed_cancellation_policy: "Flexible".to_string(),
     };
-    match get_api_client(cx).create_booking(&request).await {
+    let token = service_token(cx, guest).map_err(|_| {
+        tracing::error!(guest_id = %guest.user_id, "booking not placed: could not mint the guest's API token");
+        "We couldn't place your booking. Please try again.".to_string()
+    })?;
+    match get_api_client(cx).create_booking(&request, &token).await {
         Ok(booking) => {
             tracing::info!(booking_id = %booking.id, "booking hold placed");
             Ok(())

@@ -33,7 +33,9 @@ ensure_db_running() {
 
 ensure_db_running
 
-# Run User API service
+# Run User API service. The admin password matches the local seed data
+# (db_core/seeds); it is only used when the local database has no admin yet.
+SYSTEM_ADMIN_PASSWORD="${SYSTEM_ADMIN_PASSWORD:-admin_changeme_2026}" \
 EA__SERVER__PORT="${EA__SERVER__PORT:-8083}" \
 EA__DATABASE__HOST="${EA__DATABASE__HOST:-localhost}" \
 exec cargo run

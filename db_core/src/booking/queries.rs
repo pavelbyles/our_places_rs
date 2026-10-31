@@ -40,6 +40,47 @@ where
     Ok(bookings)
 }
 
+/// Retrieves bookings on listings hosted by `host_id`, newest first.
+#[tracing::instrument(skip(executor))]
+pub async fn get_bookings_by_host_id<'e, E>(
+    executor: E,
+    host_id: Uuid,
+    page: u32,
+    per_page: u32,
+) -> Result<Vec<Booking>>
+where
+    E: PgExecutor<'e>,
+{
+    let limit = per_page as i64;
+    let offset = ((page.max(1) - 1) * per_page) as i64;
+
+    let bookings = sqlx::query_as!(
+        Booking,
+        r#"
+        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as "status: BookingStatus",
+            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,
+            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
+            b.total_price, b.cancellation_policy as "cancellation_policy: CancellationPolicy",
+            b.metadata as "metadata: Json<crate::models::BookingMetadata>",
+            b.door_access_code,
+            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,
+            b.created_at, b.updated_at
+        FROM booking b
+        JOIN listing l ON l.id = b.listing_id
+        WHERE l.user_id = $1
+        ORDER BY b.created_at DESC
+        LIMIT $2 OFFSET $3
+        "#,
+        host_id,
+        limit,
+        offset
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(bookings)
+}
+
 /// Retrieves a single booking by ID.
 #[tracing::instrument(skip(executor))]
 pub async fn get_booking_by_id<'e, E>(executor: E, id: Uuid) -> Result<Booking>

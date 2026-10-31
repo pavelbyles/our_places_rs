@@ -7,6 +7,7 @@ use crate::models::{
     Booking, BookingStatus, CancellationPolicy, FeeItem, SupplierInfo, UpdatedBooking,
 };
 use chrono::Utc;
+use common::payout::{NewPayout, PayoutRecord, PendingPayout};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use sqlx::types::Json;
@@ -182,26 +183,9 @@ pub async fn update_booking(
 
         let terms = host_payout_terms(&mut tx, &booking).await?;
         let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
-        let platform_fee_pct = terms.commission_pct;
-        let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
-            gross_amount,
-            platform_fee_pct,
-            rust_decimal::Decimal::ZERO,
-        );
-
         crate::payout_ledger::create_payout_ledger_entry(
             &mut tx,
-            uuid::Uuid::now_v7(),
-            booking.id,
-            booking.listing_id,
-            terms.host_id,
-            &terms.host_currency,
-            gross_amount,
-            platform_fee_pct,
-            platform_fee_amount,
-            rust_decimal::Decimal::ZERO,
-            terms.exchange_rate,
-            net_payout_amount,
+            &terms.pending_payout(&booking, gross_amount),
         )
         .await?;
     }
@@ -269,27 +253,9 @@ pub async fn update_booking(
             if host_retained > Decimal::ZERO {
                 let terms = host_payout_terms(&mut tx, &booking).await?;
                 let retained_gross = (host_retained * terms.exchange_rate).round_dp(2);
-                let platform_fee_pct = terms.commission_pct;
-                let (platform_fee_amount, net_payout_amount) =
-                    common::pricing::calculate_host_payout(
-                        retained_gross,
-                        platform_fee_pct,
-                        Decimal::ZERO,
-                    );
-
                 crate::payout_ledger::create_payout_ledger_entry(
                     &mut tx,
-                    uuid::Uuid::now_v7(),
-                    booking.id,
-                    booking.listing_id,
-                    terms.host_id,
-                    &terms.host_currency,
-                    retained_gross,
-                    platform_fee_pct,
-                    platform_fee_amount,
-                    Decimal::ZERO,
-                    terms.exchange_rate,
-                    net_payout_amount,
+                    &terms.pending_payout(&booking, retained_gross),
                 )
                 .await?;
             }
@@ -330,6 +296,35 @@ struct HostPayoutTerms {
     commission_pct: Decimal,
     host_currency: String,
     exchange_rate: Decimal,
+}
+
+impl HostPayoutTerms {
+    /// A pending payout to this host of `gross_amount`, already converted
+    /// into the host's currency, less the platform commission.
+    fn pending_payout(
+        &self,
+        booking: &Booking,
+        gross_amount: Decimal,
+    ) -> PayoutRecord<PendingPayout> {
+        let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
+            gross_amount,
+            self.commission_pct,
+            Decimal::ZERO,
+        );
+        PayoutRecord::new(NewPayout {
+            id: Uuid::now_v7(),
+            booking_id: booking.id,
+            listing_id: booking.listing_id,
+            host_id: self.host_id,
+            currency: self.host_currency.clone(),
+            gross_amount,
+            platform_fee_pct: self.commission_pct,
+            platform_fee_amount,
+            tax_withheld_amount: Decimal::ZERO,
+            exchange_rate: self.exchange_rate,
+            net_payout_amount,
+        })
+    }
 }
 
 async fn host_payout_terms(

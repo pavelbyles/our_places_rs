@@ -84,6 +84,7 @@ export async function createBooking(
     const start = new Date(Date.UTC(2032, 0, 1 + Math.floor(Math.random() * 1400)));
     const end = new Date(start.getTime() + 2 * 86_400_000);
     const res = await request.post(`${BOOKING_API_URL}/api/v1/bookings`, {
+      headers: { Authorization: `Bearer ${signTestJwt(guestId)}` },
       data: {
         guest_id: guestId,
         listing_id: SEEDED_LISTING_ID,

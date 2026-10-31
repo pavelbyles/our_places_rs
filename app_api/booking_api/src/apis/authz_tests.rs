@@ -1,0 +1,345 @@
+//! Who may call which booking route: anonymous, stranger, guest, host,
+//! another host and admin. A route that loses its check fails here.
+
+use actix_web::{App, test, web};
+use db_core::models::UserRole;
+use rust_decimal_macros::dec;
+use sqlx::PgPool;
+use sqlx_db_tester::TestPg;
+use std::path::Path;
+use uuid::Uuid;
+
+fn new_user(id: Uuid, role: UserRole) -> db_core::models::NewUser {
+    db_core::models::NewUser {
+        id,
+        email: format!("u_{id}@example.com"),
+        password_hash: "hash".to_string(),
+        first_name: "Test".to_string(),
+        last_name: "User".to_string(),
+        phone_number: None,
+        is_active: true,
+        is_verified: true,
+        verification_code: None,
+        verification_code_expires_at: None,
+        attributes: serde_json::json!({}),
+        roles: Some(vec![role]),
+        default_currency: "USD".to_string(),
+    }
+}
+
+async fn user(pool: &PgPool, role: UserRole) -> Uuid {
+    let id = Uuid::now_v7();
+    db_core::user::create_user(pool, &new_user(id, role))
+        .await
+        .unwrap();
+    if role == UserRole::Host {
+        db_core::user::create_host_profile(
+            pool,
+            id,
+            &db_core::models::NewHostProfile {
+                description: None,
+                verified_status: Some("pending".to_string()),
+                payout_details: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    id
+}
+
+async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
+    db_core::listing::create_listing(
+        pool,
+        &db_core::models::NewListing {
+            name: format!("Villa {}", Uuid::now_v7()),
+            user_id: host_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(200.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.1000)),
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+fn settings() -> api_core::settings::Settings {
+    api_core::settings::Settings {
+        server: api_core::settings::Server {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        database: api_core::settings::DatabaseSettings {
+            username: String::new(),
+            password: String::new(),
+            port: 0,
+            host: String::new(),
+            database_name: String::new(),
+            cloud: false,
+            instance_name: String::new(),
+            database_url: None,
+        },
+        log: api_core::settings::Log {
+            level: "info".to_string(),
+        },
+        env: api_core::settings::Env::Testing,
+        application: api_core::settings::Application {
+            max_attempts: 3,
+            pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+        },
+        feature_flags: api_core::settings::FeatureFlags {
+            enable_hard_deletes: false,
+        },
+    }
+}
+
+fn booking_request(guest_id: Uuid, listing_id: Uuid) -> serde_json::Value {
+    serde_json::json!({
+        "guest_id": guest_id,
+        "listing_id": listing_id,
+        "check_in": "2030-08-01",
+        "check_out": "2030-08-03",
+        "num_adults": 1,
+        "num_children": 0,
+        "num_infants": 0,
+        "num_pets": 0,
+        "is_business_trip": false,
+        "currency": "USD",
+        "agreed_cancellation_policy": "Flexible",
+    })
+}
+
+#[tokio::test]
+async fn test_booking_routes_enforce_user_and_booking_authorization() {
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+
+    let host = user(&pool, UserRole::Host).await;
+    let other_host = user(&pool, UserRole::Host).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let stranger = user(&pool, UserRole::Booker).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let villa = listing(&pool, host).await;
+    listing(&pool, other_host).await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+
+    let call = |method: test::TestRequest, uri: String, as_user: Option<Uuid>| {
+        let req = method
+            .uri(&uri)
+            .insert_header(("Accept", "application/json"));
+        match as_user {
+            Some(id) => req.insert_header((
+                "Authorization",
+                format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+            )),
+            None => req,
+        }
+    };
+    macro_rules! status {
+        ($req:expr) => {
+            test::call_service(&app, $req.to_request())
+                .await
+                .status()
+                .as_u16()
+        };
+    }
+
+    // Public routes stay open to anonymous visitors.
+    assert_eq!(
+        status!(call(
+            test::TestRequest::get(),
+            format!(
+                "/api/v1/bookings/availability?listing_id={villa}&date_from=2030-08-01&date_to=2030-08-03"
+            ),
+            None
+        )),
+        200
+    );
+    assert_eq!(
+        status!(call(
+            test::TestRequest::get(),
+            format!(
+                "/api/v1/bookings/listing/{villa}/unavailable-ranges?from=2030-08-01&to=2030-09-01"
+            ),
+            None
+        )),
+        200
+    );
+
+    // Booking as someone else is refused (it would also cancel their holds).
+    assert_eq!(
+        status!(
+            call(
+                test::TestRequest::post(),
+                "/api/v1/bookings".into(),
+                Some(stranger)
+            )
+            .set_json(booking_request(guest, villa))
+        ),
+        403
+    );
+    assert_eq!(
+        status!(
+            call(test::TestRequest::post(), "/api/v1/bookings".into(), None)
+                .set_json(booking_request(guest, villa))
+        ),
+        401
+    );
+    let resp = test::call_service(
+        &app,
+        call(
+            test::TestRequest::post(),
+            "/api/v1/bookings".into(),
+            Some(guest),
+        )
+        .set_json(booking_request(guest, villa))
+        .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let booking: serde_json::Value = test::read_body_json(resp).await;
+    let id = booking["id"].as_str().unwrap().to_string();
+
+    // Reading one booking: its parties and admins only; everyone else 404s.
+    let one = format!("/api/v1/bookings/{id}");
+    for (who, expected) in [
+        (None, 401),
+        (Some(stranger), 404),
+        (Some(other_host), 404),
+        (Some(guest), 200),
+        (Some(host), 200),
+        (Some(admin), 200),
+    ] {
+        assert_eq!(
+            status!(call(test::TestRequest::get(), one.clone(), who)),
+            expected,
+            "GET booking as {who:?}"
+        );
+    }
+    for (path, who, expected) in [
+        (format!("{one}/messages"), stranger, 404),
+        (format!("{one}/cancellation-quote"), stranger, 404),
+        (format!("{one}/documents"), stranger, 404),
+        (format!("{one}/messages"), guest, 200),
+    ] {
+        assert_eq!(
+            status!(call(test::TestRequest::get(), path.clone(), Some(who))),
+            expected,
+            "GET {path}"
+        );
+    }
+    assert_eq!(
+        status!(
+            call(test::TestRequest::patch(), one.clone(), Some(stranger))
+                .set_json(serde_json::json!({ "door_access_code": "1234" }))
+        ),
+        404
+    );
+
+    // A user's booking list: that user or an admin.
+    let by_guest = format!("/api/v1/bookings/user/{guest}");
+    for (who, expected) in [(stranger, 404), (host, 404), (guest, 200), (admin, 200)] {
+        assert_eq!(
+            status!(call(test::TestRequest::get(), by_guest.clone(), Some(who))),
+            expected,
+            "GET user bookings as {who}"
+        );
+    }
+
+    // A listing's bookings: its host or an admin.
+    let by_listing = format!("/api/v1/bookings/listing/{villa}");
+    for (who, expected) in [(guest, 404), (other_host, 404), (host, 200), (admin, 200)] {
+        assert_eq!(
+            status!(call(
+                test::TestRequest::get(),
+                by_listing.clone(),
+                Some(who)
+            )),
+            expected,
+            "GET listing bookings as {who}"
+        );
+    }
+
+    // The full list is scoped server-side: admins see all, hosts their own.
+    for (who, sees_it) in [
+        (admin, true),
+        (host, true),
+        (other_host, false),
+        (guest, false),
+    ] {
+        let resp = test::call_service(
+            &app,
+            call(
+                test::TestRequest::get(),
+                "/api/v1/bookings?per_page=100".into(),
+                Some(who),
+            )
+            .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let list: serde_json::Value = test::read_body_json(resp).await;
+        let found = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["id"].as_str() == Some(id.as_str()));
+        assert_eq!(found, sees_it, "booking list as {who}");
+    }
+
+    // Transfer and hard delete are admin-only.
+    let transfer = format!("{one}/transfer");
+    for who in [guest, host] {
+        assert_eq!(
+            status!(
+                call(test::TestRequest::post(), transfer.clone(), Some(who))
+                    .set_json(serde_json::json!({ "guest_id": who }))
+            ),
+            403
+        );
+        assert_eq!(
+            status!(call(test::TestRequest::delete(), one.clone(), Some(who))),
+            403
+        );
+    }
+    assert_eq!(
+        status!(call(test::TestRequest::delete(), one.clone(), None)),
+        401
+    );
+    assert_eq!(
+        status!(call(test::TestRequest::delete(), one.clone(), Some(admin))),
+        204
+    );
+}

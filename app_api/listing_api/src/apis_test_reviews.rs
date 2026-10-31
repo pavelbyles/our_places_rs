@@ -8,8 +8,8 @@ async fn test_reviews_endpoints() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
-    let guest_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
+    let guest_id = create_test_user(&mut conn).await;
 
     // 1. Create a listing
     let new_listing = NewListing {
@@ -66,7 +66,7 @@ async fn test_reviews_endpoints() {
     .unwrap();
 
     // 3. Generate a token
-    let token = db_core::review::create_review_token(&mut *conn, booking_id).await.unwrap();
+    let token = db_core::review::create_review_token(&mut conn, booking_id).await.unwrap();
 
     // Make the token valid immediately for the test
     sqlx::query(
@@ -179,8 +179,8 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
-    let guest_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
+    let guest_id = create_test_user(&mut conn).await;
 
     // 1. Create a listing
     let new_listing = NewListing {

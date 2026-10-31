@@ -115,18 +115,24 @@ impl TopcoatApiClient {
         common::app_client::get_pricing_quote(listing_id, check_in, check_out, currency).await
     }
 
-    /// Create a pending booking hold
-    pub async fn create_booking(&self, req: &NewBookingRequest) -> anyhow::Result<BookingResponse> {
-        common::app_client::create_booking(req).await
+    /// Create a pending booking hold as the guest who owns `jwt`
+    pub async fn create_booking(
+        &self,
+        req: &NewBookingRequest,
+        jwt: &str,
+    ) -> anyhow::Result<BookingResponse> {
+        common::app_client::create_booking(req, jwt).await
     }
 
-    /// Get all bookings for admin
+    /// Bookings visible to the user who owns `jwt` (all for admins, own
+    /// listings' for hosts)
     pub async fn get_all_bookings(
         &self,
         page: Option<u32>,
         per_page: Option<u32>,
+        jwt: &str,
     ) -> anyhow::Result<Vec<BookingResponse>> {
-        common::app_client::get_all_bookings(page, per_page).await
+        common::app_client::get_all_bookings(page, per_page, jwt).await
     }
 
     /// Update a booking

@@ -16,6 +16,7 @@ Every variable the services read, where it comes from in each environment, and t
 | `DB_PASSWORD_DEV` / `_PROD` | yes | Cloud SQL password for the APIs and workers. |
 | `JWT_SECRET_DEV` / `_PROD` | **yes (new)** | HS256 key shared by the portals (they sign user tokens) and the three APIs (they verify them). The deploy fails fast if it is missing. Generate with `openssl rand -hex 32`. |
 | `SMTP_PASS_DEV` / `_PROD` | yes | SMTP password. For Gmail this is a 16-character app password, not the account password. |
+| `SYSTEM_ADMIN_PASSWORD_DEV` / `_PROD` | **yes (new)** | Password for `admin@ourplaces.io`, which user_api creates on first boot against an empty schema (every new branch). At least 12 characters; the deploy fails fast otherwise. Ignored once the admin exists, so change an existing admin's password in the app. Generate with `openssl rand -base64 24`. |
 | `CRON_SECRET_DEV` / `_PROD` | yes | `x-cron-secret` header for booking_api's `/api/v1/internal/cron/*` sweeps. |
 
 ### Variables
@@ -71,6 +72,7 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 | `STORAGE_EMULATOR_HOST` | listing | local only | Fake GCS for signed URLs. |
 | `BASE_URL` | booking | yes in cloud | Guest portal URL for links in emails. Set by CI after the portals deploy. Local default `http://localhost:3010`. |
 | `ADMIN_BASE_URL` | booking | yes in cloud | Admin portal URL for host links in emails. Set by CI. Local default `http://localhost:3012`. |
+| `SYSTEM_ADMIN_PASSWORD` | user | yes on first boot | Password for the bootstrap admin when the database has none; user_api refuses to start without it then. No fallback in the cloud. `run_local.sh` defaults it to the local seed password. |
 | `CRON_SECRET` | booking | yes | Required by the cron endpoints; no fallback. |
 | `EA__APPLICATION__PENDING_HOLD_MINUTES` | booking | no | Minutes a new `pending` booking holds its dates. Default `120` (`config/Default.toml`). Must be positive or booking_api will not start. Not set by CI. Change it with `gcloud run services update booking-api-<branch> --update-env-vars EA__APPLICATION__PENDING_HOLD_MINUTES=60`: that makes a new revision, not a rebuild, and later CI deploys keep it because `deploy-cloudrun` merges env vars. Existing holds keep their `expires_at`. |
 | `TAJ_SUPPLIER_TRN`, `TAJ_SUPPLIER_NAME`, `TAJ_SUPPLIER_ADDRESS` | booking | yes | Tax document supplier block. |

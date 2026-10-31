@@ -1,9 +1,10 @@
 //! Booking status changes, deletion and guest transfer.
 
 use super::notifications::dispatch_booking_status_notifications;
-use super::{map_pricing_error, nightly_price};
+use super::{authorize_booking_party, is_admin, map_pricing_error, nightly_price, require_admin};
 use crate::settings::TaxSettings;
-use actix_web::{FromRequest, HttpRequest, HttpResponse, Responder, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, web};
+use api_core::auth::Claims;
 use api_core::response::{Payload, respond};
 use api_core::{
     error::ApiError,
@@ -12,7 +13,6 @@ use api_core::{
 use chrono::{NaiveDate, Utc};
 use common::pricing::BookingCalculator;
 use db_core::booking as db_booking;
-use db_core::booking_message as db_booking_message;
 use db_core::listing as db_listing;
 use db_core::models::{BookingMetadata, BookingStatus, FeeItem, UpdatedBooking};
 use rust_decimal::Decimal;
@@ -63,86 +63,22 @@ pub(super) async fn update_booking(
 ) -> Result<impl Responder, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
 
-    // If door_access_code is being modified, verify that caller is the host of the listing or an admin
-    if body.door_access_code.is_some() {
-        let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
-            .await
-            .map_err(ApiError::Database)?
-            .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
-                sqlx::Error::RowNotFound,
-            )))?;
+    // Only the booking's guest, its host or an admin may touch it (404 otherwise).
+    let (parties, user) = authorize_booking_party(&req, pool.get_ref(), *id).await?;
+    let caller_is_admin = is_admin(&user);
 
-        let mut dev_payload = actix_web::dev::Payload::None;
-        let claims = match api_core::auth::Claims::from_request(&req, &mut dev_payload).into_inner()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                return Err(ApiError::Unauthorized(
-                    "Authorization required to configure door access codes".into(),
-                ));
-            }
-        };
-
-        let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-            .await
-            .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
-
-        let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
-        let is_host = claims.sub == parties.host_id;
-
-        if !is_admin && !is_host {
-            return Err(ApiError::Forbidden(
-                "Only hosts and administrators can configure property door access codes"
-                    .to_string(),
-            ));
-        }
+    if body.door_access_code.is_some() && !caller_is_admin && user.id != parties.host_id {
+        return Err(ApiError::Forbidden(
+            "Only hosts and administrators can configure property door access codes".to_string(),
+        ));
     }
 
     let terms_requested =
         body.date_from.is_some() || body.date_to.is_some() || body.number_of_persons.is_some();
-    if terms_requested {
-        let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
-            .await
-            .map_err(ApiError::Database)?
-            .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
-                sqlx::Error::RowNotFound,
-            )))?;
-
-        let mut dev_payload = actix_web::dev::Payload::None;
-        let claims = match api_core::auth::Claims::from_request(&req, &mut dev_payload).into_inner()
-        {
-            Ok(c) => c,
-            Err(_) => {
-                return Err(ApiError::Database(db_core::error::DbError::Sqlx(
-                    sqlx::Error::RowNotFound,
-                )));
-            }
-        };
-
-        let user = match db_core::user::get_user_by_id(pool.get_ref(), claims.sub).await {
-            Ok(u) => u,
-            Err(_) => {
-                return Err(ApiError::Database(db_core::error::DbError::Sqlx(
-                    sqlx::Error::RowNotFound,
-                )));
-            }
-        };
-
-        let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
-        let is_guest = claims.sub == parties.guest_id;
-        let is_host = claims.sub == parties.host_id;
-
-        if !is_admin && !is_guest && !is_host {
-            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
-                sqlx::Error::RowNotFound,
-            )));
-        }
-
-        if !is_admin {
-            return Err(ApiError::Forbidden(
-                "Direct reservation date or guest count changes require administrator privileges; submit a reservation change request instead".to_string(),
-            ));
-        }
+    if terms_requested && !caller_is_admin {
+        return Err(ApiError::Forbidden(
+            "Direct reservation date or guest count changes require administrator privileges; submit a reservation change request instead".to_string(),
+        ));
     }
 
     let old_booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
@@ -382,9 +318,12 @@ pub(super) async fn update_booking(
     )
 )]
 pub(super) async fn delete_booking(
+    claims: Claims,
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<impl Responder, ApiError> {
+    require_admin(pool.get_ref(), &claims, "delete bookings").await?;
+    tracing::info!(booking_id = %id, admin_id = %claims.sub, "hard-deleting booking");
     db_booking::delete_booking(pool.get_ref(), *id)
         .await
         .map_err(ApiError::Database)?;
@@ -405,11 +344,16 @@ pub(super) async fn delete_booking(
 )]
 pub(super) async fn transfer_booking(
     req: HttpRequest,
+    claims: Claims,
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
     body: web::Json<common::models::TransferBookingRequest>,
 ) -> Result<impl Responder, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
+    // Moving a booking to another account is admin-only until guests can
+    // claim a placeholder booking with proof of ownership.
+    require_admin(pool.get_ref(), &claims, "transfer bookings").await?;
+    tracing::info!(booking_id = %id, new_guest_id = %body.guest_id, admin_id = %claims.sub, "transferring booking");
 
     let booking = db_booking::transfer_booking_guest(pool.get_ref(), *id, body.guest_id)
         .await

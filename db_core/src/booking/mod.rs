@@ -12,8 +12,8 @@ pub use history::get_booking_history;
 pub(crate) use history::record_booking_history;
 pub use hold::{create_booking, expire_stale_holds, transfer_booking_guest};
 pub use queries::{
-    get_booking_by_id, get_bookings, get_bookings_by_listing_id, get_bookings_by_user_id,
-    get_confirmed_bookings_past_checkout,
+    get_booking_by_id, get_bookings, get_bookings_by_host_id, get_bookings_by_listing_id,
+    get_bookings_by_user_id, get_confirmed_bookings_past_checkout,
 };
 pub use update::{delete_booking, update_booking};
 

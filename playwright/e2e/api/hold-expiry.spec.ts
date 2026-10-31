@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { expirePendingHold } from '../setup/db-seed.js';
+import { signTestJwt } from '../fixtures/bookings-data.js';
 
 /**
  * Verifies the expirePendingHold seed helper against a real pending hold
@@ -35,6 +36,7 @@ test.describe('expirePendingHold', () => {
     const day = (d: Date) => d.toISOString().slice(0, 10);
 
     const res = await request.post(`${BOOKING_API_URL}/api/v1/bookings`, {
+      headers: { Authorization: `Bearer ${signTestJwt(HOLD_TEST_GUEST_ID)}` },
       data: {
         guest_id: HOLD_TEST_GUEST_ID,
         listing_id: LISTING_ID,

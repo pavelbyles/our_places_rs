@@ -660,6 +660,7 @@ jobs:
       TAJ_SUPPLIER_ADDRESS: ${{ vars[format('TAJ_SUPPLIER_ADDRESS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_ADDRESS || 'Main Street, Ocho Rios, St. Ann, Jamaica' }}
       CRON_SECRET: ${{ secrets[format('CRON_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || secrets.CRON_SECRET || 'dev-cron-secret' }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      SYSTEM_ADMIN_PASSWORD: ${{ secrets[format('SYSTEM_ADMIN_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -712,6 +713,14 @@ jobs:
         run: |
           if [ -z "$JWT_SECRET" ]; then
             echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set. The APIs would fall back to a public default and the portals refuse to start without it."
+            exit 1
+          fi
+
+      # Every branch gets a fresh schema, so user_api creates the admin on first boot and refuses to start without this.
+      - name: Require System Admin Password
+        run: |
+          if [ ${#SYSTEM_ADMIN_PASSWORD} -lt 12 ]; then
+            echo "::error::Secret SYSTEM_ADMIN_PASSWORD_${{ env.ENV_SUFFIX }} is missing or shorter than 12 characters. user_api needs it to create the admin account."
             exit 1
           fi
 
@@ -940,6 +949,7 @@ jobs:
             EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
             JWT_SECRET=${{ env.JWT_SECRET }}
+            SYSTEM_ADMIN_PASSWORD=${{ env.SYSTEM_ADMIN_PASSWORD }}
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_USER_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
 

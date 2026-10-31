@@ -30,7 +30,10 @@ pub async fn get_pricing_quote_tc(
     common::app_client::get_pricing_quote(listing_id, check_in, check_out, currency).await
 }
 
-/// Create a pending booking hold via booking_api
-pub async fn create_booking_hold_tc(req: &NewBookingRequest) -> anyhow::Result<BookingResponse> {
-    common::app_client::create_booking(req).await
+/// Create a pending booking hold via booking_api, as the guest who owns `jwt`
+pub async fn create_booking_hold_tc(
+    req: &NewBookingRequest,
+    jwt: &str,
+) -> anyhow::Result<BookingResponse> {
+    common::app_client::create_booking(req, jwt).await
 }

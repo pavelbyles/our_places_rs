@@ -73,7 +73,7 @@ Dependency rules:
 
 | Crate | Kind | Responsibility | Depends on |
 | :--- | :--- | :--- | :--- |
-| **`common/`** | lib | Domain DTOs, `rust_decimal` pricing and cancellation math, availability rules, tax documents, reference data (`reference.rs`), exchange-rate and GCS/geocode helpers, a typed HTTP client (`app_client.rs`) used by `web_client`. | — |
+| **`common/`** | lib | Domain DTOs, `rust_decimal` pricing and cancellation math, availability rules, tax documents, reference data (`reference.rs`), exchange-rate and GCS/geocode helpers, a typed HTTP client (`app_client/`, one module per API area) used by `web_client`. | — |
 | **`db_core/`** | lib + bins | SQLx entities and compile-time checked queries, migrations (`db_core/migrations/`), seeds, connection pool. | `common` |
 | **`app_api/api_core/`** | lib | Shared Actix pieces: `ApiError`, JWT extractors (HS256), server startup, `/actuator` health and Prometheus metrics, tracing, the email outbox publisher, settings loader. | `common`, `db_core` |
 | **`app_api/listing_api/`** | bin | Listings, search, price overrides, Nominatim geocoding, V4 signed upload URLs, images. | `api_core`, `common`, `db_core` |
@@ -87,7 +87,7 @@ Dependency rules:
 | **`web_ui_admin/`** | bin | Admin and host portal: dashboard, listings and photos, pricing, bookings, users, payouts, exchange rates. | `web_ui_common`, `web_client`, `common` |
 | **`protoproj/`** | lib | gRPC/protobuf experiment (`tonic`). Not deployed; excluded from CI gates. | — |
 
-### 3.1. Module layout of the two largest crates
+### 3.1. Module layout of the largest modules
 
 `booking_api/src/apis/` has one module per route group, and `routes.rs` wires them together:
 
@@ -116,6 +116,14 @@ Dependency rules:
 | `availability.rs` | Availability checks and unavailable ranges |
 | `history.rs` | Immutable `booking_history` snapshots |
 | `*tests.rs` | Integration tests and shared fixtures |
+
+The other large modules follow the same pattern: one file per area, re-exported from `mod.rs` so public paths are unchanged.
+
+| Directory | Modules |
+| :--- | :--- |
+| `db_core/src/listing/` | `write` (create, update, delete), `queries` (search, by owner, by id or slug), `images`, `price_overrides`, `tests` |
+| `user_api/src/apis/` | `registration` (sign-up, login, verification), `profile`, `admin`, `account` (password, email, deactivation), `sessions`, `tests`; `mod.rs` holds the DTOs and route table |
+| `common/src/app_client/` | `listings`, `bookings`, `reservation_changes`, `payouts`, `reviews`, `users`; `mod.rs` holds the shared client and API URLs |
 
 ---
 

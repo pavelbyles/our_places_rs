@@ -1,10 +1,12 @@
 //! Creating bookings (pending holds) and reading them back.
 
 use super::{
-    CurrencyQuery, convert_booking_amounts, display_rate, enqueue_email,
-    generate_confirmation_code, is_confirmation_code_collision, map_pricing_error, nightly_price,
+    CurrencyQuery, authorize_booking_party, caller, convert_booking_amounts, display_rate,
+    enqueue_email, generate_confirmation_code, is_admin, is_confirmation_code_collision,
+    map_pricing_error, nightly_price, not_found,
 };
 use actix_web::{HttpRequest, Responder, web};
+use api_core::auth::Claims;
 use api_core::response::{Payload, respond};
 use api_core::{
     error::ApiError,
@@ -37,12 +39,26 @@ use validator::Validate;
 )]
 pub(super) async fn create_booking(
     req: HttpRequest,
+    claims: Claims,
     pool: web::Data<PgPool>,
     body: web::Json<NewBookingRequest>,
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
     let req_data = body.into_inner();
+
+    // The guest is whoever is signed in. Creating a hold also cancels the
+    // guest's other holds, so booking "as" someone else must be impossible.
+    if req_data.guest_id != claims.sub {
+        tracing::warn!(
+            caller = %claims.sub,
+            requested_guest = %req_data.guest_id,
+            "rejected booking created for a different user"
+        );
+        return Err(ApiError::Forbidden(
+            "You can only create bookings for yourself".to_string(),
+        ));
+    }
 
     let listing_details = db_listing::get_listing_by_id(pool.get_ref(), req_data.listing_id)
         .await
@@ -335,6 +351,7 @@ pub(super) async fn create_booking(
 )]
 pub(super) async fn get_bookings(
     req: HttpRequest,
+    claims: Claims,
     pool: web::Data<PgPool>,
     query: web::Query<pagination::Pagination>,
     currency_query: web::Query<CurrencyQuery>,
@@ -342,9 +359,17 @@ pub(super) async fn get_bookings(
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(10).min(100);
 
-    let bookings = db_booking::get_bookings(pool.get_ref(), page, per_page)
-        .await
-        .map_err(ApiError::Database)?;
+    // Admins see every booking; anyone else only bookings on their own listings.
+    let user = caller(pool.get_ref(), &claims).await?;
+    let bookings = if is_admin(&user) {
+        db_booking::get_bookings(pool.get_ref(), page, per_page).await
+    } else {
+        db_booking::get_bookings_by_host_id(pool.get_ref(), claims.sub, page, per_page).await
+    }
+    .map_err(|e| {
+        tracing::error!(user_id = %claims.sub, error = ?e, "failed to list bookings");
+        ApiError::Database(e)
+    })?;
 
     let mut response: Vec<BookingResponse> =
         bookings.into_iter().map(map_booking_to_response).collect();
@@ -391,6 +416,8 @@ pub(super) async fn get_booking_by_id(
     id: web::Path<Uuid>,
     currency_query: web::Query<CurrencyQuery>,
 ) -> Result<impl Responder, ApiError> {
+    authorize_booking_party(&req, pool.get_ref(), *id).await?;
+
     let booking = db_booking::get_booking_by_id(pool.get_ref(), *id)
         .await
         .map_err(ApiError::Database)?;
@@ -426,10 +453,16 @@ pub(super) async fn get_booking_by_id(
 )]
 pub(super) async fn get_user_bookings(
     req: HttpRequest,
+    claims: Claims,
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
     query: web::Query<pagination::Pagination>,
 ) -> Result<impl Responder, ApiError> {
+    if *id != claims.sub && !is_admin(&caller(pool.get_ref(), &claims).await?) {
+        tracing::warn!(caller = %claims.sub, requested_user = %id, "user bookings access denied");
+        return Err(not_found());
+    }
+
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(20).min(100);
 
@@ -470,10 +503,26 @@ pub(super) async fn get_user_bookings(
 )]
 pub(super) async fn get_listing_bookings(
     req: HttpRequest,
+    claims: Claims,
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
     query: web::Query<pagination::Pagination>,
 ) -> Result<impl Responder, ApiError> {
+    let host_id = db_listing::get_listing_by_id(pool.get_ref(), *id)
+        .await
+        .map(|details| details.listing.user_id)
+        .map_err(|e| match e {
+            db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound) => not_found(),
+            e => {
+                tracing::error!(listing_id = %id, error = ?e, "failed to load listing for its bookings");
+                ApiError::Database(e)
+            }
+        })?;
+    if host_id != claims.sub && !is_admin(&caller(pool.get_ref(), &claims).await?) {
+        tracing::warn!(caller = %claims.sub, listing_id = %id, "listing bookings access denied");
+        return Err(not_found());
+    }
+
     let page = query.page.unwrap_or(1);
     let per_page = query.per_page.unwrap_or(50).min(100);
 

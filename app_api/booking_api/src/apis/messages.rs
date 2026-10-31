@@ -1,6 +1,6 @@
 //! Guest-to-host messaging on a booking.
 
-use super::enqueue_email;
+use super::{authorize_booking_party, enqueue_email, is_admin};
 use actix_web::{HttpRequest, Responder, web};
 use api_core::error::ApiError;
 use api_core::response::{Payload, respond};
@@ -28,26 +28,7 @@ pub(super) async fn get_booking_messages(
     id: web::Path<Uuid>,
     claims: api_core::auth::Claims,
 ) -> Result<impl Responder, ApiError> {
-    let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
-        .await
-        .map_err(ApiError::Database)?
-        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
-            sqlx::Error::RowNotFound,
-        )))?;
-
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
-
-    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
-    let is_guest = claims.sub == parties.guest_id;
-    let is_host = claims.sub == parties.host_id;
-
-    if !is_admin && !is_guest && !is_host {
-        return Err(ApiError::Unauthorized(
-            "Not authorized to access messages".to_string(),
-        ));
-    }
+    authorize_booking_party(&req, pool.get_ref(), *id).await?;
 
     let msgs = db_booking_message::list_booking_messages(pool.get_ref(), *id)
         .await
@@ -113,12 +94,8 @@ pub(super) async fn send_booking_message(
         ));
     }
 
-    let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
-        .await
-        .map_err(ApiError::Database)?
-        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
-            sqlx::Error::RowNotFound,
-        )))?;
+    // Authorize before revealing anything about the booking (even its status).
+    let (parties, user) = authorize_booking_party(&req, pool.get_ref(), *id).await?;
 
     if parties.status == BookingStatus::Cancelled {
         return Err(ApiError::Database(
@@ -128,24 +105,15 @@ pub(super) async fn send_booking_message(
         ));
     }
 
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
-
-    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
-    let is_guest = claims.sub == parties.guest_id;
+    let is_admin = is_admin(&user);
     let is_host = claims.sub == parties.host_id;
 
     let role = if is_admin {
         db_core::models::DbMessageSenderRole::Admin
     } else if is_host {
         db_core::models::DbMessageSenderRole::Host
-    } else if is_guest {
-        db_core::models::DbMessageSenderRole::Guest
     } else {
-        return Err(ApiError::Unauthorized(
-            "Not authorized to send messages".to_string(),
-        ));
+        db_core::models::DbMessageSenderRole::Guest
     };
 
     let display_name = if is_admin {
@@ -227,26 +195,7 @@ pub(super) async fn mark_booking_messages_read(
     id: web::Path<Uuid>,
     claims: api_core::auth::Claims,
 ) -> Result<impl Responder, ApiError> {
-    let parties = db_booking_message::get_booking_parties(pool.get_ref(), *id)
-        .await
-        .map_err(ApiError::Database)?
-        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
-            sqlx::Error::RowNotFound,
-        )))?;
-
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(|_| ApiError::Unauthorized("User not found".to_string()))?;
-
-    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
-    let is_guest = claims.sub == parties.guest_id;
-    let is_host = claims.sub == parties.host_id;
-
-    if !is_admin && !is_guest && !is_host {
-        return Err(ApiError::Unauthorized(
-            "Not authorized to access messages".to_string(),
-        ));
-    }
+    authorize_booking_party(&req, pool.get_ref(), *id).await?;
 
     let updated =
         db_booking_message::mark_booking_messages_as_read(pool.get_ref(), *id, claims.sub)

@@ -184,6 +184,52 @@ async fn check_booking_authorization(
     Ok(())
 }
 
+/// A 404 for anything the caller may not see, so IDs cannot be probed.
+fn not_found() -> ApiError {
+    ApiError::Database(db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound))
+}
+
+fn is_admin(user: &db_core::models::User) -> bool {
+    user.roles.contains(&db_core::models::UserRole::Admin)
+}
+
+/// The user behind `claims`. A token for a user that no longer exists is a
+/// 401; a database failure is passed up (and logged), never hidden as a 404.
+async fn caller(
+    pool: &PgPool,
+    claims: &api_core::auth::Claims,
+) -> Result<db_core::models::User, ApiError> {
+    db_core::user::get_user_by_id(pool, claims.sub)
+        .await
+        .map_err(|e| match e {
+            db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound) => {
+                tracing::warn!(user_id = %claims.sub, "token is for a user that does not exist");
+                ApiError::Unauthorized("Unknown user".to_string())
+            }
+            e => {
+                tracing::error!(user_id = %claims.sub, error = ?e, "failed to load the calling user");
+                ApiError::Database(e)
+            }
+        })
+}
+
+/// The calling user, who must be an administrator (403 otherwise).
+async fn require_admin(
+    pool: &PgPool,
+    claims: &api_core::auth::Claims,
+    action: &str,
+) -> Result<db_core::models::User, ApiError> {
+    let user = caller(pool, claims).await?;
+    if is_admin(&user) {
+        Ok(user)
+    } else {
+        tracing::warn!(user_id = %claims.sub, action, "non-admin attempted an admin-only action");
+        Err(ApiError::Forbidden(format!(
+            "Only administrators can {action}"
+        )))
+    }
+}
+
 /// Validates that the request carries a valid JWT for the booking guest, listing host, or an administrator.
 /// Returns `404 Not Found` for unauthenticated callers or strangers to prevent IDOR enumeration.
 async fn authorize_booking_party(
@@ -191,44 +237,29 @@ async fn authorize_booking_party(
     pool: &PgPool,
     booking_id: Uuid,
 ) -> Result<(db_core::models::BookingParties, db_core::models::User), ApiError> {
+    let claims = api_core::auth::Claims::from_request(req, &mut actix_web::dev::Payload::None)
+        .into_inner()
+        .map_err(|_| not_found())?;
+
     let parties = db_booking_message::get_booking_parties(pool, booking_id)
         .await
-        .map_err(ApiError::Database)?
-        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
-            sqlx::Error::RowNotFound,
-        )))?;
+        .map_err(|e| {
+            tracing::error!(%booking_id, error = ?e, "failed to load booking parties");
+            ApiError::Database(e)
+        })?
+        .ok_or_else(not_found)?;
 
-    let mut dev_payload = actix_web::dev::Payload::None;
-    let claims = match api_core::auth::Claims::from_request(req, &mut dev_payload).into_inner() {
-        Ok(c) => c,
-        Err(_) => {
-            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
-                sqlx::Error::RowNotFound,
-            )));
-        }
-    };
+    let user = caller(pool, &claims).await?;
 
-    let user = match db_core::user::get_user_by_id(pool, claims.sub).await {
-        Ok(u) => u,
-        Err(_) => {
-            return Err(ApiError::Database(db_core::error::DbError::Sqlx(
-                sqlx::Error::RowNotFound,
-            )));
-        }
-    };
-
-    let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
-    let is_guest = claims.sub == parties.guest_id;
-    let is_host = claims.sub == parties.host_id;
-
-    if !is_admin && !is_guest && !is_host {
-        return Err(ApiError::Database(db_core::error::DbError::Sqlx(
-            sqlx::Error::RowNotFound,
-        )));
+    if !is_admin(&user) && claims.sub != parties.guest_id && claims.sub != parties.host_id {
+        tracing::warn!(%booking_id, user_id = %claims.sub, "booking access denied: caller is not a party");
+        return Err(not_found());
     }
 
     Ok((parties, user))
 }
 
+#[cfg(test)]
+mod authz_tests;
 #[cfg(test)]
 mod tests;

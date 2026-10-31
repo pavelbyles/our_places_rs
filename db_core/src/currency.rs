@@ -64,7 +64,7 @@ pub async fn get_exchange_rates_cache<'e, E, I, S>(
     executor: E,
     base_currencies: I,
     target_currency: &str,
-) -> HashMap<String, (Decimal, String)>
+) -> Result<HashMap<String, (Decimal, String)>>
 where
     E: PgExecutor<'e> + Copy,
     I: IntoIterator<Item = S>,
@@ -73,16 +73,13 @@ where
     let mut rates = HashMap::new();
     for base in base_currencies {
         let base_ref = base.as_ref();
-        #[allow(clippy::collapsible_if)]
         if !rates.contains_key(base_ref) {
-            if let Ok(rate_info) =
-                get_exchange_rate_and_currency(executor, base_ref, target_currency).await
-            {
-                rates.insert(base_ref.to_string(), rate_info);
-            }
+            let rate_info =
+                get_exchange_rate_and_currency(executor, base_ref, target_currency).await?;
+            rates.insert(base_ref.to_string(), rate_info);
         }
     }
-    rates
+    Ok(rates)
 }
 
 /// Lists the newest rate for every stored currency pair (the one

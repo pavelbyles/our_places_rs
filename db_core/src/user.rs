@@ -362,61 +362,82 @@ where
     Ok(users)
 }
 
-/// Initializes the default system admin if it doesn't exist.
-#[tracing::instrument(skip(pool))]
-pub async fn initialize_system_admin(pool: &PgPool) {
+/// Shortest password accepted for the bootstrap admin account.
+pub const MIN_SYSTEM_ADMIN_PASSWORD_LEN: usize = 12;
+
+/// Creates the system admin account if it doesn't exist yet.
+///
+/// `password` is only needed on first boot against an empty database; once
+/// the admin exists it is ignored, so rotating it means changing the
+/// password in the app, not the variable. Any failure is returned so the
+/// service refuses to start rather than running without an admin. Losing a
+/// creation race to another instance starting at the same time is not a
+/// failure.
+#[tracing::instrument(skip(pool, password))]
+pub async fn initialize_system_admin(pool: &PgPool, password: Option<&str>) -> anyhow::Result<()> {
+    use anyhow::Context;
+
     let admin_email = "admin@ourplaces.io";
 
-    // Check if admin already exists
     let exists = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 FROM "user" WHERE email = $1)"#,
+        r#"SELECT EXISTS(SELECT 1 FROM "user" WHERE email = $1) AS "exists!""#,
         admin_email
     )
     .fetch_one(pool)
     .await
-    .unwrap_or(Some(false))
-    .unwrap_or(false);
+    .context("checking whether the system admin exists")?;
 
-    if !exists {
-        tracing::info!("Initializing default system admin");
+    if exists {
+        return Ok(());
+    }
 
-        let password_hash = match tokio::task::spawn_blocking(|| {
-            bcrypt::hash("admin_changeme_2026", bcrypt::DEFAULT_COST).map_err(|e| e.to_string())
-        })
-        .await
-        {
-            Ok(Ok(h)) => h,
-            Ok(Err(e)) => {
-                tracing::error!("Failed to hash default admin password: {e}");
-                return;
-            }
-            Err(e) => {
-                tracing::error!("Failed to join blocking task for admin password hash: {e}");
-                return;
-            }
-        };
+    let password = password
+        .filter(|p| !p.trim().is_empty())
+        .context("SYSTEM_ADMIN_PASSWORD must be set to create the system admin account")?;
+    if password.chars().count() < MIN_SYSTEM_ADMIN_PASSWORD_LEN {
+        anyhow::bail!(
+            "SYSTEM_ADMIN_PASSWORD must be at least {MIN_SYSTEM_ADMIN_PASSWORD_LEN} characters"
+        );
+    }
 
-        let new_user = NewUser {
-            id: Uuid::now_v7(),
-            email: admin_email.to_string(),
-            password_hash,
-            first_name: "System".to_string(),
-            last_name: "Admin".to_string(),
-            phone_number: None,
-            is_active: true,
-            is_verified: true,
-            verification_code: None,
-            verification_code_expires_at: None,
-            attributes: serde_json::json!({}),
-            roles: Some(vec![UserRole::Admin]),
-            default_currency: "USD".to_string(),
-        };
+    tracing::info!("Initializing default system admin");
 
-        if let Err(e) = create_user(pool, &new_user).await {
-            tracing::error!("Failed to initialize system admin: {:?}", e);
-        } else {
+    let password = password.to_owned();
+    let password_hash =
+        tokio::task::spawn_blocking(move || bcrypt::hash(password, bcrypt::DEFAULT_COST))
+            .await
+            .context("joining the admin password hash task")?
+            .context("hashing the system admin password")?;
+
+    let new_user = NewUser {
+        id: Uuid::now_v7(),
+        email: admin_email.to_string(),
+        password_hash,
+        first_name: "System".to_string(),
+        last_name: "Admin".to_string(),
+        phone_number: None,
+        is_active: true,
+        is_verified: true,
+        verification_code: None,
+        verification_code_expires_at: None,
+        attributes: serde_json::json!({}),
+        roles: Some(vec![UserRole::Admin]),
+        default_currency: "USD".to_string(),
+    };
+
+    match create_user(pool, &new_user).await {
+        Ok(_) => {
             tracing::info!("Default system admin initialized successfully");
+            Ok(())
         }
+        Err(DbError::Sqlx(e))
+            if e.as_database_error()
+                .is_some_and(|db| db.is_unique_violation()) =>
+        {
+            tracing::info!("System admin was created by another instance");
+            Ok(())
+        }
+        Err(e) => Err(e).context("creating the default system admin"),
     }
 }
 

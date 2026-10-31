@@ -1,6 +1,8 @@
 use crate::error::ApiError;
-use actix_web::dev::Payload;
-use actix_web::{FromRequest, HttpRequest};
+use actix_web::body::{EitherBody, MessageBody};
+use actix_web::dev::{Payload, ServiceRequest, ServiceResponse};
+use actix_web::middleware::Next;
+use actix_web::{FromRequest, HttpRequest, ResponseError};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -50,6 +52,32 @@ impl FromRequest for Claims {
             });
 
         ready(claims)
+    }
+}
+
+/// Rejects any request that does not carry a valid user JWT (401).
+///
+/// Wrap a whole scope with `from_fn(require_user)` so every route in it is
+/// protected by default; register the few public routes outside that scope.
+/// Cloud Run IAM only proves *which service* called; this proves *which user*.
+pub async fn require_user(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, actix_web::Error> {
+    match Claims::from_request(req.request(), &mut Payload::None).into_inner() {
+        Ok(_) => next
+            .call(req)
+            .await
+            .map(ServiceResponse::map_into_left_body),
+        Err(e) => {
+            tracing::warn!(
+                method = %req.method(),
+                path = %req.path(),
+                error = %e,
+                "rejected request without a valid user token"
+            );
+            Ok(req.into_response(e.error_response()).map_into_right_body())
+        }
     }
 }
 

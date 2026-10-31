@@ -92,7 +92,11 @@ pub async fn get_listings(
             response.iter().map(|l| &l.base_currency),
             target_currency,
         )
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(target_currency, "Exchange rate lookup failed: {:?}", e);
+            ApiError::Database(e)
+        })?;
 
         for listing in &mut response {
             if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
@@ -141,25 +145,22 @@ async fn get_listing_by_id(
 
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
 
-    #[allow(clippy::collapsible_if)]
     if let Some(target_currency) = &query.currency {
-        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+        let (rate, final_curr) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
             &response.listing.base_currency,
             target_currency,
         )
-        .await
-        {
-            response.listing.price_per_night = response
-                .listing
-                .price_per_night
-                .map(|p| (p * rate).round_dp(2));
-            response.listing.extra_guest_fee = response
-                .listing
-                .extra_guest_fee
-                .map(|p| (p * rate).round_dp(2));
-            response.listing.base_currency = final_curr;
-        }
+        .await?;
+        response.listing.price_per_night = response
+            .listing
+            .price_per_night
+            .map(|p| (p * rate).round_dp(2));
+        response.listing.extra_guest_fee = response
+            .listing
+            .extra_guest_fee
+            .map(|p| (p * rate).round_dp(2));
+        response.listing.base_currency = final_curr;
     }
 
     Ok(respond(
@@ -853,5 +854,4 @@ async fn delete_price_override(
 
 #[cfg(test)]
 #[path = "apis_test.rs"]
-#[allow(clippy::explicit_auto_deref)]
 mod tests;

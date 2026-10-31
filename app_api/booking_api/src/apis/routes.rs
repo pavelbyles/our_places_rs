@@ -30,6 +30,7 @@ use super::{
 use actix_web::middleware::from_fn;
 use actix_web::web;
 use api_core::api_common::content_negotiation_middleware;
+use api_core::auth::require_user;
 use api_core::{models::BookingResponse, pagination};
 use common::models::NewBookingRequest;
 use db_core::models::{BookingStatus, CancellationPolicy, FeeItem};
@@ -119,14 +120,25 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .url("/api-docs/openapi.json", ApiDoc::openapi()),
     );
 
+    // Public: anyone browsing a villa may check dates. These are registered
+    // before the protected scope below, which matches the same prefix.
+    cfg.service(
+        web::resource("/api/v1/bookings/availability").route(
+            web::get()
+                .to(check_availability)
+                .wrap(from_fn(content_negotiation_middleware)),
+        ),
+    );
+    cfg.service(
+        web::resource("/api/v1/bookings/listing/{id}/unavailable-ranges")
+            .route(web::get().to(get_unavailable_ranges)),
+    );
+
+    // Everything else needs a signed-in user; handlers then check that the
+    // user may act on the specific booking.
     cfg.service(
         web::scope("/api/v1/bookings")
-            .route(
-                "/availability",
-                web::get()
-                    .to(check_availability)
-                    .wrap(from_fn(content_negotiation_middleware)),
-            )
+            .wrap(from_fn(require_user))
             .route(
                 "",
                 web::get()
@@ -150,10 +162,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::get()
                     .to(get_listing_bookings)
                     .wrap(from_fn(content_negotiation_middleware)),
-            )
-            .route(
-                "/listing/{id}/unavailable-ranges",
-                web::get().to(get_unavailable_ranges),
             )
             .route(
                 "/{id}",
@@ -255,6 +263,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/hosts/ledger")
+            .wrap(from_fn(require_user))
             .route(
                 "",
                 web::get()
@@ -272,16 +281,19 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
     cfg.service(
         web::scope("/api/v1/admin/exchange-rates")
+            .wrap(from_fn(require_user))
             .route("", web::get().to(get_admin_exchange_rates)),
     );
 
     cfg.service(
-        web::scope("/api/v1/admin/ledger").route(
-            "/{id}/status",
-            web::patch()
-                .to(update_admin_payout_status)
-                .wrap(from_fn(content_negotiation_middleware)),
-        ),
+        web::scope("/api/v1/admin/ledger")
+            .wrap(from_fn(require_user))
+            .route(
+                "/{id}/status",
+                web::patch()
+                    .to(update_admin_payout_status)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            ),
     );
 
     cfg.service(
