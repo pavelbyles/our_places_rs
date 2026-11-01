@@ -54,7 +54,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
 
 ## Phase 1 — Foundation
 
-- [ ] **T1: Currency reference migration**
+- [x] **T1: Currency reference migration**
   - **Scope:** M
   - **Description:** `sqlx migrate add --source db_core/migrations currency_reference_and_rate_management`. The order inside the migration:
     0. `SET LOCAL lock_timeout = '5s'`, then **one** `LOCK TABLE listing, "user", user_history, currency_exchange_rates, booking, booking_history, reservation_change_request, host_payout_ledger, tax_document IN ACCESS EXCLUSIVE MODE`. This matches the order the app touches the tables (hold: `listing FOR UPDATE` → `booking` insert → history; confirmation → payout ledger → tax document). A `lock_timeout` (55P03) or deadlock (40P01) aborts the single migration transaction cleanly; retry it in a quiet window.

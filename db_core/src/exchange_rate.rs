@@ -100,6 +100,19 @@ mod tests {
         TestPg::new(db_url, Path::new("migrations"))
     }
 
+    /// Test-only currencies, so fixture rates satisfy the `currencies` FK.
+    async fn insert_test_currencies(conn: &mut PgConnection, codes: &[&str]) {
+        for code in codes {
+            sqlx::query(
+                "INSERT INTO currencies (code, name) VALUES ($1, $1) ON CONFLICT DO NOTHING",
+            )
+            .bind(code)
+            .execute(&mut *conn)
+            .await
+            .expect("insert test currency");
+        }
+    }
+
     #[tokio::test]
     async fn test_exchange_rate_identity() {
         let test_db = setup_test_db().await;
@@ -119,6 +132,7 @@ mod tests {
         let mut tx = pool.begin().await.expect("Failed to begin transaction");
 
         let now = Utc::now();
+        insert_test_currencies(&mut tx, &["FOO", "BAR"]).await;
         // Insert a unique known pair
         sqlx::query!(
             r#"
@@ -144,6 +158,7 @@ mod tests {
         let mut tx = pool.begin().await.expect("Failed to begin transaction");
 
         let now = Utc::now();
+        insert_test_currencies(&mut tx, &["FOO", "BAR"]).await;
         // Insert only BAR -> FOO with rate 2.0
         sqlx::query!(
             r#"
