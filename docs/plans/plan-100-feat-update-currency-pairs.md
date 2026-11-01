@@ -169,7 +169,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p listing_api currency_conversion_tests`
   - **Dependencies:** T6, T8 (`ensure_active` for the target-currency check)
 
-- [ ] **T7b: Rate-lock regression tests**
+- [x] **T7b: Rate-lock regression tests**
   - **Scope:** S
   - **Description:** In `mod rate_lock_tests` (booking_api):
     - Hold at R1 → R2 effective → confirm: `booking.exchange_rate == R1`.

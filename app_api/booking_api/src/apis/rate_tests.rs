@@ -15,6 +15,7 @@ use uuid::Uuid;
 pub(super) struct Fixture {
     pub _db: TestPg,
     pub pool: PgPool,
+    pub host_id: Uuid,
     pub guest_id: Uuid,
     pub listing_id: Uuid,
 }
@@ -35,6 +36,15 @@ fn new_user(id: Uuid, role: db_core::models::UserRole) -> db_core::models::NewUs
         roles: Some(vec![role]),
         default_currency: "USD".to_string(),
     }
+}
+
+/// An admin user in the fixture database.
+pub(super) async fn create_admin(pool: &PgPool) -> Uuid {
+    let id = Uuid::now_v7();
+    db_core::user::create_user(pool, &new_user(id, db_core::models::UserRole::Admin))
+        .await
+        .expect("create admin");
+    id
 }
 
 pub(super) async fn fixture() -> Fixture {
@@ -103,6 +113,7 @@ pub(super) async fn fixture() -> Fixture {
     Fixture {
         _db: db,
         pool,
+        host_id,
         guest_id,
         listing_id: listing.id,
     }
@@ -216,5 +227,180 @@ mod hold_rate_use_tests {
         assert_eq!(resp.status(), 422);
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["code"], "CURRENCY_INACTIVE");
+    }
+}
+
+mod rate_lock_tests {
+    //! The base→payment rate is locked at hold creation; payout uses the rate
+    //! at confirmation and tax documents the JMD rate at issue time.
+
+    use super::*;
+    use rust_decimal::Decimal;
+
+    async fn publish_now(pool: &PgPool, base: &str, target: &str, rate: Decimal) {
+        sqlx::query(
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ($1, $2, $3, now())",
+        )
+        .bind(base)
+        .bind(target)
+        .bind(rate)
+        .execute(pool)
+        .await
+        .expect("publish rate");
+    }
+
+    async fn hold<S>(app: &S, f: &Fixture, currency: &str) -> Uuid
+    where
+        S: Service<actix_http::Request, Response = ServiceResponse, Error = actix_web::Error>,
+    {
+        let resp = test::call_service(app, hold_request(f, currency)).await;
+        assert_eq!(resp.status(), 201, "hold created");
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        body["id"]
+            .as_str()
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .expect("booking id")
+    }
+
+    async fn confirm<S>(app: &S, admin: Uuid, booking: Uuid)
+    where
+        S: Service<actix_http::Request, Response = ServiceResponse, Error = actix_web::Error>,
+    {
+        let resp = test::call_service(
+            app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/bookings/{booking}"))
+                .insert_header(("Accept", "application/json"))
+                .insert_header((
+                    "Authorization",
+                    format!("Bearer {}", api_core::auth::generate_test_jwt(admin)),
+                ))
+                .set_json(serde_json::json!({ "status": "confirmed" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200, "confirmation succeeds");
+    }
+
+    async fn scalar(pool: &PgPool, sql: &str, booking: Uuid) -> Decimal {
+        sqlx::query_scalar(sql)
+            .bind(booking)
+            .fetch_one(pool)
+            .await
+            .expect("scalar query")
+    }
+
+    #[tokio::test]
+    async fn booking_keeps_hold_rate_after_new_rate_takes_effect() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+
+        let booking = hold(&app, &f, "JMD").await; // seeded USD→JMD 160
+        publish_now(&f.pool, "USD", "JMD", rust_decimal_macros::dec!(170)).await;
+        confirm(&app, admin, booking).await;
+
+        let locked = scalar(
+            &f.pool,
+            "SELECT exchange_rate FROM booking WHERE id = $1",
+            booking,
+        )
+        .await;
+        assert_eq!(locked, rust_decimal_macros::dec!(160));
+        let nightly = scalar(
+            &f.pool,
+            "SELECT daily_rate FROM booking WHERE id = $1",
+            booking,
+        )
+        .await;
+        assert_eq!(
+            nightly,
+            rust_decimal_macros::dec!(32000.00),
+            "200 USD × 160"
+        );
+    }
+
+    #[tokio::test]
+    async fn payout_uses_host_rate_at_confirmation() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+
+        let booking = hold(&app, &f, "JMD").await;
+        // Host is paid in USD; an explicit JMD→USD rate takes effect after the hold.
+        publish_now(&f.pool, "JMD", "USD", rust_decimal_macros::dec!(0.0062)).await;
+        confirm(&app, admin, booking).await;
+
+        let payout_rate = scalar(
+            &f.pool,
+            "SELECT exchange_rate FROM host_payout_ledger WHERE booking_id = $1",
+            booking,
+        )
+        .await;
+        assert_eq!(payout_rate, rust_decimal_macros::dec!(0.0062));
+        let host_currency: String =
+            sqlx::query_scalar(r#"SELECT default_currency FROM "user" WHERE id = $1"#)
+                .bind(f.host_id)
+                .fetch_one(&f.pool)
+                .await
+                .expect("host currency");
+        assert_eq!(host_currency, "USD");
+    }
+
+    #[tokio::test]
+    async fn tax_document_uses_jmd_rate_at_issue_time() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+
+        let booking = hold(&app, &f, "USD").await;
+        publish_now(&f.pool, "USD", "JMD", rust_decimal_macros::dec!(171.5)).await;
+        confirm(&app, admin, booking).await;
+
+        let jmd_rate = scalar(
+            &f.pool,
+            "SELECT jmd_exchange_rate FROM tax_document WHERE booking_id = $1 ORDER BY issue_date DESC LIMIT 1",
+            booking,
+        )
+        .await;
+        assert_eq!(jmd_rate, rust_decimal_macros::dec!(171.5));
+    }
+
+    #[tokio::test]
+    async fn booking_confirms_after_currency_deactivated_and_pair_retired() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+
+        let booking = hold(&app, &f, "JMD").await;
+        sqlx::query(
+            "UPDATE currency_exchange_rates SET retired_at = now()
+             WHERE (base_currency, target_currency) IN (('USD','JMD'), ('JMD','USD'))",
+        )
+        .execute(&f.pool)
+        .await
+        .expect("retire pairs");
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'JMD'")
+            .execute(&f.pool)
+            .await
+            .expect("deactivate JMD");
+
+        confirm(&app, admin, booking).await;
+
+        let docs: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM tax_document WHERE booking_id = $1")
+                .bind(booking)
+                .fetch_one(&f.pool)
+                .await
+                .expect("count documents");
+        assert!(docs >= 1, "payment receipt issued");
+        let ledger: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM host_payout_ledger WHERE booking_id = $1")
+                .bind(booking)
+                .fetch_one(&f.pool)
+                .await
+                .expect("count ledger");
+        assert_eq!(ledger, 1, "payout ledger entry created");
     }
 }
