@@ -79,7 +79,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `sqlx migrate run --source db_core/migrations && cargo sqlx prepare --workspace -- --all-targets && cargo test -p db_core migration_tests && cargo test -p db_core exchange_rate`
   - **Dependencies:** None
 
-- [ ] **T2: `common` currency domain types**
+- [x] **T2: `common` currency domain types**
   - **Scope:** S
   - **Description:** New `common/src/currency.rs`: the `CurrencyCode` newtype (byte check `^[A-Z]{3}$`, `TryFrom<&str>`, serde transparent + validating), `Currency`, `CurrenciesResponse`, `CreateCurrencyRequest` (name trimmed, 1–64), `UpdateCurrencyRequest` (at least one field, otherwise a validation error), `ListingRef`, `CurrencyInUse`. Everything is `///` documented and has `ToSchema`.
   - **Files Touched:** `common/src/currency.rs` (new), `common/src/lib.rs`
