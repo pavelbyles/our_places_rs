@@ -108,8 +108,9 @@ CREATE TABLE currencies (
 );
 -- 2. Normalise upper(trim()) on all 10 columns; RAISE EXCEPTION on any non-^[A-Z]{3}$ value
 -- 3. Seed: USD, JMD, EUR, GBP, CAD (named) ∪ SELECT DISTINCT from all 10 columns (name = code if unknown)
--- 4. CHAR(3) → VARCHAR(3) USING trim(col): booking, booking_history, host_payout_ledger,
---    tax_document, reservation_change_request   (bpchar/varchar FKs are type-incompatible)
+-- 4. No column type changes: CHAR(3) columns (booking, booking_history, host_payout_ledger,
+--    tax_document, reservation_change_request) can reference VARCHAR(3) directly
+--    (verified on PostgreSQL 18.6, 2026-11-01)
 -- 5. FKs (ON DELETE RESTRICT ON UPDATE RESTRICT) on:
 --    currency_exchange_rates.base_currency, .target_currency, listing.base_currency,
 --    "user".default_currency, user_history.default_currency, booking.currency,
@@ -190,7 +191,7 @@ None. `email_worker` test fixtures with `"USD"` strings are unaffected.
 - Rate lookup: one indexed query (`idx_exchange_rates_pair`) instead of up to two. Search: one batched query per request instead of one or two per distinct base currency.
 - Deactivate/retire in-use check: `idx_listing_base_currency_live` partial index. O(listings using the code).
 - Active currency list: about 5–20 rows, cached 60s per UI instance. No added DB round-trip on guest page renders inside the TTL. No new dependencies, so cold start is unchanged.
-- Migration: tables are small (5 villas). The `CHAR → VARCHAR` rewrite and FK validation finish in well under a second. Run in a deploy window anyway because it takes `ACCESS EXCLUSIVE` locks.
+- Migration: tables are small (5 villas). No table rewrites (column types unchanged). Normalisation and FK validation finish in well under a second. Run in a deploy window anyway because it takes `ACCESS EXCLUSIVE` locks.
 - Advisory lock is scoped per pair and per transaction. There's no contention with booking holds (different keys, no row locks on `booking`).
 
 ## 5. Security Mitigations
@@ -229,10 +230,11 @@ None. `email_worker` test fixtures with `"USD"` strings are unaffected.
 - `villa_card` with `price_unavailable_in = Some("CAD")` renders "Price unavailable in CAD" and no amount.
 
 ### 6.4. E2E (Playwright, `playwright/e2e/admin-portal/exchange-rates.spec.ts` + new `currencies.spec.ts`)
-- Admin adds currency `TTD` → adds `USD→TTD` → the guest currency selector shows TTD (after cache TTL or a forced refresh in the test env).
-- Admin publishes a rate 10% off → confirmation alert → confirm → table updated.
+Serial per project. Each browser project uses its own scratch currency and dedicated seeded pair, keyed by `testInfo.project.name` (e.g. chromium `XCD` / `USD→XCD`, firefox `TTD` / `USD→TTD`), and never `USD→JMD`. Specs must pass when rerun against the same DB. The webServer env sets `CURRENCY_CACHE_TTL_SECONDS=0` with `reuseExistingServer: false`.
+- Admin adds the project's scratch currency (tolerating "already exists") → adds the project's pair → the guest currency selector shows it.
+- Admin publishes a rate 10% off on the project's pair → confirmation alert → confirm → table updated.
 - Admin schedules a rate for tomorrow → history shows Scheduled → delete → gone.
-- Admin retires `USD→JMD` while a USD listing exists → blocked modal lists the listing.
+- Admin retires the project's pair while a seeded listing uses its base → blocked modal lists the listing.
 - Host sees the current table only. A direct POST to the publish endpoint as host → 403.
 - Update the existing `USD / EUR` assertion to reflect DB-driven rows (no "Not set" placeholder).
 
@@ -256,3 +258,23 @@ None. `email_worker` test fixtures with `"USD"` strings are unaffected.
 ## 8. Decisions Log
 - [x] **Search with an unresolvable pair** (originator, 2026-11-01): show that listing without a price, marked "Price unavailable in <CUR>". The rest of the search renders normally.
 - [x] **Payout rate**: rate at confirmation (unchanged). **JMD tax-document rate**: issue date (unchanged).
+- [x] **Column types**: no `CHAR → VARCHAR` conversion. A `CHAR(3)` FK → `VARCHAR(3)` PK was verified on PostgreSQL 18.6.
+
+---
+
+## 9. Engineering Review Amendments (panel rev 1 → plan rev 2, 2026-11-01)
+These amendments **supersede** any conflicting text above. Task-level detail is in the plan's Cross-Cutting Rules.
+1. **Clock**: db_core rate/currency functions take an explicit `now`. `publish_rate` reads `clock_timestamp()` **after** the pair advisory lock, so concurrent "now" publishes store in commit order and the second guard compares against the first.
+2. **Pair lock everywhere**: `publish_rate`, `delete_scheduled_rate` and `retire_pair` all take `pg_advisory_xact_lock(hashtext('fx:'||base||':'||target))`. Lock order: `listing` → `currencies` → pair lock, and never a `currencies` row lock after the pair lock (publish, delete and retire first lock **every** currency row they will reference, including rows only touched implicitly by FK checks on the rate and audit-log inserts, in ascending code order: `FOR UPDATE` on the base for retire, `FOR KEY SHARE` otherwise. Only then do they take the pair lock). The migration's upfront `LOCK TABLE` follows the app's table order (`listing`, `"user"`, `user_history`, `currency_exchange_rates`, `booking`, `booking_history`, `reservation_change_request`, `host_payout_ledger`, `tax_document`).
+3. **Retire block also covers the reverse**: retiring `A → B` is also blocked by live listings with `base_currency = B` when no explicit non-retired `B → A` row exists, because those listings price through the derived reverse.
+4. **`ensure_active` runs in the write transaction**: listing create (now wrapped in a tx), listing update, user registration (wrapped in a tx) and update (already transactional), and hold creation inside `booking/hold.rs` after `listing FOR UPDATE`. Unknown code on a write → 422 `CURRENCY_NOT_FOUND` (`DbError::CurrencyUnknown`, also for SQLSTATE 23503). Inactive → 422 `CURRENCY_INACTIVE`. Admin `PATCH` on an unknown code → 404 (`DbError::CurrencyNotFound`).
+5. **Search input**: `?currency=` is parsed as `CurrencyCode` (400) and must be active (422) before any lookup. A base equal to the target always converts at `1`. Missing pairs log one aggregated `warn!` per request.
+6. **Effective-time bounds**: grace is `0 < grace ≤ 300s` (validated at startup). `effective_at` must be ≤ now + 366 days (`422 EFFECTIVE_AT_TOO_FAR`). Rate strings use strict decimal syntax and are normalised before the 6-decimal-place check.
+7. **Guard math**: `|new − base| × 100 > 5 × base`, with no division. `deviation_pct` is for display only.
+8. **AuthZ**: admin routes use `require_admin` (403). The staff current-rate GET uses `require_staff` and returns **403** for non-staff (was 401). `actor_id` always comes from the server-loaded user.
+9. **Portal**: no `hx-delete`. Deleting a scheduled rate is `POST /admin/exchange-rates/rates/{id}/delete`. All mutating forms use `hx-disabled-elt`.
+10. **Audit log**: also protected against `TRUNCATE`. `rate_deleted` details come from the `DELETE … RETURNING` row.
+11. **Migration safety**: `SET LOCAL lock_timeout='5s'` + one ordered `LOCK TABLE` up front. Pre-checks `RAISE` on invalid codes or rate rows. Normalise `UPDATE`s use `WHERE col IS DISTINCT FROM upper(trim(col))` so they don't rewrite `host_payout_ledger.updated_at`.
+12. **Currency cache**: TTL from `common::app_client::currency_cache_ttl()` (env `CURRENCY_CACHE_TTL_SECONDS` via a named constant) (default 60; 0 disables, used by E2E). Refresh is single-flight. On a fetch error the stale list is served with a `warn!` (display only). A guest whose stored currency is inactive is prompted to choose one.
+13. **Tests**: named test modules with minimum counts, `Migrator`-based legacy-data migration tests, `lock_timeout` + SQLSTATE `55P03` concurrency tests, serial, rerun-safe Playwright specs with a separate scratch currency and seeded pair per browser project.
+14. **Lock contention**: SQLSTATE 40P01 (deadlock) and 55P03 (lock timeout) map to retryable `503 SERVICE_UNAVAILABLE` with `Retry-After`, never a bare 500.
