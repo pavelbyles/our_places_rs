@@ -224,6 +224,10 @@ pub struct ListingResponse {
     /// Optional fee per extra guest per night above `guests_included` (base currency).
     #[serde(default)]
     pub extra_guest_fee: Option<Decimal>,
+    /// Set by listing search when the requested currency cannot be quoted for
+    /// this listing: prices are omitted rather than shown in another currency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price_unavailable_in: Option<String>,
 }
 
 /// Itemized fee line item in booking price breakdowns.

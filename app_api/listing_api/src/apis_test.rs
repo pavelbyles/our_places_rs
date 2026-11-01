@@ -413,6 +413,7 @@ async fn test_xml_serialization_of_vec() {
     use serde_xml_rs::to_string;
 
     let response = vec![ListingResponse {
+        price_unavailable_in: None,
         id: Uuid::now_v7(),
         user_id: Uuid::now_v7(),
         name: "Test".to_string(),
@@ -825,3 +826,222 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
 }
 
 include!("apis_test_reviews.rs");
+
+mod currency_conversion_tests {
+    //! Listing search/detail prices in a requested currency (#100): one
+    //! effective-dated lookup, no fallback rates, unavailable prices flagged.
+
+    use super::*;
+    use rust_decimal::Decimal;
+
+    struct Ctx {
+        _db: TestPg,
+        pool: PgPool,
+        host: Uuid,
+    }
+
+    async fn ctx() -> Ctx {
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = db.get_pool().await;
+        let mut conn = pool.acquire().await.expect("conn");
+        let host = create_test_user(&mut conn).await;
+        Ctx {
+            _db: db,
+            pool,
+            host,
+        }
+    }
+
+    async fn listing(c: &Ctx, base: &str, price: Decimal) -> Uuid {
+        let mut conn = c.pool.acquire().await.expect("conn");
+        db_listing::create_listing(
+            &mut *conn,
+            &NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: c.host,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(price),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 2,
+                bedrooms: 1,
+                beds: 1,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: base.to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.0000)),
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .expect("create listing")
+        .id
+    }
+
+    async fn sql(c: &Ctx, statement: &str) {
+        sqlx::query(statement)
+            .execute(&c.pool)
+            .await
+            .expect("setup statement");
+    }
+
+    async fn get(c: &Ctx, uri: &str) -> (u16, serde_json::Value) {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(c.pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(uri)
+                .insert_header(("Accept", "application/json"))
+                .to_request(),
+        )
+        .await;
+        let status = resp.status().as_u16();
+        let bytes = test::read_body(resp).await;
+        let body = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+        (status, body)
+    }
+
+    fn find(body: &serde_json::Value, id: Uuid) -> &serde_json::Value {
+        let items = body
+            .as_array()
+            .or_else(|| body["listing"].as_array())
+            .expect("listing array");
+        items
+            .iter()
+            .find(|l| l["id"] == id.to_string())
+            .expect("listing in results")
+    }
+
+    #[actix_web::test]
+    async fn search_flags_unquotable_listing_and_converts_the_rest() {
+        let c = ctx().await;
+        sql(
+            &c,
+            "INSERT INTO currencies (code, name) VALUES ('TTD', 'Trinidad Dollar')",
+        )
+        .await;
+        let usd = listing(&c, "USD", dec!(100)).await;
+        let ttd = listing(&c, "TTD", dec!(700)).await;
+
+        let (status, body) = get(&c, "/api/v1/listings?currency=JMD&per_page=50").await;
+        assert_eq!(status, 200);
+        let usd_row = find(&body, usd);
+        assert_eq!(usd_row["price_per_night"], "16000.00");
+        assert_eq!(usd_row["base_currency"], "JMD");
+        assert!(usd_row.get("price_unavailable_in").is_none());
+
+        let ttd_row = find(&body, ttd);
+        assert!(
+            ttd_row["price_per_night"].is_null(),
+            "no price without a rate"
+        );
+        assert_eq!(ttd_row["base_currency"], "TTD", "label is never relabelled");
+        assert_eq!(ttd_row["price_unavailable_in"], "JMD");
+    }
+
+    #[actix_web::test]
+    async fn base_equal_to_target_is_never_flagged() {
+        let c = ctx().await;
+        let jmd = listing(&c, "JMD", dec!(15000)).await;
+        let (status, body) = get(&c, "/api/v1/listings?currency=JMD&per_page=50").await;
+        assert_eq!(status, 200);
+        let row = find(&body, jmd);
+        assert_eq!(row["price_per_night"], "15000.00");
+        assert!(row.get("price_unavailable_in").is_none());
+    }
+
+    #[actix_web::test]
+    async fn malformed_currency_is_400() {
+        let c = ctx().await;
+        let id = listing(&c, "USD", dec!(100)).await;
+        let (search, _) = get(&c, "/api/v1/listings?currency=zz1").await;
+        assert_eq!(search, 400);
+        let (detail, _) = get(&c, &format!("/api/v1/listings/{id}?currency=usd")).await;
+        assert_eq!(detail, 400);
+    }
+
+    #[actix_web::test]
+    async fn inactive_target_is_422() {
+        let c = ctx().await;
+        listing(&c, "USD", dec!(100)).await;
+        sql(
+            &c,
+            "UPDATE currencies SET active = false WHERE code = 'GBP'",
+        )
+        .await;
+        let (status, body) = get(&c, "/api/v1/listings?currency=GBP").await;
+        assert_eq!(status, 422);
+        assert_eq!(body["code"], "CURRENCY_INACTIVE");
+    }
+
+    #[actix_web::test]
+    async fn detail_with_unresolvable_pair_is_422() {
+        let c = ctx().await;
+        let id = listing(&c, "USD", dec!(100)).await;
+        let (status, body) = get(&c, &format!("/api/v1/listings/{id}?currency=CAD")).await;
+        assert_eq!(status, 422);
+        assert_eq!(body["code"], "FX_RATE_UNAVAILABLE");
+    }
+
+    #[actix_web::test]
+    async fn scheduled_rate_does_not_change_prices_yet() {
+        let c = ctx().await;
+        let id = listing(&c, "USD", dec!(100)).await;
+        sql(
+            &c,
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('USD', 'JMD', 999, now() + interval '1 day')",
+        )
+        .await;
+        let (status, body) = get(&c, &format!("/api/v1/listings/{id}?currency=JMD")).await;
+        assert_eq!(status, 200);
+        assert_eq!(body["listing"]["price_per_night"], "16000.00");
+    }
+
+    #[actix_web::test]
+    async fn detail_price_matches_checkout_conversion() {
+        let c = ctx().await;
+        let id = listing(&c, "USD", dec!(123.45)).await;
+        sql(
+            &c,
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('USD', 'JMD', 157.123456, now() - interval '1 minute')",
+        )
+        .await;
+        // Checkout (booking_api) prices the nightly rate as
+        // (price × get_rate(.., NewQuote)).round_dp(2); the detail page must agree.
+        let rate = db_core::exchange_rate::get_rate_pool(
+            &c.pool,
+            "USD",
+            "JMD",
+            Utc::now(),
+            db_core::exchange_rate::RateUse::NewQuote,
+        )
+        .await
+        .expect("checkout rate");
+        let expected = (dec!(123.45) * rate).round_dp(2).to_string();
+        let (status, body) = get(&c, &format!("/api/v1/listings/{id}?currency=JMD")).await;
+        assert_eq!(status, 200);
+        assert_eq!(body["listing"]["price_per_night"], expected);
+    }
+}

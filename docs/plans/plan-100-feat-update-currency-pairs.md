@@ -146,7 +146,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p db_core -p booking_api`
   - **Dependencies:** T5
 
-- [ ] **T7: Search/detail on the unified lookup, and fallbacks removed**
+- [x] **T7: Search/detail on the unified lookup, and fallbacks removed**
   - **Scope:** M
   - **Description:**
     - Parse `?currency=` with `CurrencyCode` (400 on failure). Require it to be active (422 `CURRENCY_INACTIVE`) **before** any rate lookup.

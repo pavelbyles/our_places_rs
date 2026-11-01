@@ -131,6 +131,61 @@ pub async fn get_rate_pool(
     get_rate(&mut conn, base, target, at, use_).await
 }
 
+/// Rates converting each of `bases` into `target` at `at`, in one query.
+///
+/// Same resolution as [`get_rate`] (explicit first, derived reverse second,
+/// `NewQuote` filters). A base equal to `target` maps to `1`. Bases with no
+/// resolvable rate are **absent** from the map, so the caller decides how to
+/// present them; they are never given a fallback rate. For `NewQuote` the
+/// target itself must exist and be active.
+#[tracing::instrument(skip(conn))]
+pub async fn get_rates_for_bases(
+    conn: &mut PgConnection,
+    bases: &[String],
+    target: &str,
+    at: DateTime<Utc>,
+    use_: RateUse,
+) -> Result<std::collections::HashMap<String, Decimal>> {
+    if use_ == RateUse::NewQuote {
+        ensure_quotable(conn, target, target).await?;
+    }
+    let rows = sqlx::query!(
+        r#"
+        SELECT DISTINCT ON (r.base) r.base AS "base!", r.rate AS "rate!", r.derived AS "derived!"
+        FROM (
+            SELECT base_currency AS base, rate, FALSE AS derived, effective_at, updated_at
+              FROM currency_exchange_rates
+             WHERE base_currency = ANY($1) AND target_currency = $2
+               AND effective_at <= $3 AND ($4 OR retired_at IS NULL)
+            UNION ALL
+            SELECT target_currency AS base, rate, TRUE AS derived, effective_at, updated_at
+              FROM currency_exchange_rates
+             WHERE target_currency = ANY($1) AND base_currency = $2
+               AND effective_at <= $3 AND ($4 OR retired_at IS NULL)
+        ) r
+        ORDER BY r.base, r.derived, r.effective_at DESC, r.updated_at DESC
+        "#,
+        bases,
+        target,
+        at,
+        use_.includes_retired()
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    let identity = bases
+        .iter()
+        .filter(|b| b.as_str() == target)
+        .map(|b| Ok((b.clone(), Decimal::ONE)));
+    rows.into_iter()
+        .map(|r| {
+            let rate = if r.derived { invert(r.rate)? } else { r.rate };
+            Ok((r.base, rate))
+        })
+        .chain(identity)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

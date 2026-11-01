@@ -17,6 +17,7 @@ pub fn map_listing_to_response(
     };
 
     common::models::ListingResponse {
+        price_unavailable_in: None,
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,
@@ -105,6 +106,7 @@ pub fn map_listing_with_owner_to_response(
     };
 
     common::models::ListingResponse {
+        price_unavailable_in: None,
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,
