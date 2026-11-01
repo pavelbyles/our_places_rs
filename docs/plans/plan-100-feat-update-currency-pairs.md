@@ -104,7 +104,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p common rate_rules_tests`
   - **Dependencies:** None
 
-- [ ] **T4: Error variants & HTTP mapping**
+- [x] **T4: Error variants & HTTP mapping**
   - **Scope:** S
   - **Description:** Add `DbError` variants: `CurrencyNotFound` (404, admin `PATCH /currencies/{code}` only), `CurrencyUnknown` (422 `CURRENCY_NOT_FOUND`, used by `ensure_active` and for 23503 on writes), `CurrencyInactive`, `CurrencyInUse(Vec<ListingRef>)`, `EffectiveAtInPast`, `EffectiveAtTooFar`, `RateAlreadyEffective`, `RateVersionExists`, `RateChangeConfirmationRequired{baseline,proposed,deviation_pct}`, `CurrencyExists`. Each gets explicit arms in `status_code` **and** `error_response`, plus a `warn!` on business 4xx. Map SQLSTATE 23505/23503 to these variants at the db_core boundary.
   - **Files Touched:** `db_core/src/error.rs`, `app_api/api_core/src/error.rs`
