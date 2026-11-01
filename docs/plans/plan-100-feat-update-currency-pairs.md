@@ -88,7 +88,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p common currency_tests`
   - **Dependencies:** None
 
-- [ ] **T3: `common` rate rules & DTOs**
+- [x] **T3: `common` rate rules & DTOs**
   - **Scope:** S
   - **Description:** Extend `common/src/exchange_rate.rs`:
     - `parse_rate(&str)`: strict decimal syntax (no exponent, sign, comma or surrounding whitespace). Apply `normalize()` before the ≤6 decimal-places check, so `"160.5000000"` is accepted. Require >0 and ≤ `999_999_999.999999`.
