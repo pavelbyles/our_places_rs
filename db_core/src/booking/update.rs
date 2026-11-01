@@ -475,18 +475,23 @@ async fn host_payout_terms(
     .fetch_one(&mut *conn)
     .await?;
 
-    let exchange_rate =
-        crate::exchange_rate::get_rate(conn, &booking.currency, &host_currency, Utc::now())
-            .await
-            .inspect_err(|e| {
-                tracing::error!(
-                    booking_id = %booking.id,
-                    from = %booking.currency,
-                    to = %host_currency,
-                    error = %e,
-                    "host payout currency conversion failed"
-                )
-            })?;
+    let exchange_rate = crate::exchange_rate::get_rate(
+        conn,
+        &booking.currency,
+        &host_currency,
+        Utc::now(),
+        crate::exchange_rate::RateUse::Settlement,
+    )
+    .await
+    .inspect_err(|e| {
+        tracing::error!(
+            booking_id = %booking.id,
+            from = %booking.currency,
+            to = %host_currency,
+            error = %e,
+            "host payout currency conversion failed"
+        )
+    })?;
 
     Ok(HostPayoutTerms {
         host_id: listing.user_id,

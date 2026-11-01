@@ -118,7 +118,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
 
 ## Phase 2 — Unified Rate Resolution (high risk)
 
-- [ ] **T5: `get_rate` with `RateUse`, explicit-first single query**
+- [x] **T5: `get_rate` with `RateUse`, explicit-first single query**
   - **Scope:** S
   - **Description:** Add the `RateUse { NewQuote, Settlement }` parameter. A single `UNION ALL` query returns `(rate, derived)` with `ORDER BY derived, effective_at DESC, updated_at DESC LIMIT 1`. The inverse is computed **in Rust** (`(Decimal::ONE / r).round_dp(6)`), never with SQL `round()`. `NewQuote` filters `retired_at IS NULL`, which also covers derivation from a retired pair, and requires both currencies active. `Settlement` filters on neither.
   - **Files Touched:** `db_core/src/exchange_rate.rs`
@@ -136,7 +136,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p db_core get_rate_tests`
   - **Dependencies:** T1, T4
 
-- [ ] **T6: Move existing rate callers to explicit `RateUse`**
+- [x] **T6: Move existing rate callers to explicit `RateUse`**
   - **Scope:** S (mechanical)
   - **Description:** Hold creation uses `NewQuote`. Display, payout at confirmation, reservation-change payout and tax-document JMD use `Settlement`.
   - **Files Touched:** `app_api/booking_api/src/apis/bookings.rs`, `app_api/booking_api/src/apis/mod.rs`, `db_core/src/booking/update.rs`, `db_core/src/reservation_change.rs`, `db_core/src/tax_document.rs`

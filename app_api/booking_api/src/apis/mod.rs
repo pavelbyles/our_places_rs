@@ -107,12 +107,18 @@ pub fn generate_confirmation_code() -> String {
 /// Rate for showing a booking's amounts in `target`. A missing pair is a 422
 /// (`FX_RATE_UNAVAILABLE`) so amounts are never shown under the wrong label.
 async fn display_rate(pool: &PgPool, from: &str, target: &str) -> Result<Decimal, ApiError> {
-    db_core::exchange_rate::get_rate_pool(pool, from, target, Utc::now())
-        .await
-        .map_err(|e| {
-            tracing::warn!(from, to = target, error = %e, "booking display currency conversion failed");
-            ApiError::Database(e)
-        })
+    db_core::exchange_rate::get_rate_pool(
+        pool,
+        from,
+        target,
+        Utc::now(),
+        db_core::exchange_rate::RateUse::Settlement,
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(from, to = target, error = %e, "booking display currency conversion failed");
+        ApiError::Database(e)
+    })
 }
 
 /// Restates a booking's money fields in `target` at `rate`.
@@ -262,5 +268,7 @@ async fn authorize_booking_party(
 
 #[cfg(test)]
 mod authz_tests;
+#[cfg(test)]
+mod rate_tests;
 #[cfg(test)]
 mod tests;

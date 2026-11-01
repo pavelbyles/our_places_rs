@@ -332,8 +332,14 @@ pub async fn issue_payment_receipt(
     let issue_date = Utc::now();
 
     // Look up JMD FX rate
-    let jmd_exchange_rate =
-        crate::exchange_rate::get_rate(&mut *conn, &booking.currency, "JMD", issue_date).await?;
+    let jmd_exchange_rate = crate::exchange_rate::get_rate(
+        &mut *conn,
+        &booking.currency,
+        "JMD",
+        issue_date,
+        crate::exchange_rate::RateUse::Settlement,
+    )
+    .await?;
 
     // Determine revision number and supersede active if necessary
     let prev_max_rev = sqlx::query_scalar!(
@@ -512,8 +518,14 @@ pub async fn issue_tax_invoice(
     }
 
     // Look up JMD FX rate
-    let jmd_exchange_rate =
-        crate::exchange_rate::get_rate(&mut *conn, &booking.currency, "JMD", issue_date).await?;
+    let jmd_exchange_rate = crate::exchange_rate::get_rate(
+        &mut *conn,
+        &booking.currency,
+        "JMD",
+        issue_date,
+        crate::exchange_rate::RateUse::Settlement,
+    )
+    .await?;
 
     let doc_num = common::tax_document::document_number(
         common::tax_document::TaxDocumentType::TaxInvoice,
@@ -709,8 +721,14 @@ pub async fn issue_refund_receipt(
     let issue_date = Utc::now();
 
     // Look up JMD FX rate
-    let jmd_exchange_rate =
-        crate::exchange_rate::get_rate(&mut *conn, &booking.currency, "JMD", issue_date).await?;
+    let jmd_exchange_rate = crate::exchange_rate::get_rate(
+        &mut *conn,
+        &booking.currency,
+        "JMD",
+        issue_date,
+        crate::exchange_rate::RateUse::Settlement,
+    )
+    .await?;
 
     let doc_num = common::tax_document::document_number(
         common::tax_document::TaxDocumentType::RefundReceipt,
