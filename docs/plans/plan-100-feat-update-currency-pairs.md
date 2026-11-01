@@ -257,7 +257,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p web_client currency_cache_tests`
   - **Dependencies:** T9
 
-- [ ] **T12a: Admin selects driven by the DB**
+- [x] **T12a: Admin selects driven by the DB**
   - **Scope:** S
   - **Description:** Remove the hardcoded lists. Pure render fns take `&[Currency]` plus the current value. An inactive current value renders as `CODE (inactive)` and stays selected.
   - **Files Touched:** `web_ui_admin/src/pages/listings/form.rs`, `web_ui_admin/src/pages/users/form.rs`, `web_ui_admin/src/pages/users/mod.rs`
