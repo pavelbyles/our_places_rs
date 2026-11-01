@@ -404,3 +404,258 @@ mod rate_lock_tests {
         assert_eq!(ledger, 1, "payout ledger entry created");
     }
 }
+
+mod currency_api_tests {
+    //! `/api/v1/currencies` (public) and `/api/v1/admin/currencies` (admin only).
+
+    use super::*;
+
+    fn bearer(user: Uuid) -> (&'static str, String) {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(user)),
+        )
+    }
+
+    async fn call<S>(app: &S, req: actix_http::Request) -> (u16, serde_json::Value)
+    where
+        S: Service<actix_http::Request, Response = ServiceResponse, Error = actix_web::Error>,
+    {
+        let resp = test::call_service(app, req).await;
+        let status = resp.status().as_u16();
+        let bytes = test::read_body(resp).await;
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    fn codes(body: &serde_json::Value) -> Vec<String> {
+        body["currencies"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|c| c["code"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn public_list_needs_no_auth_and_hides_inactive() {
+        let f = fixture().await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+            .execute(&f.pool)
+            .await
+            .expect("deactivate CAD");
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/currencies")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let codes = codes(&body);
+        assert!(codes.contains(&"USD".to_string()));
+        assert!(!codes.contains(&"CAD".to_string()));
+    }
+
+    #[tokio::test]
+    async fn admin_list_includes_inactive() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+            .execute(&f.pool)
+            .await
+            .expect("deactivate CAD");
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/currencies")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(codes(&body).contains(&"CAD".to_string()));
+    }
+
+    #[tokio::test]
+    async fn hosts_are_forbidden_on_every_admin_route() {
+        let f = fixture().await;
+        let app = app(&f.pool).await;
+        let host = bearer(f.host_id);
+        let requests = [
+            test::TestRequest::get()
+                .uri("/api/v1/admin/currencies")
+                .insert_header(host.clone())
+                .to_request(),
+            test::TestRequest::post()
+                .uri("/api/v1/admin/currencies")
+                .insert_header(host.clone())
+                .set_json(serde_json::json!({ "code": "TTD", "name": "Trinidad Dollar" }))
+                .to_request(),
+            test::TestRequest::patch()
+                .uri("/api/v1/admin/currencies/CAD")
+                .insert_header(host.clone())
+                .set_json(serde_json::json!({ "active": false }))
+                .to_request(),
+        ];
+        for req in requests {
+            let (status, _) = call(&app, req).await;
+            assert_eq!(status, 403);
+        }
+    }
+
+    #[tokio::test]
+    async fn anonymous_admin_calls_are_401() {
+        let f = fixture().await;
+        let app = app(&f.pool).await;
+        let (status, _) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/currencies")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 401);
+    }
+
+    #[tokio::test]
+    async fn create_returns_201() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/admin/currencies")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "code": "TTD", "name": " Trinidad Dollar " }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 201);
+        assert_eq!(body["code"], "TTD");
+        assert_eq!(body["name"], "Trinidad Dollar");
+        assert_eq!(body["active"], true);
+    }
+
+    #[tokio::test]
+    async fn malformed_codes_are_400() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (post, _) = call(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/admin/currencies")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "code": "ttd", "name": "Trinidad Dollar" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(post, 400);
+        let (patch, _) = call(
+            &app,
+            test::TestRequest::patch()
+                .uri("/api/v1/admin/currencies/cad")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "active": false }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(patch, 400);
+    }
+
+    #[tokio::test]
+    async fn blank_or_long_names_and_empty_updates_are_400() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let long = "x".repeat(65);
+        for body in [
+            serde_json::json!({ "code": "TTD", "name": "  " }),
+            serde_json::json!({ "code": "TTD", "name": long }),
+        ] {
+            let (status, _) = call(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/v1/admin/currencies")
+                    .insert_header(bearer(admin))
+                    .set_json(body)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(status, 400);
+        }
+        let (empty, _) = call(
+            &app,
+            test::TestRequest::patch()
+                .uri("/api/v1/admin/currencies/CAD")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(empty, 400);
+    }
+
+    #[tokio::test]
+    async fn patch_unknown_code_is_404() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            test::TestRequest::patch()
+                .uri("/api/v1/admin/currencies/QQQ")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "active": false }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 404);
+        assert_eq!(body["code"], "CURRENCY_NOT_FOUND");
+    }
+
+    #[tokio::test]
+    async fn duplicate_create_is_409() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/admin/currencies")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "code": "USD", "name": "Dollar" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 409);
+        assert_eq!(body["code"], "CURRENCY_EXISTS");
+    }
+
+    #[tokio::test]
+    async fn deactivating_a_currency_in_use_is_409_with_listings() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            test::TestRequest::patch()
+                .uri("/api/v1/admin/currencies/USD")
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "active": false }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 409);
+        assert_eq!(body["code"], "CURRENCY_IN_USE");
+        assert_eq!(body["listings"][0]["id"], f.listing_id.to_string());
+    }
+}

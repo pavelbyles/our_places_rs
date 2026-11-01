@@ -19,6 +19,7 @@ mod booking_policy;
 mod booking_updates;
 mod bookings;
 mod cron;
+mod currencies;
 mod documents;
 mod ledger;
 mod messages;

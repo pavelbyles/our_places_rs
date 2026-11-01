@@ -208,7 +208,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p db_core currency_admin_tests`
   - **Dependencies:** T1, T2, T4
 
-- [ ] **T9: Currency endpoints in `booking_api`**
+- [x] **T9: Currency endpoints in `booking_api`**
   - **Scope:** M
   - **Description:** New `apis/currencies.rs`.
     - `GET /api/v1/currencies` is registered **outside** every `require_user` scope.

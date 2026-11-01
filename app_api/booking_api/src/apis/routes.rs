@@ -11,6 +11,7 @@ use super::cron::{
     CompleteStaysResponse, CronSweepResponse, CronSweepsResponse, complete_stays_cron,
     process_scheduled_notifications, run_sweeps,
 };
+use super::currencies;
 use super::documents::{
     get_booking_document_by_number, get_booking_documents, get_cancellation_quote,
 };
@@ -68,6 +69,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             documents::get_booking_document_by_number,
             cron::complete_stays_cron,
             cron::run_sweeps,
+            currencies::list_active_currencies,
+            currencies::admin_list_currencies,
+            currencies::create_currency,
+            currencies::update_currency,
         ),
         components(
             schemas(
@@ -79,6 +84,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::availability::UnavailableRangesResponse,
                 common::exchange_rate::ExchangeRate,
                 common::exchange_rate::ExchangeRatesResponse,
+                common::currency::Currency,
+                common::currency::CurrenciesResponse,
+                common::currency::CreateCurrencyRequest,
+                common::currency::UpdateCurrencyRequest,
+                common::currency::ListingRef,
+                common::currency::CurrencyInUse,
                 BookingResponse,
                 pagination::Pagination,
                 FeeItem,
@@ -109,7 +120,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             )
         ),
         tags(
-            (name = "bookings", description = "Booking management endpoints")
+            (name = "bookings", description = "Booking management endpoints"),
+            (name = "currencies", description = "Currency reference data")
         ),
     )]
     struct ApiDoc;
@@ -277,6 +289,19 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route("/export", web::get().to(export_host_ledger_csv)),
+    );
+
+    // Public: active currencies for selectors (no auth).
+    cfg.service(
+        web::resource("/api/v1/currencies")
+            .route(web::get().to(currencies::list_active_currencies)),
+    );
+    cfg.service(
+        web::scope("/api/v1/admin/currencies")
+            .wrap(from_fn(require_user))
+            .route("", web::get().to(currencies::admin_list_currencies))
+            .route("", web::post().to(currencies::create_currency))
+            .route("/{code}", web::patch().to(currencies::update_currency)),
     );
 
     cfg.service(
