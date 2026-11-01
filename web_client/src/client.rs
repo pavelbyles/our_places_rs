@@ -25,6 +25,8 @@ pub struct TopcoatApiClient {
     pub booking_api_url: String,
     /// Base URL of `user_api`.
     pub user_api_url: String,
+    /// Active-currency cache shared by every clone of this client.
+    pub currency_cache: Arc<crate::currency_cache::CurrencyCache>,
 }
 
 impl std::fmt::Debug for TopcoatApiClient {
@@ -51,6 +53,9 @@ impl TopcoatApiClient {
             listing_api_url: common::app_client::listing_api_url(),
             booking_api_url: common::app_client::booking_api_url(),
             user_api_url: common::app_client::user_api_url(),
+            currency_cache: Arc::new(crate::currency_cache::CurrencyCache::new(
+                common::app_client::currency_cache_ttl(),
+            )),
         }
     }
 
@@ -66,6 +71,9 @@ impl TopcoatApiClient {
             listing_api_url: listing_api_url.trim_end_matches('/').to_string(),
             booking_api_url: booking_api_url.trim_end_matches('/').to_string(),
             user_api_url: user_api_url.trim_end_matches('/').to_string(),
+            currency_cache: Arc::new(crate::currency_cache::CurrencyCache::new(
+                common::app_client::currency_cache_ttl(),
+            )),
         }
     }
 
@@ -449,6 +457,49 @@ pub enum UserCallError {
     /// No Google ID token could be obtained for the backend (Cloud Run IAM).
     #[error("could not get a service identity token: {0}")]
     Identity(anyhow::Error),
+    /// A structured business rejection (`{ "code", "message", ... }`), kept
+    /// whole so pages can show its details (e.g. blocking listings).
+    #[error("backend rejected the request ({}): {}", .0.code, .0.message)]
+    Api(ApiRejection),
+}
+
+/// A backend error body with an explicit code.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApiRejection {
+    /// HTTP status.
+    pub status: u16,
+    /// Machine-readable code, e.g. `CURRENCY_IN_USE`.
+    pub code: String,
+    /// Human-readable message.
+    pub message: String,
+    /// The whole body, for code-specific fields.
+    pub body: serde_json::Value,
+}
+
+/// Like [`decode`], but keeps structured 400/409/422/503 bodies as
+/// [`UserCallError::Api`].
+async fn decode_api<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> Result<T, UserCallError> {
+    let status = response.status().as_u16();
+    match status {
+        200..=299 => Ok(response.json::<T>().await?),
+        404 => Err(UserCallError::NotFound),
+        401 | 403 => Err(UserCallError::Unauthorized),
+        400 | 409 | 422 | 503 => {
+            let body: serde_json::Value = response.json().await?;
+            let field = |k: &str| body[k].as_str().map(str::to_string);
+            Err(UserCallError::Api(ApiRejection {
+                status,
+                code: field("code").unwrap_or_else(|| format!("HTTP_{status}")),
+                message: field("message")
+                    .or_else(|| field("error"))
+                    .unwrap_or_else(|| format!("request rejected with status {status}")),
+                body,
+            }))
+        }
+        other => Err(UserCallError::Status(other)),
+    }
 }
 
 impl TopcoatApiClient {
@@ -599,6 +650,91 @@ impl TopcoatApiClient {
             req,
         )
         .await
+    }
+
+    /// Active currencies for selectors, from the in-process cache.
+    pub async fn active_currencies(
+        &self,
+    ) -> Result<Arc<Vec<common::currency::Currency>>, UserCallError> {
+        let url = format!("{}/api/v1/currencies", self.booking_api_url);
+        self.currency_cache
+            .get_or_refresh(|| async {
+                let request = service_request(
+                    &self.client,
+                    reqwest::Method::GET,
+                    &url,
+                    &booking_api_audience(),
+                    None,
+                )
+                .await?;
+                decode::<common::currency::CurrenciesResponse>(request.send().await?)
+                    .await
+                    .map(|r| r.currencies)
+            })
+            .await
+    }
+
+    /// Drops the cached currency list (call after a currency change).
+    pub async fn invalidate_currencies(&self) {
+        self.currency_cache.invalidate().await;
+    }
+
+    /// Every currency including inactive ones, as the admin who owns `jwt`.
+    pub async fn list_all_currencies_as(
+        &self,
+        jwt: &str,
+    ) -> Result<common::currency::CurrenciesResponse, UserCallError> {
+        let url = format!("{}/api/v1/admin/currencies", self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Adds a currency, as the admin who owns `jwt`.
+    pub async fn create_currency_as(
+        &self,
+        jwt: &str,
+        req: &common::currency::CreateCurrencyRequest,
+    ) -> Result<common::currency::Currency, UserCallError> {
+        let url = format!("{}/api/v1/admin/currencies", self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await?;
+        let created = decode_api(request.json(req).send().await?).await;
+        self.invalidate_currencies().await;
+        created
+    }
+
+    /// Renames and/or (de)activates a currency, as the admin who owns `jwt`.
+    pub async fn update_currency_as(
+        &self,
+        jwt: &str,
+        code: &common::currency::CurrencyCode,
+        req: &common::currency::UpdateCurrencyRequest,
+    ) -> Result<common::currency::Currency, UserCallError> {
+        let url = format!("{}/api/v1/admin/currencies/{code}", self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::PATCH,
+            &url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await?;
+        let updated = decode_api(request.json(req).send().await?).await;
+        self.invalidate_currencies().await;
+        updated
     }
 
     /// The newest rate per currency pair, as the admin or host who owns `jwt`.

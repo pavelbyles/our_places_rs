@@ -8,6 +8,8 @@ pub mod api_client;
 pub mod auth;
 /// HTTP client for the backend services, registered in Topcoat's app context.
 pub mod client;
+/// In-process cache of the active currency list.
+pub mod currency_cache;
 /// Application error type for Topcoat SSR handlers.
 pub mod error;
 /// Short-lived service tokens for backend calls on behalf of a user.

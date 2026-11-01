@@ -243,7 +243,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p listing_api -p user_api -p booking_api currency_inactive_tests`
   - **Dependencies:** T8
 
-- [ ] **T11: Client methods and active-currency cache**
+- [x] **T11: Client methods and active-currency cache**
   - **Scope:** S
   - **Description:** Add `common/src/app_client/currencies.rs`. The TTL comes from a new `common::app_client::currency_cache_ttl()` next to the existing `booking_api_url()` helpers. It reads `static CURRENCY_CACHE_TTL_ENV: &str = "CURRENCY_CACHE_TTL_SECONDS"` (a named constant, per the env-var gate). The default is 60 and 0 means no cache. An unparseable value logs a `warn!` and uses 60; it's a display cache, not money. The cache is an `Arc` field on `TopcoatApiClient` set up by its constructors. `active_currencies()` then provides:
     - injectable clock
