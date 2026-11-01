@@ -82,8 +82,6 @@ pub async fn villa_card(
                 </ul>
                 <p class="mt-2 flex items-center gap-3 text-xs">
                     <span><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" / night"</span></span>
-                    <span aria-hidden="true" class="h-3 w-px bg-border"></span>
-                    <a href=(href) class="font-medium tracking-wide uppercase hover:underline underline-offset-4">"View Listing"</a>
                 </p>
             </div>
         </article>
