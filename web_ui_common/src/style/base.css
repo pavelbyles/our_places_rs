@@ -1,0 +1,79 @@
+/* Shared Tailwind wiring for the redesigned portals: maps the theme tokens to
+   Tailwind utilities (`bg-background`, `text-primary`, ...). Each portal's
+   theme file (guest.css / admin.css) imports this and sets the token values
+   for light (`:root`), dim (`.dim`) and dark (`.dark`). */
+
+/* `dark:` targets the dark theme only. Dim is a lowered light theme, not a
+   dark one (docs/design/guest-theme.md §1). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-divider: var(--divider);
+  --color-chip: var(--chip);
+  --color-photo-placeholder: var(--photo-placeholder);
+  --color-link: var(--link);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+}
+
+@layer base {
+  body {
+    @apply bg-background font-sans text-foreground;
+  }
+  a {
+    color: var(--link);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Printing tax documents: hide page chrome, flatten the document card. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .tax-document-container {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}
+
+/* Booking calendar: the grid needs ui.js (which sets data-enhanced); the
+   date inputs stay visible either way. */
+[data-calendar]:not([data-enhanced]) [data-calendar-grid] {
+  display: none;
+}
+
+/* A photo that failed to load (marked by ui.js): show the placeholder tile
+   behind it, not the broken-image icon and alt text. */
+img[data-broken] {
+  visibility: hidden;
+}

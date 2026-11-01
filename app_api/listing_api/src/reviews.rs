@@ -12,7 +12,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/reviews/token/{token}",
@@ -194,7 +194,7 @@ fn default_per_page() -> i64 {
     20
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}/reviews",
@@ -229,7 +229,7 @@ pub async fn get_listing_reviews_handler(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/reviews/booking/{booking_id}/token",

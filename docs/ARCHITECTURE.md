@@ -1,211 +1,282 @@
-# Architecture Documentation — Our Places (`our_places_rs`)
+# Architecture — Our Places (`our_places_rs`)
 
-## 1. Executive Summary & Architectural Goals
+Last updated: 2026-10-31
 
-**Our Places** is an Isomorphic Rust monorepo designed for high-performance, low-cost property rental management for luxury villas in Jamaica. 
+## 1. Summary & Architectural Goals
+
+**Our Places** is a Rust monorepo for short-term rental of villas in Jamaica. Its parts are independent services, each deployed as its own scale-to-zero Cloud Run service, so each can scale and fail on its own.
 
 ### Key Architectural Drivers
-- **Cloud Run Scale-to-Zero Efficiency**: Designed to execute within lightweight container limits ($0.25\text{ vCPU}$, $256\text{MB RAM}$) with cold start targets under $300\text{ms}$ (p50) and $1\text{s}$ (p95).
-- **Isomorphic Code Execution**: Domain models, pricing mathematics, and business validators are written once in Rust (`common`) and compiled to both WebAssembly (`web_app` frontend) and native machine code (`app_api` backend).
-- **Financial Precision**: Absolute avoidance of floating-point arithmetic (`f32`/`f64`) across multi-currency conversions and tax calculations using `rust_decimal::Decimal`.
-- **Atomic Reservation Concurrency**: Elimination of double-bookings through PostgreSQL row-level locks (`SELECT ... FOR UPDATE`) and 15-minute self-expiring date holds.
+- **Scale-to-zero on Cloud Run**: every service and worker idles at zero instances. Budget: cold start < 300 ms (p50) and < 1 s (p95) on 0.25 vCPU / 256 MB.
+- **Server-rendered UI**: two Topcoat SSR portals (guest and admin) render HTML on the server and use HTMX for partial updates. No WASM is shipped to the browser.
+- **Shared domain code**: DTOs, the pricing engine and reference data live once in `common` and are used by the APIs and the portals.
+- **Financial precision**: all money, rates and taxes use `rust_decimal::Decimal`. `f32`/`f64` are banned in pricing paths.
+- **No double bookings**: availability and holds are decided inside one PostgreSQL transaction holding a row lock on the listing (`SELECT ... FOR UPDATE`). No cache takes part.
+- **Holds expire by timestamp**: a hold blocks dates only while `expires_at > NOW()`. Correctness never depends on a background job running.
 
 ---
 
-## 2. High-Level Component Architecture
-
-The following diagram illustrates the crate boundaries, data access layers, and external service integrations within the monorepo:
+## 2. Component Architecture
 
 ```mermaid
 flowchart TB
-    subgraph s1["Server-Side Rendered Frontend - Topcoat & HTMX"]
-        WA["web_app_tc - Guest Portal"]
-        WAA["web_app_admin_tc - Admin Dashboard"]
-        WAC["web_app_common_tc - Shared UI & API Client"]
+    subgraph portals["Topcoat SSR portals (public, Cloud Run)"]
+        WG["web_ui_guest :3010"]
+        WA["web_ui_admin :3012"]
+        WUC["web_ui_common<br/>components, theme, shells, CSP"]
+        WC["web_client<br/>API client, sessions, guards, JWT minting"]
     end
-    subgraph s2["Shared Isomorphic Crates"]
-        COM["common - Isomorphic Pricing & Ref Data"]
-        DBC["db_core - SQLx PostgreSQL Entities & Migrations"]
+    subgraph apis["Actix-web APIs (private, Cloud Run IAM)"]
+        LA["listing_api"]
+        BA["booking_api"]
+        UA["user_api"]
+        AC["api_core<br/>errors, auth extractors, startup, metrics, email publisher"]
     end
-    subgraph s3["Actix-web API Services"]
-        LA["listing_api - Listings & Geocoding"]
-        BA["booking_api - Booking State Machine"]
-        UA["user_api - Auth & Profiles"]
-        IW["image_worker - Background Image Processor"]
+    subgraph workers["Workers (internal ingress)"]
+        IW["image_worker"]
+        EW["email_worker"]
     end
-    subgraph s4["Google Cloud Platform"]
-        PG[("PostgreSQL Database")]
-        GCS[("Google Cloud Storage")]
-        PS["GCP Pub/Sub Event Bus"]
+    subgraph shared["Shared crates"]
+        COM["common"]
+        DBC["db_core"]
     end
-    WA --> WAC
-    WAA --> WAC
-    WA -.-> COM
-    WAA -.-> COM
-    LA --> COM
-    LA --> DBC
-    BA --> COM
-    BA --> DBC
-    UA --> COM
-    UA --> DBC
-    IW --> DBC
-    DBC --> PG
-    LA -- V4 Signed URL --> GCS
-    GCS -- Upload Notification --> PS
-    PS -- Push Event --> IW
-    IW -- Optimized WebP Assets --> GCS
+    subgraph gcp["Google Cloud"]
+        PG[("Cloud SQL PostgreSQL<br/>+ pg_cron")]
+        GCSR[("GCS raw bucket")]
+        GCSP[("GCS public bucket")]
+        PSI["Pub/Sub: image uploads"]
+        PSE["Pub/Sub: email notifications"]
+        SCH["Cloud Scheduler<br/>hourly run-sweeps"]
+    end
+    SMTP["SMTP provider"]
+
+    WG --> WUC --> WC
+    WA --> WUC
+    WC -- "ID token + X-Forwarded-Authorization: user JWT" --> LA & BA & UA
+    LA & BA & UA --> AC
+    LA & BA & UA & IW & EW --> DBC --> PG
+    WC & LA & BA & UA & DBC -.-> COM
+    LA -- "V4 signed upload URL" --> WA
+    WA -- "direct upload" --> GCSR --> PSI --> IW --> GCSP
+    BA & UA -- "1. insert email_outbox<br/>2. publish id" --> PSE --> EW --> SMTP
+    SCH -- "OIDC + x-cron-secret" --> BA
 ```
 
+Dependency rules:
+- **APIs never depend on each other.** They share code only through `api_core`, `db_core` and `common`.
+- **Portals never touch the database.** They reach data only through `web_client`, which calls the APIs over HTTP.
+- **The APIs share one PostgreSQL database.** Each table is owned by the service that writes it. `db_core` is the only crate that runs SQL.
+
 ---
 
-## 3. Monorepo Crate Taxonomy
+## 3. Crate Taxonomy
 
-| Crate | Target | Description | Dependencies |
+| Crate | Kind | Responsibility | Depends on |
 | :--- | :--- | :--- | :--- |
-| **`common/`** | WASM & Native | Isomorphic domain DTOs, `rust_decimal` pricing engine, statutory tax rates, static reference data. | None |
-| **`db_core/`** | Native | PostgreSQL pool management, compile-time verified `sqlx` queries, migration scripts. | `common` |
-| **`app_api/listing_api`** | Native | Villa creation, OSM Nominatim reverse geocoding, GCS V4 Signed URL generation, spatial search. | `common`, `db_core` |
-| **`app_api/booking_api`** | Native | Availability checking, `SELECT FOR UPDATE` locking, 15-min reservation holds, payment orchestration. | `common`, `db_core` |
-| **`app_api/user_api`** | Native | JWT authentication, bcrypt password hashing, shadow user registration and promotion. | `common`, `db_core` |
-| **`app_api/image_worker`** | Native | Event-driven background service processing GCS image upload events to multi-resolution WebP. | `db_core` |
-| **`web_app_tc/`** | Native / SSR | Public guest-facing Topcoat SSR & HTMX application (villas, search, booking checkout, messaging). | `common`, `web_app_common_tc` |
-| **`web_app_admin_tc/`** | Native / SSR | Internal administration dashboard (exchanges rates, listings, bookings, messaging, audits). | `common`, `web_app_common_tc` |
-| **`web_app_common_tc/`** | Native / SSR | Shared Topcoat UI components, layouts, theme engine, and centralized HTTP client. | `common` |
+| **`common/`** | lib | Domain DTOs, `rust_decimal` pricing and cancellation math, availability rules, tax documents, reference data (`reference.rs`), exchange-rate and GCS/geocode helpers, a typed HTTP client (`app_client/`, one module per API area) used by `web_client`. | — |
+| **`db_core/`** | lib + bins | SQLx entities and compile-time checked queries, migrations (`db_core/migrations/`), seeds, connection pool. | `common` |
+| **`app_api/api_core/`** | lib | Shared Actix pieces: `ApiError`, JWT extractors (HS256), server startup, `/actuator` health and Prometheus metrics, tracing, the email outbox publisher, settings loader. | `common`, `db_core` |
+| **`app_api/listing_api/`** | bin | Listings, search, price overrides, Nominatim geocoding, V4 signed upload URLs, images. | `api_core`, `common`, `db_core` |
+| **`app_api/booking_api/`** | bin | Holds and bookings, availability, change requests, cancellation quotes, messaging, host ledger and payouts, tax documents, internal cron sweeps. | `api_core`, `common`, `db_core` |
+| **`app_api/user_api/`** | bin | Registration, login, email verification, profiles, user slugs, admin user management. | `api_core`, `common`, `db_core` |
+| **`app_api/image_worker/`** | bin | Pub/Sub push handler: resizes uploads into 640/1024/1920 px WebP and records them in `listing_image`. | `db_core`, `common` |
+| **`app_api/email_worker/`** | bin | Pub/Sub push handler: loads an `email_outbox` row, renders its template, sends over SMTP (logs instead when no SMTP is configured). | `db_core`, `common` |
+| **`web_client/`** | lib | UI-free API client, typed sessions, route guards, short-lived HS256 user JWTs. Adds the service account's Google ID token to every API call. | `common` |
+| **`web_ui_common/`** | lib | Shared Topcoat components (DaisyUI v5 / Tailwind v4), theme tokens, guest and admin shells, security headers (CSP), asset bundler used by the Docker builds. | `web_client`, `common` |
+| **`web_ui_guest/`** | bin | Guest portal: home, search, listing detail, checkout, bookings, change requests, messages, documents, reviews, profile. | `web_ui_common`, `web_client`, `common` |
+| **`web_ui_admin/`** | bin | Admin and host portal: dashboard, listings and photos, pricing, bookings, users, payouts, exchange rates. | `web_ui_common`, `web_client`, `common` |
+| **`protoproj/`** | lib | gRPC/protobuf experiment (`tonic`). Not deployed; excluded from CI gates. | — |
+
+### 3.1. Module layout of the largest modules
+
+`booking_api/src/apis/` has one module per route group, and `routes.rs` wires them together:
+
+| Module | Contents |
+| :--- | :--- |
+| `mod.rs` | Shared helpers: portal URLs, pricing-error mapping, confirmation codes, display currency, email enqueueing, booking authorization |
+| `availability.rs` | Availability check, unavailable ranges |
+| `bookings.rs` | Create a hold; read bookings |
+| `booking_updates.rs` | Status changes, delete, guest transfer |
+| `reservation_changes.rs` | Change quotes and bilateral change requests |
+| `messages.rs` | Booking messaging |
+| `ledger.rs` | Host ledger, payout status, admin exchange rates |
+| `documents.rs` | Cancellation quotes, tax documents |
+| `notifications.rs` | Transactional email dispatch |
+| `cron.rs` | `/api/v1/internal/cron/*` sweeps |
+| `routes.rs` | Route table and OpenAPI document |
+| `tests.rs` | Integration tests |
+
+`db_core/src/booking/` re-exports everything from `mod.rs`, so callers keep using `db_core::booking::*`:
+
+| Module | Contents |
+| :--- | :--- |
+| `hold.rs` | Create a hold, expire stale holds, transfer a hold to another guest |
+| `queries.rs` | Read-only lookups |
+| `update.rs` | Status transitions and host payout bookkeeping |
+| `availability.rs` | Availability checks and unavailable ranges |
+| `history.rs` | Immutable `booking_history` snapshots |
+| `*tests.rs` | Integration tests and shared fixtures |
+
+The other large modules follow the same pattern: one file per area, re-exported from `mod.rs` so public paths are unchanged.
+
+| Directory | Modules |
+| :--- | :--- |
+| `db_core/src/listing/` | `write` (create, update, delete), `queries` (search, by owner, by id or slug), `images`, `price_overrides`, `tests` |
+| `user_api/src/apis/` | `registration` (sign-up, login, verification), `profile`, `admin`, `account` (password, email, deactivation), `sessions`, `tests`; `mod.rs` holds the DTOs and route table |
+| `common/src/app_client/` | `listings`, `bookings`, `reservation_changes`, `payouts`, `reviews`, `users`; `mod.rs` holds the shared client and API URLs |
 
 ---
 
-## 4. Key Subsystems & Technical Workflows
+## 4. Key Subsystems
 
 ### 4.1. Booking Engine & Concurrency Control
-
-To ensure **zero double-bookings** without relying on volatile caching layers (e.g. Redis), availability verification and hold allocation are enforced directly in PostgreSQL.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Guest
-    participant Client as Leptos WASM Client
-    participant API as booking_api (Actix)
-    participant DB as PostgreSQL (db_core)
+    participant Portal as web_ui_guest (SSR)
+    participant API as booking_api
+    participant DB as PostgreSQL
 
-    Guest->>Client: Select Check-in / Check-out Dates
-    Client->>API: POST /bookings/hold (listing_id, dates, guest_info)
-    Note over API,DB: Begin Serializable Transaction
-    API->>DB: SELECT * FROM listings WHERE id = $1 FOR UPDATE
-    API->>DB: Check overlapping confirmed or pending_payment holds
-    alt Dates Available
-        API->>DB: INSERT INTO bookings (status = 'pending_payment', expires_at = NOW() + 15m)
-        API->>DB: INSERT INTO booking_status_history (immutable audit log)
-        DB-->>API: Transaction Commit Success
-        API-->>Client: 201 Created (booking_id, hold_expires_at)
-    else Dates Overlapping
-        DB-->>API: Row Locked / Conflict Detected
-        API-->>Client: 409 Conflict ("DATE_UNAVAILABLE")
+    Guest->>Portal: POST /checkout/{slug} (dates, guests)
+    Portal->>API: POST /api/v1/bookings (ID token + user JWT)
+    API->>API: Price stay (common::pricing, Decimal)
+    Note over API,DB: BEGIN
+    API->>DB: SELECT id FROM listing WHERE id = $1 FOR UPDATE
+    API->>DB: Overlapping bookings: confirmed, or pending with expires_at > NOW()
+    alt Dates free (or only this guest's own pending hold overlaps)
+        API->>DB: Cancel this guest's other pending holds (+ history rows)
+        API->>DB: INSERT booking (status = 'pending', expires_at = NOW() + hold_minutes)
+        API->>DB: INSERT booking_history ("Booking created")
+        Note over API,DB: COMMIT
+        API-->>Portal: 201 Created (BookingResponse)
+    else Dates taken
+        Note over API,DB: ROLLBACK
+        API-->>Portal: 400 "Listing is not available for the selected dates"
     end
 ```
 
-#### Reservation Hold Lifecycle
-1. **Pending Hold Creation**: Unauthenticated or authenticated guests initiate checkout, creating a `pending_payment` status with a 15-minute `expires_at` window.
-2. **Natural Expiry**: Expired holds (`expires_at < NOW()`) are automatically treated as available dates during subsequent `SELECT ... FOR UPDATE` checks, eliminating mandatory cleanup cron jobs.
-3. **Shadow User Promotion**: Unauthenticated checkouts create a temporary guest identity ("shadow user"). Upon post-payment account creation, the identity is promoted seamlessly without invalidating date holds.
+- **One lock per listing**: two attempts to book the same listing run one after the other, while different listings are booked in parallel. The same lock protects availability checks for change requests (`reservation_change.rs`) and reviews.
+- **Statuses** (`BookingStatus`): `pending` → `confirmed` → `completed`, or `cancelled` from `pending` or `confirmed`. Every transition writes a full row snapshot to `booking_history`.
+- **Confirmation codes**: generated randomly. If a code collides with an existing one, booking_api retries up to `application.max_attempts` times.
 
----
+#### Pending Hold Lifecycle
+1. **Window is configuration, not code.** The hold length is `application.pending_hold_minutes`: 120 by default, set in `app_api/booking_api/config/Default.toml`. Override it per deploy, with no rebuild, via the env var `EA__APPLICATION__PENDING_HOLD_MINUTES`. booking_api refuses to start if the value is not positive. `create_booking` stores `expires_at` once, at insert time.
+2. **Expiry is enforced on every read.** Availability queries treat a `pending` row as blocking only while `expires_at > NOW()`. An expired hold frees its dates immediately, even before any cleanup runs.
+3. **Housekeeping.** Expired holds are flipped to `cancelled` with a history snapshot in two places:
+   - the `pg_cron` job `cleanup_stale_pending_holds`, which runs every 15 minutes;
+   - booking_api's `POST /api/v1/internal/cron/run-sweeps`, which Cloud Scheduler calls hourly at :05.
 
-### 4.2. Isomorphic "Tri-Currency" Pricing Mathematics
+   Both use `FOR UPDATE SKIP LOCKED`, so they never fight over the same rows.
+4. **Reminder.** The same sweep emails the guest once (deduplicated via `booking_notification_log`) when a hold is 15–45 minutes from `expires_at`.
 
-Handling international transactions across multi-currency listings requires strict precision.
+### 4.2. Tri-Currency Pricing
 
 ```
-+------------------+      Exchange Rate      +---------------------+      Static Tax Math      +-------------------+
-|  Base Currency   | ----------------------> |  Payment Currency   | ------------------------> |   Final Receipt   |
-| (Villa Nightly)  |                         |  (Guest Checkout)   |                           | (Jamaican GCT 15%)|
-+------------------+                         +---------------------+                           +-------------------+
+Base currency (listing price) --exchange rate--> Payment currency (guest) --GCT--> Totals
 ```
 
-- **Calculation Flow**:
-  1. Convert Base Nightly Price (e.g. $350 USD) $\rightarrow$ Guest Payment Currency (e.g. $54,250 JMD) using active `currency_exchange_rates`.
-  2. Compute base stay total: $\text{Payment Nightly} \times \text{Nights}$.
-  3. Apply statutory tax rates (stored statically in `common/src/reference.rs`, e.g., Jamaican GCT 15%).
-- **Precision Guarantee**: All monetary calculations use `rust_decimal::Decimal`. Floating point types (`f32`/`f64`) are prohibited in pricing paths.
+1. **Base nightly rate**: comes from `listing.price_per_night`, or a matching `listing_price_overrides` row. Overlapping override date ranges are rejected by a GiST `EXCLUDE` constraint.
+2. **Price the stay**: `BookingCalculator` builds the total in typed steps: base subtotal → weekly/monthly discount → tax → fees (platform fee, cleaning fee, extra-guest fee, damage deposit).
+3. **Convert currency**: the result is converted with `currency_exchange_rates`, which supports direct and inverse lookups.
+4. **Statutory tax**: rates (Jamaican GCT 15%) are fixed in `common/src/reference.rs`. Exchange rates live in the database.
+5. **Tax documents**: completed stays get statutory tax documents (`tax_document`), issued by the Merchant of Record named in `TAJ_SUPPLIER_*`.
 
----
-
-### 4.3. High-Performance Asynchronous Image Pipeline
-
-To minimize bandwidth usage on Cloud Run instances, raw image payloads bypass backend services entirely:
+### 4.3. Image Pipeline
 
 ```mermaid
 flowchart LR
-    A[Leptos Client] -- 1. Request Signed Upload URL --> B[listing_api]
-    B -- 2. Return V4 Signed URL --> A
-    A -- 3. Upload Raw Image Direct --> C[Google Cloud Storage]
-    C -- 4. Object Finalized Event --> D[GCP Pub/Sub]
-    D -- 5. Push Notification --> E[image_worker]
-    E -- 6. Generate 640px, 1024px, 1920px WebP --> C
-    A -- 7. Render HTML srcset --> C
+    A[web_ui_admin] -- 1. request signed URL --> B[listing_api]
+    B -- 2. V4 signed URL --> A
+    A -- 3. direct upload --> C[(GCS raw)]
+    C -- 4. object finalized --> D[Pub/Sub]
+    D -- 5. push --> E[image_worker]
+    E -- 6. 640/1024/1920 px WebP --> F[(GCS public)]
+    E -- 7. listing_image rows --> G[(PostgreSQL)]
 ```
 
-1. **Direct Signed Upload**: `listing_api` issues a short-lived GCP V4 Signed Upload URL.
-2. **Client-Direct Push**: Client uploads high-resolution images directly to GCS.
-3. **Pub/Sub Worker**: GCS upload events trigger `image_worker` to resize assets to preset resolutions (640px, 1024px, 1920px) and compress them into WebP format.
-4. **Responsive Delivery**: Frontend renders standard `<picture>` and `srcset` tags allowing native browser resolution negotiation.
+Image bytes never pass through an API. The portals render `<picture>`/`srcset` from the `listing_image` rows.
 
----
+### 4.4. Transactional Email (Outbox)
 
-### 4.4. Verified Guest Review & Token Lifecycle State Machine
+1. **Write the outbox row.** booking_api or user_api inserts an `email_outbox` row (recipient, template, JSON payload, `max_attempts`).
+2. **Publish the id.** The API publishes that row's id to the email Pub/Sub topic (`api_core::email_publisher`) from a detached task, so a slow publish never slows the request.
+3. **Send.** email_worker receives the push, claims the row with `FOR UPDATE SKIP LOCKED`, renders the template from `app_api/email_worker/templates/`, and sends it over SMTP. Delivery status is recorded on the row.
+4. **Deduplicate scheduled emails.** Scheduled notifications (48-hour pre-arrival, hold expiry reminder) are claimed in `booking_notification_log` first, so a re-run of a sweep never sends duplicates.
 
-Authentic reviews are gated by single-use, time-bound verification tokens issued upon stay completion.
+### 4.5. Verified Reviews
 
 ```mermaid
 stateDiagram-v2
-    [*] --> StayActive: Guest Booking Confirmed
-    StayActive --> ReviewEligible: Stay Concluded (today >= date_to)
-    ReviewEligible --> TokenActive: Token Issued (expires date_to + 15d)
-    TokenActive --> TokenExpired: 15-Day Window Expired (410 Gone)
-    TokenActive --> ReviewSubmitted: Review Posted (used_at = NOW())
-    ReviewSubmitted --> HostReplied: Host Response Posted
+    [*] --> StayActive: Booking confirmed
+    StayActive --> ReviewEligible: today >= date_to
+    ReviewEligible --> TokenActive: Token issued (expires date_to + 15 days)
+    TokenActive --> TokenExpired: Window passed (410 Gone)
+    TokenActive --> ReviewSubmitted: Review posted (used_at = NOW())
+    ReviewSubmitted --> HostReplied: Host reply posted
     TokenExpired --> [*]
     HostReplied --> [*]
 ```
 
-- **Eligibility Window**: Opens immediately post-checkout (`today >= date_to`) and strictly expires 15 days after checkout (`date_to + 15 days` at 23:59:59 UTC).
-- **Single-Use Invalidation**: Review tokens are consumed atomically inside a PostgreSQL transaction (`UPDATE review_token SET used_at = NOW() WHERE token = $1 AND used_at IS NULL ... RETURNING ...`).
-- **Rating Recalculation & Row Locking**: Review submission acquires a row lock (`SELECT id FROM listing WHERE id = $1 FOR UPDATE`) to recalculate property aggregate ratings (`overall_rating` and `review_count`) atomically without race conditions.
+- **Single use**: a token is consumed atomically with `UPDATE review_token SET used_at = NOW() WHERE token = $1 AND used_at IS NULL ... RETURNING`.
+- **Rating updates are serialized**: posting a review locks the listing row while it recalculates `overall_rating` and `review_count`.
 
 ---
 
+### 4.6. Distributed Tracing
 
-## 5. Security & Cross-Cutting Concerns
+One trace follows a request from the browser through the portal, the APIs and the workers (`common::telemetry`, OpenTelemetry):
 
-- **Authentication**: JWT tokens signed using `jsonwebtoken` algorithm (HMAC-SHA256). Extractors in Actix validate claims per-request.
-- **Password Hashing**: User credentials hashed using `bcrypt` with work factor 12.
-- **Database Safety**: SQL queries are verified at compile-time via `sqlx::query!`. Schema modifications require immutable migrations in `db_core/migrations/`.
-- **Observability**: Distributed request tracing implemented via `tracing` crate with `#[instrument]` annotations on async service handlers.
+- **HTTP:** the portals (`web_ui_common::request_tracing::RequestTracing`) and APIs (`api_core::tracing_utils::CustomRootSpanBuilder`) continue an incoming `traceparent` or Cloud Run's `X-Cloud-Trace-Context`; `AuthenticatedClient` forwards both on every API call.
+- **Async hops:** email events carry the trace context as Pub/Sub attributes. Image uploads carry it as `x-goog-meta-traceparent` object metadata, required by the signed URL and delivered in the GCS notification.
+- **Logs:** each Cloud Logging entry gets `logging.googleapis.com/trace` and `spanId`, so one filter shows every service's logs for a request.
+- **Export:** with `TRACE_EXPORTER=gcp`, spans go to Cloud Trace over OTLP (`telemetry.googleapis.com`), sampled by `TRACE_SAMPLE_RATIO`. Configuration and IAM are in [ENVIRONMENT.md §4](ENVIRONMENT.md).
+
+## 5. Security
+
+- **User auth**: the portals mint short-lived HS256 JWTs (`web_client::jwt`) after login, and `api_core::auth` verifies them. Both sides share `JWT_SECRET`.
+- **Service auth**: the APIs deploy with `--no-allow-unauthenticated`. The portals call them with their service account's Google ID token and pass the user's JWT in `X-Forwarded-Authorization`.
+- **Cron auth**: Cloud Scheduler calls booking_api's `/api/v1/internal/cron/*` with an OIDC token *and* the `x-cron-secret` header. The secret is compared in constant time.
+- **Passwords**: hashed with `bcrypt` at `DEFAULT_COST`, inside `spawn_blocking`.
+- **Portals**: strict security headers and CSP (`web_ui_common::security_headers`). No inline JS.
+- **SQL**: queries are checked at compile time (`sqlx::query!`, with offline metadata in `.sqlx/`). Applied migrations are immutable.
 
 ---
 
-## 6. Environment Configuration & Operational Commands
+## 6. Configuration
 
-### Environment Variables (`.env`)
+Each API loads `config/Default.toml`, then `config/{RUN_ENV}.toml`, then any `EA__SECTION__KEY` environment variables (`api_core::settings::get_settings`). Settings that matter operationally:
+
+| Setting | Default | Override |
+| :--- | :--- | :--- |
+| `application.pending_hold_minutes` | 120 | `EA__APPLICATION__PENDING_HOLD_MINUTES` |
+| `application.max_attempts` | 5 | `EA__APPLICATION__MAX_ATTEMPTS` |
+| `feature_flags.enable_hard_deletes` | false | `EA__FEATURE_FLAGS__ENABLE_HARD_DELETES` |
+
+Secrets and per-environment variables are listed in [ENVIRONMENT.md](ENVIRONMENT.md).
+
+---
+
+## 7. Build, Deploy & Scaling
+
+- **Images**: one Dockerfile per service (`Dockerfile.<service>`). Each builds with `cargo-chef` for dependency caching and `SQLX_OFFLINE=true`, and runs as a non-root user on `debian:bookworm-slim`.
+- **Release profile**: tuned for request speed and startup rather than size: `opt-level = 3`, fat LTO, one codegen unit, stripped symbols.
+- **Deploy**: [`cicd_full_stack.yml`](../.github/workflows/cicd_full_stack.yml) builds and deploys every service with `gcloud run deploy`. It also creates the Pub/Sub topics and subscriptions, the IAM bindings and the Cloud Scheduler job. Branch `main` deploys to prod; other branches get suffixed dev services.
+- **Scaling**: every service runs with `--min-instances=0`. Each is capped at `--max-instances=4`. The services are stateless (sessions are in PostgreSQL, holds are row-locked), so the cap is a deploy flag, not a code change. The limit after that is database connections: each instance's pool is capped at 5 (`db_core::connection`), so the five database-backed services (3 APIs, 2 workers) can open up to 5 × 4 × 5 = 100 connections at full scale. The Cloud SQL tier's `max_connections` must stay above that.
+- **Terraform**: `infra/` holds network, Cloud SQL, accounts and a placeholder Cloud Run module. The workflow, not Terraform, is the source of truth for Cloud Run services today.
+
+---
+
+## 8. Local Development
+
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/our_places
-JWT_SECRET=super_secret_jwt_signing_key_32_chars
-GCS_BUCKET_NAME=our-places-assets-dev
-PUBSUB_TOPIC_ID=image-processing-topic
-EXCHANGE_RATE_API_KEY=sync_api_key
-```
-
-### Local Development Orchestration
-```bash
-# Start infrastructure dependencies
-docker compose up -d
-
-# Run workspace compilation
+docker compose up -d            # PostgreSQL with pg_cron
+sqlx migrate run --source db_core/migrations
 cargo build --workspace
-
-# Execute workspace unit & integration test suites
-cargo test --workspace
-
-# Database schema migrations
-sqlx migrate run
+cargo test --workspace --exclude protoproj
+SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings
+cargo sqlx prepare --workspace  # after changing any query
 ```
+
+The quality gates every change must pass are in [CONSTRAINTS.md](../CONSTRAINTS.md).

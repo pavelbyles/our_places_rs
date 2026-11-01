@@ -1,4 +1,5 @@
-import { test as base, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { test as base } from './base.fixture.js';
 import { TEST_USERS } from './test-data.js';
 
 export async function loginAsAdmin(page: Page, email = TEST_USERS.admin.email, password = TEST_USERS.admin.password): Promise<void> {

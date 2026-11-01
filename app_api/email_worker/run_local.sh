@@ -22,7 +22,7 @@ ensure_db_running() {
   ) 200>"$lockfile"
 
   local retries=5
-  until is_db_ready || [ $retries -eq 0 ]; do
+  until is_db_ready || [[ $retries -eq 0 ]]; do
     echo "Waiting for database to accept connections... (${retries}s remaining)"
     sleep 1
     retries=$((retries - 1))

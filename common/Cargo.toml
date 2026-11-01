@@ -13,7 +13,7 @@ uuid = { workspace = true, features = ["js"] }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 utoipa = { version = "6.0.0", features = ["uuid", "chrono", "decimal"] }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
@@ -25,6 +25,14 @@ sqlx = { workspace = true, optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 google-cloud-storage = { workspace = true }
 google-cloud-auth = "1.6.0"
+tracing-subscriber = { workspace = true, features = ["json"] }
+tracing-opentelemetry = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-http = { workspace = true }
+http = "1"
+bytes = "1"
 
 [dev-dependencies]
 rand = { workspace = true }

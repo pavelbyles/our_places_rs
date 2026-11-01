@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE booking SET currency = 'JMD' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e867ec7afa817b9c94be8bbd7c5439469de5ecb2cfe1b794b30e02cb853860f7"
+}

@@ -70,9 +70,8 @@ cargo fmt --check
 SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings
 
 # 3. Unit & Integration Tests
-cargo test --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
-cargo test -p web_app_tc -p web_app_common_tc --verbose
-cargo test -p web_app_admin_tc --verbose
+cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
+cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose
 ```
 
 ## 5. Commit, Push & Resume Watch

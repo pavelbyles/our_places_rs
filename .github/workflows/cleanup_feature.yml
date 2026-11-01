@@ -13,22 +13,27 @@ env:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    # Long-lived environments are never torn down: merging dev -> main through
+    # a PR closes a PR whose head is `dev`.
+    if: >-
+      (github.event_name == 'delete' && github.event.ref_type == 'branch' && !contains(fromJSON('["main","dev"]'), github.event.ref)) ||
+      (github.event_name == 'pull_request' && !contains(fromJSON('["main","dev"]'), github.head_ref))
     permissions:
       contents: "read"
       id-token: "write"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - id: "auth"
         name: "Authenticate to Google Cloud"
-        uses: "google-github-actions/auth@v3"
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Determine Target
         id: target
@@ -67,6 +72,9 @@ jobs:
             "user-api-$SUFFIX"
             "our-places-image-worker-$SUFFIX"
             "our-places-email-worker-$SUFFIX"
+            "our-places-web-ui-guest-$SUFFIX"
+            "our-places-web-ui-admin-$SUFFIX"
+            # Retired portals, still deleted for branches deployed before the switch
             "our-places-web-app-tc-$SUFFIX"
             "our-places-web-app-admin-tc-$SUFFIX"
           )

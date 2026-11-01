@@ -3,16 +3,14 @@ version = 1
 test_patterns = [
   "**/tests/**",
   "**/tests.rs",
+  "**/*_tests.rs",
   "**/test_*.rs"
 ]
 
 exclude_patterns = [
   "db_core/migrations/**",
   "target/**",
-  "node_modules/**",
-  "web_app_tc/**",
-  "web_app_admin_tc/**",
-  "web_app_common_tc/**"
+  "node_modules/**"
 ]
 
 [[analyzers]]

@@ -48,7 +48,7 @@ pub struct NewBookingRequest {
 /// Lifecycle status for reservations and bookings.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum BookingStatus {
-    /// Initial payment pending state (15-minute hold).
+    /// Initial payment pending state; holds its dates until `expires_at`.
     Pending,
     /// Payment confirmed and reservation secured.
     Confirmed,

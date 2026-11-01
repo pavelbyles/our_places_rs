@@ -1,6 +1,6 @@
 ---
 name: audit-booking-flow
-description: Domain & financial guardrails audit — verify tri-currency math, statutory tax precision, PostgreSQL row-level locks, 15-minute hold timeouts, and status history tracking.
+description: Domain & financial guardrails audit — verify tri-currency math, statutory tax precision, PostgreSQL row-level locks, configurable hold timeouts, and status history tracking.
 ---
 
 # /audit-booking-flow — Booking & Financial Logic Audit
@@ -38,8 +38,8 @@ Run `/audit-booking-flow` whenever modifying code in:
 - Ensure locks are held within an active SQL transaction and never bypassed in favor of caching layers.
 
 ### 3. Reservation Hold Lifecycle & Shadow Users
-- Check that new checkout sessions initialize with a `pending_payment` status and a strict 15-minute `expires_at` window.
-- Verify shadow user creation: guest checkouts must attach to the 15-minute hold and seamlessly promote to full users without releasing date holds.
+- Check that new checkout sessions initialize with a `pending` status and an `expires_at` set from `application.pending_hold_minutes` (never a hardcoded duration).
+- Verify shadow user creation: guest checkouts must attach to the pending hold and seamlessly promote to full users without releasing date holds.
 - Verify status transitions are immutably appended to `booking_status_history`.
 
 ### 4. Automated Verification

@@ -64,7 +64,7 @@ pub async fn get_exchange_rates_cache<'e, E, I, S>(
     executor: E,
     base_currencies: I,
     target_currency: &str,
-) -> HashMap<String, (Decimal, String)>
+) -> Result<HashMap<String, (Decimal, String)>>
 where
     E: PgExecutor<'e> + Copy,
     I: IntoIterator<Item = S>,
@@ -73,14 +73,43 @@ where
     let mut rates = HashMap::new();
     for base in base_currencies {
         let base_ref = base.as_ref();
-        #[allow(clippy::collapsible_if)]
         if !rates.contains_key(base_ref) {
-            if let Ok(rate_info) =
-                get_exchange_rate_and_currency(executor, base_ref, target_currency).await
-            {
-                rates.insert(base_ref.to_string(), rate_info);
-            }
+            let rate_info =
+                get_exchange_rate_and_currency(executor, base_ref, target_currency).await?;
+            rates.insert(base_ref.to_string(), rate_info);
         }
     }
-    rates
+    Ok(rates)
+}
+
+/// Lists the newest rate for every stored currency pair (the one
+/// [`get_exchange_rate_and_currency`] uses), sorted by base then target
+/// currency. Read-only; one row per pair.
+#[tracing::instrument(skip(executor))]
+pub async fn list_latest_exchange_rates<'e, E>(
+    executor: E,
+) -> Result<Vec<common::exchange_rate::ExchangeRate>>
+where
+    E: PgExecutor<'e>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT DISTINCT ON (base_currency, target_currency)
+               base_currency, target_currency, rate, effective_at
+        FROM currency_exchange_rates
+        ORDER BY base_currency, target_currency, effective_at DESC
+        "#
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| common::exchange_rate::ExchangeRate {
+            base_currency: r.base_currency,
+            target_currency: r.target_currency,
+            rate: r.rate,
+            effective_at: r.effective_at,
+        })
+        .collect())
 }

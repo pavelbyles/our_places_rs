@@ -11,16 +11,16 @@ test.describe('Admin Portal - Executive Dashboard', () => {
     await expect(heading).toContainText('Executive Dashboard');
 
     // Check quick action links
-    const newVillaBtn = authenticatedAdminPage.locator('main a[href="/admin/listings/new"], a.btn:has-text("New Villa")').first();
+    const newVillaBtn = authenticatedAdminPage.locator('main a[href="/admin/listings/new"]').first();
     await expect(newVillaBtn).toBeVisible();
 
-    const viewBookingsBtn = authenticatedAdminPage.locator('main a[href="/admin/bookings"], a.btn:has-text("Schedule")').first();
+    const viewBookingsBtn = authenticatedAdminPage.locator('main a[href="/admin/bookings"]').first();
     await expect(viewBookingsBtn).toBeVisible();
   });
 
   test('should display key performance indicator (KPI) metric cards', async ({ authenticatedAdminPage }) => {
     // Verify KPI grid cards
-    await expect(authenticatedAdminPage.locator('text=Active Villas')).toBeVisible();
+    await expect(authenticatedAdminPage.locator('text=Active Listings')).toBeVisible();
     await expect(authenticatedAdminPage.locator('text=Active Holds')).toBeVisible();
     await expect(authenticatedAdminPage.locator('text=Bookings Revenue')).toBeVisible();
   });

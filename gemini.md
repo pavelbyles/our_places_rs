@@ -23,9 +23,10 @@ You must **optimize for performance, correctness, type safety, and minimal resou
 │   ├── user_api/       # JWT authentication, host profiles, shadow user promotion (Port 8083)
 │   ├── image_worker/   # Pub/Sub background worker for WebP image resizing
 │   └── email_worker/   # Pub/Sub background worker for transactional email dispatch (Port 8080)
-├── web_app_tc/         # Public-facing Topcoat SSR & HTMX frontend application (Port 3000)
-├── web_app_admin_tc/   # Internal admin & host dashboard (listings, bookings, messaging, rates, payouts) (Port 3002)
-├── web_app_common_tc/  # Shared Topcoat UI components, themes, layouts, error bridge & API client logic
+├── web_client/         # UI-free backend API client, sessions & auth guards shared by the portals
+├── web_ui_common/      # Shared Topcoat UI components, theme, shells & security headers
+├── web_ui_guest/       # Public-facing guest portal (Topcoat SSR & HTMX) (Port 3010)
+├── web_ui_admin/       # Admin & host dashboard (listings, bookings, messaging, rates, payouts) (Port 3012)
 ├── playwright/         # End-to-end integration and browser test suites
 └── infra/              # Terraform GCP Cloud Run, Cloud Storage, Cloud Scheduler infrastructure
 ```
@@ -46,9 +47,9 @@ You must **optimize for performance, correctness, type safety, and minimal resou
 - **Build & Dev Environment**: Nix via `devenv` (PostgreSQL 18, OpenJDK 21 for Pub/Sub emulator, Rust toolchain)
 - **Deployment**: GCP Cloud Run (services & jobs), Google Cloud Storage, Google Cloud Scheduler, Cloud Pub/Sub
 
-### Frontend Applications (`web_app_tc`, `web_app_admin_tc`, `web_app_common_tc`)
+### Frontend Applications (`web_ui_guest`, `web_ui_admin`, `web_ui_common`, `web_client`)
 - **Framework**: Topcoat (SSR & HTMX)
-- **Styling**: TailwindCSS v4 + DaisyUI v5
+- **Styling**: TailwindCSS v4 + Topcoat UI components
 - **Template System**: Topcoat `view!` macro, signals, and shards
 - **Build & Dev Tool**: Topcoat CLI (`topcoat dev`)
 
@@ -99,7 +100,7 @@ You must **optimize for performance, correctness, type safety, and minimal resou
 - **Monadic Pipelines**: Prefer monadic combinators (`.and_then()`, `.map()`, `.or_else()`, `.transpose()`, `?`) and Railway-Oriented Programming over deeply nested `if let` or `match` ladders.
 - **Error Types**:
   - Use `thiserror` for crate/library error enums.
-  - Map them to unified `AppError` in Actix-web handlers and `web_app_common_tc::AppError` in Topcoat route handlers.
+  - Map them to unified `AppError` in Actix-web handlers and `web_client::AppError` in Topcoat route handlers.
 - **Structured Tracing**: Annotate async functions with `#[tracing::instrument]`. Log errors with `tracing::error!` or `tracing::warn!` before returning user-facing error payloads.
 - **Standard Types**:
   - Entity IDs: `uuid::Uuid` (v7 / v4)
@@ -126,7 +127,7 @@ apis-stop
 # Seed database with test admin, host, guest, and deterministic listing/booking data
 db-seed
 
-# Start Topcoat frontends (Guest Portal on :3000, Admin Portal on :3002)
+# Start Topcoat portals (Guest Portal on :3010, Admin Portal on :3012)
 frontends
 
 # Launch complete development stack (APIs, Frontends, PubSub emulator, Postgres)

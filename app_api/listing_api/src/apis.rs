@@ -32,6 +32,7 @@ use validator::Validate;
         (status = 500, description = "Internal server error")
     )
 )]
+#[tracing::instrument(skip(pool, req))]
 pub async fn get_listings(
     pool: web::Data<sqlx::PgPool>,
     query: web::Query<common::models::ListingQueryParams>,
@@ -71,6 +72,7 @@ pub async fn get_listings(
         resolution: query.resolution.clone(),
         currency: query.currency.clone(),
         user_id: query.user_id,
+        host: query.host.clone(),
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -90,7 +92,11 @@ pub async fn get_listings(
             response.iter().map(|l| &l.base_currency),
             target_currency,
         )
-        .await;
+        .await
+        .map_err(|e| {
+            tracing::error!(target_currency, "Exchange rate lookup failed: {:?}", e);
+            ApiError::Database(e)
+        })?;
 
         for listing in &mut response {
             if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
@@ -114,7 +120,7 @@ pub struct CurrencyQuery {
     pub currency: Option<String>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}",
@@ -139,25 +145,22 @@ async fn get_listing_by_id(
 
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
 
-    #[allow(clippy::collapsible_if)]
     if let Some(target_currency) = &query.currency {
-        if let Ok((rate, final_curr)) = db_core::currency::get_exchange_rate_and_currency(
+        let (rate, final_curr) = db_core::currency::get_exchange_rate_and_currency(
             pool.get_ref(),
             &response.listing.base_currency,
             target_currency,
         )
-        .await
-        {
-            response.listing.price_per_night = response
-                .listing
-                .price_per_night
-                .map(|p| (p * rate).round_dp(2));
-            response.listing.extra_guest_fee = response
-                .listing
-                .extra_guest_fee
-                .map(|p| (p * rate).round_dp(2));
-            response.listing.base_currency = final_curr;
-        }
+        .await?;
+        response.listing.price_per_night = response
+            .listing
+            .price_per_night
+            .map(|p| (p * rate).round_dp(2));
+        response.listing.extra_guest_fee = response
+            .listing
+            .extra_guest_fee
+            .map(|p| (p * rate).round_dp(2));
+        response.listing.base_currency = final_curr;
     }
 
     Ok(respond(
@@ -168,7 +171,7 @@ async fn get_listing_by_id(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings",
@@ -286,7 +289,7 @@ async fn create_listing(
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     patch,
     path = "/api/v1/listings/{id}",
@@ -381,7 +384,7 @@ pub struct DeleteListingParams {
     pub hard_delete: Option<bool>,
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}",
@@ -397,7 +400,7 @@ pub struct DeleteListingParams {
     )
 )]
 async fn delete_listing(
-    req: HttpRequest,
+    _req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     query: web::Query<DeleteListingParams>,
@@ -416,7 +419,7 @@ async fn delete_listing(
     Ok(HttpResponse::NoContent().finish())
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/images/presign",
@@ -454,21 +457,39 @@ async fn presign_batch(
         return Err(ApiError::ValidationError(errors));
     }
 
+    // The upload carries this request's trace context as object metadata, so
+    // the image worker's processing joins this trace.
+    let traceparent =
+        common::telemetry::current_trace_headers().remove(common::telemetry::TRACEPARENT);
+    let upload_headers: std::collections::HashMap<String, String> = traceparent
+        .iter()
+        .map(|value| {
+            (
+                common::gcs::TRACEPARENT_METADATA_HEADER.to_owned(),
+                value.clone(),
+            )
+        })
+        .collect();
+
     // Generate the IDs and upload URLs first so they can be saved to the database.
     let mut db_payload = Vec::new();
     for image in &img_metadata_req.images {
         let file_id = Uuid::new_v4();
         let object_path = format!("listing_{}/image_{}", listing_id, file_id);
-        let upload_url = common::gcs::generate_v4_signed_url(&object_path, &image.content_type)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "Failed to generate presigned URL for listing_id: {}: {:?}",
-                    listing_id,
-                    e
-                );
-                ApiError::Internal
-            })?;
+        let upload_url = common::gcs::generate_v4_signed_url(
+            &object_path,
+            &image.content_type,
+            traceparent.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to generate presigned URL for listing_id: {}: {:?}",
+                listing_id,
+                e
+            );
+            ApiError::Internal
+        })?;
 
         db_payload.push((file_id, image.clone(), upload_url));
     }
@@ -497,6 +518,7 @@ async fn presign_batch(
             file_id: img.id,
             // Safe to unwrap here because we literally just inserted these URLs in the DB ourselves
             upload_url: img.upload_url.unwrap_or_default(),
+            upload_headers: upload_headers.clone(),
         });
     }
 
@@ -506,6 +528,39 @@ async fn presign_batch(
         |_: Vec<common::models::ImagePresignResponse>| (),
         actix_web::http::StatusCode::OK,
     ))
+}
+
+#[tracing::instrument]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/listings/{id}/images/{image_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("image_id" = String, Path, description = "Photo UUID (the original upload, not a resized variant)")
+    ),
+    responses(
+        (status = 204, description = "Photo and its resized variants deleted"),
+        (status = 404, description = "Photo not found on this listing"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn delete_listing_image(
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, image_id) = path.into_inner();
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| ApiError::Database(e.into()))?;
+    db_listing::delete_listing_image(&mut tx, listing_id, image_id).await?;
+    tx.commit()
+        .await
+        .map_err(|e| ApiError::Database(e.into()))?;
+    tracing::info!(%listing_id, %image_id, "listing photo deleted");
+
+    Ok(HttpResponse::NoContent().finish())
 }
 
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
@@ -518,6 +573,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             update_listing,
             delete_listing,
             presign_batch,
+            delete_listing_image,
             crate::reviews::get_review_token_info,
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
@@ -592,6 +648,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
+                "/{id}/images/{image_id}",
+                web::delete()
+                    .to(delete_listing_image)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
                 "/{id}/reviews",
                 web::get()
                     .to(crate::reviews::get_listing_reviews_handler)
@@ -626,7 +688,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     crate::reviews::configure_routes(cfg);
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -685,7 +747,7 @@ async fn create_price_override(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings/{id}/price-overrides",
@@ -716,7 +778,7 @@ async fn get_price_overrides(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     put,
     path = "/api/v1/listings/{id}/price-overrides/{override_id}",
@@ -811,5 +873,4 @@ async fn delete_price_override(
 
 #[cfg(test)]
 #[path = "apis_test.rs"]
-#[allow(clippy::explicit_auto_deref)]
 mod tests;

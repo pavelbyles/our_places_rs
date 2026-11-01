@@ -1,24 +1,18 @@
 use crate::error::Result;
 use crate::models::{DbPayoutLedgerEntry, DbPayoutStatus, DbPayoutSummary};
-use chrono::{DateTime, NaiveDate, Utc};
-use rust_decimal::Decimal;
+use chrono::{DateTime, Utc};
+use common::payout::{PayoutFilter, PayoutRecord, PendingPayout};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-#[allow(clippy::too_many_arguments)]
+/// Ledger page size when the caller doesn't ask for one.
+pub const DEFAULT_LEDGER_PAGE_SIZE: u32 = 20;
+
+/// Inserts a pending payout. A booking has at most one ledger entry; a
+/// second insert for the same booking is ignored.
 pub async fn create_payout_ledger_entry(
     conn: &mut PgConnection,
-    id: Uuid,
-    booking_id: Uuid,
-    listing_id: Uuid,
-    host_id: Uuid,
-    currency: &str,
-    gross_amount: Decimal,
-    platform_fee_pct: Decimal,
-    platform_fee_amount: Decimal,
-    tax_withheld_amount: Decimal,
-    exchange_rate: Decimal,
-    net_payout_amount: Decimal,
+    payout: &PayoutRecord<PendingPayout>,
 ) -> Result<()> {
     sqlx::query!(
         r#"
@@ -30,17 +24,17 @@ pub async fn create_payout_ledger_entry(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending'::payout_status)
         ON CONFLICT (booking_id) DO NOTHING
         "#,
-        id,
-        booking_id,
-        listing_id,
-        host_id,
-        currency,
-        gross_amount,
-        platform_fee_pct,
-        platform_fee_amount,
-        tax_withheld_amount,
-        exchange_rate,
-        net_payout_amount,
+        payout.id,
+        payout.booking_id,
+        payout.listing_id,
+        payout.host_id,
+        payout.currency,
+        payout.gross_amount,
+        payout.platform_fee_pct,
+        payout.platform_fee_amount,
+        payout.tax_withheld_amount,
+        payout.exchange_rate,
+        payout.net_payout_amount,
     )
     .execute(&mut *conn)
     .await?;
@@ -48,19 +42,20 @@ pub async fn create_payout_ledger_entry(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+/// One page of ledger entries matching `filter`, newest first, plus the
+/// total number of matches. `page` defaults to 1 and `per_page` to
+/// [`DEFAULT_LEDGER_PAGE_SIZE`] (capped at 100).
 pub async fn get_payout_ledger_entries(
     pool: &PgPool,
-    host_id: Option<Uuid>,
-    listing_id: Option<Uuid>,
-    status: Option<DbPayoutStatus>,
-    date_from: Option<NaiveDate>,
-    date_to: Option<NaiveDate>,
-    page: u32,
-    per_page: u32,
+    filter: &PayoutFilter,
 ) -> Result<(Vec<DbPayoutLedgerEntry>, i64)> {
-    let offset = ((page.max(1) - 1) * per_page) as i64;
-    let limit = per_page.clamp(1, 100) as i64;
+    let page = filter.page.unwrap_or(1).max(1);
+    let limit = filter
+        .per_page
+        .unwrap_or(DEFAULT_LEDGER_PAGE_SIZE)
+        .clamp(1, 100);
+    let offset = i64::from(page - 1) * i64::from(limit);
+    let limit = i64::from(limit);
 
     let entries = sqlx::query_as!(
         DbPayoutLedgerEntry,
@@ -100,11 +95,11 @@ pub async fn get_payout_ledger_entries(
         ORDER BY l.created_at DESC
         LIMIT $6 OFFSET $7
         "#,
-        host_id,
-        listing_id,
-        status as Option<DbPayoutStatus>,
-        date_from,
-        date_to,
+        filter.host_id,
+        filter.listing_id,
+        filter.status as Option<DbPayoutStatus>,
+        filter.date_from,
+        filter.date_to,
         limit,
         offset
     )
@@ -122,11 +117,11 @@ pub async fn get_payout_ledger_entries(
           AND ($4::date IS NULL OR b.date_from >= $4)
           AND ($5::date IS NULL OR b.date_to <= $5)
         "#,
-        host_id,
-        listing_id,
-        status as Option<DbPayoutStatus>,
-        date_from,
-        date_to
+        filter.host_id,
+        filter.listing_id,
+        filter.status as Option<DbPayoutStatus>,
+        filter.date_from,
+        filter.date_to
     )
     .fetch_one(pool)
     .await?

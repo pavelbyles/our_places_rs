@@ -24,7 +24,7 @@ ensure_db_running() {
 
   # Wait up to 5 seconds for DB readiness
   local retries=5
-  until is_db_ready || [ $retries -eq 0 ]; do
+  until is_db_ready || [[ $retries -eq 0 ]]; do
     echo "Waiting for database to accept connections... (${retries}s remaining)"
     sleep 1
     retries=$((retries - 1))
@@ -36,6 +36,13 @@ ensure_db_running
 # Determine safe branch name for GCS bucket
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
 SAFE_BRANCH=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's|[/_]|-|g' | sed 's/[^a-z0-9-]//g' | cut -c 1-35 | sed 's/-$//')
+
+# With the local Cloud Storage emulator, sign upload URLs with the throwaway
+# key made by `gcs-start`: the emulator does not check signatures.
+LOCAL_GCS_SIGNING_KEY="${DEVENV_STATE:-}/fake-gcs/signing-key.json"
+if [[ -n "${STORAGE_EMULATOR_HOST:-}" && -f "$LOCAL_GCS_SIGNING_KEY" ]]; then
+  export GOOGLE_APPLICATION_CREDENTIALS="$LOCAL_GCS_SIGNING_KEY"
+fi
 
 # Run Listing API service
 EA__SERVER__PORT="${EA__SERVER__PORT:-8082}" \

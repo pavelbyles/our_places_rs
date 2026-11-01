@@ -43,14 +43,15 @@ export default defineConfig({
   /* Configure projects for major browsers and portals */
   projects: [
     // ----------------------------------------------------
-    // Guest Portal (web_app_tc on :3000)
+    // Portals (web_ui_guest on :3010, web_ui_admin on :3012). base.fixture
+    // fails any test with a CSP violation.
     // ----------------------------------------------------
     {
       name: 'guest-portal-chromium',
       testDir: path.resolve(__dirname, 'e2e/guest-portal'),
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:3000',
+        baseURL: 'http://localhost:3010',
       },
     },
     {
@@ -58,7 +59,7 @@ export default defineConfig({
       testDir: path.resolve(__dirname, 'e2e/guest-portal'),
       use: {
         ...devices['Desktop Firefox'],
-        baseURL: 'http://localhost:3000',
+        baseURL: 'http://localhost:3010',
         launchOptions: {
           env: {
             ...process.env,
@@ -67,16 +68,12 @@ export default defineConfig({
         },
       },
     },
-
-    // ----------------------------------------------------
-    // Admin Portal (web_app_admin_tc on :3002)
-    // ----------------------------------------------------
     {
       name: 'admin-portal-chromium',
       testDir: path.resolve(__dirname, 'e2e/admin-portal'),
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: 'http://localhost:3002',
+        baseURL: 'http://localhost:3012',
       },
     },
     {
@@ -84,7 +81,28 @@ export default defineConfig({
       testDir: path.resolve(__dirname, 'e2e/admin-portal'),
       use: {
         ...devices['Desktop Firefox'],
-        baseURL: 'http://localhost:3002',
+        baseURL: 'http://localhost:3012',
+        launchOptions: {
+          env: {
+            ...process.env,
+            LD_LIBRARY_PATH: `/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:${process.env.LD_LIBRARY_PATH || ''}`,
+          },
+        },
+      },
+    },
+    // ----------------------------------------------------
+    // web_ui_common/src/assets/ui.js in a bare page (no server needed).
+    // ----------------------------------------------------
+    {
+      name: 'ui-js-chromium',
+      testDir: path.resolve(__dirname, 'e2e/ui-js'),
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'ui-js-firefox',
+      testDir: path.resolve(__dirname, 'e2e/ui-js'),
+      use: {
+        ...devices['Desktop Firefox'],
         launchOptions: {
           env: {
             ...process.env,
@@ -105,18 +123,24 @@ export default defineConfig({
   /* Run local Topcoat web servers if they aren't already running */
   webServer: [
     {
-      command: 'cd web_app_tc && PORT=3000 CARGO_TARGET_DIR=../target/guest topcoat dev',
+      command: 'cd web_ui_guest && PORT=3010 CARGO_TARGET_DIR=../target/ui_guest topcoat dev',
+      // The new portals refuse to start without JWT_SECRET. Local backends
+      // fall back to "secret" when it is unset, so match that here.
+      env: { ...process.env, JWT_SECRET: process.env.JWT_SECRET || 'secret' } as Record<string, string>,
       cwd: rootDir,
-      url: 'http://localhost:3000',
+      url: 'http://localhost:3010',
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: 180 * 1000,
     },
     {
-      command: 'cd web_app_admin_tc && PORT=3002 CARGO_TARGET_DIR=../target/admin topcoat dev',
+      command: 'cd web_ui_admin && PORT=3012 CARGO_TARGET_DIR=../target/ui_admin topcoat dev',
+      // The new portals refuse to start without JWT_SECRET. Local backends
+      // fall back to "secret" when it is unset, so match that here.
+      env: { ...process.env, JWT_SECRET: process.env.JWT_SECRET || 'secret' } as Record<string, string>,
       cwd: rootDir,
-      url: 'http://localhost:3002',
+      url: 'http://localhost:3012',
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',

@@ -114,33 +114,37 @@ pub struct PayoutRecord<State> {
     pub state: State,
 }
 
+/// Everything needed to open a pending payout. Named fields keep the six
+/// money values from being passed in the wrong order.
+#[derive(Debug, Clone)]
+pub struct NewPayout {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub listing_id: Uuid,
+    pub host_id: Uuid,
+    pub currency: String,
+    pub gross_amount: Decimal,
+    pub platform_fee_pct: Decimal,
+    pub platform_fee_amount: Decimal,
+    pub tax_withheld_amount: Decimal,
+    pub exchange_rate: Decimal,
+    pub net_payout_amount: Decimal,
+}
+
 impl PayoutRecord<PendingPayout> {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: Uuid,
-        booking_id: Uuid,
-        listing_id: Uuid,
-        host_id: Uuid,
-        currency: String,
-        gross_amount: Decimal,
-        platform_fee_pct: Decimal,
-        platform_fee_amount: Decimal,
-        tax_withheld_amount: Decimal,
-        exchange_rate: Decimal,
-        net_payout_amount: Decimal,
-    ) -> Self {
+    pub fn new(payout: NewPayout) -> Self {
         Self {
-            id,
-            booking_id,
-            listing_id,
-            host_id,
-            currency,
-            gross_amount,
-            platform_fee_pct,
-            platform_fee_amount,
-            tax_withheld_amount,
-            exchange_rate,
-            net_payout_amount,
+            id: payout.id,
+            booking_id: payout.booking_id,
+            listing_id: payout.listing_id,
+            host_id: payout.host_id,
+            currency: payout.currency,
+            gross_amount: payout.gross_amount,
+            platform_fee_pct: payout.platform_fee_pct,
+            platform_fee_amount: payout.platform_fee_amount,
+            tax_withheld_amount: payout.tax_withheld_amount,
+            exchange_rate: payout.exchange_rate,
+            net_payout_amount: payout.net_payout_amount,
             gateway_reference: None,
             failure_reason: None,
             payout_date: None,
@@ -371,19 +375,19 @@ mod tests {
 
     #[test]
     fn test_typestate_payout_record() {
-        let record = PayoutRecord::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            "USD".to_string(),
-            Decimal::new(1000, 0),
-            Decimal::new(3, 2),
-            Decimal::new(30, 0),
-            Decimal::ZERO,
-            Decimal::ONE,
-            Decimal::new(970, 0),
-        );
+        let record = PayoutRecord::new(NewPayout {
+            id: Uuid::new_v4(),
+            booking_id: Uuid::new_v4(),
+            listing_id: Uuid::new_v4(),
+            host_id: Uuid::new_v4(),
+            currency: "USD".to_string(),
+            gross_amount: Decimal::new(1000, 0),
+            platform_fee_pct: Decimal::new(3, 2),
+            platform_fee_amount: Decimal::new(30, 0),
+            tax_withheld_amount: Decimal::ZERO,
+            exchange_rate: Decimal::ONE,
+            net_payout_amount: Decimal::new(970, 0),
+        });
 
         let processing = record.begin_processing();
         let paid = processing.mark_paid(Utc::now(), Some("MPGS_12345".to_string()));

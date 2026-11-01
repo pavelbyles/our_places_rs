@@ -680,6 +680,46 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/bookings/listing/{id}/unavailable-ranges:
+    get:
+      summary: Booked date ranges for a listing (public, dates only)
+      operationId: getUnavailableRanges
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date
+          required: true
+      responses:
+        "200":
+          description: Merged, sorted booked ranges in the window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnavailableRangesResponse"
+        "400":
+          description: Window is empty, reversed, or longer than 366 days
+        "404":
+          description: Listing not found
+        "500":
+          description: Internal server error
+
   /api/v1/bookings/{id}:
     get:
       summary: Get booking by ID
@@ -1431,6 +1471,26 @@ components:
       properties:
         available:
           type: boolean
+
+    UnavailableRange:
+      type: object
+      required: [date_from, date_to]
+      properties:
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+
+    UnavailableRangesResponse:
+      type: object
+      required: [ranges]
+      properties:
+        ranges:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnavailableRange"
 
     PingResponse:
       type: object

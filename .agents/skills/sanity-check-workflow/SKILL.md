@@ -11,7 +11,7 @@ Actions to execute whenever significant code changes are done, before pushing or
 > **CRITICAL RULE:** If any step below fails, apply a fix and **re-run that specific command** until it completes with 0 errors before moving to the next step. Do not assume your fix worked.
 
 ### 1. Ensure Frontend Dependencies are Installed
-Topcoat crates (`web_app_common_tc`, `web_app_tc`, `web_app_admin_tc`) compile Tailwind CSS v4 in `build.rs` and require `daisyui` in `node_modules`.
+The portals (`web_ui_guest`, `web_ui_admin`) compile Tailwind CSS v4 in `build.rs` with the standalone Tailwind CLI (no Node needed). `node_modules` is only needed for Playwright:
 ```bash
 npm ci
 ```
@@ -65,15 +65,11 @@ Run the test suites in the same isolated configurations as CI to catch environme
 
 1. **Backend & Shared Domain Tests (mirrors `test-api` job)**:
    ```bash
-   cargo test --verbose --workspace --exclude web_app_tc --exclude web_app_admin_tc --exclude web_app_common_tc --exclude protoproj
+   cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
    ```
-2. **Topcoat Web & Common Tests (mirrors `test-web-tc` job)**:
+2. **Web UI Tests (mirrors `test-web-ui` job)**:
    ```bash
-   cargo test -p web_app_tc -p web_app_common_tc --verbose
-   ```
-3. **Topcoat Admin Tests (mirrors `test-web-admin-tc` job)**:
-   ```bash
-   cargo test -p web_app_admin_tc --verbose
+   cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose
    ```
 > [!NOTE]
 > Frontend unit tests must not require a live backend API server running on `localhost:8082/8081/8083`. If a test exercises client calls, ensure it includes offline fallback handling.

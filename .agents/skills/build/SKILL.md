@@ -31,7 +31,7 @@ Pick the next pending task (`- [ ]`) from `tasks/plan.md`:
    - Run compilation & linting: `cargo clippy --workspace`
 5. **ATOMIC COMMIT**:
    - Stage only modified files and the task checklist update in `tasks/plan.md`.
-   - Commit with an imperative commit message (e.g. `feat(booking): implement 15-minute hold timeout`).
+   - Commit with an imperative commit message (e.g. `feat(booking): implement booking hold timeout`).
 6. **HALT**: Mark task completed (`- [x]`) and stop.
 
 ---

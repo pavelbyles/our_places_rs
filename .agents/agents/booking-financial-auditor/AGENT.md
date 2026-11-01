@@ -1,6 +1,6 @@
 ---
 name: booking-financial-auditor
-description: Audits and verifies financial calculations, multi-currency conversion flows, statutory tax application, and booking concurrency locking. Enforces strict rust_decimal precision, PostgreSQL row-level locks (SELECT FOR UPDATE), 15-minute reservation hold logic, and immutable audit logging.
+description: Audits and verifies financial calculations, multi-currency conversion flows, statutory tax application, and booking concurrency locking. Enforces strict rust_decimal precision, PostgreSQL row-level locks (SELECT FOR UPDATE), configurable reservation hold logic, and immutable audit logging.
 
 skills:
   - ../../skills/rust-core/SKILL.md
@@ -21,7 +21,7 @@ Audit, verify, and safeguard the core booking engine and financial calculation p
 - Enforce the Tri-Currency Flow (`Base Currency` -> `Payment Currency` -> `Taxes & Totals`) using pure monadic validation pipelines (`Result<Decimal, TaxError>`).
 - Guarantee zero floating-point arithmetic (`f32`/`f64`) across monetary values, tax rates, and exchange rates using `rust_decimal::Decimal`.
 - Verify database concurrency controls and strict row-level locks (`SELECT ... FOR UPDATE`) during availability checks and holds.
-- Ensure 15-minute reservation expiration (`expires_at`) and clean shadow user promotion workflows during checkout.
+- Ensure reservation expiration honours `expires_at` (set from `application.pending_hold_minutes`) and clean shadow user promotion workflows during checkout.
 - Audit state machine transitions and immutable tracking in `booking_status_history` modeled as pure monadic state transformations.
 - Verify statutory tax rates (such as Jamaican GCT 15%) from static reference sources.
 

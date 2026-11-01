@@ -29,6 +29,7 @@ pub fn map_listing_to_response(
         is_active: listing.is_active,
         added_at: listing.added_at,
         owner_name: None,
+        owner_slug: None,
         primary_image_url: listing.primary_image_url,
         max_guests: listing.max_guests,
         bedrooms: listing.bedrooms,
@@ -53,19 +54,38 @@ pub fn map_listing_to_response(
     }
 }
 
+/// Variant shown for a photo once image_worker has resized it.
+const DISPLAY_RESOLUTION: db_core::models::ImageResolution =
+    db_core::models::ImageResolution::Desktop1920w;
+
+/// One entry per uploaded photo, in display order: its display-size variant,
+/// or the original until variants exist (e.g. seeded photos). The raw upload
+/// lives in a private bucket in production, and the other sizes would show
+/// the same photo again, so neither is listed separately.
+pub fn photo_images(
+    images: &[db_core::models::ListingImage],
+) -> Vec<common::models::ListingImageResponse> {
+    images
+        .iter()
+        .filter(|photo| photo.parent_id.is_none())
+        .filter_map(|photo| {
+            images
+                .iter()
+                .find(|v| v.parent_id == Some(photo.id) && v.resolution == DISPLAY_RESOLUTION)
+                .and_then(|v| v.upload_url.clone())
+                .or_else(|| photo.upload_url.clone())
+                .filter(|url| !url.is_empty())
+                .map(|url| common::models::ListingImageResponse { id: photo.id, url })
+        })
+        .collect()
+}
+
 pub fn map_listing_details_to_response(
     details: db_core::models::ListingDetails,
 ) -> common::models::ListingDetails {
     common::models::ListingDetails {
         listing: map_listing_to_response(details.listing),
-        images: details
-            .images
-            .into_iter()
-            .map(|img| common::models::ListingImageResponse {
-                id: img.id,
-                url: img.upload_url.unwrap_or_default(),
-            })
-            .collect(),
+        images: photo_images(&details.images),
         host_name: details.owner_name,
         rating_summary: details.rating_summary,
     }
@@ -97,6 +117,7 @@ pub fn map_listing_with_owner_to_response(
         is_active: listing.is_active,
         added_at: listing.added_at,
         owner_name: listing.owner_name,
+        owner_slug: listing.owner_slug,
         primary_image_url: listing.primary_image_url,
         max_guests: listing.max_guests,
         bedrooms: listing.bedrooms,
@@ -176,5 +197,90 @@ pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
         exchange_rate: Some(booking.exchange_rate),
         created_at: booking.created_at,
         updated_at: booking.updated_at,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use db_core::models::{ImageResolution, ImageStatus, ListingImage};
+    use uuid::Uuid;
+
+    fn image(
+        id: Uuid,
+        parent: Option<Uuid>,
+        resolution: ImageResolution,
+        url: &str,
+    ) -> ListingImage {
+        ListingImage {
+            id,
+            listing_id: Uuid::nil(),
+            client_file_id: "0".into(),
+            status: ImageStatus::Processed,
+            resolution,
+            parent_id: parent,
+            upload_url: Some(url.into()),
+            content_type: None,
+            size_bytes: None,
+            display_order: 0,
+            is_primary: false,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn a_resized_photo_is_listed_once_at_display_size() {
+        let photo = Uuid::now_v7();
+        let images = [
+            image(photo, None, ImageResolution::Raw, "raw/photo"),
+            image(
+                Uuid::now_v7(),
+                Some(photo),
+                ImageResolution::Thumbnail400w,
+                "thumb",
+            ),
+            image(
+                Uuid::now_v7(),
+                Some(photo),
+                ImageResolution::Desktop1920w,
+                "desktop",
+            ),
+            image(
+                Uuid::now_v7(),
+                Some(photo),
+                ImageResolution::HighRes2560w,
+                "highres",
+            ),
+        ];
+        let listed = photo_images(&images);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, photo);
+        assert_eq!(listed[0].url, "desktop");
+    }
+
+    #[test]
+    fn a_photo_without_variants_shows_its_original() {
+        let photo = Uuid::now_v7();
+        let listed = photo_images(&[image(photo, None, ImageResolution::Raw, "seeded.jpg")]);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].url, "seeded.jpg");
+    }
+
+    #[test]
+    fn photos_keep_their_order_and_variants_alone_are_not_listed() {
+        let (first, second) = (Uuid::now_v7(), Uuid::now_v7());
+        let images = [
+            image(first, None, ImageResolution::Raw, "first"),
+            image(
+                Uuid::now_v7(),
+                Some(Uuid::now_v7()),
+                ImageResolution::Desktop1920w,
+                "orphan",
+            ),
+            image(second, None, ImageResolution::Raw, "second"),
+        ];
+        let urls: Vec<_> = photo_images(&images).into_iter().map(|i| i.url).collect();
+        assert_eq!(urls, ["first", "second"]);
     }
 }

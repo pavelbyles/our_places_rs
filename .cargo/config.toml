@@ -1,0 +1,6 @@
+# Local-only defaults for processes cargo starts (`cargo run`, `cargo test`,
+# so also `run_local.sh`). `force = false`: a real value in the environment
+# always wins. Deployed images run the binaries directly, not via cargo, so
+# this never applies there: the APIs refuse to start without JWT_SECRET.
+[env]
+JWT_SECRET = { value = "secret", force = false }

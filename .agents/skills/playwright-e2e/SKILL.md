@@ -5,12 +5,12 @@ description: Run Playwright end-to-end tests across Topcoat guest and admin port
 
 # Playwright E2E Testing
 
-Execute, debug, and report end-to-end tests for the Topcoat SSR frontend applications (`web_app_tc` and `web_app_admin_tc`) against live backend services.
+Execute, debug, and report end-to-end tests for the Topcoat SSR portals (`web_ui_guest` and `web_ui_admin`) against live backend services.
 
 ## Core Workflow
 
 1. **Pre-flight Readiness**:
-   - `devenv shell test-e2e` automatically invokes `stack-start` (which ensures PostgreSQL via `devenv shell db-start`, boots `booking_api`, `listing_api`, and `user_api` in background if offline via `devenv shell apis-start`, and boots `web_app_tc` and `web_app_admin_tc` via `devenv shell frontends-start`).
+   - `devenv shell test-e2e` automatically invokes `stack-start` (which ensures PostgreSQL via `devenv shell db-start`, boots `booking_api`, `listing_api`, and `user_api` in background if offline via `devenv shell apis-start`, and boots `web_ui_guest` and `web_ui_admin` via `devenv shell frontends-start`).
    - All services are pre-warmed and health-checked before test execution begins.
 
 2. **Execution Mode Selection (Headless vs. UI)**:

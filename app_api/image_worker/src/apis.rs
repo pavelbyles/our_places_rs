@@ -3,6 +3,7 @@ use actix_web::{Error, HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
 use google_cloud_storage::client::Storage;
 use serde::Deserialize;
+use tracing::Instrument;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
@@ -51,6 +52,10 @@ pub struct GcsObjectMetadata {
     pub _media_link: Option<String>,
     pub _crc32c: Option<String>,
     pub _etag: Option<String>,
+    /// Custom object metadata; `traceparent` holds the uploader's trace
+    /// context (see `common::gcs::TRACEPARENT_METADATA_HEADER`).
+    #[serde(default)]
+    pub metadata: std::collections::HashMap<String, String>,
 }
 
 use base64::Engine;
@@ -204,10 +209,7 @@ impl ImageTask<Processed> {
                 continue;
             }
 
-            let public_url = format!(
-                "https://storage.googleapis.com/{}/{}",
-                public_bucket, target_name
-            );
+            let public_url = common::gcs::public_object_url(public_bucket, &target_name);
 
             db_variants.push((
                 self.listing_id,
@@ -248,14 +250,14 @@ impl ImageTask<Processed> {
 ///
 /// # Arguments
 ///
-/// * `req` - The Actix HTTP request.
+/// * `_req` - The Actix HTTP request.
 /// * `payload` - A JSON body containing the Google Cloud Pub/Sub message.
 /// * `pool` - The database connection pool.
 ///
 /// # Returns
 ///
 /// Returns a `200 OK` response on success, or an appropriate error on failure (e.g., 400 for invalid payload, 500 for database or GCS errors).
-#[tracing::instrument]
+#[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
     path = "/api/v1/internal/image/process_image",
@@ -268,7 +270,7 @@ impl ImageTask<Processed> {
     )
 )]
 pub async fn process_image(
-    req: HttpRequest,
+    _req: HttpRequest,
     payload: web::Json<PubSubPayload>,
     pool: web::Data<sqlx::PgPool>,
 ) -> Result<impl Responder, Error> {
@@ -282,6 +284,18 @@ pub async fn process_image(
         }
     };
 
+    // Process the upload inside the trace of the request that presigned it.
+    let span = tracing::info_span!(
+        "process uploaded image",
+        otel.kind = "consumer",
+        object = %object_metadata.name,
+        trace_id = tracing::field::Empty,
+        span_id = tracing::field::Empty,
+        trace_sampled = tracing::field::Empty,
+    );
+    common::telemetry::continue_trace(&span, |name| object_metadata.metadata.get(name).cloned());
+
+    async move {
     tracing::info!(
         "Received PubSub notification for object: {} (bucket: {}, {:?})",
         object_metadata.name,
@@ -350,9 +364,7 @@ pub async fn process_image(
     };
 
     // 3. Downloads the original image from the raw GCS bucket.
-    use google_cloud_storage::client::Storage;
-
-    let client = match Storage::builder().build().await {
+    let client = match common::gcs::storage_client().await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Failed to configure GCS client auth: {}", e);
@@ -373,10 +385,7 @@ pub async fn process_image(
         .unwrap_or_else(|_| "our-places-gcs-img-public".to_string());
 
     let raw_url = raw_image_record.upload_url.unwrap_or_else(|| {
-        format!(
-            "https://storage.googleapis.com/{}/{}",
-            object_metadata.bucket, object_metadata.name
-        )
+        common::gcs::public_object_url(&object_metadata.bucket, &object_metadata.name)
     });
 
     processed
@@ -389,7 +398,10 @@ pub async fn process_image(
         )
         .await?;
 
-    Ok(HttpResponse::Ok().finish())
+        Ok::<HttpResponse, Error>(HttpResponse::Ok().finish())
+    }
+    .instrument(span)
+    .await
 }
 
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {

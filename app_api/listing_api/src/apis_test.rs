@@ -68,7 +68,10 @@ fn get_test_settings() -> Settings {
             level: "info".to_string(),
         },
         env: Env::Testing,
-        application: Application { max_attempts: 1 },
+        application: Application {
+            max_attempts: 1,
+            pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+        },
         feature_flags: FeatureFlags {
             enable_hard_deletes: true,
         },
@@ -84,7 +87,7 @@ async fn test_get_listing_by_id_success() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
     let new_listing = NewListing {
         name: "API Test Listing".to_string(),
         user_id,
@@ -175,7 +178,7 @@ async fn test_create_listing_validation_error() {
     let pool = test_db.get_pool().await;
 
     let mut conn = pool.acquire().await.unwrap();
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
 
     let app = test::init_service(
         App::new()
@@ -233,7 +236,7 @@ async fn test_delete_listing() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
     let new_listing = NewListing {
         name: "Delete Me Listing".to_string(),
         user_id,
@@ -347,7 +350,7 @@ async fn test_delete_listing_hard_forbidden() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
     let new_listing = NewListing {
         name: "Forbidden Hard Delete".to_string(),
         user_id,
@@ -422,6 +425,7 @@ async fn test_xml_serialization_of_vec() {
         is_active: true,
         added_at: Utc::now(),
         owner_name: None,
+        owner_slug: None,
         primary_image_url: None,
         max_guests: 2,
         bedrooms: 1,
@@ -459,7 +463,7 @@ async fn test_update_listing_multiple_times() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
     let original_name = "Original Name".to_string();
     let new_listing = NewListing {
         name: original_name.clone(),
@@ -553,7 +557,7 @@ async fn test_get_listings_with_filter() {
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
 
     let listing1 = NewListing {
         name: "Apartment in Paris".to_string(),
@@ -657,7 +661,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
     let pool = test_db.get_pool().await;
 
     let mut conn = pool.acquire().await.unwrap();
-    let user_id = create_test_user(&mut *conn).await;
+    let user_id = create_test_user(&mut conn).await;
 
     let app = test::init_service(
         App::new()

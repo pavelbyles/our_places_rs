@@ -1,9 +1,8 @@
-use actix_web::{HttpRequest, HttpResponse, web};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
-use serde::{Deserialize, Serialize};
+use actix_web::{FromRequest, HttpRequest, HttpResponse, ResponseError, web};
+use db_core::models::UserRole;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use std::env;
-use uuid::Uuid;
 
 use crate::actuator::models::{
     LoggerLevelInfo, LoggersResponse, UpdateLoggerRequest, UpdateLoggerResponse,
@@ -11,67 +10,110 @@ use crate::actuator::models::{
 
 const VALID_LEVELS: &[&str] = &["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct ActuatorJwtClaims {
-    pub sub: Uuid,
-    pub exp: usize,
-    #[serde(default)]
-    pub role: Option<String>,
-    #[serde(default)]
-    pub is_admin: Option<bool>,
+/// Whether `presented` matches the configured actuator secret. With no secret
+/// (unset or blank) token access is off: there is no well-known default.
+/// Compared in constant time so the secret cannot be guessed byte by byte.
+fn actuator_token_matches(presented: &str, expected: Option<&str>) -> bool {
+    expected
+        .filter(|s| !s.trim().is_empty())
+        .is_some_and(|expected| {
+            presented.len() == expected.len()
+                && presented
+                    .bytes()
+                    .zip(expected.bytes())
+                    .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+                    == 0
+        })
+}
+
+fn actuator_denied(
+    status: actix_web::http::StatusCode,
+    code: &str,
+    message: &str,
+) -> Box<HttpResponse> {
+    Box::new(
+        HttpResponse::build(status).json(serde_json::json!({ "code": code, "message": message })),
+    )
 }
 
 /// Verifies whether the request contains valid actuator credentials:
-/// Either an `X-Actuator-Token` header matching `ACTUATOR_SECRET`,
-/// or an `Authorization: Bearer <jwt>` token with an admin role or valid claims.
-pub fn verify_actuator_auth(req: &HttpRequest) -> Result<(), Box<HttpResponse>> {
+/// either an `X-Actuator-Token` header matching `ACTUATOR_SECRET`, or a user
+/// JWT (`X-Forwarded-Authorization` behind Cloud Run, else `Authorization`)
+/// for a user whose stored roles include admin. Token claims alone never make
+/// someone an admin: the roles are read from the database.
+pub async fn verify_actuator_auth(req: &HttpRequest) -> Result<(), Box<HttpResponse>> {
+    use actix_web::http::StatusCode;
+
     // 1. Check X-Actuator-Token header
     if let Some(token_val) = req
         .headers()
         .get("x-actuator-token")
         .and_then(|h| h.to_str().ok())
     {
-        let expected_secret = env::var("ACTUATOR_SECRET")
+        let expected = env::var("ACTUATOR_SECRET")
             .or_else(|_| env::var("ADMIN_SECRET"))
-            .unwrap_or_else(|_| "secret".to_string());
-
-        if token_val == expected_secret {
+            .ok();
+        if actuator_token_matches(token_val, expected.as_deref()) {
             return Ok(());
         }
+        tracing::warn!(
+            secret_configured = expected.as_deref().is_some_and(|s| !s.trim().is_empty()),
+            "rejected actuator token"
+        );
     }
 
-    // 2. Check Authorization Bearer JWT
-    if let Some(auth_header) = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        && let Some(jwt_str) = auth_header.strip_prefix("Bearer ")
+    // 2. A signed-in admin.
+    let headers = req.headers();
+    if !headers.contains_key(common::http_client::USER_AUTHORIZATION_HEADER)
+        && !headers.contains_key("authorization")
     {
-        let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
-        let mut validation = Validation::new(Algorithm::HS256);
-        validation.validate_exp = true;
-
-        if let Ok(token_data) = decode::<ActuatorJwtClaims>(
-            jwt_str,
-            &DecodingKey::from_secret(secret.as_bytes()),
-            &validation,
-        ) {
-            let is_admin = token_data.claims.role.as_deref() == Some("admin")
-                || token_data.claims.is_admin == Some(true)
-                || !token_data.claims.sub.is_nil();
-
-            if is_admin {
-                return Ok(());
-            }
+        return Err(actuator_denied(
+            StatusCode::UNAUTHORIZED,
+            "UNAUTHORIZED",
+            "Missing or invalid actuator credentials",
+        ));
+    }
+    let claims = crate::auth::Claims::from_request(req, &mut actix_web::dev::Payload::None)
+        .into_inner()
+        .map_err(|e| {
+            tracing::warn!(error = %e, "rejected actuator JWT");
+            Box::new(e.error_response())
+        })?;
+    let pool = req.app_data::<web::Data<PgPool>>().ok_or_else(|| {
+        tracing::error!("actuator: no database pool to check the caller's admin role");
+        actuator_denied(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            "Cannot verify administrator access right now",
+        )
+    })?;
+    match db_core::user::get_user_by_id(pool.get_ref(), claims.sub).await {
+        Ok(user) if user.roles.contains(&UserRole::Admin) => Ok(()),
+        Ok(_) => {
+            tracing::warn!(user_id = %claims.sub, "non-admin attempted to use the actuator");
+            Err(actuator_denied(
+                StatusCode::FORBIDDEN,
+                "FORBIDDEN",
+                "Only administrators can change log levels",
+            ))
+        }
+        Err(db_core::error::DbError::Sqlx(sqlx::Error::RowNotFound)) => {
+            tracing::warn!(user_id = %claims.sub, "actuator token is for a user that does not exist");
+            Err(actuator_denied(
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "Missing or invalid actuator credentials",
+            ))
+        }
+        Err(e) => {
+            tracing::error!(user_id = %claims.sub, error = ?e, "actuator: failed to load the caller's roles");
+            Err(actuator_denied(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SERVICE_UNAVAILABLE",
+                "Cannot verify administrator access right now",
+            ))
         }
     }
-
-    Err(Box::new(HttpResponse::Unauthorized().json(
-        serde_json::json!({
-            "code": "UNAUTHORIZED",
-            "message": "Missing or invalid actuator credentials"
-        }),
-    )))
 }
 
 /// Lists all supported log levels and current active root level.
@@ -144,7 +186,7 @@ pub async fn update_logger_handler(
     path: web::Path<String>,
     body: web::Json<UpdateLoggerRequest>,
 ) -> HttpResponse {
-    if let Err(resp) = verify_actuator_auth(&req) {
+    if let Err(resp) = verify_actuator_auth(&req).await {
         return *resp;
     }
 
@@ -183,5 +225,26 @@ pub async fn update_logger_handler(
                 "message": e
             }))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::actuator_token_matches;
+
+    #[test]
+    fn no_configured_secret_means_no_token_access() {
+        assert!(!actuator_token_matches("secret", None));
+        assert!(!actuator_token_matches("", Some("")));
+        assert!(!actuator_token_matches("  ", Some("  ")));
+    }
+
+    #[test]
+    fn only_the_exact_secret_matches() {
+        let secret = Some("super-secret-token");
+        assert!(actuator_token_matches("super-secret-token", secret));
+        assert!(!actuator_token_matches("super-secret-tokeN", secret));
+        assert!(!actuator_token_matches("super-secret", secret));
+        assert!(!actuator_token_matches("secret", secret));
     }
 }

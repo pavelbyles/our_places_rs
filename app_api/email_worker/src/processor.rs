@@ -5,6 +5,12 @@ use std::time::Duration;
 use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
+/// Per-attempt SMTP send timeout. A remote relay (e.g. Gmail) can spend most
+/// of 3s on the TLS handshake and login alone. The Pub/Sub ack deadline must
+/// exceed the worst case (max retries x this + backoff), or a still-running
+/// send is redelivered and the email goes out twice.
+const SEND_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// Loads an external HTML template from disk using configured or standard search paths,
 /// falling back to compile-time embedded copies if the file is unavailable.
 pub fn load_template(filename: &str) -> String {
@@ -495,9 +501,9 @@ pub async fn process_email_event(
     while attempt < allowed_retries {
         attempt += 1;
 
-        // Enforce strict 3-second timeout per SMTP dispatch attempt
+        // Bound each SMTP dispatch attempt so a hung relay cannot stall the worker
         let send_fut = provider.send_email(&record.recipient_email, &record.subject, &body);
-        match tokio::time::timeout(Duration::from_secs(3), send_fut).await {
+        match tokio::time::timeout(SEND_TIMEOUT, send_fut).await {
             Ok(Ok(())) => {
                 db_core::email_outbox::mark_email_sent(pool, email_id, attempt)
                     .await
@@ -513,7 +519,11 @@ pub async fn process_email_event(
                 last_err = Some(e);
             }
             Err(_) => {
-                let timeout_err = format!("Attempt {} timed out after 3 seconds", attempt);
+                let timeout_err = format!(
+                    "Attempt {} timed out after {} seconds",
+                    attempt,
+                    SEND_TIMEOUT.as_secs()
+                );
                 warn!("{}", timeout_err);
                 last_err = Some(timeout_err);
             }

@@ -52,6 +52,8 @@ pub struct User {
     pub roles: Vec<UserRole>,
     pub default_currency: String,
     pub deleted_at: Option<DateTime<Utc>>,
+    /// Unique public handle, e.g. `jane-brown` (see `common::slug`).
+    pub slug: String,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
@@ -107,6 +109,8 @@ pub struct UpdatedUser {
     pub attributes: Option<serde_json::Value>,
     pub roles: Option<Vec<UserRole>>,
     pub default_currency: Option<String>,
+    /// New slug, already cleaned up with `common::slug::user_slug`.
+    pub slug: Option<String>,
 }
 
 pub use common::models::UserRole;
@@ -202,7 +206,7 @@ pub struct BookingWithEligibility {
 #[sqlx(type_name = "booking_status", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum BookingStatus {
-    /// Initial payment pending state (15-minute hold).
+    /// Initial payment pending state; holds its dates until `expires_at`.
     Pending,
     /// Payment confirmed and reservation secured.
     Confirmed,
@@ -210,6 +214,23 @@ pub enum BookingStatus {
     Cancelled,
     /// Reservation completed post-stay.
     Completed,
+}
+
+impl BookingStatus {
+    /// Whether a booking may move from `self` to `to`. Staying put is always
+    /// allowed. Cancelled and completed are final: reviving one would skip
+    /// the availability check and could double-book its dates.
+    pub fn can_transition_to(self, to: BookingStatus) -> bool {
+        use BookingStatus::*;
+        self == to
+            || matches!(
+                (self, to),
+                (Pending, Confirmed)
+                    | (Pending, Cancelled)
+                    | (Confirmed, Cancelled)
+                    | (Confirmed, Completed)
+            )
+    }
 }
 
 /// Parameters for creating a new booking hold.
@@ -565,6 +586,7 @@ pub struct ListingWithOwner {
     pub added_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub owner_name: Option<String>,
+    pub owner_slug: Option<String>,
     pub primary_image_url: Option<String>,
     pub weekly_discount_percentage: Option<Decimal>,
     pub monthly_discount_percentage: Option<Decimal>,
@@ -1209,5 +1231,23 @@ mod tests {
         // With zero discount
         booking.discount_value = Some(Decimal::ZERO);
         assert_eq!(booking.accommodation_net(), dec!(1000.00));
+    }
+
+    #[test]
+    fn booking_status_transitions_are_one_way() {
+        use BookingStatus::*;
+        let all = [Pending, Confirmed, Cancelled, Completed];
+        let allowed = [
+            (Pending, Confirmed),
+            (Pending, Cancelled),
+            (Confirmed, Cancelled),
+            (Confirmed, Completed),
+        ];
+        for from in all {
+            for to in all {
+                let expected = from == to || allowed.contains(&(from, to));
+                assert_eq!(from.can_transition_to(to), expected, "{from:?} -> {to:?}");
+            }
+        }
     }
 }

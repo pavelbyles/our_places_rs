@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import * as crypto from 'node:crypto';
+import { psql } from '../fixtures/bookings-data.js';
 
 /**
  * Generates an HS256 JWT bearer token matching api_core::auth::Claims format.
@@ -181,15 +182,9 @@ test.describe('Backend API Validation - Transactional Messaging & Sweeps', () =>
       expect(body.id).toBe(testBookingId);
       expect(body.status.toLowerCase()).toBe('cancelled');
 
-      // Restore confirmed status for other test runs
-      await request.patch(`${bookingApiUrl}/api/v1/bookings/${testBookingId}`, {
-        headers: {
-          Authorization: `Bearer ${hostToken}`,
-        },
-        data: {
-          status: 'confirmed',
-        },
-      });
+      // Restore confirmed status for other test runs. The API rightly refuses
+      // to revive a cancelled booking, so reset the seed row directly.
+      psql(`UPDATE booking SET status = 'confirmed' WHERE id = '${testBookingId}';`);
     });
   });
 });

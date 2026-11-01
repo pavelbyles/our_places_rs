@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)\n        VALUES ('USD', 'JMD', 160.000000, NOW())\n        ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "bad2ec6478a1d1f775bc5ad4846d32d9dfac1c09c380935b3bbbe1fc09f0429d"
+}

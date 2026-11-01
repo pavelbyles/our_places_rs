@@ -1,0 +1,7 @@
+/* Tailwind entry point for web_ui_guest: the shared guest theme plus the class
+   sources to scan (this crate and web_ui_common). */
+@import "tailwindcss";
+@import "../../../web_ui_common/src/style/guest.css";
+
+@source "../../src/**/*.rs";
+@source "../../../web_ui_common/src/**/*.rs";

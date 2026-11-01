@@ -32,6 +32,8 @@ def run_assertions(benchmark, completion_text):
             passed = val not in completion_text
         elif atype == "contains_pattern":
             passed = bool(re.search(assertion.get("pattern", ""), completion_text, re.MULTILINE))
+        elif atype == "not_contains_pattern":
+            passed = not re.search(assertion.get("pattern", ""), completion_text, re.MULTILINE)
         
         results.append({
             "assertion": assertion,
