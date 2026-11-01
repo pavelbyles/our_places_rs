@@ -1,6 +1,13 @@
 //! Users, authentication and portal sessions.
 
-use super::*;
+use super::{get_client, user_api_audience, user_api_url};
+use crate::models::{
+    CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
+    UpdateUserRequest, UserResponse, VerifyRequest,
+};
+use anyhow::{Context, Result, bail};
+use reqwest::Response;
+use uuid::Uuid;
 
 pub async fn fetch_user_profile(user_id: &str) -> Result<Response> {
     let url = format!("{}/api/v1/users/{}", user_api_url(), user_id);

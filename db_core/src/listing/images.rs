@@ -1,6 +1,7 @@
 //! Listing images: upload presigns, processing state, variants and deletion.
 
-use super::*;
+use crate::error::Result;
+use uuid::Uuid;
 
 /// Batch inserts pending listing images in preparation for presigned URL uploads.
 #[tracing::instrument(skip(executor))]

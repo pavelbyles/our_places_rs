@@ -1,6 +1,13 @@
 //! Admin user management: listing, soft/hard delete and restore.
 
-use super::*;
+use super::{UserFilter, UserResponse, UsersWrapper, map_user_to_response};
+use actix_web::{HttpRequest, Responder, web};
+use api_core::error::ApiError;
+use api_core::pagination;
+use api_core::response::{Payload, respond};
+use db_core::models::UserRole;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(

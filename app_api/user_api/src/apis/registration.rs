@@ -1,6 +1,18 @@
 //! Sign-up, login, email verification and resending codes.
 
-use super::*;
+use super::{UserResponse, map_user_to_response};
+use actix_web::{HttpRequest, Responder, web};
+use api_core::error::ApiError;
+use api_core::response::{Payload, respond};
+use api_core::settings::Settings;
+use chrono::Utc;
+use common::models::{LoginRequest, NewUserRequest, ResendVerificationRequest, VerifyRequest};
+use db_core::models::{NewUser, UserRole};
+use rand::distr::{Alphanumeric, SampleString};
+use sqlx::PgPool;
+use std::str::FromStr;
+use uuid::Uuid;
+use validator::Validate;
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(

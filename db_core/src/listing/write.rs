@@ -1,6 +1,10 @@
 //! Creating, updating and deleting listings.
 
-use super::*;
+use super::generate_listing_slug_native;
+use crate::error::{DbError, Result};
+use crate::models::{Listing, NewListing, UpdatedListing};
+use sqlx::{PgExecutor, PgPool};
+use uuid::Uuid;
 
 /// Creates a new listing in the database.
 #[tracing::instrument(skip(executor))]

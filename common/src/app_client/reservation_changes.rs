@@ -1,6 +1,8 @@
 //! Reservation change requests: quote, create, list, approve, decline, cancel.
 
-use super::*;
+use super::{booking_api_audience, booking_api_url, get_client};
+use anyhow::{Context, Result, bail};
+use uuid::Uuid;
 
 fn extract_api_error_message(err_text: &str) -> String {
     serde_json::from_str::<serde_json::Value>(err_text)

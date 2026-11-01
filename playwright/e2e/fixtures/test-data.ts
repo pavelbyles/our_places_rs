@@ -1,6 +1,8 @@
 /**
  * Shared test data and constants across E2E test suites.
  */
+import bcrypt from 'bcryptjs';
+
 export const TEST_CONFIG = {
   guestPortalUrl: process.env.GUEST_PORTAL_URL || 'http://localhost:3010',
   adminPortalUrl: process.env.ADMIN_PORTAL_URL || 'http://localhost:3012',
@@ -22,6 +24,22 @@ export const TEST_USERS = {
     phone: '+18765550199',
   },
 };
+
+const passwordHashes = new Map<string, string>();
+
+/**
+ * bcrypt hash of a test password, for inserting users straight into the
+ * database. Hashed at runtime so no hash is committed; cached because each
+ * worker would otherwise pay the bcrypt cost for every user it creates.
+ */
+export function passwordHash(password: string): string {
+  let hash = passwordHashes.get(password);
+  if (hash === undefined) {
+    hash = bcrypt.hashSync(password, 10);
+    passwordHashes.set(password, hash);
+  }
+  return hash;
+}
 
 export const KNOWN_LISTINGS = {
   courtyardStudio: {

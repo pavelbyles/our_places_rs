@@ -1,34 +1,20 @@
 //! user_api HTTP handlers, request/response types and route wiring.
 
 use actix_web::middleware::from_fn;
-use actix_web::{HttpRequest, Responder, web};
+use actix_web::web;
 use api_core::api_common::content_negotiation_middleware;
-use api_core::{
-    error::ApiError,
-    models::{
-        BookingResponse, BookingsWrapper, ListingsWrapper, map_booking_to_response,
-        map_listing_to_response,
-    },
-    pagination,
-    response::{Payload, respond},
-    settings::Settings,
-};
+use api_core::{error::ApiError, models::BookingResponse, pagination};
 use chrono::{DateTime, Utc};
 use common::models::ListingResponse;
-use db_core::booking as db_booking;
-use db_core::listing as db_listing;
-use db_core::models::{NewUser, UpdatedUser, User, UserRole};
-use rand::distr::{Alphanumeric, SampleString};
+use db_core::models::User;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
-use std::str::FromStr;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
 
 pub use common::models::{
-    CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
+    CreateSessionRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, VerifyRequest,
 };
 
@@ -37,11 +23,6 @@ mod admin;
 mod profile;
 mod registration;
 mod sessions;
-use account::*;
-use admin::*;
-use profile::*;
-use registration::*;
-use sessions::*;
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SessionNamespaceQuery {
@@ -146,22 +127,22 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(
         paths(
-            get_all_users,
-            create_user,
-            update_user,
-            resend_verification,
-            verify_user,
-            get_user,
-            get_user_bookings,
-            get_user_listings,
-            request_password_change,
-            confirm_password_change,
-            change_email,
-            deactivate_account,
-            create_session_handler,
-            get_session_handler,
-            delete_session_handler,
-            revoke_user_sessions_handler,
+            admin::get_all_users,
+            registration::create_user,
+            profile::update_user,
+            registration::resend_verification,
+            registration::verify_user,
+            profile::get_user,
+            profile::get_user_bookings,
+            profile::get_user_listings,
+            account::request_password_change,
+            account::confirm_password_change,
+            account::change_email,
+            account::deactivate_account,
+            sessions::create_session_handler,
+            sessions::get_session_handler,
+            sessions::delete_session_handler,
+            sessions::revoke_user_sessions_handler,
         ),
         components(
             schemas(
@@ -190,19 +171,19 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "",
                 web::post()
-                    .to(create_session_handler)
+                    .to(sessions::create_session_handler)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{token_hash}",
                 web::get()
-                    .to(get_session_handler)
+                    .to(sessions::get_session_handler)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{token_hash}",
                 web::delete()
-                    .to(delete_session_handler)
+                    .to(sessions::delete_session_handler)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );
@@ -212,121 +193,121 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "",
                 web::get()
-                    .to(get_all_users)
+                    .to(admin::get_all_users)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/",
                 web::get()
-                    .to(get_all_users)
+                    .to(admin::get_all_users)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "",
                 web::post()
-                    .to(create_user)
+                    .to(registration::create_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/",
                 web::post()
-                    .to(create_user)
+                    .to(registration::create_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}",
                 web::get()
-                    .to(get_user)
+                    .to(profile::get_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}",
                 web::patch()
-                    .to(update_user)
+                    .to(profile::update_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}",
                 web::delete()
-                    .to(soft_delete_user)
+                    .to(admin::soft_delete_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}/sessions",
                 web::delete()
-                    .to(revoke_user_sessions_handler)
+                    .to(sessions::revoke_user_sessions_handler)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/{id}/sessions",
                 web::delete()
-                    .to(revoke_user_sessions_handler)
+                    .to(sessions::revoke_user_sessions_handler)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}/restore",
                 web::post()
-                    .to(restore_user)
+                    .to(admin::restore_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{id}/hard",
                 web::delete()
-                    .to(hard_delete_user)
+                    .to(admin::hard_delete_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}/bookings",
                 web::get()
-                    .to(get_user_bookings)
+                    .to(profile::get_user_bookings)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/user/{email}/listings",
                 web::get()
-                    .to(get_user_listings) // TODO: implement
+                    .to(profile::get_user_listings) // TODO: implement
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/login",
                 web::post()
-                    .to(login)
+                    .to(registration::login)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/verify",
                 web::post()
-                    .to(verify_user)
+                    .to(registration::verify_user)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/resend-verification",
                 web::post()
-                    .to(resend_verification)
+                    .to(registration::resend_verification)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/profile/password/request",
                 web::post()
-                    .to(request_password_change)
+                    .to(account::request_password_change)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/profile/password/confirm",
                 web::post()
-                    .to(confirm_password_change)
+                    .to(account::confirm_password_change)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/profile/email",
                 web::post()
-                    .to(change_email)
+                    .to(account::change_email)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
                 "/profile/deactivate",
                 web::post()
-                    .to(deactivate_account)
+                    .to(account::deactivate_account)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );

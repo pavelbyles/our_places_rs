@@ -6,53 +6,158 @@ use crate::error::Result;
 use crate::models::{
     Booking, BookingStatus, CancellationPolicy, FeeItem, SupplierInfo, UpdatedBooking,
 };
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use common::payout::{NewPayout, PayoutRecord, PendingPayout};
 use rust_decimal::Decimal;
-use sqlx::PgPool;
 use sqlx::types::Json;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 /// Updates a booking's status.
 #[tracing::instrument(skip(pool))]
-// skipcq: RS-R1000
 pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
     updated_booking: &UpdatedBooking,
     supplier: &SupplierInfo,
 ) -> Result<Booking> {
-    // Check existence first or let standard update fail if not found?
-    // Listing API uses transaction and SELECT FOR UPDATE, then COALESCE.
-    // I'll follow that pattern.
-
     let mut tx = pool.begin().await?;
 
+    let current = lock_booking(&mut tx, id).await?;
+    let change = BookingChange::new(&current, updated_booking);
+    check_change_allowed(&mut tx, id, &current, updated_booking, &change).await?;
+
+    let booking = write_booking_update(&mut tx, id, updated_booking).await?;
+
+    let history_id = match change.history_reason() {
+        Some(reason) => Some(record_booking_history(&mut tx, &booking, reason, None).await?),
+        None => None,
+    };
+
+    apply_status_side_effects(&mut tx, &booking, &change, supplier, history_id).await?;
+
+    tx.commit().await?;
+
+    Ok(booking)
+}
+
+/// The booking as it was before this update, read under its row lock.
+struct CurrentBooking {
+    listing_id: Uuid,
+    status: BookingStatus,
+    date_from: NaiveDate,
+    date_to: NaiveDate,
+    number_of_persons: i32,
+    hold_active: bool,
+}
+
+/// Locks the booking's listing, then the booking row, and reads the booking.
+async fn lock_booking(conn: &mut PgConnection, id: Uuid) -> Result<CurrentBooking> {
     // Standardize global lock acquisition hierarchy (Listing -> Booking) to prevent
     // deadlocks (PostgreSQL 40P01) with concurrent create_booking operations.
     let booking_listing = sqlx::query!("SELECT listing_id FROM booking WHERE id = $1", id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *conn)
         .await?;
 
     sqlx::query!(
         "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
         booking_listing.listing_id
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *conn)
     .await?;
 
-    let current = sqlx::query!(
+    let row = sqlx::query!(
         r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to, number_of_persons,
             COALESCE(expires_at > NOW(), FALSE) as "hold_active!"
         FROM booking WHERE id = $1 FOR UPDATE"#,
         id
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *conn)
     .await?;
 
-    // Checked under the row lock so concurrent requests cannot, say, confirm
-    // a booking that another request has just cancelled.
-    if let Some(to) = updated_booking.status
+    Ok(CurrentBooking {
+        listing_id: row.listing_id,
+        status: row.status,
+        date_from: row.date_from,
+        date_to: row.date_to,
+        number_of_persons: row.number_of_persons,
+        hold_active: row.hold_active,
+    })
+}
+
+/// What this update changes compared with the stored booking.
+struct BookingChange {
+    from: BookingStatus,
+    to: Option<BookingStatus>,
+    status_changed: bool,
+    dates_changed: bool,
+    guests_changed: bool,
+    metadata_changed: bool,
+    door_code_changed: bool,
+}
+
+impl BookingChange {
+    fn new(current: &CurrentBooking, updated: &UpdatedBooking) -> Self {
+        let date_from_changed = updated.date_from.is_some_and(|d| d != current.date_from);
+        let date_to_changed = updated.date_to.is_some_and(|d| d != current.date_to);
+        Self {
+            from: current.status,
+            to: updated.status,
+            status_changed: updated.status.is_some_and(|s| s != current.status),
+            dates_changed: date_from_changed || date_to_changed,
+            guests_changed: updated
+                .number_of_persons
+                .is_some_and(|n| n != current.number_of_persons),
+            metadata_changed: updated.metadata.is_some(),
+            door_code_changed: updated.door_access_code.is_some(),
+        }
+    }
+
+    /// Dates or guest count changed: the stay itself is different.
+    fn terms_changed(&self) -> bool {
+        self.dates_changed || self.guests_changed
+    }
+
+    /// The booking moved into `status` with this update.
+    fn became(&self, status: BookingStatus) -> bool {
+        self.to == Some(status) && self.status_changed
+    }
+
+    /// Why this update belongs in the booking history; `None` when nothing
+    /// worth recording changed.
+    fn history_reason(&self) -> Option<&'static str> {
+        if self.dates_changed {
+            return Some("Date change on confirmed reservation");
+        }
+        if self.guests_changed {
+            return Some("Guest count change on confirmed reservation");
+        }
+        match (
+            self.status_changed,
+            self.metadata_changed,
+            self.door_code_changed,
+        ) {
+            (false, false, false) => None,
+            (true, true, _) => Some("Status and metadata updated"),
+            (true, false, false) => Some("Status updated"),
+            (false, true, false) => Some("Metadata updated"),
+            (false, false, true) => Some("Door access code updated"),
+            _ => Some("Booking updated"),
+        }
+    }
+}
+
+/// Rejects updates the booking's current state does not allow. Checked under
+/// the row lock so concurrent requests cannot, say, confirm a booking that
+/// another request has just cancelled.
+async fn check_change_allowed(
+    conn: &mut PgConnection,
+    id: Uuid,
+    current: &CurrentBooking,
+    updated: &UpdatedBooking,
+    change: &BookingChange,
+) -> Result<()> {
+    if let Some(to) = updated.status
         && !current.status.can_transition_to(to)
     {
         tracing::warn!(booking_id = %id, from = ?current.status, to = ?to, "rejected invalid booking status change");
@@ -63,7 +168,7 @@ pub async fn update_booking(
         )));
     }
 
-    if updated_booking.status == Some(BookingStatus::Confirmed)
+    if updated.status == Some(BookingStatus::Confirmed)
         && current.status == BookingStatus::Pending
         && !current.hold_active
     {
@@ -71,32 +176,32 @@ pub async fn update_booking(
         return Err(crate::error::DbError::HoldExpired);
     }
 
-    let dates_changed = (updated_booking.date_from.is_some()
-        && updated_booking.date_from != Some(current.date_from))
-        || (updated_booking.date_to.is_some() && updated_booking.date_to != Some(current.date_to));
-    let guests_changed = updated_booking.number_of_persons.is_some()
-        && updated_booking.number_of_persons != Some(current.number_of_persons);
-    let terms_changed = dates_changed || guests_changed;
-
-    if terms_changed && current.status != BookingStatus::Confirmed {
+    if change.terms_changed() && current.status != BookingStatus::Confirmed {
         return Err(crate::error::DbError::BookingNotModifiable(
             "Only confirmed bookings can have their dates modified".to_string(),
         ));
     }
 
-    if dates_changed {
-        let target_from = updated_booking.date_from.unwrap_or(current.date_from);
-        let target_to = updated_booking.date_to.unwrap_or(current.date_to);
-
-        let available =
-            check_availability_excluding(&mut *tx, current.listing_id, target_from, target_to, id)
-                .await?;
-
-        if !available {
-            return Err(crate::error::DbError::DateUnavailable);
-        }
+    if !change.dates_changed {
+        return Ok(());
     }
+    let target_from = updated.date_from.unwrap_or(current.date_from);
+    let target_to = updated.date_to.unwrap_or(current.date_to);
+    let available =
+        check_availability_excluding(&mut *conn, current.listing_id, target_from, target_to, id)
+            .await?;
+    if !available {
+        return Err(crate::error::DbError::DateUnavailable);
+    }
+    Ok(())
+}
 
+/// Writes the update; fields left `None` keep their stored values.
+async fn write_booking_update(
+    conn: &mut PgConnection,
+    id: Uuid,
+    updated_booking: &UpdatedBooking,
+) -> Result<Booking> {
     let booking = sqlx::query_as!(
         Booking,
         r#"
@@ -151,73 +256,78 @@ pub async fn update_booking(
         id,
         updated_booking.number_of_persons
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *conn)
     .await?;
+    Ok(booking)
+}
 
-    // Record history if anything changed
-    let status_changed = updated_booking
-        .status
-        .map(|s| s != current.status)
-        .unwrap_or(false);
-    let metadata_changed = updated_booking.metadata.is_some();
-    let door_code_changed = updated_booking.door_access_code.is_some();
-
-    let history_id = if status_changed || metadata_changed || door_code_changed || terms_changed {
-        let reason = if dates_changed {
-            "Date change on confirmed reservation"
-        } else if guests_changed {
-            "Guest count change on confirmed reservation"
-        } else {
-            match (status_changed, metadata_changed, door_code_changed) {
-                (true, true, _) => "Status and metadata updated",
-                (true, false, false) => "Status updated",
-                (false, true, false) => "Metadata updated",
-                (false, false, true) => "Door access code updated",
-                _ => "Booking updated",
-            }
-        };
-        Some(record_booking_history(&mut tx, &booking, reason, None).await?)
-    } else {
-        None
-    };
-
-    // Trigger review token generation if booking transitions to Completed
-    if let Some(BookingStatus::Completed) = updated_booking.status
-        && status_changed
-    {
-        crate::review::create_review_token(&mut tx, booking.id).await?;
+/// Tax documents, host payouts, review tokens and change requests that follow
+/// from the update, in the order they must be written.
+async fn apply_status_side_effects(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    change: &BookingChange,
+    supplier: &SupplierInfo,
+    history_id: Option<Uuid>,
+) -> Result<()> {
+    if change.became(BookingStatus::Completed) {
+        crate::review::create_review_token(&mut *conn, booking.id).await?;
     }
-
-    // Trigger payment receipt issuance and host payout ledger generation if booking transitions to Confirmed
-    if let Some(BookingStatus::Confirmed) = updated_booking.status
-        && status_changed
-    {
-        crate::tax_document::issue_payment_receipt(&mut tx, &booking, supplier, history_id).await?;
-
-        let terms = host_payout_terms(&mut tx, &booking).await?;
-        let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
-        crate::payout_ledger::create_payout_ledger_entry(
-            &mut tx,
-            &terms.pending_payout(&booking, gross_amount),
-        )
-        .await?;
+    if change.became(BookingStatus::Confirmed) {
+        start_host_payout(&mut *conn, booking, supplier, history_id).await?;
     }
+    if change.terms_changed() && change.from == BookingStatus::Confirmed {
+        revise_confirmed_terms(&mut *conn, booking, supplier, history_id).await?;
+    }
+    if change.became(BookingStatus::Cancelled) {
+        settle_cancellation(&mut *conn, booking, change.from, supplier, history_id).await?;
+    }
+    if change.became(BookingStatus::Completed) {
+        complete_stay(&mut *conn, booking, supplier, history_id).await?;
+    }
+    Ok(())
+}
 
-    // Trigger revised receipt issuance and update pending host payout ledger if confirmed booking terms changed
-    if terms_changed && current.status == BookingStatus::Confirmed {
-        crate::tax_document::issue_payment_receipt(&mut tx, &booking, supplier, history_id).await?;
+/// A newly confirmed booking: issue the payment receipt and queue the host payout.
+async fn start_host_payout(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    supplier: &SupplierInfo,
+    history_id: Option<Uuid>,
+) -> Result<()> {
+    crate::tax_document::issue_payment_receipt(&mut *conn, booking, supplier, history_id).await?;
 
-        let terms = host_payout_terms(&mut tx, &booking).await?;
-        let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
-        let platform_fee_pct = terms.commission_pct;
-        let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
-            gross_amount,
-            platform_fee_pct,
-            rust_decimal::Decimal::ZERO,
-        );
+    let terms = host_payout_terms(&mut *conn, booking).await?;
+    let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
+    crate::payout_ledger::create_payout_ledger_entry(
+        &mut *conn,
+        &terms.pending_payout(booking, gross_amount),
+    )
+    .await?;
+    Ok(())
+}
 
-        sqlx::query!(
-            r#"
+/// A confirmed booking's dates or guest count changed: issue a revised receipt
+/// and reprice the pending host payout.
+async fn revise_confirmed_terms(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    supplier: &SupplierInfo,
+    history_id: Option<Uuid>,
+) -> Result<()> {
+    crate::tax_document::issue_payment_receipt(&mut *conn, booking, supplier, history_id).await?;
+
+    let terms = host_payout_terms(&mut *conn, booking).await?;
+    let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
+    let platform_fee_pct = terms.commission_pct;
+    let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
+        gross_amount,
+        platform_fee_pct,
+        rust_decimal::Decimal::ZERO,
+    );
+
+    sqlx::query!(
+        r#"
             UPDATE host_payout_ledger
             SET gross_amount = $1,
                 platform_fee_amount = $2,
@@ -226,79 +336,86 @@ pub async fn update_booking(
                 updated_at = NOW()
             WHERE booking_id = $5 AND status = 'pending'::payout_status
             "#,
-            gross_amount,
-            platform_fee_amount,
-            net_payout_amount,
-            terms.exchange_rate,
-            booking.id
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
+        gross_amount,
+        platform_fee_amount,
+        net_payout_amount,
+        terms.exchange_rate,
+        booking.id
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
 
-    // Handle cancellation: issue refund receipt and adjust host payout ledger if transitioning from Confirmed
-    if let Some(BookingStatus::Cancelled) = updated_booking.status
-        && status_changed
-    {
-        sqlx::query!(
-            r#"
+/// A cancelled booking: close its pending change requests and, if it had been
+/// confirmed, refund the guest and pay the host whatever the policy retains.
+async fn settle_cancellation(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    from: BookingStatus,
+    supplier: &SupplierInfo,
+    history_id: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
             UPDATE reservation_change_request
             SET status = 'cancelled'::reservation_change_status,
                 updated_at = NOW()
             WHERE booking_id = $1 AND status = 'pending'::reservation_change_status
             "#,
-            booking.id
-        )
-        .execute(&mut *tx)
-        .await?;
+        booking.id
+    )
+    .execute(&mut *conn)
+    .await?;
 
-        if current.status == BookingStatus::Confirmed {
-            let ref_doc =
-                crate::tax_document::issue_refund_receipt(&mut tx, &booking, supplier, history_id)
-                    .await?;
-
-            crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
-
-            // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
-            let accommodation_net = booking.accommodation_net();
-            let host_retained = (accommodation_net - ref_doc.accommodation_net).round_dp(2);
-
-            if host_retained > Decimal::ZERO {
-                let terms = host_payout_terms(&mut tx, &booking).await?;
-                let retained_gross = (host_retained * terms.exchange_rate).round_dp(2);
-                crate::payout_ledger::create_payout_ledger_entry(
-                    &mut tx,
-                    &terms.pending_payout(&booking, retained_gross),
-                )
-                .await?;
-            }
-        } else {
-            crate::payout_ledger::cancel_pending_payout_for_booking(&mut tx, booking.id).await?;
-        }
+    if from != BookingStatus::Confirmed {
+        crate::payout_ledger::cancel_pending_payout_for_booking(&mut *conn, booking.id).await?;
+        return Ok(());
     }
 
-    // Handle completion: issue statutory tax invoice (INV-YYYY-{code}) if transitioning to Completed
-    if let Some(BookingStatus::Completed) = updated_booking.status
-        && status_changed
-    {
-        sqlx::query!(
-            r#"
+    let ref_doc =
+        crate::tax_document::issue_refund_receipt(&mut *conn, booking, supplier, history_id)
+            .await?;
+
+    crate::payout_ledger::cancel_pending_payout_for_booking(&mut *conn, booking.id).await?;
+
+    // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
+    let host_retained = (booking.accommodation_net() - ref_doc.accommodation_net).round_dp(2);
+    if host_retained <= Decimal::ZERO {
+        return Ok(());
+    }
+    let terms = host_payout_terms(&mut *conn, booking).await?;
+    let retained_gross = (host_retained * terms.exchange_rate).round_dp(2);
+    crate::payout_ledger::create_payout_ledger_entry(
+        &mut *conn,
+        &terms.pending_payout(booking, retained_gross),
+    )
+    .await?;
+    Ok(())
+}
+
+/// A completed stay: expire its pending change requests and issue the
+/// statutory tax invoice (INV-YYYY-{code}).
+async fn complete_stay(
+    conn: &mut PgConnection,
+    booking: &Booking,
+    supplier: &SupplierInfo,
+    history_id: Option<Uuid>,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
             UPDATE reservation_change_request
             SET status = 'expired'::reservation_change_status,
                 updated_at = NOW()
             WHERE booking_id = $1 AND status = 'pending'::reservation_change_status
             "#,
-            booking.id
-        )
-        .execute(&mut *tx)
-        .await?;
+        booking.id
+    )
+    .execute(&mut *conn)
+    .await?;
 
-        crate::tax_document::issue_tax_invoice(&mut tx, &booking, supplier, history_id).await?;
-    }
-
-    tx.commit().await?;
-
-    Ok(booking)
+    crate::tax_document::issue_tax_invoice(&mut *conn, booking, supplier, history_id).await?;
+    Ok(())
 }
 
 /// Who a booking's host payout goes to, at what commission, and the rate that

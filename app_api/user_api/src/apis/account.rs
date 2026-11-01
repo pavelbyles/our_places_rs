@@ -1,6 +1,17 @@
 //! Self-service account changes: password, email, deactivation.
 
-use super::*;
+use super::{
+    DeactivateRequest, EmailChangeRequest, PasswordChangeConfirm, PasswordChangeRequest,
+    UserResponse, map_user_to_response,
+};
+use actix_web::{HttpRequest, Responder, web};
+use api_core::error::ApiError;
+use api_core::response::{Payload, respond};
+use chrono::Utc;
+use db_core::models::UserRole;
+use rand::distr::{Alphanumeric, SampleString};
+use sqlx::PgPool;
+use validator::Validate;
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(

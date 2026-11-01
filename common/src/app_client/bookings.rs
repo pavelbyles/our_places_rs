@@ -1,6 +1,13 @@
 //! Bookings, cancellation quotes, messages and tax documents.
 
-use super::*;
+use super::{booking_api_audience, booking_api_url, get_client};
+use crate::models::{
+    BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
+    MarkMessagesReadResponse, NewBookingRequest, TransferBookingRequest, UpdatedBookingRequest,
+};
+use crate::tax_document::TaxDocumentResponse;
+use anyhow::{Context, Result, bail};
+use uuid::Uuid;
 
 /// Places a hold as the user who owns `user_jwt` (must be `req.guest_id`).
 pub async fn create_booking(req: &NewBookingRequest, user_jwt: &str) -> Result<BookingResponse> {

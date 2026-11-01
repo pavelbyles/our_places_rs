@@ -1,6 +1,6 @@
 //! Unavailable-range tests and shared booking fixtures.
 
-use super::*;
+use super::{create_booking, get_unavailable_ranges};
 use crate::models::{Booking, CancellationPolicy, NewBooking};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;

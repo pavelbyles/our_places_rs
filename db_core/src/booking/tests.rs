@@ -1,7 +1,7 @@
 //! Booking lifecycle integration tests.
 
 use super::unavailable_ranges_tests::HOLD_MINUTES;
-use super::*;
+use super::{create_booking, get_booking_by_id, get_bookings_by_listing_id, update_booking};
 use crate::models::{BookingStatus, CancellationPolicy, NewBooking, SupplierInfo, UpdatedBooking};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;

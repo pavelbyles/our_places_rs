@@ -1,10 +1,11 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '../fixtures/base.fixture.js';
 import { userVerificationCode } from '../fixtures/admin-data.js';
 import { psql } from '../fixtures/bookings-data.js';
 
 test.describe('Admin Portal - Host Sign-Up & Verification', () => {
   test('registers a host, verifies the emailed code and lands in the console', async ({ page }) => {
-    const email = `e2e.newhost.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.com`;
+    const email = `e2e.newhost.${Date.now()}.${randomInt(1e6)}@example.com`;
 
     await page.goto('/register');
     await page.locator('#page-host-fn').fill('Morgan');
@@ -26,7 +27,7 @@ test.describe('Admin Portal - Host Sign-Up & Verification', () => {
   });
 
   test('rejects a wrong verification code', async ({ page }) => {
-    const email = `e2e.newhost.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.com`;
+    const email = `e2e.newhost.${Date.now()}.${randomInt(1e6)}@example.com`;
     await page.goto('/register');
     await page.locator('#page-host-fn').fill('Riley');
     await page.locator('#page-host-ln').fill('Wrongcode');

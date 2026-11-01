@@ -229,7 +229,7 @@ pub async fn date_range_calendar(
                                                     >(day.day())</button>
                                                 </td>
                                             } else {
-                                                <td role="gridcell" aria-hidden="true"></td>
+                                                <td role="gridcell"></td>
                                             }
                                         }
                                     </tr>

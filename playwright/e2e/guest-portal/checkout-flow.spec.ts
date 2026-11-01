@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '../fixtures/base.fixture.js';
 import { KNOWN_LISTINGS, TEST_USERS } from '../fixtures/test-data.js';
 import { createGuest, loginGuest, psql } from '../fixtures/bookings-data.js';
@@ -11,7 +12,7 @@ test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
 
   /** A random 5-night stay far enough ahead to be free of other bookings. */
   function freeStay(): { checkIn: string; checkOut: string } {
-    const start = new Date(Date.UTC(2038, 0, 1 + Math.floor(Math.random() * 1000)));
+    const start = new Date(Date.UTC(2038, 0, 1 + randomInt(1000)));
     const end = new Date(start.getTime() + 5 * 86_400_000);
     return { checkIn: start.toISOString().slice(0, 10), checkOut: end.toISOString().slice(0, 10) };
   }

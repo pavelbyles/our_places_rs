@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '../fixtures/base.fixture.js';
 import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
 import { psql } from '../fixtures/bookings-data.js';
@@ -15,7 +16,7 @@ test.describe('Admin Portal - User Administration', () => {
   });
 
   test('creates a user account', async ({ page }) => {
-    const email = `e2e.created.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.com`;
+    const email = `e2e.created.${Date.now()}.${randomInt(1e6)}@example.com`;
     await loginAdminAs(page, TEST_USERS.admin);
     await page.goto('/admin/users/new');
 

@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '../fixtures/auth.fixture.js';
 import { psql, SEEDED_LISTING_ID } from '../fixtures/bookings-data.js';
 
@@ -11,7 +12,7 @@ const overrides = (start: string) =>
 
 /** A random 3-night window in 2037, unique enough for parallel runs. */
 function randomWindow(): { start: string; end: string } {
-  const start = new Date(Date.UTC(2037, 0, 1 + Math.floor(Math.random() * 350)));
+  const start = new Date(Date.UTC(2037, 0, 1 + randomInt(350)));
   const end = new Date(start.getTime() + 3 * 86_400_000);
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }

@@ -17,8 +17,8 @@ ENV SQLX_OFFLINE=true
 # from the same build.
 ARG RELEASE_FLAG
 RUN PROFILE=$([ "$RELEASE_FLAG" = "--release" ] && echo release || echo debug) \
-&& cargo build ${RELEASE_FLAG} -p web_ui_admin --bin web_ui_admin \
-&& cargo build ${RELEASE_FLAG} -p web_ui_common --bin topcoat_bundler \
+&& cargo build --locked ${RELEASE_FLAG} -p web_ui_admin --bin web_ui_admin \
+&& cargo build --locked ${RELEASE_FLAG} -p web_ui_common --bin topcoat_bundler \
 && mkdir -p /out/assets \
 && cp target/$PROFILE/web_ui_admin /out/web_ui_admin \
 && target/$PROFILE/topcoat_bundler target/$PROFILE/web_ui_admin /out/assets target

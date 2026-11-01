@@ -1,6 +1,13 @@
 //! Server-side portal sessions: create, read, delete, revoke.
 
-use super::*;
+use super::SessionNamespaceQuery;
+use actix_web::{HttpRequest, Responder, web};
+use api_core::error::ApiError;
+use api_core::response::{Payload, respond};
+use chrono::Utc;
+use common::models::{CreateSessionRequest, SessionResponse};
+use sqlx::PgPool;
+use uuid::Uuid;
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(

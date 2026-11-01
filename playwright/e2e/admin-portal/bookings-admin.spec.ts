@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '../fixtures/auth.fixture.js';
 import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
 
@@ -65,7 +66,7 @@ test.describe('Admin Portal - Master Booking Schedule & Keyless Entry', () => {
     const statusMsg = dialog.locator('#door-code-status-msg');
 
     // Enter a new door access code
-    const testCode = `KEY-${Math.floor(1000 + Math.random() * 9000)}`;
+    const testCode = `KEY-${randomInt(1000, 10000)}`;
     await doorCodeInput.fill(testCode);
 
     // Click Save Code

@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { expirePendingHold } from '../setup/db-seed.js';
@@ -31,7 +32,7 @@ test.describe('expirePendingHold', () => {
 
   test('expires a pending hold the way the cleanup cron job does', async ({ request }) => {
     // A random week in 2031 avoids colliding with other bookings on the villa.
-    const start = new Date(Date.UTC(2031, 0, 1 + Math.floor(Math.random() * 300)));
+    const start = new Date(Date.UTC(2031, 0, 1 + randomInt(300)));
     const end = new Date(start.getTime() + 2 * 86_400_000);
     const day = (d: Date) => d.toISOString().slice(0, 10);
 

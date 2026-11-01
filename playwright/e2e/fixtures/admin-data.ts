@@ -1,10 +1,8 @@
 import * as crypto from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { psql } from './bookings-data.js';
-import { TEST_USERS } from './test-data.js';
+import { TEST_USERS, passwordHash } from './test-data.js';
 
-/** bcrypt hash of TEST_USERS.admin.password, as seeded in db-seed.ts. */
-const ADMIN_PASSWORD_HASH = '$2b$12$H09UlIMmYBCR3TpiZ44.SOkrYELsOkplVxMYH6Aup52FbrMF5VGCW';
 
 export interface TestHost {
   id: string;
@@ -19,7 +17,7 @@ export function createHost(): TestHost {
   psql(`
     INSERT INTO "user" (id, email, password_hash, first_name, last_name, roles,
                         is_active, is_verified, default_currency, created_at, updated_at)
-    VALUES ('${id}', '${email}', '${ADMIN_PASSWORD_HASH}', 'Harper', 'Host',
+    VALUES ('${id}', '${email}', '${passwordHash(TEST_USERS.admin.password)}', 'Harper', 'Host',
             '{host,booker}', true, true, 'USD', NOW(), NOW());
     INSERT INTO host_profiles (user_id, verified_status) VALUES ('${id}', 'pending');
   `);

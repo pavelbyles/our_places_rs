@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { TEST_USERS, passwordHash } from '../fixtures/test-data.js';
 
 /**
  * Seeds the database with essential test entities (test user, listing, image)
@@ -51,7 +52,7 @@ export async function seedTestData(): Promise<void> {
     ) VALUES (
         '01a0bcbd-014d-7062-99b2-6a42d05b9ed7',
         'admin@ourplaces.io',
-        '$2b$12$H09UlIMmYBCR3TpiZ44.SOkrYELsOkplVxMYH6Aup52FbrMF5VGCW',
+        '${passwordHash(TEST_USERS.admin.password)}',
         'System',
         'Admin',
         '{admin,host}',
@@ -76,7 +77,7 @@ export async function seedTestData(): Promise<void> {
     ) VALUES (
         '01a0bcbd-014d-7062-99b2-6a42d05b9ee8',
         'guest.tester@example.com',
-        '$2b$12$G3TzzR2meVcZAQU2OL49tel/uqz8pfao3/6jDPvWsyc9bL4EUdgk2',
+        '${passwordHash(TEST_USERS.guest.password)}',
         'Jordan',
         'Tester',
         '{booker}',

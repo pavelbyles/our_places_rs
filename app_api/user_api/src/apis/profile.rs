@@ -1,6 +1,22 @@
 //! Reading and updating a user, and their listings and bookings.
 
-use super::*;
+use super::{UserResponse, field_error, map_user_to_response};
+use actix_web::{HttpRequest, Responder, web};
+use api_core::error::ApiError;
+use api_core::models::{
+    BookingResponse, BookingsWrapper, ListingsWrapper, map_booking_to_response,
+    map_listing_to_response,
+};
+use api_core::pagination;
+use api_core::response::{Payload, respond};
+use common::models::{ListingResponse, UpdateUserRequest};
+use db_core::booking as db_booking;
+use db_core::listing as db_listing;
+use db_core::models::{UpdatedUser, UserRole};
+use sqlx::PgPool;
+use std::str::FromStr;
+use uuid::Uuid;
+use validator::Validate;
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(
@@ -29,129 +45,127 @@ pub(super) async fn update_user(
         .transpose()
         .map_err(|msg| field_error("slug", msg))?;
 
-    let mut attempts = 0;
-    const MAX_ATTEMPTS: u32 = 5;
-
     let id = path.into_inner();
 
-    // --- Admin Guard Middleware Logic ---
-    // Fetch the target user to check their roles. If they are an admin, deny the update.
     let target_user = db_core::user::get_user_by_id(pool.get_ref(), id)
         .await
         .map_err(ApiError::Database)?;
+    reject_admin_lockout(&target_user.roles, &req_data)?;
 
-    if target_user.roles.contains(&UserRole::Admin) {
-        let is_demoting_admin = req_data.roles.as_ref().is_some_and(|roles| {
-            let parsed_roles: std::collections::HashSet<UserRole> = roles
-                .iter()
-                .filter_map(|r| UserRole::from_str(r).ok())
-                .collect();
-            !parsed_roles.contains(&UserRole::Admin)
-        });
-        let is_deactivating = req_data.is_active == Some(false);
-        let is_unverifying = req_data.is_verified == Some(false);
+    let password_hash = hash_new_password(req_data.password.as_deref()).await?;
 
-        if is_demoting_admin || is_deactivating || is_unverifying {
-            return Err(ApiError::Forbidden(
-                "Cannot modify roles or active status of the system admin".to_string(),
-            ));
-        }
-    }
-    // ------------------------------------
-
-    let password_hash = if let Some(ref password) = req_data.password {
-        if !password.is_empty() {
-            let pwd = password.clone();
-            Some(
-                tokio::task::spawn_blocking(move || bcrypt::hash(&pwd, bcrypt::DEFAULT_COST))
-                    .await
-                    .map_err(|_| ApiError::Internal)?
-                    .map_err(|_| ApiError::Internal)?,
-            )
-        } else {
-            None
-        }
-    } else {
-        None
+    let updated = UpdatedUser {
+        email: req_data.email.clone(),
+        password_hash,
+        first_name: req_data.first_name.clone(),
+        last_name: req_data.last_name.clone(),
+        phone_number: req_data.phone_number.clone(),
+        is_active: req_data.is_active,
+        is_verified: req_data.is_verified,
+        verification_code: None,
+        verification_code_expires_at: None,
+        attributes: req_data.attributes.clone(),
+        roles: req_data.roles.as_deref().map(parse_roles),
+        default_currency: req_data.default_currency.clone(),
+        slug,
     };
 
-    loop {
-        attempts += 1;
-        let updated = UpdatedUser {
-            email: req_data.email.clone(),
-            password_hash: password_hash.clone(),
-            first_name: req_data.first_name.clone(),
-            last_name: req_data.last_name.clone(),
-            phone_number: req_data.phone_number.clone(),
-            is_active: req_data.is_active,
-            is_verified: req_data.is_verified,
-            verification_code: None,
-            verification_code_expires_at: None,
-            attributes: req_data.attributes.clone(),
-            roles: req_data.roles.clone().map(|roles| {
-                roles
-                    .into_iter()
-                    .filter_map(|r| UserRole::from_str(&r).ok())
-                    .collect()
-            }),
-            default_currency: req_data.default_currency.clone(),
-            slug: slug.clone(),
-        };
+    let updated_user = db_core::user::update_user(pool.get_ref(), id, &updated)
+        .await
+        .map_err(map_update_error)?;
 
-        match db_core::user::update_user(pool.get_ref(), id, &updated).await {
-            Ok(updated_user) => {
-                // Check for profile creation if roles/profiles are provided
-                if let Some(roles_vec) = &req_data.roles {
-                    let is_booker = roles_vec.iter().any(|r| r.to_lowercase() == "booker");
-                    let is_host = roles_vec.iter().any(|r| r.to_lowercase() == "host");
+    create_requested_profiles(pool.get_ref(), id, &req_data).await;
 
-                    if is_booker && let Some(profile) = &req_data.booker_profile {
-                        let _ =
-                            db_core::user::create_booker_profile(pool.get_ref(), id, profile).await;
-                    }
+    Ok(respond(
+        &req,
+        Payload::Item(map_user_to_response(updated_user)),
+        |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
 
-                    if is_host && let Some(profile) = &req_data.host_profile {
-                        let _ =
-                            db_core::user::create_host_profile(pool.get_ref(), id, profile).await;
-                    }
-                }
+/// Role names that parse; unknown names are dropped.
+fn parse_roles(roles: &[String]) -> Vec<UserRole> {
+    roles
+        .iter()
+        .filter_map(|r| UserRole::from_str(r).ok())
+        .collect()
+}
 
-                return Ok(respond(
-                    &req,
-                    Payload::Item(map_user_to_response(updated_user)),
-                    |_: Vec<UserResponse>| (),
-                    actix_web::http::StatusCode::OK,
-                ));
-            }
-            Err(e) => {
-                match e {
-                    db_core::error::DbError::Sqlx(ref sqlx_error) => {
-                        if let Some(db_error) = sqlx_error.as_database_error()
-                            && db_error.code().as_deref() == Some("23505")
-                            && let Some(constraint) = db_error.constraint()
-                            && constraint == "user_pkey"
-                        {
-                            if attempts >= MAX_ATTEMPTS {
-                                return Err(ApiError::Internal);
-                            }
-                            continue;
-                        }
-                    }
-                    db_core::error::DbError::ValidationError(msg) => {
-                        let mut map = std::collections::HashMap::new();
-                        map.insert(
-                            std::borrow::Cow::from("validation"),
-                            validator::ValidationErrorsKind::Field(vec![
-                                validator::ValidationError::new("custom").with_message(msg.into()),
-                            ]),
-                        );
-                        return Err(ApiError::ValidationError(validator::ValidationErrors(map)));
-                    }
-                    _ => {}
-                }
-                return Err(ApiError::Database(e));
-            }
+/// An admin may not be demoted, deactivated or unverified through this
+/// endpoint, so the system can never lose its last way in.
+fn reject_admin_lockout(
+    target_roles: &[UserRole],
+    req_data: &UpdateUserRequest,
+) -> Result<(), ApiError> {
+    if !target_roles.contains(&UserRole::Admin) {
+        return Ok(());
+    }
+    let is_demoting_admin = req_data
+        .roles
+        .as_deref()
+        .is_some_and(|roles| !parse_roles(roles).contains(&UserRole::Admin));
+    let is_deactivating = req_data.is_active == Some(false);
+    let is_unverifying = req_data.is_verified == Some(false);
+
+    if is_demoting_admin || is_deactivating || is_unverifying {
+        return Err(ApiError::Forbidden(
+            "Cannot modify roles or active status of the system admin".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// bcrypt hash of a new password, off the async workers. `None` when no
+/// (or an empty) password was sent, leaving the current one in place.
+async fn hash_new_password(password: Option<&str>) -> Result<Option<String>, ApiError> {
+    let Some(pwd) = password.filter(|p| !p.is_empty()).map(str::to_owned) else {
+        return Ok(None);
+    };
+    tokio::task::spawn_blocking(move || bcrypt::hash(&pwd, bcrypt::DEFAULT_COST))
+        .await
+        .map_err(|_| ApiError::Internal)?
+        .map(Some)
+        .map_err(|_| ApiError::Internal)
+}
+
+/// Creates the booker and host profiles sent with the update, for the roles
+/// the request grants. A failure is logged and does not fail the update.
+async fn create_requested_profiles(pool: &PgPool, id: Uuid, req_data: &UpdateUserRequest) {
+    let Some(roles) = &req_data.roles else {
+        return;
+    };
+    let has_role = |name: &str| roles.iter().any(|r| r.to_lowercase() == name);
+
+    if has_role("booker")
+        && let Some(profile) = &req_data.booker_profile
+        && let Err(e) = db_core::user::create_booker_profile(pool, id, profile).await
+    {
+        tracing::warn!(user_id = %id, error = %e, "booker profile not created");
+    }
+    if has_role("host")
+        && let Some(profile) = &req_data.host_profile
+        && let Err(e) = db_core::user::create_host_profile(pool, id, profile).await
+    {
+        tracing::warn!(user_id = %id, error = %e, "host profile not created");
+    }
+}
+
+/// A validation failure from the database becomes a 400; anything else is a
+/// database error.
+fn map_update_error(e: db_core::error::DbError) -> ApiError {
+    match e {
+        db_core::error::DbError::ValidationError(msg) => {
+            let mut map = std::collections::HashMap::new();
+            map.insert(
+                std::borrow::Cow::from("validation"),
+                validator::ValidationErrorsKind::Field(vec![
+                    validator::ValidationError::new("custom").with_message(msg.into()),
+                ]),
+            );
+            ApiError::ValidationError(validator::ValidationErrors(map))
         }
+        other => ApiError::Database(other),
     }
 }
 

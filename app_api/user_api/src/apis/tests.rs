@@ -1,4 +1,4 @@
-use super::*;
+use super::{UserResponse, configure_routes};
 use actix_web::{App, test, web};
 use api_core::settings::{Application, DatabaseSettings, Env, FeatureFlags, Log, Server, Settings};
 use db_core::models::UserRole;

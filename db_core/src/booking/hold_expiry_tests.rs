@@ -1,7 +1,10 @@
 //! Hold expiry tests.
 
 use super::unavailable_ranges_tests::{book, book_held, day, host, listing};
-use super::*;
+use super::{
+    check_availability, expire_stale_holds, get_booking_by_id, get_unavailable_ranges,
+    update_booking,
+};
 use crate::models::{BookingStatus, SupplierInfo, UpdatedBooking};
 use rust_decimal_macros::dec;
 use sqlx::PgPool;

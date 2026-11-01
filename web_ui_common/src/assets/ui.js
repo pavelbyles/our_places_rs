@@ -278,7 +278,7 @@
   // morning. A range may not include any booked or past night.
   var DAY_MS = 86400000;
 
-  function parseDay(iso) { return iso ? Date.parse(iso + 'T00:00:00Z') : NaN; }
+  function parseDay(iso) { return iso ? Date.parse(iso + 'T00:00:00Z') : Number.NaN; }
   function isoDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
 
   function calendarParts(root) {
@@ -500,7 +500,7 @@
     var track = carouselParts(root).track;
     if (!track) return;
     var card = track.firstElementChild;
-    var gap = parseFloat(window.getComputedStyle(track).columnGap) || 0;
+    var gap = Number.parseFloat(window.getComputedStyle(track).columnGap) || 0;
     var distance = card ? card.getBoundingClientRect().width + gap : track.clientWidth;
     track.scrollBy({ left: dir * distance, behavior: reduceMotion && reduceMotion.matches ? 'auto' : 'smooth' });
   }

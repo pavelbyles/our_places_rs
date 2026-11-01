@@ -1,6 +1,9 @@
 //! Reading listings: search, by owner, by id or slug.
 
-use super::*;
+use crate::error::Result;
+use crate::models::{Listing, ListingWithOwner};
+use sqlx::PgExecutor;
+use uuid::Uuid;
 
 /// Retrieves a paginated list of listings from the database with optional filtering.
 #[tracing::instrument(skip(executor))]

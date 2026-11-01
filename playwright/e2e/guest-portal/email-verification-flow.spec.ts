@@ -40,7 +40,7 @@ function getLatestOutboxForEmail(email: string): OutboxRecord | null {
       subject,
       template_id,
       status,
-      attempts: parseInt(attempts, 10),
+      attempts: Number.parseInt(attempts, 10),
       payload: JSON.parse(payloadStr || '{}'),
     };
   } catch (err) {
@@ -59,7 +59,7 @@ function countOutboxForEmail(email: string): number {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
-    return parseInt(raw.trim(), 10) || 0;
+    return Number.parseInt(raw.trim(), 10) || 0;
   } catch {
     return 0;
   }

@@ -1,14 +1,12 @@
 import { execSync } from 'node:child_process';
 import * as crypto from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
-import { TEST_USERS } from './test-data.js';
+import { TEST_USERS, passwordHash } from './test-data.js';
 
 const DB_URL = process.env.DATABASE_URL || 'postgres://postgres:password@localhost:5432/our_places';
 const BOOKING_API_URL = process.env.BOOKING_API_URL || 'http://127.0.0.1:8081';
 /** The seeded villa (db-seed.ts). */
 export const SEEDED_LISTING_ID = '018f3a5e-6b9c-7000-8000-000000000001';
-/** bcrypt hash of TEST_USERS.guest.password, as seeded in db-seed.ts. */
-const GUEST_PASSWORD_HASH = '$2b$12$G3TzzR2meVcZAQU2OL49tel/uqz8pfao3/6jDPvWsyc9bL4EUdgk2';
 
 export interface TestGuest {
   id: string;
@@ -37,7 +35,7 @@ export function createGuest(): TestGuest {
   psql(`
     INSERT INTO "user" (id, email, password_hash, first_name, last_name, roles,
                         is_active, is_verified, default_currency, created_at, updated_at)
-    VALUES ('${id}', '${email}', '${GUEST_PASSWORD_HASH}', 'Casey', 'E2E',
+    VALUES ('${id}', '${email}', '${passwordHash(TEST_USERS.guest.password)}', 'Casey', 'E2E',
             '{booker}', true, true, 'USD', NOW(), NOW());
   `);
   return { id, email, password: TEST_USERS.guest.password };
@@ -61,7 +59,7 @@ export function createUnverifiedUser(roles: 'booker' | 'host,booker'): TestUnver
     INSERT INTO "user" (id, email, password_hash, first_name, last_name, roles,
                         is_active, is_verified, verification_code, verification_code_expires_at,
                         default_currency, created_at, updated_at)
-    VALUES ('${id}', '${email}', '${GUEST_PASSWORD_HASH}', 'Uma', 'Unverified',
+    VALUES ('${id}', '${email}', '${passwordHash(TEST_USERS.guest.password)}', 'Uma', 'Unverified',
             '{${roles}}', true, false, '${code}', NOW() + INTERVAL '30 minutes',
             'USD', NOW(), NOW());
   `);
@@ -81,7 +79,7 @@ export async function createBooking(
   options: { confirmed?: boolean } = {},
 ): Promise<TestBooking> {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const start = new Date(Date.UTC(2032, 0, 1 + Math.floor(Math.random() * 1400)));
+    const start = new Date(Date.UTC(2032, 0, 1 + crypto.randomInt(1400)));
     const end = new Date(start.getTime() + 2 * 86_400_000);
     const res = await request.post(`${BOOKING_API_URL}/api/v1/bookings`, {
       headers: { Authorization: `Bearer ${signTestJwt(guestId)}` },
