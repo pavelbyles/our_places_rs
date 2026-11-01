@@ -42,12 +42,12 @@ pub async fn home_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <section class="grid gap-6 pb-10 md:grid-cols-2 md:items-end">
             <h1 class="font-serif text-[clamp(48px,7vw,96px)] leading-[1.02] font-light tracking-[-0.025em]">"Jamaica's Finest Escapes"</h1>
-            <p class="text-lg text-muted-foreground">"Curated private villas with dedicated butler service, from the cliffs of Negril to the hills above Ocho Rios."</p>
+            <p class="text-lg text-muted-foreground">"Hand-picked private villas and apartments in Runaway Bay and Kingston."</p>
         </section>
         <section class="relative">
             <img src=(HERO_IMAGE) alt="A villa terrace overlooking the Caribbean Sea" class="h-[560px] w-full rounded-[var(--radius-surface,16px)] bg-photo-placeholder object-cover" />
             <form method="get" action="/listings" role="search" aria-label="Search villas" class="absolute inset-x-4 bottom-4 grid items-center divide-divider rounded-[var(--radius-surface,16px)] bg-card shadow-xs md:inset-x-8 md:bottom-8 md:grid-cols-[2fr_1fr_1fr_1fr_auto] md:divide-x">
-                <label class=(field)>"Where"<input name="q" placeholder="Ocho Rios, Negril…" class=(input) /></label>
+                <label class=(field)>"Where"<input name="q" placeholder="Runaway Bay, Kingston…" class=(input) /></label>
                 <label class=(field)>"Check in"<input type="date" name="check_in" class=(input) /></label>
                 <label class=(field)>"Check out"<input type="date" name="check_out" class=(input) /></label>
                 <label class=(field)>"Guests"<input type="number" name="guests" min="1" value="2" class=(input) /></label>
@@ -58,7 +58,7 @@ pub async fn home_page(cx: &Cx) -> Result<impl View> {
         <section class="mt-28 space-y-8" aria-labelledby="season-heading">
             <div class="flex items-end justify-between">
                 <h2 id="season-heading" class="font-serif text-[40px] tracking-[-0.015em]">"This season's stays"</h2>
-                <a href="/listings" class="text-sm font-medium">"View all villas →"</a>
+                <a href="/listings" class="text-sm font-medium">"View all listings →"</a>
             </div>
             villa_carousel(listings: featured, track_id: "featured-villas".to_string(), label: "This season's stays".to_string())
         </section>

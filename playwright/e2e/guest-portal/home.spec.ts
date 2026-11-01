@@ -14,8 +14,8 @@ test.describe('Guest Portal - Home Page', () => {
     await expect(heroHeading).toBeVisible();
     await expect(heroHeading).toContainText("Jamaica's Finest Escapes");
 
-    // Verify luxury villa tagline
-    const subtext = page.locator('text=Curated private villas with dedicated butler service');
+    // Verify tagline
+    const subtext = page.locator('text=Hand-picked private villas and apartments');
     await expect(subtext).toBeVisible();
   });
 
