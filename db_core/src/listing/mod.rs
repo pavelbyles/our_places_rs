@@ -17,7 +17,10 @@ pub use price_overrides::{
 pub use queries::{
     get_listing_by_id, get_listing_by_id_or_slug, get_listings, get_listings_by_user_id,
 };
-pub use write::{create_listing, delete_listing, update_listing, update_listing_with_conn};
+pub use write::{
+    create_listing, create_listing_with_active_currency, delete_listing, update_listing,
+    update_listing_with_conn,
+};
 
 pub fn generate_listing_slug_native(title: &str) -> String {
     const MAX_SLUG_LEN: usize = 60;

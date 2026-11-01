@@ -1045,3 +1045,237 @@ mod currency_conversion_tests {
         assert_eq!(body["listing"]["price_per_night"], expected);
     }
 }
+
+mod currency_inactive_tests {
+    //! Listing writes require an active currency (checked in the write tx).
+
+    use super::*;
+
+    async fn app_for(
+        pool: &PgPool,
+    ) -> impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    > {
+        test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await
+    }
+
+    fn new_listing_request(user_id: Uuid, base: &str) -> common::models::NewListingRequest {
+        common::models::NewListingRequest {
+            name: format!("Villa {}", Uuid::now_v7()),
+            user_id,
+            description: None,
+            listing_structure: "Apartment".to_string(),
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(100.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: base.to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: 1,
+            extra_guest_fee: None,
+        }
+    }
+
+    async fn setup() -> (TestPg, PgPool, Uuid) {
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = db.get_pool().await;
+        let mut conn = pool.acquire().await.expect("conn");
+        let user = create_test_user(&mut conn).await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+            .execute(&pool)
+            .await
+            .expect("deactivate CAD");
+        (db, pool, user)
+    }
+
+    async fn status_and_code<S>(app: &S, req: actix_http::Request) -> (u16, serde_json::Value)
+    where
+        S: actix_web::dev::Service<
+                actix_http::Request,
+                Response = actix_web::dev::ServiceResponse,
+                Error = actix_web::Error,
+            >,
+    {
+        let resp = test::call_service(app, req).await;
+        let status = resp.status().as_u16();
+        let bytes = test::read_body(resp).await;
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    #[actix_web::test]
+    async fn create_with_inactive_base_is_422() {
+        let (_db, pool, user) = setup().await;
+        let app = app_for(&pool).await;
+        let (status, body) = status_and_code(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/listings")
+                .set_json(new_listing_request(user, "CAD"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 422);
+        assert_eq!(body["code"], "CURRENCY_INACTIVE");
+    }
+
+    #[actix_web::test]
+    async fn create_with_unknown_base_is_422_not_500() {
+        let (_db, pool, user) = setup().await;
+        let app = app_for(&pool).await;
+        let (status, body) = status_and_code(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/listings")
+                .set_json(new_listing_request(user, "QQQ"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 422);
+        assert_eq!(body["code"], "CURRENCY_NOT_FOUND");
+    }
+
+    #[actix_web::test]
+    async fn update_to_inactive_base_is_422() {
+        let (_db, pool, user) = setup().await;
+        let mut conn = pool.acquire().await.expect("conn");
+        let listing = db_listing::create_listing(
+            &mut *conn,
+            &NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: user,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(100.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 2,
+                bedrooms: 1,
+                beds: 1,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: None,
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .expect("listing");
+        let app = app_for(&pool).await;
+        let (status, body) = status_and_code(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/listings/{}", listing.id))
+                .set_json(UpdatedListingRequest {
+                    base_currency: Some("CAD".to_string()),
+                    ..Default::default()
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 422);
+        assert_eq!(body["code"], "CURRENCY_INACTIVE");
+    }
+
+    #[actix_web::test]
+    async fn keeping_an_inactive_base_unchanged_is_allowed() {
+        let (_db, pool, user) = setup().await;
+        let mut conn = pool.acquire().await.expect("conn");
+        // A legacy listing already priced in CAD (deactivated afterwards).
+        let id: Uuid = {
+            sqlx::query("UPDATE currencies SET active = true WHERE code = 'CAD'")
+                .execute(&pool)
+                .await
+                .expect("reactivate");
+            let l = db_listing::create_listing_with_active_currency(
+                &pool,
+                &NewListing {
+                    name: format!("Villa {}", Uuid::now_v7()),
+                    user_id: user,
+                    description: None,
+                    listing_structure_id: 1,
+                    country: "Jamaica".to_string(),
+                    price_per_night: Some(dec!(100.00)),
+                    weekly_discount_percentage: None,
+                    monthly_discount_percentage: None,
+                    max_guests: 2,
+                    bedrooms: 1,
+                    beds: 1,
+                    full_bathrooms: 1,
+                    half_bathrooms: 0,
+                    square_meters: None,
+                    latitude: None,
+                    longitude: None,
+                    listing_details: None,
+                    city: None,
+                    base_currency: "CAD".to_string(),
+                    minimum_stay: 1,
+                    days_between_bookings: 0,
+                    commission_pct: None,
+                    cleaning_fee: None,
+                    damage_deposit: None,
+                    guests_included: None,
+                    extra_guest_fee: None,
+                },
+            )
+            .await
+            .expect("CAD listing");
+            sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+                .execute(&mut *conn)
+                .await
+                .expect("deactivate again");
+            l.id
+        };
+        let app = app_for(&pool).await;
+        let (status, _) = status_and_code(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/listings/{id}"))
+                .set_json(UpdatedListingRequest {
+                    name: Some("Renamed".to_string()),
+                    base_currency: Some("CAD".to_string()),
+                    ..Default::default()
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 200);
+    }
+}

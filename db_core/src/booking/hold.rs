@@ -30,6 +30,10 @@ pub async fn create_booking(
     .await?
     .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
 
+    // Lock order: listing, then currency. A concurrent deactivation waits for
+    // this hold (and then sees it), or this hold sees the deactivation.
+    crate::currency::ensure_active(&mut tx, &new_booking.currency).await?;
+
     let overlapping = sqlx::query!(
         r#"
         SELECT id, guest_id, status as "status: BookingStatus" FROM booking 

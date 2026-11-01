@@ -142,6 +142,17 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     let mut tx = pool.begin().await?;
     lock_and_snapshot(&mut tx, id).await?;
 
+    if let Some(new_currency) = updated_user.default_currency.as_deref() {
+        let current =
+            sqlx::query_scalar!(r#"SELECT default_currency FROM "user" WHERE id = $1"#, id)
+                .fetch_one(&mut *tx)
+                .await?;
+        // An unchanged (even inactive) currency is left alone.
+        if current != new_currency {
+            crate::currency::ensure_active(&mut tx, new_currency).await?;
+        }
+    }
+
     let updated = query_user!(
         returning
         r#"

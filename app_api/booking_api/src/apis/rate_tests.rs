@@ -659,3 +659,66 @@ mod currency_api_tests {
         assert_eq!(body["listings"][0]["id"], f.listing_id.to_string());
     }
 }
+
+mod currency_inactive_tests {
+    //! The hold transaction re-checks the payment currency after locking the listing.
+
+    use super::*;
+
+    #[tokio::test]
+    async fn hold_in_inactive_identity_currency_is_422() {
+        let f = fixture().await;
+        // The listing is priced in USD; USD itself is deactivated (bypassing
+        // the in-use guard) so only the hold's own check can refuse it.
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'USD'")
+            .execute(&f.pool)
+            .await
+            .expect("deactivate USD");
+        let app = app(&f.pool).await;
+        let resp = test::call_service(&app, hold_request(&f, "USD")).await;
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "CURRENCY_INACTIVE");
+    }
+
+    #[tokio::test]
+    async fn hold_transaction_refuses_inactive_currency_directly() {
+        let f = fixture().await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'JMD'")
+            .execute(&f.pool)
+            .await
+            .expect("deactivate JMD");
+        let booking = db_core::models::NewBooking {
+            confirmation_code: format!("C{}", Uuid::now_v7().simple())[..10].to_uppercase(),
+            guest_id: f.guest_id,
+            listing_id: f.listing_id,
+            date_from: chrono::NaiveDate::from_ymd_opt(2030, 8, 1).expect("date"),
+            date_to: chrono::NaiveDate::from_ymd_opt(2030, 8, 3).expect("date"),
+            currency: "JMD".to_string(),
+            daily_rate: dec!(32000.00),
+            number_of_persons: 2,
+            total_days: 2,
+            sub_total_price: dec!(64000.00),
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: vec![],
+            total_price: dec!(64000.00),
+            cancellation_policy: db_core::models::CancellationPolicy::Flexible,
+            metadata: db_core::models::BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: rust_decimal::Decimal::ZERO,
+            damage_deposit: rust_decimal::Decimal::ZERO,
+            platform_fee: rust_decimal::Decimal::ZERO,
+            tax_rate: dec!(0.1500),
+            exchange_rate: dec!(160),
+        };
+        let r = db_core::booking::create_booking(&f.pool, &booking, 120).await;
+        assert!(
+            matches!(r, Err(db_core::error::DbError::CurrencyInactive(ref c)) if c == "JMD"),
+            "got {r:?}"
+        );
+    }
+}

@@ -86,6 +86,13 @@ pub(super) async fn create_user(
                 .unwrap_or_else(|| "USD".to_string()),
         };
 
+        db_core::currency::ensure_active(&mut tx, &user.default_currency)
+            .await
+            .map_err(|e| {
+                tracing::warn!(currency = %user.default_currency, error = %e, "registration currency rejected");
+                ApiError::Database(e)
+            })?;
+
         match db_core::user::create_user(&mut *tx, &user).await {
             Ok(created_user) => {
                 let roles_strings = req_data.roles.clone().unwrap_or_default();

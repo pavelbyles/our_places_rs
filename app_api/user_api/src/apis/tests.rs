@@ -811,3 +811,107 @@ async fn test_soft_restore_hard_delete_user() {
     let resp_hard = test::call_service(&app, req_hard).await;
     assert_eq!(resp_hard.status(), 204);
 }
+
+mod currency_inactive_tests {
+    //! A user's default currency must be active when set or changed.
+
+    use super::*;
+
+    async fn setup() -> (TestPg, sqlx::PgPool) {
+        dotenvy::dotenv().ok();
+        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = db.get_pool().await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+            .execute(&pool)
+            .await
+            .expect("deactivate CAD");
+        (db, pool)
+    }
+
+    fn registration(currency: &str) -> serde_json::Value {
+        json!({
+            "email": format!("cur_{}@example.com", Uuid::now_v7()),
+            "password": "password123",
+            "first_name": "Cur",
+            "last_name": "Rency",
+            "is_active": true,
+            "roles": ["booker"],
+            "booker_profile": { "loyalty": {} },
+            "default_currency": currency
+        })
+    }
+
+    #[actix_web::test]
+    async fn registration_with_inactive_currency_is_422() {
+        let (_db, pool) = setup().await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/")
+                .set_json(registration("CAD"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 422);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "CURRENCY_INACTIVE");
+    }
+
+    #[actix_web::test]
+    async fn changing_default_to_inactive_is_422_but_unchanged_is_fine() {
+        let (_db, pool) = setup().await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/")
+                .set_json(registration("USD"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 201);
+        let user: UserResponse = test::read_body_json(resp).await;
+
+        let change = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/users/user/{}", user.id))
+                .set_json(json!({ "default_currency": "CAD" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(change.status(), 422);
+        let body: serde_json::Value = test::read_body_json(change).await;
+        assert_eq!(body["code"], "CURRENCY_INACTIVE");
+
+        // A user whose currency was deactivated later can still save their
+        // profile without changing it.
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'USD'")
+            .execute(&pool)
+            .await
+            .expect("deactivate USD");
+        let unchanged = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/users/user/{}", user.id))
+                .set_json(json!({ "first_name": "Renamed", "default_currency": "USD" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unchanged.status(), 200);
+    }
+}

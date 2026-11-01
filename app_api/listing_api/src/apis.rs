@@ -322,7 +322,7 @@ async fn create_listing(
             extra_guest_fee: req_data.extra_guest_fee,
         };
 
-        match db_listing::create_listing(pool.get_ref(), &listing).await {
+        match db_listing::create_listing_with_active_currency(pool.get_ref(), &listing).await {
             Ok(created_listing) => {
                 return Ok(respond(
                     &req,

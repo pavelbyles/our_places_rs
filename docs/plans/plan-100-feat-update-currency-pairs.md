@@ -227,7 +227,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p booking_api currency_api_tests`
   - **Dependencies:** T8
 
-- [ ] **T10: Enforce active currency inside write transactions**
+- [x] **T10: Enforce active currency inside write transactions**
   - **Scope:** M
   - **Description:** Call `ensure_active(&mut tx, code)` in the **same transaction** as each write that sets a new or changed currency:
     - `create_listing` (wrap it in a tx; today it autocommits) and `update_listing_with_conn`
