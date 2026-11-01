@@ -187,7 +187,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
 
 ## Phase 3 — Currency Management (vertical slice)
 
-- [ ] **T8: `db_core` currency CRUD, `ensure_active`, in-use check**
+- [x] **T8: `db_core` currency CRUD, `ensure_active`, in-use check**
   - **Scope:** M
   - **Description:**
     - `list_currencies(active_only)`, `create_currency`, `update_currency`.

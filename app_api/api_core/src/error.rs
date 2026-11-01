@@ -334,7 +334,7 @@ mod currency_error_tests {
         let listing = ListingRef {
             id: uuid::Uuid::nil(),
             title: "Villa Azul".into(),
-            slug: Some("villa-azul".into()),
+            slug: "villa-azul".into(),
         };
         let (s, b, _) = render(DbError::CurrencyInUse(vec![listing])).await;
         assert_eq!(s, StatusCode::CONFLICT);

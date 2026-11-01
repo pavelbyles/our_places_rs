@@ -170,8 +170,8 @@ pub struct ListingRef {
     pub id: Uuid,
     /// Listing name.
     pub title: String,
-    /// Listing slug, if any.
-    pub slug: Option<String>,
+    /// Listing slug.
+    pub slug: String,
 }
 
 /// Body detail of a `409 CURRENCY_IN_USE` rejection.
