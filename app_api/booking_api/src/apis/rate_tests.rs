@@ -11,6 +11,9 @@ use sqlx_db_tester::TestPg;
 use std::path::Path;
 use uuid::Uuid;
 
+/// Env var holding the test database URL.
+const DATABASE_URL_ENV: &str = "DATABASE_URL";
+
 /// Everything a rate test needs; `_db` keeps the database alive.
 pub(super) struct Fixture {
     pub _db: TestPg,
@@ -49,7 +52,7 @@ pub(super) async fn create_admin(pool: &PgPool) -> Uuid {
 
 pub(super) async fn fixture() -> Fixture {
     dotenvy::dotenv().ok();
-    let db_url = std::env::var("DATABASE_URL")
+    let db_url = std::env::var(DATABASE_URL_ENV)
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
     let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
     let pool = db.get_pool().await;

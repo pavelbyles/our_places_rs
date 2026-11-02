@@ -592,6 +592,23 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/currencies:
+    get:
+      summary: List active currencies (for currency selectors)
+      operationId: listActiveCurrencies
+      tags:
+        - currencies
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: Active currencies, sorted by code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrenciesResponse"
+        "500":
+          description: Internal server error
+
   /api/v1/bookings/availability:
     get:
       summary: Check listing availability for dates
@@ -1466,6 +1483,24 @@ components:
           type: string
           format: uuid
 
+    CurrenciesResponse:
+      type: object
+      properties:
+        currencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/Currency"
+    Currency:
+      type: object
+      properties:
+        code:
+          type: string
+          example: "JMD"
+        name:
+          type: string
+          example: "Jamaican Dollar"
+        active:
+          type: boolean
     AvailabilityResponse:
       type: object
       properties:

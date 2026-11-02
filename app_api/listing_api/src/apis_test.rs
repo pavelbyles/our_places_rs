@@ -10,6 +10,9 @@ use sqlx_db_tester::TestPg;
 use std::env;
 use std::path::Path;
 
+/// Env var holding the test database URL.
+const DATABASE_URL_ENV: &str = "DATABASE_URL";
+
 async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
     let id = Uuid::now_v7();
     let new_user = NewUser {
@@ -843,7 +846,7 @@ mod currency_conversion_tests {
 
     async fn ctx() -> Ctx {
         dotenvy::dotenv().ok();
-        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
         let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
         let pool = db.get_pool().await;
         let mut conn = pool.acquire().await.expect("conn");
@@ -1101,7 +1104,7 @@ mod currency_inactive_tests {
 
     async fn setup() -> (TestPg, PgPool, Uuid) {
         dotenvy::dotenv().ok();
-        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
         let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
         let pool = db.get_pool().await;
         let mut conn = pool.acquire().await.expect("conn");

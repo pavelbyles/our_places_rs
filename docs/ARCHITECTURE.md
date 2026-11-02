@@ -179,9 +179,21 @@ Base currency (listing price) --exchange rate--> Payment currency (guest) --GCT-
 
 1. **Base nightly rate**: comes from `listing.price_per_night`, or a matching `listing_price_overrides` row. Overlapping override date ranges are rejected by a GiST `EXCLUDE` constraint.
 2. **Price the stay**: `BookingCalculator` builds the total in typed steps: base subtotal → weekly/monthly discount → tax → fees (platform fee, cleaning fee, extra-guest fee, damage deposit).
-3. **Convert currency**: the result is converted with `currency_exchange_rates`, which supports direct and inverse lookups.
-4. **Statutory tax**: rates (Jamaican GCT 15%) are fixed in `common/src/reference.rs`. Exchange rates live in the database.
-5. **Tax documents**: completed stays get statutory tax documents (`tax_document`), issued by the Merchant of Record named in `TAJ_SUPPLIER_*`.
+3. **Convert currency**: the result is converted with `db_core::exchange_rate::get_rate`, the single, effective-dated lookup: the latest explicit `base → target` row with `effective_at <= at`, otherwise the latest `target → base` row inverted to 6 dp (banker's rounding, in Rust). There is never a fallback rate or currency: a missing pair is `422 FX_RATE_UNAVAILABLE`. Every caller states a `RateUse`:
+   - `NewQuote` (listing search and detail, checkout hold): retired pairs are ignored (also as a derived source) and both currencies must be active.
+   - `Settlement` (payout at confirmation, reservation-change payout, tax-document JMD rate, booking display): history is honoured even after retirement or deactivation.
+
+   Listing search converts in one batched query; a listing that cannot be quoted keeps its base label, has no price and carries `price_unavailable_in` (cards show "Price unavailable in CUR").
+4. **Rate locking**:
+
+   | Conversion | Rate used |
+   |---|---|
+   | Listing base → payment (`booking.exchange_rate`) | effective at hold creation; reused for the booking's whole life |
+   | Booking currency → host currency (payout ledger) | effective at confirmation (and at reservation-change approval) |
+   | Booking currency → JMD (tax documents) | effective at the document's issue date |
+5. **Currencies and rates are data**: `currencies` is the reference table every currency column references (`ON DELETE/UPDATE RESTRICT`); currencies are deactivated, never deleted, and no currency list is hardcoded in code. Admins manage currencies and rates on `/admin/exchange-rates`: rates are append-only versions (no backdating beyond `rate_effective_grace_seconds`, at most 366 days ahead, a 5% change needs confirmation), only scheduled versions can be deleted, and pairs are retired rather than removed. Deactivating a currency or retiring a pair is refused while live listings depend on it. Every change is written to the append-only `currency_audit_log`. Rate transactions lock currency rows in ascending code order, then a per-pair advisory lock (`hashtext('fx:'||base||':'||target)`), then read the clock.
+6. **Statutory tax**: rates (Jamaican GCT 15%) are fixed in `common/src/reference.rs`. Exchange rates live in the database.
+7. **Tax documents**: completed stays get statutory tax documents (`tax_document`), issued by the Merchant of Record named in `TAJ_SUPPLIER_*`.
 
 ### 4.3. Image Pipeline
 

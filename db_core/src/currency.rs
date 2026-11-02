@@ -344,7 +344,7 @@ mod migration_tests {
 
     fn db_url() -> String {
         dotenvy::dotenv().ok();
-        env::var("DATABASE_URL").unwrap_or_else(|_| {
+        env::var(crate::DATABASE_URL_ENV).unwrap_or_else(|_| {
             "postgres://postgres:password@localhost:5432/our_places".to_string()
         })
     }
@@ -579,7 +579,7 @@ mod currency_admin_tests {
 
     async fn db() -> TestPg {
         dotenvy::dotenv().ok();
-        let url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let url = env::var(crate::DATABASE_URL_ENV).unwrap_or_else(|_| {
             "postgres://postgres:password@localhost:5432/our_places".to_string()
         });
         TestPg::new(url, Path::new("migrations"))

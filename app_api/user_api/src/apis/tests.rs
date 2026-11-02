@@ -8,6 +8,9 @@ use std::env;
 use std::path::Path;
 use uuid::Uuid;
 
+/// Env var holding the test database URL.
+const DATABASE_URL_ENV: &str = "DATABASE_URL";
+
 /// Helper to get default test settings.
 fn get_test_settings() -> Settings {
     Settings {
@@ -820,7 +823,7 @@ mod currency_inactive_tests {
 
     async fn setup() -> (TestPg, sqlx::PgPool) {
         dotenvy::dotenv().ok();
-        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
         let db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
         let pool = db.get_pool().await;
         sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")

@@ -5,7 +5,7 @@
 **Baseline Commit:** `eb05d61a`
 **Branch:** `feat/100-update-currency-pairs`
 
-> **Engineering Review Status**: LOCKED (rev 3)
+> **Engineering Review Status**: LOCKED (rev 3) — **IMPLEMENTED** (all tasks done, 2026-11-01)
 > **Review Date**: 2026-11-01
 > **Review Panel**: Lead Architect, Edge Case Analyst, Security Reviewer, DB Guardian, QA Strategist
 
@@ -397,7 +397,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `/playwright-e2e` (admin-portal projects, run twice)
   - **Dependencies:** T12b, T19, T20
 
-- [ ] **T22: OpenAPI, docs, release gates**
+- [x] **T22: OpenAPI, docs, release gates**
   - **Scope:** S
   - **Files Touched:** `openapi.yaml`, `openapi-prod.yaml`, `docs/ARCHITECTURE.md` (§4.2), `docs/ENVIRONMENT.md` (grace + cache TTL env vars)
   - **Acceptance Criteria:**
