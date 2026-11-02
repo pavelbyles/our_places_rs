@@ -368,7 +368,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p common promo::reevaluate_tests`
   - **Dependencies:** T6, T7
 
-- [ ] **Task 14: Apply promos on direct updates**
+- [x] **Task 14: Apply promos on direct updates**
   - **Scope:** S
   - **Description:** `reprice` re-evaluates from the booking's snapshot. Promo columns follow `replace_discounts`. When lost, clear them and set `released_at` in the same transaction. Change `update.rs:17` to `skip(pool, updated_booking), fields(booking_id = %id)`.
   - **Files Touched:**

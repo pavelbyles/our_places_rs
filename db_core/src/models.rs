@@ -356,6 +356,12 @@ pub struct UpdatedBooking {
     /// When true, the discount fields replace the stored values, so `None`
     /// clears a discount that no longer applies. When false, `None` keeps them.
     pub replace_discounts: bool,
+    /// New promo discount on the stay, when repriced.
+    pub promo_stay_discount: Option<Decimal>,
+    /// New promo discount on the cleaning fee, when repriced.
+    pub promo_cleaning_discount: Option<Decimal>,
+    /// Removes the promo and frees its use, because the new stay doesn't qualify.
+    pub clear_promo: bool,
 }
 
 /// Immutable audit log entry capturing booking status transitions.

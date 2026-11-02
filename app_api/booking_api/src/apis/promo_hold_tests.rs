@@ -976,3 +976,160 @@ mod quote {
         assert!(!text.contains("QUOTEGUESS"), "{text}");
     }
 }
+
+mod promo_reprice {
+    use super::*;
+
+    /// A confirmed promo booking for 2 nights at 200.00 with 10% off the stay.
+    async fn confirmed(pool: &PgPool, value: &str, change: &str) -> (Uuid, Uuid, Uuid) {
+        let host = user(pool, UserRole::Host).await;
+        let guest = user(pool, UserRole::Booker).await;
+        let admin = user(pool, UserRole::Admin).await;
+        let villa = listing(pool, host).await;
+        let id = code(pool, host, value).await;
+        if !change.is_empty() {
+            sqlx::query(&format!("UPDATE promo_code SET {change} WHERE id = $1"))
+                .bind(id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        let app = app!(pool);
+        assert_eq!(
+            post_hold!(app, guest, with_code(guest, villa, value)).status(),
+            201
+        );
+        let booking = booking_of(pool, guest).await.expect("hold created");
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/bookings/{}", booking.id))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "status": "confirmed" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        (booking.id, admin, id)
+    }
+
+    macro_rules! patch_dates {
+        ($app:expr, $admin:expr, $id:expr, $date_to:expr) => {
+            test::call_service(
+                &$app,
+                test::TestRequest::patch()
+                    .uri(&format!("/api/v1/bookings/{}", $id))
+                    .insert_header(("Accept", "application/json"))
+                    .insert_header(bearer($admin))
+                    .set_json(serde_json::json!({ "date_to": $date_to }))
+                    .to_request(),
+            )
+            .await
+        };
+    }
+
+    #[tokio::test]
+    async fn a_longer_stay_recalculates_a_percentage_even_after_deactivation() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, admin, code_id) = confirmed(&pool, "KEPTPCT", "").await;
+        sqlx::query(
+            "UPDATE promo_code SET deactivated_at = NOW(), deactivated_by = created_by,
+                 valid_from = NOW() - INTERVAL '2 days', valid_to = NOW() - INTERVAL '1 day',
+                 total_usage_limit = 1 WHERE id = $1",
+        )
+        .bind(code_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let app = app!(pool);
+
+        let resp = patch_dates!(app, admin, id, "2030-08-05");
+        assert_eq!(resp.status(), 200);
+
+        let booking = db_core::booking::get_booking_by_id(&pool, id)
+            .await
+            .unwrap();
+        assert_eq!(booking.promo_code_id, Some(code_id));
+        assert_eq!(booking.sub_total_price, dec!(800.00));
+        assert_eq!(booking.promo_stay_discount, dec!(80.00));
+        assert_eq!(booking.accommodation_net(), dec!(720.00));
+        // 720.00 + 15% GCT + 5% platform fee.
+        assert_eq!(booking.total_price, dec!(864.00));
+    }
+
+    #[tokio::test]
+    async fn a_fixed_discount_stays_and_is_capped_when_the_stay_shrinks() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, admin, _) = confirmed(
+            &pool,
+            "KEPTFIXED",
+            "discount_type = 'fixed', discount_value = 250, currency = 'USD'",
+        )
+        .await;
+        let app = app!(pool);
+
+        let before = db_core::booking::get_booking_by_id(&pool, id)
+            .await
+            .unwrap();
+        assert_eq!(before.promo_stay_discount, dec!(250.00));
+
+        // Shortened to one night at 200.00.
+        let resp = patch_dates!(app, admin, id, "2030-08-02");
+        assert_eq!(resp.status(), 200);
+        let booking = db_core::booking::get_booking_by_id(&pool, id)
+            .await
+            .unwrap();
+        assert_eq!(booking.promo_stay_discount, dec!(200.00));
+        assert_eq!(booking.accommodation_net(), Decimal::ZERO);
+        assert_eq!(booking.total_price, dec!(0.00));
+    }
+
+    #[tokio::test]
+    async fn a_shorter_stay_below_the_minimum_loses_the_discount_and_frees_the_use() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, admin, code_id) =
+            confirmed(&pool, "NEEDSTWO", "min_nights = 2, total_usage_limit = 1").await;
+        let app = app!(pool);
+
+        let resp = patch_dates!(app, admin, id, "2030-08-02");
+        assert_eq!(resp.status(), 200);
+
+        let booking = db_core::booking::get_booking_by_id(&pool, id)
+            .await
+            .unwrap();
+        assert_eq!(booking.promo_code_id, None);
+        assert_eq!(booking.promo_stay_discount, Decimal::ZERO);
+        assert_eq!(booking.accommodation_net(), dec!(200.00));
+        assert_eq!(booking.total_price, dec!(240.00));
+
+        let mut conn = pool.acquire().await.unwrap();
+        let (_, usage) = db_core::promo::lock_and_count(&mut conn, code_id, Uuid::now_v7())
+            .await
+            .unwrap();
+        assert_eq!(usage.total_used, 0);
+    }
+
+    #[tokio::test]
+    async fn a_captured_update_does_not_log_the_code() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, admin, _) = confirmed(&pool, "UPDATESECRET", "").await;
+        let app = app!(pool);
+
+        let (logs, guard) = capture_logs();
+        let resp = patch_dates!(app, admin, id, "2030-08-05");
+        assert_eq!(resp.status(), 200);
+        drop(guard);
+
+        let text = logs.text();
+        assert!(
+            text.contains("update_booking"),
+            "the span was captured: {text}"
+        );
+        assert!(!text.contains("UPDATESECRET"), "{text}");
+    }
+}

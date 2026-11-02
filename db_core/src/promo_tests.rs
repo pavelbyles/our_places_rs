@@ -1197,3 +1197,169 @@ mod redemption {
         assert_eq!(status_of(&pool, booking.id).await, "pending");
     }
 }
+
+mod update {
+    use super::*;
+    use crate::models::{SupplierInfo, UpdatedBooking};
+
+    fn supplier() -> SupplierInfo {
+        SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        }
+    }
+
+    /// A live hold redeeming a one-use code, with 40.00 off the stay.
+    async fn redeemed_hold(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
+        let host = raw_user(pool).await;
+        let guest = raw_user(pool).await;
+        let villa = raw_listing(pool, host).await;
+        let code = insert_code(pool, host, "CHANGED").await;
+        sqlx::query("UPDATE promo_code SET total_usage_limit = 1 WHERE id = $1")
+            .bind(code)
+            .execute(pool)
+            .await
+            .unwrap();
+        let booking = raw_booking(pool, guest, villa, "pending").await;
+        sqlx::query(
+            r#"UPDATE booking SET expires_at = NOW() + INTERVAL '1 hour', promo_code_id = $2,
+                   promo_terms = '{"code":"CHANGED","discount_type":"percentage","discount_value":"10","scope":"stay","currency":null,"exchange_rate":"1","min_nights":null,"min_booking_value":null,"stay_from":null,"stay_to":null}',
+                   promo_stay_discount = 40
+               WHERE id = $1"#,
+        )
+        .bind(booking)
+        .bind(code)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO promo_code_redemption (promo_code_id, booking_id) VALUES ($1, $2)",
+        )
+        .bind(code)
+        .bind(booking)
+        .execute(pool)
+        .await
+        .unwrap();
+        (booking, code, guest)
+    }
+
+    async fn total_used(pool: &PgPool, code: Uuid, guest: Uuid) -> i64 {
+        let mut conn = pool.acquire().await.unwrap();
+        let (_, usage) = crate::promo::lock_and_count(&mut conn, code, guest)
+            .await
+            .unwrap();
+        usage.total_used
+    }
+
+    #[tokio::test]
+    async fn new_amounts_replace_the_discount_and_keep_the_code() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (booking, code, guest) = redeemed_hold(&pool).await;
+
+        let updated = crate::booking::update_booking(
+            &pool,
+            booking,
+            &UpdatedBooking {
+                promo_stay_discount: Some(dec!(80)),
+                promo_cleaning_discount: Some(dec!(5)),
+                ..Default::default()
+            },
+            &supplier(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated.promo_code_id, Some(code));
+        assert!(updated.promo_terms.is_some());
+        assert_eq!(updated.promo_stay_discount, dec!(80));
+        assert_eq!(updated.promo_cleaning_discount, dec!(5));
+        assert_eq!(total_used(&pool, code, guest).await, 1);
+    }
+
+    #[tokio::test]
+    async fn an_unrelated_update_leaves_the_promo_alone() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (booking, code, guest) = redeemed_hold(&pool).await;
+
+        let updated = crate::booking::update_booking(
+            &pool,
+            booking,
+            &UpdatedBooking {
+                door_access_code: Some("1234".to_string()),
+                ..Default::default()
+            },
+            &supplier(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated.promo_code_id, Some(code));
+        assert_eq!(updated.promo_stay_discount, dec!(40));
+        assert_eq!(total_used(&pool, code, guest).await, 1);
+    }
+
+    #[tokio::test]
+    async fn losing_the_discount_clears_it_frees_the_use_and_keeps_the_old_snapshot() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (booking, code, guest) = redeemed_hold(&pool).await;
+
+        // A status snapshot taken before the change, which must survive it.
+        sqlx::query(
+            "INSERT INTO booking_history (booking_id, confirmation_code, guest_id, listing_id, status,
+                 date_from, date_to, currency, daily_rate, number_of_persons, total_days, sub_total_price,
+                 fee_breakdown, total_price, cancellation_policy, metadata, promo_code_id, promo_terms,
+                 promo_stay_discount, change_reason)
+             SELECT id, confirmation_code, guest_id, listing_id, status, date_from, date_to, currency,
+                 daily_rate, number_of_persons, total_days, sub_total_price, fee_breakdown, total_price,
+                 cancellation_policy, metadata, promo_code_id, promo_terms, promo_stay_discount,
+                 'Booking created'
+             FROM booking WHERE id = $1",
+        )
+        .bind(booking)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let updated = crate::booking::update_booking(
+            &pool,
+            booking,
+            &UpdatedBooking {
+                clear_promo: true,
+                promo_stay_discount: Some(Decimal::ZERO),
+                promo_cleaning_discount: Some(Decimal::ZERO),
+                ..Default::default()
+            },
+            &supplier(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated.promo_code_id, None);
+        assert!(updated.promo_terms.is_none());
+        assert_eq!(updated.promo_stay_discount, Decimal::ZERO);
+        assert_eq!(total_used(&pool, code, guest).await, 0);
+
+        let released: bool = sqlx::query_scalar(
+            "SELECT released_at IS NOT NULL FROM promo_code_redemption WHERE booking_id = $1",
+        )
+        .bind(booking)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(released, "the redemption is kept, marked released");
+
+        let old: Option<String> = sqlx::query_scalar(
+            "SELECT promo_terms->>'code' FROM booking_history
+             WHERE booking_id = $1 AND change_reason = 'Booking created'",
+        )
+        .bind(booking)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(old.as_deref(), Some("CHANGED"));
+    }
+}

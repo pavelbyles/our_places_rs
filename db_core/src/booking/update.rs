@@ -14,7 +14,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 /// Updates a booking's status.
-#[tracing::instrument(skip(pool))]
+#[tracing::instrument(skip(pool, updated_booking, supplier), fields(booking_id = %id))]
 pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
@@ -257,7 +257,11 @@ async fn write_booking_update(
             tax_rate = COALESCE($16, tax_rate),
             exchange_rate = COALESCE($17, exchange_rate),
             updated_at = $18,
-            number_of_persons = COALESCE($20, number_of_persons)
+            number_of_persons = COALESCE($20, number_of_persons),
+            promo_code_id = CASE WHEN $22 THEN NULL ELSE promo_code_id END,
+            promo_terms = CASE WHEN $22 THEN NULL ELSE promo_terms END,
+            promo_stay_discount = CASE WHEN $22 THEN 0 ELSE COALESCE($23, promo_stay_discount) END,
+            promo_cleaning_discount = CASE WHEN $22 THEN 0 ELSE COALESCE($24, promo_cleaning_discount) END
         WHERE id = $19
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
@@ -290,10 +294,16 @@ async fn write_booking_update(
         Utc::now(),
         id,
         updated_booking.number_of_persons,
-        updated_booking.replace_discounts
+        updated_booking.replace_discounts,
+        updated_booking.clear_promo,
+        updated_booking.promo_stay_discount,
+        updated_booking.promo_cleaning_discount
     )
     .fetch_one(&mut *conn)
     .await?;
+    if updated_booking.clear_promo {
+        crate::promo::release_redemption(&mut *conn, id).await?;
+    }
     Ok(booking)
 }
 

@@ -245,7 +245,7 @@ async fn reprice(
         in_payment_currency(listing_details.listing.extra_guest_fee, conversion_rate);
 
     let days = (new_check_out - new_check_in).num_days() as i32;
-    let calculator = BookingCalculator::with_subtotal(
+    let discounted = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
         days,
         dynamic_quote.subtotal,
@@ -259,10 +259,22 @@ async fn reprice(
         listing_details.listing.monthly_discount_percentage,
         listing_details.listing.weekly_discount_percentage,
     )
-    .with_fees(Some(clean_fee), Some(dmg_deposit))
-    .apply_promo(None)
-    .apply_taxes(tax_rate)
-    .finalize();
+    .with_fees(Some(clean_fee), Some(dmg_deposit));
+
+    let promo_terms = old_booking.promo_terms.as_ref().map(|terms| &terms.0);
+    let promo_outcome = common::promo::reevaluate(
+        promo_terms,
+        common::promo::PromoStay {
+            check_in: new_check_in,
+            check_out: new_check_out,
+        },
+        discounted.discounted_subtotal,
+        discounted.cleaning_fee,
+    );
+    let calculator = discounted
+        .apply_promo(promo_terms.filter(|_| promo_outcome.is_kept()))
+        .apply_taxes(tax_rate)
+        .finalize();
 
     let plat_fee = calculator
         .fee_breakdown
@@ -294,6 +306,9 @@ async fn reprice(
         tax_rate: Some(tax_rate),
         exchange_rate: Some(conversion_rate),
         replace_discounts: true,
+        promo_stay_discount: Some(calculator.promo_stay_discount),
+        promo_cleaning_discount: Some(calculator.promo_cleaning_discount),
+        clear_promo: matches!(promo_outcome, common::promo::PromoOutcome::Lost { .. }),
         ..UpdatedBooking::default()
     })
 }

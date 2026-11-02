@@ -210,6 +210,17 @@ pub async fn lock_code(conn: &mut PgConnection, code_id: Uuid) -> Result<PromoCo
     Ok(code)
 }
 
+/// Frees the use a booking holds, because a change means it no longer qualifies.
+pub async fn release_redemption(conn: &mut PgConnection, booking_id: Uuid) -> Result<()> {
+    sqlx::query!(
+        "UPDATE promo_code_redemption SET released_at = NOW() WHERE booking_id = $1 AND released_at IS NULL",
+        booking_id
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// The usage a quote should show, without a lock. A guest's own pending holds
 /// are left out of both counts, because placing the hold cancels them first, so
 /// a quote can't refuse a code that the hold would accept.
