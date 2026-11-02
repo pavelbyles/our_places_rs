@@ -80,6 +80,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             currencies::admin_list_currencies,
             currencies::create_currency,
             currencies::update_currency,
+            stay_pricing::public_listing_quote,
+            stay_pricing::signed_in_quote,
+            promo_codes::list_promo_codes,
+            promo_codes::get_promo_code,
+            promo_codes::create_promo_code,
+            promo_codes::deactivate_promo_code,
         ),
         components(
             schemas(
@@ -129,12 +135,23 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::tax_document::TaxDocumentStatus,
                 common::tax_document::InvoiceLineItem,
                 common::tax_document::InvoiceTaxCategory,
+                common::models::StayQuoteRequest,
+                common::models::StayQuoteResponse,
+                common::models::StayQuotePromo,
+                common::models::StayQuoteRefusal,
+                common::promo::PromoOutcome,
+                common::promo::PromoDiscountType,
+                common::promo::PromoScope,
+                common::promo::CreatePromoCodeRequest,
+                common::promo::PromoCodeResponse,
+                common::promo::PromoCodesResponse,
             )
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints"),
             (name = "currencies", description = "Currency reference data"),
-            (name = "exchange-rates", description = "Exchange-rate administration")
+            (name = "exchange-rates", description = "Exchange-rate administration"),
+            (name = "promo-codes", description = "Promo code administration")
         ),
     )]
     struct ApiDoc;

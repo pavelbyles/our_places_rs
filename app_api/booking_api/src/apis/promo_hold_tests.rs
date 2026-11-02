@@ -1679,3 +1679,30 @@ mod agreement {
         assert_eq!(ledger_after, ledger);
     }
 }
+
+/// The generated document lists every new route, so the API contract can't lose one.
+#[tokio::test]
+async fn openapi_includes_promo_routes() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let app = app!(pool);
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api-docs/openapi.json")
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let doc: serde_json::Value = test::read_body_json(resp).await;
+    for (path, method) in [
+        ("/api/v1/bookings/listing/{id}/quote", "get"),
+        ("/api/v1/bookings/quote", "post"),
+        ("/api/v1/admin/promo-codes", "get"),
+        ("/api/v1/admin/promo-codes", "post"),
+        ("/api/v1/admin/promo-codes/{id}", "get"),
+        ("/api/v1/admin/promo-codes/{id}/deactivate", "post"),
+    ] {
+        assert!(doc["paths"][path][method].is_object(), "{method} {path}");
+    }
+}

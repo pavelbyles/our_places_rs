@@ -665,7 +665,7 @@ T30 final gates               ← all
 
 ## Phase G: Finish
 
-- [ ] **Task 29: Update docs and API contracts**
+- [x] **Task 29: Update docs and API contracts**
   - **Scope:** S
   - **Description:** Add the pricing order, lock order and payout formula to `docs/ARCHITECTURE.md`. Add the new paths to both OpenAPI files, and to the utoipa registration in `routes.rs`.
   - **Files Touched:**

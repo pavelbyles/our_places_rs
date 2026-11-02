@@ -697,6 +697,187 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/bookings/quote:
+    post:
+      summary: What a stay costs a signed-in guest, with any promo code
+      operationId: getStayQuote
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: The stay's price, with the discount or the reason a code was refused
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid stay, too many guests, or a stay over the limit
+        "401":
+          description: Not signed in
+        "422":
+          description: FX_RATE_UNAVAILABLE for the payment currency
+  /api/v1/admin/promo-codes:
+    get:
+      summary: List promo codes with usage (all for admins, their own for hosts)
+      operationId: listPromoCodes
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: per_page
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: One page of codes
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller is not an admin or host
+    post:
+      summary: Create a promo code
+      operationId: createPromoCode
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: The new code
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid terms
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller is not an admin or host, or selected a listing they don't own
+        "409":
+          description: PROMO_CODE_EXISTS
+        "422":
+          description: CURRENCY_INACTIVE or CURRENCY_NOT_FOUND
+  /api/v1/admin/promo-codes/{id}:
+    get:
+      summary: One promo code with its usage
+      operationId: getPromoCode
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: The code
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller doesn't manage this code
+        "404":
+          description: No such code
+  /api/v1/admin/promo-codes/{id}/deactivate:
+    post:
+      summary: Deactivate a promo code, which can't be undone
+      operationId: deactivatePromoCode
+      tags:
+        - promo-codes
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: The deactivated code
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: Missing or invalid token
+        "403":
+          description: Caller doesn't manage this code
+        "404":
+          description: No such code
+        "409":
+          description: PROMO_ALREADY_DEACTIVATED
+  /api/v1/bookings/listing/{id}/quote:
+    get:
+      summary: What a stay costs, for anyone browsing a listing (public, takes no promo code)
+      operationId: getPublicStayQuote
+      tags:
+        - bookings
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - in: query
+          name: check_in
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: check_out
+          schema:
+            type: string
+            format: date
+          required: true
+        - in: query
+          name: guests
+          schema:
+            type: integer
+        - in: query
+          name: currency
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The stay's price
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid stay, too many guests, or a stay over the limit
+        "422":
+          description: FX_RATE_UNAVAILABLE
   /api/v1/bookings/listing/{id}/unavailable-ranges:
     get:
       summary: Booked date ranges for a listing (public, dates only)

@@ -84,7 +84,7 @@ Dependency rules:
 | **`web_client/`** | lib | UI-free API client, typed sessions, route guards, short-lived HS256 user JWTs. Adds the service account's Google ID token to every API call. | `common` |
 | **`web_ui_common/`** | lib | Shared Topcoat components (DaisyUI v5 / Tailwind v4), theme tokens, guest and admin shells, security headers (CSP), asset bundler used by the Docker builds. | `web_client`, `common` |
 | **`web_ui_guest/`** | bin | Guest portal: home, search, listing detail, checkout, bookings, change requests, messages, documents, reviews, profile. | `web_ui_common`, `web_client`, `common` |
-| **`web_ui_admin/`** | bin | Admin and host portal: dashboard, listings and photos, pricing, bookings, users, payouts, exchange rates. | `web_ui_common`, `web_client`, `common` |
+| **`web_ui_admin/`** | bin | Admin and host portal: dashboard, listings and photos, pricing, bookings, users, payouts, promo codes, exchange rates. | `web_ui_common`, `web_client`, `common` |
 | **`protoproj/`** | lib | gRPC/protobuf experiment (`tonic`). Not deployed; excluded from CI gates. | — |
 
 ### 3.1. Module layout of the largest modules
@@ -96,6 +96,8 @@ Dependency rules:
 | `mod.rs` | Shared helpers: portal URLs, pricing-error mapping, confirmation codes, display currency, email enqueueing, booking authorization |
 | `availability.rs` | Availability check, unavailable ranges |
 | `bookings.rs` | Create a hold; read bookings |
+| `stay_pricing.rs` | Prices a stay for quotes and holds; quote endpoints; refused-code logging |
+| `promo_codes.rs` | Promo code management |
 | `booking_updates.rs` | Status changes, delete, guest transfer |
 | `reservation_changes.rs` | Change quotes and bilateral change requests |
 | `messages.rs` | Booking messaging |
@@ -178,7 +180,7 @@ Base currency (listing price) --exchange rate--> Payment currency (guest) --GCT-
 ```
 
 1. **Base nightly rate**: comes from `listing.price_per_night`, or a matching `listing_price_overrides` row. Overlapping override date ranges are rejected by a GiST `EXCLUDE` constraint.
-2. **Price the stay**: `BookingCalculator` builds the total in typed steps: base subtotal → weekly/monthly discount → tax → fees (platform fee, cleaning fee, extra-guest fee, damage deposit).
+2. **Price the stay**: `BookingCalculator` builds the total in typed steps: seasonal nights plus extra-guest fees → weekly/monthly discount → cleaning fee and deposit → promo code → tax → platform fee → total. The type-state makes the promo step impossible to skip. Tax is charged on the stay and cleaning fee after the promo. The guest platform fee is 5% of the stay after the promo. Neither the platform fee, the refundable deposit nor GCT is discounted. Quotes and holds share `stay_pricing::price_stay`, so they can't disagree, and the listing page and checkout show its total. Stays over `application.max_stay_nights`, or too large for the booking's money columns, are refused with a 400.
 3. **Convert currency**: the result is converted with `db_core::exchange_rate::get_rate`, the single, effective-dated lookup: the latest explicit `base → target` row with `effective_at <= at`, otherwise the latest `target → base` row inverted to 6 dp (banker's rounding, in Rust). There is never a fallback rate or currency: a missing pair is `422 FX_RATE_UNAVAILABLE`. Every caller states a `RateUse`:
    - `NewQuote` (listing search and detail, checkout hold): retired pairs are ignored (also as a derived source) and both currencies must be active.
    - `Settlement` (payout at confirmation, reservation-change payout, tax-document JMD rate, booking display): history is honoured even after retirement or deactivation.
@@ -189,11 +191,33 @@ Base currency (listing price) --exchange rate--> Payment currency (guest) --GCT-
    | Conversion | Rate used |
    |---|---|
    | Listing base → payment (`booking.exchange_rate`) | effective at hold creation; reused for the booking's whole life |
-   | Booking currency → host currency (payout ledger) | effective at confirmation (and at reservation-change approval) |
+   | Booking currency → host currency (payout ledger) | effective at confirmation; the ledger row keeps its currency, rate and commission through revisions, change approvals and cancellation |
+   | Promo code currency → payment (`booking.promo_terms`) | effective at hold creation; reused for the booking's whole life |
    | Booking currency → JMD (tax documents) | effective at the document's issue date |
 5. **Currencies and rates are data**: `currencies` is the reference table every currency column references (`ON DELETE/UPDATE RESTRICT`); currencies are deactivated, never deleted, and no currency list is hardcoded in code. Admins manage currencies and rates on `/admin/exchange-rates`: rates are append-only versions (no backdating beyond `rate_effective_grace_seconds`, at most 366 days ahead, a 5% change needs confirmation), only scheduled versions can be deleted, and pairs are retired rather than removed. Deactivating a currency or retiring a pair is refused while live listings depend on it. Every change is written to the append-only `currency_audit_log`. Rate transactions lock currency rows in ascending code order, then a per-pair advisory lock (`hashtext('fx:'||base||':'||target)`), then read the clock.
 6. **Statutory tax**: rates (Jamaican GCT 15%) are fixed in `common/src/reference.rs`. Exchange rates live in the database.
 7. **Tax documents**: completed stays get statutory tax documents (`tax_document`), issued by the Merchant of Record named in `TAJ_SUPPLIER_*`.
+
+### 4.2.1. Host Payout
+
+There is one formula, `common::pricing::host_gross`. The host funds every promo discount:
+
+```
+gross      = round((accommodation net of discounts + cleaning fee net of promo) × host rate)
+commission = round(gross × commission_pct)
+net        = max(0, gross − commission)
+```
+
+On a cancellation the cleaning fee is refunded in full, so a retained payout is accommodation only. It returns the booking's ledger row to `pending`. A payout already `processing`, `paid` or `refunded` isn't changed, and a warning is logged.
+
+### 4.2.2. Promo Codes
+
+Admins manage every code and hosts their own, on `/admin/promo-codes`. Terms never change after creation, and codes are deactivated, never deleted. A host-owned code only applies to that host's current listings.
+
+- **Usage is derived, not counted.** A use counts while its redemption isn't released and its booking is `confirmed`, `completed`, or `pending` with `expires_at` in the future. So expiry sweeps and cancellations free a use with no bookkeeping.
+- **Locks**: a hold takes listing → currency → the guest's other pending bookings → promo code. Confirming a promo booking takes listing → booking → promo code, then re-reads the time, so a hold that lost its use at expiry can't be confirmed. The count is a separate statement after the lock, which gives it a fresh snapshot.
+- **Bookings keep a snapshot** in `promo_terms`, so later changes can't reprice them. A reservation change re-checks only the stay rules against that snapshot: minimum nights, stay window and minimum value. If they fail, the discount is removed and the use is freed, and the guest is told before accepting.
+- **Logs**: code strings never enter a log or span. Refused attempts log the guest, the reason and a SHA-256 hash. Attempts aren't rate-limited yet (#110).
 
 ### 4.3. Image Pipeline
 
@@ -264,6 +288,7 @@ Each API loads `config/Default.toml`, then `config/{RUN_ENV}.toml`, then any `EA
 | :--- | :--- | :--- |
 | `application.pending_hold_minutes` | 120 | `EA__APPLICATION__PENDING_HOLD_MINUTES` |
 | `application.max_attempts` | 5 | `EA__APPLICATION__MAX_ATTEMPTS` |
+| `application.max_stay_nights` | 3650 | `EA__APPLICATION__MAX_STAY_NIGHTS` |
 | `feature_flags.enable_hard_deletes` | false | `EA__FEATURE_FLAGS__ENABLE_HARD_DELETES` |
 
 Secrets and per-environment variables are listed in [ENVIRONMENT.md](ENVIRONMENT.md).
