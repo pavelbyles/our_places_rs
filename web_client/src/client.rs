@@ -457,6 +457,9 @@ pub enum UserCallError {
     /// No Google ID token could be obtained for the backend (Cloud Run IAM).
     #[error("could not get a service identity token: {0}")]
     Identity(anyhow::Error),
+    /// The backend did not answer within the allowed time.
+    #[error("backend request timed out after {0:?}")]
+    TimedOut(std::time::Duration),
     /// A structured business rejection (`{ "code", "message", ... }`), kept
     /// whole so pages can show its details (e.g. blocking listings).
     #[error("backend rejected the request ({}): {}", .0.code, .0.message)]
@@ -672,6 +675,12 @@ impl TopcoatApiClient {
                     .map(|r| r.currencies)
             })
             .await
+            .map_err(|e| match e {
+                crate::currency_cache::RefreshError::Fetch(e) => e,
+                crate::currency_cache::RefreshError::TimedOut(after) => {
+                    UserCallError::TimedOut(after)
+                }
+            })
     }
 
     /// Drops the cached currency list (call after a currency change).
