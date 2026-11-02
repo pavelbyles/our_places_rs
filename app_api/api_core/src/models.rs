@@ -197,6 +197,11 @@ pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
         platform_fee: Some(booking.platform_fee),
         tax_rate: Some(booking.tax_rate),
         exchange_rate: Some(booking.exchange_rate),
+        promo_code: booking
+            .promo_terms
+            .as_ref()
+            .map(|terms| terms.0.code.clone()),
+        promo_discount: booking.promo_stay_discount + booking.promo_cleaning_discount,
         created_at: booking.created_at,
         updated_at: booking.updated_at,
     }

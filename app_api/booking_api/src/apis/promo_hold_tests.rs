@@ -1437,3 +1437,76 @@ async fn cancellation_quote_matches_the_refund_receipt_for_a_promo_booking() {
     assert_eq!(amount(&quote["refund_total"]), refund.total_amount);
     assert_eq!(refund.total_amount, booking.total_price);
 }
+
+mod promo_booking_response {
+    use super::*;
+
+    #[tokio::test]
+    async fn responses_carry_the_code_and_discount_and_convert_for_display() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        code(&pool, host, "RESPONSE").await;
+        let app = app!(pool);
+
+        let resp = post_hold!(app, guest, with_code(guest, villa, "RESPONSE"));
+        assert_eq!(resp.status(), 201);
+        let created: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(created["promo_code"], "RESPONSE");
+        let amount = |v: &serde_json::Value| -> Decimal {
+            v.as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| v.to_string())
+                .parse()
+                .expect("an amount")
+        };
+        assert_eq!(amount(&created["promo_discount"]), dec!(40.00));
+
+        // Hosts see the code on their own bookings too, including admin-created ones.
+        let id = created["id"].as_str().expect("id");
+        for who in [guest, host] {
+            let read = test::call_service(
+                &app,
+                test::TestRequest::get()
+                    .uri(&format!("/api/v1/bookings/{id}"))
+                    .insert_header(("Accept", "application/json"))
+                    .insert_header(bearer(who))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(read.status(), 200);
+            let read: serde_json::Value = test::read_body_json(read).await;
+            assert_eq!(read["promo_code"], "RESPONSE");
+        }
+
+        // The seeded USD -> JMD rate is 160.
+        let converted = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!("/api/v1/bookings/{id}?currency=JMD"))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(guest))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(converted.status(), 200);
+        let converted: serde_json::Value = test::read_body_json(converted).await;
+        assert_eq!(converted["currency"], "JMD");
+        assert_eq!(amount(&converted["promo_discount"]), dec!(6400.00));
+    }
+
+    #[tokio::test]
+    async fn a_booking_without_a_promo_has_none() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        let app = app!(pool);
+        let resp = post_hold!(app, guest, booking_request(guest, villa));
+        let created: serde_json::Value = test::read_body_json(resp).await;
+        assert!(created["promo_code"].is_null());
+    }
+}

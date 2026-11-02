@@ -445,7 +445,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p common csv::promo_columns && cargo test -p db_core payout_ledger::promo_tests`
   - **Dependencies:** T2, T3, T7
 
-- [ ] **Task 18: Return promos on booking responses**
+- [x] **Task 18: Return promos on booking responses**
   - **Scope:** XS
   - **Description:** `BookingResponse` gains `promo_code` and `promo_discount`, and `display_rate` conversion includes the discount.
   - **Files Touched:**

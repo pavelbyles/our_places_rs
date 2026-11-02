@@ -325,6 +325,12 @@ pub struct BookingResponse {
     /// Base to payment exchange rate.
     #[serde(default)]
     pub exchange_rate: Option<Decimal>,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount.
+    #[serde(default)]
+    pub promo_discount: Decimal,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.

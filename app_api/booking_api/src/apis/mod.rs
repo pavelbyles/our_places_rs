@@ -134,6 +134,7 @@ fn convert_booking_amounts(booking: &mut BookingResponse, rate: Decimal, target:
     booking.cleaning_fee = booking.cleaning_fee.map(|f| (f * rate).round_dp(2));
     booking.damage_deposit = booking.damage_deposit.map(|f| (f * rate).round_dp(2));
     booking.platform_fee = booking.platform_fee.map(|f| (f * rate).round_dp(2));
+    booking.promo_discount = (booking.promo_discount * rate).round_dp(2);
     booking.currency = target.trim().to_ascii_uppercase();
 }
 
