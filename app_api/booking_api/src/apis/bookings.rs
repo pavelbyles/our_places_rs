@@ -192,6 +192,7 @@ pub(super) async fn create_booking(
         listing_details.listing.weekly_discount_percentage,
     )
     .with_fees(Some(cleaning_fee), Some(damage_deposit))
+    .apply_promo(None)
     .apply_taxes(tax_rate)
     .finalize();
 

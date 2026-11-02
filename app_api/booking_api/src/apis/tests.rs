@@ -18,7 +18,9 @@ fn test_booking_calculator_state_machine() {
     assert_eq!(discounted.discounted_subtotal, Decimal::new(900, 0));
 
     // Discounted -> Taxed (15% tax)
-    let taxed = discounted.apply_taxes(Decimal::new(15, 2));
+    let taxed = discounted
+        .apply_promo(None)
+        .apply_taxes(Decimal::new(15, 2));
     assert_eq!(taxed.tax_value.unwrap(), Decimal::new(135, 0));
 
     // Taxed -> Final
@@ -60,6 +62,7 @@ fn test_booking_calculator_with_seasonal_override() {
 
     let calc = BookingCalculator::with_subtotal(quote.effective_daily_rate, 5, quote.subtotal)
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
@@ -384,6 +387,7 @@ fn test_statutory_tax_resolution_for_jamaican_and_fallback_countries() {
     let tax_rate = SupportedCountry::tax_rate_for("Jamaica");
     let calc = BookingCalculator::new(daily_rate, 5)
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(tax_rate)
         .finalize();
 

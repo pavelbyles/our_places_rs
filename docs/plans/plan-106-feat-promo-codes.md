@@ -189,7 +189,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p common promo::`
   - **Dependencies:** None
 
-- [ ] **Task 6: Add the calculator's promo step**
+- [x] **Task 6: Add the calculator's promo step**
   - **Scope:** M
   - **Description:** Add the `PromoApplied` type-state and `apply_promo(Option<&PromoTerms>)`, and move `apply_taxes` to it. Add `promo_stay_discount`, `promo_cleaning_discount` and `cleaning_net`. All call sites pass `None` for now. New tests live in `mod promo_tests`.
   - **Files Touched:**

@@ -211,6 +211,7 @@ async fn compute_reservation_change_quote(
         listing_details.listing.weekly_discount_percentage,
     )
     .with_fees(Some(clean_fee), Some(dmg_deposit))
+    .apply_promo(None)
     .apply_taxes(tax_rate)
     .finalize();
 
