@@ -611,7 +611,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p web_ui_guest checkout::promo_tests && npm run test:e2e:guest -- checkout-flow`
   - **Dependencies:** T24
 
-- [ ] **Task 26: Warn guests about a lost discount**
+- [x] **Task 26: Warn guests about a lost discount**
   - **Scope:** S
   - **Description:** `booking_change.rs` shows a warning, with the reason, when `promo_outcome` is lost. The pending-change banner in `bookings.rs` shows `promo_lost_reason`, because a host-proposed change is accepted there, without visiting the change page.
   - **Files Touched:**
@@ -625,7 +625,7 @@ T30 final gates               ← all
   - **Verification Command:** `npm run test:e2e:guest -- reservation-changes`
   - **Dependencies:** T15, T23, T25
 
-- [ ] **Task 27: Add the admin promo page**
+- [x] **Task 27: Add the admin promo page**
   - **Scope:** M
   - **Description:** Add `pages/promo_codes.rs`, following `currencies.rs`: list with stats, create form, deactivate, and nav links. Dates are Jamaica calendar days, sent as the start of `valid_from` and the end of `valid_to`. All three routes use `staff(cx)` from `web_ui_admin/src/support.rs`, not the `admin_only` that `currencies.rs` uses, and parse `{id}` as `Uuid` before calling the API. Log `promo_code_id`, not the code. Fixtures use random code suffixes.
   - **Files Touched:**
@@ -643,7 +643,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p web_ui_admin promo_codes && npm run test:e2e:admin -- promo-codes`
   - **Dependencies:** T23, T25
 
-- [ ] **Task 28: Show promos on the ledger and booking detail pages**
+- [x] **Task 28: Show promos on the ledger and booking detail pages**
   - **Scope:** S
   - **Description:** Add the cleaning fee, code and discount to `payouts.rs`, showing accommodation as `gross − cleaning_fee_amount`. Add the promo line to the guest and admin booking detail pages. Also add the columns to the portal's own export (`payouts.rs:199`), which is built separately from the API's CSV and uses `csv_cell`. Extend `checkout-flow.spec.ts`: apply, confirm, and see the discount on the booking.
   - **Files Touched:**

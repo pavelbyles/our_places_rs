@@ -414,16 +414,18 @@ impl TopcoatApiClient {
     pub async fn get_host_payout_ledger(
         &self,
         filter: &common::payout::PayoutFilter,
+        jwt: &str,
     ) -> anyhow::Result<common::payout::PayoutLedgerResponse> {
-        common::app_client::get_host_payout_ledger(filter).await
+        common::app_client::get_host_payout_ledger(filter, jwt).await
     }
 
     /// Retrieve host payout summary statistics
     pub async fn get_host_payout_summary(
         &self,
         filter: &common::payout::PayoutFilter,
+        jwt: &str,
     ) -> anyhow::Result<common::payout::PayoutSummary> {
-        common::app_client::get_host_payout_summary(filter).await
+        common::app_client::get_host_payout_summary(filter, jwt).await
     }
 
     /// Update payout status (admin only)

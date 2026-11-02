@@ -120,6 +120,9 @@ async fn quote_preview(
                 <p class="font-medium">(format!("{} → {}, {} guest(s)", q.proposed_date_from.format("%a %-d %b %Y"), q.proposed_date_to.format("%a %-d %b %Y"), q.proposed_number_of_persons))</p>
                 <p>"New total: " (money(&q.currency, q.proposed_total_price))</p>
                 <p class="text-muted-foreground">"Balance due: " (money(&q.currency, q.balance_due))</p>
+                if let Some(reason) = q.promo_outcome.lost_reason() {
+                    <p id="change-promo-lost" role="alert" class="text-destructive">(format!("This change removes your promo discount. {reason}"))</p>
+                }
             } else if let Some(error) = error {
                 <p role="alert" class="text-destructive">(error)</p>
             }

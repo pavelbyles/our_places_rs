@@ -139,6 +139,9 @@ test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
       expect(discountedTotal).toContain(total);
       expect(discount).toBe('325.00');
       expect(stored).toBe(code);
+
+      await expect(page.locator('[id^="booking-promo-"]')).toContainText(code);
+      await expect(page.locator('[id^="booking-promo-"]')).toContainText('325.00');
     });
 
     test('an expired code shows its reason and the full price', NEW_ONLY, async ({ page }) => {

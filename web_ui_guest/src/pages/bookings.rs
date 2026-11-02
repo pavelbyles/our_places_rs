@@ -86,6 +86,9 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
                     <p class="text-sm text-muted-foreground">(card.location) " · Reservation " <span class="font-mono">(b.confirmation_code.clone())</span></p>
                     <p class="text-sm">(format!("{} → {} · {} guest(s)", b.date_from.format("%a %-d %b %Y"), b.date_to.format("%a %-d %b %Y"), b.number_of_persons))</p>
                     <p class="text-sm font-medium">(money(&b.currency, b.total_price))</p>
+                    if let Some(code) = b.promo_code.clone() {
+                        <p id=(format!("booking-promo-{id}")) class="text-sm text-muted-foreground">(format!("Includes promo discount ({code}): -{}", money(&b.currency, b.promo_discount)))</p>
+                    }
                 </div>
                 <span id=(format!("status-badge-{id}")) class="rounded-full border border-border px-3 py-1 text-xs font-medium capitalize">(status.clone())</span>
             </div>
@@ -103,6 +106,9 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
                 <section id=(format!("pending-change-banner-{id}")) aria-label="Pending reservation change" class="space-y-2 rounded-lg border border-border p-4 text-sm">
                     <p class="font-medium">(if by_guest { "Change request pending host approval" } else { "Your host proposed a change" })</p>
                     <p>(format!("{} → {}, {} guest(s) · new total {}", change.proposed_date_from.format("%a %-d %b %Y"), change.proposed_date_to.format("%a %-d %b %Y"), change.proposed_number_of_persons, money(&change.currency, change.proposed_total_price)))</p>
+                    if let Some(reason) = change.pricing_snapshot.promo_lost_reason.clone() {
+                        <p id=(format!("pending-change-promo-lost-{id}")) role="alert" class="text-destructive">(format!("This change removes your promo discount. {reason}"))</p>
+                    }
                     <div class="flex flex-wrap gap-2">
                         if by_guest {
                             <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/cancel"))>
