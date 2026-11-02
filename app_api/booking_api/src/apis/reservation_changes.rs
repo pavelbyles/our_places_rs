@@ -224,22 +224,26 @@ async fn compute_reservation_change_quote(
     let discounted_subtotal =
         calculator.sub_total_price - calculator.discount_value.unwrap_or(Decimal::ZERO);
 
+    let commission_pct = payout_ctx
+        .existing_commission_pct
+        .unwrap_or(listing_details.listing.commission_pct);
+
     let previous_net_payout = payout_ctx.existing_net_payout.unwrap_or_else(|| {
-        let prev_gross = (booking.accommodation_net() * payout_ctx.host_exchange_rate).round_dp(2);
-        common::pricing::calculate_host_payout(
-            prev_gross,
-            listing_details.listing.commission_pct,
-            Decimal::ZERO,
-        )
-        .1
+        let prev_gross = common::pricing::host_gross(
+            booking.accommodation_net(),
+            booking.cleaning_fee,
+            payout_ctx.host_exchange_rate,
+        );
+        common::pricing::calculate_host_payout(prev_gross, commission_pct, Decimal::ZERO).1
     });
 
-    let host_gross_amount = (discounted_subtotal * payout_ctx.host_exchange_rate).round_dp(2);
-    let (host_platform_fee_amount, proposed_net_payout) = common::pricing::calculate_host_payout(
-        host_gross_amount,
-        listing_details.listing.commission_pct,
-        Decimal::ZERO,
+    let host_gross_amount = common::pricing::host_gross(
+        discounted_subtotal,
+        calculator.cleaning_fee,
+        payout_ctx.host_exchange_rate,
     );
+    let (host_platform_fee_amount, proposed_net_payout) =
+        common::pricing::calculate_host_payout(host_gross_amount, commission_pct, Decimal::ZERO);
     let host_payout_delta = proposed_net_payout - previous_net_payout;
 
     let balance_due = calculator.total_price - booking.total_price;

@@ -20,6 +20,8 @@ pub use update::{delete_booking, update_booking};
 #[cfg(test)]
 mod hold_expiry_tests;
 #[cfg(test)]
+mod host_gross_tests;
+#[cfg(test)]
 mod retained_payout_tests;
 #[cfg(test)]
 mod tests;

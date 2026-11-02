@@ -298,6 +298,13 @@ impl BookingCalculator<Taxed> {
     }
 }
 
+/// The one formula for a host's gross payout, in the host's currency. It covers
+/// the net accommodation and the net cleaning fee. The refundable deposit, GCT
+/// and the guest platform fee are never part of it.
+pub fn host_gross(accommodation_net: Decimal, cleaning_net: Decimal, rate: Decimal) -> Decimal {
+    ((accommodation_net + cleaning_net) * rate).round_dp(2)
+}
+
 /// Calculates host platform commission fee and net payout amount using Banker's rounding.
 /// Formula:
 /// fee_amount = (gross_amount * platform_fee_pct).round_dp(2)
@@ -372,6 +379,30 @@ pub fn validate_reservation_change_dates(
     };
 
     Ok(expires_at_date)
+}
+
+#[cfg(test)]
+mod host_gross_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn host_gross_adds_the_cleaning_fee_before_converting_and_rounding_once() {
+        assert_eq!(host_gross(dec!(810), dec!(90), Decimal::ONE), dec!(900));
+        assert_eq!(
+            host_gross(dec!(100.01), dec!(100.01), dec!(0.5)),
+            dec!(100.01)
+        );
+    }
+
+    #[test]
+    fn host_gross_with_commission_is_charged_on_the_whole_gross() {
+        let gross = host_gross(dec!(400), dec!(100), Decimal::ONE);
+        assert_eq!(
+            calculate_host_payout(gross, dec!(0.1), Decimal::ZERO),
+            (dec!(50.0), dec!(450.0))
+        );
+    }
 }
 
 #[cfg(test)]

@@ -299,7 +299,11 @@ async fn start_host_payout(
     crate::tax_document::issue_payment_receipt(&mut *conn, booking, supplier, history_id).await?;
 
     let terms = host_payout_terms(&mut *conn, booking).await?;
-    let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
+    let gross_amount = common::pricing::host_gross(
+        booking.accommodation_net(),
+        booking.cleaning_fee,
+        terms.exchange_rate,
+    );
     crate::payout_ledger::create_payout_ledger_entry(
         &mut *conn,
         &terms.pending_payout(booking, gross_amount),
@@ -318,34 +322,13 @@ async fn revise_confirmed_terms(
 ) -> Result<()> {
     crate::tax_document::issue_payment_receipt(&mut *conn, booking, supplier, history_id).await?;
 
-    let terms = host_payout_terms(&mut *conn, booking).await?;
-    let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
-    let platform_fee_pct = terms.commission_pct;
-    let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
-        gross_amount,
-        platform_fee_pct,
-        rust_decimal::Decimal::ZERO,
-    );
-
-    sqlx::query!(
-        r#"
-            UPDATE host_payout_ledger
-            SET gross_amount = $1,
-                platform_fee_amount = $2,
-                net_payout_amount = $3,
-                exchange_rate = $4,
-                updated_at = NOW()
-            WHERE booking_id = $5 AND status = 'pending'::payout_status
-            "#,
-        gross_amount,
-        platform_fee_amount,
-        net_payout_amount,
-        terms.exchange_rate,
-        booking.id
+    crate::payout_ledger::reprice_pending_payout(
+        &mut *conn,
+        booking.id,
+        booking.accommodation_net(),
+        booking.cleaning_fee,
     )
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
+    .await
 }
 
 /// A cancelled booking: close its pending change requests and, if it had been

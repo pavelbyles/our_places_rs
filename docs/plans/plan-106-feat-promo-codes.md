@@ -131,7 +131,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core retained_payout`
   - **Dependencies:** None
 
-- [ ] **Task 3: Include the cleaning fee in host gross**
+- [x] **Task 3: Include the cleaning fee in host gross**
   - **Scope:** M
   - **Description:** Add `common::pricing::host_gross` and use it in every gross calculation. `approve_change_request` recalculates from the updated booking, using the ledger row's `exchange_rate` and `platform_fee_pct`, instead of writing the snapshot's amounts. Uses `booking.cleaning_fee` until T7 adds `cleaning_net()`. `revise_confirmed_terms` also uses the row's `exchange_rate`, `platform_fee_pct` and `currency` instead of `host_payout_terms`, fixing the same currency bug as T2, and the change quote uses the row's percentage when a row exists, so the quote and approval agree.
   - **Files Touched:**

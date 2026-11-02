@@ -20,6 +20,9 @@ pub struct BookingPayoutContext {
     pub host_exchange_rate: rust_decimal::Decimal,
     /// Existing pending net payout amount if a `host_payout_ledger` row exists.
     pub existing_net_payout: Option<rust_decimal::Decimal>,
+    /// Commission recorded on the `host_payout_ledger` row if one exists. Approval
+    /// uses this percentage, so the quote must too.
+    pub existing_commission_pct: Option<rust_decimal::Decimal>,
 }
 
 /// Retrieves the host payout context (status, exchange rate, and current net payout) for a booking.
@@ -32,7 +35,7 @@ pub async fn get_booking_payout_context(
 ) -> Result<BookingPayoutContext> {
     let existing = sqlx::query!(
         r#"
-        SELECT status as "status: DbPayoutStatus", exchange_rate, net_payout_amount
+        SELECT status as "status: DbPayoutStatus", exchange_rate, net_payout_amount, platform_fee_pct
         FROM host_payout_ledger
         WHERE booking_id = $1
         ORDER BY created_at DESC
@@ -51,6 +54,7 @@ pub async fn get_booking_payout_context(
             ),
             host_exchange_rate: row.exchange_rate,
             existing_net_payout: Some(row.net_payout_amount),
+            existing_commission_pct: Some(row.platform_fee_pct),
         });
     }
 
@@ -83,6 +87,7 @@ pub async fn get_booking_payout_context(
         is_payout_processed: false,
         host_exchange_rate,
         existing_net_payout: None,
+        existing_commission_pct: None,
     })
 }
 
@@ -895,21 +900,14 @@ pub async fn approve_change_request(
     )
     .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE host_payout_ledger
-        SET gross_amount = $1,
-            platform_fee_amount = $2,
-            net_payout_amount = $3,
-            updated_at = NOW()
-        WHERE booking_id = $4 AND status = 'pending'::payout_status
-        "#,
-        snap.host_gross_amount,
-        snap.host_platform_fee_amount,
-        snap.host_net_payout_amount,
-        updated_booking.id
+    // Recalculated rather than copied from the snapshot, so a request quoted
+    // under an earlier formula can't write that formula back to the ledger.
+    crate::payout_ledger::reprice_pending_payout(
+        &mut tx,
+        updated_booking.id,
+        updated_booking.accommodation_net(),
+        updated_booking.cleaning_fee,
     )
-    .execute(&mut *tx)
     .await?;
 
     let updated_req = sqlx::query_as!(
@@ -1264,7 +1262,9 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(payout_net, dec!(1125.00));
+        // (1250.00 stay + 50.00 cleaning) less 10% commission, not the snapshot's
+        // 1125.00, which was quoted without the cleaning fee.
+        assert_eq!(payout_net, dec!(1170.00));
 
         // 4. Create a second change request and test auto-expiry when today_jm >= expires_at_date
         let second_req = NewReservationChangeRequest {

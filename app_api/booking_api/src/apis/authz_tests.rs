@@ -578,3 +578,102 @@ async fn stale_discount_is_cleared_when_a_direct_update_stops_it_applying() {
     assert_eq!(shortened.accommodation_net(), dec!(1000.00));
     assert_eq!(shortened.sub_total_price, dec!(1000.00));
 }
+
+/// The change quote includes the cleaning fee and uses the ledger row's
+/// commission, so what it promises is what approval writes.
+#[tokio::test]
+async fn reservation_change_payout_quote_matches_what_approval_writes() {
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+
+    let host = user(&pool, UserRole::Host).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let villa = listing(&pool, host).await;
+    sqlx::query("UPDATE listing SET cleaning_fee = 100 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .app_data(web::Data::new(tax_settings()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+    let bearer = |id: Uuid| {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+        )
+    };
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/bookings")
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(booking_request(guest, villa))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let id: Uuid = test::read_body_json::<serde_json::Value, _>(resp).await["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{id}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(admin))
+            .set_json(serde_json::json!({ "status": "confirmed" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    // The listing's commission moves after the ledger row was written at 10%.
+    sqlx::query("UPDATE listing SET commission_pct = 0.2 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{id}/change-quote"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(serde_json::json!({ "date_to": "2030-08-04" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let quote: serde_json::Value = test::read_body_json(resp).await;
+    let amount = |v: &serde_json::Value| {
+        v.to_string()
+            .trim_matches('"')
+            .parse::<rust_decimal::Decimal>()
+            .unwrap()
+    };
+
+    // 2 nights at 200.00 plus 100.00 cleaning, less 10%.
+    assert_eq!(amount(&quote["previous_net_payout"]), dec!(450.00));
+    // 3 nights at 200.00 plus 100.00 cleaning, less the row's 10%, not the listing's 20%.
+    assert_eq!(amount(&quote["proposed_net_payout"]), dec!(630.00));
+    assert_eq!(
+        amount(&quote["pricing_snapshot"]["host_gross_amount"]),
+        dec!(700.00)
+    );
+}

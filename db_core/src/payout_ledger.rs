@@ -45,6 +45,54 @@ pub async fn create_payout_ledger_entry(
     Ok(inserted)
 }
 
+/// Recalculates a booking's pending payout for new terms, using the row's own
+/// rate and commission, so its amounts always match its currency even if the
+/// host has since changed theirs. A booking with no pending row is left alone.
+pub async fn reprice_pending_payout(
+    conn: &mut PgConnection,
+    booking_id: Uuid,
+    accommodation_net: Decimal,
+    cleaning_net: Decimal,
+) -> Result<()> {
+    let Some(row) = sqlx::query!(
+        r#"
+        SELECT id, exchange_rate, platform_fee_pct FROM host_payout_ledger
+        WHERE booking_id = $1 AND status = 'pending'::payout_status
+        FOR UPDATE
+        "#,
+        booking_id
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    else {
+        return Ok(());
+    };
+
+    let gross_amount =
+        common::pricing::host_gross(accommodation_net, cleaning_net, row.exchange_rate);
+    let (platform_fee_amount, net_payout_amount) =
+        common::pricing::calculate_host_payout(gross_amount, row.platform_fee_pct, Decimal::ZERO);
+
+    sqlx::query!(
+        r#"
+        UPDATE host_payout_ledger
+        SET gross_amount = $1,
+            platform_fee_amount = $2,
+            net_payout_amount = $3,
+            updated_at = NOW()
+        WHERE id = $4
+        "#,
+        gross_amount,
+        platform_fee_amount,
+        net_payout_amount,
+        row.id
+    )
+    .execute(&mut *conn)
+    .await?;
+
+    Ok(())
+}
+
 /// Returns a just-cancelled payout to `pending` for the amount the host keeps
 /// under the cancellation policy. `retained` is in the booking currency, and
 /// the row's own rate and commission are used, so the amounts always match the
