@@ -273,7 +273,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p web_ui_common -p web_ui_guest currency_select_tests`
   - **Dependencies:** T11
 
-- [ ] **T13: Admin currencies card**
+- [x] **T13: Admin currencies card**
   - **Scope:** S
   - **Description:** New `pages/currencies.rs` with POST `#[page]` actions (create, rename, toggle). The first statement of each is `admin_only`. On `CURRENCY_IN_USE`, a modal lists the listings (escaped via `view!`) with links to edit them. `invalidate_currencies()` runs after any mutation. Pure render fns.
   - **Files Touched:** `web_ui_admin/src/pages/currencies.rs` (new), `web_ui_admin/src/pages/mod.rs`

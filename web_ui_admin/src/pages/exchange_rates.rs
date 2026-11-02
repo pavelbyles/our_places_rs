@@ -63,6 +63,7 @@ pub async fn exchange_rates_page(cx: &Cx) -> Result<impl View> {
         "Exchange rates could not be loaded. Try again shortly.".to_string()
     });
     let table = rows(loaded.map(|r| r.rates).unwrap_or_default());
+    let is_admin = user.role == web_client::session::AdminRole::Admin;
     Ok(view! {
         <div class="space-y-6">
             <div>
@@ -95,6 +96,9 @@ pub async fn exchange_rates_page(cx: &Cx) -> Result<impl View> {
                     </tbody>
                 </table>
             </div>
+            if is_admin {
+                super::currencies::currencies_section(token: token.clone())
+            }
         </div>
     })
 }

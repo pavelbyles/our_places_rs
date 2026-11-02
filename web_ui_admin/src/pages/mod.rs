@@ -4,6 +4,8 @@ pub mod aliases;
 pub mod auth;
 /// Booking schedule and details.
 pub mod bookings;
+/// Currency administration card and actions.
+pub mod currencies;
 /// Dashboard.
 pub mod dashboard;
 /// Exchange rate table.
