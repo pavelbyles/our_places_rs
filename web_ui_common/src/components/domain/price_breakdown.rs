@@ -19,10 +19,16 @@ pub struct PriceBreakdown {
     pub subtotal: Decimal,
     /// Length-of-stay discount, if any.
     pub discount_amount: Option<Decimal>,
-    /// Cleaning fee, if any.
+    /// The promo code applied, if any.
+    pub promo_code: Option<String>,
+    /// The whole promo discount, if any.
+    pub promo_discount: Option<Decimal>,
+    /// Cleaning fee before any promo, if any.
     pub cleaning_fee: Option<Decimal>,
     /// Refundable damage deposit, if any.
     pub damage_deposit: Option<Decimal>,
+    /// Guest platform fee, if any.
+    pub platform_fee: Option<Decimal>,
     /// Jamaican GCT.
     pub tax_amount: Decimal,
     /// Amount due.
@@ -56,6 +62,11 @@ pub async fn price_breakdown(
     );
     let subtotal = money(cur, quote.subtotal);
     let discount = positive(quote.discount_amount).map(|d| format!("-{cur} {d:.2}"));
+    let promo = positive(quote.promo_discount).map(|d| {
+        let code = quote.promo_code.clone().unwrap_or_default();
+        (format!("Promo code {code}"), format!("-{cur} {d:.2}"))
+    });
+    let platform_fee = positive(quote.platform_fee).map(|f| money(cur, f));
     let cleaning = positive(quote.cleaning_fee).map(|c| money(cur, c));
     let tax = money(cur, quote.tax_amount);
     let deposit = positive(quote.damage_deposit).map(|d| money(cur, d));
@@ -79,6 +90,12 @@ pub async fn price_breakdown(
                         <dd class="font-medium tabular-nums">(discount)</dd>
                     </div>
                 }
+                if let Some((label, amount)) = promo {
+                    <div class=(row)>
+                        <dt>(label)</dt>
+                        <dd id="breakdown-promo" class="font-medium tabular-nums">(amount)</dd>
+                    </div>
+                }
                 if let Some(cleaning) = cleaning {
                     <div class=(row)>
                         <dt>"Cleaning Fee"</dt>
@@ -89,6 +106,12 @@ pub async fn price_breakdown(
                     <dt>"Jamaican GCT (15%)"</dt>
                     <dd id="breakdown-tax" class="font-medium tabular-nums">(tax)</dd>
                 </div>
+                if let Some(platform_fee) = platform_fee {
+                    <div class=(row)>
+                        <dt>"Platform Fee"</dt>
+                        <dd id="breakdown-platform-fee" class="font-medium tabular-nums">(platform_fee)</dd>
+                    </div>
+                }
                 if let Some(deposit) = deposit {
                     <div class=(row)>
                         <dt>"Refundable Damage Deposit"</dt>

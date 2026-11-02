@@ -1,10 +1,9 @@
 use chrono::NaiveDate;
 use common::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
-    CreateSessionRequest, DynamicPricingQuote, ListingDetails, ListingResponse, LoginRequest,
-    MarkMessagesReadResponse, NewBookingRequest, NewUserRequest, PriceOverride,
-    ResendVerificationRequest, ReviewResponse, SessionResponse, UpdateUserRequest,
-    UpdatedBookingRequest, UserResponse, VerifyRequest,
+    CreateSessionRequest, ListingDetails, ListingResponse, LoginRequest, MarkMessagesReadResponse,
+    NewBookingRequest, NewUserRequest, PriceOverride, ResendVerificationRequest, ReviewResponse,
+    SessionResponse, UpdateUserRequest, UpdatedBookingRequest, UserResponse, VerifyRequest,
 };
 
 pub use common::app_client::ListingSearchParams;
@@ -110,17 +109,6 @@ impl TopcoatApiClient {
         per_page: i64,
     ) -> anyhow::Result<Vec<ReviewResponse>> {
         common::app_client::get_listing_reviews(listing_id, page, per_page).await
-    }
-
-    /// Calculate dynamic pricing quote for a stay
-    pub async fn get_pricing_quote(
-        &self,
-        listing_id: Uuid,
-        check_in: NaiveDate,
-        check_out: NaiveDate,
-        currency: Option<&str>,
-    ) -> anyhow::Result<DynamicPricingQuote> {
-        common::app_client::get_pricing_quote(listing_id, check_in, check_out, currency).await
     }
 
     /// What a stay costs, for anyone browsing a listing

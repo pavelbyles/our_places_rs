@@ -1,9 +1,8 @@
 //! Listings, price overrides, images and pricing quotes.
 
 use super::{get_client, listing_api_audience, listing_api_url};
-use crate::models::{DynamicPricingQuote, ListingDetails, ListingResponse, PriceOverride};
+use crate::models::{ListingDetails, ListingResponse, PriceOverride};
 use anyhow::{Context, Result, bail};
-use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -251,34 +250,4 @@ pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Resul
     }
 
     Ok(())
-}
-
-pub async fn get_pricing_quote(
-    listing_id: Uuid,
-    check_in: NaiveDate,
-    check_out: NaiveDate,
-    currency: Option<&str>,
-) -> Result<DynamicPricingQuote> {
-    use rust_decimal::Decimal;
-
-    let listing_details = get_listing_by_id(&listing_id.to_string(), currency).await?;
-    let base_nightly_rate = listing_details
-        .listing
-        .price_per_night
-        .unwrap_or(Decimal::ZERO);
-
-    let all_overrides = get_price_overrides(listing_id).await.unwrap_or_default();
-    let active_overrides: Vec<PriceOverride> = all_overrides
-        .into_iter()
-        .filter(|ovr| ovr.start_date < check_out && ovr.end_date > check_in)
-        .collect();
-
-    crate::pricing::calculate_dynamic_quote(
-        base_nightly_rate,
-        listing_details.listing.minimum_stay,
-        &active_overrides,
-        check_in,
-        check_out,
-    )
-    .map_err(|e| anyhow::anyhow!("Pricing calculation failed: {}", e))
 }

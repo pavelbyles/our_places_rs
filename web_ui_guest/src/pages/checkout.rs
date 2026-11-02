@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use common::models::{ListingDetails, NewBookingRequest};
+use common::models::{ListingDetails, NewBookingRequest, StayQuoteRequest};
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -26,7 +26,7 @@ use web_ui_common::components::{
 use web_ui_common::guard::guard_failure;
 
 use crate::pages::register::urlencode;
-use crate::quote::quote_for;
+use crate::quote::signed_in_quote;
 use crate::support::{display_currency, jamaica_today, service_token};
 
 path_param!(slug);
@@ -184,7 +184,10 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
                             <textarea id="guest-message" name="message_to_host" rows="3" maxlength="2000" class=(format!("{input} h-auto py-2"))>(v.message.clone())</textarea>
                         </label>
                         <p class="text-sm text-muted-foreground">"Confirming places a hold on these dates for 2 hours while payment is arranged."</p>
-                        <button id="checkout-submit-btn" type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground">"Confirm reservation"</button>
+                        if v.breakdown.is_none() {
+                            <p id="checkout-no-quote" role="alert" class="text-sm text-destructive">"We couldn't price this stay right now. Please try again shortly, or choose different dates."</p>
+                        }
+                        <button id="checkout-submit-btn" type="submit" disabled=(v.breakdown.is_none()) class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50">"Confirm reservation"</button>
                     </form>
                 }
                 <aside aria-label="Your stay" class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
@@ -227,15 +230,30 @@ async fn build_view(
     guests: u32,
     currency: String,
 ) -> CheckoutView {
+    let (first_name, last_name) = split_name(&guest.name);
+    let max_guests = u32::try_from(details.listing.max_guests.max(1)).unwrap_or(1);
     let breakdown = match stay {
-        Some((a, b)) => {
-            let cur = (!currency.is_empty()).then_some(currency.as_str());
-            quote_for(cx, details, a, b, cur).await
+        Some((check_in, check_out)) => {
+            let request = StayQuoteRequest {
+                listing_id: details.listing.id,
+                check_in,
+                check_out,
+                guests: guests.clamp(1, max_guests),
+                currency: Some(currency.clone()).filter(|c| !c.is_empty()),
+                promo_code: None,
+            };
+            match service_token(cx, guest) {
+                Ok(token) => signed_in_quote(cx, &token, &request)
+                    .await
+                    .map(|(breakdown, _)| breakdown),
+                Err(e) => {
+                    tracing::error!(guest_id = %guest.user_id, error = ?e, "no checkout quote: could not mint the guest's API token");
+                    None
+                }
+            }
         }
         None => None,
     };
-    let (first_name, last_name) = split_name(&guest.name);
-    let max_guests = u32::try_from(details.listing.max_guests.max(1)).unwrap_or(1);
     CheckoutView {
         summary: ListingSummary::from(&details.listing),
         slug: details.listing.slug.clone(),

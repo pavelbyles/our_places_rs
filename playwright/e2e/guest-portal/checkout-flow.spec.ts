@@ -32,8 +32,27 @@ test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
     await expect(page.locator('#breakdown-cleaning-fee')).toContainText('75.00');
     await expect(page.locator('#breakdown-tax')).toContainText('498.75');
     await expect(page.locator('#breakdown-damage-deposit')).toContainText('150.00');
-    await expect(page.locator('#breakdown-total')).toContainText('3973.75');
+    await expect(page.locator('#breakdown-platform-fee')).toContainText('162.50');
+    await expect(page.locator('#breakdown-total')).toContainText('4136.25');
     await expect(page.locator('#guest-email')).toHaveValue(guest.email);
+  });
+
+  test('the listing page, checkout and hold all show the same total', NEW_ONLY, async ({ page }) => {
+    const guest = createGuest();
+    const { checkIn, checkOut } = freeStay();
+    await loginGuest(page, guest);
+
+    await page.goto(`/listings/${targetVilla.slug}?check_in=${checkIn}&check_out=${checkOut}&guests=2`);
+    const listingTotal = await page.locator('#breakdown-total').innerText();
+
+    await page.goto(`/checkout/${targetVilla.slug}?check_in=${checkIn}&check_out=${checkOut}&guests=2`);
+    await expect(page.locator('#breakdown-total')).toHaveText(listingTotal);
+
+    await page.locator('#guest-phone').fill(TEST_USERS.guest.phone);
+    await page.locator('#checkout-submit-btn').click();
+    await expect(page).toHaveURL(/\/bookings\?new_booking=true$/);
+    const stored = psql(`SELECT total_price FROM booking WHERE guest_id = '${guest.id}' ORDER BY created_at DESC LIMIT 1;`);
+    expect(listingTotal).toContain(stored);
   });
 
   test('places a hold for the signed-in guest on the chosen dates', NEW_ONLY, async ({ page }) => {

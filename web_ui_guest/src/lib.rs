@@ -5,7 +5,7 @@
 pub mod layout;
 /// Routed pages of the guest portal.
 pub mod pages;
-/// Stay price arithmetic for quotes.
+/// Stay prices from the booking API.
 pub mod quote;
 /// Shared helpers for guest pages (session, service tokens, shell).
 pub mod support;
