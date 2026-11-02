@@ -167,7 +167,7 @@ pub(super) fn promo_summary(booking: &Booking) -> (Option<String>, Option<Decima
 }
 
 /// What the guest's confirmation email shows. All amounts are after any promo.
-fn guest_confirmation_payload(
+pub(super) fn guest_confirmation_payload(
     new_b: &Booking,
     listing_name: String,
     guest_name: String,
@@ -207,6 +207,66 @@ fn completion_amounts(new_b: &Booking) -> (Decimal, Decimal, Decimal, Decimal) {
     (accommodation_net, cleaning_fee, tax_amount, total_price)
 }
 
+/// A booking's ledger row. A missing row or failed lookup is logged, and the
+/// email goes out with no payout figure rather than a wrong one.
+async fn booking_payout(
+    pool: &PgPool,
+    booking: &Booking,
+) -> Option<db_core::payout_ledger::BookingPayout> {
+    match db_core::payout_ledger::get_booking_payout(pool, booking.id).await {
+        Ok(Some(payout)) => Some(payout),
+        Ok(None) => {
+            tracing::error!(booking_id = %booking.id, "host email sent without a payout figure: no ledger row");
+            None
+        }
+        Err(e) => {
+            tracing::error!(booking_id = %booking.id, error = ?e, "host email sent without a payout figure: ledger lookup failed");
+            None
+        }
+    }
+}
+
+/// What a host's email states about their payout.
+struct HostFigures {
+    total_payout: Option<Decimal>,
+    currency: String,
+    promo_code: Option<String>,
+    promo_discount: Option<Decimal>,
+}
+
+/// The ledger's figures in the ledger's currency, with no figure at all when
+/// there's no ledger row.
+fn host_figures(
+    booking: &Booking,
+    payout: Option<db_core::payout_ledger::BookingPayout>,
+) -> HostFigures {
+    let (promo_code, _) = promo_summary(booking);
+    match payout {
+        Some(payout) => HostFigures {
+            total_payout: Some(payout.net_payout_amount),
+            promo_discount: promo_code.as_ref().map(|_| payout.promo_discount_amount),
+            promo_code,
+            currency: payout.currency,
+        },
+        None => HostFigures {
+            total_payout: None,
+            promo_discount: None,
+            promo_code,
+            currency: booking.currency.clone(),
+        },
+    }
+}
+
+/// What a host still receives after a cancellation: the retained net, or no
+/// figure when nothing is retained.
+fn cancelled_host_figures(
+    booking: &Booking,
+    payout: Option<db_core::payout_ledger::BookingPayout>,
+) -> HostFigures {
+    let retained = payout.filter(|p| p.pending);
+    host_figures(booking, retained)
+}
+
 async fn send_confirmation_emails(pool: &PgPool, recipients: &Recipients, new_b: &Booking) {
     let doc_number = common::tax_document::document_number(
         common::tax_document::TaxDocumentType::PaymentReceipt,
@@ -230,16 +290,19 @@ async fn send_confirmation_emails(pool: &PgPool, recipients: &Recipients, new_b:
     )
     .await;
 
+    let host = host_figures(new_b, booking_payout(pool, new_b).await);
     let host_payload = common::email::BookingConfirmationHostPayload {
         booking_id: new_b.id,
         confirmation_code: new_b.confirmation_code.clone(),
         listing_name: recipients.listing_name.clone(),
         date_from: new_b.date_from.to_string(),
         date_to: new_b.date_to.to_string(),
-        total_payout: new_b.sub_total_price,
-        currency: new_b.currency.clone(),
+        total_payout: host.total_payout,
+        currency: host.currency,
         guest_name: recipients.guest_name(),
         host_name: recipients.host_name(),
+        promo_code: host.promo_code,
+        promo_discount: host.promo_discount,
     };
     enqueue_email(
         pool,
@@ -293,6 +356,7 @@ async fn send_cancellation_emails(pool: &PgPool, recipients: &Recipients, new_b:
     )
     .await;
 
+    let host = cancelled_host_figures(new_b, booking_payout(pool, new_b).await);
     let host_payload = common::email::BookingCancelledHostPayload {
         booking_id: new_b.id,
         confirmation_code: new_b.confirmation_code.clone(),
@@ -300,8 +364,8 @@ async fn send_cancellation_emails(pool: &PgPool, recipients: &Recipients, new_b:
         date_from: new_b.date_from.to_string(),
         date_to: new_b.date_to.to_string(),
         guest_name: recipients.guest_name(),
-        payout_impact: new_b.sub_total_price,
-        currency: new_b.currency.clone(),
+        payout_impact: host.total_payout,
+        currency: host.currency,
     };
     enqueue_email(
         pool,
@@ -361,16 +425,19 @@ async fn send_update_emails(
     )
     .await;
 
+    let host = host_figures(new_b, booking_payout(pool, new_b).await);
     let host_payload = common::email::BookingUpdatedHostPayload {
         booking_id: new_b.id,
         confirmation_code: new_b.confirmation_code.clone(),
         listing_name: recipients.listing_name.clone(),
         date_from: new_b.date_from.to_string(),
         date_to: new_b.date_to.to_string(),
-        total_payout: new_b.sub_total_price,
-        currency: new_b.currency.clone(),
+        total_payout: host.total_payout,
+        currency: host.currency,
         guest_name: recipients.guest_name(),
         changes_summary,
+        promo_code: host.promo_code,
+        promo_discount: host.promo_discount,
     };
     enqueue_email(
         pool,
@@ -742,6 +809,45 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    fn ledger(pending: bool) -> db_core::payout_ledger::BookingPayout {
+        db_core::payout_ledger::BookingPayout {
+            currency: "JMD".to_string(),
+            net_payout_amount: dec!(129600.00),
+            promo_discount_amount: dec!(16000.00),
+            pending,
+        }
+    }
+
+    #[test]
+    fn host_figures_come_from_the_ledger_in_its_currency() {
+        let figures = host_figures(&booking(true), Some(ledger(true)));
+        assert_eq!(figures.total_payout, Some(dec!(129600.00)));
+        assert_eq!(figures.currency, "JMD");
+        assert_eq!(figures.promo_code.as_deref(), Some("SUMMER"));
+        assert_eq!(figures.promo_discount, Some(dec!(16000.00)));
+
+        let figures = host_figures(&booking(false), Some(ledger(true)));
+        assert_eq!(figures.total_payout, Some(dec!(129600.00)));
+        assert_eq!(figures.promo_code, None);
+        assert_eq!(figures.promo_discount, None);
+    }
+
+    #[test]
+    fn host_figures_show_no_amount_without_a_ledger_row() {
+        let figures = host_figures(&booking(true), None);
+        assert_eq!(figures.total_payout, None);
+        assert_eq!(figures.promo_discount, None);
+        assert_eq!(figures.currency, "USD");
+    }
+
+    #[test]
+    fn host_cancellation_figures_show_only_a_retained_amount() {
+        let retained = cancelled_host_figures(&booking(false), Some(ledger(true)));
+        assert_eq!(retained.total_payout, Some(dec!(129600.00)));
+        let nothing = cancelled_host_figures(&booking(false), Some(ledger(false)));
+        assert_eq!(nothing.total_payout, None);
     }
 
     #[test]

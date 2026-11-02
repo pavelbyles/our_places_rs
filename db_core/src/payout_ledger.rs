@@ -143,6 +143,39 @@ pub async fn reopen_payout_as_retained(
     Ok(())
 }
 
+/// A booking's ledger row, for stating a payout in an email.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BookingPayout {
+    /// The currency the host is paid in.
+    pub currency: String,
+    /// What the host receives after commission.
+    pub net_payout_amount: Decimal,
+    /// The promo discount the host funded.
+    pub promo_discount_amount: Decimal,
+    /// Whether the payout is still due.
+    pub pending: bool,
+}
+
+/// A booking's ledger row, if it has one.
+pub async fn get_booking_payout(pool: &PgPool, booking_id: Uuid) -> Result<Option<BookingPayout>> {
+    Ok(sqlx::query!(
+        r#"
+        SELECT currency, net_payout_amount, promo_discount_amount,
+            status = 'pending'::payout_status as "pending!"
+        FROM host_payout_ledger WHERE booking_id = $1
+        "#,
+        booking_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .map(|row| BookingPayout {
+        currency: row.currency.trim().to_string(),
+        net_payout_amount: row.net_payout_amount,
+        promo_discount_amount: row.promo_discount_amount,
+        pending: row.pending,
+    }))
+}
+
 /// One page of ledger entries matching `filter`, newest first, plus the
 /// total number of matches. `page` defaults to 1 and `per_page` to
 /// [`DEFAULT_LEDGER_PAGE_SIZE`] (capped at 100).

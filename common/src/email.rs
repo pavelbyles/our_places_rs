@@ -218,14 +218,22 @@ pub struct BookingConfirmationHostPayload {
     pub date_from: String,
     /// Check-out date.
     pub date_to: String,
-    /// Total payout to host after platform commissions.
-    pub total_payout: Decimal,
+    /// Net payout to host from the ledger, in `currency`. `None` when the ledger
+    /// row couldn't be read, so no figure is shown rather than a wrong one.
+    #[serde(default)]
+    pub total_payout: Option<Decimal>,
     /// Currency code.
     pub currency: String,
     /// Full name of primary guest.
     pub guest_name: String,
     /// Full name of property host.
     pub host_name: String,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount the host funded, in `currency`.
+    #[serde(default)]
+    pub promo_discount: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for guest booking modifications.
@@ -268,14 +276,22 @@ pub struct BookingUpdatedHostPayload {
     pub date_from: String,
     /// Check-out date.
     pub date_to: String,
-    /// Updated total payout to host.
-    pub total_payout: Decimal,
+    /// Net payout to host from the ledger, in `currency`. `None` when the ledger
+    /// row couldn't be read, so no figure is shown rather than a wrong one.
+    #[serde(default)]
+    pub total_payout: Option<Decimal>,
     /// Currency code.
     pub currency: String,
     /// Full name of primary guest.
     pub guest_name: String,
     /// Summary of changes applied.
     pub changes_summary: String,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount the host funded, in `currency`.
+    #[serde(default)]
+    pub promo_discount: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for guest booking cancellation.
@@ -320,8 +336,10 @@ pub struct BookingCancelledHostPayload {
     pub date_to: String,
     /// Full name of primary guest.
     pub guest_name: String,
-    /// Net financial payout impact on host.
-    pub payout_impact: Decimal,
+    /// What the host still receives, from the ledger, in `currency`. `None` when
+    /// nothing is retained.
+    #[serde(default)]
+    pub payout_impact: Option<Decimal>,
     /// Currency code.
     pub currency: String,
 }
@@ -757,6 +775,8 @@ mod tests {
             receipt_url: Some(
                 "http://localhost:8080/bookings/000/documents/REC-2026-CONF123".into(),
             ),
+            promo_code: None,
+            promo_discount: None,
         };
         let json = serde_json::to_string(&guest_confirm).unwrap();
         let parsed: BookingConfirmationGuestPayload = serde_json::from_str(&json).unwrap();

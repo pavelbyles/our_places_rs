@@ -324,3 +324,61 @@ async fn promo_line_leaves_nothing_behind_without_a_code_including_queued_emails
         assert!(!html.contains("{{promo_line}}"), "{template}: {html}");
     }
 }
+
+#[tokio::test]
+async fn host_payout_shows_the_ledger_figure_and_promo() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "JMD",
+        "total_payout": "129600.00",
+        "promo_code": "SUMMER",
+        "promo_discount": "16000.00",
+    });
+    for (template, label) in [
+        ("booking_confirmation_host", "Host Payout"),
+        ("booking_updated_host", "Adjusted Host Payout"),
+    ] {
+        let html = render_email_body(template, &payload);
+        assert!(
+            html.contains(&format!("<strong>{label}:</strong> JMD 129600.00")),
+            "{template}: {html}"
+        );
+        assert!(
+            html.contains("Includes promo discount (SUMMER): -JMD 16000.00"),
+            "{template}: {html}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn host_payout_shows_no_blank_amount_without_a_figure() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "total_payout": null,
+        "payout_impact": null,
+    });
+    for template in [
+        "booking_confirmation_host",
+        "booking_updated_host",
+        "booking_cancelled_host",
+    ] {
+        let html = render_email_body(template, &payload);
+        assert!(!html.contains("Payout"), "{template}: {html}");
+        assert!(!html.contains("{{"), "{template}: {html}");
+    }
+}
+
+#[tokio::test]
+async fn host_payout_on_a_cancellation_shows_the_retained_figure() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "payout_impact": "180.00",
+    });
+    let html = render_email_body("booking_cancelled_host", &payload);
+    assert!(
+        html.contains("<strong>Net Payout Impact:</strong> USD 180.00"),
+        "{html}"
+    );
+}

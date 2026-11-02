@@ -477,7 +477,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p booking_api notifications::tests && cargo test -p email_worker promo_line`
   - **Dependencies:** T7, T11
 
-- [ ] **Task 20: Correct host email payouts**
+- [x] **Task 20: Correct host email payouts**
   - **Scope:** S
   - **Description:** The confirmation and update payloads take `total_payout` and `currency` from the ledger row. If it's missing, log an error and send no payout figure. Add the promo line. `total_payout` becomes `Option` with a conditional line, so a missing row shows no blank amount. Correct `payout_impact` on the host cancellation email (`notifications.rs:261`), which sends `sub_total_price` as "Net Payout Impact", to the retained net from the ledger. Prefix the builder tests with `host_`.
   - **Files Touched:**
@@ -496,7 +496,7 @@ T30 final gates               ← all
   - **Dependencies:** T17, T19
 
 
-- [ ] **Task 20a: Prove the figures agree across surfaces**
+- [x] **Task 20a: Prove the figures agree across surfaces**
   - **Scope:** S
   - **Description:** One integration test takes a promo booking through quote, hold, confirmation and documents, for spec §6's agreement and immutability requirements.
   - **Files Touched:**

@@ -20,7 +20,8 @@
     <div style="background-color: #f8fafc; border-radius: 6px; padding: 16px; margin: 24px 0; border: 1px solid #e2e8f0;">
       <p style="margin: 0 0 8px 0;"><strong>Confirmation Code:</strong> <span style="font-family: monospace; font-size: 16px; color: #0284c7;">{{confirmation_code}}</span></p>
       <p style="margin: 0 0 8px 0;"><strong>Stay Dates:</strong> {{date_from}} to {{date_to}}</p>
-      <p style="margin: 0;"><strong>Adjusted Host Payout:</strong> {{currency}} {{total_payout}}</p>
+      {{payout_line}}
+      {{promo_line}}
     </div>
   </div>
 </body>
