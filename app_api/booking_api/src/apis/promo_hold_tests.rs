@@ -1510,3 +1510,172 @@ mod promo_booking_response {
         assert!(created["promo_code"].is_null());
     }
 }
+
+mod agreement {
+    use super::*;
+
+    /// One promo booking's discount, net amounts and tax agree everywhere they
+    /// appear, and later changes to the code or the rate leave them alone.
+    #[tokio::test]
+    async fn figures_agree_across_every_surface_and_later_changes_leave_them_alone() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let villa = listing(&pool, host).await;
+        sqlx::query(
+            "UPDATE listing SET cleaning_fee = 100, damage_deposit = 200, weekly_discount_percentage = 10
+             WHERE id = $1",
+        )
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let code_id = code(&pool, host, "AGREEMENT").await;
+        sqlx::query("UPDATE promo_code SET scope = 'stay_and_cleaning' WHERE id = $1")
+            .bind(code_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let app = app!(pool);
+        let amount = |v: &serde_json::Value| -> Decimal {
+            v.as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| v.to_string())
+                .parse()
+                .expect("an amount")
+        };
+
+        // Quote.
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/bookings/quote")
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(guest))
+                .set_json(serde_json::json!({
+                    "listing_id": villa,
+                    "check_in": "2030-08-01",
+                    "check_out": "2030-08-08",
+                    "guests": 1,
+                    "currency": "USD",
+                    "promo_code": "AGREEMENT",
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let quote: serde_json::Value = test::read_body_json(resp).await;
+
+        // Booking.
+        let mut hold = with_code(guest, villa, "AGREEMENT");
+        hold["check_out"] = serde_json::json!("2030-08-08");
+        assert_eq!(post_hold!(app, guest, hold).status(), 201);
+        let held = booking_of(&pool, guest).await.expect("hold created");
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/bookings/{}", held.id))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "status": "confirmed" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let booking = db_core::booking::get_booking_by_id(&pool, held.id)
+            .await
+            .unwrap();
+
+        // 1,400 stay less 140 weekly is 1,260; 10% off gives 126 and 10.
+        let discount = dec!(136.00);
+        let stay_net = dec!(1134.00);
+        let cleaning_net = dec!(90.00);
+        let tax = dec!(183.60);
+        // 1,224.00 taxable + 183.60 GCT + 56.70 platform fee + 200.00 deposit.
+        let total = dec!(1664.30);
+
+        assert_eq!(amount(&quote["promo"]["discount"]), discount);
+        assert_eq!(amount(&quote["tax_amount"]), tax);
+        assert_eq!(amount(&quote["total_amount"]), total);
+
+        assert_eq!(
+            booking.promo_stay_discount + booking.promo_cleaning_discount,
+            discount
+        );
+        assert_eq!(booking.accommodation_net(), stay_net);
+        assert_eq!(booking.cleaning_net(), cleaning_net);
+        assert_eq!(booking.tax_value, Some(tax));
+        assert_eq!(booking.total_price, total);
+
+        // Email payload.
+        let email = super::super::notifications::guest_confirmation_payload(
+            &booking,
+            "Villa".to_string(),
+            "Guest".to_string(),
+            "https://example.test/receipt".to_string(),
+        );
+        assert_eq!(email.promo_discount, Some(discount));
+        assert_eq!(email.accommodation_net, Some(stay_net));
+        assert_eq!(email.cleaning_fee, Some(cleaning_net));
+        assert_eq!(email.tax_amount, Some(tax));
+        assert_eq!(email.total_price, total);
+
+        // Tax document.
+        let docs = db_core::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        let receipt = docs
+            .iter()
+            .find(|d| d.document_type == db_core::models::TaxDocumentType::PaymentReceipt)
+            .expect("a receipt");
+        assert_eq!(receipt.promo_discount, discount);
+        assert_eq!(receipt.accommodation_net, stay_net);
+        assert_eq!(receipt.cleaning_fee, cleaning_net);
+        assert_eq!(receipt.tax_amount, tax);
+        assert_eq!(receipt.total_amount, total);
+
+        // Ledger: the seeded host is paid in USD at 10% commission.
+        let ledger = db_core::payout_ledger::get_booking_payout(&pool, booking.id)
+            .await
+            .unwrap()
+            .expect("a ledger row");
+        assert_eq!(ledger.promo_discount_amount, discount);
+        assert_eq!(ledger.net_payout_amount, dec!(1101.60));
+
+        // Deactivating the code and publishing a rate leave everything alone.
+        sqlx::query(
+            "UPDATE promo_code SET deactivated_at = NOW(), deactivated_by = $2 WHERE id = $1",
+        )
+        .bind(code_id)
+        .bind(admin)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('USD', 'JMD', 999, NOW())",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let after = db_core::booking::get_booking_by_id(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(after.total_price, total);
+        assert_eq!(after.promo_stay_discount, booking.promo_stay_discount);
+        let docs_after = db_core::tax_document::list_for_booking(&pool, booking.id)
+            .await
+            .unwrap();
+        assert_eq!(docs_after.len(), docs.len());
+        assert_eq!(docs_after[0].total_amount, docs[0].total_amount);
+        assert_eq!(docs_after[0].jmd_total_amount, docs[0].jmd_total_amount);
+        let ledger_after = db_core::payout_ledger::get_booking_payout(&pool, booking.id)
+            .await
+            .unwrap()
+            .expect("a ledger row");
+        assert_eq!(ledger_after, ledger);
+    }
+}
