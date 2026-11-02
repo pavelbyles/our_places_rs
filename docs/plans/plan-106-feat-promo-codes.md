@@ -157,7 +157,7 @@ T30 final gates               ← all
 
 ## Phase B: Promo Foundations
 
-- [ ] **Task 4: Add the promo migration**
+- [x] **Task 4: Add the promo migration**
   - **Scope:** S
   - **Description:** Run `devenv shell -- sqlx migrate add --source db_core/migrations promo_codes`, then write spec §3.1: tables, enums, booking, history, ledger and tax document columns, and the rescheduled `cleanup_stale_pending_holds` job. Take the table locks first, following `20261101231550`: `SET LOCAL lock_timeout = '5s'` then `LOCK TABLE ... IN ACCESS EXCLUSIVE MODE`. Otherwise the foreign key creation followed by `ALTER` can deadlock with a running `update_booking`.
   - **Files Touched:**
