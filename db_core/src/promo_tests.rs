@@ -84,7 +84,7 @@ async fn raw_user(pool: &PgPool) -> Uuid {
 async fn raw_listing(pool: &PgPool, host: Uuid) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO listing (name, listing_structure_id, country, added_at, user_id, slug)
-         VALUES ('Villa', 1, 'Jamaica', NOW(), $1, 'villa-' || replace(gen_random_uuid()::text, '-', ''))
+         VALUES ('Villa ' || gen_random_uuid(), 1, 'Jamaica', NOW(), $1, 'villa-' || replace(gen_random_uuid()::text, '-', ''))
          RETURNING id",
     )
     .bind(host)
@@ -416,5 +416,236 @@ mod booking_columns {
             history.get::<Option<Decimal>, _>("promo_cleaning_discount"),
             Some(dec!(10))
         );
+    }
+}
+
+mod usage {
+    use super::*;
+    use crate::promo::{covers_listing, get_by_code, lock_and_count, usage_for_quote};
+
+    async fn limited_code(pool: &PgPool, created_by: Uuid, code: &str) -> Uuid {
+        let id = insert_code(pool, created_by, code).await;
+        sqlx::query(
+            "UPDATE promo_code SET total_usage_limit = 100, per_guest_limit = 100 WHERE id = $1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    /// A booking redeeming `code`, with its hold still live.
+    async fn redeemed(pool: &PgPool, guest: Uuid, villa: Uuid, code: Uuid, status: &str) -> Uuid {
+        let booking = raw_booking(pool, guest, villa, status).await;
+        sqlx::query("UPDATE booking SET expires_at = NOW() + INTERVAL '1 hour' WHERE id = $1")
+            .bind(booking)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO promo_code_redemption (promo_code_id, booking_id) VALUES ($1, $2)",
+        )
+        .bind(code)
+        .bind(booking)
+        .execute(pool)
+        .await
+        .unwrap();
+        booking
+    }
+
+    async fn counts(pool: &PgPool, code: Uuid, guest: Uuid) -> (i64, i64) {
+        let mut conn = pool.acquire().await.unwrap();
+        let (_, usage) = lock_and_count(&mut conn, code, guest).await.unwrap();
+        (usage.total_used, usage.guest_used)
+    }
+
+    #[tokio::test]
+    async fn counts_live_uses_and_leaves_out_the_rest() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let other = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let code = limited_code(&pool, host, "COUNTED").await;
+
+        redeemed(&pool, guest, villa, code, "pending").await;
+        redeemed(&pool, guest, villa, code, "confirmed").await;
+        redeemed(&pool, other, villa, code, "completed").await;
+        assert_eq!(counts(&pool, code, guest).await, (3, 2));
+
+        // Cancelled: not counted.
+        redeemed(&pool, guest, villa, code, "cancelled").await;
+        assert_eq!(counts(&pool, code, guest).await, (3, 2));
+
+        // Expired but not yet swept: not counted.
+        let expired = redeemed(&pool, guest, villa, code, "pending").await;
+        sqlx::query("UPDATE booking SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1")
+            .bind(expired)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(counts(&pool, code, guest).await, (3, 2));
+
+        // Released when a reservation change lost the discount: not counted.
+        let released = redeemed(&pool, guest, villa, code, "confirmed").await;
+        sqlx::query("UPDATE promo_code_redemption SET released_at = NOW() WHERE booking_id = $1")
+            .bind(released)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(counts(&pool, code, guest).await, (3, 2));
+    }
+
+    #[tokio::test]
+    async fn the_per_guest_count_follows_the_bookings_guest_after_a_transfer() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let other = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let code = limited_code(&pool, host, "TRANSFER").await;
+        let booking = redeemed(&pool, guest, villa, code, "pending").await;
+
+        crate::booking::transfer_booking_guest(&pool, booking, other)
+            .await
+            .unwrap();
+
+        assert_eq!(counts(&pool, code, guest).await, (1, 0));
+        assert_eq!(counts(&pool, code, other).await, (1, 1));
+    }
+
+    #[tokio::test]
+    async fn a_second_transaction_waits_on_the_code_lock() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = limited_code(&pool, host, "LOCKED").await;
+
+        let mut holder = pool.begin().await.unwrap();
+        lock_and_count(&mut holder, code, host).await.unwrap();
+
+        let mut waiter = pool.begin().await.unwrap();
+        sqlx::query("SET LOCAL lock_timeout = '200ms'")
+            .execute(&mut *waiter)
+            .await
+            .unwrap();
+        let err = sqlx::query("SELECT id FROM promo_code WHERE id = $1 FOR UPDATE")
+            .bind(code)
+            .execute(&mut *waiter)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, sqlx::Error::Database(e) if e.code().as_deref() == Some("55P03")),
+            "expected a lock timeout, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_lock_timeout_setting_does_not_linger() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = limited_code(&pool, host, "LINGER").await;
+
+        let mut tx = pool.begin().await.unwrap();
+        lock_and_count(&mut tx, code, host).await.unwrap();
+        let timeout: String = sqlx::query_scalar("SHOW lock_timeout")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(timeout, "0", "later statements keep the default timeout");
+    }
+
+    #[tokio::test]
+    async fn a_quote_leaves_out_the_guests_own_holds_but_a_hold_still_counts_them() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let other = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let code_id = limited_code(&pool, host, "OWNHOLD").await;
+        redeemed(&pool, guest, villa, code_id, "pending").await;
+        redeemed(&pool, other, villa, code_id, "pending").await;
+        redeemed(&pool, guest, villa, code_id, "confirmed").await;
+
+        let code = get_by_code(&pool, "OWNHOLD").await.unwrap().unwrap();
+        let usage = usage_for_quote(&pool, &code, guest).await.unwrap();
+        assert_eq!((usage.total_used, usage.guest_used), (2, 1));
+
+        assert_eq!(counts(&pool, code_id, guest).await, (3, 2));
+    }
+
+    #[tokio::test]
+    async fn a_code_without_limits_is_not_counted() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let code = insert_code(&pool, host, "NOLIMIT").await;
+        redeemed(&pool, guest, villa, code, "confirmed").await;
+
+        assert_eq!(counts(&pool, code, guest).await, (0, 0));
+    }
+
+    #[tokio::test]
+    async fn coverage_follows_scope_and_ownership() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let other_host = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let other_villa = raw_listing(&pool, other_host).await;
+
+        // An admin code on all listings covers everything.
+        insert_code(&pool, host, "ADMINALL").await;
+        let admin_all = get_by_code(&pool, "ADMINALL").await.unwrap().unwrap();
+        assert!(covers_listing(&pool, &admin_all, villa).await.unwrap());
+        assert!(
+            covers_listing(&pool, &admin_all, other_villa)
+                .await
+                .unwrap()
+        );
+
+        // A selected code covers only its listings.
+        let selected_id = insert_code(&pool, host, "SELECTED").await;
+        sqlx::query("UPDATE promo_code SET applies_to_all = FALSE WHERE id = $1")
+            .bind(selected_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO promo_code_listing (promo_code_id, listing_id) VALUES ($1, $2)")
+            .bind(selected_id)
+            .bind(villa)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let selected = get_by_code(&pool, "SELECTED").await.unwrap().unwrap();
+        assert!(covers_listing(&pool, &selected, villa).await.unwrap());
+        assert!(!covers_listing(&pool, &selected, other_villa).await.unwrap());
+
+        // A host's "all" covers only that host's listings, including one that's
+        // transferred away later, even when it was selected.
+        let hosted_id = insert_code(&pool, host, "HOSTALL").await;
+        sqlx::query("UPDATE promo_code SET owner_host_id = $2 WHERE id = $1")
+            .bind(hosted_id)
+            .bind(host)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let hosted = get_by_code(&pool, "HOSTALL").await.unwrap().unwrap();
+        assert!(covers_listing(&pool, &hosted, villa).await.unwrap());
+        assert!(!covers_listing(&pool, &hosted, other_villa).await.unwrap());
+        sqlx::query("UPDATE listing SET user_id = $2 WHERE id = $1")
+            .bind(villa)
+            .bind(other_host)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!covers_listing(&pool, &hosted, villa).await.unwrap());
     }
 }

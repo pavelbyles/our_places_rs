@@ -246,7 +246,7 @@ T30 final gates               ← all
 
 ## Phase C: Redemption & Pricing
 
-- [ ] **Task 9: Lock and count code usage**
+- [x] **Task 9: Lock and count code usage**
   - **Scope:** S
   - **Description:** Add `db_core::promo::lock_and_count`: `SELECT ... FOR UPDATE` on the code, then total and per-guest counts using the spec §1.5 live-booking predicate. Also add `get_by_code` and listing eligibility, including the `listing.user_id = owner_host_id` rule. Add a separate non-locking `usage_counts(executor, code_id, guest_id)` for quotes. It excludes that guest's `pending` bookings from both counts, because the hold would cancel them, so a quote can't refuse a code the hold would accept. All of these use `skip(pool, code)` on instrumentation. Skip counting when both limits are `NULL`.
   - **Files Touched:**
