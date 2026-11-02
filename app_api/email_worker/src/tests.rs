@@ -278,3 +278,49 @@ async fn test_pubsub_endpoint_authentication_and_dispatch() {
         .expect("Not found");
     assert_eq!(updated.status, DbEmailStatus::Sent);
 }
+
+#[tokio::test]
+async fn promo_line_shows_on_guest_emails_with_a_code() {
+    let payload = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "total_price": "1275.50",
+        "accommodation_net": "810.00",
+        "cleaning_fee": "90.00",
+        "promo_code": "SUMMER",
+        "promo_discount": "100.00",
+    });
+    let html = render_email_body("booking_confirmation_guest", &payload);
+    assert!(html.contains("Includes promo discount (SUMMER)"), "{html}");
+    assert!(html.contains("-USD 100.00"), "{html}");
+    assert!(!html.contains("{{promo_line}}"), "{html}");
+
+    let hold = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "dates": "2030-06-01 to 2030-06-08",
+        "total_price": "1275.50 USD",
+        "currency": "USD",
+        "promo_code": "SUMMER",
+        "promo_discount": "100.00",
+    });
+    let html = render_email_body("booking_confirmation", &hold);
+    assert!(
+        html.contains("Includes promo discount (SUMMER): -USD 100.00"),
+        "{html}"
+    );
+}
+
+#[tokio::test]
+async fn promo_line_leaves_nothing_behind_without_a_code_including_queued_emails() {
+    // Emails queued before this release have no promo fields at all.
+    let queued = serde_json::json!({
+        "confirmation_code": "CONF123",
+        "currency": "USD",
+        "total_price": "1395.00",
+    });
+    for template in ["booking_confirmation_guest", "booking_confirmation"] {
+        let html = render_email_body(template, &queued);
+        assert!(!html.contains("promo"), "{template}: {html}");
+        assert!(!html.contains("{{promo_line}}"), "{template}: {html}");
+    }
+}

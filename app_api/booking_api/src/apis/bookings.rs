@@ -171,6 +171,8 @@ pub(super) async fn create_booking(
                 let conf_code = booking.confirmation_code.clone();
                 let total_price = format!("{} {}", booking.total_price, booking.currency);
                 let dates = format!("{} to {}", booking.date_from, booking.date_to);
+                let currency = booking.currency.clone();
+                let (promo_code, promo_discount) = super::notifications::promo_summary(&booking);
 
                 tokio::spawn(async move {
                     let guest = match db_core::user::get_user_by_id(&pool_clone, guest_id).await {
@@ -189,6 +191,9 @@ pub(super) async fn create_booking(
                             "confirmation_code": conf_code,
                             "dates": dates,
                             "total_price": total_price,
+                            "currency": currency,
+                            "promo_code": promo_code,
+                            "promo_discount": promo_discount,
                         }),
                     )
                     .await;

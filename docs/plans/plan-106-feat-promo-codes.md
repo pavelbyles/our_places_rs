@@ -459,7 +459,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p booking_api promo_booking_response`
   - **Dependencies:** T7
 
-- [ ] **Task 19: Show promos in guest emails**
+- [x] **Task 19: Show promos in guest emails**
   - **Scope:** S
   - **Description:** Guest payloads gain `#[serde(default)]` promo fields. `{{promo_line}}` is empty when there's no promo. Both the hold-time and confirmation emails carry the discount, using after-promo figures. `send_completion_email` (`notifications.rs:359`) and the confirmation payload (`:175`) use `cleaning_net()`. Extract pure payload builders, because payloads are built inside `tokio::spawn`, and test those.
   - **Files Touched:**

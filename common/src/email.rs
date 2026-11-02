@@ -197,6 +197,12 @@ pub struct BookingConfirmationGuestPayload {
     /// Direct URL to view statutory payment receipt.
     #[serde(default)]
     pub receipt_url: Option<String>,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    #[serde(default)]
+    pub promo_discount: Option<Decimal>,
 }
 
 /// Strongly-typed email payload for host booking confirmation.

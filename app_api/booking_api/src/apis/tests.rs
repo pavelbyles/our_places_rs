@@ -1830,6 +1830,8 @@ fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discou
         platform_fee: Some(booking.platform_fee),
         damage_deposit: Some(booking.damage_deposit),
         receipt_url: Some("http://localhost:8080/bookings/doc/1".to_string()),
+        promo_code: None,
+        promo_discount: None,
     };
 
     assert_eq!(
@@ -1856,6 +1858,8 @@ fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discou
         platform_fee: Some(booking.platform_fee),
         damage_deposit: Some(booking.damage_deposit),
         receipt_url: Some("http://localhost:8080/bookings/doc/1".to_string()),
+        promo_code: None,
+        promo_discount: None,
     };
 
     assert_eq!(
