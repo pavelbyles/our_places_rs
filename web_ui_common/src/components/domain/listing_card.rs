@@ -53,9 +53,21 @@ pub struct ListingSummary {
     pub review_count: Option<i64>,
     /// The host, when known.
     pub host: Option<HostLink>,
+    /// Set when search could not quote this listing in the chosen currency:
+    /// the card shows "Price unavailable in {code}" instead of an amount.
+    pub price_unavailable_in: Option<String>,
 }
 
 impl ListingSummary {
+    /// The card's price line: `Ok("USD 650")`, or `Err("Price unavailable in JMD")`
+    /// when no rate could quote it (never a made-up amount).
+    pub fn price_text(&self) -> std::result::Result<String, String> {
+        match &self.price_unavailable_in {
+            Some(code) => Err(format!("Price unavailable in {code}")),
+            None => Ok(format!("{} {}", self.currency, self.price)),
+        }
+    }
+
     /// "City, Country", or just the country.
     pub fn location(&self) -> String {
         match &self.city {
@@ -87,7 +99,7 @@ pub async fn listing_card(
     let href = format!("/listings/{}", listing.slug);
     let location = listing.location();
     let specs = listing.specs();
-    let price = format!("{} {}", listing.currency, listing.price);
+    let price = listing.price_text();
     let ListingSummary {
         name,
         image_url,
@@ -111,7 +123,14 @@ pub async fn listing_card(
             </div>
             <p class="text-sm text-muted-foreground">(location) " · " (specs)</p>
             <div class="flex items-center justify-between">
-                <p class="text-sm"><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" per night"</span></p>
+                match price {
+                    Ok(price) => {
+                        <p class="text-sm"><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" per night"</span></p>
+                    }
+                    Err(unavailable) => {
+                        <p class="text-sm text-muted-foreground" data-price-unavailable="">(unavailable)</p>
+                    }
+                }
                 <a href=(href) class="text-sm font-medium">"View Listing"</a>
             </div>
         </article>
@@ -142,6 +161,7 @@ impl From<&common::models::ListingResponse> for ListingSummary {
                 .clone()
                 .zip(l.owner_slug.clone())
                 .map(|(name, slug)| HostLink { name, slug }),
+            price_unavailable_in: l.price_unavailable_in.clone(),
         }
     }
 }

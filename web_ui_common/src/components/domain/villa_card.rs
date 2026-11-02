@@ -46,7 +46,7 @@ pub async fn villa_card(
     let href = format!("/listings/{}", listing.slug);
     let location = listing.location();
     let specs = villa_specs(&listing);
-    let price = format!("{} {}", listing.currency, listing.price);
+    let price = listing.price_text();
     let ListingSummary {
         name,
         image_url,
@@ -81,7 +81,14 @@ pub async fn villa_card(
                     }
                 </ul>
                 <p class="mt-2 flex items-center gap-3 text-xs">
-                    <span><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" / night"</span></span>
+                    match price {
+                        Ok(price) => {
+                            <span><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" / night"</span></span>
+                        }
+                        Err(unavailable) => {
+                            <span class="text-muted-foreground" data-price-unavailable="">(unavailable)</span>
+                        }
+                    }
                 </p>
             </div>
         </article>
@@ -150,6 +157,7 @@ mod tests {
             rating: None,
             review_count: None,
             host: None,
+            price_unavailable_in: None,
         }
     }
 
@@ -162,6 +170,67 @@ mod tests {
         assert_eq!(
             villa_specs(&listing(1, 1, 1)),
             ["Up to 1 Bedroom", "1 Bathroom", "1 Guest"]
+        );
+    }
+}
+
+#[cfg(test)]
+mod villa_card_price_tests {
+    use super::*;
+    use topcoat::context::Cx;
+    use topcoat::view::ViewExt;
+
+    fn summary(unavailable: Option<&str>) -> ListingSummary {
+        ListingSummary {
+            slug: "villa".into(),
+            name: "Villa".into(),
+            image_url: None,
+            price: "650".into(),
+            currency: "TTD".into(),
+            country: "Jamaica".into(),
+            city: None,
+            max_guests: 4,
+            bedrooms: 2,
+            full_bathrooms: 2,
+            rating: None,
+            review_count: None,
+            host: None,
+            price_unavailable_in: unavailable.map(str::to_string),
+        }
+    }
+
+    async fn html(v: impl View, cx: &Cx) -> String {
+        match v.first().await {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn unavailable_price_shows_the_currency_and_no_amount() {
+        let __cx = &Cx::default();
+        let listing = summary(Some("CAD"));
+        let out = html(view! { villa_card(listing: listing) }, __cx).await;
+        assert!(out.contains("Price unavailable in CAD"), "{out}");
+        assert!(!out.contains("650"), "no amount is shown: {out}");
+        assert!(!out.contains("/ night"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn normal_price_is_unchanged() {
+        let __cx = &Cx::default();
+        let listing = summary(None);
+        let out = html(view! { villa_card(listing: listing) }, __cx).await;
+        assert!(out.contains("TTD 650"), "{out}");
+        assert!(!out.contains("Price unavailable"), "{out}");
+    }
+
+    #[test]
+    fn price_text_never_invents_an_amount() {
+        assert_eq!(summary(None).price_text(), Ok("TTD 650".to_string()));
+        assert_eq!(
+            summary(Some("JMD")).price_text(),
+            Err("Price unavailable in JMD".to_string())
         );
     }
 }

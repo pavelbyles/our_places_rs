@@ -369,7 +369,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p web_ui_admin history_page_tests`
   - **Dependencies:** T18
 
-- [ ] **T20: Villa card "Price unavailable in CUR"**
+- [x] **T20: Villa card "Price unavailable in CUR"**
   - **Scope:** XS
   - **Files Touched:** `web_ui_common/src/components/domain/villa_card.rs`
   - **Acceptance Criteria:** [ ] `mod villa_card_price_tests` (≥2).
