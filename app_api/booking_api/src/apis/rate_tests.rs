@@ -145,6 +145,7 @@ pub(super) async fn app(
         application: api_core::settings::Application {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -719,6 +720,400 @@ mod currency_inactive_tests {
         assert!(
             matches!(r, Err(db_core::error::DbError::CurrencyInactive(ref c)) if c == "JMD"),
             "got {r:?}"
+        );
+    }
+}
+
+mod exchange_rate_api_tests {
+    //! `/api/v1/admin/exchange-rates/*`: authz, validation and every error code.
+
+    use super::*;
+
+    fn bearer(user: Uuid) -> (&'static str, String) {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(user)),
+        )
+    }
+
+    async fn call<S>(app: &S, req: actix_http::Request) -> (u16, serde_json::Value)
+    where
+        S: Service<actix_http::Request, Response = ServiceResponse, Error = actix_web::Error>,
+    {
+        let resp = test::call_service(app, req).await;
+        let status = resp.status().as_u16();
+        let bytes = test::read_body(resp).await;
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+        )
+    }
+
+    fn publish(user: Uuid, body: serde_json::Value) -> actix_http::Request {
+        test::TestRequest::post()
+            .uri("/api/v1/admin/exchange-rates")
+            .insert_header(bearer(user))
+            .set_json(body)
+            .to_request()
+    }
+
+    #[tokio::test]
+    async fn hosts_are_forbidden_on_admin_routes_but_read_current_rates() {
+        let f = fixture().await;
+        let app = app(&f.pool).await;
+        let host = f.host_id;
+        let id = Uuid::now_v7();
+        let forbidden = [
+            publish(
+                host,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"161"}),
+            ),
+            test::TestRequest::delete()
+                .uri(&format!("/api/v1/admin/exchange-rates/{id}"))
+                .insert_header(bearer(host))
+                .to_request(),
+            test::TestRequest::post()
+                .uri("/api/v1/admin/exchange-rates/USD/JMD/retire")
+                .insert_header(bearer(host))
+                .to_request(),
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates/USD/JMD/history")
+                .insert_header(bearer(host))
+                .to_request(),
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates/coverage")
+                .insert_header(bearer(host))
+                .to_request(),
+        ];
+        for req in forbidden {
+            let (status, _) = call(&app, req).await;
+            assert_eq!(status, 403);
+        }
+        let (status, body) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates")
+                .insert_header(bearer(host))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(body["rates"].as_array().is_some_and(|r| !r.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn guests_are_forbidden_on_the_current_table() {
+        let f = fixture().await;
+        let app = app(&f.pool).await;
+        let (status, _) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates")
+                .insert_header(bearer(f.guest_id))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(status, 403);
+    }
+
+    #[tokio::test]
+    async fn malformed_paths_and_rates_are_400() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (history, _) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates/usd/JMD/history")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(history, 400);
+        let (retire, _) = call(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/admin/exchange-rates/USD/J1D/retire")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(retire, 400);
+        for rate in ["1e5", "1,000", "-1", " 160"] {
+            let (status, _) = call(
+                &app,
+                publish(
+                    admin,
+                    serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":rate}),
+                ),
+            )
+            .await;
+            assert_eq!(status, 400, "rate {rate:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_now_and_scheduled() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (now_status, now_body) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"161.5"}),
+            ),
+        )
+        .await;
+        assert_eq!(now_status, 201);
+        assert_eq!(now_body["state"], "current");
+        let at = (chrono::Utc::now() + chrono::Duration::days(2)).to_rfc3339();
+        let (sched_status, sched_body) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"162","effective_at":at}),
+            ),
+        )
+        .await;
+        assert_eq!(sched_status, 201);
+        assert_eq!(sched_body["state"], "scheduled");
+    }
+
+    #[tokio::test]
+    async fn large_change_needs_confirmation_then_succeeds() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let (status, body) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"176"}),
+            ),
+        )
+        .await;
+        assert_eq!(status, 422);
+        assert_eq!(body["code"], "RATE_CHANGE_CONFIRMATION_REQUIRED");
+        assert_eq!(body["baseline_rate"], "160.000000");
+        assert_eq!(body["proposed_rate"], "176");
+        assert_eq!(body["deviation_pct"], "10.00");
+        let (confirmed, _) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"176","confirm_large_change":true}),
+            ),
+        )
+        .await;
+        assert_eq!(confirmed, 201);
+    }
+
+    #[tokio::test]
+    async fn effective_time_bounds_are_422() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let past = (chrono::Utc::now() - chrono::Duration::minutes(10)).to_rfc3339();
+        let (s1, b1) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"161","effective_at":past}),
+            ),
+        )
+        .await;
+        assert_eq!(
+            (s1, b1["code"].clone()),
+            (422, "EFFECTIVE_AT_IN_PAST".into())
+        );
+        let far = (chrono::Utc::now() + chrono::Duration::days(400)).to_rfc3339();
+        let (s2, b2) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"161","effective_at":far}),
+            ),
+        )
+        .await;
+        assert_eq!(
+            (s2, b2["code"].clone()),
+            (422, "EFFECTIVE_AT_TOO_FAR".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn duplicate_version_is_409() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let at = (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339();
+        let body = serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"161","effective_at":at});
+        let (first, _) = call(&app, publish(admin, body.clone())).await;
+        assert_eq!(first, 201);
+        let (second, b) = call(&app, publish(admin, body)).await;
+        assert_eq!(
+            (second, b["code"].clone()),
+            (409, "RATE_VERSION_EXISTS".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn inactive_and_unknown_currencies_are_422() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+            .execute(&f.pool)
+            .await
+            .expect("deactivate");
+        let app = app(&f.pool).await;
+        let (s1, b1) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"CAD","rate":"1.36"}),
+            ),
+        )
+        .await;
+        assert_eq!((s1, b1["code"].clone()), (422, "CURRENCY_INACTIVE".into()));
+        let (s2, b2) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"QQQ","rate":"1"}),
+            ),
+        )
+        .await;
+        assert_eq!((s2, b2["code"].clone()), (422, "CURRENCY_NOT_FOUND".into()));
+    }
+
+    #[tokio::test]
+    async fn delete_rules() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let at = (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339();
+        let (_, created) = call(
+            &app,
+            publish(
+                admin,
+                serde_json::json!({"base_currency":"USD","target_currency":"JMD","rate":"161","effective_at":at}),
+            ),
+        )
+        .await;
+        let scheduled = created["id"].as_str().expect("id").to_string();
+        let effective: Uuid = sqlx::query_scalar(
+            "SELECT id FROM currency_exchange_rates WHERE base_currency='USD' AND target_currency='JMD' AND effective_at <= now() LIMIT 1",
+        )
+        .fetch_one(&f.pool)
+        .await
+        .expect("effective id");
+        let del = |id: String| {
+            test::TestRequest::delete()
+                .uri(&format!("/api/v1/admin/exchange-rates/{id}"))
+                .insert_header(bearer(admin))
+                .to_request()
+        };
+        let (s1, b1) = call(&app, del(effective.to_string())).await;
+        assert_eq!(
+            (s1, b1["code"].clone()),
+            (409, "RATE_ALREADY_EFFECTIVE".into())
+        );
+        let (s2, _) = call(&app, del(scheduled)).await;
+        assert_eq!(s2, 204);
+        let (s3, _) = call(&app, del(Uuid::now_v7().to_string())).await;
+        assert_eq!(s3, 404);
+    }
+
+    #[tokio::test]
+    async fn retire_rules_history_and_coverage() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        // The fixture listing is priced in USD.
+        let (s1, b1) = call(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/admin/exchange-rates/USD/JMD/retire")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!((s1, b1["code"].clone()), (409, "CURRENCY_IN_USE".into()));
+        assert_eq!(b1["listings"][0]["id"], f.listing_id.to_string());
+
+        let (s2, _) = call(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/admin/exchange-rates/EUR/CAD/retire")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(s2, 404, "no such pair");
+
+        let (s3, b3) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates/USD/JMD/history")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(s3, 200);
+        assert_eq!(b3["versions"][0]["state"], "current");
+
+        let (s4, b4) = call(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/admin/exchange-rates/coverage")
+                .insert_header(bearer(admin))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(s4, 200);
+        let targets: Vec<&str> = b4
+            .as_array()
+            .map(|gaps| {
+                gaps.iter()
+                    .filter_map(|g| g["target_currency"].as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(targets, vec!["CAD", "EUR"]);
+    }
+
+    #[::core::prelude::v1::test]
+    fn grace_setting_is_bounded() {
+        let app_settings = |secs| api_core::settings::Application {
+            max_attempts: 1,
+            pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: secs,
+        };
+        assert!(app_settings(0).rate_effective_grace().is_err());
+        assert!(app_settings(301).rate_effective_grace().is_err());
+        assert_eq!(
+            app_settings(60)
+                .rate_effective_grace()
+                .map(|d| d.num_seconds()),
+            Ok(60)
+        );
+        assert!(app_settings(300).rate_effective_grace().is_ok());
+    }
+
+    #[::core::prelude::v1::test]
+    fn grace_setting_defaults_to_60_and_reads_configured_value() {
+        let default: api_core::settings::Application =
+            serde_json::from_value(serde_json::json!({ "max_attempts": 3 }))
+                .expect("defaults apply");
+        assert_eq!(default.rate_effective_grace_seconds, 60);
+        let configured: api_core::settings::Application = serde_json::from_value(
+            serde_json::json!({ "max_attempts": 3, "rate_effective_grace_seconds": 30 }),
+        )
+        .expect("configured value");
+        assert_eq!(
+            configured.rate_effective_grace().map(|d| d.num_seconds()),
+            Ok(30)
         );
     }
 }

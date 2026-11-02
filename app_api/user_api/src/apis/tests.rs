@@ -34,6 +34,7 @@ fn get_test_settings() -> Settings {
         application: Application {
             max_attempts: 1,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
         },
         feature_flags: FeatureFlags {
             enable_hard_deletes: true,

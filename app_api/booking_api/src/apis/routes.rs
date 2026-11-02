@@ -15,9 +15,10 @@ use super::currencies;
 use super::documents::{
     get_booking_document_by_number, get_booking_documents, get_cancellation_quote,
 };
+use super::exchange_rates;
 use super::ledger::{
-    export_host_ledger_csv, get_admin_exchange_rates, get_host_ledger_entries,
-    get_host_ledger_summary, update_admin_payout_status,
+    export_host_ledger_csv, get_host_ledger_entries, get_host_ledger_summary,
+    update_admin_payout_status,
 };
 use super::messages::{get_booking_messages, mark_booking_messages_read, send_booking_message};
 use super::reservation_changes::{
@@ -26,7 +27,7 @@ use super::reservation_changes::{
     list_reservation_change_requests, quote_reservation_change,
 };
 use super::{
-    availability, booking_updates, bookings, cron, documents, ledger, messages, reservation_changes,
+    availability, booking_updates, bookings, cron, documents, messages, reservation_changes,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -50,7 +51,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             bookings::get_user_bookings,
             bookings::get_listing_bookings,
             availability::get_unavailable_ranges,
-            ledger::get_admin_exchange_rates,
+            exchange_rates::current_rates,
+            exchange_rates::coverage,
+            exchange_rates::history,
+            exchange_rates::publish,
+            exchange_rates::delete_scheduled,
+            exchange_rates::retire,
             booking_updates::update_booking,
             booking_updates::delete_booking,
             booking_updates::transfer_booking,
@@ -84,6 +90,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::availability::UnavailableRangesResponse,
                 common::exchange_rate::ExchangeRate,
                 common::exchange_rate::ExchangeRatesResponse,
+                common::exchange_rate::PublishRateRequest,
+                common::exchange_rate::RateVersion,
+                common::exchange_rate::RateState,
+                common::exchange_rate::PairHistoryResponse,
+                common::exchange_rate::RateCoverageGap,
                 common::currency::Currency,
                 common::currency::CurrenciesResponse,
                 common::currency::CreateCurrencyRequest,
@@ -121,7 +132,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints"),
-            (name = "currencies", description = "Currency reference data")
+            (name = "currencies", description = "Currency reference data"),
+            (name = "exchange-rates", description = "Exchange-rate administration")
         ),
     )]
     struct ApiDoc;
@@ -307,7 +319,18 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/admin/exchange-rates")
             .wrap(from_fn(require_user))
-            .route("", web::get().to(get_admin_exchange_rates)),
+            .route("", web::get().to(exchange_rates::current_rates))
+            .route("", web::post().to(exchange_rates::publish))
+            .route("/coverage", web::get().to(exchange_rates::coverage))
+            .route("/{id}", web::delete().to(exchange_rates::delete_scheduled))
+            .route(
+                "/{base}/{target}/history",
+                web::get().to(exchange_rates::history),
+            )
+            .route(
+                "/{base}/{target}/retire",
+                web::post().to(exchange_rates::retire),
+            ),
     );
 
     cfg.service(

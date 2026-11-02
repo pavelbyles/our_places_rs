@@ -21,6 +21,7 @@ mod bookings;
 mod cron;
 mod currencies;
 mod documents;
+mod exchange_rates;
 mod ledger;
 mod messages;
 mod notifications;
@@ -234,6 +235,29 @@ async fn require_admin(
         tracing::warn!(user_id = %claims.sub, action, "non-admin attempted an admin-only action");
         Err(ApiError::Forbidden(format!(
             "Only administrators can {action}"
+        )))
+    }
+}
+
+/// The calling user, who must be an administrator or a host (403 otherwise).
+async fn require_staff(
+    pool: &PgPool,
+    claims: &api_core::auth::Claims,
+    action: &str,
+) -> Result<db_core::models::User, ApiError> {
+    let user = caller(pool, claims).await?;
+    let staff = user.roles.iter().any(|r| {
+        matches!(
+            r,
+            db_core::models::UserRole::Admin | db_core::models::UserRole::Host
+        )
+    });
+    if staff {
+        Ok(user)
+    } else {
+        tracing::warn!(user_id = %claims.sub, action, "non-staff attempted a staff-only action");
+        Err(ApiError::Forbidden(format!(
+            "Only administrators and hosts can {action}"
         )))
     }
 }

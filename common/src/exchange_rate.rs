@@ -106,7 +106,12 @@ pub fn requires_confirmation(baseline: Decimal, proposed: Decimal) -> bool {
 pub fn deviation_pct(baseline: Decimal, proposed: Decimal) -> Option<Decimal> {
     ((proposed - baseline).abs() * Decimal::ONE_HUNDRED)
         .checked_div(baseline)
-        .map(|pct| pct.round_dp(2))
+        .map(|pct| {
+            // Always two places for display ("10.00", not "10").
+            let mut pct = pct.round_dp(2);
+            pct.rescale(2);
+            pct
+        })
 }
 
 /// Why a requested effective time is not acceptable.
@@ -264,7 +269,10 @@ mod rate_rules_tests {
 
     #[test]
     fn deviation_is_for_display_and_safe_on_zero() {
-        assert_eq!(deviation_pct(dec!(160), dec!(176)), Some(dec!(10.00)));
+        assert_eq!(
+            deviation_pct(dec!(160), dec!(176)).map(|d| d.to_string()),
+            Some("10.00".to_string())
+        );
         assert_eq!(deviation_pct(dec!(3), dec!(4)), Some(dec!(33.33)));
         assert_eq!(deviation_pct(Decimal::ZERO, dec!(1)), None);
     }

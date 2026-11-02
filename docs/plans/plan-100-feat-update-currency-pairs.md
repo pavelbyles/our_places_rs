@@ -331,7 +331,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p db_core rate_admin_tests`
   - **Dependencies:** T14
 
-- [ ] **T16: Rate endpoints and settings**
+- [x] **T16: Rate endpoints and settings**
   - **Scope:** M
   - **Description:** Move the handlers to a new `apis/exchange_rates.rs`. The staff GET uses `require_staff` (403, no longer 401). Admin routes use `require_admin`. `/coverage` is registered before `/{id}`. `{id}` is parsed as `web::Path<Uuid>` and `{base}`/`{target}` with `CurrencyCode`. Add the settings `rate_effective_grace_seconds` (default 60; startup rejects ≤0 or **>300**).
   - **Files Touched:** `app_api/booking_api/src/apis/exchange_rates.rs` (new), `apis/ledger.rs`, `apis/routes.rs`, `apis/authz_tests.rs`, `app_api/api_core/src/settings.rs`, `app_api/booking_api/config/Default.toml`, `app_api/booking_api/src/main.rs`

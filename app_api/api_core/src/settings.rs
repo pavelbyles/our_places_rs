@@ -32,10 +32,41 @@ pub struct Application {
     /// `[application] pending_hold_minutes` or `EA__APPLICATION__PENDING_HOLD_MINUTES`.
     #[serde(default = "default_pending_hold_minutes")]
     pub pending_hold_minutes: i32,
+    /// Grace window, in seconds, within which an exchange rate submitted as
+    /// "effective now" is not treated as backdated. Set via
+    /// `[application] rate_effective_grace_seconds` or
+    /// `EA__APPLICATION__RATE_EFFECTIVE_GRACE_SECONDS`; must be 1-300.
+    #[serde(default = "default_rate_effective_grace_seconds")]
+    pub rate_effective_grace_seconds: i64,
 }
 
 fn default_pending_hold_minutes() -> i32 {
     DEFAULT_PENDING_HOLD_MINUTES
+}
+
+/// Default grace window for "effective now" exchange rates, in seconds.
+pub const DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS: i64 = 60;
+
+/// Largest allowed grace window: anything longer would amount to backdating.
+pub const MAX_RATE_EFFECTIVE_GRACE_SECONDS: i64 = 300;
+
+fn default_rate_effective_grace_seconds() -> i64 {
+    DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS
+}
+
+impl Application {
+    /// The rate grace window, or why the configured value is invalid.
+    pub fn rate_effective_grace(&self) -> Result<chrono::Duration, String> {
+        (1..=MAX_RATE_EFFECTIVE_GRACE_SECONDS)
+            .contains(&self.rate_effective_grace_seconds)
+            .then(|| chrono::Duration::seconds(self.rate_effective_grace_seconds))
+            .ok_or_else(|| {
+                format!(
+                    "application.rate_effective_grace_seconds must be 1-{MAX_RATE_EFFECTIVE_GRACE_SECONDS}, got {}",
+                    self.rate_effective_grace_seconds
+                )
+            })
+    }
 }
 
 // Server model

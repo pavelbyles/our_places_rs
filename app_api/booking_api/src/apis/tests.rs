@@ -2042,10 +2042,11 @@ async fn test_admin_exchange_rates_endpoint() {
     .await
     .unwrap();
 
-    // A newer USD/JMD rate supersedes the migration's seed.
+    // A newer USD/JMD rate supersedes the migration's seed. It must already be
+    // effective: future-dated rows are scheduled, not current (#100).
     sqlx::query(
         "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
-             VALUES ('USD', 'JMD', 157.250000, NOW() + INTERVAL '1 second')",
+             VALUES ('USD', 'JMD', 157.250000, NOW() - INTERVAL '1 second')",
     )
     .execute(&pool)
     .await
@@ -2080,8 +2081,9 @@ async fn test_admin_exchange_rates_endpoint() {
     let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(host_id))).await;
     assert_eq!(resp.status(), 200);
 
+    // A signed-in non-staff user is forbidden (403), not unauthenticated (#100).
     let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(booker_id))).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 }
 
 /// Checkout pricing must use a real rate, reject unknown policies, convert
@@ -2193,6 +2195,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
         application: api_core::settings::Application {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
