@@ -93,7 +93,7 @@ T30 final gates               ← all
 
 ## Phase A: Payout Fixes
 
-- [ ] **Task 1: Clear stale discounts on direct updates**
+- [x] **Task 1: Clear stale discounts on direct updates**
   - **Scope:** S
   - **Description:** Add `UpdatedBooking.replace_discounts`, set it in `reprice`, and write `discount_value = CASE WHEN $21 THEN $9 ELSE COALESCE($9, discount_value) END`.
   - **Files Touched:**

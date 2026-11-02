@@ -214,7 +214,7 @@ async fn write_booking_update(
             daily_rate = COALESCE($6, daily_rate),
             total_days = COALESCE($7, total_days),
             sub_total_price = COALESCE($8, sub_total_price),
-            discount_value = COALESCE($9, discount_value),
+            discount_value = CASE WHEN $21 THEN $9 ELSE COALESCE($9, discount_value) END,
             tax_value = COALESCE($10, tax_value),
             fee_breakdown = COALESCE($11, fee_breakdown),
             total_price = COALESCE($12, total_price),
@@ -254,7 +254,8 @@ async fn write_booking_update(
         updated_booking.exchange_rate,
         Utc::now(),
         id,
-        updated_booking.number_of_persons
+        updated_booking.number_of_persons,
+        updated_booking.replace_discounts
     )
     .fetch_one(&mut *conn)
     .await?;

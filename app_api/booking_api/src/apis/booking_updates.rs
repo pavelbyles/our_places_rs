@@ -292,6 +292,7 @@ async fn reprice(
         platform_fee: Some(plat_fee),
         tax_rate: Some(tax_rate),
         exchange_rate: Some(conversion_rate),
+        replace_discounts: true,
         ..UpdatedBooking::default()
     })
 }

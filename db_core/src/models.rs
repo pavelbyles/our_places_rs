@@ -321,6 +321,9 @@ pub struct UpdatedBooking {
     pub tax_rate: Option<Decimal>,
     /// Exchange rate.
     pub exchange_rate: Option<Decimal>,
+    /// When true, the discount fields replace the stored values, so `None`
+    /// clears a discount that no longer applies. When false, `None` keeps them.
+    pub replace_discounts: bool,
 }
 
 /// Immutable audit log entry capturing booking status transitions.
