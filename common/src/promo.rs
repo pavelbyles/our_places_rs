@@ -13,7 +13,7 @@ pub const MIN_CODE_LEN: usize = 4;
 pub const MAX_CODE_LEN: usize = 32;
 
 /// How a code's discount is expressed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[cfg_attr(
     feature = "sqlx",
@@ -28,7 +28,7 @@ pub enum PromoDiscountType {
 }
 
 /// What a code's discount applies to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
 #[cfg_attr(
     feature = "sqlx",
@@ -255,6 +255,181 @@ pub fn check_usage(usage: PromoUsage) -> Result<(), PromoRefusal> {
     }
 }
 
+/// Largest amount a code's `NUMERIC(12,2)` columns can hold.
+const MAX_CODE_AMOUNT: Decimal = Decimal::from_parts(3_567_587_327, 232, 0, false, 2);
+
+/// A code to create.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct CreatePromoCodeRequest {
+    /// The code as typed.
+    pub code: String,
+    /// Whether `discount_value` is a percentage or an amount.
+    pub discount_type: PromoDiscountType,
+    /// The percentage, or the amount in `currency`.
+    pub discount_value: Decimal,
+    /// The stated currency of a fixed discount or minimum value.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// What the discount applies to.
+    pub scope: PromoScope,
+    /// When the code starts being valid.
+    pub valid_from: DateTime<Utc>,
+    /// When the code stops being valid.
+    pub valid_to: DateTime<Utc>,
+    /// First eligible night.
+    #[serde(default)]
+    pub stay_from: Option<NaiveDate>,
+    /// Last eligible night.
+    #[serde(default)]
+    pub stay_to: Option<NaiveDate>,
+    /// Fewest nights the stay must have.
+    #[serde(default)]
+    pub min_nights: Option<i32>,
+    /// Least the eligible amount must be, in `currency`.
+    #[serde(default)]
+    pub min_booking_value: Option<Decimal>,
+    /// Most uses allowed across all guests.
+    #[serde(default)]
+    pub total_usage_limit: Option<i32>,
+    /// Most uses allowed per guest.
+    #[serde(default)]
+    pub per_guest_limit: Option<i32>,
+    /// Whether the code covers every listing in its owner's reach.
+    pub applies_to_all: bool,
+    /// The selected listings, when it doesn't.
+    #[serde(default)]
+    pub listing_ids: Vec<uuid::Uuid>,
+}
+
+/// A code with its usage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct PromoCodeResponse {
+    /// Unique identifier.
+    pub id: uuid::Uuid,
+    /// The normalized code.
+    pub code: String,
+    /// Whether `discount_value` is a percentage or an amount.
+    pub discount_type: PromoDiscountType,
+    /// The percentage, or the amount in `currency`.
+    pub discount_value: Decimal,
+    /// The stated currency of a fixed discount or minimum value.
+    pub currency: Option<String>,
+    /// What the discount applies to.
+    pub scope: PromoScope,
+    /// When the code starts being valid.
+    pub valid_from: DateTime<Utc>,
+    /// When the code stops being valid.
+    pub valid_to: DateTime<Utc>,
+    /// First eligible night.
+    pub stay_from: Option<NaiveDate>,
+    /// Last eligible night.
+    pub stay_to: Option<NaiveDate>,
+    /// Fewest nights the stay must have.
+    pub min_nights: Option<i32>,
+    /// Least the eligible amount must be, in `currency`.
+    pub min_booking_value: Option<Decimal>,
+    /// Most uses allowed across all guests.
+    pub total_usage_limit: Option<i32>,
+    /// Most uses allowed per guest.
+    pub per_guest_limit: Option<i32>,
+    /// Whether the code covers every listing in its owner's reach.
+    pub applies_to_all: bool,
+    /// The selected listings.
+    pub listing_ids: Vec<uuid::Uuid>,
+    /// The host who funds and manages the code; `None` for an admin-created code.
+    pub owner_host_id: Option<uuid::Uuid>,
+    /// When the code was deactivated.
+    pub deactivated_at: Option<DateTime<Utc>>,
+    /// Live holds using the code.
+    pub active_holds: i64,
+    /// Confirmed or completed bookings using the code.
+    pub confirmed_uses: i64,
+    /// Uses left, when the code has a total limit.
+    pub remaining_uses: Option<i64>,
+    /// When the code was created.
+    pub created_at: DateTime<Utc>,
+}
+
+/// One page of codes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct PromoCodesResponse {
+    /// The codes on this page.
+    pub codes: Vec<PromoCodeResponse>,
+    /// Codes across all pages.
+    pub total: i64,
+}
+
+fn is_valid_amount(amount: Decimal) -> bool {
+    amount > Decimal::ZERO && amount.normalize().scale() <= 2 && amount <= MAX_CODE_AMOUNT
+}
+
+/// Checks a code's terms and returns the normalized code, or what's wrong with
+/// them. More than 2 decimal places is rejected, not rounded.
+pub fn validate_new_code(request: &CreatePromoCodeRequest) -> Result<String, String> {
+    let code = normalize_code(&request.code)
+        .ok()
+        .flatten()
+        .ok_or_else(|| {
+            format!(
+                "Codes are {MIN_CODE_LEN}-{MAX_CODE_LEN} letters, digits or hyphens, and can't start with a hyphen."
+            )
+        })?;
+    if !is_valid_amount(request.discount_value) {
+        return Err("The discount must be above 0, with at most 2 decimal places.".to_string());
+    }
+    if request.discount_type == PromoDiscountType::Percentage
+        && request.discount_value > Decimal::ONE_HUNDRED
+    {
+        return Err("A percentage discount can be at most 100.".to_string());
+    }
+    let needs_currency =
+        request.discount_type == PromoDiscountType::Fixed || request.min_booking_value.is_some();
+    match (needs_currency, &request.currency) {
+        (true, None) => {
+            return Err("A fixed discount or minimum value needs a currency.".to_string());
+        }
+        (false, Some(_)) => {
+            return Err("Only a fixed discount or minimum value has a currency.".to_string());
+        }
+        (true, Some(currency)) => {
+            crate::currency::CurrencyCode::try_from(currency.as_str())
+                .map_err(|_| "Currencies are three capital letters, e.g. USD.".to_string())?;
+        }
+        (false, None) => {}
+    }
+    if request.valid_to <= request.valid_from {
+        return Err("The validity period must end after it starts.".to_string());
+    }
+    if let (Some(from), Some(to)) = (request.stay_from, request.stay_to)
+        && to < from
+    {
+        return Err("The stay window must end on or after its first night.".to_string());
+    }
+    if request.min_nights.is_some_and(|n| n < 1) {
+        return Err("Minimum nights must be at least 1.".to_string());
+    }
+    if request
+        .min_booking_value
+        .is_some_and(|value| !is_valid_amount(value))
+    {
+        return Err(
+            "The minimum value must be above 0, with at most 2 decimal places.".to_string(),
+        );
+    }
+    if request.total_usage_limit.is_some_and(|n| n < 1)
+        || request.per_guest_limit.is_some_and(|n| n < 1)
+    {
+        return Err("Usage limits must be at least 1.".to_string());
+    }
+    if request.applies_to_all && !request.listing_ids.is_empty() {
+        return Err("Choose all listings or selected listings, not both.".to_string());
+    }
+    if !request.applies_to_all && request.listing_ids.is_empty() {
+        return Err("Select at least one listing.".to_string());
+    }
+    Ok(code)
+}
+
 /// What happens to a booking's promo when its terms change.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -353,6 +528,249 @@ impl PromoTerms {
                 (stay, cleaning)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod validation {
+    use super::*;
+    use chrono::TimeZone;
+    use rust_decimal_macros::dec;
+
+    fn at(day: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2030, 1, day, 0, 0, 0)
+            .single()
+            .expect("valid time")
+    }
+
+    fn valid() -> CreatePromoCodeRequest {
+        CreatePromoCodeRequest {
+            code: " summer-10 ".to_string(),
+            discount_type: PromoDiscountType::Percentage,
+            discount_value: dec!(10),
+            currency: None,
+            scope: PromoScope::Stay,
+            valid_from: at(1),
+            valid_to: at(2),
+            stay_from: None,
+            stay_to: None,
+            min_nights: None,
+            min_booking_value: None,
+            total_usage_limit: None,
+            per_guest_limit: None,
+            applies_to_all: true,
+            listing_ids: vec![],
+        }
+    }
+
+    #[test]
+    fn a_valid_code_is_normalized() {
+        assert_eq!(validate_new_code(&valid()).as_deref(), Ok("SUMMER-10"));
+    }
+
+    #[test]
+    fn valid_edge_cases_are_accepted() {
+        for request in [
+            CreatePromoCodeRequest {
+                discount_value: dec!(100),
+                ..valid()
+            },
+            CreatePromoCodeRequest {
+                discount_value: dec!(33.33),
+                ..valid()
+            },
+            CreatePromoCodeRequest {
+                discount_type: PromoDiscountType::Fixed,
+                discount_value: dec!(1000),
+                currency: Some("USD".to_string()),
+                ..valid()
+            },
+            CreatePromoCodeRequest {
+                min_booking_value: Some(dec!(100)),
+                currency: Some("USD".to_string()),
+                stay_from: Some(at(5).date_naive()),
+                stay_to: Some(at(5).date_naive()),
+                min_nights: Some(1),
+                total_usage_limit: Some(1),
+                per_guest_limit: Some(1),
+                ..valid()
+            },
+            CreatePromoCodeRequest {
+                applies_to_all: false,
+                listing_ids: vec![uuid::Uuid::nil()],
+                ..valid()
+            },
+        ] {
+            assert!(validate_new_code(&request).is_ok(), "{request:?}");
+        }
+    }
+
+    #[test]
+    fn every_rule_refuses_with_a_reason() {
+        for (case, request) in [
+            (
+                "malformed code",
+                CreatePromoCodeRequest {
+                    code: "SUM_MER".to_string(),
+                    ..valid()
+                },
+            ),
+            (
+                "blank code",
+                CreatePromoCodeRequest {
+                    code: "  ".to_string(),
+                    ..valid()
+                },
+            ),
+            (
+                "leading hyphen",
+                CreatePromoCodeRequest {
+                    code: "-ABCD".to_string(),
+                    ..valid()
+                },
+            ),
+            (
+                "zero",
+                CreatePromoCodeRequest {
+                    discount_value: Decimal::ZERO,
+                    ..valid()
+                },
+            ),
+            (
+                "negative",
+                CreatePromoCodeRequest {
+                    discount_value: dec!(-1),
+                    ..valid()
+                },
+            ),
+            (
+                "rounds to zero",
+                CreatePromoCodeRequest {
+                    discount_value: dec!(0.001),
+                    ..valid()
+                },
+            ),
+            (
+                "too precise",
+                CreatePromoCodeRequest {
+                    discount_value: dec!(33.335),
+                    ..valid()
+                },
+            ),
+            (
+                "over 100%",
+                CreatePromoCodeRequest {
+                    discount_value: dec!(100.01),
+                    ..valid()
+                },
+            ),
+            (
+                "overflows the column",
+                CreatePromoCodeRequest {
+                    discount_type: PromoDiscountType::Fixed,
+                    discount_value: dec!(100000000000),
+                    currency: Some("USD".to_string()),
+                    ..valid()
+                },
+            ),
+            (
+                "fixed with no currency",
+                CreatePromoCodeRequest {
+                    discount_type: PromoDiscountType::Fixed,
+                    ..valid()
+                },
+            ),
+            (
+                "minimum with no currency",
+                CreatePromoCodeRequest {
+                    min_booking_value: Some(dec!(10)),
+                    ..valid()
+                },
+            ),
+            (
+                "needless currency",
+                CreatePromoCodeRequest {
+                    currency: Some("USD".to_string()),
+                    ..valid()
+                },
+            ),
+            (
+                "malformed currency",
+                CreatePromoCodeRequest {
+                    discount_type: PromoDiscountType::Fixed,
+                    currency: Some("usd1".to_string()),
+                    ..valid()
+                },
+            ),
+            (
+                "backwards period",
+                CreatePromoCodeRequest {
+                    valid_to: at(1),
+                    ..valid()
+                },
+            ),
+            (
+                "backwards window",
+                CreatePromoCodeRequest {
+                    stay_from: Some(at(5).date_naive()),
+                    stay_to: Some(at(4).date_naive()),
+                    ..valid()
+                },
+            ),
+            (
+                "zero nights",
+                CreatePromoCodeRequest {
+                    min_nights: Some(0),
+                    ..valid()
+                },
+            ),
+            (
+                "too precise minimum",
+                CreatePromoCodeRequest {
+                    min_booking_value: Some(dec!(1.001)),
+                    currency: Some("USD".to_string()),
+                    ..valid()
+                },
+            ),
+            (
+                "zero total limit",
+                CreatePromoCodeRequest {
+                    total_usage_limit: Some(0),
+                    ..valid()
+                },
+            ),
+            (
+                "zero guest limit",
+                CreatePromoCodeRequest {
+                    per_guest_limit: Some(0),
+                    ..valid()
+                },
+            ),
+            (
+                "no listings",
+                CreatePromoCodeRequest {
+                    applies_to_all: false,
+                    ..valid()
+                },
+            ),
+            (
+                "all and selected",
+                CreatePromoCodeRequest {
+                    listing_ids: vec![uuid::Uuid::nil()],
+                    ..valid()
+                },
+            ),
+        ] {
+            assert!(
+                validate_new_code(&request).is_err(),
+                "{case} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn the_amount_limit_matches_the_column() {
+        assert_eq!(MAX_CODE_AMOUNT, dec!(9999999999.99));
     }
 }
 

@@ -530,7 +530,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core promo_tests::management`
   - **Dependencies:** T8, T9
 
-- [ ] **Task 22: Add the promo management API**
+- [x] **Task 22: Add the promo management API**
   - **Scope:** M
   - **Description:** Add `apis/promo_codes.rs` with list, create, get and deactivate under `/api/v1/admin/promo-codes`, using `require_staff` plus the spec §1.2 ownership rules. Add request validation for §1.1 and the DTOs. Wrap the scope in `from_fn(require_user)`. `validate_new_code` in `common::promo` covers §1.1, including at most 2 decimal places and no empty selected-listings set. Create and deactivate log `info` with `promo_code_id` and `actor_id`, never `code`.
   - **Files Touched:**

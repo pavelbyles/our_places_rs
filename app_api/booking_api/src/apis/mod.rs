@@ -25,6 +25,7 @@ mod exchange_rates;
 mod ledger;
 mod messages;
 mod notifications;
+mod promo_codes;
 mod reservation_changes;
 mod routes;
 mod stay_pricing;

@@ -1508,10 +1508,11 @@ mod management {
             let guest = raw_user(&pool).await;
             let booking = raw_booking(&pool, guest, villa, status).await;
             sqlx::query(
-                "UPDATE booking SET expires_at = NOW() + $2 * INTERVAL '1 hour' WHERE id = $1",
+                "UPDATE booking SET expires_at = CASE WHEN $2 THEN NOW() - INTERVAL '1 hour'
+                     ELSE NOW() + INTERVAL '1 hour' END WHERE id = $1",
             )
             .bind(booking)
-            .bind(if expired { -1.0_f64 } else { 1.0_f64 })
+            .bind(expired)
             .execute(&pool)
             .await
             .unwrap();

@@ -27,8 +27,8 @@ use super::reservation_changes::{
     list_reservation_change_requests, quote_reservation_change,
 };
 use super::{
-    availability, booking_updates, bookings, cron, documents, messages, reservation_changes,
-    stay_pricing,
+    availability, booking_updates, bookings, cron, documents, messages, promo_codes,
+    reservation_changes, stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -336,6 +336,18 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/{base}/{target}/retire",
                 web::post().to(exchange_rates::retire),
+            ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/admin/promo-codes")
+            .wrap(from_fn(require_user))
+            .route("", web::get().to(promo_codes::list_promo_codes))
+            .route("", web::post().to(promo_codes::create_promo_code))
+            .route("/{id}", web::get().to(promo_codes::get_promo_code))
+            .route(
+                "/{id}/deactivate",
+                web::post().to(promo_codes::deactivate_promo_code),
             ),
     );
 
