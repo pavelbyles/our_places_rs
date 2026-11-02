@@ -265,7 +265,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p web_ui_admin currency_select_tests`
   - **Dependencies:** T11
 
-- [ ] **T12b: Guest selects driven by the DB**
+- [x] **T12b: Guest selects driven by the DB**
   - **Scope:** S
   - **Description:** Remove `DISPLAY_CURRENCIES` and `checkout.rs::CURRENCIES`. Render fns take `&[Currency]`. If the stored preference or default currency isn't in the active list, the selector preselects nothing and prompts "Choose a currency", and detail/quote fetches are made without `?currency` until one is chosen. If `active_currencies()` errors with no cache, the selector is hidden and prices stay in the listing's base currency (correctly labelled), with a `warn!`.
   - **Files Touched:** `web_ui_common/src/components/domain/currency_selector.rs`, `web_ui_guest/src/pages/checkout.rs`, `web_ui_guest/src/pages/profile.rs`

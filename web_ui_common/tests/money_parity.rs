@@ -8,7 +8,7 @@ use rust_decimal_macros::dec;
 use topcoat::context::Cx;
 use topcoat::view::{ViewExt, view};
 use web_ui_common::components::domain::{
-    currency_selector::currency_selector,
+    currency_selector::currency_menu,
     price_breakdown::{PriceBreakdown, price_breakdown},
 };
 
@@ -160,12 +160,17 @@ async fn matches_legacy_when_optional_fees_are_absent_or_zero() {
 #[tokio::test]
 async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     let __cx = &Cx::default();
+    let codes: Vec<String> = ["CAD", "EUR", "GBP", "JMD", "USD"]
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
+    let menu_codes = codes.clone();
     let out = html(
-        view! { currency_selector(current_currency: Some("jmd".into())) },
+        view! { currency_menu(codes: menu_codes, current_currency: Some("jmd".into())) },
         __cx,
     )
     .await;
-    for c in ["USD", "JMD", "EUR", "GBP", "CAD"] {
+    for c in &codes {
         assert!(
             out.contains(&format!(r#"href="?currency={c}""#)),
             "{c}: {out}"
@@ -173,10 +178,27 @@ async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     }
     assert_eq!(out.matches(r#"aria-current="true""#).count(), 1, "{out}");
     assert!(out.contains("Display currency: JMD"), "{out}");
+
+    // A code that is no longer offered (e.g. deactivated) prompts a choice
+    // instead of pretending to be USD.
+    let unknown_codes = codes.clone();
     let unknown = html(
-        view! { currency_selector(current_currency: Some("XYZ".into())) },
+        view! { currency_menu(codes: unknown_codes, current_currency: Some("XYZ".into())) },
         __cx,
     )
     .await;
-    assert!(unknown.contains("Display currency: USD"), "{unknown}");
+    assert!(unknown.contains("Choose a currency"), "{unknown}");
+    assert_eq!(
+        unknown.matches(r#"aria-current="true""#).count(),
+        0,
+        "{unknown}"
+    );
+
+    // No list (backend unreachable): the menu is hidden.
+    let hidden = html(
+        view! { currency_menu(codes: Vec::new(), current_currency: None) },
+        __cx,
+    )
+    .await;
+    assert!(!hidden.contains("<details"), "{hidden}");
 }

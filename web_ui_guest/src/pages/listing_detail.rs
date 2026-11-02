@@ -111,7 +111,7 @@ async fn quote_panel(
 }
 
 async fn load(cx: &Cx, slug: &str) -> Result<ListingDetails> {
-    let currency = display_currency(cx);
+    let currency = display_currency(cx).await;
     get_api_client(cx)
         .get_listing_by_id(slug, currency.as_deref())
         .await
@@ -156,7 +156,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let reviews: Vec<ReviewResponse> = reviews.unwrap_or_default();
     let summary = ListingSummary::from(&details.listing);
     let listing = details.listing.clone();
-    let currency = display_currency(cx);
+    let currency = display_currency(cx).await;
     let price = format!("{} {}", summary.currency, summary.price);
     let max_guests = listing.max_guests.max(1);
     let default_guests = q.guests.unwrap_or(2).clamp(1, max_guests);
@@ -318,7 +318,7 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
     let details = load(cx, slug).await?;
     let q = stay_query(cx);
-    let currency = display_currency(cx);
+    let currency = display_currency(cx).await;
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     let href = checkout_href(&details.listing.slug, &q, currency.as_deref());
     let slug = details.listing.slug.clone();

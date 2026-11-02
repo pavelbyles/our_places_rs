@@ -1,48 +1,85 @@
-//! Display-currency switcher (tri-currency display: USD base plus JMD, EUR,
-//! GBP and CAD). Selecting a currency reloads the page with `?currency=`.
+//! Display-currency switcher. The offered currencies come from the database
+//! (the cached active list); selecting one reloads the page with `?currency=`.
 
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
 };
 
-/// Currencies offered, in menu order.
-pub const DISPLAY_CURRENCIES: [&str; 5] = ["USD", "JMD", "EUR", "GBP", "CAD"];
-
-/// A pill showing the active currency that opens a menu of the others.
-/// Closes on outside click / Escape via `ui.js` (`data-dismiss-outside`).
+/// A pill showing the active display currency that opens a menu of the
+/// active currencies. Hidden when no currency list is available.
 #[component]
 pub async fn currency_selector(
-    /// Active currency; defaults to USD.
+    /// Request context.
+    cx: &topcoat::context::Cx,
+    /// Active currency, if one was chosen.
+    #[default]
+    current_currency: Option<String>,
+    /// Extra HTML attributes for the root element; `class` is merged with the defaults.
+    #[default]
+    attrs: Attributes,
+) -> Result<impl View> {
+    let codes = active_currency_codes(cx).await;
+    Ok(view! { currency_menu(codes: codes, current_currency: current_currency, attrs: attrs) })
+}
+
+/// The menu itself, rendered from a list of codes (no I/O; used by tests).
+/// No choice shows USD (prices in their base currency); a code that is not
+/// offered (e.g. deactivated) prompts the guest to choose.
+#[component]
+pub async fn currency_menu(
+    /// Codes to offer, in menu order.
+    codes: Vec<String>,
+    /// Active currency, if one was chosen.
     #[default]
     current_currency: Option<String>,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
-    let active = current_currency
-        .map(|c| c.to_uppercase())
-        .filter(|c| DISPLAY_CURRENCIES.contains(&c.as_str()))
-        .unwrap_or_else(|| "USD".to_string());
+    let requested = current_currency.map(|c| c.to_uppercase());
+    let active = match &requested {
+        None => Some("USD".to_string()),
+        Some(c) => codes.iter().find(|code| *code == c).cloned(),
+    };
+    let summary = active
+        .clone()
+        .unwrap_or_else(|| "Choose a currency".to_string());
+    let label = active
+        .as_ref()
+        .map(|a| format!("Display currency: {a}"))
+        .unwrap_or_else(|| "Choose a display currency".to_string());
+    let hidden = codes.is_empty();
     Ok(view! {
-        <details data-dismiss-outside="" class=(class!("relative", attrs.remove("class"))) (attrs)>
-            <summary
-                aria-label=(format!("Display currency: {active}"))
-                class="flex h-11 cursor-pointer list-none items-center rounded-full border border-border px-3 text-sm font-medium sm:px-4"
-            >(active.clone())</summary>
-            <ul class="absolute right-0 z-50 mt-2 w-28 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-sm">
-                for curr in DISPLAY_CURRENCIES {
-                    <li>
-                        <a
-                            href=(format!("?currency={curr}"))
-                            aria-current=((curr == active).then_some("true"))
-                            class="block rounded-lg px-3 py-2 text-sm aria-[current=true]:font-semibold"
-                        >(curr)</a>
-                    </li>
-                }
-            </ul>
-        </details>
+        if !hidden {
+            <details data-dismiss-outside="" class=(class!("relative", attrs.remove("class"))) (attrs)>
+                <summary
+                    aria-label=(label)
+                    class="flex h-11 cursor-pointer list-none items-center rounded-full border border-border px-3 text-sm font-medium sm:px-4"
+                >(summary)</summary>
+                <ul class="absolute right-0 z-50 mt-2 w-28 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-sm">
+                    for curr in codes {
+                        <li>
+                            <a
+                                href=(format!("?currency={curr}"))
+                                aria-current=((Some(&curr) == active.as_ref()).then_some("true"))
+                                class="block rounded-lg px-3 py-2 text-sm aria-[current=true]:font-semibold"
+                            >(curr.clone())</a>
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
     })
+}
+
+/// Codes of the active currencies, from the portal's cache.
+pub async fn active_currency_codes(cx: &topcoat::context::Cx) -> Vec<String> {
+    active_currency_list(cx)
+        .await
+        .into_iter()
+        .map(|c| c.code.to_string())
+        .collect()
 }
 
 /// One `<option>` of a currency `<select>`.

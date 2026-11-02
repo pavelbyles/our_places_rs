@@ -15,6 +15,7 @@ use web_client::{
     get_api_client,
     session::{GuardError, GuestSession, login_redirect, require_guest},
 };
+use web_ui_common::components::domain::currency_selector::active_currency_codes;
 use web_ui_common::components::{
     domain::{
         listing_card::ListingSummary,
@@ -32,7 +33,6 @@ path_param!(slug);
 path_param!(id);
 
 /// Display currencies accepted at checkout.
-const CURRENCIES: [&str; 5] = ["USD", "JMD", "EUR", "GBP", "CAD"];
 const ARRIVAL_TIMES: [&str; 4] = [
     "3:00 PM (Standard Check-in)",
     "5:00 PM",
@@ -76,11 +76,11 @@ pub struct CheckoutForm {
     pub message_to_host: String,
 }
 
-/// Legacy `{slug}-jmd` style URLs carry the currency in the slug.
-fn split_currency_suffix(slug: &str) -> Option<(&str, &'static str)> {
-    CURRENCIES.iter().skip(1).find_map(|c| {
+/// Legacy `{slug}-jmd` style URLs carry an (active) currency in the slug.
+fn split_currency_suffix<'a>(slug: &'a str, codes: &[String]) -> Option<(&'a str, String)> {
+    codes.iter().find_map(|c| {
         slug.strip_suffix(&format!("-{}", c.to_lowercase()))
-            .map(|base| (base, *c))
+            .map(|base| (base, c.clone()))
     })
 }
 
@@ -262,11 +262,12 @@ async fn build_view(
 #[page("/checkout/{slug}")]
 pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
-    if let Some((base, currency)) = split_currency_suffix(slug) {
+    let offered = active_currency_codes(cx).await;
+    if let Some((base, currency)) = split_currency_suffix(slug, &offered) {
         return Err(redirect_permanent(format!("/checkout/{base}?currency={currency}")).into());
     }
     let guest = require_guest(cx).await.map_err(|e| guard_failure(cx, e))?;
-    let currency = display_currency(cx).unwrap_or_default();
+    let currency = display_currency(cx).await.unwrap_or_default();
     let details = load(
         cx,
         slug,
@@ -304,7 +305,7 @@ pub async fn checkout_submit(
         }
         Err(e) => return Err(guard_failure(cx, e)),
     };
-    let currency = if CURRENCIES.contains(&form.currency.as_str()) {
+    let currency = if active_currency_codes(cx).await.contains(&form.currency) {
         form.currency.clone()
     } else {
         String::new()
@@ -403,6 +404,9 @@ async fn place_booking(
                         .to_string()
                 } else if text.contains("max_guests") {
                     format!("This stay allows 1 to {max_guests} guests.")
+                } else if text.contains("CURRENCY_INACTIVE") {
+                    "This currency is no longer offered. Please choose another currency."
+                        .to_string()
                 } else if text.contains("FX_RATE_UNAVAILABLE") {
                     "We can't take payment in this currency right now. Please choose another currency."
                         .to_string()
