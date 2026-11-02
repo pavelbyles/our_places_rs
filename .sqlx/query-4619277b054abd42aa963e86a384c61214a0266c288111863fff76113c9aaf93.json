@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        FROM booking\n        WHERE id = $1\n        ",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\",\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            promo_stay_discount, promo_cleaning_discount,\n            created_at, updated_at\n        FROM booking\n        WHERE id = $1\n        FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -150,11 +150,31 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -189,9 +209,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "e52d6314389fce4ad76778456b52ea187004fe80674a5c55faec10a186cd7c76"
+  "hash": "4619277b054abd42aa963e86a384c61214a0266c288111863fff76113c9aaf93"
 }

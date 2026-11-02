@@ -189,6 +189,10 @@ fn test_user_bookings_response_mapping() {
         platform_fee: Decimal::new(45, 0),
         tax_rate: Decimal::new(15, 2),
         exchange_rate: Decimal::ONE,
+        promo_code_id: None,
+        promo_terms: None,
+        promo_stay_discount: Decimal::ZERO,
+        promo_cleaning_discount: Decimal::ZERO,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
@@ -250,6 +254,10 @@ fn test_listing_bookings_response_mapping_all_statuses() {
             platform_fee: Decimal::ZERO,
             tax_rate: Decimal::new(15, 2),
             exchange_rate: Decimal::ONE,
+            promo_code_id: None,
+            promo_terms: None,
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -588,6 +596,8 @@ async fn test_get_booking_documents_and_authorization() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -949,6 +959,8 @@ async fn test_booking_date_change_api() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -1006,6 +1018,8 @@ async fn test_booking_date_change_api() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             b2_id,
@@ -1569,6 +1583,8 @@ async fn test_complete_stays_cron() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -1789,6 +1805,10 @@ fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discou
         platform_fee: dec!(50.00),
         tax_rate: dec!(0.15),
         exchange_rate: dec!(1.0),
+        promo_code_id: None,
+        promo_terms: None,
+        promo_stay_discount: Decimal::ZERO,
+        promo_cleaning_discount: Decimal::ZERO,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };

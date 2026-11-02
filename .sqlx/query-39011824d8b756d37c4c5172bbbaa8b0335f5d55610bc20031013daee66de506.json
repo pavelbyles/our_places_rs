@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO booking (\n                id, confirmation_code, guest_id, listing_id, status,\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown,\n                total_price, cancellation_policy, metadata, door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            )\n            VALUES (\n                $1, $2, $3, $4, 'confirmed'::booking_status,\n                $5, $6, 'USD', 200.00, 2, 5,\n                1000.00, 0.00, 150.00, '[]'::jsonb,\n                1300.00, 'flexible'::cancellation_policy, $7, NULL,\n                50.00, 100.00, 50.00, 0.1500, 1.000000,\n                NOW(), NOW()\n            )\n            RETURNING\n                id, confirmation_code, guest_id, listing_id, status as \"status: db_core::models::BookingStatus\",\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<db_core::models::FeeItem>>\",\n                total_price, cancellation_policy as \"cancellation_policy: db_core::models::CancellationPolicy\",\n                metadata as \"metadata: Json<db_core::models::BookingMetadata>\",\n                door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            ",
+  "query": "\n            INSERT INTO booking (\n                id, confirmation_code, guest_id, listing_id, status,\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown,\n                total_price, cancellation_policy, metadata, door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            )\n            VALUES (\n                $1, $2, $3, $4, 'confirmed'::booking_status,\n                $5, $6, 'USD', 200.00, 2, 3,\n                600.00, 0.00, 97.50, '[]'::jsonb,\n                827.50, 'flexible'::cancellation_policy, $7, NULL,\n                50.00, 100.00, 30.00, 0.1500, 1.000000,\n                NOW(), NOW()\n            )\n            RETURNING\n                id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\",\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<crate::models::FeeItem>>\",\n                total_price, cancellation_policy as \"cancellation_policy: crate::models::CancellationPolicy\",\n                metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n                door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n                promo_stay_discount, promo_cleaning_discount,\n                created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -25,7 +25,7 @@
       },
       {
         "ordinal": 4,
-        "name": "status: db_core::models::BookingStatus",
+        "name": "status: BookingStatus",
         "type_info": {
           "Custom": {
             "name": "booking_status",
@@ -87,7 +87,7 @@
       },
       {
         "ordinal": 14,
-        "name": "fee_breakdown: Json<Vec<db_core::models::FeeItem>>",
+        "name": "fee_breakdown: Json<Vec<crate::models::FeeItem>>",
         "type_info": "Jsonb"
       },
       {
@@ -97,7 +97,7 @@
       },
       {
         "ordinal": 16,
-        "name": "cancellation_policy: db_core::models::CancellationPolicy",
+        "name": "cancellation_policy: crate::models::CancellationPolicy",
         "type_info": {
           "Custom": {
             "name": "cancellation_policy",
@@ -115,7 +115,7 @@
       },
       {
         "ordinal": 17,
-        "name": "metadata: Json<db_core::models::BookingMetadata>",
+        "name": "metadata: Json<crate::models::BookingMetadata>",
         "type_info": "Jsonb"
       },
       {
@@ -150,11 +150,31 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -195,9 +215,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "fbc0f153969e2639b79b21e6a1a07774e1e42278bd282f99781901fe3aaf5d32"
+  "hash": "39011824d8b756d37c4c5172bbbaa8b0335f5d55610bc20031013daee66de506"
 }

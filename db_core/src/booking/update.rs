@@ -233,6 +233,8 @@ async fn write_booking_update(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
@@ -301,7 +303,7 @@ async fn start_host_payout(
     let terms = host_payout_terms(&mut *conn, booking).await?;
     let gross_amount = common::pricing::host_gross(
         booking.accommodation_net(),
-        booking.cleaning_fee,
+        booking.cleaning_net(),
         terms.exchange_rate,
     );
     crate::payout_ledger::create_payout_ledger_entry(
@@ -326,7 +328,7 @@ async fn revise_confirmed_terms(
         &mut *conn,
         booking.id,
         booking.accommodation_net(),
-        booking.cleaning_fee,
+        booking.cleaning_net(),
     )
     .await
 }

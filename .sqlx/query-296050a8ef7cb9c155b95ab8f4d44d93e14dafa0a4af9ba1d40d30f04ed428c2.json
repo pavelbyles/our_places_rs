@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\", \n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            json_build_object(\n                'booking_id', b.id,\n                'is_eligible', \n                    CASE \n                        WHEN b.status = 'cancelled' THEN false\n                        WHEN r.id IS NOT NULL THEN false\n                        WHEN CURRENT_DATE < b.date_to THEN false\n                        WHEN CURRENT_DATE > (b.date_to + 15) THEN false\n                        ELSE true\n                    END,\n                'token', rt.token,\n                'has_reviewed', CASE WHEN r.id IS NOT NULL THEN true ELSE false END,\n                'days_remaining', \n                    CASE \n                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 0\n                        ELSE (b.date_to + 15) - CURRENT_DATE\n                    END,\n                'status_message', \n                    CASE \n                        WHEN b.status = 'cancelled' THEN 'Cancelled bookings are not eligible for review'\n                        WHEN r.id IS NOT NULL THEN 'You have already submitted a review for this stay'\n                        WHEN CURRENT_DATE < b.date_to THEN 'Reviews can only be submitted after your stay has ended'\n                        WHEN CURRENT_DATE > (b.date_to + 15) THEN 'The 15-day review period for this stay has expired'\n                        ELSE 'Eligible for review'\n                    END\n            ) as \"review_eligibility!\",\n            b.created_at, b.updated_at,\n            b.door_access_code,\n            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate\n        FROM booking b\n        LEFT JOIN review r ON r.booking_id = b.id\n        LEFT JOIN LATERAL (\n            SELECT token FROM review_token \n            WHERE booking_id = b.id AND used_at IS NULL AND expires_at > NOW() \n            ORDER BY created_at DESC LIMIT 1\n        ) rt ON true\n        WHERE b.guest_id = $1\n        ORDER BY b.date_from ASC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\",\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            promo_stay_discount, promo_cleaning_discount,\n            created_at, updated_at\n        FROM booking\n        WHERE status = 'confirmed'::booking_status\n          AND date_to <= $1\n        ORDER BY date_to ASC, id ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -120,55 +120,68 @@
       },
       {
         "ordinal": 18,
-        "name": "review_eligibility!",
-        "type_info": "Json"
-      },
-      {
-        "ordinal": 19,
-        "name": "created_at",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 20,
-        "name": "updated_at",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 21,
         "name": "door_access_code",
         "type_info": "Text"
       },
       {
-        "ordinal": 22,
+        "ordinal": 19,
         "name": "cleaning_fee",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 23,
+        "ordinal": 20,
         "name": "damage_deposit",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 24,
+        "ordinal": 21,
         "name": "platform_fee",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 25,
+        "ordinal": 22,
         "name": "tax_rate",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 26,
+        "ordinal": 23,
         "name": "exchange_rate",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 29,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Int8",
-        "Int8"
+        "Date"
       ]
     },
     "nullable": [
@@ -190,16 +203,19 @@
       false,
       false,
       false,
-      null,
+      true,
+      false,
+      false,
+      false,
       false,
       false,
       true,
-      false,
+      true,
       false,
       false,
       false,
       false
     ]
   },
-  "hash": "317290efca6a90c0202bae711abc4c6b478ecaa1741e12f6b3420a6b3e54b67f"
+  "hash": "296050a8ef7cb9c155b95ab8f4d44d93e14dafa0a4af9ba1d40d30f04ed428c2"
 }

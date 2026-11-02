@@ -232,7 +232,7 @@ async fn compute_reservation_change_quote(
     let previous_net_payout = payout_ctx.existing_net_payout.unwrap_or_else(|| {
         let prev_gross = common::pricing::host_gross(
             booking.accommodation_net(),
-            booking.cleaning_fee,
+            booking.cleaning_net(),
             payout_ctx.host_exchange_rate,
         );
         common::pricing::calculate_host_payout(prev_gross, commission_pct, Decimal::ZERO).1

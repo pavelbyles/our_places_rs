@@ -180,6 +180,15 @@ pub struct Booking {
     /// Base to payment exchange rate.
     pub exchange_rate: Decimal,
 
+    /// Promo code redeemed by this booking, if any.
+    pub promo_code_id: Option<Uuid>,
+    /// Snapshot of the code's terms at hold time.
+    pub promo_terms: Option<Json<common::promo::PromoTerms>>,
+    /// Promo discount taken from the stay.
+    pub promo_stay_discount: Decimal,
+    /// Promo discount taken from the cleaning fee.
+    pub promo_cleaning_discount: Decimal,
+
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
@@ -187,9 +196,16 @@ pub struct Booking {
 }
 
 impl Booking {
-    /// Calculate net accommodation price after subtracting discounts.
+    /// Net accommodation price after weekly or monthly discounts and any promo.
     pub fn accommodation_net(&self) -> Decimal {
-        self.sub_total_price - self.discount_value.unwrap_or(Decimal::ZERO)
+        self.sub_total_price
+            - self.discount_value.unwrap_or(Decimal::ZERO)
+            - self.promo_stay_discount
+    }
+
+    /// Cleaning fee after any promo.
+    pub fn cleaning_net(&self) -> Decimal {
+        self.cleaning_fee - self.promo_cleaning_discount
     }
 }
 
@@ -1220,6 +1236,10 @@ mod tests {
             platform_fee: dec!(50.00),
             tax_rate: dec!(0.15),
             exchange_rate: dec!(1.0),
+            promo_code_id: None,
+            promo_terms: None,
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

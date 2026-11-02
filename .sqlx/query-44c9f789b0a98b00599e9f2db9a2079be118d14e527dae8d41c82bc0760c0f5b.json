@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\",\n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            b.door_access_code,\n            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,\n            b.created_at, b.updated_at\n        FROM booking b\n        JOIN listing l ON l.id = b.listing_id\n        WHERE l.user_id = $1\n        ORDER BY b.created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            promo_stay_discount, promo_cleaning_discount,\n            created_at, updated_at\n        FROM booking\n        ORDER BY created_at DESC\n        LIMIT $1 OFFSET $2\n        ",
   "describe": {
     "columns": [
       {
@@ -150,18 +150,37 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Int8",
         "Int8"
       ]
@@ -191,9 +210,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "6e3212c8b383a1e6b80811d4cc3142f670dece1ce5297131b27809f74761970c"
+  "hash": "44c9f789b0a98b00599e9f2db9a2079be118d14e527dae8d41c82bc0760c0f5b"
 }

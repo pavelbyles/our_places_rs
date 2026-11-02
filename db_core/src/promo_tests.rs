@@ -314,3 +314,107 @@ async fn promo_schema_checks_reject_invalid_codes() {
         "codes are unique, got {duplicate:?}"
     );
 }
+
+/// Reads a promo booking through the normal query path and takes it to
+/// confirmation, checking the figures each column feeds.
+mod booking_columns {
+    use super::*;
+    use crate::models::{BookingStatus, SupplierInfo, UpdatedBooking};
+    use common::promo::{PromoDiscountType, PromoScope, PromoTerms};
+
+    fn terms() -> PromoTerms {
+        PromoTerms {
+            code: "SUMMER".to_string(),
+            discount_type: PromoDiscountType::Percentage,
+            discount_value: dec!(10),
+            scope: PromoScope::StayAndCleaning,
+            currency: None,
+            exchange_rate: Decimal::ONE,
+            min_nights: None,
+            min_booking_value: None,
+            stay_from: None,
+            stay_to: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn promo_amounts_reach_net_figures_host_gross_and_history() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        sqlx::query("UPDATE listing SET commission_pct = 0.1 WHERE id = $1")
+            .bind(villa)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let code = insert_code(&pool, host, "SUMMER").await;
+        let hold = raw_booking(&pool, guest, villa, "pending").await;
+        sqlx::query(
+            "UPDATE booking SET expires_at = NOW() + INTERVAL '1 hour', sub_total_price = 1000,
+                 discount_value = 100, cleaning_fee = 100, promo_code_id = $2, promo_terms = $3,
+                 promo_stay_discount = 90, promo_cleaning_discount = 10 WHERE id = $1",
+        )
+        .bind(hold)
+        .bind(code)
+        .bind(sqlx::types::Json(terms()))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let read = crate::booking::get_booking_by_id(&pool, hold)
+            .await
+            .unwrap();
+        assert_eq!(read.promo_code_id, Some(code));
+        assert_eq!(read.promo_terms.as_ref().map(|t| &t.0), Some(&terms()));
+        assert_eq!(read.accommodation_net(), dec!(810));
+        assert_eq!(read.cleaning_net(), dec!(90));
+
+        let supplier = SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+        crate::booking::update_booking(
+            &pool,
+            hold,
+            &UpdatedBooking {
+                status: Some(BookingStatus::Confirmed),
+                ..Default::default()
+            },
+            &supplier,
+        )
+        .await
+        .unwrap();
+
+        // (810 + 90) gross, less 10% commission.
+        let ledger = sqlx::query(
+            "SELECT gross_amount, net_payout_amount FROM host_payout_ledger WHERE booking_id = $1",
+        )
+        .bind(hold)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ledger.get::<Decimal, _>("gross_amount"), dec!(900));
+        assert_eq!(ledger.get::<Decimal, _>("net_payout_amount"), dec!(810));
+
+        let history = sqlx::query(
+            "SELECT promo_code_id, promo_stay_discount, promo_cleaning_discount
+             FROM booking_history WHERE booking_id = $1 ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(hold)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(history.get::<Option<Uuid>, _>("promo_code_id"), Some(code));
+        assert_eq!(
+            history.get::<Option<Decimal>, _>("promo_stay_discount"),
+            Some(dec!(90))
+        );
+        assert_eq!(
+            history.get::<Option<Decimal>, _>("promo_cleaning_discount"),
+            Some(dec!(10))
+        );
+    }
+}

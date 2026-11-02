@@ -74,6 +74,8 @@ pub async fn create_booking(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         new_booking.guest_id,
@@ -112,6 +114,8 @@ pub async fn create_booking(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -182,6 +186,8 @@ pub async fn expire_stale_holds(pool: &PgPool) -> Result<Vec<Booking>> {
             b.metadata as "metadata: Json<crate::models::BookingMetadata>",
             b.door_access_code,
             b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,
+            b.promo_code_id, b.promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            b.promo_stay_discount, b.promo_cleaning_discount,
             b.created_at, b.updated_at
         "#
     )
@@ -220,6 +226,8 @@ pub async fn transfer_booking_guest(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         new_guest_id,

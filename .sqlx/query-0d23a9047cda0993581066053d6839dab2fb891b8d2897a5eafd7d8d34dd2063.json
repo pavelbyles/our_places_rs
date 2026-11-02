@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        WITH due AS (\n            SELECT id FROM booking\n            WHERE status = 'pending' AND expires_at <= NOW()\n            FOR UPDATE SKIP LOCKED\n        )\n        UPDATE booking b\n        SET status = 'cancelled', updated_at = NOW()\n        FROM due\n        WHERE b.id = due.id\n        RETURNING b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\",\n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            b.door_access_code,\n            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,\n            b.created_at, b.updated_at\n        ",
+  "query": "\n        WITH due AS (\n            SELECT id FROM booking\n            WHERE status = 'pending' AND expires_at <= NOW()\n            FOR UPDATE SKIP LOCKED\n        )\n        UPDATE booking b\n        SET status = 'cancelled', updated_at = NOW()\n        FROM due\n        WHERE b.id = due.id\n        RETURNING b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\",\n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            b.door_access_code,\n            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,\n            b.promo_code_id, b.promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            b.promo_stay_discount, b.promo_cleaning_discount,\n            b.created_at, b.updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -150,11 +150,31 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -187,9 +207,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "43797ddb0d98e2f8608b255f8259c2d859edbef5667f3d5ea1a9613206d3e283"
+  "hash": "0d23a9047cda0993581066053d6839dab2fb891b8d2897a5eafd7d8d34dd2063"
 }

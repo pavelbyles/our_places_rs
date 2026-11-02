@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at\n        FROM booking\n        WHERE listing_id = $1\n        ORDER BY date_from DESC, created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n            INSERT INTO booking (\n                id, confirmation_code, guest_id, listing_id, status,\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown,\n                total_price, cancellation_policy, metadata, door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            )\n            VALUES (\n                $1, $2, $3, $4, 'confirmed'::booking_status,\n                $5, $6, 'USD', 200.00, 2, 4,\n                800.00, 0.00, 127.50, '[]'::jsonb,\n                1077.50, 'flexible'::cancellation_policy, $7, NULL,\n                50.00, 100.00, 40.00, 0.1500, 1.000000,\n                NOW(), NOW()\n            )\n            RETURNING\n                id, confirmation_code, guest_id, listing_id, status as \"status: db_core::models::BookingStatus\",\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<db_core::models::FeeItem>>\",\n                total_price, cancellation_policy as \"cancellation_policy: db_core::models::CancellationPolicy\",\n                metadata as \"metadata: Json<db_core::models::BookingMetadata>\",\n                door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n                promo_stay_discount, promo_cleaning_discount,\n                created_at, updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -25,7 +25,7 @@
       },
       {
         "ordinal": 4,
-        "name": "status: BookingStatus",
+        "name": "status: db_core::models::BookingStatus",
         "type_info": {
           "Custom": {
             "name": "booking_status",
@@ -87,7 +87,7 @@
       },
       {
         "ordinal": 14,
-        "name": "fee_breakdown: Json<Vec<FeeItem>>",
+        "name": "fee_breakdown: Json<Vec<db_core::models::FeeItem>>",
         "type_info": "Jsonb"
       },
       {
@@ -97,7 +97,7 @@
       },
       {
         "ordinal": 16,
-        "name": "cancellation_policy: CancellationPolicy",
+        "name": "cancellation_policy: db_core::models::CancellationPolicy",
         "type_info": {
           "Custom": {
             "name": "cancellation_policy",
@@ -115,7 +115,7 @@
       },
       {
         "ordinal": 17,
-        "name": "metadata: Json<crate::models::BookingMetadata>",
+        "name": "metadata: Json<db_core::models::BookingMetadata>",
         "type_info": "Jsonb"
       },
       {
@@ -150,11 +150,31 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -162,8 +182,12 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Int8",
-        "Int8"
+        "Varchar",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date",
+        "Jsonb"
       ]
     },
     "nullable": [
@@ -191,9 +215,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "babd5bf12a9ac5cbf44c630d02d6ee2141e98d383f7708757f3ef65e34904fed"
+  "hash": "10f9960669a590c9be46b7d5d0151b064a59f79d69e39977bad53aa3092d8d46"
 }

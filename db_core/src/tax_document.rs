@@ -1035,6 +1035,8 @@ mod tests {
                 metadata as "metadata: Json<crate::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,

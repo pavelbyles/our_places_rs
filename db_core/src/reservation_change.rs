@@ -701,6 +701,8 @@ pub async fn approve_change_request(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -861,6 +863,8 @@ pub async fn approve_change_request(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         req_row.proposed_date_from,
@@ -906,7 +910,7 @@ pub async fn approve_change_request(
         &mut tx,
         updated_booking.id,
         updated_booking.accommodation_net(),
-        updated_booking.cleaning_fee,
+        updated_booking.cleaning_net(),
     )
     .await?;
 

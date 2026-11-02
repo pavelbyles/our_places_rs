@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO booking (\n                id, confirmation_code, guest_id, listing_id, status,\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown,\n                total_price, cancellation_policy, metadata, door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            )\n            VALUES (\n                $1, $2, $3, $4, 'confirmed'::booking_status,\n                $5, $6, 'USD', 200.00, 2, 3,\n                600.00, 0.00, 97.50, '[]'::jsonb,\n                827.50, 'flexible'::cancellation_policy, $7, NULL,\n                50.00, 100.00, 30.00, 0.1500, 1.000000,\n                NOW(), NOW()\n            )\n            RETURNING\n                id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\",\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<crate::models::FeeItem>>\",\n                total_price, cancellation_policy as \"cancellation_policy: crate::models::CancellationPolicy\",\n                metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n                door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            ",
+  "query": "\n        UPDATE booking\n        SET guest_id = $1,\n            updated_at = $2\n        WHERE id = $3 AND status = 'pending'\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            promo_stay_discount, promo_cleaning_discount,\n            created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -87,7 +87,7 @@
       },
       {
         "ordinal": 14,
-        "name": "fee_breakdown: Json<Vec<crate::models::FeeItem>>",
+        "name": "fee_breakdown: Json<Vec<FeeItem>>",
         "type_info": "Jsonb"
       },
       {
@@ -97,7 +97,7 @@
       },
       {
         "ordinal": 16,
-        "name": "cancellation_policy: crate::models::CancellationPolicy",
+        "name": "cancellation_policy: CancellationPolicy",
         "type_info": {
           "Custom": {
             "name": "cancellation_policy",
@@ -150,11 +150,31 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -162,12 +182,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Varchar",
-        "Uuid",
-        "Uuid",
-        "Date",
-        "Date",
-        "Jsonb"
+        "Timestamptz",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -195,9 +211,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "793fa44335332168ca752b92d6e670427c2f0f7e6fc96323ca53cdedd257cfbe"
+  "hash": "2e8411775557c747ebcb6356d07cd281378c07b0a9f508ad1680f41719bd3523"
 }

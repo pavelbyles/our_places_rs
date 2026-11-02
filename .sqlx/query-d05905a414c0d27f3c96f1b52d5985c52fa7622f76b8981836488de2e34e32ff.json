@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO booking (\n                id, confirmation_code, guest_id, listing_id, status,\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown,\n                total_price, cancellation_policy, metadata, door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            )\n            VALUES (\n                $1, $2, $3, $4, 'confirmed'::booking_status,\n                $5, $6, 'USD', 200.00, 2, 4,\n                800.00, 0.00, 127.50, '[]'::jsonb,\n                1077.50, 'flexible'::cancellation_policy, $7, NULL,\n                50.00, 100.00, 40.00, 0.1500, 1.000000,\n                NOW(), NOW()\n            )\n            RETURNING\n                id, confirmation_code, guest_id, listing_id, status as \"status: db_core::models::BookingStatus\",\n                date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n                sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<db_core::models::FeeItem>>\",\n                total_price, cancellation_policy as \"cancellation_policy: db_core::models::CancellationPolicy\",\n                metadata as \"metadata: Json<db_core::models::BookingMetadata>\",\n                door_access_code,\n                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n                created_at, updated_at\n            ",
+  "query": "\n        SELECT b.id, b.confirmation_code, b.guest_id, b.listing_id, b.status as \"status: BookingStatus\",\n            b.date_from, b.date_to, b.currency, b.daily_rate, b.number_of_persons, b.total_days,\n            b.sub_total_price, b.discount_value, b.tax_value, b.fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            b.total_price, b.cancellation_policy as \"cancellation_policy: CancellationPolicy\",\n            b.metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            b.door_access_code,\n            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,\n            b.promo_code_id, b.promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            b.promo_stay_discount, b.promo_cleaning_discount,\n            b.created_at, b.updated_at\n        FROM booking b\n        JOIN listing l ON l.id = b.listing_id\n        WHERE l.user_id = $1\n        ORDER BY b.created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
   "describe": {
     "columns": [
       {
@@ -25,7 +25,7 @@
       },
       {
         "ordinal": 4,
-        "name": "status: db_core::models::BookingStatus",
+        "name": "status: BookingStatus",
         "type_info": {
           "Custom": {
             "name": "booking_status",
@@ -87,7 +87,7 @@
       },
       {
         "ordinal": 14,
-        "name": "fee_breakdown: Json<Vec<db_core::models::FeeItem>>",
+        "name": "fee_breakdown: Json<Vec<FeeItem>>",
         "type_info": "Jsonb"
       },
       {
@@ -97,7 +97,7 @@
       },
       {
         "ordinal": 16,
-        "name": "cancellation_policy: db_core::models::CancellationPolicy",
+        "name": "cancellation_policy: CancellationPolicy",
         "type_info": {
           "Custom": {
             "name": "cancellation_policy",
@@ -115,7 +115,7 @@
       },
       {
         "ordinal": 17,
-        "name": "metadata: Json<db_core::models::BookingMetadata>",
+        "name": "metadata: Json<crate::models::BookingMetadata>",
         "type_info": "Jsonb"
       },
       {
@@ -150,11 +150,31 @@
       },
       {
         "ordinal": 24,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 25,
+        "name": "promo_terms: Json<common::promo::PromoTerms>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 26,
+        "name": "promo_stay_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 27,
+        "name": "promo_cleaning_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 28,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 25,
+        "ordinal": 29,
         "name": "updated_at",
         "type_info": "Timestamptz"
       }
@@ -162,12 +182,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Varchar",
-        "Uuid",
-        "Uuid",
-        "Date",
-        "Date",
-        "Jsonb"
+        "Int8",
+        "Int8"
       ]
     },
     "nullable": [
@@ -195,9 +211,13 @@
       false,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
       false,
       false
     ]
   },
-  "hash": "adf020aff1517bbb6c142dc8fb14c752ba54fa3ca44c8114abcb0f77c0a8366f"
+  "hash": "d05905a414c0d27f3c96f1b52d5985c52fa7622f76b8981836488de2e34e32ff"
 }

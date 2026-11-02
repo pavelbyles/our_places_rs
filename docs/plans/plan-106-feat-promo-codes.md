@@ -209,7 +209,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p common pricing::promo_tests && cargo test -p booking_api --lib apis::tests`
   - **Dependencies:** T5
 
-- [ ] **Task 7: Add promo columns to `Booking`**
+- [x] **Task 7: Add promo columns to `Booking`**
   - **Scope:** M (mechanical; `query_as!` requires every query to change together, so this can't be split further)
   - **Description:** Add the four columns to `Booking` and to every query that returns it. Update `record_booking_history`. `accommodation_net()` subtracts `promo_stay_discount`, and `cleaning_net()` is new. Switch `host_gross` callers to `cleaning_net()`.
   - **Files Touched:**
