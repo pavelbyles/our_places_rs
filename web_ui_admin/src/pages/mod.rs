@@ -8,6 +8,8 @@ pub mod bookings;
 pub mod currencies;
 /// Dashboard.
 pub mod dashboard;
+/// One pair's rate history, scheduled-rate deletion and retirement.
+pub mod exchange_rate_history;
 /// Exchange rate table.
 pub mod exchange_rates;
 /// Listings studio.

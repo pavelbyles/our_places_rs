@@ -32,7 +32,7 @@ pub struct CardState {
 }
 
 /// User-facing text and blocking listings for a failed call.
-fn describe(err: &UserCallError) -> CardState {
+pub fn describe(err: &UserCallError) -> CardState {
     match err {
         UserCallError::Api(r) if r.code == "CURRENCY_IN_USE" => CardState {
             errors: vec![
@@ -117,19 +117,31 @@ pub async fn currencies_card(
                 <label class="text-xs text-muted-foreground">"Name"<input name="name" required=(true) maxlength="64" placeholder="Trinidad and Tobago Dollar" class=(format!("{field} mt-1 block")) /></label>
                 <button type="submit" class="h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Add currency"</button>
             </form>
-            if !state.blocked.is_empty() {
-                <dialog id="currency-blocked-dialog" data-auto-open="" aria-labelledby="currency-blocked-title" class="m-auto w-[min(560px,95vw)] rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50">
-                    <h3 id="currency-blocked-title" class="text-lg font-semibold">"Still in use"</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">"These listings are priced in this currency. Change their base currency first."</p>
-                    <ul class="mt-4 space-y-2">
-                        for l in state.blocked {
-                            <li><a href=(format!("/admin/listings/{}/edit", l.id)) class="underline">(l.title)</a></li>
-                        }
-                    </ul>
-                    <button type="button" data-dialog-close="" class=(format!("{button} mt-4"))>"Close"</button>
-                </dialog>
-            }
+            blocked_listings_dialog(listings: state.blocked)
         </section>
+    })
+}
+
+/// A dialog listing live listings that block a currency change (opens on
+/// render; nothing when empty).
+#[component]
+pub async fn blocked_listings_dialog(
+    /// The blocking listings.
+    listings: Vec<ListingRef>,
+) -> Result<impl View> {
+    Ok(view! {
+        if !listings.is_empty() {
+            <dialog id="currency-blocked-dialog" data-auto-open="" aria-labelledby="currency-blocked-title" class="m-auto w-[min(560px,95vw)] rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50">
+                <h3 id="currency-blocked-title" class="text-lg font-semibold">"Still in use"</h3>
+                <p class="mt-1 text-sm text-muted-foreground">"These listings depend on this currency or pair. Change their base currency first."</p>
+                <ul class="mt-4 space-y-2">
+                    for l in listings {
+                        <li><a href=(format!("/admin/listings/{}/edit", l.id)) class="underline">(l.title)</a></li>
+                    }
+                </ul>
+                <button type="button" data-dialog-close="" class="mt-4 h-9 rounded-lg border border-border px-3 text-sm font-medium">"Close"</button>
+            </dialog>
+        }
     })
 }
 

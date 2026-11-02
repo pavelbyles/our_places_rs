@@ -361,7 +361,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p web_ui_admin exchange_rates_page_tests`
   - **Dependencies:** T13, T17
 
-- [ ] **T19: Pair history page with delete and retire**
+- [x] **T19: Pair history page with delete and retire**
   - **Scope:** S
   - **Description:** `/admin/exchange-rates/{base}/{target}` (`admin_only`). Delete is `hx-post` → `POST /admin/exchange-rates/rates/{id}/delete` (no `hx-delete`). Retire is a POST that reuses the blocked modal from T13.
   - **Files Touched:** `web_ui_admin/src/pages/exchange_rate_history.rs` (new), `web_ui_admin/src/pages/mod.rs`
