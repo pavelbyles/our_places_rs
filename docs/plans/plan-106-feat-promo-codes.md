@@ -175,7 +175,7 @@ T30 final gates               ← all
   - **Verification Command:** `devenv shell -- sqlx migrate run --source db_core/migrations && ! rg -qi 'UPDATE\s+host_payout_ledger\b' db_core/migrations/*_promo_codes.sql && test "$(rg -ci 'UPDATE\s+booking\b' db_core/migrations/*_promo_codes.sql)" = 1 && cargo test -p db_core promo_tests::promo_schema`
   - **Dependencies:** None
 
-- [ ] **Task 5: Add `common::promo` rules**
+- [x] **Task 5: Add `common::promo` rules**
   - **Scope:** S
   - **Description:** Add `PromoTerms`, `PromoRefusal`, `normalize_code(&str) -> Result<Option<String>, PromoRefusal>`, `check_status` (checks 2–4), `check_stay_rules` (7–9) and `check_usage` (10–11). Blank is `Ok(None)` and malformed is `Err(NotFound)`, so a malformed code can't turn into a full-price hold.
   - **Files Touched:**
