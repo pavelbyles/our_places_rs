@@ -111,7 +111,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core stale_discount && cargo test -p booking_api stale_discount`
   - **Dependencies:** None
 
-- [ ] **Task 2: Write retained payouts on partial refunds**
+- [x] **Task 2: Write retained payouts on partial refunds**
   - **Scope:** S
   - **Description:** Add `reopen_payout_as_retained`, and have `settle_cancellation` use the ledger ID from `cancel_pending_payout_for_booking`. `create_payout_ledger_entry` keeps `DO NOTHING`. Read `exchange_rate`, `platform_fee_pct` and `currency` from the ledger row under the booking lock, and calculate the retained gross from those, not from `host_payout_terms`. A host changing `default_currency` would otherwise put a converted amount under the old currency label. When no row exists, insert one through `create_payout_ledger_entry`, which now returns rows affected, so bookings confirmed before the ledger existed still get paid.
   - **Files Touched:**

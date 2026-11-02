@@ -378,20 +378,39 @@ async fn settle_cancellation(
         crate::tax_document::issue_refund_receipt(&mut *conn, booking, supplier, history_id)
             .await?;
 
-    crate::payout_ledger::cancel_pending_payout_for_booking(&mut *conn, booking.id).await?;
+    let cancelled_payout =
+        crate::payout_ledger::cancel_pending_payout_for_booking(&mut *conn, booking.id).await?;
 
     // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
     let host_retained = (booking.accommodation_net() - ref_doc.accommodation_net).round_dp(2);
     if host_retained <= Decimal::ZERO {
         return Ok(());
     }
+    if let Some(ledger_id) = cancelled_payout {
+        return crate::payout_ledger::reopen_payout_as_retained(
+            &mut *conn,
+            ledger_id,
+            host_retained,
+        )
+        .await;
+    }
+
+    // No pending row: either the booking predates the ledger, or its payout is
+    // already processing, paid or refunded, which only an operator can reconcile.
     let terms = host_payout_terms(&mut *conn, booking).await?;
     let retained_gross = (host_retained * terms.exchange_rate).round_dp(2);
-    crate::payout_ledger::create_payout_ledger_entry(
+    let inserted = crate::payout_ledger::create_payout_ledger_entry(
         &mut *conn,
         &terms.pending_payout(booking, retained_gross),
     )
     .await?;
+    if inserted == 0 {
+        tracing::warn!(
+            booking_id = %booking.id,
+            %host_retained,
+            "retained payout not recorded: the payout already left the pending state"
+        );
+    }
     Ok(())
 }
 

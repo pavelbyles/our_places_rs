@@ -2,19 +2,21 @@ use crate::error::Result;
 use crate::models::{DbPayoutLedgerEntry, DbPayoutStatus, DbPayoutSummary};
 use chrono::{DateTime, Utc};
 use common::payout::{PayoutFilter, PayoutRecord, PendingPayout};
+use rust_decimal::Decimal;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 /// Ledger page size when the caller doesn't ask for one.
 pub const DEFAULT_LEDGER_PAGE_SIZE: u32 = 20;
 
-/// Inserts a pending payout. A booking has at most one ledger entry; a
-/// second insert for the same booking is ignored.
+/// Inserts a pending payout and returns the number of rows written. A booking
+/// has at most one ledger entry; a second insert for the same booking is
+/// ignored and returns 0.
 pub async fn create_payout_ledger_entry(
     conn: &mut PgConnection,
     payout: &PayoutRecord<PendingPayout>,
-) -> Result<()> {
-    sqlx::query!(
+) -> Result<u64> {
+    let inserted = sqlx::query!(
         r#"
         INSERT INTO host_payout_ledger (
             id, booking_id, listing_id, host_id, currency, gross_amount,
@@ -35,6 +37,48 @@ pub async fn create_payout_ledger_entry(
         payout.tax_withheld_amount,
         payout.exchange_rate,
         payout.net_payout_amount,
+    )
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+
+    Ok(inserted)
+}
+
+/// Returns a just-cancelled payout to `pending` for the amount the host keeps
+/// under the cancellation policy. `retained` is in the booking currency, and
+/// the row's own rate and commission are used, so the amounts always match the
+/// row's currency even if the host has since changed theirs.
+pub async fn reopen_payout_as_retained(
+    conn: &mut PgConnection,
+    ledger_id: Uuid,
+    retained: Decimal,
+) -> Result<()> {
+    let row = sqlx::query!(
+        "SELECT exchange_rate, platform_fee_pct FROM host_payout_ledger WHERE id = $1 FOR UPDATE",
+        ledger_id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let gross_amount = (retained * row.exchange_rate).round_dp(2);
+    let (platform_fee_amount, net_payout_amount) =
+        common::pricing::calculate_host_payout(gross_amount, row.platform_fee_pct, Decimal::ZERO);
+
+    sqlx::query!(
+        r#"
+        UPDATE host_payout_ledger
+        SET gross_amount = $1,
+            platform_fee_amount = $2,
+            net_payout_amount = $3,
+            status = 'pending'::payout_status,
+            updated_at = NOW()
+        WHERE id = $4 AND status = 'cancelled'::payout_status
+        "#,
+        gross_amount,
+        platform_fee_amount,
+        net_payout_amount,
+        ledger_id
     )
     .execute(&mut *conn)
     .await?;

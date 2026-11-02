@@ -27,6 +27,7 @@ bcrypt = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 dotenvy = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tracing-test = "0.2"
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [
     "postgres",
 ] }
