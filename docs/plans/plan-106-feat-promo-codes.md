@@ -386,7 +386,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core promo_tests::update && cargo test -p booking_api promo_reprice`
   - **Dependencies:** T1, T10, T13
 
-- [ ] **Task 15: Apply promos on change quotes and approvals**
+- [x] **Task 15: Apply promos on change quotes and approvals**
   - **Scope:** M
   - **Description:** The change quote re-evaluates and returns `promo_outcome`. `ReservationChangePricingSnapshot` gains `#[serde(default)]` fields. Approval writes promo amounts from the snapshot and releases the redemption if lost. Use the calculator's `discounted_subtotal` and `cleaning_net` for gross, not `reservation_changes.rs:224-225` and the gross fee at `:180`. The snapshot also stores `promo_lost_reason`, exposed on `ReservationChangeRequestResponse`. Approval is rejected when the snapshot keeps a promo but the booking no longer has one, because an admin edit can get in between. The handler also checks this before `settle_balance_delta` (`reservation_changes.rs:556`), so a refusal doesn't come after settlement, and the check under lock stays.
   - **Files Touched:**

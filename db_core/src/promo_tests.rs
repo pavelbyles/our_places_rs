@@ -18,7 +18,7 @@ fn db_url() -> String {
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string())
 }
 
-fn migrated_db() -> TestPg {
+pub(crate) fn migrated_db() -> TestPg {
     TestPg::new(db_url(), Path::new("migrations"))
 }
 
@@ -69,7 +69,7 @@ fn cron_job_sql() -> String {
     text[start..end].replace("''", "'")
 }
 
-async fn raw_user(pool: &PgPool) -> Uuid {
+pub(crate) async fn raw_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar(
         r#"INSERT INTO "user" (email, password_hash, first_name, last_name, slug)
            VALUES ('promo-' || gen_random_uuid() || '@example.com', 'x', 'Promo', 'Test',
@@ -81,7 +81,7 @@ async fn raw_user(pool: &PgPool) -> Uuid {
     .expect("insert user")
 }
 
-async fn raw_listing(pool: &PgPool, host: Uuid) -> Uuid {
+pub(crate) async fn raw_listing(pool: &PgPool, host: Uuid) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO listing (name, listing_structure_id, country, added_at, user_id, slug)
          VALUES ('Villa ' || gen_random_uuid(), 1, 'Jamaica', NOW(), $1, 'villa-' || replace(gen_random_uuid()::text, '-', ''))
@@ -93,7 +93,7 @@ async fn raw_listing(pool: &PgPool, host: Uuid) -> Uuid {
     .expect("insert listing")
 }
 
-async fn raw_booking(pool: &PgPool, guest: Uuid, listing: Uuid, status: &str) -> Uuid {
+pub(crate) async fn raw_booking(pool: &PgPool, guest: Uuid, listing: Uuid, status: &str) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO booking (confirmation_code, guest_id, listing_id, date_from, date_to, daily_rate,
              number_of_persons, total_days, sub_total_price, total_price, cancellation_policy, status)
@@ -109,7 +109,7 @@ async fn raw_booking(pool: &PgPool, guest: Uuid, listing: Uuid, status: &str) ->
     .expect("insert booking")
 }
 
-async fn insert_code(pool: &PgPool, created_by: Uuid, code: &str) -> Uuid {
+pub(crate) async fn insert_code(pool: &PgPool, created_by: Uuid, code: &str) -> Uuid {
     sqlx::query_scalar(
         "INSERT INTO promo_code (code, discount_type, discount_value, scope, valid_from, valid_to,
              applies_to_all, created_by)

@@ -1133,3 +1133,230 @@ mod promo_reprice {
         assert!(!text.contains("UPDATESECRET"), "{text}");
     }
 }
+
+mod promo_change_quote {
+    use super::*;
+
+    /// A confirmed 2-night promo booking at 200.00 with a 100.00 cleaning fee.
+    async fn confirmed(pool: &PgPool, value: &str, change: &str) -> (Uuid, Uuid, Uuid) {
+        let host = user(pool, UserRole::Host).await;
+        let guest = user(pool, UserRole::Booker).await;
+        let admin = user(pool, UserRole::Admin).await;
+        let villa = listing(pool, host).await;
+        sqlx::query("UPDATE listing SET cleaning_fee = 100 WHERE id = $1")
+            .bind(villa)
+            .execute(pool)
+            .await
+            .unwrap();
+        let id = code(pool, host, value).await;
+        sqlx::query(&format!(
+            "UPDATE promo_code SET scope = 'stay_and_cleaning' {change} WHERE id = $1"
+        ))
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+        let app = app!(pool);
+        assert_eq!(
+            post_hold!(app, guest, with_code(guest, villa, value)).status(),
+            201
+        );
+        let booking = booking_of(pool, guest).await.expect("hold created");
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/bookings/{}", booking.id))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "status": "confirmed" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        (booking.id, guest, host)
+    }
+
+    macro_rules! change {
+        ($app:expr, $who:expr, $id:expr, $path:expr, $date_to:expr) => {
+            test::call_service(
+                &$app,
+                test::TestRequest::post()
+                    .uri(&format!("/api/v1/bookings/{}/{}", $id, $path))
+                    .insert_header(("Accept", "application/json"))
+                    .insert_header(bearer($who))
+                    .set_json(serde_json::json!({ "date_to": $date_to }))
+                    .to_request(),
+            )
+            .await
+        };
+    }
+
+    fn amount(v: &serde_json::Value) -> Decimal {
+        v.as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| v.to_string())
+            .parse()
+            .expect("an amount")
+    }
+
+    #[tokio::test]
+    async fn a_kept_promo_is_reported_and_approval_writes_the_quote() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, guest, host) = confirmed(&pool, "KEPT", "").await;
+        let app = app!(pool);
+
+        let resp = change!(app, guest, id, "change-quote", "2030-08-04");
+        assert_eq!(resp.status(), 200);
+        let quote: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(quote["promo_outcome"]["status"], "kept");
+        assert_eq!(quote["promo_outcome"]["code"], "KEPT");
+        let snap = &quote["pricing_snapshot"];
+        assert_eq!(snap["promo_retained"], true);
+        assert!(snap["promo_lost_reason"].is_null());
+        assert_eq!(amount(&snap["promo_stay_discount"]), dec!(60.00));
+        assert_eq!(amount(&snap["promo_cleaning_discount"]), dec!(10.00));
+        // 540.00 + 90.00 taxable, at 15%, plus a 5% platform fee on 540.00.
+        assert_eq!(amount(&snap["total_price"]), dec!(751.50));
+        // Commission is 10% of the (540.00 + 90.00) gross.
+        assert_eq!(amount(&quote["proposed_net_payout"]), dec!(567.00));
+
+        let resp = change!(app, guest, id, "change-requests", "2030-08-04");
+        assert_eq!(resp.status(), 201);
+        let request: serde_json::Value = test::read_body_json(resp).await;
+        let request_id = request["id"].as_str().expect("request id").to_string();
+
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/bookings/{id}/change-requests/{request_id}/approve"
+                ))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(host))
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+
+        let booking = db_core::booking::get_booking_by_id(&pool, id)
+            .await
+            .unwrap();
+        assert_eq!(booking.promo_stay_discount, dec!(60.00));
+        assert_eq!(booking.promo_cleaning_discount, dec!(10.00));
+        assert_eq!(booking.total_price, dec!(751.50));
+        let net: Decimal = sqlx::query_scalar(
+            "SELECT net_payout_amount FROM host_payout_ledger WHERE booking_id = $1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(net, dec!(567.00), "approval writes what the quote promised");
+    }
+
+    #[tokio::test]
+    async fn a_lost_promo_is_reported_with_its_reason_and_prices_at_full_rate() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, guest, _) = confirmed(&pool, "LOSTONE", ", min_nights = 2").await;
+        let app = app!(pool);
+
+        let resp = change!(app, guest, id, "change-quote", "2030-08-02");
+        assert_eq!(resp.status(), 200);
+        let quote: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(quote["promo_outcome"]["status"], "lost");
+        assert_eq!(
+            quote["promo_outcome"]["reason_code"],
+            "PROMO_MIN_NIGHTS_NOT_MET"
+        );
+        assert!(quote["promo_outcome"]["reason"].is_string());
+        let snap = &quote["pricing_snapshot"];
+        assert_eq!(snap["promo_retained"], false);
+        assert!(snap["promo_lost_reason"].is_string());
+        assert_eq!(amount(&snap["promo_stay_discount"]), Decimal::ZERO);
+        // 200.00 + 100.00 taxable at 15%, plus the platform fee on 200.00.
+        assert_eq!(amount(&snap["total_price"]), dec!(355.00));
+
+        // A host's pending request carries the reason for the guest's banner.
+        let resp = change!(app, guest, id, "change-requests", "2030-08-02");
+        assert_eq!(resp.status(), 201);
+        let request: serde_json::Value = test::read_body_json(resp).await;
+        assert!(request["pricing_snapshot"]["promo_lost_reason"].is_string());
+    }
+
+    #[tokio::test]
+    async fn a_booking_without_a_promo_reports_none() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let villa = listing(&pool, host).await;
+        let app = app!(pool);
+        assert_eq!(
+            post_hold!(app, guest, booking_request(guest, villa)).status(),
+            201
+        );
+        let booking = booking_of(&pool, guest).await.expect("hold created");
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/bookings/{}", booking.id))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(admin))
+                .set_json(serde_json::json!({ "status": "confirmed" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+
+        let resp = change!(app, guest, booking.id, "change-quote", "2030-08-04");
+        let quote: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(quote["promo_outcome"]["status"], "none");
+    }
+
+    #[tokio::test]
+    async fn approval_is_refused_before_settlement_when_the_promo_was_removed() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let (id, guest, host) = confirmed(&pool, "REMOVED", "").await;
+        let app = app!(pool);
+
+        let resp = change!(app, guest, id, "change-requests", "2030-08-04");
+        assert_eq!(resp.status(), 201);
+        let request: serde_json::Value = test::read_body_json(resp).await;
+        let request_id = request["id"].as_str().expect("request id").to_string();
+        sqlx::query(
+            "UPDATE booking SET promo_code_id = NULL, promo_terms = NULL, promo_stay_discount = 0,
+                 promo_cleaning_discount = 0 WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "/api/v1/bookings/{id}/change-requests/{request_id}/approve"
+                ))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(host))
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 409);
+        let settled: String = sqlx::query_scalar(
+            "SELECT settlement_status::text FROM reservation_change_request WHERE id = $1::uuid",
+        )
+        .bind(&request_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_ne!(settled, "charged", "the guest wasn't charged");
+    }
+}

@@ -1236,8 +1236,23 @@ pub struct ReservationChangePricingSnapshot {
     pub discount_value: Option<Decimal>,
     /// Net accommodation subtotal after discount (`sub_total_price - discount_value`).
     pub discounted_subtotal: Decimal,
-    /// One-time host cleaning fee.
+    /// One-time host cleaning fee, before any promo.
     pub cleaning_fee: Decimal,
+    /// Promo discount on the stay.
+    #[serde(default)]
+    pub promo_stay_discount: Decimal,
+    /// Promo discount on the cleaning fee.
+    #[serde(default)]
+    pub promo_cleaning_discount: Decimal,
+    /// Cleaning fee after any promo.
+    #[serde(default)]
+    pub cleaning_net: Decimal,
+    /// Whether the booking keeps its promo on these terms.
+    #[serde(default)]
+    pub promo_retained: bool,
+    /// Why the booking would lose its promo on these terms, if it would.
+    #[serde(default)]
+    pub promo_lost_reason: Option<String>,
     /// Refundable security damage deposit.
     pub damage_deposit: Decimal,
     /// Guest platform service fee (5% of `discounted_subtotal`).
@@ -1316,6 +1331,8 @@ pub struct ReservationChangeQuoteResponse {
     pub host_payout_delta: Decimal,
     /// Detailed breakdown of the proposed pricing calculation.
     pub pricing_snapshot: ReservationChangePricingSnapshot,
+    /// What happens to the booking's promo on these terms.
+    pub promo_outcome: crate::promo::PromoOutcome,
     /// Date on which a pending request for these terms will auto-expire.
     pub expires_at_date: NaiveDate,
 }

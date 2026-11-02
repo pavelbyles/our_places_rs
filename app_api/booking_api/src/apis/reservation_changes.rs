@@ -196,7 +196,7 @@ async fn compute_reservation_change_quote(
     };
 
     let days = (new_date_to - new_date_from).num_days() as i32;
-    let calculator = BookingCalculator::with_subtotal(
+    let discounted = BookingCalculator::with_subtotal(
         dynamic_quote.effective_daily_rate,
         days,
         dynamic_quote.subtotal,
@@ -210,10 +210,22 @@ async fn compute_reservation_change_quote(
         listing_details.listing.monthly_discount_percentage,
         listing_details.listing.weekly_discount_percentage,
     )
-    .with_fees(Some(clean_fee), Some(dmg_deposit))
-    .apply_promo(None)
-    .apply_taxes(tax_rate)
-    .finalize();
+    .with_fees(Some(clean_fee), Some(dmg_deposit));
+
+    let promo_terms = booking.promo_terms.as_ref().map(|terms| &terms.0);
+    let promo_outcome = common::promo::reevaluate(
+        promo_terms,
+        common::promo::PromoStay {
+            check_in: new_date_from,
+            check_out: new_date_to,
+        },
+        discounted.discounted_subtotal,
+        discounted.cleaning_fee,
+    );
+    let calculator = discounted
+        .apply_promo(promo_terms.filter(|_| promo_outcome.is_kept()))
+        .apply_taxes(tax_rate)
+        .finalize();
 
     let plat_fee = calculator
         .fee_breakdown
@@ -222,8 +234,7 @@ async fn compute_reservation_change_quote(
         .map(|f| f.amount)
         .unwrap_or(Decimal::ZERO);
 
-    let discounted_subtotal =
-        calculator.sub_total_price - calculator.discount_value.unwrap_or(Decimal::ZERO);
+    let discounted_subtotal = calculator.discounted_subtotal;
 
     let commission_pct = payout_ctx
         .existing_commission_pct
@@ -240,7 +251,7 @@ async fn compute_reservation_change_quote(
 
     let host_gross_amount = common::pricing::host_gross(
         discounted_subtotal,
-        calculator.cleaning_fee,
+        calculator.cleaning_net,
         payout_ctx.host_exchange_rate,
     );
     let (host_platform_fee_amount, proposed_net_payout) =
@@ -259,6 +270,11 @@ async fn compute_reservation_change_quote(
         discount_value: calculator.discount_value,
         discounted_subtotal,
         cleaning_fee: clean_fee,
+        promo_stay_discount: calculator.promo_stay_discount,
+        promo_cleaning_discount: calculator.promo_cleaning_discount,
+        cleaning_net: calculator.cleaning_net,
+        promo_retained: promo_outcome.is_kept(),
+        promo_lost_reason: promo_outcome.lost_reason(),
         damage_deposit: dmg_deposit,
         platform_fee: plat_fee,
         tax_rate,
@@ -290,6 +306,7 @@ async fn compute_reservation_change_quote(
         proposed_net_payout,
         host_payout_delta,
         pricing_snapshot,
+        promo_outcome,
         expires_at_date,
     })
 }
@@ -551,6 +568,17 @@ pub(super) async fn approve_reservation_change_request(
             "Only pending reservation change requests can be approved".to_string(),
         ));
     }
+
+    // Checked again under the lock at approval, but a refusal there would come
+    // after the guest's balance was settled.
+    let current = db_booking::get_booking_by_id(pool.get_ref(), booking_id)
+        .await
+        .map_err(ApiError::Database)?;
+    db_core::reservation_change::check_promo_still_attached(
+        &req_row.pricing_snapshot.0,
+        current.promo_code_id,
+    )
+    .map_err(ApiError::Database)?;
 
     let default_gateway = crate::payment_gateway::SimulatedPaymentGateway;
     let active_gateway: &dyn crate::payment_gateway::PaymentSettlementGateway = gateway
