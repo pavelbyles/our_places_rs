@@ -3,7 +3,7 @@
 ## Metadata
 - **Author**: Originator (via GitHub Issue #106)
 - **Date**: 2026-11-01
-- **Status**: Under Review
+- **Status**: Approved (2026-11-01)
 - **Target Area**: Fullstack (`common`, `db_core`, `app_api/booking_api`, `common/src/app_client`, `web_client`, `web_ui_guest`, `web_ui_admin`)
 
 ---
@@ -40,12 +40,17 @@ A promo code changes what the guest pays, the tax charged and what the host rece
 - **A full checkout quote endpoint.** This doesn't exist today. The guest checkout page shows `web_ui_guest/src/quote.rs` output, which is built from the seasonal subtotal and has no fees or tax from `BookingCalculator`. The discount line needs a server-priced quote.
 - Typed validation failures, with one error code per reason: not found or not applicable, not yet valid, expired, deactivated, minimum not met, listing or stay dates not eligible, usage limit reached, per-guest limit reached.
 - **Host payout includes the cleaning fee, for all bookings and not just promo bookings.** Today host gross is `accommodation_net × rate` and leaves the cleaning fee out. All payout calculations change together: `db_core/src/booking/update.rs` (confirmation and revision) and `reservation_changes.rs` (previous and proposed payout).
-- Rate limiting on code attempts. No rate limiting exists anywhere in the repo today, so this is new infrastructure (see the design in §7).
+- Fixing the stale weekly/monthly discount kept by direct booking updates (`db_core/src/booking/update.rs:217`), so a discount that no longer applies is cleared.
+- Correcting `total_payout` in host emails, which today sends `sub_total_price`, to the real net payout.
+- Fixing retained payouts on partial refunds, which today appear never to reach the ledger because of the `UNIQUE (booking_id)` and `ON CONFLICT DO NOTHING` combination.
+- Making the listing page and checkout show the same server-calculated total as the hold, and removing the portal-side calculation (`stay_price`).
 - Discount shown in: confirmation emails, tax documents (`db_core/src/tax_document.rs`), host ledger views and CSV export (`common/src/payout.rs`, `common/src/csv.rs`), and booking display-currency conversion (`booking_api/src/apis/mod.rs`). The ledger also shows the cleaning fee, so hosts can see what makes up their gross.
 - Documenting the pricing order in `docs/ARCHITECTURE.md` §4.2.
 - Updates to `openapi.yaml`, `openapi-prod.yaml` and `.sqlx/` metadata, plus Playwright coverage for the guest and admin portals.
 
 ### Out of Scope / Non-Goals
+- Rate limiting on code attempts, tracked in #110. The issue asks for it, but it was deferred, so guessing is unthrottled until #110 ships. Failed attempts are logged and usage limits cap the cost of a guessed code.
+- Changing existing ledger rows, correcting payouts already paid, correcting past cancellations, or correcting bookings that already hold a stale discount.
 - Add-ons. The issue mentions them, but no add-on concept exists in the codebase. The discount scope must not block adding them later.
 - Stacking multiple promo codes on one booking (one code per booking).
 - A platform-funded discount option. The host always pays in this iteration.
@@ -72,7 +77,7 @@ A promo code changes what the guest pays, the tax charged and what the host rece
   | `db_core/src/models.rs` | `accommodation_net()` must account for the promo. It drives host gross, tax documents and retained amounts on cancellation |
   | `db_core/src/booking/update.rs` | Payout creation and revision, promo handling on changed terms |
   | `db_core/src/tax_document.rs` | Discount line. The taxable amount must match what was quoted |
-  | `booking_api` | Promo management, quote endpoint, rate limiting, email payloads (`bookings.rs`, `notifications.rs`) |
+  | `booking_api` | Promo management, quote endpoint, email payloads (`bookings.rs`, `notifications.rs`) |
   | `web_ui_guest` | `pages/checkout.rs` code entry and quote display, `booking_change.rs` |
   | `web_ui_admin` | Code list, create form, usage stats, deactivate action, ledger discount column |
 
@@ -102,10 +107,9 @@ A promo code changes what the guest pays, the tax charged and what the host rece
   - Pending holds end in several places, including a pg_cron SQL job with no application code (`cleanup_stale_pending_holds`), `expire_stale_holds` and hold supersession. A stored counter would have to be decremented on every path and would drift if one were missed, so the design must handle all of them.
 - **Performance Budgets**: validation adds only indexed lookups. The promo row lock is held only for the hold transaction, and only bookings using the same code contend. The Cloud Run cold start budget is unchanged (<300ms p50, <1s p95).
 - **Security & Compliance**:
-  - Rate limiting must work across Cloud Run instances. An in-process counter resets on scale-to-zero and isn't shared between instances.
   - Host ownership is enforced in the API, including on every listing in a "selected listings" set. A host's "all listings" means only that host's own listings.
   - Code creation and deactivation are logged with the actor ID (`tracing` plus a persisted record).
-  - Validation failures are logged without turning logs into a list of valid codes.
+  - Failed attempts are logged with the guest ID and a hash of the attempted code, so guessing is visible without turning logs into a list of codes.
   - `CONSTRAINTS.md` applies in full, including doc comments on all new public items.
 
 ---
@@ -123,16 +127,16 @@ A promo code changes what the guest pays, the tax charged and what the host rece
   - Test: deactivating a code, or publishing a new exchange rate, leaves existing bookings unchanged.
   - Test: a host gets 403 when creating a code for, or viewing or deactivating a code on, another host's listing.
   - Test: `SUMMER`, `summer` and ` Summer ` resolve to one code, and a case-variant duplicate is rejected.
-  - Test: repeated failed attempts return a typed 429 across instances (shared store), at a configured threshold. A correct code is also refused during lockout.
-  - Test: failed codes submitted at hold count towards the same limit as those submitted at quote.
-  - Test: host gross includes the cleaning fee at confirmation, on revision and in the reservation-change quote, with and without a promo.
+  - Test: host gross includes the cleaning fee at confirmation, on revision, in the reservation-change quote and on change approval, with and without a promo. Commission is charged on the whole gross.
+  - Test: existing ledger rows aren't changed by the migration.
+  - Test: shortening a stay below the weekly threshold through a direct update clears the weekly discount.
   - Test: cancelling a booking with a retained amount pays the host accommodation only, with no cleaning fee.
   - Database tests run against the local Postgres in the devenv shell, not Docker.
 - **Lagging Indicators**:
   - Share of bookings using a code, and redemptions per code.
   - No usage-limit overruns in production.
   - No disputes caused by differences between the quoted discount, the receipt and the host's payout.
-  - Rate-limit rejections visible in logs, so guessing attempts can be spotted.
+  - Failed attempts visible in logs, so guessing attempts can be spotted.
 
 ---
 
@@ -150,26 +154,21 @@ A promo code changes what the guest pays, the tax charged and what the host rece
 - [x] **Minimum booking value**: measured on the eligible amount before the promo and before tax, in the code's stated currency. Each code has one stated currency.
 - [x] **Deactivation**: no reactivation in the MVP. Create a new code instead.
 
-### Originator decisions still open
-- [ ] **Is host commission charged on the cleaning fee?** Including the cleaning fee in gross means `commission_pct` applies to it unless it's excluded. *Proposed*: yes, commission applies to the whole gross, so there's one formula. The alternative keeps the cleaning fee commission-free.
-- [ ] **What happens to bookings that already have a ledger row?** Their gross leaves out the cleaning fee. Without a decision, an older booking's payout would jump the next time its terms are revised.
-  - *Proposed*: the migration recalculates `pending` rows once, so every unpaid payout uses one formula. `paid` rows are never changed.
-  - *To decide separately*: whether hosts are owed the cleaning fee on payouts already paid. Report the total before deciding.
+- [x] **Commission on the cleaning fee**: charged. Commission applies to the whole gross.
+- [x] **Existing ledger rows**: unchanged, with no backfill. The new formula applies to future calculations only, including when an older booking's payout is later revised. There is one formula in the code and old formulas don't linger.
+- [x] **Rate limiting**: deferred to #110.
+- [x] **Retained payouts**: fixed in this branch. Past cancellations aren't corrected.
+- [x] **Listing page totals**: in scope.
+- [x] **Fixed discount allocation**: applied to the stay first, then the cleaning fee.
+- [x] **Stale discount**: fixed in this branch. Bookings that already hold one aren't corrected.
+- [x] **Refusal messages**: specific reasons, such as expired or minimum not met.
+- [x] **Code format**: letters, digits and hyphens, 4–32 characters; trimmed and stored uppercase.
+- [x] **Usage counting**: one redemption row per booking, with usage derived from live booking status.
+- [x] **Fixed-amount codes**: code currency → payment currency is looked up at hold time and snapshotted. A missing pair makes the code unusable for that checkout.
+- [x] **"All listings"**: includes listings added later. For a host, only their own.
+- [x] **Host access**: hosts see and deactivate only their own codes, and can't touch admin-created codes on their listings.
+- [x] **Deactivating a code**: live holds and existing bookings keep their discount. New quotes and holds are refused.
+- [x] **Signed-out quotes**: not applicable, because checkout requires sign-in.
+- [x] **Per-guest limits**: key on the booking's guest. Someone with several accounts can get around them, which is accepted for the MVP.
 
-### Stage 2 design
-- [ ] **Conversion rate for fixed-amount codes.** "The booking's rate" (`booking.exchange_rate`) only converts listing base currency to payment currency. A code in a third currency needs its own lookup, and no triangulation exists (#100 excluded it). *Proposed*: look up code currency → payment currency with `get_rate(RateUse::NewQuote)` at hold time and snapshot that rate. A missing pair makes the code unusable for that checkout.
-- [ ] **Usage counting model.** *Proposed*: one redemption row per booking, with usage derived under the promo row lock by joining to live booking status. This handles the pg_cron path without changing that job. Confirm index needs and how admin stats are read.
-- [ ] **Rate limiter.** *Proposed design*:
-  - **Store**: a Postgres table of fixed-window counters, updated with one atomic upsert (`INSERT ... ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count`). Postgres is used because counters must be shared across Cloud Run instances and survive scale-to-zero, and the stack has no Redis. Losing counters in a crash is acceptable, so the table can be `UNLOGGED`.
-  - **Keys**: authenticated guest ID and client IP, each with its own limit. IPs are stored hashed. The guest key stops one account guessing, and the IP key stops one source using many accounts.
-  - **What counts**: failed attempts only, at both quote and hold, so the hold can't be used to bypass the limit. Thresholds and the window live in `application` settings, overridable by environment variable like `pending_hold_minutes`.
-  - **Order**: check the limit before validating the code, so a correct code gets the same refusal during lockout.
-  - **Response**: 429 `PROMO_RATE_LIMITED` with `Retry-After`. `ApiError` has no 429 variant today, so one is added. Rejections are logged.
-  - **Cleanup**: expired windows are removed by a scheduled sweep, using the existing internal cron endpoints or pg_cron.
-  - **Client IP**: the guest portal calls `booking_api` server to server, so the API only sees the portal's address. The portal must read the guest's IP and forward it in a header. The API may trust that header only from an authenticated portal, or a caller could fake a new IP on each request. Check how `X-Forwarded-For` arrives in the deployed setup, and whether anything other than the portals can reach the API.
-  - **Known limit**: this slows guessing but doesn't stop a distributed attempt on a guessable code like `SUMMER`. Usage limits cap the cost of a guessed code.
-- [ ] **Quote access for signed-out guests.** The hold requires a token, but the checkout quote may be reached earlier. Per-guest limits can only be fully checked once the guest is known, so they're enforced at hold at the latest. Decide whether code entry requires sign-in, which would also make the guest rate-limit key always available.
-- [ ] **Guest identity for per-guest limits.** Limits key on `guest_id`, and redemptions follow a booking through `transfer_booking_guest`. A person with several accounts can get around the limit. *Proposed*: accept this for the MVP and note it as a known limitation.
-- [ ] **Reason messages versus code guessing.** The issue asks for clear reasons, but "expired" confirms a code exists where "not found" doesn't. *Proposed*: give specific reasons, relying on rate limiting. Also, a global uniqueness check lets a host discover that a code exists by trying to create it. Accept this or return a neutral message.
-- [ ] **Storage shape on the booking.** Keep promo amounts separate from `discount_value`, so weekly/monthly and promo lines can be displayed and audited separately. `accommodation_net()` and its callers need to change together, and the cleaning fee needs a clear gross and after-promo figure. Line-level detail on tax documents also needs a column or `line_items` decision.
-- [ ] **Stale discount on date changes (possible existing bug).** `db_core/src/booking/update.rs:217` writes `discount_value = COALESCE($9, discount_value)`. When a stay is shortened below the weekly threshold, the calculator returns `None`, so the old discount looks like it's kept. Confirm this, and don't copy the pattern for promo columns, where a removed discount has to be clearable.
+Design detail is in [spec-106](../specs/spec-106-feat-promo-codes.md).
