@@ -718,6 +718,7 @@ mod currency_inactive_tests {
             platform_fee: rust_decimal::Decimal::ZERO,
             tax_rate: dec!(0.1500),
             exchange_rate: dec!(160),
+            promo: None,
         };
         let r = db_core::booking::create_booking(&f.pool, &booking, 120).await;
         assert!(

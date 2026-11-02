@@ -1135,6 +1135,7 @@ mod tests {
                 platform_fee: dec!(40.00),
                 tax_rate: dec!(0.1500),
                 exchange_rate: Decimal::ONE,
+                promo: None,
             },
             120,
         )

@@ -263,7 +263,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core promo_tests::usage`
   - **Dependencies:** T4, T7, T8
 
-- [ ] **Task 10: Record redemptions in `create_booking`**
+- [x] **Task 10: Record redemptions in `create_booking`**
   - **Scope:** M (highest-risk task: test concurrency before anything else depends on it)
   - **Description:** `NewBooking` gains `promo: Option<NewBookingPromo>`. After cancelling the guest's other holds, lock and count, run `check_status` then `check_usage`, insert the booking and insert the redemption. Change `hold.rs:17` to `skip(pool, new_booking), fields(listing_id = %new_booking.listing_id, guest_id = %new_booking.guest_id)`. Use `SET LOCAL lock_timeout = '5s'` on the promo lock, mapped through `DbError::from_sqlx_contended`, because the pool has 5 connections and waiters would otherwise pin them. Confirmation of a booking with a `promo_code_id` takes the promo lock after `lock_booking`, then re-reads `expires_at > clock_timestamp()` and returns `HoldExpired` if false.
   - **Files Touched:**

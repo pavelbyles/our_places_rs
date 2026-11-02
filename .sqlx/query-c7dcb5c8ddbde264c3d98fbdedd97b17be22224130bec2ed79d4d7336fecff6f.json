@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO booking (\n            id, confirmation_code, guest_id, listing_id, status,\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown,\n            total_price, cancellation_policy, metadata, door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at, expires_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,\n            NOW() + make_interval(mins => $27))\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            promo_stay_discount, promo_cleaning_discount,\n            created_at, updated_at\n        ",
+  "query": "\n        INSERT INTO booking (\n            id, confirmation_code, guest_id, listing_id, status,\n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown,\n            total_price, cancellation_policy, metadata, door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            created_at, updated_at, expires_at,\n            promo_code_id, promo_terms, promo_stay_discount, promo_cleaning_discount\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,\n            NOW() + make_interval(mins => $27), $28, $29, $30, $31)\n        RETURNING id, confirmation_code, guest_id, listing_id, status as \"status: BookingStatus\", \n            date_from, date_to, currency, daily_rate, number_of_persons, total_days,\n            sub_total_price, discount_value, tax_value, fee_breakdown as \"fee_breakdown: Json<Vec<FeeItem>>\",\n            total_price, cancellation_policy as \"cancellation_policy: CancellationPolicy\", \n            metadata as \"metadata: Json<crate::models::BookingMetadata>\",\n            door_access_code,\n            cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,\n            promo_code_id, promo_terms as \"promo_terms: Json<common::promo::PromoTerms>\",\n            promo_stay_discount, promo_cleaning_discount,\n            created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -232,7 +232,11 @@
         "Numeric",
         "Timestamptz",
         "Timestamptz",
-        "Int4"
+        "Int4",
+        "Uuid",
+        "Jsonb",
+        "Numeric",
+        "Numeric"
       ]
     },
     "nullable": [
@@ -268,5 +272,5 @@
       false
     ]
   },
-  "hash": "3bb27eb193f884e679412c23088266f0446af00d1c243cacd5b4f16922d3a95d"
+  "hash": "c7dcb5c8ddbde264c3d98fbdedd97b17be22224130bec2ed79d4d7336fecff6f"
 }

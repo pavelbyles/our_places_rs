@@ -254,6 +254,7 @@ pub(super) async fn create_booking(
             platform_fee,
             tax_rate: calculator.tax_rate,
             exchange_rate: conversion_rate,
+            promo: None,
         };
 
         match db_booking::create_booking(

@@ -296,6 +296,22 @@ pub struct NewBooking {
     pub tax_rate: Decimal,
     /// Base to payment exchange rate.
     pub exchange_rate: Decimal,
+    /// The promo code this booking redeems, if any.
+    #[serde(default)]
+    pub promo: Option<NewBookingPromo>,
+}
+
+/// A promo code being redeemed by a new booking.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NewBookingPromo {
+    /// The code being redeemed.
+    pub promo_code_id: Uuid,
+    /// Snapshot of the code's terms.
+    pub terms: common::promo::PromoTerms,
+    /// Discount taken from the stay.
+    pub stay_discount: Decimal,
+    /// Discount taken from the cleaning fee.
+    pub cleaning_discount: Decimal,
 }
 
 /// Parameters for mutating an existing booking.

@@ -1988,6 +1988,7 @@ async fn test_unavailable_ranges_endpoint() {
                 platform_fee: Decimal::ZERO,
                 tax_rate: dec!(0.1000),
                 exchange_rate: Decimal::ONE,
+                promo: None,
             },
             api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
         )
@@ -2449,6 +2450,7 @@ async fn test_confirmation_code_collision_is_detected() {
         platform_fee: Decimal::ZERO,
         tax_rate: dec!(0.1500),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
     let (first, second) = (Uuid::now_v7(), Uuid::now_v7());
     for id in [first, second] {

@@ -26,6 +26,7 @@ pub async fn update_booking(
     let current = lock_booking(&mut tx, id).await?;
     let change = BookingChange::new(&current, updated_booking);
     check_change_allowed(&mut tx, id, &current, updated_booking, &change).await?;
+    keep_promo_use_on_confirmation(&mut tx, id, &current, updated_booking).await?;
 
     let booking = write_booking_update(&mut tx, id, updated_booking).await?;
 
@@ -49,6 +50,7 @@ struct CurrentBooking {
     date_to: NaiveDate,
     number_of_persons: i32,
     hold_active: bool,
+    promo_code_id: Option<Uuid>,
 }
 
 /// Locks the booking's listing, then the booking row, and reads the booking.
@@ -68,7 +70,7 @@ async fn lock_booking(conn: &mut PgConnection, id: Uuid) -> Result<CurrentBookin
 
     let row = sqlx::query!(
         r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to, number_of_persons,
-            COALESCE(expires_at > NOW(), FALSE) as "hold_active!"
+            COALESCE(expires_at > NOW(), FALSE) as "hold_active!", promo_code_id
         FROM booking WHERE id = $1 FOR UPDATE"#,
         id
     )
@@ -82,6 +84,7 @@ async fn lock_booking(conn: &mut PgConnection, id: Uuid) -> Result<CurrentBookin
         date_to: row.date_to,
         number_of_persons: row.number_of_persons,
         hold_active: row.hold_active,
+        promo_code_id: row.promo_code_id,
     })
 }
 
@@ -194,6 +197,36 @@ async fn check_change_allowed(
         return Err(crate::error::DbError::DateUnavailable);
     }
     Ok(())
+}
+
+/// Stops a hold being confirmed after it lost its promo use at expiry. Another
+/// hold counts an expired one as free under the code's lock, so confirming must
+/// take that lock too and then re-read the time, which may have passed while it
+/// waited. Lock order: listing, then booking, then promo code.
+async fn keep_promo_use_on_confirmation(
+    conn: &mut PgConnection,
+    id: Uuid,
+    current: &CurrentBooking,
+    updated: &UpdatedBooking,
+) -> Result<()> {
+    let confirming = updated.status == Some(BookingStatus::Confirmed)
+        && current.status == BookingStatus::Pending;
+    let (true, Some(promo_code_id)) = (confirming, current.promo_code_id) else {
+        return Ok(());
+    };
+    crate::promo::lock_code(&mut *conn, promo_code_id).await?;
+    let still_held = sqlx::query_scalar!(
+        r#"SELECT COALESCE(expires_at > clock_timestamp(), FALSE) as "held!" FROM booking WHERE id = $1"#,
+        id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if still_held {
+        Ok(())
+    } else {
+        tracing::warn!(booking_id = %id, "rejected confirmation of a hold that expired while waiting for its promo code");
+        Err(crate::error::DbError::HoldExpired)
+    }
 }
 
 /// Writes the update; fields left `None` keep their stored values.

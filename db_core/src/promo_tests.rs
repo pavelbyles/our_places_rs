@@ -649,3 +649,551 @@ mod usage {
         assert!(!covers_listing(&pool, &hosted, villa).await.unwrap());
     }
 }
+
+mod redemption {
+    use super::*;
+    use crate::error::DbError;
+    use crate::models::{
+        Booking, BookingMetadata, BookingStatus, CancellationPolicy, NewBooking, NewBookingPromo,
+        SupplierInfo, UpdatedBooking,
+    };
+    use crate::promo::get_by_code;
+    use chrono::NaiveDate;
+    use common::promo::PromoRefusal;
+    use std::time::Duration;
+
+    const HOLD_MINUTES: i32 = 120;
+
+    fn supplier() -> SupplierInfo {
+        SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        }
+    }
+
+    fn set_status(status: BookingStatus) -> UpdatedBooking {
+        UpdatedBooking {
+            status: Some(status),
+            ..Default::default()
+        }
+    }
+
+    fn new_booking(guest_id: Uuid, listing_id: Uuid, promo: Option<NewBookingPromo>) -> NewBooking {
+        let from = NaiveDate::from_ymd_opt(2030, 3, 1).expect("valid date");
+        let to = NaiveDate::from_ymd_opt(2030, 3, 3).expect("valid date");
+        NewBooking {
+            confirmation_code: Uuid::now_v7().simple().to_string()[22..].to_uppercase(),
+            guest_id,
+            listing_id,
+            date_from: from,
+            date_to: to,
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 1,
+            total_days: 2,
+            sub_total_price: dec!(400.00),
+            discount_value: None,
+            tax_value: None,
+            fee_breakdown: vec![],
+            total_price: dec!(360.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: BookingMetadata {
+                num_adults: 1,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: Decimal::ZERO,
+            damage_deposit: Decimal::ZERO,
+            platform_fee: Decimal::ZERO,
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+            promo,
+        }
+    }
+
+    async fn promo_of(pool: &PgPool, code: &str) -> NewBookingPromo {
+        let found = get_by_code(pool, code)
+            .await
+            .expect("look up code")
+            .expect("code exists");
+        NewBookingPromo {
+            promo_code_id: found.id,
+            terms: found.terms(Decimal::ONE),
+            stay_discount: dec!(40.00),
+            cleaning_discount: Decimal::ZERO,
+        }
+    }
+
+    async fn limit(pool: &PgPool, id: Uuid, total: Option<i32>, guest: Option<i32>) {
+        sqlx::query(
+            "UPDATE promo_code SET total_usage_limit = $2, per_guest_limit = $3 WHERE id = $1",
+        )
+        .bind(id)
+        .bind(total)
+        .bind(guest)
+        .execute(pool)
+        .await
+        .expect("set limits");
+    }
+
+    async fn hold(
+        pool: &PgPool,
+        guest: Uuid,
+        villa: Uuid,
+        code: &str,
+    ) -> crate::error::Result<Booking> {
+        let promo = promo_of(pool, code).await;
+        crate::booking::create_booking(pool, &new_booking(guest, villa, Some(promo)), HOLD_MINUTES)
+            .await
+    }
+
+    fn refusal(res: crate::error::Result<Booking>) -> PromoRefusal {
+        match res {
+            Err(DbError::PromoRefused(r)) => r,
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    async fn status_of(pool: &PgPool, id: Uuid) -> String {
+        sqlx::query_scalar("SELECT status::text FROM booking WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("booking status")
+    }
+
+    /// Waits until `n` backends are queued for a lock.
+    async fn until_lock_waiters(pool: &PgPool, n: i64) {
+        loop {
+            let waiting: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM pg_locks WHERE NOT granted")
+                    .fetch_one(pool)
+                    .await
+                    .expect("read pg_locks");
+            if waiting >= n {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_hold_stores_the_snapshot_and_a_redemption() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let code = insert_code(&pool, host, "SNAPSHOT").await;
+
+        let booking = hold(&pool, guest, villa, "SNAPSHOT").await.unwrap();
+
+        assert_eq!(booking.promo_code_id, Some(code));
+        assert_eq!(booking.promo_stay_discount, dec!(40.00));
+        assert_eq!(booking.accommodation_net(), dec!(360.00));
+        assert_eq!(
+            booking.promo_terms.as_ref().map(|t| t.0.code.as_str()),
+            Some("SNAPSHOT")
+        );
+        let redeemed: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM promo_code_redemption WHERE booking_id = $1 AND promo_code_id = $2",
+        )
+        .bind(booking.id)
+        .bind(code)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(redeemed, 1);
+    }
+
+    /// Distinct guests on distinct listings, so only the promo lock can
+    /// serialise them.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_holds_cannot_exceed_the_total_limit() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "LASTONE").await;
+        limit(&pool, code, Some(1), None).await;
+
+        let mut attempts = Vec::new();
+        for _ in 0..8 {
+            let guest = raw_user(&pool).await;
+            let villa = raw_listing(&pool, host).await;
+            let pool = pool.clone();
+            attempts.push(tokio::spawn(async move {
+                hold(&pool, guest, villa, "LASTONE").await
+            }));
+        }
+
+        let mut successes = 0;
+        let mut refusals = 0;
+        for attempt in attempts {
+            match attempt.await.expect("task ran") {
+                Ok(_) => successes += 1,
+                Err(DbError::PromoRefused(PromoRefusal::UsageLimitReached)) => refusals += 1,
+                Err(other) => panic!("unexpected error {other:?}"),
+            }
+        }
+        assert_eq!((successes, refusals), (1, 7));
+    }
+
+    /// Both holds are released together while a third transaction holds the
+    /// code, so this can't pass by the holds simply not overlapping.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_holds_cannot_exceed_the_per_guest_limit() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "PERGUEST").await;
+        limit(&pool, code, None, Some(2)).await;
+
+        let earlier = raw_booking(&pool, guest, raw_listing(&pool, host).await, "confirmed").await;
+        sqlx::query(
+            "INSERT INTO promo_code_redemption (promo_code_id, booking_id) VALUES ($1, $2)",
+        )
+        .bind(code)
+        .bind(earlier)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut blocker = pool.begin().await.unwrap();
+        crate::promo::lock_code(&mut blocker, code).await.unwrap();
+
+        let mut attempts = Vec::new();
+        for _ in 0..2 {
+            let villa = raw_listing(&pool, host).await;
+            let pool = pool.clone();
+            attempts.push(tokio::spawn(async move {
+                hold(&pool, guest, villa, "PERGUEST").await
+            }));
+        }
+        until_lock_waiters(&pool, 2).await;
+        blocker.commit().await.unwrap();
+
+        for attempt in attempts {
+            if let Err(e) = attempt.await.expect("task ran") {
+                assert!(
+                    matches!(e, DbError::PromoRefused(PromoRefusal::GuestLimitReached)),
+                    "unexpected error {e:?}"
+                );
+            }
+        }
+        let live: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM promo_code_redemption r JOIN booking b ON b.id = r.booking_id
+             WHERE r.promo_code_id = $1
+               AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))",
+        )
+        .bind(code)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(live, 2, "live uses stay at the limit");
+    }
+
+    #[tokio::test]
+    async fn a_guest_replacing_their_own_hold_can_reuse_a_one_use_code() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "REPLACE").await;
+        limit(&pool, code, Some(1), Some(1)).await;
+
+        let first = hold(&pool, guest, raw_listing(&pool, host).await, "REPLACE")
+            .await
+            .unwrap();
+        let second = hold(&pool, guest, raw_listing(&pool, host).await, "REPLACE")
+            .await
+            .unwrap();
+
+        assert_eq!(status_of(&pool, first.id).await, "cancelled");
+        assert_eq!(status_of(&pool, second.id).await, "pending");
+    }
+
+    #[tokio::test]
+    async fn a_refused_hold_rolls_back_and_keeps_the_guests_earlier_hold() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "GONE").await;
+        let earlier = crate::booking::create_booking(
+            &pool,
+            &new_booking(guest, raw_listing(&pool, host).await, None),
+            HOLD_MINUTES,
+        )
+        .await
+        .unwrap();
+        let promo = promo_of(&pool, "GONE").await;
+        sqlx::query(
+            "UPDATE promo_code SET deactivated_at = NOW(), deactivated_by = $2 WHERE id = $1",
+        )
+        .bind(code)
+        .bind(host)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let villa = raw_listing(&pool, host).await;
+        let res = crate::booking::create_booking(
+            &pool,
+            &new_booking(guest, villa, Some(promo)),
+            HOLD_MINUTES,
+        )
+        .await;
+
+        assert_eq!(refusal(res), PromoRefusal::Deactivated);
+        assert_eq!(status_of(&pool, earlier.id).await, "pending");
+        let created: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM booking WHERE listing_id = $1")
+            .bind(villa)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(created, 0);
+    }
+
+    #[tokio::test]
+    async fn an_expired_hold_frees_its_use_for_another_guest() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "EXPIRY").await;
+        limit(&pool, code, Some(1), None).await;
+        let first = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "EXPIRY",
+        )
+        .await
+        .unwrap();
+
+        let refused = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "EXPIRY",
+        )
+        .await;
+        assert_eq!(refusal(refused), PromoRefusal::UsageLimitReached);
+
+        sqlx::query("UPDATE booking SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1")
+            .bind(first.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Freed before any sweep runs.
+        let second = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "EXPIRY",
+        )
+        .await
+        .unwrap();
+
+        let swept = crate::booking::expire_stale_holds(&pool).await.unwrap();
+        assert_eq!(
+            swept.iter().map(|b| b.id).collect::<Vec<_>>(),
+            vec![first.id]
+        );
+        assert_eq!(status_of(&pool, second.id).await, "pending");
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_confirmed_booking_frees_its_use() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "CANCELLED").await;
+        limit(&pool, code, Some(1), None).await;
+        let booking = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "CANCELLED",
+        )
+        .await
+        .unwrap();
+        crate::booking::update_booking(
+            &pool,
+            booking.id,
+            &set_status(BookingStatus::Confirmed),
+            &supplier(),
+        )
+        .await
+        .unwrap();
+
+        let refused = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "CANCELLED",
+        )
+        .await;
+        assert_eq!(refusal(refused), PromoRefusal::UsageLimitReached);
+
+        crate::booking::update_booking(
+            &pool,
+            booking.id,
+            &set_status(BookingStatus::Cancelled),
+            &supplier(),
+        )
+        .await
+        .unwrap();
+        hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "CANCELLED",
+        )
+        .await
+        .expect("the use is free again");
+    }
+
+    #[tokio::test]
+    async fn a_live_hold_can_be_confirmed_after_its_code_is_deactivated_or_expires() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        for (code, change) in [
+            (
+                "DEACTIVATE",
+                "deactivated_at = NOW(), deactivated_by = created_by",
+            ),
+            (
+                "LAPSES",
+                "valid_from = NOW() - INTERVAL '2 days', valid_to = NOW() - INTERVAL '1 day'",
+            ),
+        ] {
+            let id = insert_code(&pool, host, code).await;
+            let booking = hold(
+                &pool,
+                raw_user(&pool).await,
+                raw_listing(&pool, host).await,
+                code,
+            )
+            .await
+            .unwrap();
+            sqlx::query(&format!("UPDATE promo_code SET {change} WHERE id = $1"))
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+
+            let confirmed = crate::booking::update_booking(
+                &pool,
+                booking.id,
+                &set_status(BookingStatus::Confirmed),
+                &supplier(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(confirmed.status, BookingStatus::Confirmed, "{code}");
+            assert_eq!(confirmed.promo_stay_discount, dec!(40.00), "{code}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_hold_refuses_an_expired_code() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let id = insert_code(&pool, host, "TOOLATE").await;
+        sqlx::query("UPDATE promo_code SET valid_from = NOW() - INTERVAL '2 days', valid_to = NOW() - INTERVAL '1 day' WHERE id = $1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let res = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "TOOLATE",
+        )
+        .await;
+        assert_eq!(refusal(res), PromoRefusal::Expired);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_hold_with_no_code_takes_no_promo_lock() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "HELD").await;
+        let mut blocker = pool.begin().await.unwrap();
+        crate::promo::lock_code(&mut blocker, code).await.unwrap();
+
+        let plain = new_booking(raw_user(&pool).await, raw_listing(&pool, host).await, None);
+        let done = tokio::time::timeout(
+            Duration::from_secs(10),
+            crate::booking::create_booking(&pool, &plain, HOLD_MINUTES),
+        )
+        .await
+        .expect("a no-code hold doesn't wait on the promo row");
+        assert!(done.is_ok());
+    }
+
+    /// A confirmation waits on the code while its hold expires, as happens when
+    /// another guest's hold has just counted the use as free. It must refuse,
+    /// or the code would end up with one more use than its limit.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_hold_that_lost_its_use_at_expiry_cannot_be_confirmed() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let code = insert_code(&pool, host, "RACE").await;
+        let booking = hold(
+            &pool,
+            raw_user(&pool).await,
+            raw_listing(&pool, host).await,
+            "RACE",
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE booking SET expires_at = clock_timestamp() + INTERVAL '2 seconds' WHERE id = $1")
+            .bind(booking.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let mut blocker = pool.begin().await.unwrap();
+        crate::promo::lock_code(&mut blocker, code).await.unwrap();
+
+        let confirm = {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                crate::booking::update_booking(
+                    &pool,
+                    booking.id,
+                    &set_status(BookingStatus::Confirmed),
+                    &supplier(),
+                )
+                .await
+            })
+        };
+        until_lock_waiters(&pool, 1).await;
+        loop {
+            let expired: bool = sqlx::query_scalar(
+                "SELECT expires_at <= clock_timestamp() FROM booking WHERE id = $1",
+            )
+            .bind(booking.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if expired {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        blocker.commit().await.unwrap();
+
+        let res = confirm.await.expect("task ran");
+        assert!(matches!(res, Err(DbError::HoldExpired)), "got {res:?}");
+        assert_eq!(status_of(&pool, booking.id).await, "pending");
+    }
+}

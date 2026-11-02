@@ -168,6 +168,7 @@ async fn test_guest_pending_hold_cancellation_on_new_booking() {
         platform_fee: Decimal::ZERO,
         tax_rate: dec!(0.1000),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
 
     let b1 = create_booking(&pool, &new_booking1, HOLD_MINUTES)
@@ -203,6 +204,7 @@ async fn test_guest_pending_hold_cancellation_on_new_booking() {
         platform_fee: Decimal::ZERO,
         tax_rate: dec!(0.1000),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
 
     let b2 = create_booking(&pool, &new_booking2, HOLD_MINUTES)
@@ -362,6 +364,7 @@ async fn test_update_booking_confirmed_issues_payment_receipt() {
         platform_fee: dec!(40.00),
         tax_rate: dec!(0.1500),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
 
     let booking = create_booking(&pool, &new_booking, HOLD_MINUTES)
@@ -588,6 +591,7 @@ async fn test_update_booking_date_change_and_revised_receipt() {
         platform_fee: dec!(40.00),
         tax_rate: dec!(0.1500),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
 
     let booking = create_booking(&pool, &new_booking, HOLD_MINUTES)
@@ -697,6 +701,7 @@ async fn test_update_booking_date_change_and_revised_receipt() {
         platform_fee: dec!(50.00),
         tax_rate: dec!(0.1500),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
     let b2 = create_booking(&pool, &second_booking, HOLD_MINUTES)
         .await
@@ -748,6 +753,7 @@ async fn test_update_booking_date_change_and_revised_receipt() {
         platform_fee: dec!(40.00),
         tax_rate: dec!(0.1500),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
     let pending_b = create_booking(&pool, &pending_req, HOLD_MINUTES)
         .await
