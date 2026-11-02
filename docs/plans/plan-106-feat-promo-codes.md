@@ -354,7 +354,7 @@ T30 final gates               ← all
 
 ## Phase D: Reservation Changes
 
-- [ ] **Task 13: Re-evaluate a promo against a new stay**
+- [x] **Task 13: Re-evaluate a promo against a new stay**
   - **Scope:** S
   - **Description:** Add a pure `common::promo::reevaluate(terms, new_stay, eligible)` returning kept or lost with a reason. It runs checks 7–9 only, using the snapshot. Add `PromoOutcome`.
   - **Files Touched:**

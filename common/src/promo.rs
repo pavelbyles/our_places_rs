@@ -255,6 +255,67 @@ pub fn check_usage(usage: PromoUsage) -> Result<(), PromoRefusal> {
     }
 }
 
+/// What happens to a booking's promo when its terms change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PromoOutcome {
+    /// The booking has no promo.
+    None,
+    /// The discount stays, recalculated for the new terms.
+    Kept {
+        /// The code.
+        code: String,
+    },
+    /// The new stay no longer qualifies, so the discount is removed.
+    Lost {
+        /// The code.
+        code: String,
+        /// The stable refusal code.
+        reason_code: String,
+        /// Why, in words the guest can read.
+        reason: String,
+    },
+}
+
+/// Re-checks a booking's snapshotted terms against new stay terms. Only the stay
+/// rules apply: validity dates, deactivation and usage limits were settled when
+/// the code was redeemed. `stay_net` and `cleaning_fee` are before the promo.
+pub fn reevaluate(
+    terms: Option<&PromoTerms>,
+    stay: PromoStay,
+    stay_net: Decimal,
+    cleaning_fee: Decimal,
+) -> PromoOutcome {
+    let Some(terms) = terms else {
+        return PromoOutcome::None;
+    };
+    match check_stay_rules(terms, stay, terms.eligible_amount(stay_net, cleaning_fee)) {
+        Ok(()) => PromoOutcome::Kept {
+            code: terms.code.clone(),
+        },
+        Err(refusal) => PromoOutcome::Lost {
+            code: terms.code.clone(),
+            reason_code: refusal.code().to_string(),
+            reason: refusal.message(),
+        },
+    }
+}
+
+impl PromoOutcome {
+    /// Whether the discount stays.
+    pub fn is_kept(&self) -> bool {
+        matches!(self, Self::Kept { .. })
+    }
+
+    /// Why the discount is lost, if it is.
+    pub fn lost_reason(&self) -> Option<String> {
+        match self {
+            Self::Lost { reason, .. } => Some(reason.clone()),
+            Self::None | Self::Kept { .. } => None,
+        }
+    }
+}
+
 impl PromoTerms {
     /// The amount a minimum value is compared with: the net stay, plus the
     /// cleaning fee when the code covers it.
@@ -292,6 +353,108 @@ impl PromoTerms {
                 (stay, cleaning)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod reevaluate_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn day(d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2030, 6, d).expect("valid date")
+    }
+
+    fn stay(check_in: u32, check_out: u32) -> PromoStay {
+        PromoStay {
+            check_in: day(check_in),
+            check_out: day(check_out),
+        }
+    }
+
+    fn terms() -> PromoTerms {
+        PromoTerms {
+            code: "SUMMER".to_string(),
+            discount_type: PromoDiscountType::Percentage,
+            discount_value: dec!(10),
+            scope: PromoScope::Stay,
+            currency: None,
+            exchange_rate: Decimal::ONE,
+            min_nights: None,
+            min_booking_value: None,
+            stay_from: None,
+            stay_to: None,
+        }
+    }
+
+    #[test]
+    fn no_promo_stays_no_promo() {
+        assert_eq!(
+            reevaluate(None, stay(1, 3), dec!(100), dec!(10)),
+            PromoOutcome::None
+        );
+    }
+
+    #[test]
+    fn a_percentage_is_recalculated_on_the_new_amounts() {
+        let t = terms();
+        assert!(reevaluate(Some(&t), stay(1, 9), dec!(800), dec!(0)).is_kept());
+        assert_eq!(t.discounts(dec!(800), dec!(0)).0, dec!(80));
+        assert_eq!(t.discounts(dec!(300), dec!(0)).0, dec!(30));
+    }
+
+    #[test]
+    fn a_fixed_amount_stays_the_same_using_the_snapshotted_rate_subject_to_the_cap() {
+        let t = PromoTerms {
+            discount_type: PromoDiscountType::Fixed,
+            discount_value: dec!(50),
+            currency: Some("USD".to_string()),
+            exchange_rate: dec!(160),
+            ..terms()
+        };
+        assert!(reevaluate(Some(&t), stay(1, 9), dec!(80000), dec!(0)).is_kept());
+        assert_eq!(t.discounts(dec!(80000), dec!(0)).0, dec!(8000));
+        assert_eq!(t.discounts(dec!(5000), dec!(0)).0, dec!(5000));
+    }
+
+    #[test]
+    fn falling_below_a_minimum_or_outside_the_window_loses_the_discount() {
+        let short = PromoTerms {
+            min_nights: Some(5),
+            ..terms()
+        };
+        let outcome = reevaluate(Some(&short), stay(1, 3), dec!(400), dec!(0));
+        assert!(!outcome.is_kept());
+        assert!(matches!(
+            &outcome,
+            PromoOutcome::Lost { reason_code, .. } if reason_code == "PROMO_MIN_NIGHTS_NOT_MET"
+        ));
+        assert!(outcome.lost_reason().is_some());
+
+        let cheap = PromoTerms {
+            currency: Some("USD".to_string()),
+            min_booking_value: Some(dec!(500)),
+            ..terms()
+        };
+        assert!(matches!(
+            reevaluate(Some(&cheap), stay(1, 3), dec!(400), dec!(0)),
+            PromoOutcome::Lost { reason_code, .. } if reason_code == "PROMO_MIN_VALUE_NOT_MET"
+        ));
+
+        let window = PromoTerms {
+            stay_to: Some(day(2)),
+            ..terms()
+        };
+        assert!(matches!(
+            reevaluate(Some(&window), stay(1, 5), dec!(400), dec!(0)),
+            PromoOutcome::Lost { reason_code, .. } if reason_code == "PROMO_STAY_DATES_NOT_ELIGIBLE"
+        ));
+    }
+
+    #[test]
+    fn validity_deactivation_and_usage_are_not_consulted() {
+        // The terms carry none of them, so a kept outcome can't depend on them.
+        assert!(reevaluate(Some(&terms()), stay(1, 3), dec!(1), dec!(0)).is_kept());
     }
 }
 
