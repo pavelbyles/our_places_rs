@@ -346,7 +346,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p booking_api exchange_rate_api_tests`
   - **Dependencies:** T15
 
-- [ ] **T17: Client rate methods**
+- [x] **T17: Client rate methods**
   - **Scope:** XS
   - **Files Touched:** `common/src/app_client/currencies.rs`, `web_client/src/client.rs`
   - **Acceptance Criteria:** [ ] `mod currency_client_tests` (≥2): each API error `code` maps to its typed `UserCallError` variant, and the success bodies deserialise.

@@ -737,6 +737,91 @@ impl TopcoatApiClient {
         updated
     }
 
+    /// Publishes a rate version, as the admin who owns `jwt`.
+    pub async fn publish_rate_as(
+        &self,
+        jwt: &str,
+        req: &common::exchange_rate::PublishRateRequest,
+    ) -> Result<common::exchange_rate::RateVersion, UserCallError> {
+        let url = format!("{}/api/v1/admin/exchange-rates", self.booking_api_url);
+        let request = self.admin_request(reqwest::Method::POST, &url, jwt).await?;
+        decode_api(request.json(req).send().await?).await
+    }
+
+    /// Deletes a scheduled rate version, as the admin who owns `jwt`.
+    pub async fn delete_scheduled_rate_as(&self, jwt: &str, id: Uuid) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/admin/exchange-rates/{id}", self.booking_api_url);
+        let request = self
+            .admin_request(reqwest::Method::DELETE, &url, jwt)
+            .await?;
+        let response = request.send().await?;
+        if response.status().as_u16() == 204 {
+            Ok(())
+        } else {
+            decode_api::<serde_json::Value>(response).await.map(|_| ())
+        }
+    }
+
+    /// Retires `base → target`, as the admin who owns `jwt`.
+    pub async fn retire_pair_as(
+        &self,
+        jwt: &str,
+        base: &common::currency::CurrencyCode,
+        target: &common::currency::CurrencyCode,
+    ) -> Result<common::exchange_rate::PairHistoryResponse, UserCallError> {
+        let url = format!(
+            "{}/api/v1/admin/exchange-rates/{base}/{target}/retire",
+            self.booking_api_url
+        );
+        let request = self.admin_request(reqwest::Method::POST, &url, jwt).await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Every version of `base → target`, as the admin who owns `jwt`.
+    pub async fn pair_history_as(
+        &self,
+        jwt: &str,
+        base: &common::currency::CurrencyCode,
+        target: &common::currency::CurrencyCode,
+    ) -> Result<common::exchange_rate::PairHistoryResponse, UserCallError> {
+        let url = format!(
+            "{}/api/v1/admin/exchange-rates/{base}/{target}/history",
+            self.booking_api_url
+        );
+        let request = self.admin_request(reqwest::Method::GET, &url, jwt).await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Listing base currencies that cannot be quoted in an active currency.
+    pub async fn rate_coverage_as(
+        &self,
+        jwt: &str,
+    ) -> Result<Vec<common::exchange_rate::RateCoverageGap>, UserCallError> {
+        let url = format!(
+            "{}/api/v1/admin/exchange-rates/coverage",
+            self.booking_api_url
+        );
+        let request = self.admin_request(reqwest::Method::GET, &url, jwt).await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// A request to `booking_api` as the user who owns `jwt`.
+    async fn admin_request(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        jwt: &str,
+    ) -> Result<reqwest::RequestBuilder, UserCallError> {
+        service_request(
+            &self.client,
+            method,
+            url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await
+    }
+
     /// The newest rate per currency pair, as the admin or host who owns `jwt`.
     pub async fn get_exchange_rates_as(
         &self,
