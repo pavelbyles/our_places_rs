@@ -349,9 +349,15 @@ async fn start_host_payout(
         booking.cleaning_net(),
         terms.exchange_rate,
     );
+    let promo_discount = booking.promo_stay_discount + booking.promo_cleaning_discount;
     crate::payout_ledger::create_payout_ledger_entry(
         &mut *conn,
-        &terms.pending_payout(booking, gross_amount),
+        &terms.pending_payout(
+            booking,
+            gross_amount,
+            (booking.cleaning_net() * terms.exchange_rate).round_dp(2),
+            (promo_discount * terms.exchange_rate).round_dp(2),
+        ),
     )
     .await?;
     Ok(())
@@ -372,6 +378,7 @@ async fn revise_confirmed_terms(
         booking.id,
         booking.accommodation_net(),
         booking.cleaning_net(),
+        booking.promo_stay_discount + booking.promo_cleaning_discount,
     )
     .await
 }
@@ -429,7 +436,7 @@ async fn settle_cancellation(
     let retained_gross = (host_retained * terms.exchange_rate).round_dp(2);
     let inserted = crate::payout_ledger::create_payout_ledger_entry(
         &mut *conn,
-        &terms.pending_payout(booking, retained_gross),
+        &terms.pending_payout(booking, retained_gross, Decimal::ZERO, Decimal::ZERO),
     )
     .await?;
     if inserted == 0 {
@@ -483,6 +490,8 @@ impl HostPayoutTerms {
         &self,
         booking: &Booking,
         gross_amount: Decimal,
+        cleaning_fee_amount: Decimal,
+        promo_discount_amount: Decimal,
     ) -> PayoutRecord<PendingPayout> {
         let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
             gross_amount,
@@ -501,6 +510,8 @@ impl HostPayoutTerms {
             tax_withheld_amount: Decimal::ZERO,
             exchange_rate: self.exchange_rate,
             net_payout_amount,
+            cleaning_fee_amount,
+            promo_discount_amount,
         })
     }
 }

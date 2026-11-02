@@ -982,6 +982,12 @@ pub struct DbPayoutLedgerEntry {
     pub tax_withheld_amount: Decimal,
     pub exchange_rate: Decimal,
     pub net_payout_amount: Decimal,
+    /// Part of the gross that is the cleaning fee, in this row's currency.
+    pub cleaning_fee_amount: Decimal,
+    /// The promo discount the host funded, in this row's currency.
+    pub promo_discount_amount: Decimal,
+    /// The promo code the booking redeemed, if any.
+    pub promo_code: Option<String>,
     pub status: DbPayoutStatus,
     pub gateway_reference: Option<String>,
     pub failure_reason: Option<String>,
@@ -1009,6 +1015,9 @@ impl From<DbPayoutLedgerEntry> for common::payout::PayoutLedgerEntry {
             tax_withheld_amount: e.tax_withheld_amount,
             exchange_rate: e.exchange_rate,
             net_payout_amount: e.net_payout_amount,
+            cleaning_fee_amount: e.cleaning_fee_amount,
+            promo_discount_amount: e.promo_discount_amount,
+            promo_code: e.promo_code,
             status: e.status,
             gateway_reference: e.gateway_reference,
             failure_reason: e.failure_reason,

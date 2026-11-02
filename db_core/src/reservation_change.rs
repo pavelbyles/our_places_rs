@@ -938,6 +938,7 @@ pub async fn approve_change_request(
         updated_booking.id,
         updated_booking.accommodation_net(),
         updated_booking.cleaning_net(),
+        updated_booking.promo_stay_discount + updated_booking.promo_cleaning_discount,
     )
     .await?;
 

@@ -108,6 +108,10 @@ pub struct PayoutRecord<State> {
     pub tax_withheld_amount: Decimal,
     pub exchange_rate: Decimal,
     pub net_payout_amount: Decimal,
+    /// Part of the gross that is the cleaning fee, in this row's currency.
+    pub cleaning_fee_amount: Decimal,
+    /// The promo discount the host funded, in this row's currency.
+    pub promo_discount_amount: Decimal,
     pub gateway_reference: Option<String>,
     pub failure_reason: Option<String>,
     pub payout_date: Option<DateTime<Utc>>,
@@ -129,6 +133,10 @@ pub struct NewPayout {
     pub tax_withheld_amount: Decimal,
     pub exchange_rate: Decimal,
     pub net_payout_amount: Decimal,
+    /// Part of the gross that is the cleaning fee, in this row's currency.
+    pub cleaning_fee_amount: Decimal,
+    /// The promo discount the host funded, in this row's currency.
+    pub promo_discount_amount: Decimal,
 }
 
 impl PayoutRecord<PendingPayout> {
@@ -145,6 +153,8 @@ impl PayoutRecord<PendingPayout> {
             tax_withheld_amount: payout.tax_withheld_amount,
             exchange_rate: payout.exchange_rate,
             net_payout_amount: payout.net_payout_amount,
+            cleaning_fee_amount: payout.cleaning_fee_amount,
+            promo_discount_amount: payout.promo_discount_amount,
             gateway_reference: None,
             failure_reason: None,
             payout_date: None,
@@ -165,6 +175,8 @@ impl PayoutRecord<PendingPayout> {
             tax_withheld_amount: self.tax_withheld_amount,
             exchange_rate: self.exchange_rate,
             net_payout_amount: self.net_payout_amount,
+            cleaning_fee_amount: self.cleaning_fee_amount,
+            promo_discount_amount: self.promo_discount_amount,
             gateway_reference: self.gateway_reference,
             failure_reason: self.failure_reason,
             payout_date: self.payout_date,
@@ -185,6 +197,8 @@ impl PayoutRecord<PendingPayout> {
             tax_withheld_amount: self.tax_withheld_amount,
             exchange_rate: self.exchange_rate,
             net_payout_amount: self.net_payout_amount,
+            cleaning_fee_amount: self.cleaning_fee_amount,
+            promo_discount_amount: self.promo_discount_amount,
             gateway_reference: self.gateway_reference,
             failure_reason: reason,
             payout_date: self.payout_date,
@@ -211,6 +225,8 @@ impl PayoutRecord<ProcessingPayout> {
             tax_withheld_amount: self.tax_withheld_amount,
             exchange_rate: self.exchange_rate,
             net_payout_amount: self.net_payout_amount,
+            cleaning_fee_amount: self.cleaning_fee_amount,
+            promo_discount_amount: self.promo_discount_amount,
             gateway_reference,
             failure_reason: None,
             payout_date: Some(payout_date),
@@ -231,6 +247,8 @@ impl PayoutRecord<ProcessingPayout> {
             tax_withheld_amount: self.tax_withheld_amount,
             exchange_rate: self.exchange_rate,
             net_payout_amount: self.net_payout_amount,
+            cleaning_fee_amount: self.cleaning_fee_amount,
+            promo_discount_amount: self.promo_discount_amount,
             gateway_reference: self.gateway_reference,
             failure_reason: reason,
             payout_date: self.payout_date,
@@ -253,6 +271,8 @@ impl PayoutRecord<PaidPayout> {
             tax_withheld_amount: self.tax_withheld_amount,
             exchange_rate: self.exchange_rate,
             net_payout_amount: self.net_payout_amount,
+            cleaning_fee_amount: self.cleaning_fee_amount,
+            promo_discount_amount: self.promo_discount_amount,
             gateway_reference: self.gateway_reference,
             failure_reason: reason,
             payout_date: self.payout_date,
@@ -279,6 +299,15 @@ pub struct PayoutLedgerEntry {
     pub tax_withheld_amount: Decimal,
     pub exchange_rate: Decimal,
     pub net_payout_amount: Decimal,
+    /// Part of the gross that is the cleaning fee, in this row's currency.
+    #[serde(default)]
+    pub cleaning_fee_amount: Decimal,
+    /// The promo discount the host funded, in this row's currency.
+    #[serde(default)]
+    pub promo_discount_amount: Decimal,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
     pub status: PayoutStatus,
     pub gateway_reference: Option<String>,
     pub failure_reason: Option<String>,
@@ -387,6 +416,8 @@ mod tests {
             tax_withheld_amount: Decimal::ZERO,
             exchange_rate: Decimal::ONE,
             net_payout_amount: Decimal::new(970, 0),
+            cleaning_fee_amount: Decimal::ZERO,
+            promo_discount_amount: Decimal::ZERO,
         });
 
         let processing = record.begin_processing();

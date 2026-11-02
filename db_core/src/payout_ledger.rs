@@ -21,9 +21,9 @@ pub async fn create_payout_ledger_entry(
         INSERT INTO host_payout_ledger (
             id, booking_id, listing_id, host_id, currency, gross_amount,
             platform_fee_pct, platform_fee_amount, tax_withheld_amount,
-            exchange_rate, net_payout_amount, status
+            exchange_rate, net_payout_amount, cleaning_fee_amount, promo_discount_amount, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending'::payout_status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending'::payout_status)
         ON CONFLICT (booking_id) DO NOTHING
         "#,
         payout.id,
@@ -37,6 +37,8 @@ pub async fn create_payout_ledger_entry(
         payout.tax_withheld_amount,
         payout.exchange_rate,
         payout.net_payout_amount,
+        payout.cleaning_fee_amount,
+        payout.promo_discount_amount,
     )
     .execute(&mut *conn)
     .await?
@@ -53,6 +55,7 @@ pub async fn reprice_pending_payout(
     booking_id: Uuid,
     accommodation_net: Decimal,
     cleaning_net: Decimal,
+    promo_discount: Decimal,
 ) -> Result<()> {
     let Some(row) = sqlx::query!(
         r#"
@@ -79,12 +82,16 @@ pub async fn reprice_pending_payout(
         SET gross_amount = $1,
             platform_fee_amount = $2,
             net_payout_amount = $3,
+            cleaning_fee_amount = $4,
+            promo_discount_amount = $5,
             updated_at = NOW()
-        WHERE id = $4
+        WHERE id = $6
         "#,
         gross_amount,
         platform_fee_amount,
         net_payout_amount,
+        (cleaning_net * row.exchange_rate).round_dp(2),
+        (promo_discount * row.exchange_rate).round_dp(2),
         row.id
     )
     .execute(&mut *conn)
@@ -119,6 +126,8 @@ pub async fn reopen_payout_as_retained(
         SET gross_amount = $1,
             platform_fee_amount = $2,
             net_payout_amount = $3,
+            cleaning_fee_amount = 0,
+            promo_discount_amount = 0,
             status = 'pending'::payout_status,
             updated_at = NOW()
         WHERE id = $4 AND status = 'cancelled'::payout_status
@@ -169,6 +178,9 @@ pub async fn get_payout_ledger_entries(
             l.tax_withheld_amount,
             l.exchange_rate,
             l.net_payout_amount,
+            l.cleaning_fee_amount,
+            l.promo_discount_amount,
+            b.promo_terms->>'code' AS "promo_code?",
             l.status AS "status: DbPayoutStatus",
             l.gateway_reference,
             l.failure_reason,
@@ -297,6 +309,9 @@ pub async fn update_payout_status(
             l.tax_withheld_amount,
             l.exchange_rate,
             l.net_payout_amount,
+            l.cleaning_fee_amount,
+            l.promo_discount_amount,
+            b.promo_terms->>'code' AS "promo_code?",
             l.status AS "status: DbPayoutStatus",
             l.gateway_reference,
             l.failure_reason,
@@ -335,4 +350,205 @@ pub async fn cancel_pending_payout_for_booking(
     .await?;
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod promo_tests {
+    //! The cleaning fee and promo discount on ledger rows.
+
+    use crate::models::{BookingStatus, SupplierInfo, UpdatedBooking};
+    use crate::promo_tests::{insert_code, migrated_db, raw_booking, raw_listing, raw_user};
+    use common::payout::PayoutFilter;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    use sqlx::{PgPool, Row};
+    use uuid::Uuid;
+
+    fn supplier() -> SupplierInfo {
+        SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        }
+    }
+
+    /// The worked example held with 10% off the stay and cleaning fee, for a
+    /// host paid in `host_currency`.
+    async fn held(pool: &PgPool, host_currency: &str) -> (Uuid, Uuid) {
+        let host = raw_user(pool).await;
+        sqlx::query(r#"UPDATE "user" SET default_currency = $2 WHERE id = $1"#)
+            .bind(host)
+            .bind(host_currency)
+            .execute(pool)
+            .await
+            .unwrap();
+        let guest = raw_user(pool).await;
+        let villa = raw_listing(pool, host).await;
+        sqlx::query("UPDATE listing SET commission_pct = 0.1 WHERE id = $1")
+            .bind(villa)
+            .execute(pool)
+            .await
+            .unwrap();
+        let code = insert_code(pool, host, "LEDGERED").await;
+        let booking = raw_booking(pool, guest, villa, "pending").await;
+        sqlx::query(
+            r#"UPDATE booking SET expires_at = NOW() + INTERVAL '1 hour', sub_total_price = 1000,
+                   discount_value = 100, cleaning_fee = 100, platform_fee = 40.50, tax_rate = 0.15,
+                   tax_value = 135, total_price = 1075.50, date_from = '2030-06-01', date_to = '2030-06-08',
+                   total_days = 7, promo_code_id = $2, promo_stay_discount = 90, promo_cleaning_discount = 10,
+                   promo_terms = '{"code":"LEDGERED","discount_type":"percentage","discount_value":"10","scope":"stay_and_cleaning","currency":null,"exchange_rate":"1","min_nights":null,"min_booking_value":null,"stay_from":null,"stay_to":null}'
+               WHERE id = $1"#,
+        )
+        .bind(booking)
+        .bind(code)
+        .execute(pool)
+        .await
+        .unwrap();
+        (booking, host)
+    }
+
+    async fn update(pool: &PgPool, id: Uuid, updated: UpdatedBooking) {
+        crate::booking::update_booking(pool, id, &updated, &supplier())
+            .await
+            .unwrap();
+    }
+
+    fn set_status(status: BookingStatus) -> UpdatedBooking {
+        UpdatedBooking {
+            status: Some(status),
+            ..Default::default()
+        }
+    }
+
+    async fn amounts(pool: &PgPool, id: Uuid) -> (Decimal, Decimal, Decimal) {
+        let row = sqlx::query(
+            "SELECT gross_amount, cleaning_fee_amount, promo_discount_amount
+             FROM host_payout_ledger WHERE booking_id = $1",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        (
+            row.get("gross_amount"),
+            row.get("cleaning_fee_amount"),
+            row.get("promo_discount_amount"),
+        )
+    }
+
+    #[tokio::test]
+    async fn confirmation_writes_both_amounts_in_the_host_currency() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (usd, _) = held(&pool, "USD").await;
+        update(&pool, usd, set_status(BookingStatus::Confirmed)).await;
+        assert_eq!(
+            amounts(&pool, usd).await,
+            (dec!(900.00), dec!(90.00), dec!(100.00))
+        );
+    }
+
+    #[tokio::test]
+    async fn confirmation_converts_both_amounts_for_a_host_paid_in_another_currency() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (jmd, _) = held(&pool, "JMD").await;
+        update(&pool, jmd, set_status(BookingStatus::Confirmed)).await;
+        // The seeded USD -> JMD rate is 160.
+        assert_eq!(
+            amounts(&pool, jmd).await,
+            (dec!(144000.00), dec!(14400.00), dec!(16000.00))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_revision_rewrites_both_amounts() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (id, _) = held(&pool, "USD").await;
+        update(&pool, id, set_status(BookingStatus::Confirmed)).await;
+        update(
+            &pool,
+            id,
+            UpdatedBooking {
+                date_to: Some(chrono::NaiveDate::from_ymd_opt(2030, 6, 9).expect("valid date")),
+                total_days: Some(8),
+                sub_total_price: Some(dec!(1200)),
+                promo_stay_discount: Some(dec!(110)),
+                promo_cleaning_discount: Some(dec!(10)),
+                ..Default::default()
+            },
+        )
+        .await;
+        // 1200 - 100 weekly - 110 promo, plus 90 cleaning.
+        assert_eq!(
+            amounts(&pool, id).await,
+            (dec!(1080.00), dec!(90.00), dec!(120.00))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retained_row_holds_zero_for_both() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (id, _) = held(&pool, "USD").await;
+        update(&pool, id, set_status(BookingStatus::Confirmed)).await;
+        sqlx::query(
+            "UPDATE booking SET cancellation_policy = 'moderate', date_from = CURRENT_DATE + 3,
+                 date_to = CURRENT_DATE + 5 WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        update(&pool, id, set_status(BookingStatus::Cancelled)).await;
+        // Half of the 810.00 net stay.
+        assert_eq!(
+            amounts(&pool, id).await,
+            (dec!(405.00), Decimal::ZERO, Decimal::ZERO)
+        );
+    }
+
+    #[tokio::test]
+    async fn entries_carry_the_code_and_an_older_row_reads_as_zero() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (id, host) = held(&pool, "USD").await;
+        update(&pool, id, set_status(BookingStatus::Confirmed)).await;
+        let filter = PayoutFilter {
+            host_id: Some(host),
+            ..Default::default()
+        };
+        let (entries, _) = crate::payout_ledger::get_payout_ledger_entries(&pool, &filter)
+            .await
+            .unwrap();
+        let entry = entries.iter().find(|e| e.booking_id == id).expect("entry");
+        assert_eq!(entry.promo_code.as_deref(), Some("LEDGERED"));
+        assert_eq!(entry.cleaning_fee_amount, dec!(90.00));
+        assert_eq!(entry.promo_discount_amount, dec!(100.00));
+
+        let other_guest = raw_user(&pool).await;
+        let other_villa = raw_listing(&pool, host).await;
+        let plain = raw_booking(&pool, other_guest, other_villa, "confirmed").await;
+        sqlx::query(
+            "INSERT INTO host_payout_ledger (booking_id, listing_id, host_id, gross_amount, net_payout_amount)
+             VALUES ($1, $2, $3, 400, 360)",
+        )
+        .bind(plain)
+        .bind(other_villa)
+        .bind(host)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (entries, _) = crate::payout_ledger::get_payout_ledger_entries(&pool, &filter)
+            .await
+            .unwrap();
+        let older = entries
+            .iter()
+            .find(|e| e.booking_id == plain)
+            .expect("entry");
+        assert_eq!(older.promo_code, None);
+        assert_eq!(older.cleaning_fee_amount, Decimal::ZERO);
+        assert_eq!(older.promo_discount_amount, Decimal::ZERO);
+    }
 }

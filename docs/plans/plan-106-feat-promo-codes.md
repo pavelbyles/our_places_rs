@@ -425,7 +425,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p common cancellation::promo && cargo test -p db_core tax_document::promo_tests && cargo test -p booking_api cancellation_quote && npm run test:e2e:guest -- tax-documents`
   - **Dependencies:** T7, T12
 
-- [ ] **Task 17: Add ledger columns and CSV fields**
+- [x] **Task 17: Add ledger columns and CSV fields**
   - **Scope:** M
   - **Description:** Add `cleaning_fee_amount` and `promo_discount_amount` to `NewPayout`, the ledger DTOs and the writes. Retained rows hold 0 for both. Join the promo code for display. Append the CSV columns. Move `csv_cell` from `web_ui_admin/src/support.rs` to `common` and use it for all text cells, closing the formula injection that `listing_name` already has on this export.
   - **Files Touched:**

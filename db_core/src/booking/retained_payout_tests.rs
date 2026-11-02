@@ -228,6 +228,8 @@ async fn retained_payout_ledger_insert_stays_safe_to_repeat() {
         tax_withheld_amount: Decimal::ZERO,
         exchange_rate: Decimal::ONE,
         net_payout_amount: dec!(1.00),
+        cleaning_fee_amount: Decimal::ZERO,
+        promo_discount_amount: Decimal::ZERO,
     });
     let mut conn = pool.acquire().await.unwrap();
     crate::payout_ledger::create_payout_ledger_entry(&mut conn, &payout)
