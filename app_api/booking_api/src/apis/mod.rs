@@ -202,8 +202,10 @@ fn is_admin(user: &db_core::models::User) -> bool {
     user.roles.contains(&db_core::models::UserRole::Admin)
 }
 
-/// The user behind `claims`. A token for a user that no longer exists is a
-/// 401; a database failure is passed up (and logged), never hidden as a 404.
+/// The user behind `claims`. A token for a user that no longer exists, or
+/// whose account has been deactivated or deleted, is a 401: the account's
+/// tokens stop working as soon as it is switched off, not when they expire.
+/// A database failure is passed up (and logged), never hidden as a 404.
 async fn caller(
     pool: &PgPool,
     claims: &api_core::auth::Claims,
@@ -218,6 +220,19 @@ async fn caller(
             e => {
                 tracing::error!(user_id = %claims.sub, error = ?e, "failed to load the calling user");
                 ApiError::Database(e)
+            }
+        })
+        .and_then(|user| {
+            if user.is_active && user.deleted_at.is_none() {
+                Ok(user)
+            } else {
+                tracing::warn!(
+                    user_id = %claims.sub,
+                    is_active = user.is_active,
+                    deleted = user.deleted_at.is_some(),
+                    "token is for a deactivated or deleted account"
+                );
+                Err(ApiError::Unauthorized("Account is not active".to_string()))
             }
         })
 }

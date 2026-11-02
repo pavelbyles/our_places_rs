@@ -15,9 +15,7 @@ pub(super) async fn get_host_ledger_entries(
     pool: web::Data<PgPool>,
     filter: web::Query<PayoutFilter>,
 ) -> Result<impl Responder, ApiError> {
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(ApiError::Database)?;
+    let user = super::caller(pool.get_ref(), &claims).await?;
     let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
     let target_host_id = if is_admin {
         filter.host_id
@@ -63,9 +61,7 @@ pub(super) async fn get_host_ledger_summary(
     pool: web::Data<PgPool>,
     filter: web::Query<PayoutFilter>,
 ) -> Result<impl Responder, ApiError> {
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(ApiError::Database)?;
+    let user = super::caller(pool.get_ref(), &claims).await?;
     let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
     let target_host_id = if is_admin {
         filter.host_id
@@ -94,9 +90,7 @@ pub(super) async fn export_host_ledger_csv(
     pool: web::Data<PgPool>,
     filter: web::Query<PayoutFilter>,
 ) -> Result<HttpResponse, ApiError> {
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(ApiError::Database)?;
+    let user = super::caller(pool.get_ref(), &claims).await?;
     let is_admin = user.roles.contains(&db_core::models::UserRole::Admin);
     let target_host_id = if is_admin {
         filter.host_id
@@ -135,12 +129,7 @@ pub(super) async fn update_admin_payout_status(
     path: web::Path<Uuid>,
     body: web::Json<common::payout::UpdatePayoutStatusRequest>,
 ) -> Result<impl Responder, ApiError> {
-    let user = db_core::user::get_user_by_id(pool.get_ref(), claims.sub)
-        .await
-        .map_err(ApiError::Database)?;
-    if !user.roles.contains(&db_core::models::UserRole::Admin) {
-        return Err(ApiError::Unauthorized("Admin role required".to_string()));
-    }
+    super::require_admin(pool.get_ref(), &claims, "change payout status").await?;
 
     let ledger_id = path.into_inner();
 

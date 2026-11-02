@@ -1120,3 +1120,74 @@ mod exchange_rate_api_tests {
         );
     }
 }
+
+mod inactive_account_tests {
+    //! A deactivated or deleted account's tokens stop working immediately.
+
+    use super::*;
+
+    fn publish(user: Uuid) -> actix_http::Request {
+        test::TestRequest::post()
+            .uri("/api/v1/admin/exchange-rates")
+            .insert_header((
+                "Authorization",
+                format!("Bearer {}", api_core::auth::generate_test_jwt(user)),
+            ))
+            .set_json(serde_json::json!({
+                "base_currency": "USD", "target_currency": "JMD", "rate": "161"
+            }))
+            .to_request()
+    }
+
+    #[tokio::test]
+    async fn deactivated_admin_cannot_publish_rates() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        sqlx::query(r#"UPDATE "user" SET is_active = false WHERE id = $1"#)
+            .bind(admin)
+            .execute(&f.pool)
+            .await
+            .expect("deactivate admin");
+        let app = app(&f.pool).await;
+        let resp = test::call_service(&app, publish(admin)).await;
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn deleted_admin_cannot_publish_rates() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        sqlx::query(r#"UPDATE "user" SET deleted_at = now() WHERE id = $1"#)
+            .bind(admin)
+            .execute(&f.pool)
+            .await
+            .expect("soft-delete admin");
+        let app = app(&f.pool).await;
+        let resp = test::call_service(&app, publish(admin)).await;
+        assert_eq!(resp.status(), 401);
+    }
+
+    #[tokio::test]
+    async fn active_admin_still_publishes_and_hosts_cannot_change_payouts() {
+        let f = fixture().await;
+        let admin = create_admin(&f.pool).await;
+        let app = app(&f.pool).await;
+        let resp = test::call_service(&app, publish(admin)).await;
+        assert_eq!(resp.status(), 201);
+
+        // Payout status is admin-only: a host now gets 403 (was 401).
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::patch()
+                .uri(&format!("/api/v1/admin/ledger/{}/status", Uuid::now_v7()))
+                .insert_header((
+                    "Authorization",
+                    format!("Bearer {}", api_core::auth::generate_test_jwt(f.host_id)),
+                ))
+                .set_json(serde_json::json!({ "status": "paid" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 403);
+    }
+}
