@@ -61,6 +61,15 @@ pub enum DbError {
         /// Absolute deviation in percent, for display.
         deviation_pct: Option<rust_decimal::Decimal>,
     },
+    /// A promo code can't be used for this booking.
+    #[error("Promo code refused: {0}")]
+    PromoRefused(common::promo::PromoRefusal),
+    /// A code with this string already exists, in any case.
+    #[error("A promo code with this value already exists")]
+    PromoCodeExists,
+    /// The promo code has already been deactivated.
+    #[error("This promo code has already been deactivated")]
+    PromoAlreadyDeactivated,
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),

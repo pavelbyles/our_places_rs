@@ -95,6 +95,10 @@ impl ResponseError for ApiError {
                 | DbError::RateVersionExists,
             ) => StatusCode::CONFLICT,
             ApiError::Database(DbError::LockContention(_)) => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::Database(DbError::PromoRefused(_)) => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::Database(DbError::PromoCodeExists | DbError::PromoAlreadyDeactivated) => {
+                StatusCode::CONFLICT
+            }
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -131,6 +135,23 @@ impl ResponseError for ApiError {
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Database(DbError::PromoRefused(refusal)) => HttpResponse::UnprocessableEntity()
+                .json(serde_json::json!({
+                    "code": refusal.code(),
+                    "message": refusal.message()
+                })),
+            ApiError::Database(DbError::PromoCodeExists) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "PROMO_CODE_EXISTS",
+                    "message": "A promo code with this value already exists."
+                }))
+            }
+            ApiError::Database(DbError::PromoAlreadyDeactivated) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "PROMO_ALREADY_DEACTIVATED",
+                    "message": "This promo code has already been deactivated."
+                }))
             }
             ApiError::Database(DbError::FxRateUnavailable { base, target }) => {
                 HttpResponse::UnprocessableEntity().json(serde_json::json!({
@@ -279,6 +300,63 @@ pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std
 
 // A custom `Result` type for our API.
 pub type Result<T> = std::result::Result<T, ApiError>;
+
+#[cfg(test)]
+mod promo_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use common::promo::PromoRefusal;
+
+    async fn render(err: DbError) -> (StatusCode, serde_json::Value) {
+        let api = ApiError::Database(err);
+        let status = api.status_code();
+        let resp = api.error_response();
+        assert_eq!(
+            resp.status(),
+            status,
+            "status_code and error_response agree"
+        );
+        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
+        (status, serde_json::from_slice(&bytes).expect("json body"))
+    }
+
+    #[tokio::test]
+    async fn every_refusal_is_a_422_with_its_code_and_message() {
+        for refusal in [
+            PromoRefusal::NotFound,
+            PromoRefusal::Deactivated,
+            PromoRefusal::NotYetValid,
+            PromoRefusal::Expired,
+            PromoRefusal::ListingNotEligible,
+            PromoRefusal::FxRateUnavailable,
+            PromoRefusal::MinNightsNotMet,
+            PromoRefusal::StayDatesNotEligible,
+            PromoRefusal::MinValueNotMet,
+            PromoRefusal::UsageLimitReached,
+            PromoRefusal::GuestLimitReached,
+        ] {
+            let (status, body) = render(DbError::PromoRefused(refusal)).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{refusal:?}");
+            assert!(
+                !status.is_server_error(),
+                "{refusal:?} isn't a server error"
+            );
+            assert_eq!(body["code"], refusal.code());
+            assert_eq!(body["message"], refusal.message());
+        }
+    }
+
+    #[tokio::test]
+    async fn management_errors_are_409() {
+        let (status, body) = render(DbError::PromoCodeExists).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["code"], "PROMO_CODE_EXISTS");
+
+        let (status, body) = render(DbError::PromoAlreadyDeactivated).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["code"], "PROMO_ALREADY_DEACTIVATED");
+    }
+}
 
 #[cfg(test)]
 mod currency_error_tests {

@@ -229,7 +229,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core promo_tests::booking_columns && cargo test -p db_core && cargo test -p booking_api`
   - **Dependencies:** T3, T4, T5
 
-- [ ] **Task 8: Add promo error mapping**
+- [x] **Task 8: Add promo error mapping**
   - **Scope:** XS
   - **Description:** Add `DbError::PromoRefused(PromoRefusal)`, `PromoCodeExists` and `PromoAlreadyDeactivated`, with status codes and `{code, message}` bodies.
   - **Files Touched:**
