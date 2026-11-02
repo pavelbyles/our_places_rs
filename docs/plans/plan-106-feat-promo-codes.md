@@ -566,7 +566,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p common app_client::promo && SQLX_OFFLINE=true cargo check -p web_client --all-targets`
   - **Dependencies:** T12, T22
 
-- [ ] **Task 24: Use one stay total on the listing page and checkout**
+- [x] **Task 24: Use one stay total on the listing page and checkout**
   - **Scope:** M
   - **Description:** `PriceBreakdown` gains `platform_fee`, `promo_code` and `promo_discount`. The listing page and checkout both use the API quote. Delete `stay_price`, `GCT_RATE`, the old `quote_for`, `common::app_client::get_pricing_quote` and its wrappers. Update `checkout-flow.spec.ts:35`. "Confirm reservation" is disabled when no quote is available, so a guest can't place a hold without seeing a total. Cite #106 and spec §3.5 in the commit that deletes `quote.rs` tests, as `CONSTRAINTS.md` requires.
   - **Files Touched:**
@@ -588,7 +588,7 @@ T30 final gates               ← all
   - **Verification Command:** `! rg 'stay_price|GCT_RATE|get_pricing_quote' web_ui_guest web_client common/src/app_client && cargo test -p web_ui_common -p web_ui_guest && npm run test:e2e:guest`
   - **Dependencies:** T23
 
-- [ ] **Task 25: Add promo entry to checkout**
+- [x] **Task 25: Add promo entry to checkout**
   - **Scope:** M
   - **Description:** Add the code field and "Apply" button (`name="intent" value="apply_promo" formnovalidate`) inside the existing form, before "Confirm reservation", plus "Remove". Re-render without placing a booking. `place_booking` sends the code and maps `PROMO_*` errors to `PromoRefusal::message()`. `db-seed.ts` deletes redemptions, clears `booking.promo_code_id`, and deletes `promo_code_listing` and `promo_code` rows before its existing deletes, because the new `RESTRICT` keys would make cleanup fail. Promo fixtures use `psql`, so they don't depend on the admin page, and random code suffixes, because codes are permanently unique and two browser projects run in parallel.
   - **Files Touched:**

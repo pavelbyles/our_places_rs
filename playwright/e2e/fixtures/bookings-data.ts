@@ -176,3 +176,18 @@ export async function reviewTokenForPastStay(
   }
   return body.token as string;
 }
+
+/**
+ * Creates a promo code valid now, covering every listing, and returns it. Codes
+ * are permanently unique and browser projects run in parallel, so each is random.
+ * `change` is extra SQL assignments, such as `valid_to = NOW() - INTERVAL '1 day'`.
+ */
+export function createPromoCode(createdBy: string, change = ''): string {
+  const code = `E2E-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const extra = change ? `, ${change}` : '';
+  psql(`INSERT INTO promo_code (code, discount_type, discount_value, scope, valid_from, valid_to, applies_to_all, created_by)
+        VALUES ('${code}', 'percentage', 10, 'stay', NOW() - INTERVAL '2 days', NOW() + INTERVAL '1 day', TRUE, '${createdBy}');
+        UPDATE promo_code SET updated_at = NOW()${extra} WHERE code = '${code}';`);
+  return code;
+}
+
