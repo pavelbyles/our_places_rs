@@ -353,7 +353,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p web_client currency_client_tests`
   - **Dependencies:** T16
 
-- [ ] **T18: Admin exchange-rate page: table, publish form, coverage**
+- [x] **T18: Admin exchange-rate page: table, publish form, coverage**
   - **Scope:** M
   - **Description:** Remove `USD_TARGETS` and the "Not set" rows. **Replace** the test `lists_missing_usd_pairs_as_not_set` with `lists_db_rows_only` (a behaviour change, recorded in the commit message, not a silenced test). The publish form uses `hx-post` with `hx-disabled-elt`. Add the confirm `alert-warning` fragment and the coverage alert for admins only. Pure render fns.
   - **Files Touched:** `web_ui_admin/src/pages/exchange_rates.rs`
