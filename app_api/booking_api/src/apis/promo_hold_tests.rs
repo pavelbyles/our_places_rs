@@ -1360,3 +1360,80 @@ mod promo_change_quote {
         assert_ne!(settled, "charged", "the guest wasn't charged");
     }
 }
+
+/// The quote a guest sees before cancelling must match what the receipt refunds.
+#[tokio::test]
+async fn cancellation_quote_matches_the_refund_receipt_for_a_promo_booking() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let host = user(&pool, UserRole::Host).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let villa = listing(&pool, host).await;
+    sqlx::query("UPDATE listing SET cleaning_fee = 100, damage_deposit = 200 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let id = code(&pool, host, "REFUNDED").await;
+    sqlx::query("UPDATE promo_code SET scope = 'stay_and_cleaning' WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = app!(pool);
+    assert_eq!(
+        post_hold!(app, guest, with_code(guest, villa, "REFUNDED")).status(),
+        201
+    );
+    let booking = booking_of(&pool, guest).await.expect("hold created");
+    let patch = |status: &str| {
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{}", booking.id))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(admin))
+            .set_json(serde_json::json!({ "status": status }))
+            .to_request()
+    };
+    assert_eq!(
+        test::call_service(&app, patch("confirmed")).await.status(),
+        200
+    );
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/{}/cancellation-quote",
+                booking.id
+            ))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let quote: serde_json::Value = test::read_body_json(resp).await;
+    let amount = |v: &serde_json::Value| -> Decimal {
+        v.as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| v.to_string())
+            .parse()
+            .expect("an amount")
+    };
+    assert!(amount(&quote["retained_total"]) >= Decimal::ZERO, "{quote}");
+
+    assert_eq!(
+        test::call_service(&app, patch("cancelled")).await.status(),
+        200
+    );
+    let docs = db_core::tax_document::list_for_booking(&pool, booking.id)
+        .await
+        .unwrap();
+    let refund = docs
+        .iter()
+        .find(|d| d.document_type == db_core::models::TaxDocumentType::RefundReceipt)
+        .expect("a refund receipt");
+    assert_eq!(amount(&quote["refund_total"]), refund.total_amount);
+    assert_eq!(refund.total_amount, booking.total_price);
+}

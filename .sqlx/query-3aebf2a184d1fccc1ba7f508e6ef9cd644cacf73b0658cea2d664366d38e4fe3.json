@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            id,\n            document_type as \"document_type: TaxDocumentType\",\n            document_number,\n            revision,\n            status as \"status: TaxDocumentStatus\",\n            supersedes_id,\n            booking_id,\n            booking_history_id,\n            recipient_id,\n            listing_id,\n            issue_date,\n            supplier_name,\n            supplier_address,\n            supplier_trn,\n            recipient_name,\n            recipient_email,\n            recipient_company_name,\n            recipient_trn,\n            currency,\n            exchange_rate,\n            jmd_exchange_rate,\n            accommodation_net,\n            cleaning_fee,\n            taxable_amount,\n            tax_rate,\n            tax_amount,\n            platform_fee,\n            damage_deposit,\n            total_amount,\n            amount_previously_paid,\n            balance_due,\n            refund_pct,\n            retained_amount,\n            jmd_tax_amount,\n            jmd_total_amount,\n            line_items,\n            created_at\n        FROM tax_document\n        WHERE booking_id = $1\n        ORDER BY created_at DESC, revision DESC\n        ",
+  "query": "\n        SELECT\n            id,\n            document_type as \"document_type: TaxDocumentType\",\n            document_number,\n            revision,\n            status as \"status: TaxDocumentStatus\",\n            supersedes_id,\n            booking_id,\n            booking_history_id,\n            recipient_id,\n            listing_id,\n            issue_date,\n            supplier_name,\n            supplier_address,\n            supplier_trn,\n            recipient_name,\n            recipient_email,\n            recipient_company_name,\n            recipient_trn,\n            currency,\n            exchange_rate,\n            jmd_exchange_rate,\n            accommodation_net,\n            cleaning_fee,\n            taxable_amount,\n            tax_rate,\n            tax_amount,\n            platform_fee,\n            damage_deposit,\n            total_amount,\n            amount_previously_paid,\n            balance_due,\n            refund_pct,\n            retained_amount,\n            jmd_tax_amount,\n            jmd_total_amount,\n            line_items,\n            promo_code,\n            promo_discount,\n            created_at\n        FROM tax_document\n        WHERE booking_id = $1 AND document_number = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -206,13 +206,24 @@
       },
       {
         "ordinal": 36,
+        "name": "promo_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 37,
+        "name": "promo_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 38,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
@@ -252,8 +263,10 @@
       false,
       false,
       false,
+      true,
+      false,
       false
     ]
   },
-  "hash": "c6fd05fbebc425ac9218da25b47e03ad7483fc823f859686c4987070ff4cb16a"
+  "hash": "3aebf2a184d1fccc1ba7f508e6ef9cd644cacf73b0658cea2d664366d38e4fe3"
 }

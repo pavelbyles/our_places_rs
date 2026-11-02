@@ -54,6 +54,12 @@ pub async fn tax_document_view(
     let jmd_tax = money("JMD", doc.jmd_tax_amount);
     let jmd_total = money("JMD", doc.jmd_total_amount);
     let acc = money(&cur, doc.accommodation_net);
+    let promo = doc.promo_code.clone().map(|code| {
+        (
+            format!("Includes promo discount ({code}):"),
+            format!("-{}", money(&cur, doc.promo_discount)),
+        )
+    });
     let cleaning = (doc.cleaning_fee > Decimal::ZERO).then(|| money(&cur, doc.cleaning_fee));
     let taxable = money(&cur, doc.taxable_amount);
     let tax = money(&cur, doc.tax_amount);
@@ -181,6 +187,9 @@ pub async fn tax_document_view(
                     <div class=(row)><dt>"Accommodation (Net):"</dt><dd id="tot-acc" class="tabular-nums">(acc)</dd></div>
                     if let Some(cleaning) = cleaning {
                         <div class=(row)><dt>"Departure Cleaning Fee:"</dt><dd id="tot-cleaning" class="tabular-nums">(cleaning)</dd></div>
+                    }
+                    if let Some((label, amount)) = promo {
+                        <div class=(row)><dt>(label)</dt><dd id="tot-promo" class="tabular-nums">(amount)</dd></div>
                     }
                     <div class=(row)><dt>"Taxable Subtotal:"</dt><dd id="tot-taxable" class="tabular-nums">(taxable)</dd></div>
                     <div class=(row)><dt>(gct_label)</dt><dd id="tot-tax" class="tabular-nums">(tax)</dd></div>

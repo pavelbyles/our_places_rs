@@ -406,7 +406,7 @@ T30 final gates               ← all
 
 ## Phase E: Records & Communications
 
-- [ ] **Task 16: Show promos on tax documents**
+- [x] **Task 16: Show promos on tax documents**
   - **Scope:** M
   - **Description:** All three document builders use `cleaning_net()`, and `RefundableAmounts` takes the net cleaning fee. Fill `promo_code` and `promo_discount`, and show "Includes promo discount (CODE)" in the totals. `get_cancellation_quote` builds its own `RefundableAmounts` at `documents.rs:35`, and must also use `cleaning_net()`.
   - **Files Touched:**

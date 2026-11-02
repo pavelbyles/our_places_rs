@@ -119,6 +119,8 @@ fn doc(kind: TaxDocumentType, status: TaxDocumentStatus, currency: &str) -> TaxD
             tax_amount: dec!(292.50),
             total_amount: dec!(1950.00),
         }],
+        promo_code: None,
+        promo_discount: dec!(0),
         created_at: Utc
             .with_ymd_and_hms(2026, 9, 12, 15, 0, 0)
             .single()
@@ -312,4 +314,24 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
         out.contains("New") && !out.contains("4.95") && !out.contains("Infinity Pool"),
         "no invented data"
     );
+}
+
+#[tokio::test]
+async fn tax_document_shows_the_promo_discount_only_when_there_is_one() {
+    let __cx = &Cx::default();
+    let plain = doc(
+        TaxDocumentType::PaymentReceipt,
+        TaxDocumentStatus::Issued,
+        "USD",
+    );
+    let promo = TaxDocumentResponse {
+        promo_code: Some("SUMMER".into()),
+        promo_discount: dec!(100.00),
+        ..plain.clone()
+    };
+    let without = html(view! { tax_document_view(doc: plain) }, __cx).await;
+    assert!(!without.contains("tot-promo"), "{without}");
+    let with = html(view! { tax_document_view(doc: promo) }, __cx).await;
+    assert!(with.contains("Includes promo discount (SUMMER):"), "{with}");
+    assert!(with.contains("-USD 100.00"), "{with}");
 }

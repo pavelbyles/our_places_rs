@@ -482,6 +482,10 @@ pub struct NewTaxDocument {
     pub jmd_tax_amount: Decimal,
     pub jmd_total_amount: Decimal,
     pub line_items: serde_json::Value,
+    /// The code the booking redeemed, if any.
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    pub promo_discount: Decimal,
 }
 
 /// Row entity representation of a compliance tax document in PostgreSQL.
@@ -523,6 +527,10 @@ pub struct TaxDocumentRow {
     pub jmd_tax_amount: Decimal,
     pub jmd_total_amount: Decimal,
     pub line_items: serde_json::Value,
+    /// The code the booking redeemed, if any.
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    pub promo_discount: Decimal,
     pub created_at: DateTime<Utc>,
 }
 
@@ -567,6 +575,8 @@ impl From<TaxDocumentRow> for common::tax_document::TaxDocumentResponse {
             jmd_tax_amount: r.jmd_tax_amount,
             jmd_total_amount: r.jmd_total_amount,
             line_items,
+            promo_code: r.promo_code,
+            promo_discount: r.promo_discount,
             created_at: r.created_at,
         }
     }

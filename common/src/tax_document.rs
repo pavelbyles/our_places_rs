@@ -183,6 +183,13 @@ pub struct TaxDocumentResponse {
     #[schema(value_type = String, example = "135913.75")]
     pub jmd_total_amount: Decimal,
     pub line_items: Vec<InvoiceLineItem>,
+    /// The code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    #[serde(default, with = "rust_decimal::serde::str")]
+    #[schema(value_type = String, example = "100.00")]
+    pub promo_discount: Decimal,
     pub created_at: DateTime<Utc>,
 }
 
