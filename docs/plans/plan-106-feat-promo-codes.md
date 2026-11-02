@@ -681,7 +681,7 @@ T30 final gates               ← all
   - **Verification Command:** `for f in openapi.yaml openapi-prod.yaml; do for p in '/api/v1/bookings/listing/{id}/quote:' '/api/v1/bookings/quote:' '/api/v1/admin/promo-codes:' '/api/v1/admin/promo-codes/{id}:' '/api/v1/admin/promo-codes/{id}/deactivate:'; do rg -qF "$p" "$f" || exit 1; done; done && rg -q 'promo code' docs/ARCHITECTURE.md && cargo test -p booking_api openapi_includes_promo`
   - **Dependencies:** T12, T22
 
-- [ ] **Task 30: Run the final gates**
+- [x] **Task 30: Run the final gates**
   - **Scope:** S
   - **Description:** Run every `CONSTRAINTS.md` gate, `/sanity-check-workflow` and the full suites, then check each spec §7 acceptance criterion against a test. Run `/audit-booking-flow`.
   - **Files Touched:** None expected. Fixes go in the task that caused the failure.
@@ -695,3 +695,4 @@ T30 final gates               ← all
     - `env::var` literal grep: review the diff for new raw `env::var("...")` literals.
     - `SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features --message-format=short -- -W missing_docs`: `common` and `db_core` have undocumented public items. Warnings don't stop dependent crates compiling, where `-D` would hide them. Confirm no `missing documentation` line points at an item added or changed since `e2f6e2d0`.
   - **Dependencies:** All
+  - **Result (2026-11-02):** Rust gates, `cargo audit` and the booking audit pass. `-W missing_docs` reports 1,130 older items and none added here. Full E2E: 326 of 331 pass. `listings.spec.ts:32` fails in both browsers because `villa_card` has no "View Listing" link, and neither file changed on this branch. `tax-documents.spec.ts:45`, `host-signup.spec.ts:7` and `listing-api.spec.ts:8` failed once under full parallel load and pass in isolation.
