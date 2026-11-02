@@ -190,12 +190,13 @@ pub async fn get_rates_for_bases(
 // Rate administration (#100)
 // ---------------------------------------------------------------------------
 
-/// How a rate transaction locks the base currency row.
+/// How a rate transaction locks the pair's currency rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BaseLock {
-    /// `FOR KEY SHARE` (publish, delete).
+    /// Both rows `FOR KEY SHARE` (publish, delete).
     KeyShare,
-    /// `FOR UPDATE` (retire: blocks new listings in the base currency).
+    /// Both rows `FOR UPDATE` (retire: no listing may start using either
+    /// currency while the in-use check runs).
     Update,
 }
 
@@ -208,7 +209,6 @@ pub(crate) struct LockedCurrency {
 
 /// Locks both currency rows of a pair **in ascending code order**, before any
 /// pair advisory lock, so FK checks on later inserts never wait (no cycles).
-/// The base gets `base_lock`; the target always `FOR KEY SHARE`.
 pub(crate) async fn lock_pair_currencies(
     conn: &mut PgConnection,
     base: &str,
@@ -219,7 +219,7 @@ pub(crate) async fn lock_pair_currencies(
     order.sort_unstable();
     let mut locked: Vec<LockedCurrency> = Vec::with_capacity(2);
     for code in order {
-        let row = if code == base && base_lock == BaseLock::Update {
+        let row = if base_lock == BaseLock::Update {
             sqlx::query!(
                 r#"SELECT code, active FROM currencies WHERE code = $1 FOR UPDATE"#,
                 code
@@ -451,6 +451,258 @@ pub async fn publish_rate(
         .await
         .map_err(|e| DbError::from_sqlx_contended(e, "rate publish"))?;
     Ok(version)
+}
+
+/// The resolved current rate for every explicit, non-retired pair at `now`.
+#[tracing::instrument(skip(executor))]
+pub async fn list_current_rates<'e, E>(
+    executor: E,
+    now: DateTime<Utc>,
+) -> Result<Vec<common::exchange_rate::ExchangeRate>>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    Ok(sqlx::query!(
+        r#"
+        SELECT DISTINCT ON (base_currency, target_currency)
+               base_currency, target_currency, rate, effective_at
+        FROM currency_exchange_rates
+        WHERE retired_at IS NULL AND effective_at <= $1
+        ORDER BY base_currency, target_currency, effective_at DESC, updated_at DESC
+        "#,
+        now
+    )
+    .fetch_all(executor)
+    .await?
+    .into_iter()
+    .map(|r| common::exchange_rate::ExchangeRate {
+        base_currency: r.base_currency,
+        target_currency: r.target_currency,
+        rate: r.rate,
+        effective_at: r.effective_at,
+    })
+    .collect())
+}
+
+/// Every stored version of `base → target` (newest effective first) with its
+/// state at `now`. `RowNotFound` when the pair has no rows.
+pub async fn pair_history(
+    conn: &mut PgConnection,
+    base: &common::currency::CurrencyCode,
+    target: &common::currency::CurrencyCode,
+    now: DateTime<Utc>,
+) -> Result<common::exchange_rate::PairHistoryResponse> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT id, rate, effective_at, created_by, retired_at
+        FROM currency_exchange_rates
+        WHERE base_currency = $1 AND target_currency = $2
+        ORDER BY effective_at DESC, updated_at DESC
+        "#,
+        base.as_str(),
+        target.as_str()
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    if rows.is_empty() {
+        return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
+    }
+    let effective: Vec<DateTime<Utc>> = rows.iter().map(|r| r.effective_at).collect();
+    let states = common::exchange_rate::rate_states(&effective, now);
+    let retired_at = rows
+        .iter()
+        .all(|r| r.retired_at.is_some())
+        .then(|| rows.iter().filter_map(|r| r.retired_at).max())
+        .flatten();
+    Ok(common::exchange_rate::PairHistoryResponse {
+        base_currency: base.clone(),
+        target_currency: target.clone(),
+        retired_at,
+        versions: rows
+            .into_iter()
+            .zip(states)
+            .map(|(r, state)| common::exchange_rate::RateVersion {
+                id: r.id,
+                rate: r.rate,
+                effective_at: r.effective_at,
+                created_by: r.created_by,
+                state,
+            })
+            .collect(),
+    })
+}
+
+/// Deletes a rate version that has not taken effect yet, inside `tx`.
+pub async fn delete_scheduled_rate_tx(
+    tx: &mut PgConnection,
+    id: uuid::Uuid,
+    actor_id: uuid::Uuid,
+) -> Result<()> {
+    let pair = sqlx::query!(
+        r#"SELECT base_currency, target_currency FROM currency_exchange_rates WHERE id = $1"#,
+        id
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(DbError::Sqlx(sqlx::Error::RowNotFound))?;
+    let (base, target) = (pair.base_currency, pair.target_currency);
+    lock_pair_currencies(tx, &base, &target, BaseLock::KeyShare).await?;
+    lock_pair(tx, &base, &target).await?;
+    let now = db_now(tx).await?;
+
+    let deleted = sqlx::query!(
+        r#"
+        DELETE FROM currency_exchange_rates
+        WHERE id = $1 AND effective_at > $2
+        RETURNING rate, effective_at, created_by
+        "#,
+        id,
+        now
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = deleted else {
+        let still_there = sqlx::query_scalar!(
+            r#"SELECT EXISTS (SELECT 1 FROM currency_exchange_rates WHERE id = $1) AS "exists!""#,
+            id
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        return Err(if still_there {
+            DbError::RateAlreadyEffective
+        } else {
+            DbError::Sqlx(sqlx::Error::RowNotFound)
+        });
+    };
+    crate::currency::write_audit(
+        tx,
+        crate::currency::AuditEntry {
+            actor_id,
+            action: "rate_deleted",
+            currency_code: None,
+            base_currency: Some(&base),
+            target_currency: Some(&target),
+            rate_id: Some(id),
+            details: serde_json::json!({
+                "rate": row.rate.to_string(),
+                "effective_at": row.effective_at,
+                "created_by": row.created_by,
+            }),
+        },
+    )
+    .await
+}
+
+/// Deletes a scheduled (not yet effective) rate version. Effective or past
+/// versions are immutable: [`DbError::RateAlreadyEffective`].
+#[tracing::instrument(skip(pool))]
+pub async fn delete_scheduled_rate(
+    pool: &PgPool,
+    id: uuid::Uuid,
+    actor_id: uuid::Uuid,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    delete_scheduled_rate_tx(&mut tx, id, actor_id).await?;
+    tx.commit()
+        .await
+        .map_err(|e| DbError::from_sqlx_contended(e, "rate delete"))
+}
+
+/// Live listings that would lose their quote in `target` if `base → target`
+/// were retired: those priced in `base`, plus those priced in `target` when
+/// no effective, non-retired explicit `target → base` row exists (they rely
+/// on the derived reverse).
+async fn listings_depending_on_pair(
+    conn: &mut PgConnection,
+    base: &str,
+    target: &str,
+    now: DateTime<Utc>,
+) -> Result<Vec<common::currency::ListingRef>> {
+    let mut blocking = crate::currency::live_listings_with_base(conn, base).await?;
+    let explicit_reverse = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM currency_exchange_rates
+            WHERE base_currency = $1 AND target_currency = $2
+              AND retired_at IS NULL AND effective_at <= $3
+        ) AS "exists!"
+        "#,
+        target,
+        base,
+        now
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if !explicit_reverse {
+        blocking.extend(crate::currency::live_listings_with_base(conn, target).await?);
+    }
+    Ok(blocking)
+}
+
+/// Retires `base → target` inside `tx` (see [`retire_pair`]).
+pub async fn retire_pair_tx(
+    tx: &mut PgConnection,
+    base: &common::currency::CurrencyCode,
+    target: &common::currency::CurrencyCode,
+    actor_id: uuid::Uuid,
+) -> Result<common::exchange_rate::PairHistoryResponse> {
+    let (b, t) = (base.as_str(), target.as_str());
+    lock_pair_currencies(tx, b, t, BaseLock::Update).await?;
+    lock_pair(tx, b, t).await?;
+    let now = db_now(tx).await?;
+
+    let blocking = listings_depending_on_pair(tx, b, t, now).await?;
+    if !blocking.is_empty() {
+        return Err(DbError::CurrencyInUse(blocking));
+    }
+    let retired = sqlx::query!(
+        r#"
+        UPDATE currency_exchange_rates SET retired_at = $3, retired_by = $4
+        WHERE base_currency = $1 AND target_currency = $2 AND retired_at IS NULL
+        "#,
+        b,
+        t,
+        now,
+        actor_id
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if retired > 0 {
+        crate::currency::write_audit(
+            tx,
+            crate::currency::AuditEntry {
+                actor_id,
+                action: "pair_retired",
+                currency_code: None,
+                base_currency: Some(b),
+                target_currency: Some(t),
+                rate_id: None,
+                details: serde_json::json!({ "rows": retired }),
+            },
+        )
+        .await?;
+    }
+    pair_history(tx, base, target, now).await
+}
+
+/// Retires a pair: its history is kept but it is no longer used for new
+/// quotes (directly or as a derived reverse). Refused with
+/// [`DbError::CurrencyInUse`] while live listings depend on it. Locks both
+/// currency rows `FOR UPDATE` (ascending) and then the pair lock.
+#[tracing::instrument(skip(pool), fields(base = %base, target = %target))]
+pub async fn retire_pair(
+    pool: &PgPool,
+    base: &common::currency::CurrencyCode,
+    target: &common::currency::CurrencyCode,
+    actor_id: uuid::Uuid,
+) -> Result<common::exchange_rate::PairHistoryResponse> {
+    let mut tx = pool.begin().await?;
+    let history = retire_pair_tx(&mut tx, base, target, actor_id).await?;
+    tx.commit()
+        .await
+        .map_err(|e| DbError::from_sqlx_contended(e, "pair retire"))?;
+    Ok(history)
 }
 
 #[cfg(test)]
@@ -1057,5 +1309,400 @@ mod publish_rate_tests {
             .await
             .expect("B after A");
         assert!(second.effective_at > first.effective_at);
+    }
+}
+
+#[cfg(test)]
+mod rate_admin_tests {
+    //! Deleting scheduled rates, retiring pairs (incl. reverse dependants),
+    //! history, current rates and deadlock-free concurrency.
+
+    use super::*;
+    use crate::models::{NewHostProfile, NewListing, NewUser, UserRole};
+    use chrono::{Duration, TimeZone};
+    use common::currency::CurrencyCode;
+    use common::exchange_rate::RateState;
+    use rust_decimal_macros::dec;
+    use sqlx_db_tester::TestPg;
+    use std::env;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    async fn db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        TestPg::new(url, Path::new("migrations"))
+    }
+
+    fn code(c: &str) -> CurrencyCode {
+        CurrencyCode::try_from(c).expect("code")
+    }
+
+    async fn user(pool: &PgPool, role: UserRole) -> Uuid {
+        let id = Uuid::now_v7();
+        crate::user::create_user(
+            pool,
+            &NewUser {
+                id,
+                email: format!("u_{id}@example.com"),
+                password_hash: "hash".into(),
+                first_name: "Test".into(),
+                last_name: "User".into(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: Some(vec![role]),
+                default_currency: "USD".into(),
+            },
+        )
+        .await
+        .expect("user");
+        id
+    }
+
+    async fn listing_in(pool: &PgPool, base: &str) -> Uuid {
+        let host = user(pool, UserRole::Host).await;
+        crate::user::create_host_profile(
+            pool,
+            host,
+            &NewHostProfile {
+                description: None,
+                verified_status: Some("pending".into()),
+                payout_details: None,
+            },
+        )
+        .await
+        .expect("host profile");
+        crate::listing::create_listing(
+            pool,
+            &NewListing {
+                name: format!("Villa {}", Uuid::now_v7()),
+                user_id: host,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".into(),
+                price_per_night: Some(dec!(100)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 2,
+                bedrooms: 1,
+                beds: 1,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: base.into(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: None,
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+            },
+        )
+        .await
+        .expect("listing")
+        .id
+    }
+
+    async fn sql(pool: &PgPool, statement: &str) {
+        sqlx::query(statement)
+            .execute(pool)
+            .await
+            .expect("setup sql");
+    }
+
+    /// AAA and BBB with an effective AAA→BBB rate (and optionally BBB→AAA).
+    async fn private_pair(pool: &PgPool, with_reverse: bool) {
+        sql(
+            pool,
+            "INSERT INTO currencies (code, name) VALUES ('AAA', 'A'), ('BBB', 'B')",
+        )
+        .await;
+        sql(
+            pool,
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('AAA', 'BBB', 2, now() - interval '1 day')",
+        )
+        .await;
+        if with_reverse {
+            sql(
+                pool,
+                "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+                 VALUES ('BBB', 'AAA', 0.5, now() - interval '1 day')",
+            )
+            .await;
+        }
+    }
+
+    async fn scheduled(pool: &PgPool, at: DateTime<Utc>) -> Uuid {
+        sqlx::query_scalar(
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('USD', 'JMD', 161, $1) RETURNING id",
+        )
+        .bind(at)
+        .fetch_one(pool)
+        .await
+        .expect("scheduled rate")
+    }
+
+    async fn lock_timeout_tx(pool: &PgPool) -> sqlx::Transaction<'static, sqlx::Postgres> {
+        let mut tx = pool.begin().await.expect("tx");
+        sqlx::query("SET LOCAL lock_timeout = '200ms'")
+            .execute(&mut *tx)
+            .await
+            .expect("lock_timeout");
+        tx
+    }
+
+    #[tokio::test]
+    async fn deleting_a_scheduled_rate_is_audited_from_the_deleted_row() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let id = scheduled(&pool, Utc::now() + Duration::days(1)).await;
+        delete_scheduled_rate(&pool, id, admin)
+            .await
+            .expect("delete");
+        let details: serde_json::Value = sqlx::query_scalar(
+            "SELECT details FROM currency_audit_log WHERE action = 'rate_deleted' AND rate_id = $1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .expect("audit row");
+        assert_eq!(details["rate"], "161.000000");
+    }
+
+    #[tokio::test]
+    async fn deleting_an_effective_rate_is_refused() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let id: Uuid = sqlx::query_scalar(
+            "SELECT id FROM currency_exchange_rates WHERE base_currency = 'USD' AND target_currency = 'JMD'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("seeded id");
+        let r = delete_scheduled_rate(&pool, id, admin).await;
+        assert!(matches!(r, Err(DbError::RateAlreadyEffective)), "got {r:?}");
+    }
+
+    #[tokio::test]
+    async fn deleting_an_unknown_rate_is_not_found() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let r = delete_scheduled_rate(&pool, Uuid::now_v7(), admin).await;
+        assert!(
+            matches!(r, Err(DbError::Sqlx(sqlx::Error::RowNotFound))),
+            "got {r:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn retire_is_blocked_by_listings_priced_in_the_base() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        private_pair(&pool, true).await;
+        let l = listing_in(&pool, "AAA").await;
+        let r = retire_pair(&pool, &code("AAA"), &code("BBB"), admin).await;
+        assert!(
+            matches!(&r, Err(DbError::CurrencyInUse(ls)) if ls.len() == 1 && ls[0].id == l),
+            "got {r:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn retire_is_blocked_by_listings_relying_on_the_derived_reverse() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        private_pair(&pool, false).await;
+        let l = listing_in(&pool, "BBB").await;
+        let r = retire_pair(&pool, &code("AAA"), &code("BBB"), admin).await;
+        assert!(
+            matches!(&r, Err(DbError::CurrencyInUse(ls)) if ls.len() == 1 && ls[0].id == l),
+            "got {r:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_reverse_unblocks_retire_and_history_is_kept() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        private_pair(&pool, true).await;
+        listing_in(&pool, "BBB").await;
+        let history = retire_pair(&pool, &code("AAA"), &code("BBB"), admin)
+            .await
+            .expect("retire");
+        assert!(history.retired_at.is_some());
+        assert_eq!(history.versions.len(), 1, "history kept");
+        let mut c = pool.acquire().await.expect("conn");
+        let quote = get_rate(&mut c, "AAA", "BBB", Utc::now(), RateUse::NewQuote).await;
+        // BBB→AAA (explicit) still derives AAA→BBB.
+        assert_eq!(quote.expect("derived from explicit reverse"), dec!(2));
+    }
+
+    #[tokio::test]
+    async fn history_states_at_a_fixed_instant() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let now = Utc
+            .with_ymd_and_hms(2031, 1, 1, 0, 0, 0)
+            .single()
+            .expect("instant");
+        for (rate, offset) in [(dec!(150), -10), (dec!(155), -1), (dec!(158), 2)] {
+            sqlx::query(
+                "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+                 VALUES ('USD', 'CAD', $1, $2)",
+            )
+            .bind(rate)
+            .bind(now + Duration::days(offset))
+            .execute(&pool)
+            .await
+            .expect("rate");
+        }
+        let mut c = pool.acquire().await.expect("conn");
+        let h = pair_history(&mut c, &code("USD"), &code("CAD"), now)
+            .await
+            .expect("history");
+        let states: Vec<RateState> = h.versions.iter().map(|v| v.state).collect();
+        assert_eq!(
+            states,
+            vec![RateState::Scheduled, RateState::Current, RateState::Past]
+        );
+        assert_eq!(h.retired_at, None);
+    }
+
+    #[tokio::test]
+    async fn current_rates_exclude_retired_and_scheduled() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        sql(
+            &pool,
+            "UPDATE currency_exchange_rates SET retired_at = now() WHERE base_currency = 'GBP'",
+        )
+        .await;
+        scheduled(&pool, Utc::now() + Duration::days(1)).await;
+        let rates = list_current_rates(&pool, Utc::now()).await.expect("rates");
+        assert!(!rates.iter().any(|r| r.base_currency == "GBP"));
+        let usd_jmd = rates
+            .iter()
+            .find(|r| r.base_currency == "USD" && r.target_currency == "JMD")
+            .expect("USD/JMD");
+        assert_eq!(usd_jmd.rate, dec!(160), "scheduled 161 not yet current");
+    }
+
+    #[tokio::test]
+    async fn retire_and_publish_serialise_without_deadlock() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        private_pair(&pool, true).await;
+
+        let mut retire_tx = pool.begin().await.expect("retire tx");
+        retire_pair_tx(&mut retire_tx, &code("AAA"), &code("BBB"), admin)
+            .await
+            .expect("retire holds locks");
+        let mut publish_tx = lock_timeout_tx(&pool).await;
+        let publish = publish_rate_tx(
+            &mut publish_tx,
+            &PublishRate {
+                base: code("AAA"),
+                target: code("BBB"),
+                rate: dec!(2.01),
+                effective_at: None,
+                confirm_large_change: false,
+                actor_id: admin,
+                grace: Duration::seconds(60),
+            },
+        )
+        .await;
+        assert!(
+            matches!(publish, Err(DbError::LockContention(_))),
+            "got {publish:?}"
+        );
+        publish_tx.rollback().await.expect("rollback");
+        retire_tx.commit().await.expect("commit retire");
+    }
+
+    #[tokio::test]
+    async fn delete_and_retire_serialise_without_deadlock() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        sql(
+            &pool,
+            "INSERT INTO currencies (code, name) VALUES ('AAA', 'A'), ('BBB', 'B')",
+        )
+        .await;
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+             VALUES ('AAA', 'BBB', 2, now() + interval '1 day') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("scheduled");
+
+        let mut delete_tx = pool.begin().await.expect("delete tx");
+        delete_scheduled_rate_tx(&mut delete_tx, id, admin)
+            .await
+            .expect("delete holds locks");
+        let mut retire_tx = lock_timeout_tx(&pool).await;
+        let retire = retire_pair_tx(&mut retire_tx, &code("AAA"), &code("BBB"), admin).await;
+        assert!(
+            matches!(retire, Err(DbError::LockContention(_))),
+            "got {retire:?}"
+        );
+        retire_tx.rollback().await.expect("rollback");
+        delete_tx.commit().await.expect("commit delete");
+    }
+
+    #[tokio::test]
+    async fn opposite_retires_serialise_without_deadlock() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        private_pair(&pool, true).await;
+
+        let mut first = pool.begin().await.expect("first");
+        retire_pair_tx(&mut first, &code("AAA"), &code("BBB"), admin)
+            .await
+            .expect("first retire");
+        let mut second = lock_timeout_tx(&pool).await;
+        let r = retire_pair_tx(&mut second, &code("BBB"), &code("AAA"), admin).await;
+        assert!(matches!(r, Err(DbError::LockContention(_))), "got {r:?}");
+        second.rollback().await.expect("rollback");
+        first.commit().await.expect("commit");
+
+        // Once the first commits, the reverse retire proceeds (no listings).
+        retire_pair(&pool, &code("BBB"), &code("AAA"), admin)
+            .await
+            .expect("second retire after first commits");
+    }
+
+    #[tokio::test]
+    async fn retiring_an_unknown_pair_is_not_found() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let r = retire_pair(&pool, &code("EUR"), &code("CAD"), admin).await;
+        assert!(
+            matches!(r, Err(DbError::Sqlx(sqlx::Error::RowNotFound))),
+            "got {r:?}"
+        );
     }
 }

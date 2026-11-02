@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, rate, effective_at, created_by, retired_at\n        FROM currency_exchange_rates\n        WHERE base_currency = $1 AND target_currency = $2\n        ORDER BY effective_at DESC, updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "effective_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "retired_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "0527bd2760dbb0c3aa4abcc7884d5a4ce999c3ed7eec5d5d34ff26b1a1e3da8a"
+}

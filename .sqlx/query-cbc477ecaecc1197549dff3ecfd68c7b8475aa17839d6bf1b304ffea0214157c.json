@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (base_currency, target_currency)\n               base_currency, target_currency, rate, effective_at\n        FROM currency_exchange_rates\n        WHERE retired_at IS NULL AND effective_at <= $1\n        ORDER BY base_currency, target_currency, effective_at DESC, updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "base_currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "target_currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "effective_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cbc477ecaecc1197549dff3ecfd68c7b8475aa17839d6bf1b304ffea0214157c"
+}

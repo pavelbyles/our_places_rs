@@ -312,7 +312,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
   - **Verification Command:** `cargo test -p db_core publish_rate_tests`
   - **Dependencies:** T3, T5, T8
 
-- [ ] **T15: Delete scheduled, retire, history, current, coverage**
+- [x] **T15: Delete scheduled, retire, history, current, coverage**
   - **Scope:** M
   - **Description:**
     - `delete_scheduled_rate(id, actor, now)`: resolve the pair from `id`, run `lock_pair_currencies(.., KeyShare)`, take the **pair advisory lock**, then `DELETE … WHERE id=$1 AND effective_at > $now RETURNING *`. 0 rows is split into 404 vs `RateAlreadyEffective`. The audit `details` come from the `RETURNING` row.
