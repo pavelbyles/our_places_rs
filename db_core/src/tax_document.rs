@@ -881,7 +881,7 @@ pub async fn issue_refund_receipt(
 mod tests {
     use super::*;
     use crate::models::BookingStatus;
-    use chrono::NaiveDate;
+    use chrono::{Datelike, NaiveDate, Utc};
     use rust_decimal_macros::dec;
     use sqlx::types::Json;
     use sqlx_db_tester::TestPg;
@@ -898,6 +898,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_issue_payment_receipt_and_supersede() {
+        // Dates relative to today in Jamaica (UTC-5, no DST): the stay must
+        // still be in the future when the refund (cancellation) is issued.
+        let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+        let check_in: NaiveDate = today_jm + chrono::Duration::days(30);
+        let check_out: NaiveDate = check_in + chrono::Duration::days(3);
         let test_db = setup_test_db().await;
         let pool = test_db.get_pool().await;
         let mut tx = pool.begin().await.expect("Failed to begin transaction");
@@ -1036,8 +1041,8 @@ mod tests {
             code,
             guest_id,
             listing.id,
-            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 11, 4).unwrap(),
+            check_in,
+            check_out,
             Json(crate::models::BookingMetadata {
                 num_adults: 2,
                 num_children: 0,
@@ -1074,7 +1079,10 @@ mod tests {
         assert_eq!(doc1.jmd_total_amount, dec!(132400.00)); // 827.50 * 160
         assert_eq!(doc1.recipient_company_name.as_deref(), Some("Acme Corp"));
         assert_eq!(doc1.recipient_trn.as_deref(), Some("123-456-789"));
-        assert_eq!(doc1.document_number, format!("REC-2026-{}", code));
+        assert_eq!(
+            doc1.document_number,
+            format!("REC-{}-{}", Utc::now().year(), code)
+        );
 
         // 7. Verify list_for_booking
         let docs = list_for_booking(&mut *tx, booking.id)
@@ -1100,7 +1108,10 @@ mod tests {
         assert_eq!(doc2.supersedes_id, Some(doc1.id));
         assert_eq!(doc2.amount_previously_paid, Some(dec!(827.50)));
         assert_eq!(doc2.balance_due, Some(dec!(0.00)));
-        assert_eq!(doc2.document_number, format!("REC-2026-{}-R2", code));
+        assert_eq!(
+            doc2.document_number,
+            format!("REC-{}-{}-R2", Utc::now().year(), code)
+        );
 
         // 10. Verify previous document status is now Superseded
         let old_doc = get_by_number(&mut *tx, booking.id, &doc1.document_number)
@@ -1109,13 +1120,16 @@ mod tests {
             .expect("Old doc not found");
         assert_eq!(old_doc.status, TaxDocumentStatus::Superseded);
 
-        // 11. Issue refund receipt on cancellation (REF-2026-{code})
+        // 11. Issue refund receipt on cancellation (REF-{year}-{code})
         let ref_doc = issue_refund_receipt(&mut tx, &booking, &supplier, None)
             .await
             .expect("Failed to issue refund receipt");
 
         assert_eq!(ref_doc.document_type, TaxDocumentType::RefundReceipt);
-        assert_eq!(ref_doc.document_number, format!("REF-2026-{}", code));
+        assert_eq!(
+            ref_doc.document_number,
+            format!("REF-{}-{}", Utc::now().year(), code)
+        );
         assert_eq!(ref_doc.revision, 1);
         assert_eq!(ref_doc.status, TaxDocumentStatus::Issued);
         assert!(ref_doc.refund_pct.is_some());
