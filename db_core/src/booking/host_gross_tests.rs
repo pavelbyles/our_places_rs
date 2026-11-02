@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 fn test_db() -> TestPg {
     dotenvy::dotenv().ok();
-    let db_url = std::env::var("DATABASE_URL")
+    let db_url = std::env::var(crate::DATABASE_URL_ENV)
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".into());
     TestPg::new(db_url, Path::new("migrations"))
 }

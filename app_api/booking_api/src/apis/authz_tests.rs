@@ -488,7 +488,7 @@ async fn test_actuator_log_level_changes_require_a_stored_admin_role() {
 #[tokio::test]
 async fn stale_discount_is_cleared_when_a_direct_update_stops_it_applying() {
     dotenvy::dotenv().ok();
-    let db_url = std::env::var("DATABASE_URL")
+    let db_url = std::env::var(promo_codes::DATABASE_URL_ENV)
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
     let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
     let pool = test_db.get_pool().await;
@@ -585,7 +585,7 @@ async fn stale_discount_is_cleared_when_a_direct_update_stops_it_applying() {
 #[tokio::test]
 async fn reservation_change_payout_quote_matches_what_approval_writes() {
     dotenvy::dotenv().ok();
-    let db_url = std::env::var("DATABASE_URL")
+    let db_url = std::env::var(promo_codes::DATABASE_URL_ENV)
         .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
     let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
     let pool = test_db.get_pool().await;
@@ -682,9 +682,11 @@ async fn reservation_change_payout_quote_matches_what_approval_writes() {
 mod promo_codes {
     use super::*;
 
+    pub(super) static DATABASE_URL_ENV: &str = "DATABASE_URL";
+
     fn test_db() -> TestPg {
         dotenvy::dotenv().ok();
-        let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let db_url = std::env::var(DATABASE_URL_ENV).unwrap_or_else(|_| {
             "postgres://postgres:password@localhost:5432/our_places".to_string()
         });
         TestPg::new(db_url, Path::new("../../db_core/migrations"))
