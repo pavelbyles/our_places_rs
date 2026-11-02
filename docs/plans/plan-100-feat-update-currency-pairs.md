@@ -382,7 +382,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
 
 ## Phase 5 — E2E, Docs, Gates
 
-- [ ] **T21: Playwright E2E**
+- [x] **T21: Playwright E2E**
   - **Scope:** M
   - **Description:** `test.describe.configure({ mode: 'serial' })` (per project), plus **per-project isolation** keyed by `testInfo.project.name`:
     - Each project uses its own scratch currency code (e.g. `XCD` for chromium, `TTD` for firefox) and tolerates an existing row on rerun.
