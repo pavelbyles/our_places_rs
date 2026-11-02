@@ -61,18 +61,23 @@ pub async fn get_booking_payout_context(
     .fetch_one(pool)
     .await?;
 
-    let host_exchange_rate =
-        crate::exchange_rate::get_rate_pool(pool, booking_currency, &host_currency, Utc::now())
-            .await
-            .inspect_err(|e| {
-                tracing::error!(
-                    %booking_id,
-                    from = booking_currency,
-                    to = %host_currency,
-                    error = %e,
-                    "host payout currency conversion failed"
-                )
-            })?;
+    let host_exchange_rate = crate::exchange_rate::get_rate_pool(
+        pool,
+        booking_currency,
+        &host_currency,
+        Utc::now(),
+        crate::exchange_rate::RateUse::Settlement,
+    )
+    .await
+    .inspect_err(|e| {
+        tracing::error!(
+            %booking_id,
+            from = booking_currency,
+            to = %host_currency,
+            error = %e,
+            "host payout currency conversion failed"
+        )
+    })?;
 
     Ok(BookingPayoutContext {
         is_payout_processed: false,

@@ -32,6 +32,7 @@ actix-web.workspace = true
 serde_urlencoded = "0.7.1"
 
 [dev-dependencies]
+actix-http = "3"
 sqlx-db-tester = { version = "0.7.1", default-features = false, features = [
     "postgres",
 ] }

@@ -7,7 +7,10 @@ test.describe('Admin Portal - Exchange Rates', () => {
     expect(resp?.status()).toBe(200);
     await expect(page.locator('h1')).toContainText('Exchange Rates');
     await expect(page.getByRole('main')).toContainText('USD / JMD');
-    await expect(page.getByRole('main')).toContainText('USD / EUR');
+    // Pairs come from the database (#100): USD / GBP is seeded, and no
+    // hardcoded "Not set" rows are shown for pairs without a rate.
+    await expect(page.getByRole('main')).toContainText('USD / GBP');
+    await expect(page.locator('#exchange-rates-table')).not.toContainText('Not set');
   });
 
   // The legacy table is hardcoded; the redesign reads currency_exchange_rates.
@@ -28,5 +31,9 @@ test.describe('Admin Portal - Exchange rates for hosts', () => {
     await expect(page.getByRole('alert')).toHaveCount(0);
     const row = page.locator('#exchange-rates-table tr', { hasText: 'USD / JMD' });
     await expect(row).toContainText(/\d+\.\d{6}/);
+    // Read-only for hosts (#100): no admin controls.
+    await expect(page.locator('#publish-rate-form')).toHaveCount(0);
+    await expect(page.locator('#currencies-card')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'History' })).toHaveCount(0);
   });
 });

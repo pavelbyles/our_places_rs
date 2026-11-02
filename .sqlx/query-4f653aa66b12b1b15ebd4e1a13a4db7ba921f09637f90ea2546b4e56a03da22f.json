@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE currencies SET name = $2, active = $3, updated_at = now() WHERE code = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Varchar",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f653aa66b12b1b15ebd4e1a13a4db7ba921f09637f90ea2546b4e56a03da22f"
+}

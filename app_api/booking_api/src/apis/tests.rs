@@ -771,6 +771,14 @@ async fn test_get_booking_documents_and_authorization() {
 
 #[actix_web::test]
 async fn test_booking_date_change_api() {
+    use chrono::Datelike;
+    // Every stay is relative to today in Jamaica (UTC-5, no DST) so the
+    // "check-in has not arrived" guards hold whenever the test runs. The
+    // offsets keep the original layout: booking 1 on days 0-4, booking 2 on
+    // days 14-19.
+    let today_jm = (chrono::Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let base: NaiveDate = today_jm + chrono::Duration::days(30);
+    let day = |offset: i64| (base + chrono::Duration::days(offset)).to_string();
     use actix_web::{App, test, web};
     use chrono::NaiveDate;
     use rust_decimal_macros::dec;
@@ -907,7 +915,7 @@ async fn test_booking_date_change_api() {
     .await
     .unwrap();
 
-    // 6. Confirmed booking Nov 1 - Nov 5
+    // 6. Confirmed booking (days 0-4)
     let booking_id = Uuid::now_v7();
     let code = format!("D{}", Uuid::new_v4().simple())[..10].to_uppercase();
     let booking = sqlx::query_as!(
@@ -943,8 +951,8 @@ async fn test_booking_date_change_api() {
             code,
             guest_id,
             listing.id,
-            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 11, 5).unwrap(),
+            base,
+            base + chrono::Duration::days(4),
             Json(db_core::models::BookingMetadata {
                 num_adults: 2,
                 ..Default::default()
@@ -964,7 +972,7 @@ async fn test_booking_date_change_api() {
         .await
         .unwrap();
 
-    // 7. Confirmed booking 2 (Nov 15 - Nov 20)
+    // 7. Confirmed booking 2 (days 14-19)
     let b2_id = Uuid::now_v7();
     let code2 = format!("E{}", Uuid::new_v4().simple())[..10].to_uppercase();
     let _booking2 = sqlx::query_as!(
@@ -1000,8 +1008,8 @@ async fn test_booking_date_change_api() {
             code2,
             guest_id,
             listing.id,
-            NaiveDate::from_ymd_opt(2026, 11, 15).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 11, 20).unwrap(),
+            base + chrono::Duration::days(14),
+            base + chrono::Duration::days(19),
             Json(db_core::models::BookingMetadata {
                 num_adults: 2,
                 ..Default::default()
@@ -1061,8 +1069,8 @@ async fn test_booking_date_change_api() {
         .uri(&format!("/api/v1/bookings/{}", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", stranger_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-07"
+            "date_from": day(0),
+            "date_to": day(6)
         }))
         .to_request();
     let resp = test::call_service(&app, stranger_req).await;
@@ -1073,8 +1081,8 @@ async fn test_booking_date_change_api() {
         .uri(&format!("/api/v1/bookings/{}", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-07"
+            "date_from": day(0),
+            "date_to": day(6)
         }))
         .to_request();
     let resp = test::call_service(&app, guest_direct_req).await;
@@ -1104,13 +1112,13 @@ async fn test_booking_date_change_api() {
     let err_body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(err_body["code"], "BOOKING_NOT_MODIFIABLE");
 
-    // C. Admin attempts to change dates overlapping booking 2 (Nov 16 - Nov 22) -> 409 DATE_UNAVAILABLE
+    // C. Admin attempts to change dates overlapping booking 2 (days 15-21) -> 409 DATE_UNAVAILABLE
     let overlap_req = test::TestRequest::patch()
         .uri(&format!("/api/v1/bookings/{}", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-16",
-            "date_to": "2026-11-22"
+            "date_from": day(15),
+            "date_to": day(21)
         }))
         .to_request();
     let resp = test::call_service(&app, overlap_req).await;
@@ -1118,13 +1126,13 @@ async fn test_booking_date_change_api() {
     let err_body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(err_body["code"], "DATE_UNAVAILABLE");
 
-    // D. Admin successfully changes dates (Nov 1 - Nov 6, 5 nights) -> 200 OK
+    // D. Admin successfully changes dates (days 0-5, 5 nights) -> 200 OK
     let valid_req = test::TestRequest::patch()
         .uri(&format!("/api/v1/bookings/{}", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", admin_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-06"
+            "date_from": day(0),
+            "date_to": day(5)
         }))
         .to_request();
     let resp = test::call_service(&app, valid_req).await;
@@ -1139,7 +1147,10 @@ async fn test_booking_date_change_api() {
     assert_eq!(r1.status, db_core::models::TaxDocumentStatus::Superseded);
     let r2 = docs.iter().find(|d| d.revision == 2).unwrap();
     assert_eq!(r2.status, db_core::models::TaxDocumentStatus::Issued);
-    assert_eq!(r2.document_number, format!("REC-2026-{}-R2", code));
+    assert_eq!(
+        r2.document_number,
+        format!("REC-{}-{}-R2", chrono::Utc::now().year(), code)
+    );
     assert!(r2.balance_due.is_some());
     assert!(r2.amount_previously_paid.is_some());
 
@@ -1153,13 +1164,13 @@ async fn test_booking_date_change_api() {
     let resp = test::call_service(&app, noop_quote_req).await;
     assert_eq!(resp.status(), 400);
 
-    // F2. Guest previews extending stay to Nov 7 and adding 1 adult (3 adults total) -> 200 OK
+    // F2. Guest previews extending stay to day 6 and adding 1 adult (3 adults total) -> 200 OK
     let quote_req = test::TestRequest::post()
         .uri(&format!("/api/v1/bookings/{}/change-quote", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-07",
+            "date_from": day(0),
+            "date_to": day(6),
             "num_adults": 3
         }))
         .to_request();
@@ -1175,8 +1186,8 @@ async fn test_booking_date_change_api() {
         .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-07",
+            "date_from": day(0),
+            "date_to": day(6),
             "num_adults": 3,
             "reason": "Bringing a friend and staying an extra night"
         }))
@@ -1203,8 +1214,8 @@ async fn test_booking_date_change_api() {
         .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", guest_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-08"
+            "date_from": day(0),
+            "date_to": day(7)
         }))
         .to_request();
     let resp = test::call_service(&app, dup_cr_req).await;
@@ -1261,15 +1272,18 @@ async fn test_booking_date_change_api() {
     assert_eq!(docs_after_approve.len(), 3);
     let r3 = docs_after_approve.iter().find(|d| d.revision == 3).unwrap();
     assert_eq!(r3.status, db_core::models::TaxDocumentStatus::Issued);
-    assert_eq!(r3.document_number, format!("REC-2026-{}-R3", code));
+    assert_eq!(
+        r3.document_number,
+        format!("REC-{}-{}-R3", chrono::Utc::now().year(), code)
+    );
 
-    // F7. Host initiates a shorten-stay change request (Nov 1 - Nov 5, balance_due < 0) -> Guest declines -> 200 OK
+    // F7. Host initiates a shorten-stay change request (days 0-4, balance_due < 0) -> Guest declines -> 200 OK
     let host_cr_req = test::TestRequest::post()
         .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-05",
+            "date_from": day(0),
+            "date_to": day(4),
             "reason": "Maintenance needed on Nov 6"
         }))
         .to_request();
@@ -1310,8 +1324,8 @@ async fn test_booking_date_change_api() {
         .uri(&format!("/api/v1/bookings/{}/change-requests", booking.id))
         .insert_header(("Authorization", format!("Bearer {}", host_jwt)))
         .set_json(serde_json::json!({
-            "date_from": "2026-11-01",
-            "date_to": "2026-11-06"
+            "date_from": day(0),
+            "date_to": day(5)
         }))
         .to_request();
     let resp = test::call_service(&app, host_cr2_req).await;
@@ -2042,10 +2056,11 @@ async fn test_admin_exchange_rates_endpoint() {
     .await
     .unwrap();
 
-    // A newer USD/JMD rate supersedes the migration's seed.
+    // A newer USD/JMD rate supersedes the migration's seed. It must already be
+    // effective: future-dated rows are scheduled, not current (#100).
     sqlx::query(
         "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
-             VALUES ('USD', 'JMD', 157.250000, NOW() + INTERVAL '1 second')",
+             VALUES ('USD', 'JMD', 157.250000, NOW() - INTERVAL '1 second')",
     )
     .execute(&pool)
     .await
@@ -2080,8 +2095,9 @@ async fn test_admin_exchange_rates_endpoint() {
     let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(host_id))).await;
     assert_eq!(resp.status(), 200);
 
+    // A signed-in non-staff user is forbidden (403), not unauthenticated (#100).
     let resp = test::call_service(&app, get(api_core::auth::generate_test_jwt(booker_id))).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 }
 
 /// Checkout pricing must use a real rate, reject unknown policies, convert
@@ -2193,6 +2209,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
         application: api_core::settings::Application {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,

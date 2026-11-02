@@ -109,6 +109,7 @@ pub(super) async fn create_booking(
         &listing_details.listing.base_currency,
         &booking_currency,
         Utc::now(),
+        db_core::exchange_rate::RateUse::NewQuote,
     )
     .await
     .map_err(|e| {

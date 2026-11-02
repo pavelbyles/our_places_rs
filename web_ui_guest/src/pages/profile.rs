@@ -7,7 +7,7 @@ use topcoat::{
     view::{View, component, view},
 };
 use web_client::get_api_client;
-use web_ui_common::components::domain::currency_selector::DISPLAY_CURRENCIES;
+use web_ui_common::components::domain::currency_selector::currency_option_list;
 
 use crate::support::guest;
 
@@ -77,9 +77,7 @@ async fn profile_view(user: UserResponse, saved: bool, error: Option<String>) ->
                 <div>
                     <label class=(label) for="profile-currency">"Preferred currency"</label>
                     <select id="profile-currency" name="default_currency" class=(input)>
-                        for c in DISPLAY_CURRENCIES {
-                            <option value=(c) selected=(currency == c)>(c)</option>
-                        }
+                        currency_option_list(current: currency.clone())
                     </select>
                 </div>
                 <button type="submit" class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground">"Save changes"</button>
@@ -125,9 +123,13 @@ pub async fn profile_submit(
             first_name: Some(first),
             last_name: Some(last),
             phone_number: Some(form.phone_number.trim().to_string()).filter(|p| !p.is_empty()),
-            default_currency: DISPLAY_CURRENCIES
-                .contains(&form.default_currency.as_str())
-                .then(|| form.default_currency.clone()),
+            // Shape only; the API checks the currency is active.
+            default_currency: common::currency::CurrencyCode::try_from(
+                form.default_currency.as_str(),
+            )
+            .map(String::from)
+            .map_err(|e| tracing::warn!(error = %e, "ignored malformed profile currency"))
+            .ok(),
             email: None,
             password: None,
             is_active: None,

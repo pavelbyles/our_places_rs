@@ -185,3 +185,126 @@ async fn user_profile_uses_the_user_route() -> Result<(), UserCallError> {
     assert!(matches!(result, Err(UserCallError::NotFound)));
     Ok(())
 }
+
+mod currency_client_tests {
+    //! Exchange-rate and currency admin calls keep structured rejections.
+
+    use super::*;
+    use common::currency::CurrencyCode;
+    use web_client::client::ApiRejection;
+
+    fn code(c: &str) -> CurrencyCode {
+        CurrencyCode::try_from(c).expect("code")
+    }
+
+    #[tokio::test]
+    async fn confirmation_required_is_kept_with_its_details() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/admin/exchange-rates"))
+            .and(header(
+                "x-forwarded-authorization",
+                format!("Bearer {JWT}").as_str(),
+            ))
+            .respond_with(ResponseTemplate::new(422).set_body_json(serde_json::json!({
+                "code": "RATE_CHANGE_CONFIRMATION_REQUIRED",
+                "message": "confirm",
+                "baseline_rate": "160.000000",
+                "proposed_rate": "176",
+                "deviation_pct": "10.00"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let req = common::exchange_rate::PublishRateRequest {
+            base_currency: code("USD"),
+            target_currency: code("JMD"),
+            rate: "176".into(),
+            effective_at: None,
+            confirm_large_change: false,
+        };
+        match client_for(&server).publish_rate_as(JWT, &req).await {
+            Err(UserCallError::Api(ApiRejection {
+                status, code, body, ..
+            })) => {
+                assert_eq!(status, 422);
+                assert_eq!(code, "RATE_CHANGE_CONFIRMATION_REQUIRED");
+                assert_eq!(body["deviation_pct"], "10.00");
+            }
+            other => panic!("expected a structured rejection, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn retire_in_use_carries_blocking_listings() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/admin/exchange-rates/USD/JMD/retire"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+                "code": "CURRENCY_IN_USE",
+                "message": "in use",
+                "listings": [{ "id": Uuid::nil(), "title": "Villa", "slug": "villa" }]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        match client_for(&server)
+            .retire_pair_as(JWT, &code("USD"), &code("JMD"))
+            .await
+        {
+            Err(UserCallError::Api(r)) => {
+                assert_eq!(r.code, "CURRENCY_IN_USE");
+                assert_eq!(r.body["listings"][0]["slug"], "villa");
+            }
+            other => panic!("expected CURRENCY_IN_USE, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_scheduled_rate_accepts_204_and_maps_409() -> Result<(), UserCallError> {
+        let server = MockServer::start().await;
+        let ok = Uuid::now_v7();
+        let effective = Uuid::now_v7();
+        Mock::given(method("DELETE"))
+            .and(path(format!("/api/v1/admin/exchange-rates/{ok}")))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path(format!("/api/v1/admin/exchange-rates/{effective}")))
+            .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+                "code": "RATE_ALREADY_EFFECTIVE", "message": "already effective"
+            })))
+            .mount(&server)
+            .await;
+        let client = client_for(&server);
+        client.delete_scheduled_rate_as(JWT, ok).await?;
+        let refused = client.delete_scheduled_rate_as(JWT, effective).await;
+        assert!(
+            matches!(&refused, Err(UserCallError::Api(r)) if r.code == "RATE_ALREADY_EFFECTIVE"),
+            "got {refused:?}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn active_currencies_are_public_and_cached() -> Result<(), UserCallError> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/currencies"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "currencies": [{ "code": "USD", "name": "US Dollar", "active": true }]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = client_for(&server);
+        assert_eq!(client.active_currencies().await?.len(), 1);
+        assert_eq!(
+            client.active_currencies().await?.len(),
+            1,
+            "second read is cached"
+        );
+        Ok(())
+    }
+}

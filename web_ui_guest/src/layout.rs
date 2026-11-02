@@ -22,7 +22,7 @@ pub async fn guest_layout(
         topcoat::tailwind::stylesheet!(),
         "Luxury Jamaica Stays",
         user,
-        display_currency(cx),
+        display_currency(cx).await,
         slot,
     )
     .await

@@ -108,6 +108,7 @@ fn settings() -> api_core::settings::Settings {
         application: api_core::settings::Application {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,

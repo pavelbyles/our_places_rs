@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.base AS \"base!\", c.code AS \"target!\"\n        FROM (SELECT DISTINCT base_currency AS base FROM listing WHERE deleted_at IS NULL) b\n        JOIN currencies c ON c.active AND c.code <> b.base\n        WHERE NOT EXISTS (\n            SELECT 1 FROM currency_exchange_rates r\n            WHERE r.retired_at IS NULL AND r.effective_at <= $1\n              AND ((r.base_currency = b.base AND r.target_currency = c.code)\n                OR (r.base_currency = c.code AND r.target_currency = b.base))\n        )\n        ORDER BY 1, 2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "base!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "target!",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a4e89e867dc49c73a3d3ac115bec879e3683e5704eeff36f62dd46ebbd0f52f4"
+}

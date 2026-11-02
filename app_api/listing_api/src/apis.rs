@@ -6,6 +6,7 @@ use api_core::models::{
 };
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
+use common::currency::CurrencyCode;
 use common::models::{ListingQueryParams, ListingResponse, UpdatedListingRequest};
 use db_core::listing as db_listing;
 use db_core::models::{NewListing, StructureType, UpdatedListing};
@@ -17,6 +18,84 @@ use utoipa::{IntoParams, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
 use uuid::Uuid;
 use validator::Validate;
+
+/// Parses an optional `?currency=` value strictly: a malformed code is a 400,
+/// never silently ignored or normalised.
+fn requested_currency(raw: Option<&str>) -> Result<Option<CurrencyCode>, ApiError> {
+    raw.map(|code| {
+        CurrencyCode::try_from(code).map_err(|e| {
+            tracing::warn!(currency = code, "rejected malformed currency parameter");
+            ApiError::Database(db_core::error::DbError::ValidationError(e.to_string()))
+        })
+    })
+    .transpose()
+}
+
+/// Converts search results into `target` with one batched rate lookup.
+///
+/// Listings whose base currency cannot be quoted in `target` keep their base
+/// currency label, lose their prices and are flagged with
+/// `price_unavailable_in`: no fallback rate, no relabelled amounts. One
+/// aggregated `warn!` names the missing pairs.
+async fn convert_search_prices(
+    pool: &PgPool,
+    listings: &mut [ListingResponse],
+    target: &CurrencyCode,
+) -> Result<(), ApiError> {
+    let bases: Vec<String> = listings
+        .iter()
+        .map(|l| l.base_currency.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let mut conn = pool.acquire().await.map_err(|e| {
+        tracing::error!(error = %e, "could not acquire a connection for search conversion");
+        ApiError::Database(e.into())
+    })?;
+    let rates = db_core::exchange_rate::get_rates_for_bases(
+        &mut conn,
+        &bases,
+        target.as_str(),
+        chrono::Utc::now(),
+        db_core::exchange_rate::RateUse::NewQuote,
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(to = %target, error = %e, "search currency conversion failed");
+        ApiError::Database(e)
+    })?;
+
+    let missing: std::collections::BTreeSet<String> = listings
+        .iter_mut()
+        .filter_map(|listing| match rates.get(&listing.base_currency) {
+            Some(rate) => {
+                listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
+                listing.extra_guest_fee = listing.extra_guest_fee.map(|p| (p * rate).round_dp(2));
+                listing.base_currency = target.to_string();
+                None
+            }
+            None => {
+                listing.price_per_night = None;
+                listing.extra_guest_fee = None;
+                listing.price_unavailable_in = Some(target.to_string());
+                Some(listing.base_currency.clone())
+            }
+        })
+        .collect();
+    if !missing.is_empty() {
+        let affected = listings
+            .iter()
+            .filter(|l| l.price_unavailable_in.is_some())
+            .count();
+        tracing::warn!(
+            to = %target,
+            missing_bases = ?missing,
+            affected,
+            "search prices unavailable in requested currency"
+        );
+    }
+    Ok(())
+}
 
 /// Gives first 10 listings if no page or per_page is provided
 #[tracing::instrument(err)]
@@ -86,25 +165,8 @@ pub async fn get_listings(
         .map(map_listing_with_owner_to_response)
         .collect();
 
-    if let Some(target_currency) = &query.currency {
-        let rates = db_core::currency::get_exchange_rates_cache(
-            pool.get_ref(),
-            response.iter().map(|l| &l.base_currency),
-            target_currency,
-        )
-        .await
-        .map_err(|e| {
-            tracing::error!(target_currency, "Exchange rate lookup failed: {:?}", e);
-            ApiError::Database(e)
-        })?;
-
-        for listing in &mut response {
-            if let Some((rate, final_curr)) = rates.get(&listing.base_currency) {
-                listing.price_per_night = listing.price_per_night.map(|p| (p * rate).round_dp(2));
-                listing.extra_guest_fee = listing.extra_guest_fee.map(|p| (p * rate).round_dp(2));
-                listing.base_currency = final_curr.clone();
-            }
-        }
+    if let Some(target) = requested_currency(query.currency.as_deref())? {
+        convert_search_prices(pool.get_ref(), &mut response, &target).await?;
     }
 
     Ok(respond(
@@ -145,13 +207,25 @@ async fn get_listing_by_id(
 
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
 
-    if let Some(target_currency) = &query.currency {
-        let (rate, final_curr) = db_core::currency::get_exchange_rate_and_currency(
+    if let Some(target) = requested_currency(query.currency.as_deref())? {
+        let rate = db_core::exchange_rate::get_rate_pool(
             pool.get_ref(),
             &response.listing.base_currency,
-            target_currency,
+            target.as_str(),
+            chrono::Utc::now(),
+            db_core::exchange_rate::RateUse::NewQuote,
         )
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                listing_id = %response.listing.id,
+                from = %response.listing.base_currency,
+                to = %target,
+                error = %e,
+                "listing detail currency conversion failed"
+            );
+            ApiError::Database(e)
+        })?;
         response.listing.price_per_night = response
             .listing
             .price_per_night
@@ -160,7 +234,7 @@ async fn get_listing_by_id(
             .listing
             .extra_guest_fee
             .map(|p| (p * rate).round_dp(2));
-        response.listing.base_currency = final_curr;
+        response.listing.base_currency = target.to_string();
     }
 
     Ok(respond(
@@ -248,7 +322,7 @@ async fn create_listing(
             extra_guest_fee: req_data.extra_guest_fee,
         };
 
-        match db_listing::create_listing(pool.get_ref(), &listing).await {
+        match db_listing::create_listing_with_active_currency(pool.get_ref(), &listing).await {
             Ok(created_listing) => {
                 return Ok(respond(
                     &req,

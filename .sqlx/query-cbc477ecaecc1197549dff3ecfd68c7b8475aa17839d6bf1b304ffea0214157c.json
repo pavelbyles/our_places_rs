@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT DISTINCT ON (base_currency, target_currency)\n               base_currency, target_currency, rate, effective_at\n        FROM currency_exchange_rates\n        ORDER BY base_currency, target_currency, effective_at DESC\n        ",
+  "query": "\n        SELECT DISTINCT ON (base_currency, target_currency)\n               base_currency, target_currency, rate, effective_at\n        FROM currency_exchange_rates\n        WHERE retired_at IS NULL AND effective_at <= $1\n        ORDER BY base_currency, target_currency, effective_at DESC, updated_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -25,7 +25,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Timestamptz"
+      ]
     },
     "nullable": [
       false,
@@ -34,5 +36,5 @@
       false
     ]
   },
-  "hash": "cbe06c7c37f8727c03f69b94ee87f2b3ad34c9f9b751223b2139d955123c66a7"
+  "hash": "cbc477ecaecc1197549dff3ecfd68c7b8475aa17839d6bf1b304ffea0214157c"
 }

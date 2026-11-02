@@ -83,6 +83,19 @@ where
 
 /// Updates a listing in the database.
 #[tracing::instrument(skip(pool))]
+/// Creates a listing after checking, in the same transaction, that its base
+/// currency exists and is active (`CURRENCY_NOT_FOUND` / `CURRENCY_INACTIVE`).
+pub async fn create_listing_with_active_currency(
+    pool: &PgPool,
+    new_listing: &NewListing,
+) -> Result<Listing> {
+    let mut tx = pool.begin().await?;
+    crate::currency::ensure_active(&mut tx, &new_listing.base_currency).await?;
+    let listing = create_listing(&mut *tx, new_listing).await?;
+    tx.commit().await?;
+    Ok(listing)
+}
+
 pub async fn update_listing(
     pool: &PgPool,
     id: Uuid,
@@ -113,6 +126,15 @@ pub async fn update_listing_with_conn(
     let effective_guests_included = updated_listing_data
         .guests_included
         .unwrap_or(current.guests_included);
+    if let Some(new_base) = updated_listing_data
+        .base_currency
+        .as_deref()
+        .filter(|base| *base != current.base_currency)
+    {
+        // Same transaction as the update, after the listing row lock.
+        crate::currency::ensure_active(tx, new_base).await?;
+    }
+
     if effective_guests_included < 1 || effective_guests_included > effective_max_guests {
         return Err(DbError::ValidationError(
             "guests_included must be between 1 and max_guests".to_string(),

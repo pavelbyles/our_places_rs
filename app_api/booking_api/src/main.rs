@@ -40,6 +40,15 @@ async fn main() -> anyhow::Result<()> {
         hold_minutes = config.application.pending_hold_minutes,
         "Pending booking hold window"
     );
+    let grace = config
+        .application
+        .rate_effective_grace()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+    tracing::info!(
+        grace_seconds = grace.num_seconds(),
+        "Exchange-rate grace window"
+    );
 
     // Validate statutory tax configuration fast-fail (Spec §1.7)
     let _tax_settings =

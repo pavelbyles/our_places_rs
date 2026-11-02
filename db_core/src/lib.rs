@@ -42,3 +42,7 @@ pub async fn run_migrations(pool: &PgPool) {
         .expect("Failed to run migrations");
     info!("Database migrations complete");
 }
+
+/// Env var holding the test database URL (tests only).
+#[cfg(test)]
+pub(crate) const DATABASE_URL_ENV: &str = "DATABASE_URL";

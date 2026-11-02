@@ -15,6 +15,14 @@ const CLEANUP_SQL = `
 BEGIN;
 CREATE TEMP TABLE e2e_users ON COMMIT DROP AS
   SELECT id FROM "user" WHERE email LIKE 'e2e.%@example.com';
+-- Users who acted on currencies or rates stay: the audit log is
+-- append-only and rates/currencies keep their author (#100).
+DELETE FROM e2e_users WHERE id IN (
+  SELECT actor_id FROM currency_audit_log
+  UNION SELECT created_by FROM currency_exchange_rates WHERE created_by IS NOT NULL
+  UNION SELECT retired_by FROM currency_exchange_rates WHERE retired_by IS NOT NULL
+  UNION SELECT created_by FROM currencies WHERE created_by IS NOT NULL
+);
 CREATE TEMP TABLE e2e_bookings ON COMMIT DROP AS
   SELECT id FROM booking
   WHERE guest_id IN (SELECT id FROM e2e_users)

@@ -2,7 +2,6 @@
 //! 403 on every route.
 
 use serde::Deserialize;
-use web_ui_common::components::domain::currency_selector::DISPLAY_CURRENCIES;
 
 /// Archive, purge and restore.
 pub mod actions;
@@ -158,7 +157,8 @@ impl UserForm {
             )),
             _ => {}
         }
-        if !DISPLAY_CURRENCIES.contains(&self.default_currency.as_str()) {
+        // Shape only: whether the currency is active is enforced by the API.
+        if common::currency::CurrencyCode::try_from(self.default_currency.as_str()).is_err() {
             errors.push("Choose a supported currency.".to_string());
         }
         let slug = Some(self.slug.trim())

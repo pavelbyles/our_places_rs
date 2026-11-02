@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE currency_exchange_rates SET retired_at = NULL, retired_by = NULL\n        WHERE base_currency = $1 AND target_currency = $2 AND retired_at IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0fb233eb820061052871990f1b1223c6b1701101544bc6fb5fe835be14d59ebf"
+}

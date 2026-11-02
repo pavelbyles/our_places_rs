@@ -10,11 +10,10 @@ use topcoat::{
     view::{View, component, view},
 };
 use uuid::Uuid;
+use web_ui_common::components::domain::currency_selector::currency_option_list;
 
 /// Listing structures known to `listing_api`.
 pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "Studio"];
-/// Base currencies a listing can be priced in.
-pub const CURRENCIES: [&str; 5] = ["USD", "JMD", "EUR", "GBP", "CAD"];
 /// Most amenities a listing can list.
 pub const MAX_AMENITIES: usize = 50;
 /// Longest amenity, in characters.
@@ -211,6 +210,15 @@ impl Parser {
             allowed.first().copied().unwrap_or_default().to_string()
         }
     }
+    /// A well-formed currency code; whether it is active is the API's call.
+    fn currency(&mut self, v: &str) -> String {
+        common::currency::CurrencyCode::try_from(v.trim())
+            .map(String::from)
+            .unwrap_or_else(|_| {
+                self.errors.push("Choose a valid currency.".into());
+                v.trim().to_string()
+            })
+    }
     fn int(&mut self, label: &str, v: &str, min: i32) -> i32 {
         match i32::from_str(v.trim()) {
             Ok(n) if n >= min => n,
@@ -334,7 +342,7 @@ impl ListingFields {
             listing_structure: p.one_of("structure", &self.listing_structure, &STRUCTURES),
             country: p.text("Country", &self.country),
             city: Some(self.city.trim().to_string()).filter(|c| !c.is_empty()),
-            base_currency: p.one_of("currency", &self.base_currency, &CURRENCIES),
+            base_currency: p.currency(&self.base_currency),
             price_per_night: price,
             cleaning_fee: p.money("Cleaning fee", &self.cleaning_fee),
             damage_deposit: p.money("Damage deposit", &self.damage_deposit),
@@ -627,9 +635,7 @@ pub async fn listing_form(
                 <legend class="px-1 text-sm font-semibold">"Pricing & fees"</legend>
                 <label class=(label)>"Base currency"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
                     <select name="base_currency" required=(true) class=(input)>
-                        for c in CURRENCIES {
-                            <option value=(c) selected=(f.base_currency == c)>(c)</option>
-                        }
+                        currency_option_list(current: f.base_currency.clone())
                     </select>
                 </label>
                 for (name, title, value, step, required) in money_fields {

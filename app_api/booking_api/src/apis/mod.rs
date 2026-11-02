@@ -19,7 +19,9 @@ mod booking_policy;
 mod booking_updates;
 mod bookings;
 mod cron;
+mod currencies;
 mod documents;
+mod exchange_rates;
 mod ledger;
 mod messages;
 mod notifications;
@@ -107,12 +109,18 @@ pub fn generate_confirmation_code() -> String {
 /// Rate for showing a booking's amounts in `target`. A missing pair is a 422
 /// (`FX_RATE_UNAVAILABLE`) so amounts are never shown under the wrong label.
 async fn display_rate(pool: &PgPool, from: &str, target: &str) -> Result<Decimal, ApiError> {
-    db_core::exchange_rate::get_rate_pool(pool, from, target, Utc::now())
-        .await
-        .map_err(|e| {
-            tracing::warn!(from, to = target, error = %e, "booking display currency conversion failed");
-            ApiError::Database(e)
-        })
+    db_core::exchange_rate::get_rate_pool(
+        pool,
+        from,
+        target,
+        Utc::now(),
+        db_core::exchange_rate::RateUse::Settlement,
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(from, to = target, error = %e, "booking display currency conversion failed");
+        ApiError::Database(e)
+    })
 }
 
 /// Restates a booking's money fields in `target` at `rate`.
@@ -194,8 +202,10 @@ fn is_admin(user: &db_core::models::User) -> bool {
     user.roles.contains(&db_core::models::UserRole::Admin)
 }
 
-/// The user behind `claims`. A token for a user that no longer exists is a
-/// 401; a database failure is passed up (and logged), never hidden as a 404.
+/// The user behind `claims`. A token for a user that no longer exists, or
+/// whose account has been deactivated or deleted, is a 401: the account's
+/// tokens stop working as soon as it is switched off, not when they expire.
+/// A database failure is passed up (and logged), never hidden as a 404.
 async fn caller(
     pool: &PgPool,
     claims: &api_core::auth::Claims,
@@ -210,6 +220,19 @@ async fn caller(
             e => {
                 tracing::error!(user_id = %claims.sub, error = ?e, "failed to load the calling user");
                 ApiError::Database(e)
+            }
+        })
+        .and_then(|user| {
+            if user.is_active && user.deleted_at.is_none() {
+                Ok(user)
+            } else {
+                tracing::warn!(
+                    user_id = %claims.sub,
+                    is_active = user.is_active,
+                    deleted = user.deleted_at.is_some(),
+                    "token is for a deactivated or deleted account"
+                );
+                Err(ApiError::Unauthorized("Account is not active".to_string()))
             }
         })
 }
@@ -227,6 +250,29 @@ async fn require_admin(
         tracing::warn!(user_id = %claims.sub, action, "non-admin attempted an admin-only action");
         Err(ApiError::Forbidden(format!(
             "Only administrators can {action}"
+        )))
+    }
+}
+
+/// The calling user, who must be an administrator or a host (403 otherwise).
+async fn require_staff(
+    pool: &PgPool,
+    claims: &api_core::auth::Claims,
+    action: &str,
+) -> Result<db_core::models::User, ApiError> {
+    let user = caller(pool, claims).await?;
+    let staff = user.roles.iter().any(|r| {
+        matches!(
+            r,
+            db_core::models::UserRole::Admin | db_core::models::UserRole::Host
+        )
+    });
+    if staff {
+        Ok(user)
+    } else {
+        tracing::warn!(user_id = %claims.sub, action, "non-staff attempted a staff-only action");
+        Err(ApiError::Forbidden(format!(
+            "Only administrators and hosts can {action}"
         )))
     }
 }
@@ -262,5 +308,7 @@ async fn authorize_booking_party(
 
 #[cfg(test)]
 mod authz_tests;
+#[cfg(test)]
+mod rate_tests;
 #[cfg(test)]
 mod tests;

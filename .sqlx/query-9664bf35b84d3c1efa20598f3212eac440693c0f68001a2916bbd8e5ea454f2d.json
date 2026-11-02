@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM currency_exchange_rates\n        WHERE id = $1 AND effective_at > $2\n        RETURNING rate, effective_at, created_by\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "effective_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_by",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "9664bf35b84d3c1efa20598f3212eac440693c0f68001a2916bbd8e5ea454f2d"
+}

@@ -6,6 +6,7 @@ pub mod cancellation;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cloud_logging;
 pub mod csv;
+pub mod currency;
 pub mod email;
 pub mod exchange_rate;
 #[cfg(not(target_arch = "wasm32"))]

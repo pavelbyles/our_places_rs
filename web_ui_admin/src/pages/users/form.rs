@@ -15,7 +15,7 @@ use topcoat::{
 };
 use uuid::Uuid;
 use web_client::get_api_client;
-use web_ui_common::components::domain::currency_selector::DISPLAY_CURRENCIES;
+use web_ui_common::components::domain::currency_selector::currency_option_list;
 
 use super::{INPUT, LABEL, UserForm};
 use crate::support::admin_only;
@@ -105,9 +105,7 @@ async fn user_fields(
             }
             <div><label class=(LABEL) for=(id("currency"))>"Display currency"</label>
                 <select id=(id("currency")) name="default_currency" class=(INPUT)>
-                    for c in DISPLAY_CURRENCIES {
-                        <option value=(c) selected=(form.default_currency == c)>(c)</option>
-                    }
+                    currency_option_list(current: form.default_currency.clone())
                 </select></div>
         </fieldset>
         <fieldset class="space-y-2">

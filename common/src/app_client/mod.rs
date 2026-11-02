@@ -18,6 +18,29 @@ pub fn get_client() -> &'static AuthenticatedClient {
     })
 }
 
+/// Env var holding the active-currency cache TTL, in seconds.
+static CURRENCY_CACHE_TTL_ENV: &str = "CURRENCY_CACHE_TTL_SECONDS";
+
+/// Default active-currency cache TTL.
+pub const DEFAULT_CURRENCY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// TTL of the portals' active-currency cache (`CURRENCY_CACHE_TTL_SECONDS`,
+/// default 60, `0` disables caching). An unparseable value logs a warning and
+/// uses the default: this caches display data, never money.
+pub fn currency_cache_ttl() -> std::time::Duration {
+    match env::var(CURRENCY_CACHE_TTL_ENV) {
+        Err(_) => DEFAULT_CURRENCY_CACHE_TTL,
+        Ok(raw) => raw
+            .trim()
+            .parse::<u64>()
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|e| {
+                tracing::warn!(value = %raw, error = %e, "invalid CURRENCY_CACHE_TTL_SECONDS; using 60");
+                DEFAULT_CURRENCY_CACHE_TTL
+            }),
+    }
+}
+
 // Env vars for API URLs
 pub fn listing_api_url() -> String {
     env::var("LISTING_API_URL")

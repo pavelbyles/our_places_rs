@@ -126,7 +126,12 @@ export default defineConfig({
       command: 'cd web_ui_guest && PORT=3010 CARGO_TARGET_DIR=../target/ui_guest topcoat dev',
       // The new portals refuse to start without JWT_SECRET. Local backends
       // fall back to "secret" when it is unset, so match that here.
-      env: { ...process.env, JWT_SECRET: process.env.JWT_SECRET || 'secret' } as Record<string, string>,
+      env: {
+        ...process.env,
+        JWT_SECRET: process.env.JWT_SECRET || 'secret',
+        // Currency lists must reflect admin changes immediately in e2e (#100).
+        CURRENCY_CACHE_TTL_SECONDS: process.env.CURRENCY_CACHE_TTL_SECONDS || '0',
+      } as Record<string, string>,
       cwd: rootDir,
       url: 'http://localhost:3010',
       reuseExistingServer: !process.env.CI,
@@ -138,7 +143,12 @@ export default defineConfig({
       command: 'cd web_ui_admin && PORT=3012 CARGO_TARGET_DIR=../target/ui_admin topcoat dev',
       // The new portals refuse to start without JWT_SECRET. Local backends
       // fall back to "secret" when it is unset, so match that here.
-      env: { ...process.env, JWT_SECRET: process.env.JWT_SECRET || 'secret' } as Record<string, string>,
+      env: {
+        ...process.env,
+        JWT_SECRET: process.env.JWT_SECRET || 'secret',
+        // Currency lists must reflect admin changes immediately in e2e (#100).
+        CURRENCY_CACHE_TTL_SECONDS: process.env.CURRENCY_CACHE_TTL_SECONDS || '0',
+      } as Record<string, string>,
       cwd: rootDir,
       url: 'http://localhost:3012',
       reuseExistingServer: !process.env.CI,

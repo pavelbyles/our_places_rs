@@ -22,12 +22,21 @@ pub async fn nav_user(cx: &Cx) -> Option<NavUser> {
     })
 }
 
-/// The `?currency=` display currency, if given.
-pub fn display_currency(cx: &Cx) -> Option<String> {
-    parse_query_params::<CurrencyQuery>(cx)
+/// The `?currency=` display currency, if given and currently offered.
+///
+/// A code that is not in the active list (e.g. deactivated since the link was
+/// made) is dropped, so pages show prices in their base currency (correctly
+/// labelled) and the selector asks the guest to choose. When the list cannot
+/// be loaded the code is passed through and the API validates it.
+pub async fn display_currency(cx: &Cx) -> Option<String> {
+    let requested = parse_query_params::<CurrencyQuery>(cx)
         .ok()
         .and_then(|q| q.currency)
-        .filter(|c| !c.is_empty())
+        .map(|c| c.to_uppercase())
+        .filter(|c| !c.is_empty())?;
+    let offered =
+        web_ui_common::components::domain::currency_selector::active_currency_codes(cx).await;
+    (offered.is_empty() || offered.contains(&requested)).then_some(requested)
 }
 
 /// The signed-in guest, or the redirect / HX-Redirect / 403 / 503 response.
