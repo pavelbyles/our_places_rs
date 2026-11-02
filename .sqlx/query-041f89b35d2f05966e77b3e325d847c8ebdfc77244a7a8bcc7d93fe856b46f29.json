@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.promo_code_id,\n            COUNT(*) FILTER (WHERE b.status = 'pending' AND b.expires_at > NOW()) as \"active_holds!\",\n            COUNT(*) FILTER (WHERE b.status IN ('confirmed', 'completed')) as \"confirmed_uses!\"\n        FROM promo_code_redemption r\n        JOIN booking b ON b.id = r.booking_id\n        WHERE r.promo_code_id = ANY($1) AND r.released_at IS NULL\n        GROUP BY r.promo_code_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "promo_code_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "active_holds!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "confirmed_uses!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "041f89b35d2f05966e77b3e325d847c8ebdfc77244a7a8bcc7d93fe856b46f29"
+}

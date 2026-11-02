@@ -1363,3 +1363,278 @@ mod update {
         assert_eq!(old.as_deref(), Some("CHANGED"));
     }
 }
+
+mod management {
+    use super::*;
+    use crate::error::DbError;
+    use crate::promo::{NewPromoCode, create_code, deactivate_code, get_code, list_codes};
+    use chrono::Utc;
+    use common::promo::{PromoDiscountType, PromoScope};
+
+    fn new_code(code: &str, created_by: Uuid, owner: Option<Uuid>) -> NewPromoCode {
+        NewPromoCode {
+            code: code.to_string(),
+            discount_type: PromoDiscountType::Percentage,
+            discount_value: dec!(10),
+            currency: None,
+            scope: PromoScope::Stay,
+            valid_from: Utc::now() - chrono::Duration::days(1),
+            valid_to: Utc::now() + chrono::Duration::days(1),
+            stay_from: None,
+            stay_to: None,
+            min_nights: None,
+            min_booking_value: None,
+            total_usage_limit: Some(10),
+            per_guest_limit: None,
+            applies_to_all: true,
+            listing_ids: vec![],
+            owner_host_id: owner,
+            created_by,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_is_refused_and_selected_listings_are_stored() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+
+        let selected = NewPromoCode {
+            applies_to_all: false,
+            listing_ids: vec![villa],
+            ..new_code("SELECTED", host, Some(host))
+        };
+        let id = create_code(&pool, &selected).await.unwrap();
+        let stored = get_code(&pool, id).await.unwrap();
+        assert_eq!(stored.listing_ids, vec![villa]);
+        assert_eq!(stored.code.owner_host_id, Some(host));
+        assert_eq!(stored.code.created_by, host);
+
+        let duplicate = create_code(&pool, &new_code("SELECTED", host, None)).await;
+        assert!(
+            matches!(duplicate, Err(DbError::PromoCodeExists)),
+            "got {duplicate:?}"
+        );
+
+        let missing = NewPromoCode {
+            applies_to_all: false,
+            listing_ids: vec![Uuid::now_v7()],
+            ..new_code("NOLISTING", host, None)
+        };
+        let res = create_code(&pool, &missing).await;
+        assert!(
+            matches!(res, Err(DbError::ValidationError(_))),
+            "got {res:?}"
+        );
+        assert!(
+            crate::promo::get_by_code(&pool, "NOLISTING")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_inactive_currency_is_refused() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        sqlx::query("UPDATE currencies SET active = FALSE WHERE code = 'CAD'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let res = create_code(
+            &pool,
+            &NewPromoCode {
+                discount_type: PromoDiscountType::Fixed,
+                currency: Some("CAD".to_string()),
+                ..new_code("OLDCURRENCY", host, None)
+            },
+        )
+        .await;
+        assert!(
+            matches!(res, Err(DbError::CurrencyInactive(_))),
+            "got {res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn listing_filters_by_owner_and_admins_see_all() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let other = raw_user(&pool).await;
+        create_code(&pool, &new_code("MINE", host, Some(host)))
+            .await
+            .unwrap();
+        create_code(&pool, &new_code("THEIRS", other, Some(other)))
+            .await
+            .unwrap();
+        create_code(&pool, &new_code("ADMINS", other, None))
+            .await
+            .unwrap();
+
+        let (mine, total) = list_codes(&pool, Some(host), 1, 20).await.unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(mine[0].code.code, "MINE");
+
+        let (all, total) = list_codes(&pool, None, 1, 20).await.unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(all.len(), 3);
+
+        let (page, total) = list_codes(&pool, None, 2, 2).await.unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(page.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn stats_split_holds_and_confirmed_uses() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let id = create_code(&pool, &new_code("STATS", host, None))
+            .await
+            .unwrap();
+        for (status, expired, released) in [
+            ("pending", false, false),
+            ("pending", true, false),
+            ("confirmed", false, false),
+            ("completed", false, false),
+            ("cancelled", false, false),
+            ("confirmed", false, true),
+        ] {
+            let guest = raw_user(&pool).await;
+            let booking = raw_booking(&pool, guest, villa, status).await;
+            sqlx::query(
+                "UPDATE booking SET expires_at = NOW() + $2 * INTERVAL '1 hour' WHERE id = $1",
+            )
+            .bind(booking)
+            .bind(if expired { -1.0_f64 } else { 1.0_f64 })
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO promo_code_redemption (promo_code_id, booking_id, released_at)
+                 VALUES ($1, $2, CASE WHEN $3 THEN NOW() END)",
+            )
+            .bind(id)
+            .bind(booking)
+            .bind(released)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let stats = get_code(&pool, id).await.unwrap();
+        assert_eq!(stats.active_holds, 1);
+        assert_eq!(stats.confirmed_uses, 2);
+    }
+
+    #[tokio::test]
+    async fn deactivating_twice_is_refused_and_a_missing_code_is_not_found() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let id = create_code(&pool, &new_code("ONCE", host, None))
+            .await
+            .unwrap();
+
+        deactivate_code(&pool, id, host).await.unwrap();
+        let stored = get_code(&pool, id).await.unwrap();
+        assert!(stored.code.deactivated_at.is_some());
+        assert_eq!(stored.code.deactivated_by, Some(host));
+
+        let again = deactivate_code(&pool, id, host).await;
+        assert!(
+            matches!(again, Err(DbError::PromoAlreadyDeactivated)),
+            "got {again:?}"
+        );
+
+        let missing = deactivate_code(&pool, Uuid::now_v7(), host).await;
+        assert!(
+            matches!(missing, Err(DbError::Sqlx(sqlx::Error::RowNotFound))),
+            "got {missing:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn two_concurrent_deactivations_give_one_success_and_one_refusal() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let id = create_code(&pool, &new_code("RACED", host, None))
+            .await
+            .unwrap();
+
+        let mut attempts = Vec::new();
+        for _ in 0..2 {
+            let pool = pool.clone();
+            attempts.push(tokio::spawn(async move {
+                deactivate_code(&pool, id, host).await
+            }));
+        }
+        let mut successes = 0;
+        let mut refusals = 0;
+        for attempt in attempts {
+            match attempt.await.expect("task ran") {
+                Ok(()) => successes += 1,
+                Err(DbError::PromoAlreadyDeactivated) => refusals += 1,
+                Err(other) => panic!("unexpected error {other:?}"),
+            }
+        }
+        assert_eq!((successes, refusals), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn a_used_code_and_what_it_touches_cannot_be_deleted() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let host = raw_user(&pool).await;
+        let guest = raw_user(&pool).await;
+        let villa = raw_listing(&pool, host).await;
+        let selected = NewPromoCode {
+            applies_to_all: false,
+            listing_ids: vec![villa],
+            ..new_code("KEEPME", host, Some(host))
+        };
+        let id = create_code(&pool, &selected).await.unwrap();
+        let booking = raw_booking(&pool, guest, villa, "cancelled").await;
+        sqlx::query(
+            "INSERT INTO promo_code_redemption (promo_code_id, booking_id) VALUES ($1, $2)",
+        )
+        .bind(id)
+        .bind(booking)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let res = sqlx::query("DELETE FROM promo_code WHERE id = $1")
+            .bind(id)
+            .execute(&pool)
+            .await;
+        assert!(
+            matches!(&res, Err(sqlx::Error::Database(e))
+                if matches!(e.code().as_deref(), Some("23001" | "23503"))),
+            "got {res:?}"
+        );
+
+        // Clear refusals, not 500s, on the paths the new foreign keys reach.
+        let res = crate::booking::delete_booking(&pool, booking).await;
+        assert!(
+            matches!(res, Err(DbError::BookingNotModifiable(_))),
+            "got {res:?}"
+        );
+        let res = crate::listing::delete_listing(&pool, villa, true).await;
+        assert!(
+            matches!(res, Err(DbError::ValidationError(_))),
+            "got {res:?}"
+        );
+        let res = crate::user::hard_delete_user(&pool, host).await;
+        assert!(
+            matches!(res, Err(DbError::ValidationError(_))),
+            "got {res:?}"
+        );
+    }
+}

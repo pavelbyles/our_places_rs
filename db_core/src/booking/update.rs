@@ -574,7 +574,7 @@ pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
                 Some(db) if matches!(db.code().as_deref(), Some("23001" | "23503")) => {
                     tracing::warn!(booking_id = %id, constraint = ?db.constraint(), "hard delete refused: booking has retained records");
                     crate::error::DbError::BookingNotModifiable(
-                        "This booking has tax documents or payout records and cannot be deleted; cancel it instead".to_string(),
+                        "This booking has tax documents, payout records or a promo redemption and cannot be deleted; cancel it instead".to_string(),
                     )
                 }
                 _ => e.into(),

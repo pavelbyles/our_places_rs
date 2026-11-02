@@ -510,7 +510,7 @@ T30 final gates               ← all
 
 ## Phase F: Management & Portals
 
-- [ ] **Task 21: Add promo management queries**
+- [x] **Task 21: Add promo management queries**
   - **Scope:** S
   - **Description:** Add create (with selected listings), list with stats from one grouped query per page, get and deactivate. Map unique violations to `PromoCodeExists`. Map `ON DELETE RESTRICT` failures to clear refusals in `delete_listing` and `hard_delete_user`, since the new foreign keys reach those paths.
   - **Files Touched:**

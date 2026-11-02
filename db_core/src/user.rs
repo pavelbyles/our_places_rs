@@ -599,10 +599,13 @@ pub async fn hard_delete_user(pool: &PgPool, id: Uuid) -> Result<()> {
         .await
         .map_err(|err| {
             if let Some(db_err) = err.as_database_error()
-                && db_err.code().as_deref() == Some("23503")
+                && matches!(
+                    db_err.code().as_deref(),
+                    Some(crate::error::SQLSTATE_FOREIGN_KEY_VIOLATION | crate::error::SQLSTATE_RESTRICT_VIOLATION)
+                )
             {
                 return DbError::ValidationError(
-                    "Cannot permanently delete user with linked bookings, listings, or financial records. Please use Soft Delete (Archive) instead.".to_string(),
+                    "Cannot permanently delete user with linked bookings, listings, promo codes, or financial records. Please use Soft Delete (Archive) instead.".to_string(),
                 );
             }
             DbError::Sqlx(err)

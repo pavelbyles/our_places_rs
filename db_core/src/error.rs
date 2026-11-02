@@ -75,6 +75,8 @@ pub enum DbError {
     LockContention(String),
 }
 
+/// SQLSTATE: restrict violation (`ON DELETE RESTRICT`).
+pub const SQLSTATE_RESTRICT_VIOLATION: &str = "23001";
 /// SQLSTATE: foreign key violation.
 pub const SQLSTATE_FOREIGN_KEY_VIOLATION: &str = "23503";
 /// SQLSTATE: unique violation.

@@ -241,7 +241,17 @@ pub async fn delete_listing(pool: &PgPool, id: Uuid, hard_delete: bool) -> Resul
     let result: sqlx::postgres::PgQueryResult = if hard_delete {
         sqlx::query!("DELETE FROM listing WHERE id = $1", id)
             .execute(pool)
-            .await?
+            .await
+            .map_err(|e| match e.as_database_error().and_then(|d| d.code()).as_deref() {
+                Some(
+                    crate::error::SQLSTATE_RESTRICT_VIOLATION
+                    | crate::error::SQLSTATE_FOREIGN_KEY_VIOLATION,
+                ) => crate::error::DbError::ValidationError(
+                    "Cannot permanently delete a listing with linked bookings or promo codes. Please archive it instead."
+                        .to_string(),
+                ),
+                _ => crate::error::DbError::Sqlx(e),
+            })?
     } else {
         sqlx::query!("UPDATE listing SET deleted_at = now() WHERE id = $1", id)
             .execute(pool)
