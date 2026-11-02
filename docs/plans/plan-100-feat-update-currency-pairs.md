@@ -287,7 +287,7 @@ Critical path: T2/T3 → T4 → T8 → T14 → T15 → T16 → T17 → T18 → T
 
 ## Phase 4 — Rate Management (vertical slice)
 
-- [ ] **T14: `db_core::publish_rate`**
+- [x] **T14: `db_core::publish_rate`**
   - **Scope:** M
   - **Description:** One tx (the order follows the lock-order rule):
     1. `lock_pair_currencies(tx, base, target, KeyShare)` (ascending code order), then the active check for both (`ensure_active` semantics).

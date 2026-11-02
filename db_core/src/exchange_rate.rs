@@ -186,6 +186,273 @@ pub async fn get_rates_for_bases(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Rate administration (#100)
+// ---------------------------------------------------------------------------
+
+/// How a rate transaction locks the base currency row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseLock {
+    /// `FOR KEY SHARE` (publish, delete).
+    KeyShare,
+    /// `FOR UPDATE` (retire: blocks new listings in the base currency).
+    Update,
+}
+
+/// A locked currency row.
+#[derive(Debug, Clone)]
+pub(crate) struct LockedCurrency {
+    pub code: String,
+    pub active: bool,
+}
+
+/// Locks both currency rows of a pair **in ascending code order**, before any
+/// pair advisory lock, so FK checks on later inserts never wait (no cycles).
+/// The base gets `base_lock`; the target always `FOR KEY SHARE`.
+pub(crate) async fn lock_pair_currencies(
+    conn: &mut PgConnection,
+    base: &str,
+    target: &str,
+    base_lock: BaseLock,
+) -> Result<(LockedCurrency, LockedCurrency)> {
+    let mut order = [base, target];
+    order.sort_unstable();
+    let mut locked: Vec<LockedCurrency> = Vec::with_capacity(2);
+    for code in order {
+        let row = if code == base && base_lock == BaseLock::Update {
+            sqlx::query!(
+                r#"SELECT code, active FROM currencies WHERE code = $1 FOR UPDATE"#,
+                code
+            )
+            .fetch_optional(&mut *conn)
+            .await
+            .map(|r| r.map(|r| (r.code, r.active)))
+        } else {
+            sqlx::query!(
+                r#"SELECT code, active FROM currencies WHERE code = $1 FOR KEY SHARE"#,
+                code
+            )
+            .fetch_optional(&mut *conn)
+            .await
+            .map(|r| r.map(|r| (r.code, r.active)))
+        }
+        .map_err(|e| DbError::from_sqlx_contended(e, "currency lock"))?
+        .ok_or_else(|| DbError::CurrencyUnknown(code.to_string()))?;
+        locked.push(LockedCurrency {
+            code: row.0,
+            active: row.1,
+        });
+    }
+    let find = |code: &str| {
+        locked
+            .iter()
+            .find(|c| c.code == code)
+            .cloned()
+            .ok_or_else(|| DbError::CurrencyUnknown(code.to_string()))
+    };
+    Ok((find(base)?, find(target)?))
+}
+
+/// Serialises every administrative change to one pair (A→B), transaction-scoped.
+pub(crate) async fn lock_pair(conn: &mut PgConnection, base: &str, target: &str) -> Result<()> {
+    let key = format!("fx:{base}:{target}");
+    sqlx::query_scalar!(
+        r#"SELECT pg_advisory_xact_lock(hashtext($1)) IS NULL AS "locked!""#,
+        key
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(|e| DbError::from_sqlx_contended(e, "exchange-rate pair lock"))?;
+    Ok(())
+}
+
+/// The database clock right now (not the transaction start time).
+pub(crate) async fn db_now(conn: &mut PgConnection) -> Result<DateTime<Utc>> {
+    Ok(sqlx::query_scalar!(r#"SELECT clock_timestamp() AS "now!""#)
+        .fetch_one(&mut *conn)
+        .await?)
+}
+
+/// A request to publish one rate version, already shape-validated.
+#[derive(Debug, Clone)]
+pub struct PublishRate {
+    /// Currency converted from.
+    pub base: common::currency::CurrencyCode,
+    /// Currency converted to.
+    pub target: common::currency::CurrencyCode,
+    /// Validated rate (see `common::exchange_rate::parse_rate`).
+    pub rate: Decimal,
+    /// Requested effective time; `None` means now.
+    pub effective_at: Option<DateTime<Utc>>,
+    /// Confirms a change beyond the typo guard.
+    pub confirm_large_change: bool,
+    /// Admin publishing it (server-loaded, never from the request body).
+    pub actor_id: uuid::Uuid,
+    /// Grace window for "effective now" submissions.
+    pub grace: chrono::Duration,
+}
+
+/// Publishes a rate version inside `tx` (see [`publish_rate`]).
+pub async fn publish_rate_tx(
+    tx: &mut PgConnection,
+    req: &PublishRate,
+) -> Result<common::exchange_rate::RateVersion> {
+    use common::exchange_rate as rules;
+    let (base, target) = (req.base.as_str(), req.target.as_str());
+    if base == target {
+        return Err(DbError::ValidationError(
+            "base and target currencies must differ".to_string(),
+        ));
+    }
+    let rate =
+        rules::validate_rate(req.rate).map_err(|e| DbError::ValidationError(e.to_string()))?;
+
+    // 1. Currency rows (ascending), 2. pair lock, 3. clock read after the lock.
+    let (b, t) = lock_pair_currencies(tx, base, target, BaseLock::KeyShare).await?;
+    [&b, &t].iter().try_for_each(|c| {
+        c.active
+            .then_some(())
+            .ok_or_else(|| DbError::CurrencyInactive(c.code.clone()))
+    })?;
+    lock_pair(tx, base, target).await?;
+    let now = db_now(tx).await?;
+
+    let effective_at = rules::normalize_effective_at(
+        req.effective_at,
+        now,
+        req.grace,
+        chrono::Duration::days(rules::EFFECTIVE_AT_HORIZON_DAYS),
+    )
+    .map_err(|e| match e {
+        rules::EffectiveAtError::InPast => DbError::EffectiveAtInPast,
+        rules::EffectiveAtError::TooFarAhead => DbError::EffectiveAtTooFar,
+    })?;
+
+    // The explicit rate this one follows (retired history included).
+    let baseline = sqlx::query_scalar!(
+        r#"
+        SELECT rate FROM currency_exchange_rates
+        WHERE base_currency = $1 AND target_currency = $2 AND effective_at < $3
+        ORDER BY effective_at DESC, updated_at DESC
+        LIMIT 1
+        "#,
+        base,
+        target,
+        effective_at
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let guard_tripped = baseline.is_some_and(|b| rules::requires_confirmation(b, rate));
+    if let Some(b) = baseline.filter(|_| guard_tripped && !req.confirm_large_change) {
+        return Err(DbError::RateChangeConfirmationRequired {
+            baseline: b,
+            proposed: rate,
+            deviation_pct: rules::deviation_pct(b, rate),
+        });
+    }
+
+    let reinstated = sqlx::query!(
+        r#"
+        UPDATE currency_exchange_rates SET retired_at = NULL, retired_by = NULL
+        WHERE base_currency = $1 AND target_currency = $2 AND retired_at IS NOT NULL
+        "#,
+        base,
+        target
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if reinstated > 0 {
+        crate::currency::write_audit(
+            tx,
+            crate::currency::AuditEntry {
+                actor_id: req.actor_id,
+                action: "pair_reinstated",
+                currency_code: None,
+                base_currency: Some(base),
+                target_currency: Some(target),
+                rate_id: None,
+                details: serde_json::json!({ "rows": reinstated }),
+            },
+        )
+        .await?;
+    }
+
+    let row = sqlx::query!(
+        r#"
+        INSERT INTO currency_exchange_rates
+            (base_currency, target_currency, rate, effective_at, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, rate, effective_at, created_by
+        "#,
+        base,
+        target,
+        rate,
+        effective_at,
+        req.actor_id
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| match crate::error::sqlstate(&e).as_deref() {
+        Some(crate::error::SQLSTATE_UNIQUE_VIOLATION) => DbError::RateVersionExists,
+        _ => DbError::Sqlx(e),
+    })?;
+
+    crate::currency::write_audit(
+        tx,
+        crate::currency::AuditEntry {
+            actor_id: req.actor_id,
+            action: "rate_published",
+            currency_code: None,
+            base_currency: Some(base),
+            target_currency: Some(target),
+            rate_id: Some(row.id),
+            details: serde_json::json!({
+                "rate": rate.to_string(),
+                "effective_at": effective_at,
+                "baseline": baseline.map(|b| b.to_string()),
+                "deviation_pct": baseline
+                    .and_then(|b| rules::deviation_pct(b, rate))
+                    .map(|d| d.to_string()),
+                "guard_overridden": guard_tripped && req.confirm_large_change,
+            }),
+        },
+    )
+    .await?;
+
+    let state = if row.effective_at > now {
+        rules::RateState::Scheduled
+    } else {
+        rules::RateState::Current
+    };
+    Ok(rules::RateVersion {
+        id: row.id,
+        rate: row.rate,
+        effective_at: row.effective_at,
+        created_by: row.created_by,
+        state,
+    })
+}
+
+/// Publishes a rate version for a pair (creating or reinstating the pair).
+///
+/// One transaction: lock both currency rows (ascending), take the pair lock,
+/// read the clock **after** the lock, normalise the effective time (grace,
+/// no backdating, 366-day horizon), apply the 5% guard against the explicit
+/// rate it follows, reinstate a retired pair, insert, audit.
+#[tracing::instrument(skip(pool, req), fields(base = %req.base, target = %req.target))]
+pub async fn publish_rate(
+    pool: &PgPool,
+    req: &PublishRate,
+) -> Result<common::exchange_rate::RateVersion> {
+    let mut tx = pool.begin().await?;
+    let version = publish_rate_tx(&mut tx, req).await?;
+    tx.commit()
+        .await
+        .map_err(|e| DbError::from_sqlx_contended(e, "rate publish"))?;
+    Ok(version)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -522,5 +789,273 @@ mod get_rate_tests {
             .await
             .expect("rate");
         assert_eq!(r, dec!(0.000012));
+    }
+}
+
+#[cfg(test)]
+mod publish_rate_tests {
+    //! Publishing rate versions: grace, horizon, 5% guard, reinstatement,
+    //! duplicates and serialisation of concurrent publishes.
+
+    use super::*;
+    use chrono::Duration;
+    use common::currency::CurrencyCode;
+    use rust_decimal_macros::dec;
+    use sqlx_db_tester::TestPg;
+    use std::env;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    async fn db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        TestPg::new(url, Path::new("migrations"))
+    }
+
+    async fn admin(pool: &PgPool) -> Uuid {
+        sqlx::query_scalar(
+            r#"INSERT INTO "user" (email, password_hash, first_name, last_name, slug)
+               VALUES ('admin-' || gen_random_uuid() || '@example.com', 'x', 'Rate', 'Admin',
+                       'rate-admin-' || replace(gen_random_uuid()::text, '-', ''))
+               RETURNING id"#,
+        )
+        .fetch_one(pool)
+        .await
+        .expect("admin user")
+    }
+
+    fn req(actor: Uuid, base: &str, target: &str, rate: Decimal) -> PublishRate {
+        PublishRate {
+            base: CurrencyCode::try_from(base).expect("base"),
+            target: CurrencyCode::try_from(target).expect("target"),
+            rate,
+            effective_at: None,
+            confirm_large_change: false,
+            actor_id: actor,
+            grace: Duration::seconds(60),
+        }
+    }
+
+    async fn audit_actions(pool: &PgPool) -> Vec<(String, serde_json::Value)> {
+        sqlx::query_as("SELECT action::text, details FROM currency_audit_log ORDER BY created_at")
+            .fetch_all(pool)
+            .await
+            .expect("audit rows")
+    }
+
+    #[tokio::test]
+    async fn backdating_beyond_grace_is_rejected() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        let r = publish_rate(
+            &pool,
+            &PublishRate {
+                effective_at: Some(Utc::now() - Duration::minutes(5)),
+                ..req(a, "USD", "JMD", dec!(161))
+            },
+        )
+        .await;
+        assert!(matches!(r, Err(DbError::EffectiveAtInPast)), "got {r:?}");
+    }
+
+    #[tokio::test]
+    async fn within_grace_is_stored_as_now_and_current() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        let v = publish_rate(
+            &pool,
+            &PublishRate {
+                effective_at: Some(Utc::now() - Duration::seconds(5)),
+                ..req(a, "USD", "JMD", dec!(161))
+            },
+        )
+        .await
+        .expect("publish");
+        assert_eq!(v.state, common::exchange_rate::RateState::Current);
+        let mut c = pool.acquire().await.expect("conn");
+        let now = get_rate(&mut c, "USD", "JMD", Utc::now(), RateUse::NewQuote)
+            .await
+            .expect("rate");
+        assert_eq!(now, dec!(161));
+    }
+
+    #[tokio::test]
+    async fn beyond_horizon_is_rejected() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        let r = publish_rate(
+            &pool,
+            &PublishRate {
+                effective_at: Some(Utc::now() + Duration::days(400)),
+                ..req(a, "USD", "JMD", dec!(161))
+            },
+        )
+        .await;
+        assert!(matches!(r, Err(DbError::EffectiveAtTooFar)), "got {r:?}");
+    }
+
+    #[tokio::test]
+    async fn large_change_needs_confirmation() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        // Seeded USD→JMD is 160; 170 is +6.25%.
+        let r = publish_rate(&pool, &req(a, "USD", "JMD", dec!(170))).await;
+        match r {
+            Err(DbError::RateChangeConfirmationRequired {
+                baseline,
+                proposed,
+                deviation_pct,
+            }) => {
+                assert_eq!(baseline, dec!(160));
+                assert_eq!(proposed, dec!(170));
+                assert_eq!(deviation_pct, Some(dec!(6.25)));
+            }
+            other => panic!("expected confirmation, got {other:?}"),
+        }
+        assert!(audit_actions(&pool).await.is_empty(), "nothing written");
+    }
+
+    #[tokio::test]
+    async fn confirmed_large_change_is_saved_and_audited() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        publish_rate(
+            &pool,
+            &PublishRate {
+                confirm_large_change: true,
+                ..req(a, "USD", "JMD", dec!(170))
+            },
+        )
+        .await
+        .expect("confirmed publish");
+        let audit = audit_actions(&pool).await;
+        assert_eq!(audit.len(), 1);
+        assert_eq!(audit[0].0, "rate_published");
+        assert_eq!(audit[0].1["guard_overridden"], true);
+        assert_eq!(audit[0].1["baseline"], "160.000000");
+    }
+
+    #[tokio::test]
+    async fn new_pair_has_no_guard() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        let v = publish_rate(&pool, &req(a, "EUR", "JMD", dec!(175.5)))
+            .await
+            .expect("new pair");
+        assert_eq!(v.rate, dec!(175.5));
+    }
+
+    #[tokio::test]
+    async fn publishing_to_a_retired_pair_reinstates_it() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        sqlx::query(
+            "UPDATE currency_exchange_rates SET retired_at = now()
+             WHERE base_currency = 'USD' AND target_currency = 'JMD'",
+        )
+        .execute(&pool)
+        .await
+        .expect("retire");
+        publish_rate(&pool, &req(a, "USD", "JMD", dec!(161)))
+            .await
+            .expect("publish");
+        let retired: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM currency_exchange_rates
+             WHERE base_currency = 'USD' AND target_currency = 'JMD' AND retired_at IS NOT NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+        assert_eq!(retired, 0);
+        let actions: Vec<String> = audit_actions(&pool)
+            .await
+            .into_iter()
+            .map(|a| a.0)
+            .collect();
+        assert_eq!(actions, vec!["pair_reinstated", "rate_published"]);
+    }
+
+    #[tokio::test]
+    async fn duplicate_effective_time_is_rate_version_exists() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        let at = Utc::now() + Duration::hours(3);
+        let scheduled = PublishRate {
+            effective_at: Some(at),
+            ..req(a, "USD", "JMD", dec!(161))
+        };
+        let v = publish_rate(&pool, &scheduled).await.expect("first");
+        assert_eq!(v.state, common::exchange_rate::RateState::Scheduled);
+        let again = publish_rate(&pool, &scheduled).await;
+        assert!(
+            matches!(again, Err(DbError::RateVersionExists)),
+            "got {again:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inactive_currency_cannot_get_a_rate() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+        sqlx::query("UPDATE currencies SET active = false WHERE code = 'CAD'")
+            .execute(&pool)
+            .await
+            .expect("deactivate");
+        let r = publish_rate(&pool, &req(a, "USD", "CAD", dec!(1.36))).await;
+        assert!(
+            matches!(r, Err(DbError::CurrencyInactive(ref c)) if c == "CAD"),
+            "got {r:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_publishes_serialise_and_second_compares_with_first() {
+        let t = db().await;
+        let pool = t.get_pool().await;
+        let a = admin(&pool).await;
+
+        // A holds the pair lock with a confirmed +6.25% rate.
+        let mut tx_a = pool.begin().await.expect("tx A");
+        let first = publish_rate_tx(
+            &mut tx_a,
+            &PublishRate {
+                confirm_large_change: true,
+                ..req(a, "USD", "JMD", dec!(170))
+            },
+        )
+        .await
+        .expect("A publishes");
+
+        // B cannot get past the pair lock while A is open.
+        let mut tx_b = pool.begin().await.expect("tx B");
+        sqlx::query("SET LOCAL lock_timeout = '200ms'")
+            .execute(&mut *tx_b)
+            .await
+            .expect("lock_timeout");
+        let blocked = publish_rate_tx(&mut tx_b, &req(a, "USD", "JMD", dec!(171))).await;
+        assert!(
+            matches!(blocked, Err(DbError::LockContention(_))),
+            "got {blocked:?}"
+        );
+        tx_b.rollback().await.expect("rollback B");
+        tx_a.commit().await.expect("commit A");
+
+        // Retried: 171 is within 5% of A's 170 (but >5% from the seeded 160),
+        // so it only passes if A's row is the baseline; and it is later.
+        let second = publish_rate(&pool, &req(a, "USD", "JMD", dec!(171)))
+            .await
+            .expect("B after A");
+        assert!(second.effective_at > first.effective_at);
     }
 }
