@@ -157,6 +157,9 @@ A promo code changes what the guest pays, the tax charged and what the host rece
 - [x] **Commission on the cleaning fee**: charged. Commission applies to the whole gross.
 - [x] **Existing ledger rows**: unchanged, with no backfill. The new formula applies to future calculations only, including when an older booking's payout is later revised. There is one formula in the code and old formulas don't linger.
 - [x] **Rate limiting**: deferred to #110.
+- [x] **Admin codes on host surfaces**: hosts can see the code string on their own bookings, ledger, emails and documents. They still can't list or deactivate admin-created codes.
+- [x] **Long stays**: bookings over a year are allowed. A configurable limit, far above any real booking, only stops absurd date ranges.
+- [x] **100% codes**: hosts can create them on their own listings. The risk of bypassing commission is accepted.
 - [x] **Retained payouts**: fixed in this branch. Past cancellations aren't corrected.
 - [x] **Listing page totals**: in scope.
 - [x] **Fixed discount allocation**: applied to the stay first, then the cleaning fee.
