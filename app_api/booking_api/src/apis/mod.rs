@@ -27,6 +27,7 @@ mod messages;
 mod notifications;
 mod reservation_changes;
 mod routes;
+mod stay_pricing;
 
 pub use availability::{AvailabilityParams, AvailabilityResponse, UnavailableRangesParams};
 pub use booking_updates::UpdatedBookingRequest;
@@ -308,6 +309,8 @@ async fn authorize_booking_party(
 
 #[cfg(test)]
 mod authz_tests;
+#[cfg(test)]
+mod promo_hold_tests;
 #[cfg(test)]
 mod rate_tests;
 #[cfg(test)]

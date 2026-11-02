@@ -290,7 +290,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p db_core promo_tests::redemption`
   - **Dependencies:** T9
 
-- [ ] **Task 11: Share stay pricing and accept a code at hold**
+- [x] **Task 11: Share stay pricing and accept a code at hold**
   - **Scope:** M
   - **Description:** Move pricing from `create_booking` into `price_stay`. Resolve the code, checks 1–9, the conversion rate and terms snapshot, then call the calculator. `NewBookingRequest` gains `promo_code`. Log failed attempts with the guest ID, reason and a SHA-256 hash of the code, never the plain code. Add `application.max_stay_nights: i64` (a `DEFAULT_MAX_STAY_NIGHTS` constant of 3650, override with `EA__APPLICATION__MAX_STAY_NIGHTS`, must be positive at startup, checked in a small testable function following the pending-hold check), compare it with `num_days()` before any `i32` conversion, and reject longer stays with a 400 before any rate lookup or calculator call. Stays over a year are valid bookings; the limit only stops absurd ranges. After the calculator, `price_stay` returns a 400 `ValidationError` if any amount stored in a `DECIMAL(10,2)` booking column exceeds 99,999,999.99: subtotal, discount, tax, cleaning fee, deposit, platform fee or total. This is checked before the promo discount is subtracted as well as after, because a 100% code can hide a gross amount that still has to be stored. Add `log_promo_refusal(guest_id, refusal, code)` at `warn`. It hashes the normalized code, or the trimmed raw input if malformed. The hold handler calls it for refusals from `price_stay` and for `DbError::PromoRefused`, through a match arm before the catch-all at `bookings.rs:324`. Validate the requested currency with `CurrencyCode` first, and log a failed rate lookup at `warn`, because this path becomes reachable anonymously in T12.
   - **Files Touched:**
@@ -322,7 +322,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p booking_api promo_hold_tests`
   - **Dependencies:** T6, T10
 
-- [ ] **Task 12: Add the quote endpoints**
+- [x] **Task 12: Add the quote endpoints**
   - **Scope:** M
   - **Description:** Add `StayQuoteResponse`, a public `GET /api/v1/bookings/listing/{id}/quote` with no promo, and a signed-in `POST /api/v1/bookings/quote`. A refused code returns 200 with the full-price quote and `promo_refusal`. `cleaning_fee` is the gross `C`, so the rows add up. `POST /quote` calls `caller()`, which rejects deactivated accounts, uses `usage_counts`, and calls `log_promo_refusal` for every §1.4 refusal.
   - **Files Touched:**

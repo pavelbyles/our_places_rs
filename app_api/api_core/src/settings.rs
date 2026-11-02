@@ -38,6 +38,18 @@ pub struct Application {
     /// `EA__APPLICATION__RATE_EFFECTIVE_GRACE_SECONDS`; must be 1-300.
     #[serde(default = "default_rate_effective_grace_seconds")]
     pub rate_effective_grace_seconds: i64,
+    /// Longest stay a quote or hold accepts, in nights. It only stops absurd
+    /// date ranges: pricing loops per night, on a public endpoint. Set via
+    /// `[application] max_stay_nights` or `EA__APPLICATION__MAX_STAY_NIGHTS`.
+    #[serde(default = "default_max_stay_nights")]
+    pub max_stay_nights: i64,
+}
+
+/// Longest stay accepted when no setting is given: about 10 years.
+pub const DEFAULT_MAX_STAY_NIGHTS: i64 = 3650;
+
+fn default_max_stay_nights() -> i64 {
+    DEFAULT_MAX_STAY_NIGHTS
 }
 
 fn default_pending_hold_minutes() -> i32 {
@@ -55,6 +67,17 @@ fn default_rate_effective_grace_seconds() -> i64 {
 }
 
 impl Application {
+    /// Checks the stay limit, which must be positive or every booking would be
+    /// refused.
+    pub fn validate_max_stay_nights(&self) -> Result<(), String> {
+        (self.max_stay_nights > 0).then_some(()).ok_or_else(|| {
+            format!(
+                "application.max_stay_nights must be positive, got {}",
+                self.max_stay_nights
+            )
+        })
+    }
+
     /// The rate grace window, or why the configured value is invalid.
     pub fn rate_effective_grace(&self) -> Result<chrono::Duration, String> {
         (1..=MAX_RATE_EFFECTIVE_GRACE_SECONDS)

@@ -27,7 +27,7 @@ fn new_user(id: Uuid, role: UserRole) -> db_core::models::NewUser {
     }
 }
 
-async fn user(pool: &PgPool, role: UserRole) -> Uuid {
+pub(super) async fn user(pool: &PgPool, role: UserRole) -> Uuid {
     let id = Uuid::now_v7();
     db_core::user::create_user(pool, &new_user(id, role))
         .await
@@ -48,7 +48,7 @@ async fn user(pool: &PgPool, role: UserRole) -> Uuid {
     id
 }
 
-async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
+pub(super) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
     db_core::listing::create_listing(
         pool,
         &db_core::models::NewListing {
@@ -85,7 +85,7 @@ async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
     .id
 }
 
-fn settings() -> api_core::settings::Settings {
+pub(super) fn settings() -> api_core::settings::Settings {
     api_core::settings::Settings {
         server: api_core::settings::Server {
             host: "127.0.0.1".to_string(),
@@ -109,6 +109,7 @@ fn settings() -> api_core::settings::Settings {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -116,7 +117,7 @@ fn settings() -> api_core::settings::Settings {
     }
 }
 
-fn tax_settings() -> crate::settings::TaxSettings {
+pub(super) fn tax_settings() -> crate::settings::TaxSettings {
     crate::settings::TaxSettings {
         taj_supplier_trn: "000-111-222".to_string(),
         supplier_name: "Our Places Jamaica Limited".to_string(),
@@ -124,7 +125,7 @@ fn tax_settings() -> crate::settings::TaxSettings {
     }
 }
 
-fn booking_request(guest_id: Uuid, listing_id: Uuid) -> serde_json::Value {
+pub(super) fn booking_request(guest_id: Uuid, listing_id: Uuid) -> serde_json::Value {
     serde_json::json!({
         "guest_id": guest_id,
         "listing_id": listing_id,

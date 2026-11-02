@@ -2235,6 +2235,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,

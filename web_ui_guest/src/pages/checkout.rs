@@ -382,6 +382,7 @@ async fn place_booking(
             currency
         },
         agreed_cancellation_policy: "Flexible".to_string(),
+        promo_code: None,
     };
     let token = service_token(cx, guest).map_err(|_| {
         tracing::error!(guest_id = %guest.user_id, "booking not placed: could not mint the guest's API token");

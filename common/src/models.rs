@@ -481,6 +481,79 @@ pub struct NewBookingRequest {
 
     /// Name of agreed cancellation policy.
     pub agreed_cancellation_policy: String,
+
+    /// Promo code to redeem, as typed. Blank means no code.
+    #[serde(default)]
+    #[validate(length(max = 256))]
+    pub promo_code: Option<String>,
+}
+
+/// Request to price a stay for a signed-in guest.
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
+pub struct StayQuoteRequest {
+    /// Property listing identifier.
+    pub listing_id: Uuid,
+    /// First night.
+    pub check_in: NaiveDate,
+    /// Departure date.
+    pub check_out: NaiveDate,
+    /// Guests staying.
+    pub guests: u32,
+    /// Payment currency. Defaults to the listing's.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Promo code as typed. Blank means no code.
+    #[serde(default)]
+    #[validate(length(max = 256))]
+    pub promo_code: Option<String>,
+}
+
+/// A promo code's effect on a quote.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct StayQuotePromo {
+    /// The normalized code.
+    pub code: String,
+    /// The whole discount, across the stay and the cleaning fee.
+    pub discount: Decimal,
+}
+
+/// Why a promo code couldn't be used.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct StayQuoteRefusal {
+    /// The stable error code.
+    pub code: String,
+    /// The message to show the guest.
+    pub message: String,
+}
+
+/// A stay's price. `subtotal - stay_discount - promo.discount + cleaning_fee +
+/// tax_amount + platform_fee + damage_deposit` equals `total_amount`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct StayQuoteResponse {
+    /// Number of nights.
+    pub nights: i32,
+    /// Payment currency.
+    pub currency: String,
+    /// Average nightly rate after seasonal pricing.
+    pub effective_nightly_rate: Decimal,
+    /// Nights and extra-guest fees, before any discount.
+    pub subtotal: Decimal,
+    /// Weekly or monthly discount.
+    pub stay_discount: Decimal,
+    /// The promo code applied, if any.
+    pub promo: Option<StayQuotePromo>,
+    /// Why a code wasn't applied, if one was given.
+    pub promo_refusal: Option<StayQuoteRefusal>,
+    /// Cleaning fee before any promo.
+    pub cleaning_fee: Decimal,
+    /// GCT.
+    pub tax_amount: Decimal,
+    /// Guest platform fee.
+    pub platform_fee: Decimal,
+    /// Refundable damage deposit.
+    pub damage_deposit: Decimal,
+    /// Amount due.
+    pub total_amount: Decimal,
 }
 
 /// Request payload to update an existing booking reservation.

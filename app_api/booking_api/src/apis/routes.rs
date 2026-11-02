@@ -28,6 +28,7 @@ use super::reservation_changes::{
 };
 use super::{
     availability, booking_updates, bookings, cron, documents, messages, reservation_changes,
+    stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -154,6 +155,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
     );
     cfg.service(
+        web::resource("/api/v1/bookings/listing/{id}/quote")
+            .route(web::get().to(stay_pricing::public_listing_quote)),
+    );
+    cfg.service(
         web::resource("/api/v1/bookings/listing/{id}/unavailable-ranges")
             .route(web::get().to(get_unavailable_ranges)),
     );
@@ -163,6 +168,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/bookings")
             .wrap(from_fn(require_user))
+            .route("/quote", web::post().to(stay_pricing::signed_in_quote))
             .route(
                 "",
                 web::get()

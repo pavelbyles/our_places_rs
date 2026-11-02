@@ -1,9 +1,11 @@
 //! Creating bookings (pending holds) and reading them back.
 
+use super::stay_pricing::{
+    OnRefusal, PromoRequest, StayRequest, check_guest_count, log_promo_refusal, price_stay,
+};
 use super::{
     CurrencyQuery, authorize_booking_party, caller, convert_booking_amounts, display_rate,
-    enqueue_email, generate_confirmation_code, is_admin, is_confirmation_code_collision,
-    map_pricing_error, nightly_price, not_found,
+    enqueue_email, generate_confirmation_code, is_admin, is_confirmation_code_collision, not_found,
 };
 use actix_web::{HttpRequest, Responder, web};
 use api_core::auth::Claims;
@@ -14,9 +16,7 @@ use api_core::{
     pagination,
     settings::Settings,
 };
-use chrono::Utc;
 use common::models::NewBookingRequest;
-use common::pricing::BookingCalculator;
 use db_core::booking as db_booking;
 use db_core::listing as db_listing;
 use db_core::models::{BookingMetadata, CancellationPolicy, NewBooking};
@@ -81,127 +81,26 @@ pub(super) async fn create_booking(
     }
     let number_of_persons =
         (req_data.num_adults + req_data.num_children + req_data.num_infants) as i32;
-    if number_of_persons > listing_details.listing.max_guests {
-        return Err(ApiError::Database(
-            db_core::error::DbError::ValidationError(format!(
-                "Number of guests ({}) exceeds listing max_guests ({})",
-                number_of_persons, listing_details.listing.max_guests
-            )),
-        ));
-    }
+    check_guest_count(&listing_details.listing, number_of_persons)?;
 
-    let total_days = (req_data.check_out - req_data.check_in)
-        .num_days()
-        .try_into()
-        .ok()
-        .filter(|&days| days > 0)
-        .ok_or_else(|| {
-            ApiError::Database(db_core::error::DbError::ValidationError(
-                "Check-out date must be after check-in date".to_string(),
-            ))
-        })?;
-
-    // Every amount is priced in the checkout currency. A missing rate is a 422,
-    // never a silent fallback that would label base-currency amounts wrongly.
-    let booking_currency = req_data.currency.trim().to_ascii_uppercase();
-    let conversion_rate = db_core::exchange_rate::get_rate_pool(
+    let priced = price_stay(
         pool.get_ref(),
-        &listing_details.listing.base_currency,
-        &booking_currency,
-        Utc::now(),
-        db_core::exchange_rate::RateUse::NewQuote,
+        StayRequest {
+            listing: &listing_details.listing,
+            check_in: req_data.check_in,
+            check_out: req_data.check_out,
+            number_of_persons,
+            currency: &req_data.currency,
+            promo: req_data.promo_code.as_deref().map(|raw_code| PromoRequest {
+                raw_code,
+                guest_id: req_data.guest_id,
+                on_refusal: OnRefusal::Fail,
+            }),
+            max_stay_nights: settings.application.max_stay_nights,
+        },
     )
-    .await
-    .map_err(|e| {
-        tracing::error!(
-            listing_id = %req_data.listing_id,
-            from = %listing_details.listing.base_currency,
-            to = %booking_currency,
-            error = %e,
-            "checkout currency conversion failed"
-        );
-        ApiError::Database(e)
-    })?;
-    let base_nightly_rate =
-        (nightly_price(&listing_details.listing)? * conversion_rate).round_dp(2);
-
-    let raw_overrides = db_listing::get_active_overrides_for_dates(
-        pool.get_ref(),
-        req_data.listing_id,
-        req_data.check_in,
-        req_data.check_out,
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!(listing_id = %req_data.listing_id, error = %e, "failed to load price overrides for checkout");
-        ApiError::Database(e)
-    })?;
-
-    let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
-        .into_iter()
-        .map(|mut ovr| {
-            if conversion_rate != Decimal::ONE {
-                ovr.nightly_rate = (ovr.nightly_rate * conversion_rate).round_dp(2);
-            }
-            ovr
-        })
-        .collect();
-
-    let dynamic_quote = common::pricing::calculate_dynamic_quote(
-        base_nightly_rate,
-        listing_details.listing.minimum_stay,
-        &converted_overrides,
-        req_data.check_in,
-        req_data.check_out,
-    )
-    .map_err(map_pricing_error)?;
-
-    let tax_rate =
-        common::reference::SupportedCountry::tax_rate_for(&listing_details.listing.country);
-
-    let cleaning_fee = if conversion_rate != Decimal::ONE {
-        (listing_details.listing.cleaning_fee * conversion_rate).round_dp(2)
-    } else {
-        listing_details.listing.cleaning_fee
-    };
-
-    let damage_deposit = if conversion_rate != Decimal::ONE {
-        (listing_details.listing.damage_deposit * conversion_rate).round_dp(2)
-    } else {
-        listing_details.listing.damage_deposit
-    };
-
-    let extra_guest_fee = if conversion_rate != Decimal::ONE {
-        (listing_details.listing.extra_guest_fee * conversion_rate).round_dp(2)
-    } else {
-        listing_details.listing.extra_guest_fee
-    };
-
-    let calculator = BookingCalculator::with_subtotal(
-        dynamic_quote.effective_daily_rate,
-        total_days,
-        dynamic_quote.subtotal,
-    )
-    .with_extra_guests(
-        number_of_persons,
-        listing_details.listing.guests_included,
-        extra_guest_fee,
-    )
-    .apply_discounts(
-        listing_details.listing.monthly_discount_percentage,
-        listing_details.listing.weekly_discount_percentage,
-    )
-    .with_fees(Some(cleaning_fee), Some(damage_deposit))
-    .apply_promo(None)
-    .apply_taxes(tax_rate)
-    .finalize();
-
-    let platform_fee = calculator
-        .fee_breakdown
-        .iter()
-        .find(|f| f.name == "Platform Fee")
-        .map(|f| f.amount)
-        .unwrap_or(Decimal::ZERO);
+    .await?;
+    let calculator = &priced.calculator;
 
     let policy = req_data
         .agreed_cancellation_policy
@@ -226,7 +125,7 @@ pub(super) async fn create_booking(
             listing_id: req_data.listing_id,
             date_from: req_data.check_in,
             date_to: req_data.check_out,
-            currency: booking_currency.clone(),
+            currency: priced.currency.clone(),
             daily_rate: calculator.actual_daily_rate,
             number_of_persons: (req_data.num_adults + req_data.num_children + req_data.num_infants)
                 as i32,
@@ -251,10 +150,10 @@ pub(super) async fn create_booking(
             door_access_code: None,
             cleaning_fee: calculator.cleaning_fee,
             damage_deposit: calculator.damage_deposit,
-            platform_fee,
+            platform_fee: calculator.platform_fee,
             tax_rate: calculator.tax_rate,
-            exchange_rate: conversion_rate,
-            promo: None,
+            exchange_rate: priced.conversion_rate,
+            promo: priced.promo.clone(),
         };
 
         match db_booking::create_booking(
@@ -323,13 +222,23 @@ pub(super) async fn create_booking(
                     "confirmation code collision, retrying with a new code"
                 );
             }
+            Err(db_core::error::DbError::PromoRefused(refusal)) => {
+                log_promo_refusal(
+                    req_data.guest_id,
+                    refusal,
+                    req_data.promo_code.as_deref().unwrap_or_default(),
+                );
+                return Err(ApiError::Database(db_core::error::DbError::PromoRefused(
+                    refusal,
+                )));
+            }
             Err(e) => {
                 tracing::error!(
                     listing_id = %req_data.listing_id,
                     guest_id = %req_data.guest_id,
                     check_in = %req_data.check_in,
                     check_out = %req_data.check_out,
-                    currency = %booking_currency,
+                    currency = %priced.currency,
                     error = ?e,
                     "failed to create booking"
                 );
