@@ -123,6 +123,28 @@ impl TopcoatApiClient {
         common::app_client::get_pricing_quote(listing_id, check_in, check_out, currency).await
     }
 
+    /// What a stay costs, for anyone browsing a listing
+    pub async fn get_public_stay_quote(
+        &self,
+        listing_id: Uuid,
+        check_in: NaiveDate,
+        check_out: NaiveDate,
+        guests: u32,
+        currency: Option<&str>,
+    ) -> anyhow::Result<common::models::StayQuoteResponse> {
+        common::app_client::get_public_stay_quote(listing_id, check_in, check_out, guests, currency)
+            .await
+    }
+
+    /// What a stay costs the guest who owns `jwt`, with any promo code
+    pub async fn get_stay_quote(
+        &self,
+        req: &common::models::StayQuoteRequest,
+        jwt: &str,
+    ) -> anyhow::Result<common::models::StayQuoteResponse> {
+        common::app_client::get_stay_quote(req, jwt).await
+    }
+
     /// Create a pending booking hold as the guest who owns `jwt`
     pub async fn create_booking(
         &self,
@@ -723,6 +745,66 @@ impl TopcoatApiClient {
         let created = decode_api(request.json(req).send().await?).await;
         self.invalidate_currencies().await;
         created
+    }
+
+    /// One page of promo codes the user who owns `jwt` manages.
+    pub async fn list_promo_codes_as(
+        &self,
+        jwt: &str,
+        page: u32,
+    ) -> Result<common::promo::PromoCodesResponse, UserCallError> {
+        let url = format!(
+            "{}/api/v1/admin/promo-codes?page={page}",
+            self.booking_api_url
+        );
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Creates a promo code, as the admin or host who owns `jwt`.
+    pub async fn create_promo_code_as(
+        &self,
+        jwt: &str,
+        req: &common::promo::CreatePromoCodeRequest,
+    ) -> Result<common::promo::PromoCodeResponse, UserCallError> {
+        let url = format!("{}/api/v1/admin/promo-codes", self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
+    }
+
+    /// Deactivates a promo code, as the admin or host who owns `jwt`.
+    pub async fn deactivate_promo_code_as(
+        &self,
+        jwt: &str,
+        id: Uuid,
+    ) -> Result<common::promo::PromoCodeResponse, UserCallError> {
+        let url = format!(
+            "{}/api/v1/admin/promo-codes/{id}/deactivate",
+            self.booking_api_url
+        );
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
     }
 
     /// Renames and/or (de)activates a currency, as the admin who owns `jwt`.

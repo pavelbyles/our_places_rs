@@ -552,7 +552,7 @@ T30 final gates               ← all
   - **Verification Command:** `cargo test -p booking_api promo_codes && cargo test -p booking_api authz_tests::promo_codes && cargo test -p common promo::validation`
   - **Dependencies:** T21
 
-- [ ] **Task 23: Add client methods**
+- [x] **Task 23: Add client methods**
   - **Scope:** S
   - **Description:** Add `common/src/app_client/promo.rs` and `web_client` wrappers for both quotes and all management endpoints. Methods taking an ID take `Uuid`. Extract a pure error-parsing function so preservation of the code can be unit tested.
   - **Files Touched:**

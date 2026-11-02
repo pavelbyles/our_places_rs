@@ -142,6 +142,21 @@ pub enum PromoRefusal {
 }
 
 impl PromoRefusal {
+    /// Every refusal, in check order.
+    pub const ALL: [Self; 11] = [
+        Self::NotFound,
+        Self::Deactivated,
+        Self::NotYetValid,
+        Self::Expired,
+        Self::ListingNotEligible,
+        Self::FxRateUnavailable,
+        Self::MinNightsNotMet,
+        Self::StayDatesNotEligible,
+        Self::MinValueNotMet,
+        Self::UsageLimitReached,
+        Self::GuestLimitReached,
+    ];
+
     /// The stable API error code.
     pub fn code(self) -> &'static str {
         match self {
@@ -166,21 +181,7 @@ impl PromoRefusal {
 
     /// The refusal for an API error code, if it is one.
     pub fn from_code(code: &str) -> Option<Self> {
-        [
-            Self::NotFound,
-            Self::Deactivated,
-            Self::NotYetValid,
-            Self::Expired,
-            Self::ListingNotEligible,
-            Self::FxRateUnavailable,
-            Self::MinNightsNotMet,
-            Self::StayDatesNotEligible,
-            Self::MinValueNotMet,
-            Self::UsageLimitReached,
-            Self::GuestLimitReached,
-        ]
-        .into_iter()
-        .find(|r| r.code() == code)
+        Self::ALL.into_iter().find(|r| r.code() == code)
     }
 }
 
