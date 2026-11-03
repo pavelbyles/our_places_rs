@@ -6,7 +6,7 @@ use common::models::{
     SessionResponse, UpdateUserRequest, UpdatedBookingRequest, UserResponse, VerifyRequest,
 };
 
-pub use common::app_client::ListingSearchParams;
+pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
 use std::sync::Arc;
@@ -81,7 +81,13 @@ impl TopcoatApiClient {
         &self,
         params: ListingSearchParams,
     ) -> anyhow::Result<Vec<ListingResponse>> {
-        common::app_client::search_listings(params).await
+        common::app_client::search_listings_at(
+            &self.client,
+            &self.listing_api_url,
+            &common::app_client::listing_api_audience(),
+            params,
+        )
+        .await
     }
 
     /// Create a new listing

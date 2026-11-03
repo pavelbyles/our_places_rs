@@ -385,7 +385,7 @@ T22 full gates                 ← T12, T21
 
 ### Phase E: Portal
 
-- [ ] **Task 16: Surface search refusals in the client**
+- [x] **Task 16: Surface search refusals in the client**
   - **Scope:** S
   - **Description:** `ListingSearchParams` gains the new fields as strings. Add `search_listings_at(client, base_url, audience, params)` in `common`, and make the free function delegate to it. `TopcoatApiClient::search_listings` passes its own client, URL and `listing_api_audience()`, so tests can reach a stub server. The audience must not be the URL, and the test's `FixedIdToken` wouldn't catch that, so assert it. It returns a `ListingSearchRefusal` on a 4xx whose code is `INVALID_STAY_DATES`, `INVALID_GUESTS`, `INVALID_SEARCH_TEXT` or starts with `CURRENCY_`. Other failures stay ordinary errors.
   - **Files Touched:**
