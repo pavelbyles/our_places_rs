@@ -228,6 +228,27 @@ pub struct ListingResponse {
     /// this listing: prices are omitted rather than shown in another currency.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub price_unavailable_in: Option<String>,
+    /// Set by listing search when dates are given and the stay can be priced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stay_total: Option<StayTotal>,
+}
+
+/// What a stay costs, as shown on a search result. The same total as a quote
+/// and a hold with no promo code.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
+pub struct StayTotal {
+    /// Number of nights.
+    pub nights: i32,
+    /// Everything the guest pays, including the refundable deposit. Serialized as a string.
+    #[serde(serialize_with = "rust_decimal::serde::str::serialize")]
+    #[schema(value_type = String, example = "720.00")]
+    pub total_amount: Decimal,
+    /// The refundable deposit included in the total. Serialized as a string.
+    #[serde(serialize_with = "rust_decimal::serde::str::serialize")]
+    #[schema(value_type = String, example = "0.00")]
+    pub damage_deposit: Decimal,
+    /// Currency of the amounts.
+    pub currency: String,
 }
 
 /// Itemized fee line item in booking price breakdowns.

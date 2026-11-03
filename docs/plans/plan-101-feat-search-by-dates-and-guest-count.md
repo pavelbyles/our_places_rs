@@ -358,7 +358,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p db_core batched_override_tests`
   - **Dependencies:** None
 
-- [ ] **Task 15: Return stay totals from search**
+- [x] **Task 15: Return stay totals from search**
   - **Scope:** M
   - **Description:** Add `StayTotal` and `ListingResponse::stay_total`. With dates, the handler prices each listing from its database row, before mapping and conversion. Rates load in a helper that returns the map, so no connection is held during pricing, and `convert_search_prices` takes that map. The pricing loop runs in `spawn_blocking` on owned rows, because a host controls the number of overrides and the stay can be years long. A listing that can't be priced gets no total, including one with a stored discount outside 0–100, which is skipped before pricing because it could overflow `Decimal`. The closure returns the failed listing IDs, and one aggregated `warn!` names them after the join. A `JoinError` is logged, and the listings return with no totals. A failed override query fails the request, because pricing without overrides would be a guess. Wire the test module with `#[cfg(test)] #[path = "stay_total_tests.rs"] mod stay_total_tests;`, as `apis.rs` does for its others. Tests use `capture_logs` from Task 13 to count queries and warnings.
   - **Files Touched:**

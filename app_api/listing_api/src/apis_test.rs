@@ -13,7 +13,7 @@ use std::path::Path;
 /// Env var holding the test database URL.
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 
-async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
+pub(super) async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
     let id = Uuid::now_v7();
     let new_user = NewUser {
         id,
@@ -49,7 +49,7 @@ async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
 
 /// Helper to get default test settings.
 /// Returns settings with hard deletes ENABLED by default.
-fn get_test_settings() -> Settings {
+pub(super) fn get_test_settings() -> Settings {
     Settings {
         server: Server {
             host: "localhost".to_string(),
@@ -424,6 +424,7 @@ async fn test_xml_serialization_of_vec() {
 
     let response = vec![ListingResponse {
         price_unavailable_in: None,
+        stay_total: None,
         id: Uuid::now_v7(),
         user_id: Uuid::now_v7(),
         name: "Test".to_string(),

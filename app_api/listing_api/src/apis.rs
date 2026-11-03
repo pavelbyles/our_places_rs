@@ -6,14 +6,20 @@ use api_core::models::{
 };
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
+use chrono::NaiveDate;
 use common::availability::{StaySearch, jamaica_today, parse_stay_search};
 use common::currency::CurrencyCode;
-use common::models::{ListingQueryParams, ListingResponse, UpdatedListingRequest};
+use common::models::{
+    ListingQueryParams, ListingResponse, PriceOverride, StayTotal, UpdatedListingRequest,
+};
+use common::pricing::{StayPricingInput, fits_booking_columns, price_before_promo};
+use common::reference::SupportedCountry;
 use db_core::listing as db_listing;
-use db_core::models::{NewListing, StructureType, UpdatedListing};
+use db_core::models::{ListingWithOwner, NewListing, StructureType, UpdatedListing};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::str::FromStr;
 use utoipa::{IntoParams, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
@@ -32,30 +38,20 @@ fn requested_currency(raw: Option<&str>) -> Result<Option<CurrencyCode>, ApiErro
     .transpose()
 }
 
-/// Converts search results into `target` with one batched rate lookup.
-///
-/// Listings whose base currency cannot be quoted in `target` keep their base
-/// currency label, lose their prices and are flagged with
-/// `price_unavailable_in`: no fallback rate, no relabelled amounts. One
-/// aggregated `warn!` names the missing pairs.
-async fn convert_search_prices(
+/// Loads the rates for a search in one batched lookup. Returns before pricing
+/// starts, so no connection is held during it.
+async fn load_search_rates(
     pool: &PgPool,
-    listings: &mut [ListingResponse],
+    bases: &[String],
     target: &CurrencyCode,
-) -> Result<(), ApiError> {
-    let bases: Vec<String> = listings
-        .iter()
-        .map(|l| l.base_currency.clone())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
+) -> Result<HashMap<String, Decimal>, ApiError> {
     let mut conn = pool.acquire().await.map_err(|e| {
         tracing::error!(error = %e, "could not acquire a connection for search conversion");
         ApiError::Database(e.into())
     })?;
-    let rates = db_core::exchange_rate::get_rates_for_bases(
+    db_core::exchange_rate::get_rates_for_bases(
         &mut conn,
-        &bases,
+        bases,
         target.as_str(),
         chrono::Utc::now(),
         db_core::exchange_rate::RateUse::NewQuote,
@@ -64,8 +60,20 @@ async fn convert_search_prices(
     .map_err(|e| {
         tracing::warn!(to = %target, error = %e, "search currency conversion failed");
         ApiError::Database(e)
-    })?;
+    })
+}
 
+/// Converts search results into `target` using rates already loaded.
+///
+/// Listings whose base currency cannot be quoted in `target` keep their base
+/// currency label, lose their prices and are flagged with
+/// `price_unavailable_in`: no fallback rate, no relabelled amounts. One
+/// aggregated `warn!` names the missing pairs.
+fn convert_search_prices(
+    listings: &mut [ListingResponse],
+    rates: &HashMap<String, Decimal>,
+    target: &CurrencyCode,
+) {
     let missing: std::collections::BTreeSet<String> = listings
         .iter_mut()
         .filter_map(|listing| match rates.get(&listing.base_currency) {
@@ -95,7 +103,155 @@ async fn convert_search_prices(
             "search prices unavailable in requested currency"
         );
     }
-    Ok(())
+}
+
+/// One listing's stay to price. Owned, so it can move to a blocking thread.
+struct StayToPrice {
+    listing_id: Uuid,
+    nightly: Option<Decimal>,
+    minimum_stay: i32,
+    guests_included: i32,
+    extra_guest_fee: Decimal,
+    cleaning_fee: Decimal,
+    damage_deposit: Decimal,
+    weekly_discount_percentage: Option<Decimal>,
+    monthly_discount_percentage: Option<Decimal>,
+    country: String,
+    overrides: Vec<PriceOverride>,
+    rate: Decimal,
+    currency: String,
+}
+
+/// What the stay is, for every listing in a search.
+#[derive(Clone, Copy)]
+struct SearchedStay {
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    guests: i32,
+}
+
+/// Search totals, and the listings that couldn't be priced.
+#[derive(Default)]
+struct PricedStays {
+    totals: HashMap<Uuid, StayTotal>,
+    failed: Vec<Uuid>,
+}
+
+/// A stored discount outside 0–100 could overflow the calculation. New values
+/// are validated, but older rows may hold anything.
+fn discount_in_range(pct: Option<Decimal>) -> bool {
+    pct.is_none_or(|pct| (Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&pct))
+}
+
+/// A stay's total, through the same calculation as a quote and a hold. `None`
+/// when it can't be priced.
+fn price_search_stay(job: &StayToPrice, stay: SearchedStay) -> Option<StayTotal> {
+    if !discount_in_range(job.weekly_discount_percentage)
+        || !discount_in_range(job.monthly_discount_percentage)
+    {
+        return None;
+    }
+    let calculator = price_before_promo(StayPricingInput {
+        base_nightly_rate: job.nightly?,
+        minimum_stay: job.minimum_stay,
+        overrides: &job.overrides,
+        rate: job.rate,
+        check_in: stay.check_in,
+        check_out: stay.check_out,
+        number_of_persons: stay.guests,
+        guests_included: job.guests_included,
+        extra_guest_fee: job.extra_guest_fee,
+        cleaning_fee: job.cleaning_fee,
+        damage_deposit: job.damage_deposit,
+        weekly_discount_percentage: job.weekly_discount_percentage,
+        monthly_discount_percentage: job.monthly_discount_percentage,
+    })
+    .ok()?
+    .apply_promo(None)
+    .apply_taxes(SupportedCountry::tax_rate_for(&job.country))
+    .finalize();
+    fits_booking_columns(&calculator).then(|| StayTotal {
+        nights: calculator.total_days,
+        total_amount: calculator.total_price,
+        damage_deposit: calculator.damage_deposit,
+        currency: job.currency.clone(),
+    })
+}
+
+fn price_search_stays(jobs: Vec<StayToPrice>, stay: SearchedStay) -> PricedStays {
+    let mut priced = PricedStays::default();
+    for job in jobs {
+        match price_search_stay(&job, stay) {
+            Some(total) => {
+                priced.totals.insert(job.listing_id, total);
+            }
+            None => priced.failed.push(job.listing_id),
+        }
+    }
+    priced
+}
+
+/// If the pricing task itself fails, the listings still return, with no totals.
+fn totals_or_none(result: Result<PricedStays, tokio::task::JoinError>) -> PricedStays {
+    result.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "pricing search results failed");
+        PricedStays::default()
+    })
+}
+
+/// Totals for a page of search results. Works from the database rows, because
+/// `convert_search_prices` overwrites the response's prices and currency.
+///
+/// A failed override load fails the request: pricing without overrides would
+/// be a guess. A listing with no rate to `target` gets no total, and
+/// `convert_search_prices` flags it. The loop runs on a blocking thread, because
+/// a stay can be years long and a host sets the number of overrides.
+async fn search_stay_totals(
+    pool: &PgPool,
+    rows: &[ListingWithOwner],
+    stay: SearchedStay,
+    rates: Option<&HashMap<String, Decimal>>,
+    target: Option<&CurrencyCode>,
+) -> Result<HashMap<Uuid, StayTotal>, ApiError> {
+    let ids: Vec<Uuid> = rows.iter().map(|row| row.id).collect();
+    let mut overrides =
+        db_listing::get_active_overrides_for_listings(pool, &ids, stay.check_in, stay.check_out)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = ?e, "could not load overrides for search totals");
+                ApiError::Database(e)
+            })?;
+    let jobs: Vec<StayToPrice> = rows
+        .iter()
+        .filter_map(|row| {
+            let rate = match rates {
+                Some(rates) => *rates.get(&row.base_currency)?,
+                None => Decimal::ONE,
+            };
+            Some(StayToPrice {
+                listing_id: row.id,
+                nightly: row.price_per_night,
+                minimum_stay: row.minimum_stay,
+                guests_included: row.guests_included,
+                extra_guest_fee: row.extra_guest_fee,
+                cleaning_fee: row.cleaning_fee,
+                damage_deposit: row.damage_deposit,
+                weekly_discount_percentage: row.weekly_discount_percentage,
+                monthly_discount_percentage: row.monthly_discount_percentage,
+                country: row.country.clone(),
+                overrides: overrides.remove(&row.id).unwrap_or_default(),
+                rate,
+                currency: target.map_or_else(|| row.base_currency.clone(), ToString::to_string),
+            })
+        })
+        .collect();
+
+    let priced =
+        totals_or_none(tokio::task::spawn_blocking(move || price_search_stays(jobs, stay)).await);
+    if !priced.failed.is_empty() {
+        tracing::warn!(listings = ?priced.failed, "search stays could not be priced");
+    }
+    Ok(priced.totals)
 }
 
 /// Reads what a guest searched for. A refusal is logged by its code alone,
@@ -187,22 +343,52 @@ pub async fn get_listings(
         check_in,
         check_out,
         guests: search.guests,
-        q: search.q,
+        q: search.q.clone(),
     };
 
-    let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
+    let target = requested_currency(query.currency.as_deref())?;
+    let rows = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
         .await
         .map_err(|e| {
             tracing::error!("Database query failed: {:?}", e);
             ApiError::Database(e)
         })?;
-    let mut response: Vec<ListingResponse> = listings
+
+    let rates = match &target {
+        Some(target) => {
+            let bases: Vec<String> = rows
+                .iter()
+                .map(|row| row.base_currency.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            Some(load_search_rates(pool.get_ref(), &bases, target).await?)
+        }
+        None => None,
+    };
+
+    let mut totals = match search.dates {
+        Some((check_in, check_out)) if !rows.is_empty() => {
+            let stay = SearchedStay {
+                check_in,
+                check_out,
+                guests: search.guests.unwrap_or(1),
+            };
+            search_stay_totals(pool.get_ref(), &rows, stay, rates.as_ref(), target.as_ref()).await?
+        }
+        _ => HashMap::new(),
+    };
+
+    let mut response: Vec<ListingResponse> = rows
         .into_iter()
         .map(map_listing_with_owner_to_response)
         .collect();
 
-    if let Some(target) = requested_currency(query.currency.as_deref())? {
-        convert_search_prices(pool.get_ref(), &mut response, &target).await?;
+    if let (Some(rates), Some(target)) = (&rates, &target) {
+        convert_search_prices(&mut response, rates, target);
+    }
+    for listing in &mut response {
+        listing.stay_total = totals.remove(&listing.id);
     }
 
     Ok(respond(
@@ -985,3 +1171,7 @@ async fn delete_price_override(
 #[cfg(test)]
 #[path = "apis_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "stay_total_tests.rs"]
+mod stay_total_tests;
