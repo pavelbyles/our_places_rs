@@ -52,9 +52,10 @@ pub(crate) async fn record_booking_history(
             sub_total_price, discount_value, tax_value, fee_breakdown,
             total_price, cancellation_policy, metadata, door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
-            change_reason, changed_by_id
+            change_reason, changed_by_id,
+            promo_code_id, promo_terms, promo_stay_discount, promo_cleaning_discount
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
         RETURNING id
         "#,
         booking.id,
@@ -82,7 +83,11 @@ pub(crate) async fn record_booking_history(
         booking.tax_rate,
         booking.exchange_rate,
         change_reason,
-        changed_by_id
+        changed_by_id,
+        booking.promo_code_id,
+        booking.promo_terms.as_ref().map(|t| Json(&t.0)) as _,
+        booking.promo_stay_discount,
+        booking.promo_cleaning_discount
     )
     .fetch_one(&mut **tx)
     .await?;

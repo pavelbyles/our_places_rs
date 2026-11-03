@@ -418,3 +418,49 @@ pub fn quote_refund(
             .map(|c| c.quote()),
     }
 }
+
+#[cfg(test)]
+mod promo {
+    use super::*;
+    use chrono::TimeZone;
+    use rust_decimal_macros::dec;
+
+    /// The worked example with 10% off the stay and cleaning: 810.00 stay, 90.00
+    /// cleaning, 135.00 tax, 40.50 platform fee, 200.00 deposit, 1,275.50 total.
+    fn amounts() -> RefundableAmounts {
+        RefundableAmounts::new(
+            dec!(810.00),
+            dec!(90.00),
+            dec!(200.00),
+            dec!(40.50),
+            dec!(0.15),
+            dec!(1275.50),
+        )
+    }
+
+    fn quote(policy: CancellationPolicy, days_ahead: i64) -> RefundQuote {
+        let cancelled_at = Utc
+            .with_ymd_and_hms(2030, 1, 10, 12, 0, 0)
+            .single()
+            .expect("valid time");
+        let check_in = cancelled_at.date_naive() + chrono::Duration::days(days_ahead);
+        let booked_at = cancelled_at - chrono::Duration::days(30);
+        quote_refund(policy, amounts(), booked_at, check_in, cancelled_at).expect("quote")
+    }
+
+    #[test]
+    fn a_full_refund_returns_exactly_what_a_promo_guest_paid() {
+        let q = quote(CancellationPolicy::Flexible, 10);
+        assert_eq!(q.refund_total, dec!(1275.50));
+        assert_eq!(q.retained_total, Decimal::ZERO);
+    }
+
+    #[test]
+    fn a_partial_refund_adds_up_with_a_promo_and_never_goes_negative() {
+        let q = quote(CancellationPolicy::Moderate, 3);
+        assert_eq!(q.accommodation_refund, dec!(405.00));
+        assert_eq!(q.cleaning_refund, dec!(90.00));
+        assert_eq!(q.refund_total + q.retained_total, dec!(1275.50));
+        assert!(q.retained_total >= Decimal::ZERO);
+    }
+}

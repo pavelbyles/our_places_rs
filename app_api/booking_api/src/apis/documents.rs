@@ -34,7 +34,7 @@ pub(super) async fn get_cancellation_quote(
     let accommodation_net = booking.accommodation_net();
     let amounts = common::cancellation::RefundableAmounts::new(
         accommodation_net,
-        booking.cleaning_fee,
+        booking.cleaning_net(),
         booking.damage_deposit,
         booking.platform_fee,
         booking.tax_rate,

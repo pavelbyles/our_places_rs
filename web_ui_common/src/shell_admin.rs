@@ -63,6 +63,7 @@ pub async fn admin_chrome(
                         <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
                         <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
                         <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
+                        <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
                         <a href="/admin/exchange-rates" class=(NAV_LINK)>"Exchange rates"</a>
                         if is_admin {
                             <p id="admin-sidebar-users-title" class="mt-4 px-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">"Users"</p>
@@ -80,6 +81,7 @@ pub async fn admin_chrome(
                                 <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
                                 <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
                                 <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
+                                <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
                                 if is_admin {
                                     <a href="/admin/users" class=(NAV_LINK)>"Users"</a>
                                 }

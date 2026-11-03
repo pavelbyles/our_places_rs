@@ -25,8 +25,10 @@ mod exchange_rates;
 mod ledger;
 mod messages;
 mod notifications;
+mod promo_codes;
 mod reservation_changes;
 mod routes;
+mod stay_pricing;
 
 pub use availability::{AvailabilityParams, AvailabilityResponse, UnavailableRangesParams};
 pub use booking_updates::UpdatedBookingRequest;
@@ -133,6 +135,7 @@ fn convert_booking_amounts(booking: &mut BookingResponse, rate: Decimal, target:
     booking.cleaning_fee = booking.cleaning_fee.map(|f| (f * rate).round_dp(2));
     booking.damage_deposit = booking.damage_deposit.map(|f| (f * rate).round_dp(2));
     booking.platform_fee = booking.platform_fee.map(|f| (f * rate).round_dp(2));
+    booking.promo_discount = (booking.promo_discount * rate).round_dp(2);
     booking.currency = target.trim().to_ascii_uppercase();
 }
 
@@ -308,6 +311,8 @@ async fn authorize_booking_party(
 
 #[cfg(test)]
 mod authz_tests;
+#[cfg(test)]
+mod promo_hold_tests;
 #[cfg(test)]
 mod rate_tests;
 #[cfg(test)]

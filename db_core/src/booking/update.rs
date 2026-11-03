@@ -14,7 +14,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 /// Updates a booking's status.
-#[tracing::instrument(skip(pool))]
+#[tracing::instrument(skip(pool, updated_booking, supplier), fields(booking_id = %id))]
 pub async fn update_booking(
     pool: &PgPool,
     id: Uuid,
@@ -26,6 +26,7 @@ pub async fn update_booking(
     let current = lock_booking(&mut tx, id).await?;
     let change = BookingChange::new(&current, updated_booking);
     check_change_allowed(&mut tx, id, &current, updated_booking, &change).await?;
+    keep_promo_use_on_confirmation(&mut tx, id, &current, updated_booking).await?;
 
     let booking = write_booking_update(&mut tx, id, updated_booking).await?;
 
@@ -49,6 +50,7 @@ struct CurrentBooking {
     date_to: NaiveDate,
     number_of_persons: i32,
     hold_active: bool,
+    promo_code_id: Option<Uuid>,
 }
 
 /// Locks the booking's listing, then the booking row, and reads the booking.
@@ -68,7 +70,7 @@ async fn lock_booking(conn: &mut PgConnection, id: Uuid) -> Result<CurrentBookin
 
     let row = sqlx::query!(
         r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to, number_of_persons,
-            COALESCE(expires_at > NOW(), FALSE) as "hold_active!"
+            COALESCE(expires_at > NOW(), FALSE) as "hold_active!", promo_code_id
         FROM booking WHERE id = $1 FOR UPDATE"#,
         id
     )
@@ -82,6 +84,7 @@ async fn lock_booking(conn: &mut PgConnection, id: Uuid) -> Result<CurrentBookin
         date_to: row.date_to,
         number_of_persons: row.number_of_persons,
         hold_active: row.hold_active,
+        promo_code_id: row.promo_code_id,
     })
 }
 
@@ -196,6 +199,36 @@ async fn check_change_allowed(
     Ok(())
 }
 
+/// Stops a hold being confirmed after it lost its promo use at expiry. Another
+/// hold counts an expired one as free under the code's lock, so confirming must
+/// take that lock too and then re-read the time, which may have passed while it
+/// waited. Lock order: listing, then booking, then promo code.
+async fn keep_promo_use_on_confirmation(
+    conn: &mut PgConnection,
+    id: Uuid,
+    current: &CurrentBooking,
+    updated: &UpdatedBooking,
+) -> Result<()> {
+    let confirming = updated.status == Some(BookingStatus::Confirmed)
+        && current.status == BookingStatus::Pending;
+    let (true, Some(promo_code_id)) = (confirming, current.promo_code_id) else {
+        return Ok(());
+    };
+    crate::promo::lock_code(&mut *conn, promo_code_id).await?;
+    let still_held = sqlx::query_scalar!(
+        r#"SELECT COALESCE(expires_at > clock_timestamp(), FALSE) as "held!" FROM booking WHERE id = $1"#,
+        id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if still_held {
+        Ok(())
+    } else {
+        tracing::warn!(booking_id = %id, "rejected confirmation of a hold that expired while waiting for its promo code");
+        Err(crate::error::DbError::HoldExpired)
+    }
+}
+
 /// Writes the update; fields left `None` keep their stored values.
 async fn write_booking_update(
     conn: &mut PgConnection,
@@ -214,7 +247,7 @@ async fn write_booking_update(
             daily_rate = COALESCE($6, daily_rate),
             total_days = COALESCE($7, total_days),
             sub_total_price = COALESCE($8, sub_total_price),
-            discount_value = COALESCE($9, discount_value),
+            discount_value = CASE WHEN $21 THEN $9 ELSE COALESCE($9, discount_value) END,
             tax_value = COALESCE($10, tax_value),
             fee_breakdown = COALESCE($11, fee_breakdown),
             total_price = COALESCE($12, total_price),
@@ -224,7 +257,11 @@ async fn write_booking_update(
             tax_rate = COALESCE($16, tax_rate),
             exchange_rate = COALESCE($17, exchange_rate),
             updated_at = $18,
-            number_of_persons = COALESCE($20, number_of_persons)
+            number_of_persons = COALESCE($20, number_of_persons),
+            promo_code_id = CASE WHEN $22 THEN NULL ELSE promo_code_id END,
+            promo_terms = CASE WHEN $22 THEN NULL ELSE promo_terms END,
+            promo_stay_discount = CASE WHEN $22 THEN 0 ELSE COALESCE($23, promo_stay_discount) END,
+            promo_cleaning_discount = CASE WHEN $22 THEN 0 ELSE COALESCE($24, promo_cleaning_discount) END
         WHERE id = $19
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
@@ -233,6 +270,8 @@ async fn write_booking_update(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         updated_booking.status as Option<BookingStatus>,
@@ -254,10 +293,17 @@ async fn write_booking_update(
         updated_booking.exchange_rate,
         Utc::now(),
         id,
-        updated_booking.number_of_persons
+        updated_booking.number_of_persons,
+        updated_booking.replace_discounts,
+        updated_booking.clear_promo,
+        updated_booking.promo_stay_discount,
+        updated_booking.promo_cleaning_discount
     )
     .fetch_one(&mut *conn)
     .await?;
+    if updated_booking.clear_promo {
+        crate::promo::release_redemption(&mut *conn, id).await?;
+    }
     Ok(booking)
 }
 
@@ -298,10 +344,20 @@ async fn start_host_payout(
     crate::tax_document::issue_payment_receipt(&mut *conn, booking, supplier, history_id).await?;
 
     let terms = host_payout_terms(&mut *conn, booking).await?;
-    let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
+    let gross_amount = common::pricing::host_gross(
+        booking.accommodation_net(),
+        booking.cleaning_net(),
+        terms.exchange_rate,
+    );
+    let promo_discount = booking.promo_stay_discount + booking.promo_cleaning_discount;
     crate::payout_ledger::create_payout_ledger_entry(
         &mut *conn,
-        &terms.pending_payout(booking, gross_amount),
+        &terms.pending_payout(
+            booking,
+            gross_amount,
+            (booking.cleaning_net() * terms.exchange_rate).round_dp(2),
+            (promo_discount * terms.exchange_rate).round_dp(2),
+        ),
     )
     .await?;
     Ok(())
@@ -317,34 +373,14 @@ async fn revise_confirmed_terms(
 ) -> Result<()> {
     crate::tax_document::issue_payment_receipt(&mut *conn, booking, supplier, history_id).await?;
 
-    let terms = host_payout_terms(&mut *conn, booking).await?;
-    let gross_amount = (booking.accommodation_net() * terms.exchange_rate).round_dp(2);
-    let platform_fee_pct = terms.commission_pct;
-    let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
-        gross_amount,
-        platform_fee_pct,
-        rust_decimal::Decimal::ZERO,
-    );
-
-    sqlx::query!(
-        r#"
-            UPDATE host_payout_ledger
-            SET gross_amount = $1,
-                platform_fee_amount = $2,
-                net_payout_amount = $3,
-                exchange_rate = $4,
-                updated_at = NOW()
-            WHERE booking_id = $5 AND status = 'pending'::payout_status
-            "#,
-        gross_amount,
-        platform_fee_amount,
-        net_payout_amount,
-        terms.exchange_rate,
-        booking.id
+    crate::payout_ledger::reprice_pending_payout(
+        &mut *conn,
+        booking.id,
+        booking.accommodation_net(),
+        booking.cleaning_net(),
+        booking.promo_stay_discount + booking.promo_cleaning_discount,
     )
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
+    .await
 }
 
 /// A cancelled booking: close its pending change requests and, if it had been
@@ -377,20 +413,39 @@ async fn settle_cancellation(
         crate::tax_document::issue_refund_receipt(&mut *conn, booking, supplier, history_id)
             .await?;
 
-    crate::payout_ledger::cancel_pending_payout_for_booking(&mut *conn, booking.id).await?;
+    let cancelled_payout =
+        crate::payout_ledger::cancel_pending_payout_for_booking(&mut *conn, booking.id).await?;
 
     // If accommodation was partially retained by host (policy_pct < 1.00), issue adjusted payout
     let host_retained = (booking.accommodation_net() - ref_doc.accommodation_net).round_dp(2);
     if host_retained <= Decimal::ZERO {
         return Ok(());
     }
+    if let Some(ledger_id) = cancelled_payout {
+        return crate::payout_ledger::reopen_payout_as_retained(
+            &mut *conn,
+            ledger_id,
+            host_retained,
+        )
+        .await;
+    }
+
+    // No pending row: either the booking predates the ledger, or its payout is
+    // already processing, paid or refunded, which only an operator can reconcile.
     let terms = host_payout_terms(&mut *conn, booking).await?;
     let retained_gross = (host_retained * terms.exchange_rate).round_dp(2);
-    crate::payout_ledger::create_payout_ledger_entry(
+    let inserted = crate::payout_ledger::create_payout_ledger_entry(
         &mut *conn,
-        &terms.pending_payout(booking, retained_gross),
+        &terms.pending_payout(booking, retained_gross, Decimal::ZERO, Decimal::ZERO),
     )
     .await?;
+    if inserted == 0 {
+        tracing::warn!(
+            booking_id = %booking.id,
+            %host_retained,
+            "retained payout not recorded: the payout already left the pending state"
+        );
+    }
     Ok(())
 }
 
@@ -435,6 +490,8 @@ impl HostPayoutTerms {
         &self,
         booking: &Booking,
         gross_amount: Decimal,
+        cleaning_fee_amount: Decimal,
+        promo_discount_amount: Decimal,
     ) -> PayoutRecord<PendingPayout> {
         let (platform_fee_amount, net_payout_amount) = common::pricing::calculate_host_payout(
             gross_amount,
@@ -453,6 +510,8 @@ impl HostPayoutTerms {
             tax_withheld_amount: Decimal::ZERO,
             exchange_rate: self.exchange_rate,
             net_payout_amount,
+            cleaning_fee_amount,
+            promo_discount_amount,
         })
     }
 }
@@ -515,7 +574,7 @@ pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
                 Some(db) if matches!(db.code().as_deref(), Some("23001" | "23503")) => {
                     tracing::warn!(booking_id = %id, constraint = ?db.constraint(), "hard delete refused: booking has retained records");
                     crate::error::DbError::BookingNotModifiable(
-                        "This booking has tax documents or payout records and cannot be deleted; cancel it instead".to_string(),
+                        "This booking has tax documents, payout records or a promo redemption and cannot be deleted; cancel it instead".to_string(),
                     )
                 }
                 _ => e.into(),

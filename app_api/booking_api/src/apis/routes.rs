@@ -27,7 +27,8 @@ use super::reservation_changes::{
     list_reservation_change_requests, quote_reservation_change,
 };
 use super::{
-    availability, booking_updates, bookings, cron, documents, messages, reservation_changes,
+    availability, booking_updates, bookings, cron, documents, messages, promo_codes,
+    reservation_changes, stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -79,6 +80,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             currencies::admin_list_currencies,
             currencies::create_currency,
             currencies::update_currency,
+            stay_pricing::public_listing_quote,
+            stay_pricing::signed_in_quote,
+            promo_codes::list_promo_codes,
+            promo_codes::get_promo_code,
+            promo_codes::create_promo_code,
+            promo_codes::deactivate_promo_code,
         ),
         components(
             schemas(
@@ -128,12 +135,23 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::tax_document::TaxDocumentStatus,
                 common::tax_document::InvoiceLineItem,
                 common::tax_document::InvoiceTaxCategory,
+                common::models::StayQuoteRequest,
+                common::models::StayQuoteResponse,
+                common::models::StayQuotePromo,
+                common::models::StayQuoteRefusal,
+                common::promo::PromoOutcome,
+                common::promo::PromoDiscountType,
+                common::promo::PromoScope,
+                common::promo::CreatePromoCodeRequest,
+                common::promo::PromoCodeResponse,
+                common::promo::PromoCodesResponse,
             )
         ),
         tags(
             (name = "bookings", description = "Booking management endpoints"),
             (name = "currencies", description = "Currency reference data"),
-            (name = "exchange-rates", description = "Exchange-rate administration")
+            (name = "exchange-rates", description = "Exchange-rate administration"),
+            (name = "promo-codes", description = "Promo code administration")
         ),
     )]
     struct ApiDoc;
@@ -154,6 +172,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         ),
     );
     cfg.service(
+        web::resource("/api/v1/bookings/listing/{id}/quote")
+            .route(web::get().to(stay_pricing::public_listing_quote)),
+    );
+    cfg.service(
         web::resource("/api/v1/bookings/listing/{id}/unavailable-ranges")
             .route(web::get().to(get_unavailable_ranges)),
     );
@@ -163,6 +185,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1/bookings")
             .wrap(from_fn(require_user))
+            .route("/quote", web::post().to(stay_pricing::signed_in_quote))
             .route(
                 "",
                 web::get()
@@ -330,6 +353,18 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/{base}/{target}/retire",
                 web::post().to(exchange_rates::retire),
+            ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/admin/promo-codes")
+            .wrap(from_fn(require_user))
+            .route("", web::get().to(promo_codes::list_promo_codes))
+            .route("", web::post().to(promo_codes::create_promo_code))
+            .route("/{id}", web::get().to(promo_codes::get_promo_code))
+            .route(
+                "/{id}/deactivate",
+                web::post().to(promo_codes::deactivate_promo_code),
             ),
     );
 

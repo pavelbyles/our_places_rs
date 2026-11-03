@@ -108,6 +108,7 @@ pub(super) async fn fixture() -> Fixture {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -149,6 +150,7 @@ pub(super) async fn app(
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -718,6 +720,7 @@ mod currency_inactive_tests {
             platform_fee: rust_decimal::Decimal::ZERO,
             tax_rate: dec!(0.1500),
             exchange_rate: dec!(160),
+            promo: None,
         };
         let r = db_core::booking::create_booking(&f.pool, &booking, 120).await;
         assert!(
@@ -1092,6 +1095,7 @@ mod exchange_rate_api_tests {
             max_attempts: 1,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: secs,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         };
         assert!(app_settings(0).rate_effective_grace().is_err());
         assert!(app_settings(301).rate_effective_grace().is_err());

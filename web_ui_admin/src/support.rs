@@ -102,6 +102,7 @@ pub async fn scoped_listings(cx: &Cx, user: &AdminSession) -> Vec<ListingRespons
     let params = ListingSearchParams {
         per_page: Some(100),
         user_id: (user.role == AdminRole::Host).then_some(user.user_id),
+        include_inactive: true,
         ..Default::default()
     };
     let listings = get_api_client(cx)
@@ -150,16 +151,7 @@ pub async fn scoped_bookings(
     }
 }
 
-/// Escapes one CSV cell, and neutralises spreadsheet formulas
-/// (`=`, `+`, `-`, `@` prefixes) so exported data cannot run in Excel/Sheets.
-pub fn csv_cell(value: &str) -> String {
-    let guarded = if value.starts_with(['=', '+', '-', '@', '\t', '\r']) {
-        format!("'{value}")
-    } else {
-        value.to_string()
-    };
-    format!("\"{}\"", guarded.replace('"', "\"\""))
-}
+pub use common::csv::csv_cell;
 
 #[cfg(test)]
 mod tests {

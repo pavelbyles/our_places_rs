@@ -20,15 +20,12 @@ fn one_amenity_per_line_trimmed_without_blanks_or_duplicates() {
     let valid = fields("  Private pool \n\nWi-Fi\nprivate POOL\n Air conditioning")
         .validate(None, false)
         .map_err(|e| e.join("; "));
-    let request = valid.map(|v| v.into_new());
-    let details = request.ok().and_then(|r| r.listing_details);
+    let request = valid.map(|v| v.into_new()).ok();
+    assert_eq!(request.as_ref().map(|r| r.is_active), Some(true));
+    let details = request.and_then(|r| r.listing_details);
     assert_eq!(
         amenities_of(details.as_ref()),
         ["Private pool", "Wi-Fi", "Air conditioning"]
-    );
-    assert_eq!(
-        details.and_then(|d| d.get("is_active").cloned()),
-        Some(json!(true))
     );
 }
 

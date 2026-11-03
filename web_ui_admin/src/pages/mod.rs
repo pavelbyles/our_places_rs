@@ -18,6 +18,8 @@ pub mod listings;
 pub mod payouts;
 /// Seasonal pricing overrides.
 pub mod pricing;
+/// Promo code management (#106).
+pub mod promo_codes;
 /// Host sign-up and verification.
 pub mod register;
 /// User administration.

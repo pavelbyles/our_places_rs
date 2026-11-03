@@ -20,6 +20,10 @@ pub mod models;
 pub mod notification_log;
 /// Host financial earnings and payout ledger.
 pub mod payout_ledger;
+/// Promo codes: lookups, eligibility and usage.
+pub mod promo;
+#[cfg(test)]
+mod promo_tests;
 /// Bilateral reservation change requests and lifecycle operations.
 pub mod reservation_change;
 /// Guest reviews and verification tokens.

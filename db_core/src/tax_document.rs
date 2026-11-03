@@ -53,13 +53,15 @@ pub async fn insert_tax_document(
             retained_amount,
             jmd_tax_amount,
             jmd_total_amount,
-            line_items
+            line_items,
+            promo_code,
+            promo_discount
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
             $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-            $31, $32, $33, $34, $35
+            $31, $32, $33, $34, $35, $36, $37
         )
         RETURNING
             id,
@@ -98,6 +100,8 @@ pub async fn insert_tax_document(
             jmd_tax_amount,
             jmd_total_amount,
             line_items,
+            promo_code,
+            promo_discount,
             created_at
         "#,
         doc.document_type as TaxDocumentType,
@@ -134,7 +138,9 @@ pub async fn insert_tax_document(
         doc.retained_amount,
         doc.jmd_tax_amount,
         doc.jmd_total_amount,
-        doc.line_items
+        doc.line_items,
+        doc.promo_code,
+        doc.promo_discount
     )
     .fetch_one(&mut *conn)
     .await?;
@@ -191,6 +197,8 @@ pub async fn supersede_active(
             jmd_tax_amount,
             jmd_total_amount,
             line_items,
+            promo_code,
+            promo_discount,
             created_at
         "#,
         booking_id,
@@ -247,6 +255,8 @@ where
             jmd_tax_amount,
             jmd_total_amount,
             line_items,
+            promo_code,
+            promo_discount,
             created_at
         FROM tax_document
         WHERE booking_id = $1
@@ -309,6 +319,8 @@ where
             jmd_tax_amount,
             jmd_total_amount,
             line_items,
+            promo_code,
+            promo_discount,
             created_at
         FROM tax_document
         WHERE booking_id = $1 AND document_number = $2
@@ -392,7 +404,7 @@ pub async fn issue_payment_receipt(
     };
 
     let accommodation_net = booking.accommodation_net();
-    let cleaning_fee = booking.cleaning_fee;
+    let cleaning_fee = booking.cleaning_net();
     let taxable_amount = accommodation_net + cleaning_fee;
     let tax_rate = booking.tax_rate;
     let tax_amount = booking
@@ -495,6 +507,8 @@ pub async fn issue_payment_receipt(
         jmd_tax_amount,
         jmd_total_amount,
         line_items: line_items_val,
+        promo_code: promo_code_of(booking),
+        promo_discount: booking.promo_stay_discount + booking.promo_cleaning_discount,
     };
 
     insert_tax_document(conn, &new_doc).await
@@ -552,7 +566,7 @@ pub async fn issue_tax_invoice(
     };
 
     let accommodation_net = booking.accommodation_net();
-    let cleaning_fee = booking.cleaning_fee;
+    let cleaning_fee = booking.cleaning_net();
     let taxable_amount = accommodation_net + cleaning_fee;
     let tax_rate = booking.tax_rate;
     let tax_amount = booking
@@ -644,6 +658,8 @@ pub async fn issue_tax_invoice(
         jmd_tax_amount,
         jmd_total_amount,
         line_items: line_items_val,
+        promo_code: promo_code_of(booking),
+        promo_discount: booking.promo_stay_discount + booking.promo_cleaning_discount,
     };
 
     insert_tax_document(conn, &new_doc).await
@@ -698,6 +714,8 @@ where
             jmd_tax_amount,
             jmd_total_amount,
             line_items,
+            promo_code,
+            promo_discount,
             created_at
         FROM tax_document
         WHERE booking_id = $1 AND document_type = $2 AND status = 'issued'::tax_document_status
@@ -709,6 +727,14 @@ where
     .await?;
 
     Ok(row)
+}
+
+/// The code a booking redeemed, for showing on its documents.
+fn promo_code_of(booking: &Booking) -> Option<String> {
+    booking
+        .promo_terms
+        .as_ref()
+        .map(|terms| terms.0.code.clone())
 }
 
 /// Issues a statutory refund receipt (`REF-YYYY-{code}`) upon booking cancellation.
@@ -760,7 +786,7 @@ pub async fn issue_refund_receipt(
     let accommodation_net = booking.accommodation_net();
     let amounts = common::cancellation::RefundableAmounts::new(
         accommodation_net,
-        booking.cleaning_fee,
+        booking.cleaning_net(),
         booking.damage_deposit,
         booking.platform_fee,
         booking.tax_rate,
@@ -872,6 +898,8 @@ pub async fn issue_refund_receipt(
         jmd_tax_amount,
         jmd_total_amount,
         line_items: line_items_val,
+        promo_code: promo_code_of(booking),
+        promo_discount: booking.promo_stay_discount + booking.promo_cleaning_discount,
     };
 
     insert_tax_document(conn, &new_doc).await
@@ -967,6 +995,7 @@ mod tests {
                 damage_deposit: Some(dec!(100.00)),
                 guests_included: None,
                 extra_guest_fee: None,
+                is_active: true,
             },
         )
         .await
@@ -1035,6 +1064,8 @@ mod tests {
                 metadata as "metadata: Json<crate::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -1138,5 +1169,137 @@ mod tests {
             ref_doc.total_amount + ref_doc.retained_amount.unwrap(),
             booking.total_price
         );
+    }
+}
+
+#[cfg(test)]
+mod promo_tests {
+    //! Promo discounts on tax documents.
+
+    use crate::models::{BookingStatus, SupplierInfo, TaxDocumentType, UpdatedBooking};
+    use crate::promo_tests::{insert_code, migrated_db, raw_booking, raw_listing, raw_user};
+    use common::tax_document::InvoiceLineItem;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    fn supplier() -> SupplierInfo {
+        SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        }
+    }
+
+    /// The worked example, held with 10% off the stay and the cleaning fee.
+    async fn promo_hold(pool: &PgPool, with_promo: bool) -> Uuid {
+        let host = raw_user(pool).await;
+        let guest = raw_user(pool).await;
+        let villa = raw_listing(pool, host).await;
+        let booking = raw_booking(pool, guest, villa, "pending").await;
+        sqlx::query(
+            "UPDATE booking SET expires_at = NOW() + INTERVAL '1 hour', sub_total_price = 1000,
+                 discount_value = 100, cleaning_fee = 100, damage_deposit = 200, platform_fee = 40.50,
+                 tax_rate = 0.15, tax_value = 135, total_price = 1275.50, date_from = '2030-06-01',
+                 date_to = '2030-06-08', total_days = 7 WHERE id = $1",
+        )
+        .bind(booking)
+        .execute(pool)
+        .await
+        .unwrap();
+        if with_promo {
+            let code = insert_code(pool, host, "DOCUMENTS").await;
+            sqlx::query(
+                r#"UPDATE booking SET promo_code_id = $2, promo_stay_discount = 90, promo_cleaning_discount = 10,
+                       promo_terms = '{"code":"DOCUMENTS","discount_type":"percentage","discount_value":"10","scope":"stay_and_cleaning","currency":null,"exchange_rate":"1","min_nights":null,"min_booking_value":null,"stay_from":null,"stay_to":null}'
+                   WHERE id = $1"#,
+            )
+            .bind(booking)
+            .bind(code)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+        booking
+    }
+
+    async fn set_status(pool: &PgPool, id: Uuid, status: BookingStatus) {
+        crate::booking::update_booking(
+            pool,
+            id,
+            &UpdatedBooking {
+                status: Some(status),
+                ..Default::default()
+            },
+            &supplier(),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_receipt_taxes_the_discounted_amounts_and_its_lines_add_up() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let booking = promo_hold(&pool, true).await;
+
+        set_status(&pool, booking, BookingStatus::Confirmed).await;
+
+        let docs = crate::tax_document::list_for_booking(&pool, booking)
+            .await
+            .unwrap();
+        let receipt = docs
+            .iter()
+            .find(|d| d.document_type == TaxDocumentType::PaymentReceipt)
+            .expect("a receipt");
+        assert_eq!(receipt.accommodation_net, dec!(810.00));
+        assert_eq!(receipt.cleaning_fee, dec!(90.00));
+        assert_eq!(receipt.taxable_amount, dec!(900.00));
+        assert_eq!(receipt.tax_amount, dec!(135.00));
+        assert_eq!(receipt.total_amount, dec!(1275.50));
+        assert_eq!(receipt.promo_code.as_deref(), Some("DOCUMENTS"));
+        assert_eq!(receipt.promo_discount, dec!(100.00));
+
+        let lines: Vec<InvoiceLineItem> =
+            serde_json::from_value(receipt.line_items.clone()).unwrap();
+        let sum: Decimal = lines.iter().map(|l| l.total_amount).sum();
+        assert_eq!(sum, receipt.total_amount);
+    }
+
+    #[tokio::test]
+    async fn a_refund_returns_what_a_promo_guest_paid() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let booking = promo_hold(&pool, true).await;
+        set_status(&pool, booking, BookingStatus::Confirmed).await;
+
+        set_status(&pool, booking, BookingStatus::Cancelled).await;
+
+        let docs = crate::tax_document::list_for_booking(&pool, booking)
+            .await
+            .unwrap();
+        let refund = docs
+            .iter()
+            .find(|d| d.document_type == TaxDocumentType::RefundReceipt)
+            .expect("a refund receipt");
+        assert_eq!(refund.total_amount, dec!(1275.50));
+        assert_eq!(refund.cleaning_fee, dec!(90.00));
+        assert_eq!(refund.promo_code.as_deref(), Some("DOCUMENTS"));
+    }
+
+    #[tokio::test]
+    async fn a_document_without_a_promo_is_unchanged() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let booking = promo_hold(&pool, false).await;
+        set_status(&pool, booking, BookingStatus::Confirmed).await;
+
+        let docs = crate::tax_document::list_for_booking(&pool, booking)
+            .await
+            .unwrap();
+        assert_eq!(docs[0].promo_code, None);
+        assert_eq!(docs[0].promo_discount, Decimal::ZERO);
+        assert_eq!(docs[0].cleaning_fee, dec!(100.00));
     }
 }

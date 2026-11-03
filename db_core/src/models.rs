@@ -180,6 +180,15 @@ pub struct Booking {
     /// Base to payment exchange rate.
     pub exchange_rate: Decimal,
 
+    /// Promo code redeemed by this booking, if any.
+    pub promo_code_id: Option<Uuid>,
+    /// Snapshot of the code's terms at hold time.
+    pub promo_terms: Option<Json<common::promo::PromoTerms>>,
+    /// Promo discount taken from the stay.
+    pub promo_stay_discount: Decimal,
+    /// Promo discount taken from the cleaning fee.
+    pub promo_cleaning_discount: Decimal,
+
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
@@ -187,9 +196,16 @@ pub struct Booking {
 }
 
 impl Booking {
-    /// Calculate net accommodation price after subtracting discounts.
+    /// Net accommodation price after weekly or monthly discounts and any promo.
     pub fn accommodation_net(&self) -> Decimal {
-        self.sub_total_price - self.discount_value.unwrap_or(Decimal::ZERO)
+        self.sub_total_price
+            - self.discount_value.unwrap_or(Decimal::ZERO)
+            - self.promo_stay_discount
+    }
+
+    /// Cleaning fee after any promo.
+    pub fn cleaning_net(&self) -> Decimal {
+        self.cleaning_fee - self.promo_cleaning_discount
     }
 }
 
@@ -280,6 +296,22 @@ pub struct NewBooking {
     pub tax_rate: Decimal,
     /// Base to payment exchange rate.
     pub exchange_rate: Decimal,
+    /// The promo code this booking redeems, if any.
+    #[serde(default)]
+    pub promo: Option<NewBookingPromo>,
+}
+
+/// A promo code being redeemed by a new booking.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NewBookingPromo {
+    /// The code being redeemed.
+    pub promo_code_id: Uuid,
+    /// Snapshot of the code's terms.
+    pub terms: common::promo::PromoTerms,
+    /// Discount taken from the stay.
+    pub stay_discount: Decimal,
+    /// Discount taken from the cleaning fee.
+    pub cleaning_discount: Decimal,
 }
 
 /// Parameters for mutating an existing booking.
@@ -321,6 +353,15 @@ pub struct UpdatedBooking {
     pub tax_rate: Option<Decimal>,
     /// Exchange rate.
     pub exchange_rate: Option<Decimal>,
+    /// When true, the discount fields replace the stored values, so `None`
+    /// clears a discount that no longer applies. When false, `None` keeps them.
+    pub replace_discounts: bool,
+    /// New promo discount on the stay, when repriced.
+    pub promo_stay_discount: Option<Decimal>,
+    /// New promo discount on the cleaning fee, when repriced.
+    pub promo_cleaning_discount: Option<Decimal>,
+    /// Removes the promo and frees its use, because the new stay doesn't qualify.
+    pub clear_promo: bool,
 }
 
 /// Immutable audit log entry capturing booking status transitions.
@@ -441,6 +482,10 @@ pub struct NewTaxDocument {
     pub jmd_tax_amount: Decimal,
     pub jmd_total_amount: Decimal,
     pub line_items: serde_json::Value,
+    /// The code the booking redeemed, if any.
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    pub promo_discount: Decimal,
 }
 
 /// Row entity representation of a compliance tax document in PostgreSQL.
@@ -482,6 +527,10 @@ pub struct TaxDocumentRow {
     pub jmd_tax_amount: Decimal,
     pub jmd_total_amount: Decimal,
     pub line_items: serde_json::Value,
+    /// The code the booking redeemed, if any.
+    pub promo_code: Option<String>,
+    /// The whole promo discount. Already reflected in the net amounts.
+    pub promo_discount: Decimal,
     pub created_at: DateTime<Utc>,
 }
 
@@ -526,6 +575,8 @@ impl From<TaxDocumentRow> for common::tax_document::TaxDocumentResponse {
             jmd_tax_amount: r.jmd_tax_amount,
             jmd_total_amount: r.jmd_total_amount,
             line_items,
+            promo_code: r.promo_code,
+            promo_discount: r.promo_discount,
             created_at: r.created_at,
         }
     }
@@ -617,6 +668,8 @@ pub struct ListingWithOwner {
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewListing {
     pub user_id: Uuid,
+    /// Whether guests can see and book the listing.
+    pub is_active: bool,
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
 
@@ -931,6 +984,12 @@ pub struct DbPayoutLedgerEntry {
     pub tax_withheld_amount: Decimal,
     pub exchange_rate: Decimal,
     pub net_payout_amount: Decimal,
+    /// Part of the gross that is the cleaning fee, in this row's currency.
+    pub cleaning_fee_amount: Decimal,
+    /// The promo discount the host funded, in this row's currency.
+    pub promo_discount_amount: Decimal,
+    /// The promo code the booking redeemed, if any.
+    pub promo_code: Option<String>,
     pub status: DbPayoutStatus,
     pub gateway_reference: Option<String>,
     pub failure_reason: Option<String>,
@@ -958,6 +1017,9 @@ impl From<DbPayoutLedgerEntry> for common::payout::PayoutLedgerEntry {
             tax_withheld_amount: e.tax_withheld_amount,
             exchange_rate: e.exchange_rate,
             net_payout_amount: e.net_payout_amount,
+            cleaning_fee_amount: e.cleaning_fee_amount,
+            promo_discount_amount: e.promo_discount_amount,
+            promo_code: e.promo_code,
             status: e.status,
             gateway_reference: e.gateway_reference,
             failure_reason: e.failure_reason,
@@ -1217,6 +1279,10 @@ mod tests {
             platform_fee: dec!(50.00),
             tax_rate: dec!(0.15),
             exchange_rate: dec!(1.0),
+            promo_code_id: None,
+            promo_terms: None,
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

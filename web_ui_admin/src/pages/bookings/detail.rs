@@ -149,6 +149,9 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
                     <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
                         <dt>"Subtotal"</dt><dd id="detail-subtotal" class="text-right tabular-nums">(money(&cur, b.sub_total_price))</dd>
                         <dt>"Discount"</dt><dd class="text-right tabular-nums">(b.discount_value.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
+                        if let Some(code) = b.promo_code.clone() {
+                            <dt>(format!("Promo code {code}"))</dt><dd id="detail-promo" class="text-right tabular-nums">(format!("-{}", money(&cur, b.promo_discount)))</dd>
+                        }
                         <dt>"Cleaning fee"</dt><dd class="text-right tabular-nums">(b.cleaning_fee.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
                         <dt>"Jamaican GCT"</dt><dd id="detail-tax" class="text-right tabular-nums">(b.tax_value.map(|d| money(&cur, d)).unwrap_or_else(|| money(&cur, rust_decimal::Decimal::ZERO)))</dd>
                         <dt>"Platform fee"</dt><dd class="text-right tabular-nums">(b.platform_fee.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
@@ -172,6 +175,9 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
                         let from_guest = change.initiated_by_role == ChangeInitiatorRole::Guest;
 
                         <p class="text-sm">(format!("{} → {}, {} guest(s) · new total {}", change.proposed_date_from, change.proposed_date_to, change.proposed_number_of_persons, money(&change.currency, change.proposed_total_price)))</p>
+                        if let Some(reason) = change.pricing_snapshot.promo_lost_reason.clone() {
+                            <p role="alert" class="text-sm text-destructive">(format!("This change removes the promo discount. {reason}"))</p>
+                        }
 
                         if from_guest {
 

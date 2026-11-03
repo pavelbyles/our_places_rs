@@ -1,5 +1,5 @@
 use chrono::NaiveDate;
-use common::models::{ListingDetails, NewBookingRequest};
+use common::models::{ListingDetails, NewBookingRequest, StayQuoteRequest};
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -26,7 +26,7 @@ use web_ui_common::components::{
 use web_ui_common::guard::guard_failure;
 
 use crate::pages::register::urlencode;
-use crate::quote::quote_for;
+use crate::quote::signed_in_quote;
 use crate::support::{display_currency, jamaica_today, service_token};
 
 path_param!(slug);
@@ -74,6 +74,12 @@ pub struct CheckoutForm {
     /// Optional note to the host.
     #[serde(default)]
     pub message_to_host: String,
+    /// Promo code as typed.
+    #[serde(default)]
+    pub promo_code: String,
+    /// Which button was pressed: `apply_promo`, `remove_promo`, or empty to book.
+    #[serde(default)]
+    pub intent: String,
 }
 
 /// Legacy `{slug}-jmd` style URLs carry an (active) currency in the slug.
@@ -122,6 +128,8 @@ struct CheckoutView {
     arrival_time: String,
     message: String,
     error: Option<String>,
+    promo_code: String,
+    promo_refusal: Option<String>,
 }
 
 #[component]
@@ -180,11 +188,27 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
                                 }
                             </select>
                         </label>
+                        <div class="space-y-2">
+                            <label class=(label) for="checkout-promo-code">"Promo code"</label>
+                            <div class="flex gap-2">
+                                <input id="checkout-promo-code" name="promo_code" maxlength="64" autocomplete="off" value=(v.promo_code.clone()) class=(format!("{input} mt-0 uppercase")) />
+                                <button id="checkout-promo-apply" type="submit" name="intent" value="apply_promo" formnovalidate=(true) class="h-11 shrink-0 rounded-[var(--radius-control,10px)] border border-border px-4 text-sm font-medium">"Apply"</button>
+                                if !v.promo_code.is_empty() {
+                                    <button id="checkout-promo-remove" type="submit" name="intent" value="remove_promo" formnovalidate=(true) class="h-11 shrink-0 rounded-[var(--radius-control,10px)] border border-border px-4 text-sm font-medium">"Remove"</button>
+                                }
+                            </div>
+                            if let Some(refusal) = v.promo_refusal.clone() {
+                                <p id="checkout-promo-refusal" role="alert" class="text-sm text-destructive">(refusal)</p>
+                            }
+                        </div>
                         <label class=(label) for="guest-message">"Message to your host (optional)"
                             <textarea id="guest-message" name="message_to_host" rows="3" maxlength="2000" class=(format!("{input} h-auto py-2"))>(v.message.clone())</textarea>
                         </label>
                         <p class="text-sm text-muted-foreground">"Confirming places a hold on these dates for 2 hours while payment is arranged."</p>
-                        <button id="checkout-submit-btn" type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground">"Confirm reservation"</button>
+                        if v.breakdown.is_none() {
+                            <p id="checkout-no-quote" role="alert" class="text-sm text-destructive">"We couldn't price this stay right now. Please try again shortly, or choose different dates."</p>
+                        }
+                        <button id="checkout-submit-btn" type="submit" disabled=(v.breakdown.is_none()) class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50">"Confirm reservation"</button>
                     </form>
                 }
                 <aside aria-label="Your stay" class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
@@ -206,7 +230,9 @@ async fn load(cx: &Cx, slug: &str, currency: Option<&str>) -> Result<ListingDeta
     get_api_client(cx)
         .get_listing_by_id(slug, currency)
         .await
-        .map_err(|_| not_found().into())
+        .ok()
+        .filter(|details| details.listing.is_active)
+        .ok_or_else(|| not_found().into())
 }
 
 fn valid_stay(
@@ -226,16 +252,34 @@ async fn build_view(
     stay: Option<(NaiveDate, NaiveDate)>,
     guests: u32,
     currency: String,
+    promo_code: String,
 ) -> CheckoutView {
-    let breakdown = match stay {
-        Some((a, b)) => {
-            let cur = (!currency.is_empty()).then_some(currency.as_str());
-            quote_for(cx, details, a, b, cur).await
+    let (first_name, last_name) = split_name(&guest.name);
+    let max_guests = u32::try_from(details.listing.max_guests.max(1)).unwrap_or(1);
+    let quoted = match stay {
+        Some((check_in, check_out)) => {
+            let request = StayQuoteRequest {
+                listing_id: details.listing.id,
+                check_in,
+                check_out,
+                guests: guests.clamp(1, max_guests),
+                currency: Some(currency.clone()).filter(|c| !c.is_empty()),
+                promo_code: Some(promo_code.clone()).filter(|code| !code.trim().is_empty()),
+            };
+            match service_token(cx, guest) {
+                Ok(token) => signed_in_quote(cx, &token, &request).await,
+                Err(e) => {
+                    tracing::error!(guest_id = %guest.user_id, error = ?e, "no checkout quote: could not mint the guest's API token");
+                    None
+                }
+            }
         }
         None => None,
     };
-    let (first_name, last_name) = split_name(&guest.name);
-    let max_guests = u32::try_from(details.listing.max_guests.max(1)).unwrap_or(1);
+    let (breakdown, promo_refusal) = match quoted {
+        Some((breakdown, refusal)) => (Some(breakdown), refusal),
+        None => (None, None),
+    };
     CheckoutView {
         summary: ListingSummary::from(&details.listing),
         slug: details.listing.slug.clone(),
@@ -255,6 +299,8 @@ async fn build_view(
             .to_string(),
         message: String::new(),
         error: None,
+        promo_code,
+        promo_refusal,
     }
 }
 
@@ -276,7 +322,16 @@ pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
     .await?;
     let q = parse_query_params::<StayQuery>(cx).unwrap_or_default();
     let stay = valid_stay(q.check_in, q.check_out);
-    let view_data = build_view(cx, &details, &guest, stay, q.guests.unwrap_or(2), currency).await;
+    let view_data = build_view(
+        cx,
+        &details,
+        &guest,
+        stay,
+        q.guests.unwrap_or(2),
+        currency,
+        String::new(),
+    )
+    .await;
     Ok(view! { checkout_view(v: view_data) })
 }
 
@@ -317,7 +372,21 @@ pub async fn checkout_submit(
     )
     .await?;
     let stay = valid_stay(Some(form.check_in), Some(form.check_out));
-    let mut view_data = build_view(cx, &details, &guest, stay, form.guests, currency.clone()).await;
+    let promo_code = if form.intent == "remove_promo" {
+        String::new()
+    } else {
+        form.promo_code.trim().to_string()
+    };
+    let mut view_data = build_view(
+        cx,
+        &details,
+        &guest,
+        stay,
+        form.guests,
+        currency.clone(),
+        promo_code,
+    )
+    .await;
     view_data.first_name = form.first_name.clone();
     view_data.last_name = form.last_name.clone();
     view_data.email = form.email.clone();
@@ -325,19 +394,24 @@ pub async fn checkout_submit(
     view_data.arrival_time = form.arrival_time.clone();
     view_data.message = form.message_to_host.clone();
 
-    match place_booking(
-        cx,
-        &details,
-        &guest,
-        &form,
-        stay,
-        view_data.max_guests,
-        currency,
-    )
-    .await
-    {
-        Ok(()) => return Err(see_other("/bookings?new_booking=true").into()),
-        Err(message) => view_data.error = Some(message),
+    // Applying or removing a code only reprices the page. Pressing Enter in any
+    // field also lands here, because Apply is the form's first button, so Enter
+    // can never place a booking by accident.
+    if form.intent.is_empty() {
+        match place_booking(
+            cx,
+            &details,
+            &guest,
+            &form,
+            stay,
+            view_data.max_guests,
+            currency,
+        )
+        .await
+        {
+            Ok(()) => return Err(see_other("/bookings?new_booking=true").into()),
+            Err(message) => view_data.error = Some(message),
+        }
     }
     Ok(view! { checkout_view(v: view_data) })
 }
@@ -382,6 +456,7 @@ async fn place_booking(
             currency
         },
         agreed_cancellation_policy: "Flexible".to_string(),
+        promo_code: Some(form.promo_code.trim().to_string()).filter(|code| !code.is_empty()),
     };
     let token = service_token(cx, guest).map_err(|_| {
         tracing::error!(guest_id = %guest.user_id, "booking not placed: could not mint the guest's API token");
@@ -394,27 +469,29 @@ async fn place_booking(
         }
         Err(e) => {
             tracing::info!("booking rejected: {e}");
-            let text = e.to_string();
-            Err(
-                if text.contains("available")
-                    || text.contains("overlap")
-                    || text.contains("conflict")
-                {
-                    "Those dates are no longer available. Please choose different dates."
-                        .to_string()
-                } else if text.contains("max_guests") {
-                    format!("This stay allows 1 to {max_guests} guests.")
-                } else if text.contains("CURRENCY_INACTIVE") {
-                    "This currency is no longer offered. Please choose another currency."
-                        .to_string()
-                } else if text.contains("FX_RATE_UNAVAILABLE") {
-                    "We can't take payment in this currency right now. Please choose another currency."
-                        .to_string()
-                } else {
-                    "We couldn't place your booking. Please try again.".to_string()
-                },
-            )
+            Err(booking_error_message(&e.to_string(), max_guests))
         }
+    }
+}
+
+/// What to tell the guest when `booking_api` refuses a hold. A refused promo code
+/// comes first: nothing else should hide why the discount wasn't given.
+fn booking_error_message(text: &str, max_guests: u32) -> String {
+    if let Some(refusal) = common::app_client::promo_refusal_in_error(text) {
+        refusal.message()
+    } else if text.contains("LISTING_UNAVAILABLE") {
+        "This property is no longer taking bookings.".to_string()
+    } else if text.contains("available") || text.contains("overlap") || text.contains("conflict") {
+        "Those dates are no longer available. Please choose different dates.".to_string()
+    } else if text.contains("max_guests") {
+        format!("This stay allows 1 to {max_guests} guests.")
+    } else if text.contains("CURRENCY_INACTIVE") {
+        "This currency is no longer offered. Please choose another currency.".to_string()
+    } else if text.contains("FX_RATE_UNAVAILABLE") {
+        "We can't take payment in this currency right now. Please choose another currency."
+            .to_string()
+    } else {
+        "We couldn't place your booking. Please try again.".to_string()
     }
 }
 
@@ -433,3 +510,37 @@ legacy_currency_checkout!(checkout_jmd, "/checkout-jmd/{id}", "JMD");
 legacy_currency_checkout!(checkout_eur, "/checkout-eur/{id}", "EUR");
 legacy_currency_checkout!(checkout_gbp, "/checkout-gbp/{id}", "GBP");
 legacy_currency_checkout!(checkout_cad, "/checkout-cad/{id}", "CAD");
+
+#[cfg(test)]
+mod promo_tests {
+    use super::*;
+    use common::promo::PromoRefusal;
+
+    #[test]
+    fn each_promo_refusal_shows_its_own_message() {
+        for refusal in PromoRefusal::ALL {
+            if refusal == PromoRefusal::FxRateUnavailable {
+                continue;
+            }
+            let text = format!(
+                r#"Failed to create booking (422): {{"code":"{}","message":"x"}}"#,
+                refusal.code()
+            );
+            assert_eq!(booking_error_message(&text, 4), refusal.message());
+        }
+    }
+
+    #[test]
+    fn other_refusals_keep_their_messages() {
+        assert!(
+            booking_error_message("Listing is not available", 4).contains("no longer available")
+        );
+        assert!(
+            booking_error_message(r#"{"code":"LISTING_UNAVAILABLE"}"#, 4)
+                .contains("no longer taking bookings")
+        );
+        assert!(booking_error_message("exceeds listing max_guests", 4).contains("1 to 4"));
+        assert!(booking_error_message("FX_RATE_UNAVAILABLE", 4).contains("currency"));
+        assert!(booking_error_message("boom", 4).contains("try again"));
+    }
+}

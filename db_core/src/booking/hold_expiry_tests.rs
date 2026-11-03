@@ -210,3 +210,35 @@ async fn confirmation_fails_without_a_payout_rate_and_leaves_hold_pending() {
         BookingStatus::Pending
     );
 }
+
+#[tokio::test]
+async fn stale_discount_is_kept_or_cleared_as_the_update_asks() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let villa = listing(&pool, host(&pool).await).await;
+    let hold = book(&pool, villa, day(4, 1), day(4, 3)).await;
+    sqlx::query("UPDATE booking SET discount_value = 40 WHERE id = $1")
+        .bind(hold.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let unrelated = UpdatedBooking {
+        door_access_code: Some("1234".to_string()),
+        ..Default::default()
+    };
+    let kept = update_booking(&pool, hold.id, &unrelated, &supplier())
+        .await
+        .unwrap();
+    assert_eq!(kept.discount_value, Some(dec!(40.00)));
+
+    let repriced = UpdatedBooking {
+        replace_discounts: true,
+        ..Default::default()
+    };
+    let cleared = update_booking(&pool, hold.id, &repriced, &supplier())
+        .await
+        .unwrap();
+    assert_eq!(cleared.discount_value, None);
+    assert_eq!(cleared.accommodation_net(), dec!(400.00));
+}

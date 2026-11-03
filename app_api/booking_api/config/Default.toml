@@ -23,6 +23,8 @@ max_attempts = 5
 pending_hold_minutes = 120
 # Seconds within which an "effective now" exchange rate is not backdated (1-300).
 rate_effective_grace_seconds = 60
+# Longest stay a quote or hold accepts, in nights. Only stops absurd date ranges.
+max_stay_nights = 3650
 
 [feature_flags]
 enable_hard_deletes = false

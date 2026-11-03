@@ -15,6 +15,9 @@ pub enum DbError {
     /// Requested calendar dates conflict with an existing reservation.
     #[error("The requested dates are no longer available")]
     DateUnavailable,
+    /// The listing is inactive, so it can't be quoted or held.
+    #[error("This listing is not available for booking")]
+    ListingUnavailable,
     /// Target booking cannot be modified in its current state or dates.
     #[error("Booking is not in a modifiable state: {0}")]
     BookingNotModifiable(String),
@@ -61,11 +64,22 @@ pub enum DbError {
         /// Absolute deviation in percent, for display.
         deviation_pct: Option<rust_decimal::Decimal>,
     },
+    /// A promo code can't be used for this booking.
+    #[error("Promo code refused: {0}")]
+    PromoRefused(common::promo::PromoRefusal),
+    /// A code with this string already exists, in any case.
+    #[error("A promo code with this value already exists")]
+    PromoCodeExists,
+    /// The promo code has already been deactivated.
+    #[error("This promo code has already been deactivated")]
+    PromoAlreadyDeactivated,
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),
 }
 
+/// SQLSTATE: restrict violation (`ON DELETE RESTRICT`).
+pub const SQLSTATE_RESTRICT_VIOLATION: &str = "23001";
 /// SQLSTATE: foreign key violation.
 pub const SQLSTATE_FOREIGN_KEY_VIOLATION: &str = "23503";
 /// SQLSTATE: unique violation.

@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO promo_code (\n            code, discount_type, discount_value, currency, scope, valid_from, valid_to,\n            stay_from, stay_to, min_nights, min_booking_value, total_usage_limit,\n            per_guest_limit, applies_to_all, owner_host_id, created_by\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        {
+          "Custom": {
+            "name": "promo_discount_type",
+            "kind": {
+              "Enum": [
+                "percentage",
+                "fixed"
+              ]
+            }
+          }
+        },
+        "Numeric",
+        "Bpchar",
+        {
+          "Custom": {
+            "name": "promo_scope",
+            "kind": {
+              "Enum": [
+                "stay",
+                "stay_and_cleaning"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Timestamptz",
+        "Date",
+        "Date",
+        "Int4",
+        "Numeric",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9df4ffc9faeb29b56c1330377c672269971960be98c0e5c6927060e90bd8c190"
+}

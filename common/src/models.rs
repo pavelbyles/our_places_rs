@@ -325,6 +325,12 @@ pub struct BookingResponse {
     /// Base to payment exchange rate.
     #[serde(default)]
     pub exchange_rate: Option<Decimal>,
+    /// The promo code the booking redeemed, if any.
+    #[serde(default)]
+    pub promo_code: Option<String>,
+    /// The whole promo discount.
+    #[serde(default)]
+    pub promo_discount: Decimal,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
@@ -353,6 +359,11 @@ pub struct ListingDetails {
     pub rating_summary: Option<ListingRatingSummary>,
 }
 
+/// `NewListingRequest::is_active` when the caller leaves it out.
+fn default_listing_active() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingFilter {
     pub name: Option<String>,
@@ -370,6 +381,9 @@ pub struct ListingFilter {
     /// Optional host slug filter (public; matches `user.slug` exactly).
     #[serde(default)]
     pub host: Option<String>,
+    /// Also return inactive listings. Off by default so guests never see them.
+    #[serde(default)]
+    pub include_inactive: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
@@ -389,6 +403,9 @@ pub struct ListingQueryParams {
     pub user_id: Option<Uuid>,
     /// Optional host slug: only that host's listings.
     pub host: Option<String>,
+    /// Also return inactive listings, for the admin portal and past-stay lookups.
+    #[serde(default)]
+    pub include_inactive: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -481,6 +498,79 @@ pub struct NewBookingRequest {
 
     /// Name of agreed cancellation policy.
     pub agreed_cancellation_policy: String,
+
+    /// Promo code to redeem, as typed. Blank means no code.
+    #[serde(default)]
+    #[validate(length(max = 256))]
+    pub promo_code: Option<String>,
+}
+
+/// Request to price a stay for a signed-in guest.
+#[derive(Debug, Serialize, Deserialize, Clone, Validate, ToSchema)]
+pub struct StayQuoteRequest {
+    /// Property listing identifier.
+    pub listing_id: Uuid,
+    /// First night.
+    pub check_in: NaiveDate,
+    /// Departure date.
+    pub check_out: NaiveDate,
+    /// Guests staying.
+    pub guests: u32,
+    /// Payment currency. Defaults to the listing's.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Promo code as typed. Blank means no code.
+    #[serde(default)]
+    #[validate(length(max = 256))]
+    pub promo_code: Option<String>,
+}
+
+/// A promo code's effect on a quote.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct StayQuotePromo {
+    /// The normalized code.
+    pub code: String,
+    /// The whole discount, across the stay and the cleaning fee.
+    pub discount: Decimal,
+}
+
+/// Why a promo code couldn't be used.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct StayQuoteRefusal {
+    /// The stable error code.
+    pub code: String,
+    /// The message to show the guest.
+    pub message: String,
+}
+
+/// A stay's price. `subtotal - stay_discount - promo.discount + cleaning_fee +
+/// tax_amount + platform_fee + damage_deposit` equals `total_amount`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, ToSchema)]
+pub struct StayQuoteResponse {
+    /// Number of nights.
+    pub nights: i32,
+    /// Payment currency.
+    pub currency: String,
+    /// Average nightly rate after seasonal pricing.
+    pub effective_nightly_rate: Decimal,
+    /// Nights and extra-guest fees, before any discount.
+    pub subtotal: Decimal,
+    /// Weekly or monthly discount.
+    pub stay_discount: Decimal,
+    /// The promo code applied, if any.
+    pub promo: Option<StayQuotePromo>,
+    /// Why a code wasn't applied, if one was given.
+    pub promo_refusal: Option<StayQuoteRefusal>,
+    /// Cleaning fee before any promo.
+    pub cleaning_fee: Decimal,
+    /// GCT.
+    pub tax_amount: Decimal,
+    /// Guest platform fee.
+    pub platform_fee: Decimal,
+    /// Refundable damage deposit.
+    pub damage_deposit: Decimal,
+    /// Amount due.
+    pub total_amount: Decimal,
 }
 
 /// Request payload to update an existing booking reservation.
@@ -510,6 +600,10 @@ pub struct TransferBookingRequest {
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 pub struct NewListingRequest {
+    /// Whether guests can see and book the listing. Active if omitted.
+    #[serde(default = "default_listing_active")]
+    pub is_active: bool,
+
     #[schema(value_type = String, example = "Zen Loft")]
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
@@ -1163,8 +1257,23 @@ pub struct ReservationChangePricingSnapshot {
     pub discount_value: Option<Decimal>,
     /// Net accommodation subtotal after discount (`sub_total_price - discount_value`).
     pub discounted_subtotal: Decimal,
-    /// One-time host cleaning fee.
+    /// One-time host cleaning fee, before any promo.
     pub cleaning_fee: Decimal,
+    /// Promo discount on the stay.
+    #[serde(default)]
+    pub promo_stay_discount: Decimal,
+    /// Promo discount on the cleaning fee.
+    #[serde(default)]
+    pub promo_cleaning_discount: Decimal,
+    /// Cleaning fee after any promo.
+    #[serde(default)]
+    pub cleaning_net: Decimal,
+    /// Whether the booking keeps its promo on these terms.
+    #[serde(default)]
+    pub promo_retained: bool,
+    /// Why the booking would lose its promo on these terms, if it would.
+    #[serde(default)]
+    pub promo_lost_reason: Option<String>,
     /// Refundable security damage deposit.
     pub damage_deposit: Decimal,
     /// Guest platform service fee (5% of `discounted_subtotal`).
@@ -1243,6 +1352,8 @@ pub struct ReservationChangeQuoteResponse {
     pub host_payout_delta: Decimal,
     /// Detailed breakdown of the proposed pricing calculation.
     pub pricing_snapshot: ReservationChangePricingSnapshot,
+    /// What happens to the booking's promo on these terms.
+    pub promo_outcome: crate::promo::PromoOutcome,
     /// Date on which a pending request for these terms will auto-expire.
     pub expires_at_date: NaiveDate,
 }

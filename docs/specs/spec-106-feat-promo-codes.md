@@ -5,11 +5,14 @@
 ## Overview
 The admin and hosts can create promo codes, and signed-in guests can redeem them at checkout. A discount is priced by `BookingCalculator` after weekly/monthly discounts and before tax, so it reduces the guest's total, the GCT, the guest platform fee, the host's gross and the host's commission. Each booking keeps a snapshot of the code's terms. Usage is derived from live booking status under a row lock, so concurrent checkouts can't exceed a limit and expired holds free their use without any cleanup.
 
-This work also changes four things for all bookings, promo or not:
+This work also changes these things for all bookings, promo or not:
 - Host payout now includes the cleaning fee, with commission charged on the whole gross.
 - Direct booking updates no longer keep a weekly/monthly discount that has stopped applying.
 - Retained payouts on partial refunds are actually written to the ledger.
 - The listing page and checkout show the same server-calculated total as the hold.
+- Quotes and holds reject stays over a configurable limit, far above any real booking.
+- Host emails state the real net payout and retained amount.
+- Ledger CSV exports are protected against spreadsheet formulas.
 
 **Personas**: Guest (redeems a code) · Host (manages their own codes, funds every discount on their listings) · Admin (manages all codes).
 
@@ -18,8 +21,8 @@ This work also changes four things for all bookings, promo or not:
 ## 1. Requirements
 
 ### 1.1. Promo Codes
-1. **Code format**: trimmed, then uppercased; must match `^[A-Z0-9-]{4,32}$`. Unique across the platform, so a deactivated code's string can't be reused.
-2. **Discount**: `percentage` (`0 < value <= 100`) or `fixed` (`value > 0`, in the code's stated currency).
+1. **Code format**: trimmed, then uppercased; must match `^[A-Z0-9][A-Z0-9-]{3,31}$`, so it can't start with a hyphen. Unique across the platform, so a deactivated code's string can't be reused.
+2. **Discount**: `percentage` (`0 < value <= 100`) or `fixed` (`value > 0`, in the code's stated currency). All amounts and percentages have at most 2 decimal places, and more is rejected, not rounded.
 3. **Currency**: required when the discount is `fixed` or `min_booking_value` is set; otherwise empty. Must be an active currency at creation.
 4. **Validity period**: `valid_from` and `valid_to` are both required, with `valid_to > valid_from`.
 5. **Stay window** (optional): `stay_from` and/or `stay_to`, where `stay_to` is the last eligible night. Every night of the stay must fall inside the window.
@@ -28,7 +31,7 @@ This work also changes four things for all bookings, promo or not:
 8. **Listings**: all or selected.
    - An admin's "all" covers every listing, including ones added later.
    - A host's "all" covers that host's listings, including ones added later.
-   - Selected listings must be owned by the host when a host creates the code, otherwise 403.
+   - Selected listings can't be empty, and must be owned by the host when a host creates the code, otherwise 403.
 9. **Scope**: `stay` or `stay_and_cleaning`. Extra-guest fees are in the subtotal, so they're discounted in both. The guest platform fee, damage deposit and GCT are never discounted.
 10. **Immutable terms**: there is no edit endpoint. Deactivation is one-way and there is no delete.
 
@@ -39,7 +42,7 @@ This work also changes four things for all bookings, promo or not:
 | List and view | All codes | Own codes only (`owner_host_id = caller`) |
 | Deactivate | Any code | Own codes only |
 
-- Admin-created codes have `owner_host_id = NULL`. A host can't see or deactivate them, even when they apply to that host's listing. The discount still appears in the host's ledger.
+- Admin-created codes have `owner_host_id = NULL`. A host can't list or deactivate them, even when they apply to that host's listing. The code and discount still appear on that host's own bookings, ledger, emails and documents.
 - A host-owned code applies only while `listing.user_id = owner_host_id`, including selected listings. A later ownership change can't make a different host fund it.
 - Any other staff access returns 403. Non-staff callers get 403 through `require_staff`.
 
@@ -81,7 +84,7 @@ net        = max(0, gross − commission)
 | Guest total | 1,275.50 |
 | Host gross / commission / net | 900 / 90 / 810 |
 
-A fixed discount goes to the stay first, and only the remainder to the cleaning fee. A 100% discount is allowed: the guest then pays only the deposit and any remaining taxable amounts.
+A fixed discount goes to the stay first, and only the remainder to the cleaning fee. A 100% discount is allowed, including on host-created codes: the guest then pays only the deposit and any remaining taxable amounts.
 
 ### 1.4. Validation
 Checks run in this order and stop at the first failure, so the reason shown is predictable. All are pure functions in `common::promo`, except the lookups that supply their inputs.
@@ -123,19 +126,21 @@ r.released_at IS NULL AND (
 
 Per-guest counts join to `booking.guest_id`, so the redemption has no guest column to drift.
 
+A quote counts without taking a lock and excludes the guest's own `pending` bookings from both counts, because the hold would cancel them. Otherwise a guest returning to checkout would be refused a code the hold would accept. Confirmation takes the promo lock and re-checks expiry, so a hold that lost its use can't be confirmed after another guest took it.
+
 ### 1.6. Reservation Changes
 Both repricing paths use the booking's snapshot, not the live code. `reprice` is in `booking_updates.rs` and the change quote is in `reservation_changes.rs`.
 1. Run checks 7–9 against the new stay and the snapshot.
 2. **Passes**: recalculate with the snapshotted terms and rate. A percentage follows the new amounts. A fixed amount stays the same, subject to the cap.
-3. **Fails**: the discount is removed, and the promo fields are cleared on the booking. The redemption is released, and the snapshot stays in `booking_history`. The guest's change page shows this before they accept.
+3. **Fails**: the discount is removed, and the promo fields are cleared on the booking. The redemption is released, and the snapshot stays in `booking_history`. The guest sees this before accepting: on the change page for their own request, and on the pending-change banner for a host-proposed one.
 4. Validity dates, deactivation and usage limits aren't rechecked.
 
 ### 1.7. Host Payout (All Bookings)
 1. Every gross calculation uses `common::pricing::host_gross(accommodation_net, cleaning_net, rate)`. There is one formula in the code.
 2. Commission applies to the whole gross.
 3. The migration doesn't change existing ledger rows.
-4. Revising an older booking uses the new formula, so its gross gains the cleaning fee at that point (`update.rs:321`, `reservation_changes.rs:228,237`).
-5. **Change approval recalculates.** `approve_change_request` writes `snap.host_gross_amount` today, so a request created before this release would apply the old formula. It now calculates gross and net from the updated booking, using the ledger row's stored `exchange_rate` and `platform_fee_pct`.
+4. Revising an older booking uses the new formula, so its gross gains the cleaning fee at that point (`update.rs:321`, `reservation_changes.rs:228,237`). A revision uses the ledger row's `currency`, `exchange_rate` and `platform_fee_pct`, not the host's current settings. Today a host changing `default_currency` would put a converted amount under the row's old currency label.
+5. **Change approval recalculates.** `approve_change_request` writes `snap.host_gross_amount` today, so a request created before this release would apply the old formula. It now calculates gross and net from the updated booking, using the ledger row's stored `exchange_rate` and `platform_fee_pct`. The change quote uses the row's percentage too, so the quote and approval agree.
 6. On cancellation, the cleaning fee is still refunded in full, so the retained payout is accommodation only.
 
 ### 1.7.1. Retained Payouts (All Bookings)
@@ -143,9 +148,10 @@ Today a partial refund pays the host nothing, based on reading the code. `settle
 
 | Payout state at cancellation | Retained amount | Result |
 |---|---|---|
-| `pending` | Above 0 | The same row returns to `pending` with the retained gross, commission and net; `cleaning_fee_amount` and `promo_discount_amount` are 0 |
+| `pending` | Above 0 | The same row returns to `pending` with the retained gross, commission and net, using the row's own currency, rate and percentage; `cleaning_fee_amount` and `promo_discount_amount` are 0 |
 | `pending` | 0 | The row stays `cancelled` |
-| `processing` or `paid` | Any | The row is unchanged and a warning is logged. Reconciling money already sent is out of scope |
+| No row (confirmed before the ledger existed) | Above 0 | A retained `pending` row is inserted, as today |
+| `processing`, `paid` or `refunded` | Any | The row is unchanged and a warning is logged. Reconciling money already sent is out of scope |
 
 Cancellations already processed aren't corrected.
 
@@ -154,6 +160,9 @@ The listing page and checkout currently use `stay_price`, a portal-side calculat
 
 For the same listing, dates, guests, currency and instant, with no code, the listing page, checkout and hold show the same total.
 
+### 1.7.3. Maximum Stay (All Bookings)
+Stays over a year are valid bookings. Quotes and holds reject stays over `application.max_stay_nights` (default 3650, about 10 years; override with `EA__APPLICATION__MAX_STAY_NIGHTS`; must be positive at startup) with a 400, before any pricing. Pricing runs a per-night loop that allocates memory, and an anonymous `check_out=9999-12-31` is about 2.9 million iterations on a Tokio worker. At the default limit, a request costs about 3,650 iterations and under 100 KB. A stay whose amounts wouldn't fit the booking's money columns (`DECIMAL(10,2)`, up to 99,999,999.99) is also rejected with a 400, at quote and at hold.
+
 ### 1.8. Display
 | Surface | Change |
 |---|---|
@@ -161,9 +170,12 @@ For the same listing, dates, guests, currency and instant, with no code, the lis
 | Checkout | Same server quote, plus the discount line or the refusal reason |
 | Guest and admin booking detail | Code and discount |
 | Guest confirmation email | Promo line; `accommodation_net` and `cleaning_fee` are after-promo figures |
+| Guest completion email | After-promo cleaning fee, so its total equals the tax invoice |
 | Host confirmation and update emails | Promo line; `total_payout` and `currency` come from the ledger row (net, host currency) instead of `sub_total_price` |
-| Tax documents | "Includes promo discount (CODE)" in the totals. Line items stay net, so they still sum to the total |
-| Host ledger and CSV | Cleaning fee, promo code and promo discount |
+| Host cancellation email | `payout_impact` is the ledger's retained net instead of `sub_total_price` |
+| Tax documents | "Includes promo discount (CODE)" in the totals. Line items stay net, so they still sum to the total. |
+| Pending-change banner | The reason a host-proposed change would lose the discount, above "Accept change" |
+| Host ledger and both CSV exports | Cleaning fee, promo code and promo discount. Text cells are protected against spreadsheet formulas |
 | `docs/ARCHITECTURE.md` §4.2 | Pricing order, lock order and payout formula |
 
 ### 1.9. Exclusions / Non-Goals
@@ -196,6 +208,12 @@ For the same listing, dates, guests, currency and instant, with no code, the lis
 | Change request pending when the discount would be lost | Each new quote re-evaluates, and approval applies the stored snapshot's outcome |
 | Change request created before this release | `promo_retained` defaults to `false`. These bookings have no promo, so nothing changes. Payout uses the new formula (§1.7) |
 | Blank code on the form | Treated as no code |
+| Malformed code on the form | `PROMO_NOT_FOUND`, never a full-price hold |
+| Quote unavailable at checkout, such as on a cold-start timeout | No total shown and "Confirm reservation" disabled |
+| Hold confirmed at the moment it expires | The promo lock and fresh expiry check make it either confirmed with its use still counted, or `HOLD_EXPIRED` |
+| Host changes `default_currency` before a revision or cancellation | The ledger row keeps its currency and rate |
+| Two promo holds wait on one code | `lock_timeout` of 5 seconds, then a retryable 503 |
+| Approving a change that keeps a promo after a direct edit removed it | Refused |
 | Listing page dates that can't be quoted (below minimum stay, too many guests, no rate) | No price is shown, as today. Never a fallback figure |
 
 ---
@@ -203,7 +221,7 @@ For the same listing, dates, guests, currency and instant, with no code, the lis
 ## 3. Technical Implementation
 
 ### 3.1. Data Model
-One new timestamped migration, created with `sqlx migrate add`.
+One new timestamped migration, created with `sqlx migrate add`. It takes its table locks first, following `20261101231550`.
 
 ```sql
 CREATE TYPE promo_discount_type AS ENUM ('percentage', 'fixed');
@@ -211,7 +229,7 @@ CREATE TYPE promo_scope AS ENUM ('stay', 'stay_and_cleaning');
 
 CREATE TABLE promo_code (
   id                UUID PRIMARY KEY DEFAULT uuidv7(),
-  code              VARCHAR(32) NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9-]{4,32}$'),
+  code              VARCHAR(32) NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9][A-Z0-9-]{3,31}$'),
   discount_type     promo_discount_type NOT NULL,
   discount_value    NUMERIC(12,2) NOT NULL CHECK (discount_value > 0),
   currency          CHAR(3) REFERENCES currencies(code) ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -286,9 +304,11 @@ ALTER TABLE tax_document
 **New `common/src/promo.rs`**:
 - `PromoTerms`: the snapshot stored in `booking.promo_terms`. Holds code, type, value, scope, currency, snapshotted rate, minimums and stay window.
 - `PromoRefusal`: one variant per §1.4 code, with `code()` and a guest-facing `message()`.
-- `normalize_code(&str) -> Option<String>`.
-- `check_redeemable(status, usage, now) -> Result<(), PromoRefusal>`: checks 2–4 and 10–11.
+- `normalize_code(&str) -> Result<Option<String>, PromoRefusal>`: blank is `Ok(None)`, malformed is `Err`.
+- `check_status(status, now) -> Result<(), PromoRefusal>`: checks 2–4.
 - `check_stay_rules(terms, stay, eligible_amount) -> Result<(), PromoRefusal>`: checks 7–9.
+- `check_usage(terms, usage) -> Result<(), PromoRefusal>`: checks 10–11.
+- `validate_new_code(...)`: the §1.1 rules.
 
 **`common/src/pricing.rs`**:
 - Add a `PromoApplied` type-state. `apply_taxes` moves from `Discounted` to `PromoApplied`, so no pricing path can skip the step:
@@ -309,7 +329,7 @@ ALTER TABLE tax_document
 **DTOs in `common/src/models.rs`**:
 - `NewBookingRequest` gains `#[serde(default)] promo_code: Option<String>`.
 - `BookingResponse` gains `promo_code` and `promo_discount`.
-- `ReservationChangePricingSnapshot` gains `#[serde(default)]` fields `promo_stay_discount`, `promo_cleaning_discount`, `cleaning_net` and `promo_retained`.
+- `ReservationChangePricingSnapshot` gains `#[serde(default)]` fields `promo_stay_discount`, `promo_cleaning_discount`, `cleaning_net`, `promo_retained` and `promo_lost_reason`.
 - `ReservationChangeQuoteResponse` gains `promo_outcome`: none, kept, or lost with a reason.
 
 **Email and ledger**: payloads in `common/src/email.rs` gain `#[serde(default)]` promo fields. `common/src/payout.rs` and `common/src/csv.rs` gain the new ledger columns, added at the end of the CSV header.
@@ -326,11 +346,11 @@ ALTER TABLE tax_document
 
 ```text
 lock listing → ensure currency active → overlap check → cancel guest's other holds
-→ SELECT promo_code ... FOR UPDATE → count usage → check_redeemable
+→ SELECT promo_code ... FOR UPDATE → count usage (separate statement) → check_status, check_usage
 → INSERT booking → INSERT redemption → history → COMMIT
 ```
 
-The lock order is listing → currency → promo code. A refusal returns `DbError::PromoRefused(PromoRefusal)` and rolls back the transaction.
+The lock order is listing → currency → the guest's other pending bookings → promo code, and confirmation takes listing → booking → promo code. A refusal returns `DbError::PromoRefused(PromoRefusal)` and rolls back the transaction.
 
 **Stale discount fix**: `UpdatedBooking` gains `replace_discounts: bool`, set by `reprice`. In `write_booking_update`:
 
@@ -342,9 +362,9 @@ The promo columns follow the same flag. When a promo is lost, the same transacti
 
 **Host payout**: `start_host_payout`, `revise_confirmed_terms` and `approve_change_request` use `host_gross`. They also write `cleaning_fee_amount` and `promo_discount_amount`.
 
-**Retained payouts**: `settle_cancellation` uses the ledger ID returned by `cancel_pending_payout_for_booking`. A new `reopen_payout_as_retained` updates that row `WHERE id = $1 AND status = 'cancelled'`, setting gross, commission percentage and amount, net, exchange rate and `pending` status. `create_payout_ledger_entry` keeps `DO NOTHING`, which makes confirmation safe to repeat.
+**Retained payouts**: `settle_cancellation` uses the ledger ID returned by `cancel_pending_payout_for_booking`. A new `reopen_payout_as_retained` updates that row `WHERE id = $1 AND status = 'cancelled'`, setting gross, commission amount, net and `pending` status, calculated from the row's own rate and percentage. When no row was cancelled, `create_payout_ledger_entry` inserts one if none exists. It keeps `DO NOTHING`, which makes confirmation safe to repeat, and now returns rows affected.
 
-**Tax documents**: all three builders (`tax_document.rs:394`, `:554`, `:760`) use `cleaning_net()`. `RefundableAmounts` also takes the net cleaning fee, so the refund matches what the guest paid.
+**Tax documents**: all three builders (`tax_document.rs:394`, `:554`, `:760`) use `cleaning_net()`. `RefundableAmounts` also takes the net cleaning fee, there and in `get_cancellation_quote` (`documents.rs:35`), so the quote and refund match what the guest paid.
 
 ### 3.4. API (`booking_api`)
 A new `apis/promo_codes.rs` handles management. The stay pricing in `bookings.rs` moves to a shared `price_stay` function that the quote and the hold both call, so they can't disagree.
@@ -366,14 +386,15 @@ A new `apis/promo_codes.rs` handles management. The stay pricing in `bookings.rs
   "subtotal": "1000.00", "stay_discount": "100.00",
   "promo": { "code": "SUMMER", "discount": "100.00" },
   "promo_refusal": null,            // or { "code": "PROMO_EXPIRED", "message": "..." }
-  "cleaning_fee": "90.00", "tax_amount": "135.00",
+  "cleaning_fee": "100.00", "tax_amount": "135.00",
   "platform_fee": "40.50", "damage_deposit": "200.00", "total_amount": "1275.50"
 }
 ```
 
 - The public quote is registered before the protected scope, like `unavailable-ranges`, and on its own path. A public resource at `/api/v1/bookings/quote` would answer the signed-in `POST` with 405 instead of falling through to the scope. It takes no promo code, so codes can't be tested signed out.
 - Register `POST /quote` before any parameterised route in the scope.
-- Per-guest counts at quote use `claims.sub`. The hold already rejects `guest_id != claims.sub` (`bookings.rs:52`).
+- `cleaning_fee` in the quote is the gross fee, and `promo.discount` is `P_A + P_C`, so the rows add up to the total.
+- `POST /quote` calls `caller()`, which rejects deactivated accounts. Per-guest counts at quote use `claims.sub`. The hold already rejects `guest_id != claims.sub` (`bookings.rs:52`).
 - Host emails read the ledger row. If it's missing, log an error and don't send a payout figure: no fallback amount.
 - Update `apis/mod.rs` display conversion, `apis/routes.rs` and the utoipa registration.
 - Add the new paths to `openapi.yaml` and `openapi-prod.yaml`, or the gateway won't route them.
@@ -394,7 +415,7 @@ A new `apis/promo_codes.rs` handles management. The stay pricing in `bookings.rs
 
 **`web_ui_common` `price_breakdown`**: `PriceBreakdown` gains `platform_fee`, `promo_code` and `promo_discount`, with new IDs `breakdown-platform-fee` and `breakdown-promo`. The listing page leaves the promo fields as `None`.
 
-**Change page (`booking_change.rs`)**: warn when `promo_outcome` is lost, with the reason.
+**Change page (`booking_change.rs`) and pending-change banner (`bookings.rs`)**: warn when the discount would be lost, with the reason.
 
 **Admin (`web_ui_admin/src/pages/promo_codes.rs`)**: follows `currencies.rs`.
 - `GET /admin/promo-codes`, `POST /admin/promo-codes` and `POST /admin/promo-codes/{id}/deactivate`, using the same card and `hx-post` pattern.
@@ -411,10 +432,11 @@ No new jobs. In `email_worker/src/processor.rs`, templates use plain `{{placehol
 ---
 
 ## 4. Performance Considerations
-- **Listing page**: each date or guest change makes one API call that replaces the portal's listing and price-override fetches. The public quote runs the same read-only queries as the hold's pricing, takes no lock, and is unthrottled like the public availability endpoint.
+- **Listing page**: each date or guest change makes one API call that replaces the portal's listing and price-override fetches. The public quote runs the same read-only queries as the hold's pricing, takes no lock, and is unthrottled like the public availability endpoint, and limited by `application.max_stay_nights`.
 - **Signed-in quote**: adds at most three indexed lookups: the code, listing eligibility and the usage count. Rate lookup is the existing single indexed query.
 - **Usage count**: scans only unreleased redemptions for that code through `idx_promo_redemption_code`. Cost grows with a code's uses and each lookup is by primary key on `booking`, which is fine at this scale.
-- **Promo row lock**: held for the hold transaction only, and only holds using the same code contend. Calls with no code take no extra lock.
+- **Promo row lock**: held for the hold or confirmation transaction only, and only those using the same code contend. Confirmation of a promo booking can therefore return the same retryable 503. Calls with no code take no extra lock. Each waiter holds a connection from the pool of 5 and its listing lock, so during a flash sale a popular code can slow other requests on that instance. A 5-second `lock_timeout` bounds this, returning a retryable 503.
+- **Usage count skip**: no count runs when a code has no limits.
 - **Admin list**: one grouped stats query per page, with no N+1.
 - **Cold start**: no new startup work or dependencies. `sha2` is already in `booking_api`.
 - **Async**: no blocking or CPU-heavy work added.
@@ -430,8 +452,13 @@ No new jobs. In `email_worker/src/processor.rs`, templates use plain `{{placehol
 | Public quote | Read-only, returns only prices the listing page already shows, and takes no code |
 | Tampered price from the portal | The server prices everything from the code; the client sends only the code string |
 | Injection | `sqlx` parameterised queries only; code format validated before lookup |
-| XSS | Codes are limited to `[A-Z0-9-]`, and Topcoat escapes output |
-| Code guessing | **Not mitigated until #110 ships.** Failed attempts log the guest ID, the reason and a SHA-256 hash of the code, never the plain code. Usage limits cap the cost of a guessed code |
+| XSS | Topcoat escapes output, including raw input re-rendered after a refused code |
+| Code guessing | **Not mitigated until #110 ships.** Failed attempts at quote and hold log the guest ID, the reason and a SHA-256 hash of the code, never the plain code. Usage limits cap the cost of a guessed code |
+| Plain codes in logs and traces | Spans record arguments through `Debug` and are exported to Cloud Trace, so `create_booking` and `update_booking` skip those structs and name safe fields instead. This also stops `message_to_host` and `business_tax_id` reaching spans. A captured-subscriber test covers it |
+| Spreadsheet formulas in exports | Text cells go through `csv_cell`, and codes can't start with a hyphen |
+| Admin codes reaching hosts | Accepted by the product owner: a host sees the code on their own bookings, and could share it. Guests hold these codes anyway, and usage limits cap the cost |
+| Host-created 100% codes | Accepted by the product owner: a host could take payment off-platform and use a private 100% code to remove commission, guest platform fee and GCT. Every code is visible in the admin list |
+| Memory exhaustion through the public quote | `application.max_stay_nights` limit before pricing |
 | Existence of a code leaking | Accepted: specific refusal reasons, and `PROMO_CODE_EXISTS` at creation, both confirm a code exists |
 | Multiple accounts bypassing per-guest limits | Accepted for the MVP |
 
@@ -481,7 +508,7 @@ Database tests run against the local Postgres in the devenv shell, not Docker.
 - New `admin-portal/promo-codes.spec.ts`: admin creates, lists and deactivates; host sees only their own and only their listings in the picker.
 
 ### Gates
-All of `CONSTRAINTS.md` §2, including `cargo sqlx prepare --workspace --check`, the `f32`/`f64` and `.unwrap()`/`.expect()` checks, and `-D missing_docs`.
+All of `CONSTRAINTS.md` §2, including `cargo sqlx prepare --workspace --check` and the `f32`/`f64` check. The `.unwrap()`/`.expect()` grep, the `env::var` grep and `-D missing_docs` already fail at baseline, so they pass on this branch's diff instead, as in plan Task 30.
 
 ---
 
@@ -505,5 +532,6 @@ All of `CONSTRAINTS.md` §2, including `cargo sqlx prepare --workspace --check`,
 - [ ] 17. With no code, the listing page, checkout and hold show the same total, and the portal-side price calculation is gone.
 - [ ] 18. The portal lists codes with usage stats and deactivates them; used codes can't be deleted.
 - [ ] 19. Failed attempts are logged with a hash of the code, never the code itself.
-- [ ] 20. All `CONSTRAINTS.md` gates pass.
+- [ ] 20. All `CONSTRAINTS.md` gates pass, except the three baseline failures in §6, which pass on this branch's diff.
+- [ ] 21. Stays over a year can be quoted and held, and stays over `application.max_stay_nights` are rejected before pricing.
 

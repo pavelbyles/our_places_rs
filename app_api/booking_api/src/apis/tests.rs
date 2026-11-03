@@ -18,7 +18,9 @@ fn test_booking_calculator_state_machine() {
     assert_eq!(discounted.discounted_subtotal, Decimal::new(900, 0));
 
     // Discounted -> Taxed (15% tax)
-    let taxed = discounted.apply_taxes(Decimal::new(15, 2));
+    let taxed = discounted
+        .apply_promo(None)
+        .apply_taxes(Decimal::new(15, 2));
     assert_eq!(taxed.tax_value.unwrap(), Decimal::new(135, 0));
 
     // Taxed -> Final
@@ -60,6 +62,7 @@ fn test_booking_calculator_with_seasonal_override() {
 
     let calc = BookingCalculator::with_subtotal(quote.effective_daily_rate, 5, quote.subtotal)
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
@@ -186,6 +189,10 @@ fn test_user_bookings_response_mapping() {
         platform_fee: Decimal::new(45, 0),
         tax_rate: Decimal::new(15, 2),
         exchange_rate: Decimal::ONE,
+        promo_code_id: None,
+        promo_terms: None,
+        promo_stay_discount: Decimal::ZERO,
+        promo_cleaning_discount: Decimal::ZERO,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
@@ -247,6 +254,10 @@ fn test_listing_bookings_response_mapping_all_statuses() {
             platform_fee: Decimal::ZERO,
             tax_rate: Decimal::new(15, 2),
             exchange_rate: Decimal::ONE,
+            promo_code_id: None,
+            promo_terms: None,
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -384,6 +395,7 @@ fn test_statutory_tax_resolution_for_jamaican_and_fallback_countries() {
     let tax_rate = SupportedCountry::tax_rate_for("Jamaica");
     let calc = BookingCalculator::new(daily_rate, 5)
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(tax_rate)
         .finalize();
 
@@ -537,6 +549,7 @@ async fn test_get_booking_documents_and_authorization() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -584,6 +597,8 @@ async fn test_get_booking_documents_and_authorization() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -898,6 +913,7 @@ async fn test_booking_date_change_api() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -945,6 +961,8 @@ async fn test_booking_date_change_api() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -1002,6 +1020,8 @@ async fn test_booking_date_change_api() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             b2_id,
@@ -1514,6 +1534,7 @@ async fn test_complete_stays_cron() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -1565,6 +1586,8 @@ async fn test_complete_stays_cron() {
                 metadata as "metadata: Json<db_core::models::BookingMetadata>",
                 door_access_code,
                 cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+                promo_stay_discount, promo_cleaning_discount,
                 created_at, updated_at
             "#,
             booking_id,
@@ -1785,6 +1808,10 @@ fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discou
         platform_fee: dec!(50.00),
         tax_rate: dec!(0.15),
         exchange_rate: dec!(1.0),
+        promo_code_id: None,
+        promo_terms: None,
+        promo_stay_discount: Decimal::ZERO,
+        promo_cleaning_discount: Decimal::ZERO,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
@@ -1806,6 +1833,8 @@ fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discou
         platform_fee: Some(booking.platform_fee),
         damage_deposit: Some(booking.damage_deposit),
         receipt_url: Some("http://localhost:8080/bookings/doc/1".to_string()),
+        promo_code: None,
+        promo_discount: None,
     };
 
     assert_eq!(
@@ -1832,6 +1861,8 @@ fn test_booking_confirmation_guest_payload_accommodation_net_accounts_for_discou
         platform_fee: Some(booking.platform_fee),
         damage_deposit: Some(booking.damage_deposit),
         receipt_url: Some("http://localhost:8080/bookings/doc/1".to_string()),
+        promo_code: None,
+        promo_discount: None,
     };
 
     assert_eq!(
@@ -1917,6 +1948,7 @@ async fn test_unavailable_ranges_endpoint() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -1964,6 +1996,7 @@ async fn test_unavailable_ranges_endpoint() {
                 platform_fee: Decimal::ZERO,
                 tax_rate: dec!(0.1000),
                 exchange_rate: Decimal::ONE,
+                promo: None,
             },
             api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
         )
@@ -2182,6 +2215,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -2210,6 +2244,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -2394,6 +2429,7 @@ async fn test_confirmation_code_collision_is_detected() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -2425,6 +2461,7 @@ async fn test_confirmation_code_collision_is_detected() {
         platform_fee: Decimal::ZERO,
         tax_rate: dec!(0.1500),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
     let (first, second) = (Uuid::now_v7(), Uuid::now_v7());
     for id in [first, second] {

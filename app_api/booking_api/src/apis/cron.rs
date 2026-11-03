@@ -344,6 +344,10 @@ async fn complete_stays_through(
             platform_fee: None,
             tax_rate: None,
             exchange_rate: None,
+            replace_discounts: false,
+            promo_stay_discount: None,
+            promo_cleaning_discount: None,
+            clear_promo: false,
         };
 
         match db_booking::update_booking(pool, booking.id, &update_params, &supplier).await {

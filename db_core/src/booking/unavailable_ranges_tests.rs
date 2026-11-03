@@ -76,6 +76,7 @@ pub(super) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     crate::listing::create_listing(pool, &new_listing)
         .await
@@ -133,6 +134,7 @@ pub(super) async fn book_held(
         platform_fee: Decimal::ZERO,
         tax_rate: dec!(0.1000),
         exchange_rate: Decimal::ONE,
+        promo: None,
     };
     create_booking(pool, &new_booking, hold_minutes)
         .await

@@ -27,6 +27,15 @@ CREATE TEMP TABLE e2e_bookings ON COMMIT DROP AS
   SELECT id FROM booking
   WHERE guest_id IN (SELECT id FROM e2e_users)
      OR guest_id = (SELECT id FROM "user" WHERE email = 'hold.expiry@example.com');
+DELETE FROM promo_code_redemption
+  WHERE booking_id IN (SELECT id FROM e2e_bookings)
+     OR promo_code_id IN (SELECT id FROM promo_code WHERE code LIKE 'E2E-%' OR created_by IN (SELECT id FROM e2e_users));
+DELETE FROM promo_code_listing
+  WHERE listing_id IN (SELECT id FROM listing WHERE user_id IN (SELECT id FROM e2e_users) OR name LIKE 'E2E listing %')
+     OR promo_code_id IN (SELECT id FROM promo_code WHERE code LIKE 'E2E-%' OR created_by IN (SELECT id FROM e2e_users));
+UPDATE booking SET promo_code_id = NULL, promo_terms = NULL
+  WHERE promo_code_id IN (SELECT id FROM promo_code WHERE code LIKE 'E2E-%' OR created_by IN (SELECT id FROM e2e_users));
+DELETE FROM promo_code WHERE code LIKE 'E2E-%' OR created_by IN (SELECT id FROM e2e_users);
 DELETE FROM tax_document WHERE booking_id IN (SELECT id FROM e2e_bookings)
                             OR recipient_id IN (SELECT id FROM e2e_users);
 DELETE FROM host_payout_ledger WHERE booking_id IN (SELECT id FROM e2e_bookings);

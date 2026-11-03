@@ -5,6 +5,7 @@ use super::history::record_booking_history;
 use crate::error::Result;
 use crate::models::{Booking, BookingStatus, CancellationPolicy, FeeItem, NewBooking};
 use chrono::Utc;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use sqlx::types::Json;
 use uuid::Uuid;
@@ -14,7 +15,14 @@ use uuid::Uuid;
 /// The hold window comes from the caller's configuration
 /// (`application.pending_hold_minutes` in booking_api), so it can change per
 /// deploy without a rebuild.
-#[tracing::instrument(skip(pool))]
+///
+/// A promo code is checked here, under its row lock, after the guest's other
+/// holds are cancelled, so a guest replacing their own hold doesn't count against
+/// themselves. A refusal rolls everything back, including those cancellations.
+#[tracing::instrument(
+    skip(pool, new_booking),
+    fields(listing_id = %new_booking.listing_id, guest_id = %new_booking.guest_id)
+)]
 pub async fn create_booking(
     pool: &PgPool,
     new_booking: &NewBooking,
@@ -22,13 +30,16 @@ pub async fn create_booking(
 ) -> Result<Booking> {
     let mut tx = pool.begin().await?;
 
-    let _listing = sqlx::query!(
-        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+    let listing = sqlx::query!(
+        "SELECT is_active FROM listing WHERE id = $1 FOR UPDATE",
         new_booking.listing_id
     )
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
+    if !listing.is_active {
+        return Err(crate::error::DbError::ListingUnavailable);
+    }
 
     // Lock order: listing, then currency. A concurrent deactivation waits for
     // this hold (and then sees it), or this hold sees the deactivation.
@@ -74,6 +85,8 @@ pub async fn create_booking(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         new_booking.guest_id,
@@ -92,6 +105,16 @@ pub async fn create_booking(
         .await?;
     }
 
+    if let Some(promo) = &new_booking.promo {
+        let (code, usage) =
+            crate::promo::lock_and_count(&mut tx, promo.promo_code_id, new_booking.guest_id)
+                .await?;
+        common::promo::check_status(code.status(), Utc::now())
+            .and_then(|()| common::promo::check_usage(usage))
+            .map_err(crate::error::DbError::PromoRefused)?;
+    }
+
+    let promo = new_booking.promo.as_ref();
     let booking = sqlx::query_as!(
         Booking,
         r#"
@@ -101,10 +124,11 @@ pub async fn create_booking(
             sub_total_price, discount_value, tax_value, fee_breakdown,
             total_price, cancellation_policy, metadata, door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
-            created_at, updated_at, expires_at
+            created_at, updated_at, expires_at,
+            promo_code_id, promo_terms, promo_stay_discount, promo_cleaning_discount
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
-            NOW() + make_interval(mins => $27))
+            NOW() + make_interval(mins => $27), $28, $29, $30, $31)
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus", 
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
             sub_total_price, discount_value, tax_value, fee_breakdown as "fee_breakdown: Json<Vec<FeeItem>>",
@@ -112,6 +136,8 @@ pub async fn create_booking(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         Uuid::now_v7(),
@@ -140,10 +166,24 @@ pub async fn create_booking(
         new_booking.exchange_rate,
         Utc::now(),
         Utc::now(),
-        hold_minutes
+        hold_minutes,
+        promo.map(|p| p.promo_code_id),
+        promo.map(|p| Json(&p.terms)) as _,
+        promo.map_or(Decimal::ZERO, |p| p.stay_discount),
+        promo.map_or(Decimal::ZERO, |p| p.cleaning_discount)
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(promo) = promo {
+        sqlx::query!(
+            "INSERT INTO promo_code_redemption (promo_code_id, booking_id) VALUES ($1, $2)",
+            promo.promo_code_id,
+            booking.id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
 
     // Record initial history
     record_booking_history(&mut tx, &booking, "Booking created", None).await?;
@@ -182,6 +222,8 @@ pub async fn expire_stale_holds(pool: &PgPool) -> Result<Vec<Booking>> {
             b.metadata as "metadata: Json<crate::models::BookingMetadata>",
             b.door_access_code,
             b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,
+            b.promo_code_id, b.promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            b.promo_stay_discount, b.promo_cleaning_discount,
             b.created_at, b.updated_at
         "#
     )
@@ -220,6 +262,8 @@ pub async fn transfer_booking_guest(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         new_guest_id,

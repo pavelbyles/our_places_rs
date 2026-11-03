@@ -154,6 +154,119 @@ async fn active_document_or_none(
         })
 }
 
+/// The code a booking redeemed and its whole discount, for showing in an email.
+pub(super) fn promo_summary(booking: &Booking) -> (Option<String>, Option<Decimal>) {
+    let code = booking
+        .promo_terms
+        .as_ref()
+        .map(|terms| terms.0.code.clone());
+    let discount = code
+        .as_ref()
+        .map(|_| booking.promo_stay_discount + booking.promo_cleaning_discount);
+    (code, discount)
+}
+
+/// What the guest's confirmation email shows. All amounts are after any promo.
+pub(super) fn guest_confirmation_payload(
+    new_b: &Booking,
+    listing_name: String,
+    guest_name: String,
+    receipt_url: String,
+) -> common::email::BookingConfirmationGuestPayload {
+    let (promo_code, promo_discount) = promo_summary(new_b);
+    common::email::BookingConfirmationGuestPayload {
+        booking_id: new_b.id,
+        confirmation_code: new_b.confirmation_code.clone(),
+        listing_name,
+        date_from: new_b.date_from.to_string(),
+        date_to: new_b.date_to.to_string(),
+        total_price: new_b.total_price,
+        currency: new_b.currency.clone(),
+        guest_name,
+        accommodation_net: Some(new_b.accommodation_net()),
+        cleaning_fee: Some(new_b.cleaning_net()),
+        tax_rate: Some(new_b.tax_rate),
+        tax_amount: new_b.tax_value,
+        platform_fee: Some(new_b.platform_fee),
+        damage_deposit: Some(new_b.damage_deposit),
+        receipt_url: Some(receipt_url),
+        promo_code,
+        promo_discount,
+    }
+}
+
+/// The figures on the guest's stay invoice email, which match the tax invoice:
+/// net accommodation, net cleaning fee, tax and total.
+fn completion_amounts(new_b: &Booking) -> (Decimal, Decimal, Decimal, Decimal) {
+    let accommodation_net = new_b.accommodation_net();
+    let cleaning_fee = new_b.cleaning_net();
+    let tax_amount = new_b
+        .tax_value
+        .unwrap_or_else(|| ((accommodation_net + cleaning_fee) * new_b.tax_rate).round_dp(2));
+    let total_price = accommodation_net + cleaning_fee + tax_amount + new_b.platform_fee;
+    (accommodation_net, cleaning_fee, tax_amount, total_price)
+}
+
+/// A booking's ledger row. A missing row or failed lookup is logged, and the
+/// email goes out with no payout figure rather than a wrong one.
+async fn booking_payout(
+    pool: &PgPool,
+    booking: &Booking,
+) -> Option<db_core::payout_ledger::BookingPayout> {
+    match db_core::payout_ledger::get_booking_payout(pool, booking.id).await {
+        Ok(Some(payout)) => Some(payout),
+        Ok(None) => {
+            tracing::error!(booking_id = %booking.id, "host email sent without a payout figure: no ledger row");
+            None
+        }
+        Err(e) => {
+            tracing::error!(booking_id = %booking.id, error = ?e, "host email sent without a payout figure: ledger lookup failed");
+            None
+        }
+    }
+}
+
+/// What a host's email states about their payout.
+struct HostFigures {
+    total_payout: Option<Decimal>,
+    currency: String,
+    promo_code: Option<String>,
+    promo_discount: Option<Decimal>,
+}
+
+/// The ledger's figures in the ledger's currency, with no figure at all when
+/// there's no ledger row.
+fn host_figures(
+    booking: &Booking,
+    payout: Option<db_core::payout_ledger::BookingPayout>,
+) -> HostFigures {
+    let (promo_code, _) = promo_summary(booking);
+    match payout {
+        Some(payout) => HostFigures {
+            total_payout: Some(payout.net_payout_amount),
+            promo_discount: promo_code.as_ref().map(|_| payout.promo_discount_amount),
+            promo_code,
+            currency: payout.currency,
+        },
+        None => HostFigures {
+            total_payout: None,
+            promo_discount: None,
+            promo_code,
+            currency: booking.currency.clone(),
+        },
+    }
+}
+
+/// What a host still receives after a cancellation: the retained net, or no
+/// figure when nothing is retained.
+fn cancelled_host_figures(
+    booking: &Booking,
+    payout: Option<db_core::payout_ledger::BookingPayout>,
+) -> HostFigures {
+    let retained = payout.filter(|p| p.pending);
+    host_figures(booking, retained)
+}
+
 async fn send_confirmation_emails(pool: &PgPool, recipients: &Recipients, new_b: &Booking) {
     let doc_number = common::tax_document::document_number(
         common::tax_document::TaxDocumentType::PaymentReceipt,
@@ -162,23 +275,12 @@ async fn send_confirmation_emails(pool: &PgPool, recipients: &Recipients, new_b:
         1,
     );
 
-    let guest_payload = common::email::BookingConfirmationGuestPayload {
-        booking_id: new_b.id,
-        confirmation_code: new_b.confirmation_code.clone(),
-        listing_name: recipients.listing_name.clone(),
-        date_from: new_b.date_from.to_string(),
-        date_to: new_b.date_to.to_string(),
-        total_price: new_b.total_price,
-        currency: new_b.currency.clone(),
-        guest_name: recipients.guest_name(),
-        accommodation_net: Some(new_b.accommodation_net()),
-        cleaning_fee: Some(new_b.cleaning_fee),
-        tax_rate: Some(new_b.tax_rate),
-        tax_amount: new_b.tax_value,
-        platform_fee: Some(new_b.platform_fee),
-        damage_deposit: Some(new_b.damage_deposit),
-        receipt_url: Some(document_url(new_b, &doc_number)),
-    };
+    let guest_payload = guest_confirmation_payload(
+        new_b,
+        recipients.listing_name.clone(),
+        recipients.guest_name(),
+        document_url(new_b, &doc_number),
+    );
     enqueue_email(
         pool,
         &recipients.guest.email,
@@ -188,16 +290,19 @@ async fn send_confirmation_emails(pool: &PgPool, recipients: &Recipients, new_b:
     )
     .await;
 
+    let host = host_figures(new_b, booking_payout(pool, new_b).await);
     let host_payload = common::email::BookingConfirmationHostPayload {
         booking_id: new_b.id,
         confirmation_code: new_b.confirmation_code.clone(),
         listing_name: recipients.listing_name.clone(),
         date_from: new_b.date_from.to_string(),
         date_to: new_b.date_to.to_string(),
-        total_payout: new_b.sub_total_price,
-        currency: new_b.currency.clone(),
+        total_payout: host.total_payout,
+        currency: host.currency,
         guest_name: recipients.guest_name(),
         host_name: recipients.host_name(),
+        promo_code: host.promo_code,
+        promo_discount: host.promo_discount,
     };
     enqueue_email(
         pool,
@@ -251,6 +356,7 @@ async fn send_cancellation_emails(pool: &PgPool, recipients: &Recipients, new_b:
     )
     .await;
 
+    let host = cancelled_host_figures(new_b, booking_payout(pool, new_b).await);
     let host_payload = common::email::BookingCancelledHostPayload {
         booking_id: new_b.id,
         confirmation_code: new_b.confirmation_code.clone(),
@@ -258,8 +364,8 @@ async fn send_cancellation_emails(pool: &PgPool, recipients: &Recipients, new_b:
         date_from: new_b.date_from.to_string(),
         date_to: new_b.date_to.to_string(),
         guest_name: recipients.guest_name(),
-        payout_impact: new_b.sub_total_price,
-        currency: new_b.currency.clone(),
+        payout_impact: host.total_payout,
+        currency: host.currency,
     };
     enqueue_email(
         pool,
@@ -319,16 +425,19 @@ async fn send_update_emails(
     )
     .await;
 
+    let host = host_figures(new_b, booking_payout(pool, new_b).await);
     let host_payload = common::email::BookingUpdatedHostPayload {
         booking_id: new_b.id,
         confirmation_code: new_b.confirmation_code.clone(),
         listing_name: recipients.listing_name.clone(),
         date_from: new_b.date_from.to_string(),
         date_to: new_b.date_to.to_string(),
-        total_payout: new_b.sub_total_price,
-        currency: new_b.currency.clone(),
+        total_payout: host.total_payout,
+        currency: host.currency,
         guest_name: recipients.guest_name(),
         changes_summary,
+        promo_code: host.promo_code,
+        promo_discount: host.promo_discount,
     };
     enqueue_email(
         pool,
@@ -355,12 +464,7 @@ async fn send_completion_email(pool: &PgPool, recipients: &Recipients, new_b: &B
             });
     let invoice_url = document_url(new_b, &invoice_number);
 
-    let accommodation_net = new_b.accommodation_net();
-    let cleaning_fee = new_b.cleaning_fee;
-    let tax_amount = new_b
-        .tax_value
-        .unwrap_or_else(|| ((accommodation_net + cleaning_fee) * new_b.tax_rate).round_dp(2));
-    let total_price = accommodation_net + cleaning_fee + tax_amount + new_b.platform_fee;
+    let (accommodation_net, cleaning_fee, tax_amount, total_price) = completion_amounts(new_b);
 
     let guest_payload = common::email::BookingCompletedGuestPayload {
         booking_id: new_b.id,
@@ -629,4 +733,158 @@ pub(super) async fn dispatch_reservation_change_declined_notification(
         &payload,
     )
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{NaiveDate, Utc};
+    use common::promo::{PromoDiscountType, PromoScope, PromoTerms};
+    use db_core::models::{BookingMetadata, CancellationPolicy};
+    use rust_decimal_macros::dec;
+    use sqlx::types::Json;
+    use uuid::Uuid;
+
+    /// The worked example, with or without its 10% promo on the stay and cleaning.
+    pub(super) fn booking(with_promo: bool) -> Booking {
+        let (terms, stay, cleaning, tax, platform, total) = if with_promo {
+            (
+                Some(Json(PromoTerms {
+                    code: "SUMMER".to_string(),
+                    discount_type: PromoDiscountType::Percentage,
+                    discount_value: dec!(10),
+                    scope: PromoScope::StayAndCleaning,
+                    currency: None,
+                    exchange_rate: Decimal::ONE,
+                    min_nights: None,
+                    min_booking_value: None,
+                    stay_from: None,
+                    stay_to: None,
+                })),
+                dec!(90),
+                dec!(10),
+                dec!(135),
+                dec!(40.50),
+                dec!(1275.50),
+            )
+        } else {
+            (
+                None,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                dec!(150),
+                dec!(45),
+                dec!(1395),
+            )
+        };
+        Booking {
+            id: Uuid::nil(),
+            confirmation_code: "ABC123".to_string(),
+            guest_id: Uuid::nil(),
+            listing_id: Uuid::nil(),
+            status: BookingStatus::Confirmed,
+            date_from: NaiveDate::from_ymd_opt(2030, 6, 1).expect("valid date"),
+            date_to: NaiveDate::from_ymd_opt(2030, 6, 8).expect("valid date"),
+            currency: "USD".to_string(),
+            daily_rate: dec!(142.86),
+            number_of_persons: 2,
+            total_days: 7,
+            sub_total_price: dec!(1000),
+            discount_value: Some(dec!(100)),
+            tax_value: Some(tax),
+            fee_breakdown: Json(vec![]),
+            total_price: total,
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: Json(BookingMetadata::default()),
+            door_access_code: None,
+            cleaning_fee: dec!(100),
+            damage_deposit: dec!(200),
+            platform_fee: platform,
+            tax_rate: dec!(0.15),
+            exchange_rate: Decimal::ONE,
+            promo_code_id: terms.as_ref().map(|_| Uuid::nil()),
+            promo_terms: terms,
+            promo_stay_discount: stay,
+            promo_cleaning_discount: cleaning,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn ledger(pending: bool) -> db_core::payout_ledger::BookingPayout {
+        db_core::payout_ledger::BookingPayout {
+            currency: "JMD".to_string(),
+            net_payout_amount: dec!(129600.00),
+            promo_discount_amount: dec!(16000.00),
+            pending,
+        }
+    }
+
+    #[test]
+    fn host_figures_come_from_the_ledger_in_its_currency() {
+        let figures = host_figures(&booking(true), Some(ledger(true)));
+        assert_eq!(figures.total_payout, Some(dec!(129600.00)));
+        assert_eq!(figures.currency, "JMD");
+        assert_eq!(figures.promo_code.as_deref(), Some("SUMMER"));
+        assert_eq!(figures.promo_discount, Some(dec!(16000.00)));
+
+        let figures = host_figures(&booking(false), Some(ledger(true)));
+        assert_eq!(figures.total_payout, Some(dec!(129600.00)));
+        assert_eq!(figures.promo_code, None);
+        assert_eq!(figures.promo_discount, None);
+    }
+
+    #[test]
+    fn host_figures_show_no_amount_without_a_ledger_row() {
+        let figures = host_figures(&booking(true), None);
+        assert_eq!(figures.total_payout, None);
+        assert_eq!(figures.promo_discount, None);
+        assert_eq!(figures.currency, "USD");
+    }
+
+    #[test]
+    fn host_cancellation_figures_show_only_a_retained_amount() {
+        let retained = cancelled_host_figures(&booking(false), Some(ledger(true)));
+        assert_eq!(retained.total_payout, Some(dec!(129600.00)));
+        let nothing = cancelled_host_figures(&booking(false), Some(ledger(false)));
+        assert_eq!(nothing.total_payout, None);
+    }
+
+    #[test]
+    fn the_confirmation_shows_after_promo_figures_and_the_code() {
+        let payload = guest_confirmation_payload(
+            &booking(true),
+            "Villa".to_string(),
+            "Guest".to_string(),
+            "https://example.test/receipt".to_string(),
+        );
+        assert_eq!(payload.accommodation_net, Some(dec!(810)));
+        assert_eq!(payload.cleaning_fee, Some(dec!(90)));
+        assert_eq!(payload.total_price, dec!(1275.50));
+        assert_eq!(payload.promo_code.as_deref(), Some("SUMMER"));
+        assert_eq!(payload.promo_discount, Some(dec!(100)));
+    }
+
+    #[test]
+    fn the_confirmation_has_no_promo_fields_without_a_code() {
+        let payload = guest_confirmation_payload(
+            &booking(false),
+            "Villa".to_string(),
+            "Guest".to_string(),
+            "https://example.test/receipt".to_string(),
+        );
+        assert_eq!(payload.cleaning_fee, Some(dec!(100)));
+        assert_eq!(payload.promo_code, None);
+        assert_eq!(payload.promo_discount, None);
+    }
+
+    #[test]
+    fn the_completion_figures_use_the_after_promo_cleaning_fee() {
+        // 810.00 + 90.00 + 135.00 tax + 40.50 platform fee, with no deposit, as
+        // on the tax invoice.
+        assert_eq!(
+            completion_amounts(&booking(true)),
+            (dec!(810), dec!(90), dec!(135), dec!(1075.50))
+        );
+    }
 }

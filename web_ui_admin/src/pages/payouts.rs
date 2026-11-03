@@ -68,30 +68,38 @@ fn scope(user: &AdminSession) -> PayoutFilter {
     }
 }
 
-async fn ledger(cx: &Cx, user: &AdminSession) -> Vec<PayoutLedgerEntry> {
+async fn ledger(cx: &Cx, user: &AdminSession) -> topcoat::Result<Vec<PayoutLedgerEntry>> {
+    let token = service_token(cx, user)?;
     let entries = get_api_client(cx)
-        .get_host_payout_ledger(&scope(user))
+        .get_host_payout_ledger(&scope(user), &token)
         .await
         .map(|r| r.entries)
-        .unwrap_or_default();
-    match user.role {
+        .unwrap_or_else(|e| {
+            tracing::error!(user_id = %user.user_id, error = %e, "failed to load the payout ledger");
+            Vec::new()
+        });
+    Ok(match user.role {
         AdminRole::Admin => entries,
         // Defence in depth: never show a host another host's payouts.
         AdminRole::Host => entries
             .into_iter()
             .filter(|e| e.host_id == user.user_id)
             .collect(),
-    }
+    })
 }
 
 /// The payout ledger.
 #[page("/admin/payouts")]
 pub async fn payouts_page(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let entries = ledger(cx, &user).await;
+    let entries = ledger(cx, &user).await?;
+    let token = service_token(cx, &user)?;
     let summary = get_api_client(cx)
-        .get_host_payout_summary(&scope(&user))
+        .get_host_payout_summary(&scope(&user), &token)
         .await
+        .map_err(|e| {
+            tracing::error!(user_id = %user.user_id, error = %e, "failed to load the payout summary");
+        })
         .ok();
     let is_admin = user.role == AdminRole::Admin;
     let (gross, fee, net) = summary
@@ -122,13 +130,13 @@ pub async fn payouts_page(cx: &Cx) -> Result<impl View> {
                     <thead class="bg-card text-left text-xs text-muted-foreground uppercase">
                         <tr>
                             <th scope="col" class="p-3">"Reservation"</th><th scope="col" class="p-3">"Listing"</th><th scope="col" class="p-3">"Host"</th>
-                            <th scope="col" class="p-3 text-right">"Gross"</th><th scope="col" class="p-3 text-right">"Net"</th><th scope="col" class="p-3">"Status"</th>
+                            <th scope="col" class="p-3 text-right">"Gross"</th><th scope="col" class="p-3 text-right">"Cleaning fee"</th><th scope="col" class="p-3">"Promo"</th><th scope="col" class="p-3 text-right">"Net"</th><th scope="col" class="p-3">"Status"</th>
                             if is_admin { <th scope="col" class="p-3">"Override"</th> }
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-border">
                         if entries.is_empty() {
-                            <tr><td colspan="7" class="p-6 text-center text-muted-foreground">"No payouts yet."</td></tr>
+                            <tr><td colspan="9" class="p-6 text-center text-muted-foreground">"No payouts yet."</td></tr>
                         }
                         for e in entries {
                             let status = e.status.to_string();
@@ -137,6 +145,8 @@ pub async fn payouts_page(cx: &Cx) -> Result<impl View> {
                                 <td class="p-3">(e.listing_name.clone().unwrap_or_default())</td>
                                 <td class="p-3">(e.host_name.clone().unwrap_or_default())</td>
                                 <td class="p-3 text-right tabular-nums">(money(&e.currency, e.gross_amount))</td>
+                                <td class="p-3 text-right tabular-nums">(money(&e.currency, e.cleaning_fee_amount))</td>
+                                <td class="p-3" data-payout-promo="">(e.promo_code.clone().map(|code| format!("{code}: -{}", money(&e.currency, e.promo_discount_amount))).unwrap_or_default())</td>
                                 <td class="p-3 text-right tabular-nums">(money(&e.currency, e.net_payout_amount))</td>
                                 <td class="p-3 capitalize">(status.clone())</td>
                                 if is_admin {
@@ -200,9 +210,9 @@ pub async fn override_status(
 pub async fn export_payouts(cx: &Cx) -> Result<Response> {
     let user = staff(cx).await?;
     let mut csv = String::from(
-        "reservation,listing,host,currency,gross,platform_fee,tax_withheld,net,status\r\n",
+        "reservation,listing,host,currency,gross,platform_fee,tax_withheld,net,status,cleaning_fee,promo_code,promo_discount\r\n",
     );
-    for e in ledger(cx, &user).await {
+    for e in ledger(cx, &user).await? {
         let row = [
             e.booking_confirmation_code.clone().unwrap_or_default(),
             e.listing_name.clone().unwrap_or_default(),
@@ -213,6 +223,9 @@ pub async fn export_payouts(cx: &Cx) -> Result<Response> {
             format!("{:.2}", e.tax_withheld_amount),
             format!("{:.2}", e.net_payout_amount),
             e.status.to_string(),
+            format!("{:.2}", e.cleaning_fee_amount),
+            e.promo_code.clone().unwrap_or_default(),
+            format!("{:.2}", e.promo_discount_amount),
         ];
         csv.push_str(
             &row.iter()

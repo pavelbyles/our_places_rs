@@ -86,6 +86,45 @@ pub fn load_template(filename: &str) -> String {
     }
 }
 
+/// The promo row for an email's price table. Empty when there's no promo, so a
+/// booking without a code shows nothing extra.
+fn promo_table_row(code: &str, discount: &str, currency: &str) -> String {
+    if code.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 8px 0;">Includes promo discount ({})</td><td style="padding: 8px 0; text-align: right;">-{} {}</td></tr>"#,
+        escape_html(code),
+        escape_html(currency),
+        escape_html(discount)
+    )
+}
+
+/// A host's payout line. Empty with no figure, so no blank amount is shown.
+fn payout_paragraph(label: &str, amount: &str, currency: &str) -> String {
+    if amount.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"<p style="margin: 0;"><strong>{label}:</strong> {} {}</p>"#,
+        escape_html(currency),
+        escape_html(amount)
+    )
+}
+
+/// The promo line for a simple email. Empty when there's no promo.
+fn promo_paragraph(code: &str, discount: &str, currency: &str) -> String {
+    if code.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<p>Includes promo discount ({}): -{} {}</p>",
+        escape_html(code),
+        escape_html(currency),
+        escape_html(discount)
+    )
+}
+
 /// Renders transactional email HTML templates with dynamic variable interpolation.
 pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> String {
     let get_val = |key: &str| -> String {
@@ -138,6 +177,14 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .unwrap_or("paid");
             let template = load_template("booking_confirmation.html");
             template
+                .replace(
+                    "{{promo_line}}",
+                    &promo_paragraph(
+                        &get_val("promo_code"),
+                        &get_val("promo_discount"),
+                        &get_val("currency"),
+                    ),
+                )
                 .replace("{{confirmation_code}}", code)
                 .replace("{confirmation_code}", code)
                 .replace("{{dates}}", dates)
@@ -178,10 +225,34 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .replace("{{platform_fee}}", &get_val("platform_fee"))
                 .replace("{{damage_deposit}}", &get_val("damage_deposit"))
                 .replace("{{receipt_url}}", &get_val("receipt_url"))
+                .replace(
+                    "{{promo_line}}",
+                    &promo_table_row(
+                        &get_val("promo_code"),
+                        &get_val("promo_discount"),
+                        &get_val("currency"),
+                    ),
+                )
         }
         "booking_confirmation_host" | "BookingConfirmationHost" => {
             let template = load_template("booking_confirmation_host.html");
             template
+                .replace(
+                    "{{payout_line}}",
+                    &payout_paragraph(
+                        "Host Payout",
+                        &get_val("total_payout"),
+                        &get_val("currency"),
+                    ),
+                )
+                .replace(
+                    "{{promo_line}}",
+                    &promo_paragraph(
+                        &get_val("promo_code"),
+                        &get_val("promo_discount"),
+                        &get_val("currency"),
+                    ),
+                )
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{host_name}}", &get_val("host_name"))
@@ -213,6 +284,22 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         "booking_updated_host" | "BookingUpdatedHost" => {
             let template = load_template("booking_updated_host.html");
             template
+                .replace(
+                    "{{payout_line}}",
+                    &payout_paragraph(
+                        "Adjusted Host Payout",
+                        &get_val("total_payout"),
+                        &get_val("currency"),
+                    ),
+                )
+                .replace(
+                    "{{promo_line}}",
+                    &promo_paragraph(
+                        &get_val("promo_code"),
+                        &get_val("promo_discount"),
+                        &get_val("currency"),
+                    ),
+                )
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{guest_name}}", &get_val("guest_name"))
@@ -257,6 +344,14 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
         "booking_cancelled_host" | "BookingCancelledHost" => {
             let template = load_template("booking_cancelled_host.html");
             template
+                .replace(
+                    "{{payout_line}}",
+                    &payout_paragraph(
+                        "Net Payout Impact",
+                        &get_val("payout_impact"),
+                        &get_val("currency"),
+                    ),
+                )
                 .replace("{{confirmation_code}}", &get_val("confirmation_code"))
                 .replace("{{listing_name}}", &get_val("listing_name"))
                 .replace("{{guest_name}}", &get_val("guest_name"))

@@ -11,6 +11,21 @@ use crate::models::{
     ReservationChangeRequestRow, ReservationChangeStatus, SupplierInfo,
 };
 
+/// Refuses a change quoted as keeping a promo when the booking no longer has it,
+/// as an admin's direct edit can remove it between the quote and the approval.
+pub fn check_promo_still_attached(
+    snapshot: &ReservationChangePricingSnapshot,
+    promo_code_id: Option<Uuid>,
+) -> Result<()> {
+    if snapshot.promo_retained && promo_code_id.is_none() {
+        return Err(DbError::BookingNotModifiable(
+            "This booking's promo code was removed after the change was quoted. Please request the change again."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Host payout context for a booking used when computing a reservation change quote.
 #[derive(Debug, Clone)]
 pub struct BookingPayoutContext {
@@ -20,6 +35,9 @@ pub struct BookingPayoutContext {
     pub host_exchange_rate: rust_decimal::Decimal,
     /// Existing pending net payout amount if a `host_payout_ledger` row exists.
     pub existing_net_payout: Option<rust_decimal::Decimal>,
+    /// Commission recorded on the `host_payout_ledger` row if one exists. Approval
+    /// uses this percentage, so the quote must too.
+    pub existing_commission_pct: Option<rust_decimal::Decimal>,
 }
 
 /// Retrieves the host payout context (status, exchange rate, and current net payout) for a booking.
@@ -32,7 +50,7 @@ pub async fn get_booking_payout_context(
 ) -> Result<BookingPayoutContext> {
     let existing = sqlx::query!(
         r#"
-        SELECT status as "status: DbPayoutStatus", exchange_rate, net_payout_amount
+        SELECT status as "status: DbPayoutStatus", exchange_rate, net_payout_amount, platform_fee_pct
         FROM host_payout_ledger
         WHERE booking_id = $1
         ORDER BY created_at DESC
@@ -51,6 +69,7 @@ pub async fn get_booking_payout_context(
             ),
             host_exchange_rate: row.exchange_rate,
             existing_net_payout: Some(row.net_payout_amount),
+            existing_commission_pct: Some(row.platform_fee_pct),
         });
     }
 
@@ -83,6 +102,7 @@ pub async fn get_booking_payout_context(
         is_payout_processed: false,
         host_exchange_rate,
         existing_net_payout: None,
+        existing_commission_pct: None,
     })
 }
 
@@ -696,6 +716,8 @@ pub async fn approve_change_request(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -827,6 +849,7 @@ pub async fn approve_change_request(
     updated_metadata.num_pets = req_row.proposed_num_pets.max(0) as u32;
 
     let snap = &req_row.pricing_snapshot.0;
+    check_promo_still_attached(snap, current_booking.promo_code_id)?;
 
     let updated_booking = sqlx::query_as!(
         Booking,
@@ -847,7 +870,11 @@ pub async fn approve_change_request(
             damage_deposit = $13,
             platform_fee = $14,
             tax_rate = $15,
-            updated_at = $16
+            updated_at = $16,
+            promo_code_id = CASE WHEN $18 THEN promo_code_id ELSE NULL END,
+            promo_terms = CASE WHEN $18 THEN promo_terms ELSE NULL END,
+            promo_stay_discount = $19,
+            promo_cleaning_discount = $20
         WHERE id = $17
         RETURNING id, confirmation_code, guest_id, listing_id, status as "status: BookingStatus",
             date_from, date_to, currency, daily_rate, number_of_persons, total_days,
@@ -856,6 +883,8 @@ pub async fn approve_change_request(
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
         req_row.proposed_date_from,
@@ -874,10 +903,17 @@ pub async fn approve_change_request(
         snap.platform_fee,
         snap.tax_rate,
         Utc::now(),
-        current_booking.id
+        current_booking.id,
+        snap.promo_retained,
+        snap.promo_stay_discount,
+        snap.promo_cleaning_discount
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    if !snap.promo_retained && current_booking.promo_code_id.is_some() {
+        crate::promo::release_redemption(&mut tx, current_booking.id).await?;
+    }
 
     let history_id = crate::booking::record_booking_history(
         &mut tx,
@@ -895,21 +931,15 @@ pub async fn approve_change_request(
     )
     .await?;
 
-    sqlx::query!(
-        r#"
-        UPDATE host_payout_ledger
-        SET gross_amount = $1,
-            platform_fee_amount = $2,
-            net_payout_amount = $3,
-            updated_at = NOW()
-        WHERE booking_id = $4 AND status = 'pending'::payout_status
-        "#,
-        snap.host_gross_amount,
-        snap.host_platform_fee_amount,
-        snap.host_net_payout_amount,
-        updated_booking.id
+    // Recalculated rather than copied from the snapshot, so a request quoted
+    // under an earlier formula can't write that formula back to the ledger.
+    crate::payout_ledger::reprice_pending_payout(
+        &mut tx,
+        updated_booking.id,
+        updated_booking.accommodation_net(),
+        updated_booking.cleaning_net(),
+        updated_booking.promo_stay_discount + updated_booking.promo_cleaning_discount,
     )
-    .execute(&mut *tx)
     .await?;
 
     let updated_req = sqlx::query_as!(
@@ -1086,6 +1116,7 @@ mod tests {
                 damage_deposit: Some(dec!(100.00)),
                 guests_included: Some(2),
                 extra_guest_fee: Some(dec!(25.00)),
+                is_active: true,
             },
         )
         .await
@@ -1133,6 +1164,7 @@ mod tests {
                 platform_fee: dec!(40.00),
                 tax_rate: dec!(0.1500),
                 exchange_rate: Decimal::ONE,
+                promo: None,
             },
             120,
         )
@@ -1169,6 +1201,11 @@ mod tests {
             discount_value: None,
             discounted_subtotal: dec!(1250.00),
             cleaning_fee: dec!(50.00),
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
+            cleaning_net: dec!(50.00),
+            promo_retained: false,
+            promo_lost_reason: None,
             damage_deposit: dec!(100.00),
             platform_fee: dec!(62.50),
             tax_rate: dec!(0.1500),
@@ -1264,7 +1301,9 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(payout_net, dec!(1125.00));
+        // (1250.00 stay + 50.00 cleaning) less 10% commission, not the snapshot's
+        // 1125.00, which was quoted without the cleaning fee.
+        assert_eq!(payout_net, dec!(1170.00));
 
         // 4. Create a second change request and test auto-expiry when today_jm >= expires_at_date
         let second_req = NewReservationChangeRequest {
@@ -1294,5 +1333,213 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(fetched2.status, ReservationChangeStatus::Expired);
+    }
+}
+
+#[cfg(test)]
+mod promo_tests {
+    //! How approving a change treats the booking's promo.
+
+    use super::*;
+    use crate::promo_tests::{insert_code, migrated_db, raw_booking, raw_listing, raw_user};
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    use sqlx::PgPool;
+
+    fn snapshot(retained: bool) -> ReservationChangePricingSnapshot {
+        ReservationChangePricingSnapshot {
+            daily_rate: dec!(200.00),
+            total_days: 3,
+            extra_guests: 0,
+            extra_guest_fee_per_night: Decimal::ZERO,
+            extra_guest_fee_total: Decimal::ZERO,
+            sub_total_price: dec!(600.00),
+            discount_value: None,
+            discounted_subtotal: if retained { dec!(540.00) } else { dec!(600.00) },
+            cleaning_fee: Decimal::ZERO,
+            promo_stay_discount: if retained { dec!(60.00) } else { Decimal::ZERO },
+            promo_cleaning_discount: Decimal::ZERO,
+            cleaning_net: Decimal::ZERO,
+            promo_retained: retained,
+            promo_lost_reason: (!retained).then(|| "Too short".to_string()),
+            damage_deposit: Decimal::ZERO,
+            platform_fee: dec!(27.00),
+            tax_rate: dec!(0.1500),
+            tax_value: Some(dec!(81.00)),
+            fee_breakdown: vec![],
+            total_price: dec!(648.00),
+            host_gross_amount: dec!(540.00),
+            host_platform_fee_amount: Decimal::ZERO,
+            host_net_payout_amount: dec!(540.00),
+        }
+    }
+
+    /// A confirmed promo booking with a pending change to one more night.
+    async fn pending_change(pool: &PgPool, retained: bool) -> (Uuid, Uuid, Uuid) {
+        let host = raw_user(pool).await;
+        let guest = raw_user(pool).await;
+        let villa = raw_listing(pool, host).await;
+        let code = insert_code(pool, host, "APPROVED").await;
+        let booking = raw_booking(pool, guest, villa, "confirmed").await;
+        sqlx::query(
+            r#"UPDATE booking SET promo_code_id = $2, promo_stay_discount = 40,
+                   promo_terms = '{"code":"APPROVED","discount_type":"percentage","discount_value":"10","scope":"stay","currency":null,"exchange_rate":"1","min_nights":null,"min_booking_value":null,"stay_from":null,"stay_to":null}'
+               WHERE id = $1"#,
+        )
+        .bind(booking)
+        .bind(code)
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO promo_code_redemption (promo_code_id, booking_id) VALUES ($1, $2)",
+        )
+        .bind(code)
+        .bind(booking)
+        .execute(pool)
+        .await
+        .unwrap();
+        let from = NaiveDate::from_ymd_opt(2030, 1, 1).expect("valid date");
+        let request = NewReservationChangeRequest {
+            booking_id: booking,
+            listing_id: villa,
+            initiated_by_id: guest,
+            initiated_by_role: ChangeInitiatorRole::Guest,
+            previous_date_from: from,
+            previous_date_to: NaiveDate::from_ymd_opt(2030, 1, 3).expect("valid date"),
+            proposed_date_from: from,
+            proposed_date_to: NaiveDate::from_ymd_opt(2030, 1, 4).expect("valid date"),
+            previous_number_of_persons: 1,
+            proposed_number_of_persons: 1,
+            proposed_num_adults: 1,
+            proposed_num_children: 0,
+            proposed_num_infants: 0,
+            proposed_num_pets: 0,
+            currency: "USD".to_string(),
+            previous_total_price: dec!(200.00),
+            proposed_total_price: dec!(648.00),
+            balance_due: dec!(448.00),
+            previous_net_payout: Decimal::ZERO,
+            proposed_net_payout: dec!(540.00),
+            host_payout_delta: dec!(540.00),
+            pricing_snapshot: snapshot(retained),
+            settlement_status: ChangeSettlementStatus::PendingCharge,
+            reason: None,
+            expires_at_date: from,
+        };
+        let created = create_change_request(pool, &request, today())
+            .await
+            .expect("create change request");
+        (created.id, booking, host)
+    }
+
+    fn today() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2029, 12, 1).expect("valid date")
+    }
+
+    async fn approve(pool: &PgPool, id: Uuid, responder_id: Uuid) -> Result<Booking> {
+        let supplier = SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+        approve_change_request(
+            pool,
+            &ApproveChangeRequestParams {
+                id,
+                responder_id,
+                response_note: None,
+                settlement_status: ChangeSettlementStatus::Charged,
+                gateway_reference: None,
+                supplier: &supplier,
+                today_jm: today(),
+            },
+        )
+        .await
+        .map(|(_, booking)| booking)
+    }
+
+    async fn released(pool: &PgPool, booking: Uuid) -> bool {
+        sqlx::query_scalar(
+            "SELECT released_at IS NOT NULL FROM promo_code_redemption WHERE booking_id = $1",
+        )
+        .bind(booking)
+        .fetch_one(pool)
+        .await
+        .expect("redemption")
+    }
+
+    #[tokio::test]
+    async fn approving_a_kept_promo_writes_the_new_amounts() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (id, booking, host) = pending_change(&pool, true).await;
+
+        let updated = approve(&pool, id, host).await.unwrap();
+
+        assert!(updated.promo_code_id.is_some());
+        assert!(updated.promo_terms.is_some());
+        assert_eq!(updated.promo_stay_discount, dec!(60.00));
+        assert_eq!(updated.accommodation_net(), dec!(540.00));
+        assert!(!released(&pool, booking).await);
+    }
+
+    #[tokio::test]
+    async fn approving_a_lost_promo_clears_it_and_frees_the_use() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (id, booking, host) = pending_change(&pool, false).await;
+
+        let updated = approve(&pool, id, host).await.unwrap();
+
+        assert_eq!(updated.promo_code_id, None);
+        assert!(updated.promo_terms.is_none());
+        assert_eq!(updated.promo_stay_discount, Decimal::ZERO);
+        assert!(released(&pool, booking).await);
+    }
+
+    #[tokio::test]
+    async fn approval_is_refused_when_a_kept_promo_was_removed_after_the_quote() {
+        let test_db = migrated_db();
+        let pool = test_db.get_pool().await;
+        let (id, booking, host) = pending_change(&pool, true).await;
+        sqlx::query(
+            "UPDATE booking SET promo_code_id = NULL, promo_terms = NULL, promo_stay_discount = 0 WHERE id = $1",
+        )
+        .bind(booking)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let res = approve(&pool, id, host).await;
+
+        assert!(
+            matches!(res, Err(DbError::BookingNotModifiable(_))),
+            "got {res:?}"
+        );
+        let current = crate::booking::get_booking_by_id(&pool, booking)
+            .await
+            .unwrap();
+        assert_eq!(current.promo_stay_discount, Decimal::ZERO);
+    }
+
+    #[test]
+    fn a_snapshot_stored_before_this_release_still_deserializes() {
+        let mut stored = serde_json::to_value(snapshot(false)).expect("serialize");
+        let fields = stored.as_object_mut().expect("an object");
+        for field in [
+            "promo_stay_discount",
+            "promo_cleaning_discount",
+            "cleaning_net",
+            "promo_retained",
+            "promo_lost_reason",
+        ] {
+            fields.remove(field);
+        }
+        let parsed: ReservationChangePricingSnapshot =
+            serde_json::from_value(stored).expect("old snapshots still parse");
+        assert!(!parsed.promo_retained);
+        assert_eq!(parsed.promo_stay_discount, Decimal::ZERO);
+        assert_eq!(parsed.promo_lost_reason, None);
     }
 }

@@ -26,6 +26,8 @@ where
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         FROM booking
         ORDER BY created_at DESC
@@ -64,6 +66,8 @@ where
             b.metadata as "metadata: Json<crate::models::BookingMetadata>",
             b.door_access_code,
             b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,
+            b.promo_code_id, b.promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            b.promo_stay_discount, b.promo_cleaning_discount,
             b.created_at, b.updated_at
         FROM booking b
         JOIN listing l ON l.id = b.listing_id
@@ -97,6 +101,8 @@ where
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         FROM booking
         WHERE id = $1
@@ -128,6 +134,8 @@ where
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         FROM booking
         WHERE status = 'confirmed'::booking_status
@@ -191,7 +199,9 @@ where
             ) as "review_eligibility!",
             b.created_at, b.updated_at,
             b.door_access_code,
-            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate
+            b.cleaning_fee, b.damage_deposit, b.platform_fee, b.tax_rate, b.exchange_rate,
+            b.promo_code_id, b.promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            b.promo_stay_discount, b.promo_cleaning_discount
         FROM booking b
         LEFT JOIN review r ON r.booking_id = b.id
         LEFT JOIN LATERAL (
@@ -237,6 +247,10 @@ where
             platform_fee: r.platform_fee,
             tax_rate: r.tax_rate,
             exchange_rate: r.exchange_rate,
+            promo_code_id: r.promo_code_id,
+            promo_terms: r.promo_terms,
+            promo_stay_discount: r.promo_stay_discount,
+            promo_cleaning_discount: r.promo_cleaning_discount,
             created_at: r.created_at,
             updated_at: r.updated_at,
         };
@@ -279,6 +293,8 @@ where
             metadata as "metadata: Json<crate::models::BookingMetadata>",
             door_access_code,
             cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+            promo_code_id, promo_terms as "promo_terms: Json<common::promo::PromoTerms>",
+            promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         FROM booking
         WHERE listing_id = $1

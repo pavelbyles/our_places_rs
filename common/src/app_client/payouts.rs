@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 pub async fn get_host_payout_ledger(
     filter: &crate::payout::PayoutFilter,
+    user_jwt: &str,
 ) -> Result<crate::payout::PayoutLedgerResponse> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -39,7 +40,9 @@ pub async fn get_host_payout_ledger(
     let url = format!("{}/api/v1/hosts/ledger{}", api_url, query_str);
 
     let res = get_client()
-        .get(&url, &audience)
+        .user_request(reqwest::Method::GET, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
         .await
         .context("Failed to connect to booking service")?;
 
@@ -56,6 +59,7 @@ pub async fn get_host_payout_ledger(
 
 pub async fn get_host_payout_summary(
     filter: &crate::payout::PayoutFilter,
+    user_jwt: &str,
 ) -> Result<crate::payout::PayoutSummary> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -83,7 +87,9 @@ pub async fn get_host_payout_summary(
     let url = format!("{}/api/v1/hosts/ledger/summary{}", api_url, query_str);
 
     let res = get_client()
-        .get(&url, &audience)
+        .user_request(reqwest::Method::GET, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
         .await
         .context("Failed to connect to booking service")?;
 

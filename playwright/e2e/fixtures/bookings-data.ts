@@ -72,20 +72,23 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
  * Places a 2-night hold on the seeded villa through booking_api, on random
  * dates between 2032 and 2036 (retrying if they are taken).
  * With `confirmed`, the booking is then marked confirmed in the database.
+ *
+ * Stays start every 4th day, so moving one by a day or two for a date-change
+ * test stays inside its slot and can't hit another booking made here.
  */
 export async function createBooking(
   request: APIRequestContext,
   guestId: string,
-  options: { confirmed?: boolean } = {},
+  options: { confirmed?: boolean; listingId?: string } = {},
 ): Promise<TestBooking> {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const start = new Date(Date.UTC(2032, 0, 1 + crypto.randomInt(1400)));
+    const start = new Date(Date.UTC(2032, 0, 1 + 4 * crypto.randomInt(350)));
     const end = new Date(start.getTime() + 2 * 86_400_000);
     const res = await request.post(`${BOOKING_API_URL}/api/v1/bookings`, {
       headers: { Authorization: `Bearer ${signTestJwt(guestId)}` },
       data: {
         guest_id: guestId,
-        listing_id: SEEDED_LISTING_ID,
+        listing_id: options.listingId ?? SEEDED_LISTING_ID,
         check_in: day(start),
         check_out: day(end),
         num_adults: 1,
@@ -112,6 +115,27 @@ export async function createBooking(
     };
   }
   throw new Error('createBooking: no free dates found after 8 attempts');
+}
+
+/**
+ * Adds an active copy of the seeded villa, for tests that deactivate a listing.
+ * Global setup removes it next run because of its `E2E listing` name.
+ */
+export function createListingCopy(): { id: string; slug: string; name: string } {
+  const id = crypto.randomUUID();
+  const copy = { id, slug: `e2e-listing-${id}`, name: `E2E listing ${id}` };
+  psql(`
+    BEGIN;
+    CREATE TEMP TABLE listing_copy ON COMMIT DROP AS
+      SELECT * FROM listing WHERE id = '${SEEDED_LISTING_ID}';
+    UPDATE listing_copy SET id = '${copy.id}', slug = '${copy.slug}', name = '${copy.name}';
+    INSERT INTO listing SELECT * FROM listing_copy;
+    COMMIT;`);
+  return copy;
+}
+
+export function deactivateListing(listingId: string): void {
+  psql(`UPDATE listing SET is_active = FALSE WHERE id = '${listingId}';`);
 }
 
 export function bookingStatus(bookingId: string): string {
@@ -176,3 +200,18 @@ export async function reviewTokenForPastStay(
   }
   return body.token as string;
 }
+
+/**
+ * Creates a promo code valid now, covering every listing, and returns it. Codes
+ * are permanently unique and browser projects run in parallel, so each is random.
+ * `change` is extra SQL assignments, such as `valid_to = NOW() - INTERVAL '1 day'`.
+ */
+export function createPromoCode(createdBy: string, change = ''): string {
+  const code = `E2E-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const extra = change ? `, ${change}` : '';
+  psql(`INSERT INTO promo_code (code, discount_type, discount_value, scope, valid_from, valid_to, applies_to_all, created_by)
+        VALUES ('${code}', 'percentage', 10, 'stay', NOW() - INTERVAL '2 days', NOW() + INTERVAL '1 day', TRUE, '${createdBy}');
+        UPDATE promo_code SET updated_at = NOW()${extra} WHERE code = '${code}';`);
+  return code;
+}
+

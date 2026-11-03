@@ -1,4 +1,5 @@
 use crate::models::{DynamicPricingQuote, FeeItem, NightlyRateBreakdown, PriceOverride};
+use crate::promo::PromoTerms;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use thiserror::Error;
@@ -75,6 +76,8 @@ pub fn calculate_dynamic_quote(
 pub struct BaseRate;
 /// Marker state after applying weekly or monthly stay discounts.
 pub struct Discounted;
+/// Marker state after the promo step, which every pricing path must pass through.
+pub struct PromoApplied;
 /// Marker state after applying statutory taxes.
 pub struct Taxed;
 
@@ -94,10 +97,16 @@ pub struct BookingCalculator<State> {
     pub sub_total_price: Decimal,
     /// Discount amount subtracted for weekly/monthly stays.
     pub discount_value: Option<Decimal>,
-    /// Net accommodation subtotal after subtracting `discount_value`.
+    /// Net accommodation subtotal after subtracting `discount_value` and `promo_stay_discount`.
     pub discounted_subtotal: Decimal,
-    /// One-time host cleaning fee.
+    /// One-time host cleaning fee, before any promo.
     pub cleaning_fee: Decimal,
+    /// Cleaning fee after subtracting `promo_cleaning_discount`.
+    pub cleaning_net: Decimal,
+    /// Promo discount taken from the stay.
+    pub promo_stay_discount: Decimal,
+    /// Promo discount taken from the cleaning fee.
+    pub promo_cleaning_discount: Decimal,
     /// Refundable security damage deposit.
     pub damage_deposit: Decimal,
     /// Guest platform service fee (5% of `discounted_subtotal`).
@@ -108,7 +117,7 @@ pub struct BookingCalculator<State> {
     pub tax_value: Option<Decimal>,
     /// Itemized fee breakdown for receipts and UI display.
     pub fee_breakdown: Vec<FeeItem>,
-    /// Final guest total price (`discounted_subtotal + cleaning_fee + tax_value + platform_fee + damage_deposit`).
+    /// Final guest total price (`discounted_subtotal + cleaning_net + tax_value + platform_fee + damage_deposit`).
     pub total_price: Decimal,
     /// Current type-state marker.
     pub state: State,
@@ -128,6 +137,9 @@ impl BookingCalculator<BaseRate> {
             discount_value: None,
             discounted_subtotal: sub_total_price,
             cleaning_fee: Decimal::ZERO,
+            cleaning_net: Decimal::ZERO,
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
             damage_deposit: Decimal::ZERO,
             platform_fee: Decimal::ZERO,
             tax_rate: Decimal::ZERO,
@@ -154,6 +166,9 @@ impl BookingCalculator<BaseRate> {
             discount_value: None,
             discounted_subtotal: sub_total_price,
             cleaning_fee: Decimal::ZERO,
+            cleaning_net: Decimal::ZERO,
+            promo_stay_discount: Decimal::ZERO,
+            promo_cleaning_discount: Decimal::ZERO,
             damage_deposit: Decimal::ZERO,
             platform_fee: Decimal::ZERO,
             tax_rate: Decimal::ZERO,
@@ -214,6 +229,9 @@ impl BookingCalculator<BaseRate> {
             discount_value: self.discount_value,
             discounted_subtotal: self.discounted_subtotal,
             cleaning_fee: self.cleaning_fee,
+            cleaning_net: self.cleaning_net,
+            promo_stay_discount: self.promo_stay_discount,
+            promo_cleaning_discount: self.promo_cleaning_discount,
             damage_deposit: self.damage_deposit,
             platform_fee: self.platform_fee,
             tax_rate: self.tax_rate,
@@ -233,13 +251,51 @@ impl BookingCalculator<Discounted> {
         damage_deposit: Option<Decimal>,
     ) -> Self {
         self.cleaning_fee = cleaning_fee.unwrap_or(Decimal::ZERO).max(Decimal::ZERO);
+        self.cleaning_net = self.cleaning_fee;
         self.damage_deposit = damage_deposit.unwrap_or(Decimal::ZERO).max(Decimal::ZERO);
         self
     }
 
-    /// Computes statutory tax on the taxable base (`discounted_subtotal + cleaning_fee`).
+    /// Applies a promo code's discount, after weekly or monthly discounts and
+    /// before tax. Pass `None` for a booking with no code. Whether the code may
+    /// be used is checked before this step, by the rules in [`crate::promo`].
+    pub fn apply_promo(mut self, terms: Option<&PromoTerms>) -> BookingCalculator<PromoApplied> {
+        if let Some(terms) = terms {
+            let (stay, cleaning) = terms.discounts(self.discounted_subtotal, self.cleaning_fee);
+            self.promo_stay_discount = stay;
+            self.promo_cleaning_discount = cleaning;
+            self.discounted_subtotal -= stay;
+            self.cleaning_net = self.cleaning_fee - cleaning;
+        }
+
+        BookingCalculator {
+            actual_daily_rate: self.actual_daily_rate,
+            total_days: self.total_days,
+            extra_guests: self.extra_guests,
+            extra_guest_fee_per_night: self.extra_guest_fee_per_night,
+            extra_guest_fee_total: self.extra_guest_fee_total,
+            sub_total_price: self.sub_total_price,
+            discount_value: self.discount_value,
+            discounted_subtotal: self.discounted_subtotal,
+            cleaning_fee: self.cleaning_fee,
+            cleaning_net: self.cleaning_net,
+            promo_stay_discount: self.promo_stay_discount,
+            promo_cleaning_discount: self.promo_cleaning_discount,
+            damage_deposit: self.damage_deposit,
+            platform_fee: self.platform_fee,
+            tax_rate: self.tax_rate,
+            tax_value: self.tax_value,
+            fee_breakdown: self.fee_breakdown,
+            total_price: self.total_price,
+            state: PromoApplied,
+        }
+    }
+}
+
+impl BookingCalculator<PromoApplied> {
+    /// Computes statutory tax on the taxable base (`discounted_subtotal + cleaning_net`).
     pub fn apply_taxes(mut self, tax_rate: Decimal) -> BookingCalculator<Taxed> {
-        let taxable_base = self.discounted_subtotal + self.cleaning_fee;
+        let taxable_base = self.discounted_subtotal + self.cleaning_net;
         let tax_value_decimal = (taxable_base * tax_rate).round_dp(2);
         self.tax_rate = tax_rate;
         self.tax_value = Some(tax_value_decimal);
@@ -254,6 +310,9 @@ impl BookingCalculator<Discounted> {
             discount_value: self.discount_value,
             discounted_subtotal: self.discounted_subtotal,
             cleaning_fee: self.cleaning_fee,
+            cleaning_net: self.cleaning_net,
+            promo_stay_discount: self.promo_stay_discount,
+            promo_cleaning_discount: self.promo_cleaning_discount,
             damage_deposit: self.damage_deposit,
             platform_fee: self.platform_fee,
             tax_rate: self.tax_rate,
@@ -288,7 +347,7 @@ impl BookingCalculator<Taxed> {
             amount: platform_fee,
         });
 
-        let taxable_base = self.discounted_subtotal + self.cleaning_fee;
+        let taxable_base = self.discounted_subtotal + self.cleaning_net;
         self.total_price = taxable_base
             + self.tax_value.unwrap_or(Decimal::ZERO)
             + platform_fee
@@ -296,6 +355,13 @@ impl BookingCalculator<Taxed> {
 
         self
     }
+}
+
+/// The one formula for a host's gross payout, in the host's currency. It covers
+/// the net accommodation and the net cleaning fee. The refundable deposit, GCT
+/// and the guest platform fee are never part of it.
+pub fn host_gross(accommodation_net: Decimal, cleaning_net: Decimal, rate: Decimal) -> Decimal {
+    ((accommodation_net + cleaning_net) * rate).round_dp(2)
 }
 
 /// Calculates host platform commission fee and net payout amount using Banker's rounding.
@@ -375,6 +441,163 @@ pub fn validate_reservation_change_dates(
 }
 
 #[cfg(test)]
+mod promo_tests {
+    use super::*;
+    use crate::promo::{PromoDiscountType, PromoScope};
+    use rust_decimal_macros::dec;
+
+    fn terms(discount_type: PromoDiscountType, value: Decimal, scope: PromoScope) -> PromoTerms {
+        PromoTerms {
+            code: "SUMMER".to_string(),
+            discount_type,
+            discount_value: value,
+            scope,
+            currency: None,
+            exchange_rate: Decimal::ONE,
+            min_nights: None,
+            min_booking_value: None,
+            stay_from: None,
+            stay_to: None,
+        }
+    }
+
+    /// `S` 1,000 with a 100 weekly discount, 100 cleaning and 200 deposit, at 15% GCT.
+    fn priced(promo: Option<&PromoTerms>, cleaning: Decimal) -> BookingCalculator<Taxed> {
+        BookingCalculator::with_subtotal(dec!(142.86), 7, dec!(1000))
+            .apply_discounts(None, Some(dec!(10)))
+            .with_fees(Some(cleaning), Some(dec!(200)))
+            .apply_promo(promo)
+            .apply_taxes(dec!(0.15))
+            .finalize()
+    }
+
+    #[test]
+    fn matches_the_worked_example_exactly() {
+        let promo = terms(
+            PromoDiscountType::Percentage,
+            dec!(10),
+            PromoScope::StayAndCleaning,
+        );
+        let c = priced(Some(&promo), dec!(100));
+
+        assert_eq!(c.discount_value, Some(dec!(100.00)));
+        assert_eq!(c.promo_stay_discount, dec!(90.00));
+        assert_eq!(c.promo_cleaning_discount, dec!(10.00));
+        assert_eq!(c.discounted_subtotal, dec!(810.00));
+        assert_eq!(c.cleaning_fee, dec!(100));
+        assert_eq!(c.cleaning_net, dec!(90.00));
+        assert_eq!(c.tax_value, Some(dec!(135.00)));
+        assert_eq!(c.platform_fee, dec!(40.50));
+        assert_eq!(c.damage_deposit, dec!(200));
+        assert_eq!(c.total_price, dec!(1275.50));
+        assert_eq!(
+            host_gross(c.discounted_subtotal, c.cleaning_net, Decimal::ONE),
+            dec!(900.00)
+        );
+    }
+
+    #[test]
+    fn no_promo_prices_as_before() {
+        let c = priced(None, dec!(100));
+        assert_eq!(c.promo_stay_discount, Decimal::ZERO);
+        assert_eq!(c.promo_cleaning_discount, Decimal::ZERO);
+        assert_eq!(c.cleaning_net, dec!(100));
+        assert_eq!(c.discounted_subtotal, dec!(900.00));
+        assert_eq!(c.tax_value, Some(dec!(150.00)));
+        assert_eq!(c.platform_fee, dec!(45.00));
+        assert_eq!(c.total_price, dec!(1395.00));
+    }
+
+    #[test]
+    fn stay_scope_leaves_the_cleaning_fee_alone() {
+        let promo = terms(PromoDiscountType::Percentage, dec!(10), PromoScope::Stay);
+        let c = priced(Some(&promo), dec!(100));
+        assert_eq!(c.promo_cleaning_discount, Decimal::ZERO);
+        assert_eq!(c.cleaning_net, dec!(100));
+        assert_eq!(c.tax_value, Some(dec!(136.50)));
+        assert_eq!(c.platform_fee, dec!(40.50));
+        assert_eq!(c.total_price, dec!(1287.00));
+    }
+
+    #[test]
+    fn a_fixed_discount_goes_to_the_stay_first_and_is_capped() {
+        let over = terms(
+            PromoDiscountType::Fixed,
+            dec!(950),
+            PromoScope::StayAndCleaning,
+        );
+        let c = priced(Some(&over), dec!(100));
+        assert_eq!(c.promo_stay_discount, dec!(900));
+        assert_eq!(c.promo_cleaning_discount, dec!(50));
+        assert_eq!(c.discounted_subtotal, Decimal::ZERO);
+        assert_eq!(c.cleaning_net, dec!(50));
+
+        let huge = terms(PromoDiscountType::Fixed, dec!(99999), PromoScope::Stay);
+        let c = priced(Some(&huge), dec!(100));
+        assert_eq!(c.promo_stay_discount, dec!(900));
+        assert_eq!(c.discounted_subtotal, Decimal::ZERO);
+        assert_eq!(c.cleaning_net, dec!(100));
+    }
+
+    #[test]
+    fn a_full_discount_leaves_only_the_deposit() {
+        let all = terms(
+            PromoDiscountType::Percentage,
+            dec!(100),
+            PromoScope::StayAndCleaning,
+        );
+        let c = priced(Some(&all), dec!(100));
+        assert_eq!(c.tax_value, Some(dec!(0.00)));
+        assert_eq!(c.platform_fee, dec!(0.00));
+        assert_eq!(c.total_price, dec!(200));
+    }
+
+    #[test]
+    fn stay_and_cleaning_with_no_cleaning_fee_takes_nothing_from_it() {
+        let promo = terms(
+            PromoDiscountType::Percentage,
+            dec!(10),
+            PromoScope::StayAndCleaning,
+        );
+        let c = priced(Some(&promo), Decimal::ZERO);
+        assert_eq!(c.promo_cleaning_discount, Decimal::ZERO);
+        assert_eq!(c.cleaning_net, Decimal::ZERO);
+    }
+
+    #[test]
+    fn the_promo_applies_after_the_weekly_discount() {
+        let fixed_pct = terms(PromoDiscountType::Percentage, dec!(50), PromoScope::Stay);
+        let c = priced(Some(&fixed_pct), dec!(100));
+        // 50% of 900, not of the 1,000 before the weekly discount.
+        assert_eq!(c.promo_stay_discount, dec!(450.00));
+    }
+}
+
+#[cfg(test)]
+mod host_gross_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn host_gross_adds_the_cleaning_fee_before_converting_and_rounding_once() {
+        assert_eq!(host_gross(dec!(810), dec!(90), Decimal::ONE), dec!(900));
+        assert_eq!(
+            host_gross(dec!(100.01), dec!(100.01), dec!(0.5)),
+            dec!(100.01)
+        );
+    }
+
+    #[test]
+    fn host_gross_with_commission_is_charged_on_the_whole_gross() {
+        let gross = host_gross(dec!(400), dec!(100), Decimal::ONE);
+        assert_eq!(
+            calculate_host_payout(gross, dec!(0.1), Decimal::ZERO),
+            (dec!(50.0), dec!(450.0))
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
@@ -410,6 +633,7 @@ mod tests {
         let daily_rate = Decimal::new(100, 0); // $100
         let calc = BookingCalculator::new(daily_rate, 3)
             .apply_discounts(None, None)
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
@@ -428,6 +652,7 @@ mod tests {
         let daily_rate = Decimal::new(100, 0);
         let calc = BookingCalculator::new(daily_rate, 7)
             .apply_discounts(Some(Decimal::new(20, 0)), Some(Decimal::new(10, 0)))
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
@@ -444,6 +669,7 @@ mod tests {
         let daily_rate = Decimal::new(100, 0);
         let calc = BookingCalculator::new(daily_rate, 30)
             .apply_discounts(Some(Decimal::new(25, 0)), Some(Decimal::new(10, 0)))
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
@@ -460,6 +686,7 @@ mod tests {
         let daily_rate = Decimal::new(100, 0);
         let calc = BookingCalculator::new(daily_rate, -2)
             .apply_discounts(None, None)
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
@@ -596,6 +823,7 @@ mod tests {
             quote.subtotal,
         )
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
@@ -631,6 +859,7 @@ mod tests {
             quote.subtotal,
         )
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
@@ -678,6 +907,7 @@ mod tests {
             quote.subtotal,
         )
         .apply_discounts(None, None)
+        .apply_promo(None)
         .apply_taxes(Decimal::new(15, 2))
         .finalize();
 
@@ -698,6 +928,7 @@ mod tests {
         let calc = BookingCalculator::new(daily_rate, 4) // 4 nights = $800
             .apply_discounts(None, None)
             .with_fees(Some(cleaning_fee), Some(damage_deposit))
+            .apply_promo(None)
             .apply_taxes(tax_rate)
             .finalize();
 
@@ -766,6 +997,7 @@ mod tests {
                 .with_extra_guests(number_of_persons, guests_included, extra_guest_fee)
                 .apply_discounts(monthly_discount, weekly_discount)
                 .with_fees(cleaning_fee, damage_deposit)
+                .apply_promo(None)
                 .apply_taxes(tax_rate)
                 .finalize();
 
@@ -796,6 +1028,7 @@ mod tests {
         let within = BookingCalculator::new(daily_rate, 4)
             .with_extra_guests(2, 2, extra_fee)
             .apply_discounts(None, None)
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
         assert_eq!(within.extra_guests, 0);
@@ -806,6 +1039,7 @@ mod tests {
         let above = BookingCalculator::new(daily_rate, 4)
             .with_extra_guests(4, 2, extra_fee)
             .apply_discounts(None, None)
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
         assert_eq!(above.extra_guests, 2);
@@ -829,6 +1063,7 @@ mod tests {
         let weekly = BookingCalculator::new(daily_rate, 7)
             .with_extra_guests(4, 2, extra_fee)
             .apply_discounts(Some(Decimal::new(20, 0)), Some(Decimal::new(10, 0)))
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
 
@@ -843,6 +1078,7 @@ mod tests {
         let monthly = BookingCalculator::new(daily_rate, 28)
             .with_extra_guests(3, 2, extra_fee)
             .apply_discounts(Some(Decimal::new(20, 0)), Some(Decimal::new(10, 0)))
+            .apply_promo(None)
             .apply_taxes(Decimal::new(15, 2))
             .finalize();
 

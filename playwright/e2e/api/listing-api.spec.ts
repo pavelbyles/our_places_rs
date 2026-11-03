@@ -6,7 +6,11 @@ test.describe('Backend API Validation - Listing Service', () => {
   const targetVilla = KNOWN_LISTINGS.courtyardStudio;
 
   test('GET /api/v1/listings should return active listings with valid schema', async ({ request }) => {
-    const response = await request.get(`${listingApiUrl}/api/v1/listings`);
+    // The list is newest first and paged, so listings other tests add can push
+    // the seeded villa off page one. Filter by name to find it wherever it sits.
+    const response = await request.get(`${listingApiUrl}/api/v1/listings`, {
+      params: { name: targetVilla.name },
+    });
     expect(response.status()).toBe(200);
 
     const listings = await response.json();

@@ -58,6 +58,9 @@ fn quote(currency: &str, scale: Decimal) -> PriceBreakdown {
         effective_nightly_rate: dec!(650.00) * scale,
         subtotal: dec!(3250.00) * scale,
         discount_amount: Some(dec!(325.125) * scale),
+        promo_code: None,
+        promo_discount: None,
+        platform_fee: None,
         cleaning_fee: Some(dec!(75.00) * scale),
         damage_deposit: Some(dec!(150.00) * scale),
         tax_amount: dec!(498.75) * scale,
@@ -140,6 +143,9 @@ async fn matches_legacy_when_optional_fees_are_absent_or_zero() {
     compare(
         PriceBreakdown {
             discount_amount: None,
+            promo_code: None,
+            promo_discount: None,
+            platform_fee: None,
             cleaning_fee: Some(Decimal::ZERO),
             damage_deposit: None,
             ..quote("USD", dec!(1))

@@ -27,7 +27,7 @@ fn new_user(id: Uuid, role: UserRole) -> db_core::models::NewUser {
     }
 }
 
-async fn user(pool: &PgPool, role: UserRole) -> Uuid {
+pub(super) async fn user(pool: &PgPool, role: UserRole) -> Uuid {
     let id = Uuid::now_v7();
     db_core::user::create_user(pool, &new_user(id, role))
         .await
@@ -48,7 +48,7 @@ async fn user(pool: &PgPool, role: UserRole) -> Uuid {
     id
 }
 
-async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
+pub(super) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
     db_core::listing::create_listing(
         pool,
         &db_core::models::NewListing {
@@ -78,6 +78,7 @@ async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -85,7 +86,7 @@ async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
     .id
 }
 
-fn settings() -> api_core::settings::Settings {
+pub(super) fn settings() -> api_core::settings::Settings {
     api_core::settings::Settings {
         server: api_core::settings::Server {
             host: "127.0.0.1".to_string(),
@@ -109,6 +110,7 @@ fn settings() -> api_core::settings::Settings {
             max_attempts: 3,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -116,7 +118,7 @@ fn settings() -> api_core::settings::Settings {
     }
 }
 
-fn tax_settings() -> crate::settings::TaxSettings {
+pub(super) fn tax_settings() -> crate::settings::TaxSettings {
     crate::settings::TaxSettings {
         taj_supplier_trn: "000-111-222".to_string(),
         supplier_name: "Our Places Jamaica Limited".to_string(),
@@ -124,7 +126,7 @@ fn tax_settings() -> crate::settings::TaxSettings {
     }
 }
 
-fn booking_request(guest_id: Uuid, listing_id: Uuid) -> serde_json::Value {
+pub(super) fn booking_request(guest_id: Uuid, listing_id: Uuid) -> serde_json::Value {
     serde_json::json!({
         "guest_id": guest_id,
         "listing_id": listing_id,
@@ -479,5 +481,495 @@ async fn test_actuator_log_level_changes_require_a_stored_admin_role() {
         )
         .await;
         assert_eq!(status(resp), expected, "forwarded call as {who}");
+    }
+}
+
+/// A direct update that shortens a stay below the weekly threshold must clear
+/// the weekly discount, or `accommodation_net()` understates what was charged.
+#[tokio::test]
+async fn stale_discount_is_cleared_when_a_direct_update_stops_it_applying() {
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var(promo_codes::DATABASE_URL_ENV)
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+
+    let host = user(&pool, UserRole::Host).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let villa = listing(&pool, host).await;
+    sqlx::query("UPDATE listing SET weekly_discount_percentage = 10 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .app_data(web::Data::new(tax_settings()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+    let bearer = |id: Uuid| {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+        )
+    };
+
+    let mut seven_nights = booking_request(guest, villa);
+    seven_nights["check_out"] = serde_json::json!("2030-08-08");
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/bookings")
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(seven_nights)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let id: Uuid = test::read_body_json::<serde_json::Value, _>(resp).await["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let held = db_core::booking::get_booking_by_id(&pool, id)
+        .await
+        .unwrap();
+    assert_eq!(held.discount_value, Some(dec!(140.00)));
+
+    sqlx::query(
+        "INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at) \
+         VALUES ('USD', 'JMD', 160, NOW()) ON CONFLICT DO NOTHING",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{id}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(admin))
+            .set_json(serde_json::json!({ "status": "confirmed" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{id}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(admin))
+            .set_json(serde_json::json!({ "date_to": "2030-08-06" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    let shortened = db_core::booking::get_booking_by_id(&pool, id)
+        .await
+        .unwrap();
+    assert_eq!(shortened.discount_value, None);
+    assert_eq!(shortened.accommodation_net(), dec!(1000.00));
+    assert_eq!(shortened.sub_total_price, dec!(1000.00));
+}
+
+/// The change quote includes the cleaning fee and uses the ledger row's
+/// commission, so what it promises is what approval writes.
+#[tokio::test]
+async fn reservation_change_payout_quote_matches_what_approval_writes() {
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var(promo_codes::DATABASE_URL_ENV)
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+
+    let host = user(&pool, UserRole::Host).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let villa = listing(&pool, host).await;
+    sqlx::query("UPDATE listing SET cleaning_fee = 100 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .app_data(web::Data::new(tax_settings()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+    let bearer = |id: Uuid| {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+        )
+    };
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/bookings")
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(booking_request(guest, villa))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let id: Uuid = test::read_body_json::<serde_json::Value, _>(resp).await["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{id}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(admin))
+            .set_json(serde_json::json!({ "status": "confirmed" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    // The listing's commission moves after the ledger row was written at 10%.
+    sqlx::query("UPDATE listing SET commission_pct = 0.2 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/bookings/{id}/change-quote"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(serde_json::json!({ "date_to": "2030-08-04" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let quote: serde_json::Value = test::read_body_json(resp).await;
+    let amount = |v: &serde_json::Value| {
+        v.to_string()
+            .trim_matches('"')
+            .parse::<rust_decimal::Decimal>()
+            .unwrap()
+    };
+
+    // 2 nights at 200.00 plus 100.00 cleaning, less 10%.
+    assert_eq!(amount(&quote["previous_net_payout"]), dec!(450.00));
+    // 3 nights at 200.00 plus 100.00 cleaning, less the row's 10%, not the listing's 20%.
+    assert_eq!(amount(&quote["proposed_net_payout"]), dec!(630.00));
+    assert_eq!(
+        amount(&quote["pricing_snapshot"]["host_gross_amount"]),
+        dec!(700.00)
+    );
+}
+
+mod promo_codes {
+    use super::*;
+
+    pub(super) static DATABASE_URL_ENV: &str = "DATABASE_URL";
+
+    fn test_db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var(DATABASE_URL_ENV).unwrap_or_else(|_| {
+            "postgres://postgres:password@localhost:5432/our_places".to_string()
+        });
+        TestPg::new(db_url, Path::new("../../db_core/migrations"))
+    }
+
+    fn body(code: &str, listing_ids: Vec<Uuid>) -> serde_json::Value {
+        serde_json::json!({
+            "code": code,
+            "discount_type": "percentage",
+            "discount_value": "10",
+            "scope": "stay",
+            "valid_from": "2030-01-01T00:00:00Z",
+            "valid_to": "2030-12-31T00:00:00Z",
+            "applies_to_all": listing_ids.is_empty(),
+            "listing_ids": listing_ids,
+        })
+    }
+
+    macro_rules! call {
+        ($app:expr, $req:expr, $who:expr) => {{
+            let req = $req.insert_header(("Accept", "application/json"));
+            let req = match $who {
+                Some(id) => req.insert_header((
+                    "Authorization",
+                    format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+                )),
+                None => req,
+            };
+            test::call_service(&$app, req.to_request()).await
+        }};
+    }
+
+    macro_rules! app {
+        ($pool:expr) => {
+            test::init_service(
+                App::new()
+                    .app_data(web::Data::new($pool.clone()))
+                    .app_data(web::Data::new(settings()))
+                    .app_data(web::Data::new(tax_settings()))
+                    .configure(crate::apis::configure_routes),
+            )
+            .await
+        };
+    }
+
+    const URI: &str = "/api/v1/admin/promo-codes";
+
+    #[tokio::test]
+    async fn only_the_right_people_can_create_view_and_deactivate() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let host = user(&pool, UserRole::Host).await;
+        let other_host = user(&pool, UserRole::Host).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        let other_villa = listing(&pool, other_host).await;
+        let app = app!(pool);
+
+        // Anonymous callers get 401 and guests 403, on every route.
+        let id = Uuid::now_v7();
+        let routes = || {
+            [
+                test::TestRequest::get().uri(URI),
+                test::TestRequest::post()
+                    .uri(URI)
+                    .set_json(body("ANYONE", vec![])),
+                test::TestRequest::get().uri(&format!("{URI}/{id}")),
+                test::TestRequest::post().uri(&format!("{URI}/{id}/deactivate")),
+            ]
+        };
+        for req in routes() {
+            assert_eq!(call!(app, req, None::<Uuid>).status(), 401);
+        }
+        for req in routes() {
+            assert_eq!(call!(app, req, Some(guest)).status(), 403);
+        }
+
+        // A host can't select another host's listing.
+        let resp = call!(
+            app,
+            test::TestRequest::post()
+                .uri(URI)
+                .set_json(body("NOTMINE", vec![other_villa])),
+            Some(host)
+        );
+        assert_eq!(resp.status(), 403);
+
+        // A host's code is theirs; an admin's has no owner and can select any listing.
+        let resp = call!(
+            app,
+            test::TestRequest::post()
+                .uri(URI)
+                .set_json(body(" mine ", vec![villa])),
+            Some(host)
+        );
+        assert_eq!(resp.status(), 201);
+        let mine: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(mine["code"], "MINE");
+        assert_eq!(mine["owner_host_id"], host.to_string());
+        let mine_id = mine["id"].as_str().expect("id").to_string();
+
+        let resp = call!(
+            app,
+            test::TestRequest::post()
+                .uri(URI)
+                .set_json(body("FROMADMIN", vec![other_villa])),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 201);
+        let from_admin: serde_json::Value = test::read_body_json(resp).await;
+        assert!(from_admin["owner_host_id"].is_null());
+        let admin_id = from_admin["id"].as_str().expect("id").to_string();
+
+        // Reads and writes by a host who doesn't own the code are refused.
+        for (who, code_id, expected) in [
+            (other_host, mine_id.as_str(), 403),
+            (host, admin_id.as_str(), 403),
+            (host, mine_id.as_str(), 200),
+            (admin, mine_id.as_str(), 200),
+        ] {
+            let resp = call!(
+                app,
+                test::TestRequest::get().uri(&format!("{URI}/{code_id}")),
+                Some(who)
+            );
+            assert_eq!(resp.status(), expected, "GET {code_id} as {who}");
+        }
+        for (who, code_id) in [(other_host, mine_id.as_str()), (host, admin_id.as_str())] {
+            let resp = call!(
+                app,
+                test::TestRequest::post().uri(&format!("{URI}/{code_id}/deactivate")),
+                Some(who)
+            );
+            assert_eq!(resp.status(), 403);
+        }
+
+        // Lists: hosts see their own, admins everything.
+        let resp = call!(app, test::TestRequest::get().uri(URI), Some(host));
+        let list: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(list["total"], 1);
+        assert_eq!(list["codes"][0]["code"], "MINE");
+        let resp = call!(app, test::TestRequest::get().uri(URI), Some(admin));
+        let list: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(list["total"], 2);
+
+        // The actor comes from the token, and a second deactivation is refused.
+        let resp = call!(
+            app,
+            test::TestRequest::post().uri(&format!("{URI}/{mine_id}/deactivate")),
+            Some(host)
+        );
+        assert_eq!(resp.status(), 200);
+        let by: Option<Uuid> =
+            sqlx::query_scalar("SELECT deactivated_by FROM promo_code WHERE code = 'MINE'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(by, Some(host));
+        let resp = call!(
+            app,
+            test::TestRequest::post().uri(&format!("{URI}/{mine_id}/deactivate")),
+            Some(host)
+        );
+        assert_eq!(resp.status(), 409);
+        let err: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(err["code"], "PROMO_ALREADY_DEACTIVATED");
+    }
+
+    #[tokio::test]
+    async fn create_returns_typed_errors() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        sqlx::query("UPDATE currencies SET active = FALSE WHERE code = 'CAD'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let app = app!(pool);
+
+        // A case-variant duplicate.
+        let resp = call!(
+            app,
+            test::TestRequest::post()
+                .uri(URI)
+                .set_json(body("SUMMER", vec![])),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 201);
+        let resp = call!(
+            app,
+            test::TestRequest::post()
+                .uri(URI)
+                .set_json(body("summer", vec![])),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 409);
+        let err: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(err["code"], "PROMO_CODE_EXISTS");
+
+        // Invalid terms.
+        let mut too_precise = body("PRECISE", vec![]);
+        too_precise["discount_value"] = serde_json::json!("33.335");
+        let resp = call!(
+            app,
+            test::TestRequest::post().uri(URI).set_json(too_precise),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 400);
+
+        // A missing listing, and an inactive currency.
+        let resp = call!(
+            app,
+            test::TestRequest::post()
+                .uri(URI)
+                .set_json(body("GHOST", vec![Uuid::now_v7()])),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 400);
+        let mut inactive = body("INACTIVE", vec![]);
+        inactive["discount_type"] = serde_json::json!("fixed");
+        inactive["currency"] = serde_json::json!("CAD");
+        let resp = call!(
+            app,
+            test::TestRequest::post().uri(URI).set_json(inactive),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 422);
+        let err: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(err["code"], "CURRENCY_INACTIVE");
+
+        // An unknown ID.
+        let resp = call!(
+            app,
+            test::TestRequest::get().uri(&format!("{URI}/{}", Uuid::now_v7())),
+            Some(admin)
+        );
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn the_list_reports_remaining_uses() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let admin = user(&pool, UserRole::Admin).await;
+        let host = user(&pool, UserRole::Host).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        let app = app!(pool);
+
+        let mut limited = body("LIMITED", vec![]);
+        limited["total_usage_limit"] = serde_json::json!(3);
+        limited["valid_from"] = serde_json::json!("2020-01-01T00:00:00Z");
+        limited["valid_to"] = serde_json::json!("2040-01-01T00:00:00Z");
+        assert_eq!(
+            call!(
+                app,
+                test::TestRequest::post().uri(URI).set_json(limited),
+                Some(admin)
+            )
+            .status(),
+            201
+        );
+        let mut hold = booking_request(guest, villa);
+        hold["promo_code"] = serde_json::json!("LIMITED");
+        assert_eq!(
+            call!(
+                app,
+                test::TestRequest::post()
+                    .uri("/api/v1/bookings")
+                    .set_json(hold),
+                Some(guest)
+            )
+            .status(),
+            201
+        );
+
+        let resp = call!(app, test::TestRequest::get().uri(URI), Some(admin));
+        let list: serde_json::Value = test::read_body_json(resp).await;
+        let code = &list["codes"][0];
+        assert_eq!(code["active_holds"], 1);
+        assert_eq!(code["confirmed_uses"], 0);
+        assert_eq!(code["remaining_uses"], 2);
     }
 }

@@ -36,6 +36,11 @@ async fn main() -> anyhow::Result<()> {
             config.application.pending_hold_minutes
         );
     }
+    config
+        .application
+        .validate_max_stay_nights()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
     tracing::info!(
         hold_minutes = config.application.pending_hold_minutes,
         "Pending booking hold window"

@@ -18,7 +18,7 @@ use web_ui_common::components::{
     star_rating::star_rating,
 };
 
-use crate::quote::quote_for;
+use crate::quote::public_quote;
 use crate::support::{display_currency, jamaica_today};
 
 path_param!(slug);
@@ -115,7 +115,9 @@ async fn load(cx: &Cx, slug: &str) -> Result<ListingDetails> {
     get_api_client(cx)
         .get_listing_by_id(slug, currency.as_deref())
         .await
-        .map_err(|_| not_found().into())
+        .ok()
+        .filter(|details| details.listing.is_active)
+        .ok_or_else(|| not_found().into())
 }
 
 /// Most photos shown on the page; the rest are in the gallery dialog.
@@ -309,7 +311,16 @@ async fn initial_breakdown(
     currency: Option<&str>,
 ) -> Option<web_ui_common::components::domain::price_breakdown::PriceBreakdown> {
     let (check_in, check_out) = stay_dates(q)?;
-    quote_for(cx, details, check_in, check_out, currency).await
+    let guests = u32::try_from(q.guests.unwrap_or(1)).unwrap_or(1).max(1);
+    public_quote(
+        cx,
+        details.listing.id,
+        check_in,
+        check_out,
+        guests,
+        currency,
+    )
+    .await
 }
 
 /// Quote fragment for the booking card (`hx-get` on date/guest change).

@@ -75,6 +75,7 @@ fn get_test_settings() -> Settings {
             max_attempts: 1,
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
         },
         feature_flags: FeatureFlags {
             enable_hard_deletes: true,
@@ -119,6 +120,7 @@ async fn test_get_listing_by_id_success() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -220,6 +222,7 @@ async fn test_create_listing_validation_error() {
         damage_deposit: None,
         guests_included: 1,
         extra_guest_fee: None,
+        is_active: true,
     };
 
     let req = test::TestRequest::post()
@@ -268,6 +271,7 @@ async fn test_delete_listing() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -323,6 +327,7 @@ async fn test_delete_listing() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -382,6 +387,7 @@ async fn test_delete_listing_hard_forbidden() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -497,6 +503,7 @@ async fn test_update_listing_multiple_times() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -591,6 +598,7 @@ async fn test_get_listings_with_filter() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -623,6 +631,7 @@ async fn test_get_listings_with_filter() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await
@@ -704,6 +713,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         damage_deposit: Some(dec!(200.00)),
         guests_included: 2,
         extra_guest_fee: Some(dec!(30.00)),
+        is_active: true,
     };
 
     let req = test::TestRequest::post()
@@ -746,6 +756,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         damage_deposit: None,
         guests_included: 1,
         extra_guest_fee: None,
+        is_active: true,
     };
 
     let req = test::TestRequest::post()
@@ -889,6 +900,7 @@ mod currency_conversion_tests {
                 damage_deposit: None,
                 guests_included: None,
                 extra_guest_fee: None,
+                is_active: true,
             },
         )
         .await
@@ -934,6 +946,38 @@ mod currency_conversion_tests {
             .iter()
             .find(|l| l["id"] == id.to_string())
             .expect("listing in results")
+    }
+
+    #[actix_web::test]
+    async fn search_hides_inactive_listings_unless_asked() {
+        let c = ctx().await;
+        let active = listing(&c, "USD", dec!(100)).await;
+        let inactive = listing(&c, "USD", dec!(200)).await;
+        sql(
+            &c,
+            &format!("UPDATE listing SET is_active = FALSE WHERE id = '{inactive}'"),
+        )
+        .await;
+        let ids = |body: &serde_json::Value| -> Vec<String> {
+            body.as_array()
+                .expect("listing array")
+                .iter()
+                .map(|l| l["id"].as_str().expect("id").to_string())
+                .collect()
+        };
+
+        let (status, body) = get(&c, "/api/v1/listings").await;
+        assert_eq!(status, 200);
+        assert_eq!(ids(&body), [active.to_string()]);
+
+        let (status, body) = get(&c, "/api/v1/listings?include_inactive=true").await;
+        assert_eq!(status, 200);
+        assert!(ids(&body).contains(&inactive.to_string()), "{body}");
+        assert!(ids(&body).contains(&active.to_string()), "{body}");
+
+        // The admin portal reads the listing it edits by id, so this stays open.
+        let (status, _) = get(&c, &format!("/api/v1/listings/{inactive}")).await;
+        assert_eq!(status, 200);
     }
 
     #[actix_web::test]
@@ -1099,6 +1143,7 @@ mod currency_inactive_tests {
             damage_deposit: None,
             guests_included: 1,
             extra_guest_fee: None,
+            is_active: true,
         }
     }
 
@@ -1131,6 +1176,34 @@ mod currency_inactive_tests {
             status,
             serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
         )
+    }
+
+    #[actix_web::test]
+    async fn create_honours_is_active_and_treats_omitted_as_active() {
+        let (_db, pool, user) = setup().await;
+        let app = app_for(&pool).await;
+        let mut omitted = serde_json::to_value(new_listing_request(user, "USD")).expect("json");
+        omitted.as_object_mut().expect("object").remove("is_active");
+        let mut inactive = new_listing_request(user, "USD");
+        inactive.name = "Inactive villa".to_string();
+        inactive.is_active = false;
+
+        for (body, expected) in [
+            (omitted, true),
+            (serde_json::to_value(inactive).expect("json"), false),
+        ] {
+            let (status, created) = status_and_code(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/v1/listings")
+                    .insert_header(("Accept", "application/json"))
+                    .set_json(body)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(status, 201, "{created}");
+            assert_eq!(created["is_active"], expected, "{created}");
+        }
     }
 
     #[actix_web::test]
@@ -1198,6 +1271,7 @@ mod currency_inactive_tests {
                 damage_deposit: None,
                 guests_included: None,
                 extra_guest_fee: None,
+                is_active: true,
             },
         )
         .await
@@ -1257,6 +1331,7 @@ mod currency_inactive_tests {
                     damage_deposit: None,
                     guests_included: None,
                     extra_guest_fee: None,
+                    is_active: true,
                 },
             )
             .await
