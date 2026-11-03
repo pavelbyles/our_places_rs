@@ -310,7 +310,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p db_core text_search_tests`
   - **Dependencies:** None
 
-- [ ] **Task 12: Prove every path agrees on availability**
+- [x] **Task 12: Prove every path agrees on availability**
   - **Scope:** S
   - **Description:** Add the table-driven parity test from spec §6, comparing `check_availability`, the hold, search and the calendar for the same bookings. Use `TestPg`, a fresh listing for each case, and a different guest for the hold probe, because a guest's own holds don't conflict and a successful probe would otherwise affect the next case.
   - **Files Touched:**
