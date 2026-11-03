@@ -22,6 +22,7 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
 6. **Clear refusals**: invalid input returns a typed 400 with a readable message such as "Invalid date range", and the page shows it instead of "no listings".
 7. **Search by place**: the search text matches a listing's name, city or country, so "Runaway Bay" or "Jamaica" finds villas.
 8. **No past stays**: quotes and holds refuse dates in the past, as search does.
+9. **The booking gap is enforced**: `days_between_bookings` is applied wherever availability is decided, including holds, changes to a booking and the listing calendar, so a host's turnaround time is actually protected.
 
 ---
 
@@ -34,12 +35,26 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
   - Only one of the two dates: "Invalid date range: choose both check-in and check-out."
   - More nights than `application.max_stay_nights`: "Invalid date range: stays can be at most N nights."
   - `guests` below 1: "Guests must be at least 1."
-- **Availability filter**: part of the search query itself, so it's one batched query and `LIMIT`/`OFFSET` count only matching listings. It extends the overlap rule in `db_core/src/booking/availability.rs` with the listing's gap: a booking blocks the stay when `date_from < check_out + days_between_bookings AND date_to + days_between_bookings > check_in`. With a gap of 0, the default, same-day turnover stays bookable.
+- **Availability filter**: part of the search query itself, so it's one batched query and `LIMIT`/`OFFSET` count only matching listings. It uses the gap-aware overlap rule below.
+- **Gap-aware availability everywhere**: a booking blocks a stay when `date_from - days_between_bookings < check_out AND date_to + days_between_bookings > check_in`. With a gap of 0, the default, same-day turnover stays bookable. Every place that decides availability changes together:
+
+  | Path | Code | Change |
+  |---|---|---|
+  | New hold | `db_core/src/booking/hold.rs:48` | Has its own copy of the overlap query. Applies the gap, read from the listing row it already locks. A guest's own live hold still doesn't conflict, so they can replace it |
+  | Availability check | `check_availability` | Applies the gap, which also covers `GET /bookings/availability` |
+  | Booking updates | `check_availability_excluding` via `booking/update.rs:194` | Applies the gap to other bookings, never to the booking being changed |
+  | Reservation changes | `check_availability_excluding` via `reservation_change.rs:313`, `:831` and `reservation_changes.rs:120` | Same, at quote, request and approval |
+  | Listing calendar | `get_unavailable_ranges` | Each range widens to `[date_from - gap, date_to + gap)`, and the query also finds bookings just outside the window whose gap reaches into it |
+
+  - Quotes never check availability, so they don't change.
+  - The calendar needs no new date-picking logic. `ui.js` already lets a guest check out on the first unavailable night, which is now the last day the gap allows.
+  - The response still contains dates only, so a guest can't tell gap nights from booked ones.
+  - Admin and host date edits are refused inside the gap too. No override is added.
 - **Text search on name, city or country**: a case-insensitive partial match on `listing.name`, `listing.city` or `listing.country`, used by the "Where" field and the `/listings` search box.
   - It uses a new `q` parameter, so the API's `name` filter keeps its meaning.
   - `%` and `_` in the text are escaped, so they match literally.
   - `country` is free text matched as stored. A listing stored as "JM" won't match "Jamaica", but the admin form's default is "Jamaica".
-- **Past dates refused at quote and hold**: `price_stay` rejects them with the same typed 400. All three of its callers are covered: `create_booking`, the public quote and the signed-in quote. Booking updates and reservation changes already have their own date rules and don't change.
+- **Past dates refused at quote and hold**: `price_stay` rejects them with the same typed 400. All three of its callers are covered: `create_booking`, the public quote and the signed-in quote. Booking updates and reservation changes already have their own past-date rules, which don't change.
 - **Guest filter**: `guests <= max_guests`, the same comparison as `check_guest_count`.
 - **Minimum stay filter**: the nights must meet the larger of `listing.minimum_stay` and the `min_nights` of any price override covering a night of the stay. This matches `calculate_dynamic_quote` in `common/src/pricing.rs`, so search won't offer a stay that pricing then refuses.
 - **Batched stay totals**: rates and price overrides are each loaded in one query for the whole page of results. The total comes from the same calculation as the quote and the hold (see Constraints).
@@ -55,21 +70,21 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
 
 ### Out of Scope / Non-Goals
 - A per-listing maximum stay. None exists today, so the only limit is the app-wide `max_stay_nights`.
-- Enforcing `days_between_bookings` at quote or hold, or showing it on the listing calendar. This branch applies the gap in search only (see Open Questions).
+- Applying the gap to existing bookings. Bookings already closer together than the gap stay as they are, including when a host raises it later. A booking is only rechecked if its dates change.
 - Host-blocked dates. The schema has no such concept, and iCal sync is #58.
 - Promo codes on card totals. A code needs a signed-in guest and is entered at checkout.
 - Price filtering or sorting by stay total, flexible dates, and suggesting alternative dates.
 - Location or map search (#61, #103).
 - Date filtering on the admin portal's listing pages.
 - Showing a total on the home page carousel, which has no dates to price.
-- Changing how holds are placed or locked, other than the past-date check.
+- Changing how holds are locked. The listing row lock and lock order stay as they are. Only the past-date and gap checks are added.
 
 ---
 
 ## 4. Affected Systems & Stakeholders
 - **User Personas**:
   - **Guest**: searches, compares real totals, and shares links.
-  - **Host and Admin**: no new screens. Their listings appear only for searches they can serve.
+  - **Host and Admin**: no new screens. Their listings appear only for searches they can serve, and the gap they set now takes effect. Their own date edits must respect it too.
 - **System Components**:
 
   | Component | Change |
@@ -78,6 +93,8 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
   | `common/src/app_client/listings.rs`, `web_client` | Send the new params, keep the error code so pages can show the reason |
   | `common/src/pricing.rs` | Shared stay-total calculation, if pricing moves here (see Open Questions) |
   | `common` | Shared stay-date validation and Jamaica date, used by search and `price_stay` |
+  | `db_core/src/booking/availability.rs`, `hold.rs` | Gap-aware overlap rule for checks, holds and calendar ranges |
+  | `common/src/availability.rs`, `web_ui_common/.../date_range_calendar.rs` | Range docs and wording now cover gap nights as well as booked ones |
   | `db_core/src/listing/queries.rs` | Availability with gap, guest, minimum-stay and name/city/country conditions in `get_listings`, batched override loading |
   | `app_api/listing_api/src/apis.rs` | Validation, typed errors, stay totals next to `convert_search_prices` |
   | `app_api/api_core/src/error.rs` | New typed codes. `DbError::ValidationError` returns `{"error": msg}` with no code, so it isn't enough |
@@ -89,10 +106,11 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
 
 ## 5. Constraints & Non-Negotiable Invariants
 - **Domain Invariants**:
-  - **Availability rule**: search and `check_availability` use the same status set and overlap condition, and search adds the listing's gap. Search can be stricter than a hold, never looser: every listing it returns must pass `check_availability`. With a gap of 0 they agree exactly. Tests prove both.
+  - **One availability rule**: search, the hold, updates, reservation changes and the calendar all use the same status set, overlap condition and gap. There are copies of this SQL today, including the hold's, and tests must prove they agree at gaps of 0 and above.
+  - **Gap read under the lock**: the hold reads `days_between_bookings` in the transaction holding the listing row lock, so two concurrent holds can't both land inside each other's gap.
   - **One date check**: search and `price_stay` share the validation, so they can't disagree on what counts as a past date.
   - **One price**: the card total must equal the public quote and the hold for the same listing, dates, guests and currency, with no promo. It must come from shared code, not a second formula.
-  - **Search doesn't place holds**: it's a lock-free read, like `get_unavailable_ranges`. `CONSTRAINTS.md`'s `FOR UPDATE` rule still applies to the hold, which stays the only authority. A listing can be taken between search and hold, and the hold then returns its existing `DATE_UNAVAILABLE`.
+  - **Search doesn't place holds**: it's a lock-free read, like `get_unavailable_ranges`. `CONSTRAINTS.md`'s `FOR UPDATE` rule still applies to the hold, which stays the only authority. A listing can be taken between search and hold, and the hold then refuses it. Today that refusal is an untyped 400, "Listing is not available for the selected dates" (see Open Questions).
   - **No guessed prices** (#100): a listing with no rate to the requested currency stays in the results with no total and "Price unavailable in CUR". It's never given a fallback rate, and it never fails the whole search.
   - `rust_decimal::Decimal` only for money, and no `.unwrap()`/`.expect()`.
   - An expired hold frees its dates in search as soon as `expires_at` passes, without waiting for a cleanup job.
@@ -115,7 +133,13 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
   - Test: a listing is left out for a confirmed booking or a live hold, and returned for an expired hold and a cancelled booking.
   - Test: with a gap of 0, a same-day turnover is returned in either direction.
   - Test: with a gap of N, a stay N−1 days before or after a booking is left out and one N days away is returned. Live holds count, and expired holds don't.
-  - Test: with a gap of 0, search and `check_availability` agree for the same bookings. With a gap, every listing search returns still passes `check_availability`.
+  - Test: for the same bookings and gaps of 0 and above, search, `check_availability`, the hold and the calendar all agree on which stays are free.
+  - Test: a hold, a booking update, and a reservation change at quote, request and approval are each refused N−1 days from another booking and accepted N days away.
+  - Test: concurrent holds inside each other's gap produce exactly one success.
+  - Test: a guest can replace their own live hold with one inside its gap.
+  - Test: changing a booking's dates ignores its own gap, and is still checked against its neighbours.
+  - Test: a booking just outside the calendar window whose gap reaches into it greys out those nights, and the last check-out the gap allows can be selected.
+  - Test: raising a gap leaves existing bookings and their status changes alone, including confirming a live hold.
   - Test: the text search matches on name, city and country, ignoring case, and combines with the date and guest filters. `%` and `_` match literally.
   - Test: a past check-in returns the typed 400 from search, `create_booking`, the public quote and the signed-in quote, and creates no hold. Check-in on the Jamaica date for today is accepted, including when the UTC date has already moved on.
   - Test fixtures with fixed dates that go through these paths use relative dates, so they don't start failing as the dates pass.
@@ -132,7 +156,8 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
   - Playwright: an expired bookmark shows the validation message and a way to pick new dates.
   - Database tests run against the local Postgres in the devenv shell, not Docker.
 - **Lagging Indicators**:
-  - Fewer `DATE_UNAVAILABLE` and minimum-stay refusals at checkout.
+  - Fewer availability and minimum-stay refusals at checkout.
+  - No new booking lands inside a listing's gap.
   - No reports of a card total that differs from checkout.
   - Search latency stays in line with today's listing search.
 
@@ -141,18 +166,16 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
 ## 7. Open Questions & Policy Concerns
 ### Resolved (originator, 2026-11-02)
 - [x] **Maximum stay**: listings have no maximum-stay rule, so only the app-wide `max_stay_nights` applies. Going over it returns a 400 with a readable message such as "Invalid date range".
-- [x] **`days_between_bookings`**: search takes the gap into account. This goes beyond the issue, which asks for the same rule as booking.
+- [x] **`days_between_bookings`**: enforced everywhere availability is decided, including holds, not only in search. Booking and search still share one rule, as the issue asks, and that rule now includes the gap.
 - [x] **What "total" includes**: the quote's `total_amount`, including tax, fees and the refundable damage deposit, labelled so the deposit is clear. The card matches checkout.
 - [x] **Default guests**: 1 everywhere, replacing today's default of 2 on the home form, listing page form and checkout.
 - [x] **Text search**: matches a listing's name, city or country.
 - [x] **Past dates at booking**: fixed in this branch, for holds and both quote endpoints.
 
 ### Still Open
-**Policy (originator)**
-- [ ] **Gap at the hold**: holds and the listing calendar still ignore `days_between_bookings`. A guest who opens a listing directly can still book inside the gap, and search will leave out stays the calendar shows as free. *Assumed: search only, as decided, with hold enforcement as a follow-up issue.* Enforcing it at the hold would be the only way to actually protect a host's gap.
-
 **Design (Stage 2)**
+- [ ] **Hold refusal code**: `create_booking` refuses unavailable dates with `DbError::ValidationError`, an uncoded 400, while updates and reservation changes return `DATE_UNAVAILABLE` (409). *Proposed: the hold also returns `DATE_UNAVAILABLE`, once the spec confirms what the checkout page and tests expect.*
 - [ ] **Where stay totals are calculated**: `price_stay` lives in `booking_api`, and `listing_api` can't depend on it. *Proposed: move the promo-free calculation into `common`, used by both services, with `listing_api` returning the totals in the search response.* This gives one request and one set of batched lookups. The alternative is a new batch-quote endpoint in `booking_api`, which keeps pricing in one service but adds a second call per search and a new way to get a partial failure.
 - [ ] **Error codes**: exact names, and whether they reuse the `{code, message}` shape used by the currency errors. `promo_refusal_in_error` is the precedent for reading a code in the portal.
 
-Issues to open: per-listing maximum stay (if wanted), and `days_between_bookings` enforcement at quote, hold and calendar.
+Issue to open, if wanted: per-listing maximum stay.
