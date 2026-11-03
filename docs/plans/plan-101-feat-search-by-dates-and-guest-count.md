@@ -263,7 +263,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p booking_api past_date_tests`
   - **Dependencies:** Tasks 1, 2, 7
 
-- [ ] **Task 9: Fix checkout's error messages**
+- [x] **Task 9: Fix checkout's error messages**
   - **Scope:** XS
   - **Description:** `booking_error_message` checks error codes before the word match, and shows `INVALID_STAY_DATES`'s own message.
   - **Files Touched:**

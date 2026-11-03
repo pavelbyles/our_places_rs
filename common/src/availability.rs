@@ -99,6 +99,21 @@ impl StayInputError {
     }
 }
 
+/// The message of a stay refusal in an API error's text, if it is one. The text
+/// ends with the response body, such as `Failed (400): {"code":...,"message":...}`.
+pub fn stay_refusal_message_in_error(text: &str) -> Option<String> {
+    let body: serde_json::Value = serde_json::from_str(&text[text.find('{')?..]).ok()?;
+    let code = body["code"].as_str()?;
+    [
+        "INVALID_STAY_DATES",
+        "INVALID_GUESTS",
+        "INVALID_SEARCH_TEXT",
+    ]
+    .contains(&code)
+    .then(|| body["message"].as_str().map(str::to_string))
+    .flatten()
+}
+
 /// Checks a stay's dates. Search and stay pricing share this, so they can't
 /// disagree on what counts as a valid stay.
 pub fn validate_stay_dates(
@@ -387,6 +402,24 @@ mod stay_input_tests {
         );
         for bad in ["a\0b", "a\nb", "a\u{7f}b"] {
             assert_eq!(text(bad), Err(StayInputError::InvalidSearchText), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_stay_refusal_message_is_read_from_an_api_error() {
+        let refused = r#"Failed (400 Bad Request): {"code":"INVALID_STAY_DATES","message":"Invalid date range: dates can't be in the past."}"#;
+        assert_eq!(
+            stay_refusal_message_in_error(refused).as_deref(),
+            Some("Invalid date range: dates can't be in the past.")
+        );
+        for other in [
+            r#"Failed (409): {"code":"DATE_UNAVAILABLE","message":"gone"}"#,
+            r#"Failed (400): {"error":"bad"}"#,
+            "INVALID_STAY_DATES",
+            "boom",
+            "{ not json",
+        ] {
+            assert_eq!(stay_refusal_message_in_error(other), None, "{other}");
         }
     }
 

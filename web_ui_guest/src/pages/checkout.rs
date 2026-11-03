@@ -477,19 +477,24 @@ async fn place_booking(
 /// What to tell the guest when `booking_api` refuses a hold. A refused promo code
 /// comes first: nothing else should hide why the discount wasn't given.
 fn booking_error_message(text: &str, max_guests: u32) -> String {
+    // Codes come first: "unavailable" in a currency error's message would also
+    // match the word check below.
     if let Some(refusal) = common::app_client::promo_refusal_in_error(text) {
         refusal.message()
     } else if text.contains("LISTING_UNAVAILABLE") {
         "This property is no longer taking bookings.".to_string()
-    } else if text.contains("available") || text.contains("overlap") || text.contains("conflict") {
-        "Those dates are no longer available. Please choose different dates.".to_string()
-    } else if text.contains("max_guests") {
-        format!("This stay allows 1 to {max_guests} guests.")
+    } else if text.contains("INVALID_STAY_DATES") {
+        common::availability::stay_refusal_message_in_error(text)
+            .unwrap_or_else(|| "Please choose valid dates.".to_string())
     } else if text.contains("CURRENCY_INACTIVE") {
         "This currency is no longer offered. Please choose another currency.".to_string()
     } else if text.contains("FX_RATE_UNAVAILABLE") {
         "We can't take payment in this currency right now. Please choose another currency."
             .to_string()
+    } else if text.contains("available") || text.contains("overlap") || text.contains("conflict") {
+        "Those dates are no longer available. Please choose different dates.".to_string()
+    } else if text.contains("max_guests") {
+        format!("This stay allows 1 to {max_guests} guests.")
     } else {
         "We couldn't place your booking. Please try again.".to_string()
     }
@@ -542,5 +547,39 @@ mod promo_tests {
         assert!(booking_error_message("exceeds listing max_guests", 4).contains("1 to 4"));
         assert!(booking_error_message("FX_RATE_UNAVAILABLE", 4).contains("currency"));
         assert!(booking_error_message("boom", 4).contains("try again"));
+    }
+}
+
+#[cfg(test)]
+mod booking_error_codes {
+    use super::booking_error_message;
+
+    #[test]
+    fn a_currency_problem_never_says_the_dates_are_gone() {
+        let text = r#"Failed to create booking (422 Unprocessable Entity): {"code":"FX_RATE_UNAVAILABLE","message":"Foreign exchange rate unavailable for currency pair: USD -> CAD"}"#;
+        let message = booking_error_message(text, 4);
+        assert!(message.contains("currency"), "{message}");
+        assert!(!message.contains("dates"), "{message}");
+    }
+
+    #[test]
+    fn taken_dates_ask_for_other_dates() {
+        let text = r#"Failed to create booking (409 Conflict): {"code":"DATE_UNAVAILABLE","message":"The requested dates are no longer available."}"#;
+        assert!(booking_error_message(text, 4).contains("no longer available"));
+    }
+
+    #[test]
+    fn invalid_stay_dates_show_their_own_message() {
+        let text = r#"Failed to create booking (400 Bad Request): {"code":"INVALID_STAY_DATES","message":"Invalid date range: dates can't be in the past."}"#;
+        assert_eq!(
+            booking_error_message(text, 4),
+            "Invalid date range: dates can't be in the past."
+        );
+    }
+
+    #[test]
+    fn an_unreadable_invalid_stay_dates_body_still_says_something_useful() {
+        let message = booking_error_message("INVALID_STAY_DATES", 4);
+        assert!(message.contains("valid dates"), "{message}");
     }
 }
