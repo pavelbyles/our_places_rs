@@ -30,6 +30,12 @@ async fn main() -> anyhow::Result<()> {
     // Get settings
     let config = settings::get_settings().context("Could not load settings")?;
 
+    config
+        .application
+        .validate_max_stay_nights()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+
     // User tokens cannot be verified without it, and there is no fallback.
     api_core::auth::jwt_secret().context("Refusing to start")?;
 

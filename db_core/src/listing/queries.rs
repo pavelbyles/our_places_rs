@@ -48,7 +48,8 @@ fn push_stay_conditions(
 }
 
 /// Retrieves a paginated list of listings from the database with optional filtering.
-#[tracing::instrument(skip(executor))]
+/// The filter stays out of the span, because it can hold what a guest typed.
+#[tracing::instrument(skip(executor, filter))]
 pub async fn get_listings<'e, E>(
     executor: E,
     page: u32,

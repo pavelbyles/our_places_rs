@@ -6,6 +6,7 @@ use api_core::models::{
 };
 use api_core::response::{Payload, respond};
 use api_core::{error::ApiError, pagination, settings::Settings};
+use common::availability::{StaySearch, jamaica_today, parse_stay_search};
 use common::currency::CurrencyCode;
 use common::models::{ListingQueryParams, ListingResponse, UpdatedListingRequest};
 use db_core::listing as db_listing;
@@ -97,8 +98,28 @@ async fn convert_search_prices(
     Ok(())
 }
 
+/// Reads what a guest searched for. A refusal is logged by its code alone,
+/// because the input can hold what they typed.
+fn read_stay_search(
+    query: &ListingQueryParams,
+    now: chrono::DateTime<chrono::Utc>,
+    max_stay_nights: i64,
+) -> Result<StaySearch, ApiError> {
+    parse_stay_search(
+        query.check_in.as_deref(),
+        query.check_out.as_deref(),
+        query.guests.as_deref(),
+        query.q.as_deref(),
+        jamaica_today(now),
+        max_stay_nights,
+    )
+    .map_err(|refused| {
+        tracing::warn!(code = refused.code(), "search input refused");
+        ApiError::Database(db_core::error::DbError::StayInput(refused))
+    })
+}
+
 /// Gives first 10 listings if no page or per_page is provided
-#[tracing::instrument(err)]
 #[utoipa::path(
     get,
     path = "/api/v1/listings",
@@ -108,13 +129,16 @@ async fn convert_search_prices(
     ),
     responses(
         (status = 200, description = "List of listings", body = [ListingResponse]),
+        (status = 400, description = "INVALID_STAY_DATES, INVALID_GUESTS or INVALID_SEARCH_TEXT"),
         (status = 500, description = "Internal server error")
     )
 )]
-#[tracing::instrument(skip(pool, req))]
+// `skip_all`: the query and request both hold what a guest typed.
+#[tracing::instrument(skip_all)]
 pub async fn get_listings(
     pool: web::Data<sqlx::PgPool>,
     query: web::Query<common::models::ListingQueryParams>,
+    settings: web::Data<Settings>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
     tracing::info!("GET /api/v1/listings entered");
@@ -133,6 +157,13 @@ pub async fn get_listings(
             }
         }
     }
+
+    let search = read_stay_search(
+        &query,
+        chrono::Utc::now(),
+        settings.application.max_stay_nights,
+    )?;
+    let (check_in, check_out) = search.dates.unzip();
 
     // Set default values for pagination if they are not provided.
     let page = query.page.unwrap_or(1);
@@ -153,7 +184,10 @@ pub async fn get_listings(
         user_id: query.user_id,
         host: query.host.clone(),
         include_inactive: query.include_inactive,
-        ..Default::default()
+        check_in,
+        check_out,
+        guests: search.guests,
+        q: search.q,
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))

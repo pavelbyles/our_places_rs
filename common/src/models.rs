@@ -419,6 +419,15 @@ pub struct ListingQueryParams {
     /// Also return inactive listings, for the admin portal and past-stay lookups.
     #[serde(default)]
     pub include_inactive: bool,
+    /// Text matched against the listing's name, city or country.
+    pub q: Option<String>,
+    /// First night of the stay, `YYYY-MM-DD`. Read as text, so a bad date gets
+    /// the typed refusal rather than the framework's own error.
+    pub check_in: Option<String>,
+    /// Departure date of the stay, `YYYY-MM-DD`. Read as text, like `check_in`.
+    pub check_out: Option<String>,
+    /// Party size. Read as text, like `check_in`.
+    pub guests: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]

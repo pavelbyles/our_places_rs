@@ -323,7 +323,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p db_core availability_parity_tests`
   - **Dependencies:** Tasks 5, 6, 10
 
-- [ ] **Task 13: Accept and validate search params in `listing_api`**
+- [x] **Task 13: Accept and validate search params in `listing_api`**
   - **Scope:** S
   - **Description:** `ListingQueryParams` gains `q`, `check_in`, `check_out` and `guests` as strings. A helper taking `now` calls `parse_stay_search` before any query, and passes the result to the filter. Fill the `ListingFilter` literal at `apis.rs:144` and remove Task 10's `..Default::default()`, which `clippy::needless_update` would otherwise flag. Replace both `#[tracing::instrument]` attributes on `get_listings` (`apis.rs:101` and `:114`) with one `#[tracing::instrument(skip_all)]`, so a refusal doesn't log at ERROR and `query` and `req` aren't recorded. Change `db_core/src/listing/queries.rs:9` to `skip(executor, filter)`. `CustomRootSpanBuilder` records a path-only `http.target`, by building its span without the query-bearing field, as `web_ui_common/src/request_tracing.rs:46-52` does. Calling `span.record` after `root_span!` won't work, because the macro has already stored the full target and the log layer appends rather than replaces. `main.rs` validates `max_stay_nights` at startup, and the key is added to `listing_api`'s `Default.toml`, so the two services can't disagree. Copy `capture_logs` from `promo_hold_tests.rs` into `apis_test.rs` as a `pub(super)` helper, for this task and Task 15.
   - **Files Touched:**
