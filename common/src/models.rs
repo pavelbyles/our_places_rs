@@ -632,9 +632,11 @@ pub struct NewListingRequest {
     pub price_per_night: Option<Decimal>,
 
     #[serde(default)]
+    #[validate(custom(function = "validate_discount_percentage"))]
     pub weekly_discount_percentage: Option<Decimal>,
 
     #[serde(default)]
+    #[validate(custom(function = "validate_discount_percentage"))]
     pub monthly_discount_percentage: Option<Decimal>,
 
     // --- NEW: Capacity & Room Breakdown ---
@@ -692,7 +694,11 @@ pub struct NewListingRequest {
 
     #[serde(default = "default_days_between_bookings")]
     #[schema(example = 0)]
-    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    #[validate(range(
+        min = 0,
+        max = 365,
+        message = "Days between bookings must be between 0 and 365"
+    ))]
     pub days_between_bookings: i32,
 
     #[serde(default)]
@@ -720,6 +726,16 @@ pub struct NewListingRequest {
     #[schema(value_type = Option<String>, example = "25.00")]
     #[validate(custom(function = "validate_fee"))]
     pub extra_guest_fee: Option<Decimal>,
+}
+
+/// Validates that a stay discount is between 0 and 100 percent. An unbounded
+/// value could overflow the discount calculation.
+pub fn validate_discount_percentage(pct: &Decimal) -> Result<(), validator::ValidationError> {
+    if *pct < Decimal::ZERO || *pct > Decimal::ONE_HUNDRED {
+        return Err(validator::ValidationError::new("discount_out_of_range")
+            .with_message("Discounts must be between 0 and 100 percent".into()));
+    }
+    Ok(())
 }
 
 /// Validates that a fee is between 0 and 1,000,000 and has at most 2 decimal places.
@@ -783,9 +799,11 @@ pub struct UpdatedListingRequest {
     pub price_per_night: Option<Decimal>,
 
     #[serde(default)]
+    #[validate(custom(function = "validate_discount_percentage"))]
     pub weekly_discount_percentage: Option<Decimal>,
 
     #[serde(default)]
+    #[validate(custom(function = "validate_discount_percentage"))]
     pub monthly_discount_percentage: Option<Decimal>,
 
     #[serde(default)]
@@ -840,7 +858,11 @@ pub struct UpdatedListingRequest {
 
     #[serde(default)]
     #[schema(example = 0)]
-    #[validate(range(min = 0, message = "Days between bookings cannot be negative"))]
+    #[validate(range(
+        min = 0,
+        max = 365,
+        message = "Days between bookings must be between 0 and 365"
+    ))]
     pub days_between_bookings: Option<i32>,
 
     #[serde(default)]

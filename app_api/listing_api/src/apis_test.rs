@@ -1358,3 +1358,116 @@ mod currency_inactive_tests {
         assert_eq!(status, 200);
     }
 }
+
+mod gap_limit_tests {
+    use super::*;
+    use rust_decimal::Decimal;
+
+    fn listing(
+        user_id: Uuid,
+        gap: i32,
+        weekly: Option<Decimal>,
+    ) -> common::models::NewListingRequest {
+        common::models::NewListingRequest {
+            name: format!("Gap Villa {}", Uuid::now_v7()),
+            user_id,
+            description: None,
+            listing_structure: "Villa".to_string(),
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(250.00)),
+            weekly_discount_percentage: weekly,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 2,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: gap,
+            commission_pct: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: 1,
+            extra_guest_fee: None,
+            is_active: true,
+        }
+    }
+
+    #[actix_web::test]
+    async fn gap_and_discount_limits_apply_on_create_and_update() {
+        dotenvy::dotenv().ok();
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let user_id = create_test_user(&mut conn).await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let post = |body: common::models::NewListingRequest| {
+            test::TestRequest::post()
+                .uri("/api/v1/listings")
+                .set_json(body)
+                .to_request()
+        };
+
+        // Create: the limits are accepted, one past them is refused.
+        for (gap, expected) in [(0, 201), (365, 201), (-1, 400), (366, 400)] {
+            let resp = test::call_service(&app, post(listing(user_id, gap, None))).await;
+            assert_eq!(resp.status(), expected, "create with gap {gap}");
+        }
+        for (pct, expected) in [
+            (dec!(0), 201),
+            (dec!(100), 201),
+            (dec!(-1), 400),
+            (dec!(100.01), 400),
+        ] {
+            let resp = test::call_service(&app, post(listing(user_id, 0, Some(pct)))).await;
+            assert_eq!(resp.status(), expected, "create with discount {pct}");
+        }
+
+        let resp = test::call_service(&app, post(listing(user_id, 0, None))).await;
+        let created: ListingResponse = test::read_body_json(resp).await;
+        let uri = format!("/api/v1/listings/{}", created.id);
+
+        // Update: the same limits.
+        for (gap, expected) in [(0, 200), (365, 200), (-1, 400), (366, 400)] {
+            let req = test::TestRequest::patch()
+                .uri(&uri)
+                .set_json(UpdatedListingRequest {
+                    days_between_bookings: Some(gap),
+                    ..Default::default()
+                })
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), expected, "update with gap {gap}");
+        }
+        for (pct, expected) in [
+            (dec!(0), 200),
+            (dec!(100), 200),
+            (dec!(-1), 400),
+            (dec!(100.01), 400),
+        ] {
+            let req = test::TestRequest::patch()
+                .uri(&uri)
+                .set_json(UpdatedListingRequest {
+                    monthly_discount_percentage: Some(pct),
+                    ..Default::default()
+                })
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), expected, "update with discount {pct}");
+        }
+    }
+}

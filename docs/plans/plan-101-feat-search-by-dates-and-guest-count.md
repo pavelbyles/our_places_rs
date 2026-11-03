@@ -148,7 +148,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p api_core stay_input_error_tests`
   - **Dependencies:** Task 1
 
-- [ ] **Task 3: Limit the gap and discount settings**
+- [x] **Task 3: Limit the gap and discount settings**
   - **Scope:** S
   - **Description:** `days_between_bookings` must be 0–365, on create, update and the admin form. `weekly_discount_percentage` and `monthly_discount_percentage` must be 0–100 on create and update, because an unbounded value could overflow `Decimal` and panic in pricing. The admin form already caps them. Run a read-only check on the local database for out-of-range rows, and flag any to the originator rather than changing them. Task 22 records the production check.
   - **Files Touched:**
