@@ -175,5 +175,6 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
 - [x] **Hold refusal code**: the hold returns `DATE_UNAVAILABLE` (409), like updates and reservation changes.
 - [x] **Where stay totals are calculated**: in `listing_api`, with the promo-free calculation moved to `common` and used by both services.
 - [x] **Error codes**: `INVALID_STAY_DATES` and `INVALID_GUESTS`, as a 400 with `{code, message}`.
+- [x] **Confirm race**: fixed in this branch. Found in engineering review: a hold that expires while its confirmation waits on the listing lock could still be confirmed. The expiry check now uses `clock_timestamp()`.
 
 Design detail is in [spec-101](../specs/spec-101-feat-search-by-dates-and-guest-count.md). Issue to open, if wanted: per-listing maximum stay.

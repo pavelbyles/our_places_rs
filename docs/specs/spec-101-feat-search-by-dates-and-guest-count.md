@@ -37,8 +37,9 @@ Invalid input returns a 400 with `{code, message}`, and the portal shows `messag
 | 4 | `check_in` before today | `INVALID_STAY_DATES` | Invalid date range: dates can't be in the past. |
 | 5 | More nights than `application.max_stay_nights` | `INVALID_STAY_DATES` | Invalid date range: stays can be at most N nights. |
 | 6 | `guests` not a whole number, below 1, or too large for `i32` | `INVALID_GUESTS` | Guests must be at least 1. |
+| 7 | `q` with a NUL or control character, or over 200 characters | `INVALID_SEARCH_TEXT` | Please shorten your search and use only letters, numbers and punctuation. |
 
-"Today" is the Jamaica date (UTC−5). Check-in today is allowed.
+"Today" is the Jamaica date (UTC−5). Check-in today is allowed. `q` is trimmed first, and blank counts as absent. A refusal is logged by its code only, and below ERROR.
 
 ### 1.3. Search Filters
 1. **Availability**: uses the rule in §1.5.
@@ -52,7 +53,7 @@ Invalid input returns a 400 with `{code, message}`, and the portal shows `messag
 1. With dates, each listing that can be priced carries a `stay_total`. The amount is the quote's `total_amount`, which includes tax, fees and the refundable damage deposit, with no promo code.
 2. It's priced for `guests`, or 1 if omitted, in `currency`, or the listing's base currency if omitted.
 3. **No rate to the requested currency**: the listing stays in the results with no total and `price_unavailable_in`, as it does today.
-4. **Any other pricing failure**, such as a total too large for the booking's money columns: the listing stays in the results with no total, and the server logs a warning with the listing ID. One listing can't fail the search.
+4. **Any other pricing failure**, such as a total too large for the booking's money columns or a stored discount outside 0–100: the listing stays in the results with no total, and the server logs a warning with the listing ID. One listing can't fail the search. If the pricing task itself fails, the listings return with no totals and the failure is logged.
 
 ### 1.5. Availability Rule
 A booking blocks a stay when all of these hold:
@@ -64,7 +65,7 @@ AND date_from - gap < check_out
 AND date_to + gap > check_in
 ```
 
-`gap` is the listing's `days_between_bookings`. With a gap of 0, the default, this is today's rule, and same-day turnover stays bookable. With a gap of N, a stay can start N days after a booking's check-out, and end N days before its check-in.
+`gap` is the listing's `days_between_bookings`, read as `LEAST(GREATEST(days_between_bookings, 0), 365)` in every query. With a gap of 0, the default, this is today's rule, and same-day turnover stays bookable. With a gap of N, a stay can start N days after a booking's check-out, and end N days before its check-in.
 
 | Path | Code | Behaviour |
 |---|---|---|
@@ -77,12 +78,15 @@ AND date_to + gap > check_in
 
 Quotes don't check availability, so they don't change.
 
-**Limits on the gap**: `days_between_bookings` must be between 0 and 365. The current validation has a minimum only, on create. A very large gap would overflow `date + int`, and that SQL error would break search for every listing.
+**Limits on the gap**: new values of `days_between_bookings` must be between 0 and 365. Current validation has a minimum only, and the column has no constraint, so other values could already be stored. The clamp in each query covers those: without it, a very large gap would overflow `date + int` and break search for every listing, and a negative one would shrink the rule and allow overlaps.
+
+**Limits on discounts**: `weekly_discount_percentage` and `monthly_discount_percentage` must be 0–100 on create and update. They're unbounded at the API today, and an extreme value could overflow `Decimal` and panic in pricing, which search would now reach.
 
 ### 1.6. Past Dates and Hold Refusals
 1. `price_stay` runs the validation in §1.2, rows 3–5, through the same function as search. This covers all three of its callers: `create_booking`, the public quote and the signed-in quote. Its existing date and length checks are replaced.
 2. Booking updates and reservation changes keep their own past-date rules. They don't use `price_stay`.
 3. `create_booking` in `db_core` returns `DbError::DateUnavailable` on a conflict, which the API returns as 409 `DATE_UNAVAILABLE`.
+4. Confirming a hold checks expiry with `clock_timestamp()`, not `NOW()` (`booking/update.rs:73`). `NOW()` is fixed when the transaction begins, so a confirmation that waited on the listing lock could succeed after its hold expired and a rival took the dates, leaving two bookings on the same dates. The promo path already reads the clock this way.
 
 ### 1.7. Portal
 **`/listings`**
@@ -94,8 +98,10 @@ Quotes don't check availability, so they don't change.
    | API result | Page shows |
    |---|---|
    | Success | Cards, or an empty state that mentions dates when they were given |
-   | 4xx with `{code, message}` | `message` in a `role="alert"` block, plus the form, with no listings. Every listing shown here would look free for those dates |
+   | 4xx with `INVALID_STAY_DATES`, `INVALID_GUESTS`, `INVALID_SEARCH_TEXT` or a `CURRENCY_*` code | `message` in a `role="alert"` block, plus the form, with no listings. Every listing shown here would look free for those dates |
    | Any other failure | "We couldn't load listings. Please try again." The failure is logged |
+
+   The "N stays" line shows only on success.
 
 5. "Show all listings" removes only `host`.
 6. The search box placeholder says it searches by name or place.
@@ -109,6 +115,8 @@ Quotes don't check availability, so they don't change.
 
 **Keeping the search when the currency changes**
 The currency menu links to `?currency=X`, which replaces the whole query string, so switching currency loses the search. It must keep `q`, `host`, `check_in`, `check_out` and `guests`, and only those, with `currency` first. This applies on `/listings`, the listing page and checkout.
+- The checkout form posts to `/checkout/{slug}` with no query string, so a re-render after a refusal has nothing to keep. When a stay is valid, the form's `action` uses `checkout_url(...)`.
+- Dates picked on the listing page's calendar aren't in its URL, so switching currency there keeps only dates that were already in the URL. Keeping the others would need the calendar to update the URL, which is out of scope.
 
 **Default guests**
 Change to 1: `home.rs:53`, `listing_detail.rs:164`, `checkout.rs:330`.
@@ -130,7 +138,7 @@ Check error codes before the word match, and add `INVALID_STAY_DATES`, which sho
 - Carrying the search through the card's "Hosted by" link.
 - Fixing the wider OpenAPI drift (#113).
 - Rate limiting search.
-- Excluding a signed-in guest's own hold from search. Search is public and doesn't know who is asking, so their hold hides the listing until it expires, as it does on the calendar today.
+- Excluding a signed-in guest's own hold from search. Search is public and doesn't know who is asking, so their hold hides the listing until it expires, as it does on the calendar today. Any signed-in account can therefore hide one listing's dates from search for the hold window (120 minutes by default). This is accepted, because each new hold cancels that guest's others.
 
 ---
 
@@ -140,10 +148,15 @@ Check error codes before the word match, and add `INVALID_STAY_DATES`, which sho
 |---|---|
 | Listing taken between search and hold | The hold refuses with 409 `DATE_UNAVAILABLE`, and checkout asks for different dates |
 | Hold expires | Its dates are free in search and on the calendar as soon as `expires_at` passes, with no cleanup job needed |
+| Hold expires while its confirmation waits on the listing lock | The confirmation is refused as expired, so a rival hold that took the dates in the meantime keeps them |
 | Two holds race inside each other's gap | The listing lock runs them in turn. The second sees the first and gets 409 |
 | Guest replaces their own live hold with one inside its gap | Allowed: their own holds don't conflict, and the old one is cancelled in the same transaction |
 | Booking changes its own dates | It's excluded from its own check, so its old dates and gap don't block it. Its neighbours still do |
-| Host raises the gap | Later checks use the new value. Existing bookings stay. A booking too close under the new gap can stay as it is, but can't change dates to anything still inside the gap |
+| Host raises the gap | Later checks use the new value. Existing bookings stay. A booking too close under the new gap can stay as it is, but can't change dates to anything still inside the gap. For example, with A `[10,15)`, B `[15,20)` and a gap of 2, moving A to `[10,14)` is refused even though it moves away from B, and `[10,13)` is accepted |
+| Gap set long ago, before it had any effect | It takes effect on release, in search and on the calendar. Existing bookings stay |
+| Stored gap outside 0–365 | Read as the nearest limit. Search and holds keep working |
+| `q` of only spaces | Treated as absent |
+| Override query fails during search | The request fails. It never prices without overrides |
 | Host lowers the gap | Nights free up on the next read |
 | Booking just outside the calendar window | Its gap can still grey out nights inside the window |
 | Last check-out before a gap | `ui.js` already allows checking out on the first unavailable night, which is the last day the gap allows |
@@ -182,14 +195,14 @@ pub fn validate_stay_dates(check_in: NaiveDate, check_out: NaiveDate, today: Nai
     -> Result<(), StayInputError>;
 
 /// Parses raw search input. An empty value counts as absent.
-pub fn parse_stay_search(check_in: Option<&str>, check_out: Option<&str>, guests: Option<&str>, today: NaiveDate, max_nights: i64)
+pub fn parse_stay_search(check_in: Option<&str>, check_out: Option<&str>, guests: Option<&str>, q: Option<&str>, today: NaiveDate, max_nights: i64)
     -> Result<StaySearch, StayInputError>;
 
 /// Validated search input. `dates` is both or neither, so a half-filled range can't exist.
-pub struct StaySearch { pub dates: Option<(NaiveDate, NaiveDate)>, pub guests: Option<i32> }
+pub struct StaySearch { pub dates: Option<(NaiveDate, NaiveDate)>, pub guests: Option<i32>, pub q: Option<String> }
 ```
 
-`jamaica_today` replaces the copies in `web_ui_guest/src/support.rs:92`, `booking_updates.rs:148` and `cron.rs:290`.
+`StayInputError` also has an `InvalidSearchText` variant. `jamaica_today` replaces the copies in `web_ui_guest/src/support.rs:92`, `booking_updates.rs:148`, `reservation_changes.rs` and `cron.rs:290`. `urlencode` moves from `web_ui_guest/src/pages/register.rs` to a new `common::query` module, so `web_ui_common` can use it.
 
 **`common/src/pricing.rs`**: the promo-free steps of `price_stay` move here without changing any result, including when values are rounded.
 
@@ -218,7 +231,9 @@ pub fn price_before_promo(input: StayPricingInput<'_>) -> Result<BookingCalculat
 pub fn fits_booking_columns(calculator: &BookingCalculator<Taxed>) -> bool;
 ```
 
-`price_stay` calls `price_before_promo`, then resolves the promo and finishes. Search finishes with `.apply_promo(None).apply_taxes(SupportedCountry::tax_rate_for(&country)).finalize()`, then `fits_booking_columns`.
+`price_stay` calls `price_before_promo`, then resolves the promo and finishes. Search finishes with `.apply_promo(None).apply_taxes(SupportedCountry::tax_rate_for(&country)).finalize()`, then `fits_booking_columns`. The move is exact, including that the nightly rate always rounds while other conversions skip rounding at a rate of 1. `StayRequest` gains `today: NaiveDate`, so tests can choose the date.
+
+`common/testdata/stay_pricing_golden.json` holds inputs and expected totals. Both services' tests read it with `include_str!`, which lets them check the same figures without depending on each other.
 
 **`common/src/models.rs`**
 
@@ -235,23 +250,23 @@ pub struct StayTotal {
 - `ListingResponse` gains `stay_total: Option<StayTotal>`, with `default` and `skip_serializing_if`. Struct literals in `api_core/src/models.rs` and tests need the new field.
 - `ListingQueryParams` gains `q`, `check_in`, `check_out` and `guests` as `Option<String>`. Typed params would make Actix return its own untyped 400 on bad input.
 - `ListingFilter` gains `q: Option<String>`, `check_in`, `check_out`: `Option<NaiveDate>`, and `guests: Option<i32>`.
-- `NewListingRequest` and the update request: `days_between_bookings` validated to 0–365. Add validation to the update request if it's missing, and to the admin form.
+- `NewListingRequest` and the update request: `days_between_bookings` validated to 0–365, also in the admin form, and both discount percentages validated to 0–100.
 
 ### 3.3. Database Layer (`db_core`)
 
-**`booking/availability.rs` and `booking/hold.rs`**: all queries use the rule in §1.5, joining `listing` for the gap.
+**`booking/availability.rs` and `booking/hold.rs`**: all queries use the rule in §1.5. Availability checks join `listing` for the gap.
 
 ```sql
 SELECT count(*) AS count
 FROM booking b JOIN listing l ON l.id = b.listing_id
 WHERE b.listing_id = $1
   AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
-  AND b.date_from - l.days_between_bookings < $3
-  AND b.date_to + l.days_between_bookings > $2
+  AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+  AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
 ```
 
-- `get_unavailable_ranges` selects the widened dates as `date_from` and `date_to`, and `merge_ranges` still applies. Its doc comments and those in `common/src/availability.rs` change from "booked" to "unavailable".
-- The hold keeps its existing lock order and takes the listing row lock first. It returns `DbError::DateUnavailable` on a conflict.
+- `get_unavailable_ranges` selects the widened dates as `"date_from!"` and `"date_to!"`, because sqlx types computed columns as optional, and `merge_ranges` still applies. Its doc comments and those in `common/src/availability.rs` change from "booked" to "unavailable".
+- The hold keeps its existing lock order and takes the listing row lock first. It adds the clamped gap to that query as `"gap!"` and binds it in the overlap query as `date_from - $4::int4 < $3 AND date_to + $4::int4 > $2`, which is simpler than a join and reads it under the lock. The cast is required, or Postgres can't resolve `date + $4`. It returns `DbError::DateUnavailable` on a conflict, and `bookings.rs` logs that below ERROR.
 - **New error**: `DbError::StayInput(StayInputError)`, with a 400 and `{code, message}` in `api_core/src/error.rs`, alongside `PromoRefused`.
 
 The rule stays as SQL in each query, because `sqlx::query!` needs literals and a shared SQL function would mean a migration. A table-driven parity test (§6) keeps the copies in step.
@@ -271,8 +286,8 @@ AND NOT EXISTS (
   SELECT 1 FROM booking b
   WHERE b.listing_id = listing.id
     AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
-    AND b.date_from - listing.days_between_bookings < $check_out
-    AND b.date_to + listing.days_between_bookings > $check_in)
+    AND b.date_from - LEAST(GREATEST(listing.days_between_bookings, 0), 365) < $check_out
+    AND b.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > $check_in)
 -- with guests
 AND listing.max_guests >= $guests
 -- with q, the pattern escaped and wrapped in %
@@ -291,15 +306,15 @@ pub async fn get_active_overrides_for_listings<'e, E>(executor: E, listing_ids: 
 
 **`listing_api::get_listings`**
 
-1. Call `parse_stay_search` with `jamaica_today(Utc::now())` and `settings.application.max_stay_nights`. A refusal is logged at `warn!` and returned as a 400 before any query runs.
+1. Call `parse_stay_search` with `jamaica_today(Utc::now())` and `settings.application.max_stay_nights`. A refusal is logged at `warn!` by its code and returned as a 400 before any query runs. The handler's two `#[tracing::instrument]` attributes become one `skip_all`, because `err` would log every refusal at ERROR and `query` and `req` hold the search text. `get_listings` in `db_core` skips `filter`, and `CustomRootSpanBuilder` records a path-only `http.target`.
 2. Run `db_listing::get_listings` with the filter.
-3. With dates, load overrides in one query.
-4. Load rates once with `get_rates_for_bases` when `currency` is given. Without it, the rate is 1, and no rate lookup is needed: #100 refuses to deactivate a currency a listing uses, so the quote's active-currency check can't fail here.
-5. **Compute totals from the database rows, before mapping and converting.** `convert_search_prices` overwrites `price_per_night` and `base_currency` on the response, so pricing after it would convert twice.
+3. With dates, load overrides in one query. A failure here fails the request.
+4. Load rates once with `get_rates_for_bases` when `currency` is given, in a helper that returns the map, so no connection is held during pricing. Without `currency`, the rate is 1. `get_rates_for_bases` picks the same rate as the quote's `get_rate`, but only checks the target currency is active, not the base. #100 refuses to deactivate a currency a listing uses, so the base should always be active. If that guard ever failed, the card would show a total and the hold would refuse. That state isn't reachable, so it doesn't justify an extra query.
+5. **Compute totals from the database rows, before mapping and converting.** `convert_search_prices` overwrites `price_per_night` and `base_currency` on the response, so pricing after it would convert twice. The pricing loop runs in `spawn_blocking` on owned rows, and returns the IDs of listings it couldn't price.
 6. `convert_search_prices` takes the rate map from step 4, so a request makes one rate lookup.
 7. Attach `stay_total`. One aggregated `warn!` names any listings that couldn't be priced.
 
-`listing_api/src/main.rs` calls `validate_max_stay_nights` at startup, as `booking_api` does.
+`listing_api/src/main.rs` calls `validate_max_stay_nights` at startup, as `booking_api` does, and `max_stay_nights` is added to its `Default.toml`, so the two services can't disagree.
 
 **`booking_api`**
 - `price_stay` uses `validate_stay_dates` and `price_before_promo`.
@@ -309,7 +324,7 @@ pub async fn get_active_overrides_for_listings<'e, E>(executor: E, listing_ids: 
 
 | Endpoint | Change |
 |---|---|
-| `GET /api/v1/listings` | New params, `stay_total` on results, 400 `INVALID_STAY_DATES` / `INVALID_GUESTS` |
+| `GET /api/v1/listings` | New params, `stay_total` on results, 400 `INVALID_STAY_DATES` / `INVALID_GUESTS` / `INVALID_SEARCH_TEXT` |
 | `POST /api/v1/bookings` | Conflict is 409 `DATE_UNAVAILABLE`, was an uncoded 400. Past dates are 400 `INVALID_STAY_DATES` |
 | `GET /api/v1/bookings/listing/{id}/quote`, `POST /api/v1/bookings/quote` | Past dates and over-limit stays are 400 `INVALID_STAY_DATES`. Over-limit was `{"error": msg}` |
 | `GET /api/v1/bookings/listing/{id}/unavailable-ranges` | Ranges include gap nights |
@@ -319,15 +334,16 @@ pub async fn get_active_overrides_for_listings<'e, E>(executor: E, listing_ids: 
 
 **`common/src/app_client/listings.rs`**
 - `ListingSearchParams` gains `q`, `check_in`, `check_out` and `guests` as `Option<String>`, sent only when non-empty.
-- On a 4xx with `{code, message}`, `search_listings` returns `anyhow::Error::new(ListingSearchRefusal { code, message })`, so `/listings` can use `downcast_ref` and other callers don't change.
+- On a 4xx with one of the codes in §1.7, `search_listings` returns `anyhow::Error::new(ListingSearchRefusal { code, message })`, so `/listings` can use `downcast_ref` and other callers don't change. Other 4xx bodies stay ordinary errors, so their text never reaches a page.
+- `search_listings_at(client, base_url, audience, params)` holds the logic, so tests can reach a stub server.
 
 **`web_ui_common`**
-- `ListingSummary` gains `stay_total`, `search_query: Option<String>` and `href()`, used by both cards. The query is built with proper URL encoding.
-- `currency_menu` takes the allow-listed params and builds its links with them. `shell_guest.rs:68` supplies them from the request URI.
+- `ListingSummary` gains `stay_total`, `search_query: Option<String>` and `href()`, used by both cards. The query is built with `common`'s `urlencode`, and empty values are left out.
+- `currency_menu` takes the allow-listed params and builds its links with them. `guest_shell` reads them from the request URI and passes them through `GuestShell.search_params`, because `guest_chrome` also renders in tests with no request.
 - Calendar text says "unavailable" rather than "booked" for screen readers and `ui.js` announcements. `data-state` doesn't change.
 
 **`web_ui_guest`**
-- `pages/listings.rs`, `home.rs`, `listing_detail.rs` and `checkout.rs`, as §1.7 describes.
+- `pages/listings.rs`, `home.rs`, `listing_detail.rs` and `checkout.rs`, as §1.7 describes. `listings_page` and the home form split into a query parser, a pure result classifier and components, because page functions can't render without a real request.
 - `support.rs` uses `common::availability::jamaica_today`.
 
 ### 3.6. Background Workers
@@ -344,22 +360,24 @@ None. Expiry and cleanup jobs don't change: availability reads `expires_at` dire
 - **Queries per search**: one listing query, one override query, and one rate lookup with its active-currency check. The count doesn't depend on page size.
 - **Availability**: `NOT EXISTS` probes `idx_booking_listing_id` once per candidate listing, ending at the first match. Fine at today's scale. Check with `EXPLAIN` if listings or bookings grow by orders of magnitude, and add an index only if it shows a need.
 - **Portal**: one API call per search, with no per-card quote calls. `per_page` is 50, and the API clamps at 100.
-- **Pricing cost**: `calculate_dynamic_quote` is O(nights × overrides) per listing and allocates a nightly breakdown. The worst case is about 3,650 nights × 100 listings, run one at a time, with each breakdown freed before the next. This is short CPU work with a small memory peak, so `spawn_blocking` isn't needed. Lowering `max_stay_nights` tightens it.
+- **Pricing cost**: `calculate_dynamic_quote` is O(nights × overrides) per listing and allocates a nightly breakdown. The worst case is 3,650 nights × 100 listings, multiplied by a host's override count, which has no limit. It runs in `spawn_blocking`, one listing at a time, with each breakdown freed before the next, so it can't stall an async worker. Lowering `max_stay_nights` tightens it.
+- **Connections**: the pool has 5 connections. A search acquires them one at a time and holds none during pricing.
 - **Cold start**: no new dependencies or startup work beyond one settings check. The budget of <300ms p50 and <1s p95 is unchanged.
-- **Hold**: a join to the row it has already locked adds almost no time, and the lock isn't held for longer in any meaningful way.
+- **Hold**: reading the gap from the row it already locks adds no query, and the lock isn't held for longer in any meaningful way.
 
 ---
 
 ## 5. Security Mitigations
 - **Trust boundary**: all new input is an untrusted public query string. It's parsed in `parse_stay_search` before any query runs, and every value is bound as a SQL parameter.
-- **LIKE injection**: `%`, `_` and `\` in `q` are escaped, so a guest can't turn the text into a broad pattern. Length is bounded by the server's request limits.
-- **IDOR and data exposure**: search and the calendar return no booking IDs, guest data or statuses. Gap nights can't be told apart from booked ones. The gap itself is already public on the listing.
+- **LIKE injection**: `%`, `_` and `\` in `q` are escaped, so a guest can't turn the text into a broad pattern. `q` is limited to 200 characters and refuses NUL and control characters, which Postgres would otherwise reject with a 500.
+- **IDOR and data exposure**: search and the calendar return no booking IDs, guest data or statuses. The gap is public on the listing, so subtracting it can recover an isolated booking's dates. That's the same exposure as today's calendar, which shows those dates directly.
+- **Logs**: `q` and the raw filter stay out of span fields, because a guest may type personal data into them.
 - **Inactive listings**: dated searches never return them, regardless of `include_inactive`. The public reach of that flag on undated searches already exists and isn't changed here.
 - **Double bookings**: search and the calendar are lock-free reads that decide nothing. Holds, updates and change approvals still run under the listing row lock, as `CONSTRAINTS.md` requires.
 - **Reflected input**: Topcoat escapes the form values shown back to the guest. Card and currency links are relative, with URL-encoded values, and the currency menu copies only allow-listed params.
 - **Error detail**: 4xx bodies contain only fixed messages. Server failures show a generic message and log the detail.
-- **Date overflow**: the 0–365 limit on the gap stops a host's setting from causing SQL errors for other listings' searches.
-- **Abuse**: search has no rate limit, as today. Costs are bounded by the `per_page` clamp and `max_stay_nights`.
+- **Date overflow**: the clamp in each query, plus the 0–365 limit on new values, stops a host's setting from causing SQL errors for other listings' searches.
+- **Abuse**: search has no rate limit, as today. The API is private behind Cloud Run IAM, so the public route is the portal, at 50 listings a page. Cost per request depends on `per_page`, `max_stay_nights` and a host's override count, which has no limit. Blocking tasks keep running after a client disconnects. This is accepted at today's scale of 5 listings. A concurrency limit or an override cap belongs with any later rate-limiting work.
 
 ---
 
@@ -375,7 +393,7 @@ None. Expiry and cleanup jobs don't change: availability reads `expires_at` dire
 ### Integration Tests (`cargo test -p db_core -p listing_api -p booking_api`)
 Run against the local Postgres in the devenv shell.
 
-**Availability parity (table-driven)**: for each case below at gaps of 0, 1 and 3, `check_availability`, the hold, search and the calendar must agree.
+**Availability parity (table-driven)**: for each case below at gaps of 0, 1 and 3, and at a stored gap of -1 and 2147483647, `check_availability`, the hold, search and the calendar must agree.
 - Booked: confirmed, live hold, expired hold, cancelled, completed.
 - Position: overlap, same-day turnover either way, N−1 days and N days from the booking on each side.
 
@@ -386,6 +404,7 @@ Run against the local Postgres in the devenv shell.
 - A booking changing its dates ignores itself and is checked against its neighbours.
 - Raising a gap leaves existing bookings alone, and confirming a live hold still works.
 - A conflicting hold returns 409 `DATE_UNAVAILABLE`. Update any test that expects the old 400.
+- A hold whose `expires_at` falls between the transaction's start and the check counts as expired when it's confirmed.
 
 **Calendar**
 - A booking just outside the window greys out the nights its gap reaches.
@@ -422,7 +441,7 @@ API tests that create holds use 2030 dates, and past-dated fixtures insert direc
 ### E2E Tests (Playwright)
 - A home search reaches `/listings` with filters applied, and reloading the URL gives the same results.
 - A card link keeps dates and guests through to checkout, and the card total equals checkout's total.
-- Switching currency on `/listings` keeps the search and changes the totals. Check `checkout-flow.spec.ts:108` still fits, since dates now survive the switch.
+- Switching currency on `/listings` keeps the search and changes the totals.
 - A listing with a gap: search leaves out a stay inside it, the calendar greys out those nights, and the last allowed check-out can be selected.
 - An old bookmark shows the validation message and a form to pick new dates.
 - Searching a city and a country finds the expected listings.
@@ -438,7 +457,7 @@ Everything in `CONSTRAINTS.md` §2, including `cargo sqlx prepare --workspace --
 - [ ] 3. Search returns only listings that are free under §1.5, fit the party, and meet the minimum stay, including overrides.
 - [ ] 4. Text search matches name, city or country, with `%` and `_` matched literally.
 - [ ] 5. Filters run in one query, and pagination counts only matching listings.
-- [ ] 6. `check_availability`, the hold, booking updates, reservation changes, the calendar and search all apply the gap, and the parity test proves they agree at gaps of 0, 1 and 3.
+- [ ] 6. `check_availability`, the hold, booking updates, reservation changes, the calendar and search all apply the gap, and the parity test proves they agree at gaps of 0, 1 and 3, and at stored out-of-range values.
 - [ ] 7. Concurrent holds inside each other's gap produce exactly one success, and a guest can still replace their own hold.
 - [ ] 8. Existing bookings aren't changed or rechecked when a gap changes, and `days_between_bookings` is limited to 0–365.
 - [ ] 9. A conflicting hold returns 409 `DATE_UNAVAILABLE`.
@@ -452,3 +471,4 @@ Everything in `CONSTRAINTS.md` §2, including `cargo sqlx prepare --workspace --
 - [ ] 17. Checkout shows the right message for currency and date errors.
 - [ ] 18. `docs/ARCHITECTURE.md`, the OpenAPI entries for changed routes, and `.sqlx/` are updated.
 - [ ] 19. All `CONSTRAINTS.md` gates pass, and no migration was added.
+- [ ] 20. A hold that expires while its confirmation waits on the listing lock can't be confirmed.
