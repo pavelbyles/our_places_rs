@@ -417,7 +417,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common stay_card_tests && SQLX_OFFLINE=true cargo test -p web_ui_common --test domain_parity`
   - **Dependencies:** Task 15
 
-- [ ] **Task 18: Build the `/listings` search page**
+- [x] **Task 18: Build the `/listings` search page**
   - **Scope:** M
   - **Description:** Page functions need a real request context, so split `listings_page` into parts that can be tested: query parsing from a string, a pure `classify(anyhow::Result<Vec<_>>) -> Outcome`, and a `#[component] listings_results`. Tests live inline in `mod listings_page_tests`, using the `html()` helper pattern from `web_ui_common/tests/shells.rs`. The form has `q`, dates and guests, and hidden `host` and `currency`. Query values are read as strings and forwarded. The page uses `display_currency`, and forwards only the params in spec §1.1, `host` and `currency`.
   - **Files Touched:**
