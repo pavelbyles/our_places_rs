@@ -172,10 +172,8 @@ The home page asks guests for check-in, check-out and a guest count, then ignore
 - [x] **Text search**: matches a listing's name, city or country.
 - [x] **Past dates at booking**: fixed in this branch, for holds and both quote endpoints.
 
-### Still Open
-**Design (Stage 2)**
-- [ ] **Hold refusal code**: `create_booking` refuses unavailable dates with `DbError::ValidationError`, an uncoded 400, while updates and reservation changes return `DATE_UNAVAILABLE` (409). *Proposed: the hold also returns `DATE_UNAVAILABLE`, once the spec confirms what the checkout page and tests expect.*
-- [ ] **Where stay totals are calculated**: `price_stay` lives in `booking_api`, and `listing_api` can't depend on it. *Proposed: move the promo-free calculation into `common`, used by both services, with `listing_api` returning the totals in the search response.* This gives one request and one set of batched lookups. The alternative is a new batch-quote endpoint in `booking_api`, which keeps pricing in one service but adds a second call per search and a new way to get a partial failure.
-- [ ] **Error codes**: exact names, and whether they reuse the `{code, message}` shape used by the currency errors. `promo_refusal_in_error` is the precedent for reading a code in the portal.
+- [x] **Hold refusal code**: the hold returns `DATE_UNAVAILABLE` (409), like updates and reservation changes.
+- [x] **Where stay totals are calculated**: in `listing_api`, with the promo-free calculation moved to `common` and used by both services.
+- [x] **Error codes**: `INVALID_STAY_DATES` and `INVALID_GUESTS`, as a 400 with `{code, message}`.
 
-Issue to open, if wanted: per-listing maximum stay.
+Design detail is in [spec-101](../specs/spec-101-feat-search-by-dates-and-guest-count.md). Issue to open, if wanted: per-listing maximum stay.
