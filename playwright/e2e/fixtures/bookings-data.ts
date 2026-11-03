@@ -72,6 +72,9 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
  * Places a 2-night hold on the seeded villa through booking_api, on random
  * dates between 2032 and 2036 (retrying if they are taken).
  * With `confirmed`, the booking is then marked confirmed in the database.
+ *
+ * Stays start every 4th day, so moving one by a day or two for a date-change
+ * test stays inside its slot and can't hit another booking made here.
  */
 export async function createBooking(
   request: APIRequestContext,
@@ -79,7 +82,7 @@ export async function createBooking(
   options: { confirmed?: boolean } = {},
 ): Promise<TestBooking> {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const start = new Date(Date.UTC(2032, 0, 1 + crypto.randomInt(1400)));
+    const start = new Date(Date.UTC(2032, 0, 1 + 4 * crypto.randomInt(350)));
     const end = new Date(start.getTime() + 2 * 86_400_000);
     const res = await request.post(`${BOOKING_API_URL}/api/v1/bookings`, {
       headers: { Authorization: `Bearer ${signTestJwt(guestId)}` },

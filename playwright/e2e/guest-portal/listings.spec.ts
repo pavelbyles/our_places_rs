@@ -29,14 +29,14 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
     await expect(detailLink).toBeVisible();
   });
 
-  test('should navigate to listing detail page when clicking View Listing', async ({ page }) => {
+  test('should navigate to listing detail page when clicking the listing name', async ({ page }) => {
     await page.goto('/listings');
 
     const villaCard = page.locator(`#listings-grid #listing-card-${targetVilla.slug}`);
-    const viewBtn = villaCard.getByRole('link', { name: 'View Listing' });
-    await expect(viewBtn).toBeVisible();
+    const nameLink = villaCard.getByRole('heading').getByRole('link', { name: targetVilla.name });
+    await expect(nameLink).toBeVisible();
 
-    await viewBtn.click();
+    await nameLink.click();
     await expect(page).toHaveURL(`/listings/${targetVilla.slug}`);
     await expect(page.locator('h1')).toHaveText(targetVilla.name);
   });

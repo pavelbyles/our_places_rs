@@ -5,7 +5,9 @@ import { psql } from '../fixtures/bookings-data.js';
 
 const NEW_ONLY = { tag: '@new-only' };
 const uniqueCode = () => `E2E-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-const today = new Date();
+// The admin form reads dates as Jamaica calendar days (UTC-5, no daylight saving).
+// A UTC date would be tomorrow there from 7 PM, making the code "Scheduled".
+const today = new Date(Date.now() - 5 * 3_600_000);
 const addDays = (n: number) => new Date(today.getTime() + n * 86_400_000).toISOString().slice(0, 10);
 
 test.describe('Admin Portal - Promo Codes', () => {

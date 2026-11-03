@@ -34,7 +34,7 @@ pub fn villa_specs(listing: &ListingSummary) -> [String; 3] {
 
 /// A compact villa card: 4:5 photo, uppercase tracked name, location, a
 /// "Hosted by" link to the host's listings, a dotted spec line, and
-/// "from {price} / night" with a View Listing link.
+/// "from {price} / night". The photo and name link to the listing.
 #[component]
 pub async fn villa_card(
     /// The listing to show.
