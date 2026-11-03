@@ -400,7 +400,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_client --test search_refusal`
   - **Dependencies:** Task 13
 
-- [ ] **Task 17: Show totals on listing cards**
+- [x] **Task 17: Show totals on listing cards**
   - **Scope:** M
   - **Description:** `ListingSummary` gains `stay_total`, `search_query` and `href()`. Both cards show the total lines from spec §1.7, using `price_breakdown::money`, and their links carry the search, encoded with `common`'s `urlencode`.
   - **Files Touched:**
