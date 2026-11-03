@@ -295,7 +295,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p db_core search_filter_tests`
   - **Dependencies:** Task 4
 
-- [ ] **Task 11: Add text search on name, city or country**
+- [x] **Task 11: Add text search on name, city or country**
   - **Scope:** XS
   - **Description:** `ListingFilter` gains `q`, an escaped case-insensitive partial match. The existing `name` filter doesn't change. The field is added through the `..Default::default()` from Task 10 if that's done first. If this task runs first, add it here.
   - **Files Touched:**
@@ -345,7 +345,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p listing_api search_param_tests`
   - **Dependencies:** Tasks 1, 2, 10, 11
 
-- [ ] **Task 14: Load price overrides for many listings at once**
+- [x] **Task 14: Load price overrides for many listings at once**
   - **Scope:** XS
   - **Description:** Add `get_active_overrides_for_listings`, one query returning overrides grouped by listing, and re-export it from `db_core/src/listing/mod.rs`, because `price_overrides` is a private module.
   - **Files Touched:**

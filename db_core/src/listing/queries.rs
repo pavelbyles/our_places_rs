@@ -5,6 +5,13 @@ use crate::models::{Listing, ListingWithOwner};
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
+/// Makes text match literally in a `LIKE` pattern using `ESCAPE '\\'`.
+fn escape_like(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 /// Limits a search to listings that can be booked for the whole stay: active,
 /// priced, long enough to meet the minimum stay (including overrides covering a
 /// night of it), and clear of bookings under the rule in `booking::availability`.
@@ -130,6 +137,17 @@ where
 
         if let (Some(check_in), Some(check_out)) = (f.check_in, f.check_out) {
             push_stay_conditions(&mut query_builder, check_in, check_out);
+        }
+
+        if let Some(q) = f.q.as_deref() {
+            let pattern = format!("%{}%", escape_like(q));
+            query_builder.push(" AND (listing.name ILIKE ");
+            query_builder.push_bind(pattern.clone());
+            query_builder.push(" ESCAPE '\\' OR listing.city ILIKE ");
+            query_builder.push_bind(pattern.clone());
+            query_builder.push(" ESCAPE '\\' OR listing.country ILIKE ");
+            query_builder.push_bind(pattern);
+            query_builder.push(" ESCAPE '\\')");
         }
 
         if let Some(guests) = f.guests {

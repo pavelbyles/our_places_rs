@@ -394,6 +394,9 @@ pub struct ListingFilter {
     /// Party size the listing must fit.
     #[serde(default)]
     pub guests: Option<i32>,
+    /// Text matched against the listing's name, city or country.
+    #[serde(default)]
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]

@@ -12,7 +12,8 @@ pub use images::{
 };
 pub use price_overrides::{
     create_price_override, delete_price_override, get_active_overrides_for_dates,
-    get_price_override_by_id, get_price_overrides_by_listing, update_price_override,
+    get_active_overrides_for_listings, get_price_override_by_id, get_price_overrides_by_listing,
+    update_price_override,
 };
 pub use queries::{
     get_listing_by_id, get_listing_by_id_or_slug, get_listings, get_listings_by_user_id,

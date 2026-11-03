@@ -97,6 +97,43 @@ where
     Ok(records.into_iter().map(Into::into).collect())
 }
 
+/// Overrides touching `[check_in, check_out)` for many listings in one query,
+/// grouped by listing and in date order. A listing with none is absent.
+#[tracing::instrument(skip(executor, listing_ids))]
+pub async fn get_active_overrides_for_listings<'e, E>(
+    executor: E,
+    listing_ids: &[Uuid],
+    check_in: chrono::NaiveDate,
+    check_out: chrono::NaiveDate,
+) -> Result<std::collections::HashMap<Uuid, Vec<common::models::PriceOverride>>>
+where
+    E: PgExecutor<'e>,
+{
+    let records = sqlx::query_as::<_, crate::models::PriceOverride>(
+        r#"
+        SELECT id, listing_id, start_date, end_date, nightly_rate, min_nights, created_at, updated_at
+        FROM listing_price_overrides
+        WHERE listing_id = ANY($1)
+          AND start_date < $3
+          AND end_date > $2
+        ORDER BY start_date ASC
+        "#,
+    )
+    .bind(listing_ids)
+    .bind(check_in)
+    .bind(check_out)
+    .fetch_all(executor)
+    .await?;
+
+    let mut grouped: std::collections::HashMap<Uuid, Vec<common::models::PriceOverride>> =
+        std::collections::HashMap::new();
+    for record in records {
+        let row: common::models::PriceOverride = record.into();
+        grouped.entry(row.listing_id).or_default().push(row);
+    }
+    Ok(grouped)
+}
+
 /// Retrieves a single price override by ID.
 #[tracing::instrument(skip(executor))]
 pub async fn get_price_override_by_id<'e, E>(

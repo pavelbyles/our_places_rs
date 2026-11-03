@@ -1350,3 +1350,191 @@ mod search_filter_tests {
         assert!(first.iter().all(|l| free.contains(&l.id)));
     }
 }
+
+mod text_search_tests {
+    use super::*;
+    use common::models::ListingFilter;
+
+    async fn listing(
+        conn: &mut PgConnection,
+        host: Uuid,
+        name: &str,
+        city: Option<&str>,
+        country: &str,
+    ) -> Uuid {
+        let new_listing = NewListing {
+            name: format!("{name} {}", Uuid::now_v7()),
+            user_id: host,
+            description: None,
+            listing_structure_id: 1,
+            country: country.to_string(),
+            price_per_night: Some(dec!(200.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: city.map(str::to_string),
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+            is_active: true,
+        };
+        create_listing(&mut *conn, &new_listing).await.unwrap().id
+    }
+
+    async fn search(conn: &mut PgConnection, host: Uuid, q: &str) -> Vec<Uuid> {
+        let filter = ListingFilter {
+            user_id: Some(host),
+            q: Some(q.to_string()),
+            ..Default::default()
+        };
+        get_listings(&mut *conn, 1, 50, Some(filter))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|l| l.id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn text_matches_name_city_or_country_ignoring_case() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.unwrap();
+        let host = create_test_user_with_host_profile(&mut tx).await;
+        let by_name = listing(&mut tx, host, "Sea Grape", None, "Barbados").await;
+        let by_city = listing(&mut tx, host, "Palm", Some("Runaway Bay"), "Barbados").await;
+        let by_country = listing(&mut tx, host, "Almond", None, "Jamaica").await;
+
+        assert_eq!(search(&mut tx, host, "sea gr").await, [by_name]);
+        assert_eq!(search(&mut tx, host, "RUNAWAY").await, [by_city]);
+        assert_eq!(search(&mut tx, host, "jamaica").await, [by_country]);
+        assert!(search(&mut tx, host, "Kingston").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn like_wildcards_match_literally() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.unwrap();
+        let host = create_test_user_with_host_profile(&mut tx).await;
+        let plain = listing(&mut tx, host, "Plain", None, "Jamaica").await;
+        let percent = listing(&mut tx, host, "100% Beach", None, "Jamaica").await;
+        let underscore = listing(&mut tx, host, "Sea_Side", None, "Jamaica").await;
+        let backslash = listing(&mut tx, host, "Back\\slash", None, "Jamaica").await;
+
+        assert_eq!(search(&mut tx, host, "%").await, [percent]);
+        assert_eq!(search(&mut tx, host, "_").await, [underscore]);
+        assert_eq!(search(&mut tx, host, "\\").await, [backslash]);
+        assert_eq!(search(&mut tx, host, "Plain").await, [plain]);
+    }
+
+    #[tokio::test]
+    async fn the_name_filter_still_matches_only_the_name() {
+        let mut conn = setup_test_db().await;
+        let mut tx = conn.begin().await.unwrap();
+        let host = create_test_user_with_host_profile(&mut tx).await;
+        listing(&mut tx, host, "Palm", Some("Runaway Bay"), "Jamaica").await;
+        let filter = ListingFilter {
+            user_id: Some(host),
+            name: Some("Runaway".to_string()),
+            ..Default::default()
+        };
+        let results = get_listings(&mut *tx, 1, 50, Some(filter)).await.unwrap();
+        assert!(results.is_empty());
+    }
+}
+
+mod batched_override_tests {
+    use super::*;
+    use crate::listing::get_active_overrides_for_listings;
+    use chrono::NaiveDate;
+
+    fn day(m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2030, m, d).unwrap()
+    }
+
+    #[tokio::test]
+    async fn overrides_touching_the_stay_are_grouped_by_listing() {
+        let test_db = sqlx_db_tester::TestPg::new(
+            {
+                dotenvy::dotenv().ok();
+                env::var("DATABASE_URL").expect("DATABASE_URL must be set")
+            },
+            std::path::Path::new("migrations"),
+        );
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let host = create_test_user_with_host_profile(&mut conn).await;
+        let mut ids = Vec::new();
+        for n in 0..3 {
+            let listing = NewListing {
+                name: format!("Batch {n} {}", Uuid::now_v7()),
+                user_id: host,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: None,
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+                is_active: true,
+            };
+            ids.push(create_listing(&mut *conn, &listing).await.unwrap().id);
+        }
+        let insert = |listing: Uuid, from: NaiveDate, to: NaiveDate| {
+            sqlx::query(
+                "INSERT INTO listing_price_overrides (listing_id, start_date, end_date, nightly_rate, min_nights)
+                 VALUES ($1, $2, $3, 300.00, 1)",
+            )
+            .bind(listing)
+            .bind(from)
+            .bind(to)
+            .execute(&pool)
+        };
+        // Listing 0 touches the stay at each end. Listing 1 only meets it.
+        insert(ids[0], day(8, 1), day(8, 11)).await.unwrap();
+        insert(ids[0], day(8, 14), day(8, 20)).await.unwrap();
+        insert(ids[1], day(8, 1), day(8, 10)).await.unwrap();
+        insert(ids[1], day(8, 15), day(8, 20)).await.unwrap();
+
+        let found = get_active_overrides_for_listings(&pool, &ids, day(8, 10), day(8, 15))
+            .await
+            .unwrap();
+        assert_eq!(found.get(&ids[0]).map(Vec::len), Some(2));
+        assert_eq!(
+            found.get(&ids[0]).map(|rows| rows[0].start_date),
+            Some(day(8, 1)),
+            "in date order"
+        );
+        assert!(!found.contains_key(&ids[1]), "only meets the stay");
+        assert!(!found.contains_key(&ids[2]), "has none");
+    }
+}
