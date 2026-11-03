@@ -136,7 +136,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p common stay_input_tests && devenv shell -- cargo test -p booking_api test_booking_date_change_api && devenv shell -- cargo test -p booking_api test_complete_stays_cron`
   - **Dependencies:** None
 
-- [ ] **Task 2: Map stay input errors to a typed 400**
+- [x] **Task 2: Map stay input errors to a typed 400**
   - **Scope:** XS
   - **Description:** Add `DbError::StayInput(StayInputError)` and return it as a 400 with `{code, message}`, alongside `PromoRefused`.
   - **Files Touched:**

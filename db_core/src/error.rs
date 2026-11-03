@@ -73,6 +73,9 @@ pub enum DbError {
     /// The promo code has already been deactivated.
     #[error("This promo code has already been deactivated")]
     PromoAlreadyDeactivated,
+    /// Stay dates, a guest count or search text were refused.
+    #[error("Stay input refused: {0}")]
+    StayInput(common::availability::StayInputError),
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),

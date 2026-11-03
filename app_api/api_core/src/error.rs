@@ -64,7 +64,9 @@ impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             ApiError::Database(DbError::Sqlx(sqlx::Error::RowNotFound)) => StatusCode::NOT_FOUND,
-            ApiError::Database(DbError::ValidationError(_)) => StatusCode::BAD_REQUEST,
+            ApiError::Database(DbError::ValidationError(_) | DbError::StayInput(_)) => {
+                StatusCode::BAD_REQUEST
+            }
             ApiError::Database(DbError::FxRateUnavailable { .. }) => {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
@@ -137,6 +139,12 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
             }
+            ApiError::Database(DbError::StayInput(refused)) => HttpResponse::BadRequest().json(
+                serde_json::json!({
+                    "code": refused.code(),
+                    "message": refused.message()
+                }),
+            ),
             ApiError::Database(DbError::PromoRefused(refusal)) => HttpResponse::UnprocessableEntity()
                 .json(serde_json::json!({
                     "code": refusal.code(),
@@ -307,6 +315,41 @@ pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std
 
 // A custom `Result` type for our API.
 pub type Result<T> = std::result::Result<T, ApiError>;
+
+#[cfg(test)]
+mod stay_input_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+    use common::availability::StayInputError;
+
+    #[tokio::test]
+    async fn every_refusal_is_a_400_with_its_code_and_message() {
+        for refused in [
+            StayInputError::DateMalformed,
+            StayInputError::DateMissing,
+            StayInputError::CheckOutNotAfterCheckIn,
+            StayInputError::InPast,
+            StayInputError::TooLong { max_nights: 30 },
+            StayInputError::InvalidGuests,
+            StayInputError::InvalidSearchText,
+        ] {
+            let api = ApiError::Database(DbError::StayInput(refused));
+            assert_eq!(api.status_code(), StatusCode::BAD_REQUEST, "{refused:?}");
+            let resp = api.error_response();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{refused:?}");
+            let bytes = match to_bytes(resp.into_body()).await {
+                Ok(bytes) => bytes,
+                Err(e) => panic!("body: {e}"),
+            };
+            let body: serde_json::Value = match serde_json::from_slice(&bytes) {
+                Ok(body) => body,
+                Err(e) => panic!("json: {e}"),
+            };
+            assert_eq!(body["code"], refused.code(), "{refused:?}");
+            assert_eq!(body["message"], refused.message(), "{refused:?}");
+        }
+    }
+}
 
 #[cfg(test)]
 mod promo_error_tests {
