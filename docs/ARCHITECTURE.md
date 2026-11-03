@@ -162,6 +162,7 @@ sequenceDiagram
 - **One lock per listing**: two attempts to book the same listing run one after the other, while different listings are booked in parallel. The same lock protects availability checks for change requests (`reservation_change.rs`) and reviews.
 - **Statuses** (`BookingStatus`): `pending` → `confirmed` → `completed`, or `cancelled` from `pending` or `confirmed`. Every transition writes a full row snapshot to `booking_history`.
 - **Confirmation codes**: generated randomly. If a code collides with an existing one, booking_api retries up to `application.max_attempts` times.
+- **Inactive listings** (`listing.is_active = false`): `GET /api/v1/listings` leaves them out unless `include_inactive=true`, which only the admin portal and the My Bookings name lookup send. The guest portal returns 404 for their listing and checkout pages. New quotes and holds get 409 `LISTING_UNAVAILABLE`; the hold re-reads the flag under the listing lock. Existing bookings are unaffected.
 
 #### Pending Hold Lifecycle
 1. **Window is configuration, not code.** The hold length is `application.pending_hold_minutes`: 120 by default, set in `app_api/booking_api/config/Default.toml`. Override it per deploy, with no rebuild, via the env var `EA__APPLICATION__PENDING_HOLD_MINUTES`. booking_api refuses to start if the value is not positive. `create_booking` stores `expires_at` once, at insert time.
