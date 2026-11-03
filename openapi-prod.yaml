@@ -425,13 +425,38 @@ paths:
             enum: [Apartment, House, Townhouse, Studio, Villa]
         - in: query
           name: include_inactive
-          description: Also return inactive listings. For the admin portal and past-stay lookups only.
+          description: Also return inactive listings. For the admin portal and past-stay lookups only. Ignored when dates are given.
           schema:
             type: boolean
             default: false
+        - in: query
+          name: q
+          description: Text matched against the listing's name, city or country. At most 200 characters, with no control characters.
+          schema:
+            type: string
+        - in: query
+          name: check_in
+          description: First night of the stay. Both dates or neither. An empty value counts as absent.
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: check_out
+          description: Departure date of the stay. Both dates or neither. An empty value counts as absent.
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: guests
+          description: Party size, at least 1. With dates and no guests, totals are priced for 1 guest.
+          schema:
+            type: integer
+            minimum: 1
       responses:
+        "400":
+          description: INVALID_STAY_DATES, INVALID_GUESTS or INVALID_SEARCH_TEXT, with a message to show the guest
         "200":
-          description: List of listings
+          description: List of listings. With dates, only listings free for the whole stay, each with a stay_total when it can be priced
           content:
             application/json:
               schema:
@@ -594,7 +619,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/BookingResponse"
         "400":
-          description: Validation error
+          description: Validation error, or INVALID_STAY_DATES for dates in the past or a stay over the limit
+        "409":
+          description: DATE_UNAVAILABLE, when the dates or the gap around another booking conflict
         "500":
           description: Internal server error
 
@@ -617,7 +644,7 @@ paths:
 
   /api/v1/bookings/availability:
     get:
-      summary: Check listing availability for dates
+      summary: Check listing availability for dates, keeping the listing's gap between bookings
       operationId: checkAvailability
       tags:
         - bookings
@@ -723,7 +750,7 @@ paths:
               schema:
                 type: object
         "400":
-          description: Invalid stay, too many guests, or a stay over the limit
+          description: Invalid stay, too many guests, or INVALID_STAY_DATES for dates in the past or a stay over the limit
         "401":
           description: Not signed in
         "422":
@@ -881,7 +908,7 @@ paths:
               schema:
                 type: object
         "400":
-          description: Invalid stay, too many guests, or a stay over the limit
+          description: Invalid stay, too many guests, or INVALID_STAY_DATES for dates in the past or a stay over the limit
         "422":
           description: FX_RATE_UNAVAILABLE
   /api/v1/bookings/listing/{id}/unavailable-ranges:
@@ -912,7 +939,7 @@ paths:
           required: true
       responses:
         "200":
-          description: Merged, sorted booked ranges in the window
+          description: Merged, sorted unavailable ranges in the window, including the listing's gap around each booking
           content:
             application/json:
               schema:
@@ -1427,9 +1454,25 @@ components:
           nullable: true
           description: Refundable damage deposit (base currency)
 
+    StayTotal:
+      type: object
+      description: What a stay costs, as shown on a search result. The same total as a quote and a hold with no promo code.
+      properties:
+        nights:
+          type: integer
+        total_amount:
+          type: string
+          description: Everything the guest pays, including the refundable deposit.
+        damage_deposit:
+          type: string
+          description: The refundable deposit included in the total.
+        currency:
+          type: string
     ListingResponse:
       type: object
       properties:
+        stay_total:
+          $ref: "#/components/schemas/StayTotal"
         id:
           type: string
           format: uuid

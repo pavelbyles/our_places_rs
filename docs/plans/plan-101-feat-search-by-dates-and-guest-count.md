@@ -468,7 +468,7 @@ T22 full gates                 ← T12, T21
 
 ### Phase F: Finish
 
-- [ ] **Task 21: Add Playwright coverage and update the docs**
+- [x] **Task 21: Add Playwright coverage and update the docs**
   - **Scope:** M
   - **Description:** Add the E2E flows in spec §6, and a fixture listing with a gap by extending `createListingCopy` in `bookings-data.ts`. Update `docs/ARCHITECTURE.md`, and the entries in `openapi.yaml` and `openapi-prod.yaml` for changed routes they already list. Anything missing belongs to #113. `sanity-check` doesn't run Playwright, so this task runs the whole guest suite.
   - **Files Touched:**
