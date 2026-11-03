@@ -490,7 +490,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- npm run test:e2e:guest`
   - **Dependencies:** Tasks 6, 8, 18, 19, 20
 
-- [ ] **Task 22: Run the full gates and check acceptance criteria**
+- [x] **Task 22: Run the full gates and check acceptance criteria**
   - **Scope:** S
   - **Description:** Run each gate in `CONSTRAINTS.md` §2 as its own command, because `sanity-check` covers only format, clippy, compile and the test matrix. The panic and env-var checks already fail on the baseline, mostly in test code, so check only what this branch adds, and report the baseline failure to the originator. `-D missing_docs` stops at `common`, which has 487 baseline errors, so run it as a warning and compare the results with the lines this branch adds. Inline `#[cfg(test)]` modules in production files are also matched by the added-lines check, so write those tests without `.unwrap()` or review those hits by hand. `CONSTRAINTS.md` doesn't change. Check each item in spec §7 against evidence.
   - **Files Touched:**
