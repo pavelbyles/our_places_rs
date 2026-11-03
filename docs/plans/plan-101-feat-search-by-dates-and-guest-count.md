@@ -165,7 +165,7 @@ T22 full gates                 ← T12, T21
 
 ### Phase B: Gap Enforcement
 
-- [ ] **Task 4: Apply the gap in availability checks**
+- [x] **Task 4: Apply the gap in availability checks**
   - **Scope:** S
   - **Description:** `check_availability` and `check_availability_excluding` use the rule in spec §1.5 with the shared gap expression, joining `listing`. Qualify every column. This also covers `GET /bookings/availability`, booking updates and all three reservation-change paths, with no change at their call sites.
   - **Files Touched:**
