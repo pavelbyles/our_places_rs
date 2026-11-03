@@ -1407,6 +1407,7 @@ mod rate_admin_tests {
                 damage_deposit: None,
                 guests_included: None,
                 extra_guest_fee: None,
+                is_active: true,
             },
         )
         .await

@@ -423,6 +423,12 @@ paths:
           schema:
             type: string
             enum: [Apartment, House, Townhouse, Studio, Villa]
+        - in: query
+          name: include_inactive
+          description: Also return inactive listings. For the admin portal and past-stay lookups only.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: List of listings

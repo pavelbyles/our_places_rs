@@ -359,6 +359,11 @@ pub struct ListingDetails {
     pub rating_summary: Option<ListingRatingSummary>,
 }
 
+/// `NewListingRequest::is_active` when the caller leaves it out.
+fn default_listing_active() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingFilter {
     pub name: Option<String>,
@@ -376,6 +381,9 @@ pub struct ListingFilter {
     /// Optional host slug filter (public; matches `user.slug` exactly).
     #[serde(default)]
     pub host: Option<String>,
+    /// Also return inactive listings. Off by default so guests never see them.
+    #[serde(default)]
+    pub include_inactive: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
@@ -395,6 +403,9 @@ pub struct ListingQueryParams {
     pub user_id: Option<Uuid>,
     /// Optional host slug: only that host's listings.
     pub host: Option<String>,
+    /// Also return inactive listings, for the admin portal and past-stay lookups.
+    #[serde(default)]
+    pub include_inactive: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
@@ -589,6 +600,10 @@ pub struct TransferBookingRequest {
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 pub struct NewListingRequest {
+    /// Whether guests can see and book the listing. Active if omitted.
+    #[serde(default = "default_listing_active")]
+    pub is_active: bool,
+
     #[schema(value_type = String, example = "Zen Loft")]
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,

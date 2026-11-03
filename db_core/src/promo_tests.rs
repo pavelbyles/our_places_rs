@@ -83,8 +83,8 @@ pub(crate) async fn raw_user(pool: &PgPool) -> Uuid {
 
 pub(crate) async fn raw_listing(pool: &PgPool, host: Uuid) -> Uuid {
     sqlx::query_scalar(
-        "INSERT INTO listing (name, listing_structure_id, country, added_at, user_id, slug)
-         VALUES ('Villa ' || gen_random_uuid(), 1, 'Jamaica', NOW(), $1, 'villa-' || replace(gen_random_uuid()::text, '-', ''))
+        "INSERT INTO listing (is_active, name, listing_structure_id, country, added_at, user_id, slug)
+         VALUES (TRUE, 'Villa ' || gen_random_uuid(), 1, 'Jamaica', NOW(), $1, 'villa-' || replace(gen_random_uuid()::text, '-', ''))
          RETURNING id",
     )
     .bind(host)

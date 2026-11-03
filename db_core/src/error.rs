@@ -15,6 +15,9 @@ pub enum DbError {
     /// Requested calendar dates conflict with an existing reservation.
     #[error("The requested dates are no longer available")]
     DateUnavailable,
+    /// The listing is inactive, so it can't be quoted or held.
+    #[error("This listing is not available for booking")]
+    ListingUnavailable,
     /// Target booking cannot be modified in its current state or dates.
     #[error("Booking is not in a modifiable state: {0}")]
     BookingNotModifiable(String),

@@ -53,6 +53,10 @@ where
         "#,
     );
 
+    if !filter.as_ref().is_some_and(|f| f.include_inactive) {
+        query_builder.push(" AND listing.is_active = TRUE");
+    }
+
     if let Some(f) = filter {
         if let Some(name) = f.name {
             query_builder.push(" AND listing.name ILIKE ");

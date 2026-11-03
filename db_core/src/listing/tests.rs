@@ -91,13 +91,14 @@ async fn test_create_listing() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
 
     let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
     assert_eq!(created_listing.name, new_listing.name);
     assert!(!created_listing.id.is_nil());
-    assert!(!created_listing.is_active);
+    assert!(created_listing.is_active);
 }
 
 #[tokio::test]
@@ -133,6 +134,7 @@ async fn test_create_listing_fails_without_host_profile() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
 
     let result = create_listing(&mut *tx, &new_listing).await;
@@ -175,6 +177,7 @@ async fn test_get_listing_by_id() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -228,6 +231,7 @@ async fn test_get_listings_pagination() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         };
         let created = create_listing(&mut *tx, &listing).await.unwrap();
         created_ids.push(created.id);
@@ -305,6 +309,7 @@ async fn test_get_listings_uniqueness_across_pages() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         };
         create_listing(&mut *tx, &listing).await.unwrap();
     }
@@ -372,6 +377,7 @@ async fn test_get_listings_filtering() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -403,6 +409,7 @@ async fn test_get_listings_filtering() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -434,6 +441,7 @@ async fn test_get_listings_filtering() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -449,6 +457,7 @@ async fn test_get_listings_filtering() {
         currency: None,
         user_id: None,
         host: None,
+        include_inactive: false,
     };
     let results = get_listings(&mut *tx, 1, 10, Some(filter_jamaica))
         .await
@@ -472,6 +481,7 @@ async fn test_get_listings_filtering() {
         currency: None,
         user_id: None,
         host: None,
+        include_inactive: false,
     };
     let results = get_listings(&mut *tx, 1, 10, Some(filter_price))
         .await
@@ -493,6 +503,7 @@ async fn test_get_listings_filtering() {
         currency: None,
         user_id: None,
         host: None,
+        include_inactive: false,
     };
     let results = get_listings(&mut *tx, 1, 10, Some(filter_villa))
         .await
@@ -535,6 +546,7 @@ async fn test_update_listing_image_to_processing() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 
@@ -594,6 +606,7 @@ async fn test_delete_listing_image_promotes_next_primary() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
     let images: Vec<_> = (0..2)
@@ -735,6 +748,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     create_listing(&mut *tx, &l1).await.unwrap();
 
@@ -766,6 +780,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     create_listing(&mut *tx, &l2).await.unwrap();
 
@@ -781,6 +796,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         currency: None,
         user_id: None,
         host: None,
+        include_inactive: false,
     };
     let results1 = get_listings(&mut *tx, 1, 10, Some(filter1)).await.unwrap();
     assert_eq!(results1.len(), 1);
@@ -798,6 +814,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         currency: None,
         user_id: None,
         host: None,
+        include_inactive: false,
     };
     let results2 = get_listings(&mut *tx, 1, 10, Some(filter2)).await.unwrap();
     assert_eq!(results2.len(), 1);
@@ -815,6 +832,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         currency: None,
         user_id: Some(u1.id),
         host: None,
+        include_inactive: false,
     };
     let results_uid1 = get_listings(&mut *tx, 1, 10, Some(filter_uid1))
         .await
@@ -834,6 +852,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         currency: None,
         user_id: Some(u2.id),
         host: None,
+        include_inactive: false,
     };
     let results_uid2 = get_listings(&mut *tx, 1, 10, Some(filter_uid2))
         .await
@@ -895,6 +914,7 @@ async fn test_create_and_update_listing_with_fees() {
         damage_deposit: Some(dec!(300.00)),
         guests_included: Some(2),
         extra_guest_fee: Some(dec!(25.00)),
+        is_active: true,
     };
 
     let created = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -931,6 +951,7 @@ async fn test_create_and_update_listing_with_fees() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let created_no_fees = create_listing(&mut *tx, &no_fees_listing).await.unwrap();
     assert_eq!(created_no_fees.cleaning_fee, dec!(0.00));

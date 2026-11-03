@@ -152,6 +152,7 @@ pub async fn get_listings(
         currency: query.currency.clone(),
         user_id: query.user_id,
         host: query.host.clone(),
+        include_inactive: query.include_inactive,
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))
@@ -320,6 +321,7 @@ async fn create_listing(
             damage_deposit: req_data.damage_deposit,
             guests_included: Some(req_data.guests_included),
             extra_guest_fee: req_data.extra_guest_fee,
+            is_active: req_data.is_active,
         };
 
         match db_listing::create_listing_with_active_currency(pool.get_ref(), &listing).await {

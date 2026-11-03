@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { KNOWN_LISTINGS } from '../fixtures/test-data.js';
-import { psql } from '../fixtures/bookings-data.js';
+import { createBooking, createGuest, createListingCopy, deactivateListing, loginGuest, psql } from '../fixtures/bookings-data.js';
 
 test.describe('Guest Portal - Listings Exploration Page', () => {
   const targetVilla = KNOWN_LISTINGS.courtyardStudio;
@@ -39,6 +39,39 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
     await nameLink.click();
     await expect(page).toHaveURL(`/listings/${targetVilla.slug}`);
     await expect(page.locator('h1')).toHaveText(targetVilla.name);
+  });
+
+  test('hides a listing from search, its page and checkout once deactivated', async ({ page }) => {
+    const listing = createListingCopy();
+    const card = page.locator(`#listing-card-${listing.slug}`);
+
+    await page.goto(`/listings?q=${encodeURIComponent(listing.name)}`);
+    await expect(card).toBeVisible();
+    expect((await page.goto(`/listings/${listing.slug}`))?.status()).toBe(200);
+
+    deactivateListing(listing.id);
+
+    await page.goto(`/listings?q=${encodeURIComponent(listing.name)}`);
+    await expect(card).toHaveCount(0);
+    expect((await page.goto(`/listings/${listing.slug}`))?.status()).toBe(404);
+
+    // Checkout sends anonymous visitors to login before it loads the listing.
+    await loginGuest(page, createGuest());
+    expect((await page.goto(`/checkout/${listing.slug}`))?.status()).toBe(404);
+  });
+
+  test('keeps a stay\'s name but drops its listing link once deactivated', async ({ page, request }) => {
+    const listing = createListingCopy();
+    const guest = createGuest();
+    const booking = await createBooking(request, guest.id, { confirmed: true, listingId: listing.id });
+    deactivateListing(listing.id);
+
+    await loginGuest(page, guest);
+    await page.goto('/bookings');
+    await expect(page.getByText(listing.name)).toBeVisible();
+    const actions = page.locator(`#booking-actions-${booking.id}`);
+    await expect(actions.getByRole('link', { name: 'Message host' })).toBeVisible();
+    await expect(actions.getByRole('link', { name: 'View Listing' })).toHaveCount(0);
   });
 
   test('links each card to its host\'s listings', async ({ page }) => {

@@ -230,7 +230,9 @@ async fn load(cx: &Cx, slug: &str, currency: Option<&str>) -> Result<ListingDeta
     get_api_client(cx)
         .get_listing_by_id(slug, currency)
         .await
-        .map_err(|_| not_found().into())
+        .ok()
+        .filter(|details| details.listing.is_active)
+        .ok_or_else(|| not_found().into())
 }
 
 fn valid_stay(
@@ -477,6 +479,8 @@ async fn place_booking(
 fn booking_error_message(text: &str, max_guests: u32) -> String {
     if let Some(refusal) = common::app_client::promo_refusal_in_error(text) {
         refusal.message()
+    } else if text.contains("LISTING_UNAVAILABLE") {
+        "This property is no longer taking bookings.".to_string()
     } else if text.contains("available") || text.contains("overlap") || text.contains("conflict") {
         "Those dates are no longer available. Please choose different dates.".to_string()
     } else if text.contains("max_guests") {
@@ -530,6 +534,10 @@ mod promo_tests {
     fn other_refusals_keep_their_messages() {
         assert!(
             booking_error_message("Listing is not available", 4).contains("no longer available")
+        );
+        assert!(
+            booking_error_message(r#"{"code":"LISTING_UNAVAILABLE"}"#, 4)
+                .contains("no longer taking bookings")
         );
         assert!(booking_error_message("exceeds listing max_guests", 4).contains("1 to 4"));
         assert!(booking_error_message("FX_RATE_UNAVAILABLE", 4).contains("currency"));

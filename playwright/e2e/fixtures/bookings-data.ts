@@ -79,7 +79,7 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
 export async function createBooking(
   request: APIRequestContext,
   guestId: string,
-  options: { confirmed?: boolean } = {},
+  options: { confirmed?: boolean; listingId?: string } = {},
 ): Promise<TestBooking> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const start = new Date(Date.UTC(2032, 0, 1 + 4 * crypto.randomInt(350)));
@@ -88,7 +88,7 @@ export async function createBooking(
       headers: { Authorization: `Bearer ${signTestJwt(guestId)}` },
       data: {
         guest_id: guestId,
-        listing_id: SEEDED_LISTING_ID,
+        listing_id: options.listingId ?? SEEDED_LISTING_ID,
         check_in: day(start),
         check_out: day(end),
         num_adults: 1,
@@ -115,6 +115,27 @@ export async function createBooking(
     };
   }
   throw new Error('createBooking: no free dates found after 8 attempts');
+}
+
+/**
+ * Adds an active copy of the seeded villa, for tests that deactivate a listing.
+ * Global setup removes it next run because of its `E2E listing` name.
+ */
+export function createListingCopy(): { id: string; slug: string; name: string } {
+  const id = crypto.randomUUID();
+  const copy = { id, slug: `e2e-listing-${id}`, name: `E2E listing ${id}` };
+  psql(`
+    BEGIN;
+    CREATE TEMP TABLE listing_copy ON COMMIT DROP AS
+      SELECT * FROM listing WHERE id = '${SEEDED_LISTING_ID}';
+    UPDATE listing_copy SET id = '${copy.id}', slug = '${copy.slug}', name = '${copy.name}';
+    INSERT INTO listing SELECT * FROM listing_copy;
+    COMMIT;`);
+  return copy;
+}
+
+export function deactivateListing(listingId: string): void {
+  psql(`UPDATE listing SET is_active = FALSE WHERE id = '${listingId}';`);
 }
 
 export function bookingStatus(bookingId: string): string {

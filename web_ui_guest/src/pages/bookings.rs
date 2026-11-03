@@ -154,10 +154,13 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
     })
 }
 
+/// Listings by id, to name a guest's stays. Includes inactive ones, because a
+/// stay still needs its name after the host deactivates the listing.
 async fn listing_index(cx: &Cx) -> HashMap<Uuid, ListingResponse> {
     get_api_client(cx)
         .search_listings(ListingSearchParams {
             per_page: Some(100),
+            include_inactive: true,
             ..Default::default()
         })
         .await
@@ -197,7 +200,8 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
                 listing_name: listing
                     .map(|l| l.name.clone())
                     .unwrap_or_else(|| "Your stay".to_string()),
-                listing_slug: listing.map(|l| l.slug.clone()),
+                // Inactive listings have no public page to link to.
+                listing_slug: listing.filter(|l| l.is_active).map(|l| l.slug.clone()),
                 location: listing
                     .map(|l| match &l.city {
                         Some(city) => format!("{city}, {}", l.country),

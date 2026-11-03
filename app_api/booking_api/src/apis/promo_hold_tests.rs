@@ -461,6 +461,41 @@ mod quote {
     }
 
     #[tokio::test]
+    async fn an_inactive_listing_refuses_quotes_and_holds_and_keeps_earlier_bookings() {
+        let test_db = test_db();
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let earlier_guest = user(&pool, UserRole::Booker).await;
+        let guest = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        let app = app!(pool);
+
+        let earlier = post_hold!(app, earlier_guest, booking_request(earlier_guest, villa));
+        assert_eq!(earlier.status(), 201);
+        sqlx::query("UPDATE listing SET is_active = FALSE WHERE id = $1")
+            .bind(villa)
+            .execute(&pool)
+            .await
+            .expect("deactivate listing");
+
+        let quote = post_quote!(app, guest, quote_body(villa, None));
+        assert_eq!(quote.status(), 409);
+        let quote_json: serde_json::Value = test::read_body_json(quote).await;
+        assert_eq!(quote_json["code"], "LISTING_UNAVAILABLE");
+
+        let held = post_hold!(app, guest, booking_request(guest, villa));
+        assert_eq!(held.status(), 409);
+        let held_json: serde_json::Value = test::read_body_json(held).await;
+        assert_eq!(held_json, quote_json);
+        assert!(booking_of(&pool, guest).await.is_none());
+
+        let kept = booking_of(&pool, earlier_guest)
+            .await
+            .expect("earlier hold");
+        assert_eq!(kept.status, db_core::models::BookingStatus::Pending);
+    }
+
+    #[tokio::test]
     async fn public_signed_in_and_hold_totals_match_with_no_code() {
         let test_db = test_db();
         let pool = test_db.get_pool().await;

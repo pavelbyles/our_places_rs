@@ -549,6 +549,7 @@ async fn test_get_booking_documents_and_authorization() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -912,6 +913,7 @@ async fn test_booking_date_change_api() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -1532,6 +1534,7 @@ async fn test_complete_stays_cron() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -1945,6 +1948,7 @@ async fn test_unavailable_ranges_endpoint() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -2211,6 +2215,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -2424,6 +2429,7 @@ async fn test_confirmation_code_collision_is_detected() {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await

@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/auth.fixture.js';
 import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
-import { psql, SEEDED_LISTING_ID } from '../fixtures/bookings-data.js';
+import { createListingCopy, deactivateListing, psql, SEEDED_LISTING_ID } from '../fixtures/bookings-data.js';
 import { KNOWN_LISTINGS, TEST_CONFIG } from '../fixtures/test-data.js';
 
 test.describe('Admin Portal - Listings Management', () => {
@@ -15,6 +15,15 @@ test.describe('Admin Portal - Listings Management', () => {
     // Check action buttons
     const createBtn = authenticatedAdminPage.locator('main a[href*="/listings/new"]').first();
     await expect(createBtn).toBeVisible();
+  });
+
+  test('still lists a deactivated listing for staff', async ({ authenticatedAdminPage: page }) => {
+    const listing = createListingCopy();
+    deactivateListing(listing.id);
+
+    await page.goto('/admin/listings?status=inactive');
+    await expect(page.getByRole('row', { name: new RegExp(listing.name) })).toContainText('Inactive');
+    expect((await page.goto(`/admin/listings/${listing.id}/edit`))?.status()).toBe(200);
   });
 
   test('should provide search and filter controls', async ({ authenticatedAdminPage }) => {
@@ -41,6 +50,22 @@ test.describe('Admin Portal - Listings Management', () => {
     await expect(page).toHaveURL(/\/admin\/listings\/[0-9a-f-]{36}$/);
     await expect(page.locator('h1')).toHaveText(name);
     expect(psql(`SELECT price_per_night, cleaning_fee, max_guests FROM listing WHERE name = '${name}';`)).toBe('825.50|90.00|6');
+    expect(psql(`SELECT is_active FROM listing WHERE name = '${name}';`)).toBe('t');
+  });
+
+  test('saves a new listing as inactive when Bookable is unticked', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {
+    const name = `E2E listing inactive ${Date.now()}`;
+    await page.goto('/admin/listings/new');
+    await page.locator('#listing-name').fill(name);
+    await page.locator('input[name="city"]').fill('Ocho Rios');
+    await page.locator('input[name="price_per_night"]').fill('825.50');
+    await page.locator('input[name="max_guests"]').fill('6');
+    await page.locator('input[name="guests_included"]').fill('4');
+    await page.locator('input[name="is_active"]').uncheck();
+    await page.locator('#btn-save-listing').click();
+
+    await expect(page).toHaveURL(/\/admin\/listings\/[0-9a-f-]{36}$/);
+    expect(psql(`SELECT is_active FROM listing WHERE name = '${name}';`)).toBe('f');
   });
 
   test('shows validation errors without saving', { tag: '@new-only' }, async ({ authenticatedAdminPage: page }) => {

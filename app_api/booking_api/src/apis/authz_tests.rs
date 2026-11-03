@@ -78,6 +78,7 @@ pub(super) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
             damage_deposit: None,
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await

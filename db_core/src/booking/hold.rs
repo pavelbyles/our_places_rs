@@ -30,13 +30,16 @@ pub async fn create_booking(
 ) -> Result<Booking> {
     let mut tx = pool.begin().await?;
 
-    let _listing = sqlx::query!(
-        "SELECT id FROM listing WHERE id = $1 FOR UPDATE",
+    let listing = sqlx::query!(
+        "SELECT is_active FROM listing WHERE id = $1 FOR UPDATE",
         new_booking.listing_id
     )
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
+    if !listing.is_active {
+        return Err(crate::error::DbError::ListingUnavailable);
+    }
 
     // Lock order: listing, then currency. A concurrent deactivation waits for
     // this hold (and then sees it), or this hold sees the deactivation.

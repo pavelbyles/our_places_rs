@@ -995,6 +995,7 @@ mod tests {
                 damage_deposit: Some(dec!(100.00)),
                 guests_included: None,
                 extra_guest_fee: None,
+                is_active: true,
             },
         )
         .await

@@ -73,6 +73,7 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::DateUnavailable) | ApiError::DateUnavailable => {
                 StatusCode::CONFLICT
             }
+            ApiError::Database(DbError::ListingUnavailable) => StatusCode::CONFLICT,
             ApiError::Database(DbError::BookingNotModifiable(_))
             | ApiError::BookingNotModifiable(_) => StatusCode::CONFLICT,
             ApiError::Database(DbError::ChangeRequestAlreadyPending)
@@ -163,6 +164,12 @@ impl ResponseError for ApiError {
                 HttpResponse::Conflict().json(serde_json::json!({
                     "code": "DATE_UNAVAILABLE",
                     "message": "The requested dates are no longer available."
+                }))
+            }
+            ApiError::Database(DbError::ListingUnavailable) => {
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "LISTING_UNAVAILABLE",
+                    "message": "This listing is not available for booking."
                 }))
             }
             ApiError::BookingNotModifiable(msg) => {

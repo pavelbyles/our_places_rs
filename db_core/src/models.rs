@@ -668,6 +668,8 @@ pub struct ListingWithOwner {
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewListing {
     pub user_id: Uuid,
+    /// Whether guests can see and book the listing.
+    pub is_active: bool,
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
 

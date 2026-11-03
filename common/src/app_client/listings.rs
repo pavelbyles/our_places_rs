@@ -19,6 +19,8 @@ pub struct ListingSearchParams {
     pub per_page: Option<u32>,
     /// Only this host's listings (their public slug).
     pub host: Option<String>,
+    /// Also return inactive listings. Never set this for pages that offer stays.
+    pub include_inactive: bool,
 }
 
 pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingResponse>> {
@@ -59,6 +61,9 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
         }
         if let Some(c) = params.currency.filter(|c| !c.is_empty()) {
             query.append_pair("currency", &c);
+        }
+        if params.include_inactive {
+            query.append_pair("include_inactive", "true");
         }
     }
 

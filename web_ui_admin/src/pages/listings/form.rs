@@ -409,7 +409,6 @@ impl ValidListing {
             latitude: self.latitude,
             longitude: self.longitude,
             listing_details: Some(serde_json::json!({
-                "is_active": self.is_active,
                 AMENITIES_KEY: self.amenities,
             })),
             city: self.city,
@@ -421,6 +420,7 @@ impl ValidListing {
             damage_deposit: self.damage_deposit,
             guests_included: self.guests_included,
             extra_guest_fee: self.extra_guest_fee,
+            is_active: self.is_active,
         }
     }
 

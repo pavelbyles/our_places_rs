@@ -102,6 +102,7 @@ pub async fn scoped_listings(cx: &Cx, user: &AdminSession) -> Vec<ListingRespons
     let params = ListingSearchParams {
         per_page: Some(100),
         user_id: (user.role == AdminRole::Host).then_some(user.user_id),
+        include_inactive: true,
         ..Default::default()
     };
     let listings = get_api_client(cx)

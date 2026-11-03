@@ -355,7 +355,7 @@ pub(super) fn check_guest_count(listing: &Listing, number_of_persons: i32) -> Re
     Ok(())
 }
 
-/// Loads the listing a stay is priced for.
+/// Loads the listing a new stay is quoted for. Inactive listings are refused.
 pub(super) async fn load_listing(pool: &PgPool, listing_id: Uuid) -> Result<Listing, ApiError> {
     db_listing::get_listing_by_id(pool, listing_id)
         .await
@@ -365,6 +365,13 @@ pub(super) async fn load_listing(pool: &PgPool, listing_id: Uuid) -> Result<List
                 bad_request("Listing not found".to_string())
             } else {
                 ApiError::Database(e)
+            }
+        })
+        .and_then(|listing| {
+            if listing.is_active {
+                Ok(listing)
+            } else {
+                Err(ApiError::Database(DbError::ListingUnavailable))
             }
         })
 }

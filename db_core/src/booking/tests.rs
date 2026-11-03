@@ -81,6 +81,7 @@ async fn test_guest_pending_hold_cancellation_on_new_booking() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let listing1 = crate::listing::create_listing(&mut *tx, &nl1)
         .await
@@ -113,6 +114,7 @@ async fn test_guest_pending_hold_cancellation_on_new_booking() {
         damage_deposit: None,
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let listing2 = crate::listing::create_listing(&mut *tx, &nl2)
         .await
@@ -317,6 +319,7 @@ async fn test_update_booking_confirmed_issues_payment_receipt() {
             damage_deposit: Some(dec!(100.00)),
             guests_included: None,
             extra_guest_fee: None,
+            is_active: true,
         },
     )
     .await
@@ -528,6 +531,7 @@ async fn test_update_booking_date_change_and_revised_receipt() {
         damage_deposit: Some(dec!(100.00)),
         guests_included: None,
         extra_guest_fee: None,
+        is_active: true,
     };
     let listing = crate::listing::create_listing(&mut *tx, &nl).await.unwrap();
 

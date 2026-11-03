@@ -115,7 +115,9 @@ async fn load(cx: &Cx, slug: &str) -> Result<ListingDetails> {
     get_api_client(cx)
         .get_listing_by_id(slug, currency.as_deref())
         .await
-        .map_err(|_| not_found().into())
+        .ok()
+        .filter(|details| details.listing.is_active)
+        .ok_or_else(|| not_found().into())
 }
 
 /// Most photos shown on the page; the rest are in the gallery dialog.
