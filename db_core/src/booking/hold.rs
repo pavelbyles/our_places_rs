@@ -30,8 +30,10 @@ pub async fn create_booking(
 ) -> Result<Booking> {
     let mut tx = pool.begin().await?;
 
+    // The gap is read under the lock, so it can't change before this hold commits.
     let listing = sqlx::query!(
-        "SELECT is_active FROM listing WHERE id = $1 FOR UPDATE",
+        r#"SELECT is_active, LEAST(GREATEST(days_between_bookings, 0), 365) as "gap!"
+        FROM listing WHERE id = $1 FOR UPDATE"#,
         new_booking.listing_id
     )
     .fetch_optional(&mut *tx)
@@ -50,12 +52,13 @@ pub async fn create_booking(
         SELECT id, guest_id, status as "status: BookingStatus" FROM booking 
         WHERE listing_id = $1 
           AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))
-          AND date_from < $3 
-          AND date_to > $2
+          AND date_from - $4::int4 < $3
+          AND date_to + $4::int4 > $2
         "#,
         new_booking.listing_id,
         new_booking.date_from,
-        new_booking.date_to
+        new_booking.date_to,
+        listing.gap
     )
     .fetch_all(&mut *tx)
     .await?;
@@ -66,9 +69,7 @@ pub async fn create_booking(
     });
 
     if has_conflict {
-        return Err(crate::error::DbError::ValidationError(
-            "Listing is not available for the selected dates".to_string(),
-        ));
+        return Err(crate::error::DbError::DateUnavailable);
     }
 
     // Cancel any existing pending holds for this guest across all listings

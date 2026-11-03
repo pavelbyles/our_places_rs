@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, listing_id, status as \"status: BookingStatus\", date_from, date_to, number_of_persons,\n            COALESCE(expires_at > NOW(), FALSE) as \"hold_active!\", promo_code_id\n        FROM booking WHERE id = $1 FOR UPDATE",
+  "query": "SELECT id, listing_id, status as \"status: BookingStatus\", date_from, date_to, number_of_persons,\n            COALESCE(expires_at > clock_timestamp(), FALSE) as \"hold_active!\", promo_code_id\n        FROM booking WHERE id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -72,5 +72,5 @@
       true
     ]
   },
-  "hash": "b4fa3c26ee7407327f98c8e869472015fcc230bf9e8a9fb817fc346099b29dec"
+  "hash": "1bc7db0a1fdfea72b1627b099a0f8f9493f7ef336a4b57adad58ea6a8195b386"
 }

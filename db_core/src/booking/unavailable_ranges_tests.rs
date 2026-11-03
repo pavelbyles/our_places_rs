@@ -107,7 +107,23 @@ pub(super) async fn book_held(
     hold_minutes: i32,
 ) -> Booking {
     let guest_id = user(pool, crate::models::UserRole::Booker).await;
-    let new_booking = NewBooking {
+    create_booking(
+        pool,
+        &new_booking(guest_id, listing_id, from, to),
+        hold_minutes,
+    )
+    .await
+    .unwrap()
+}
+
+/// A hold request, for tests that need the guest or the outcome.
+pub(super) fn new_booking(
+    guest_id: Uuid,
+    listing_id: Uuid,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> NewBooking {
+    NewBooking {
         // UUIDv7 starts with a timestamp; take the random tail.
         confirmation_code: Uuid::now_v7().simple().to_string()[22..].to_uppercase(),
         guest_id,
@@ -135,10 +151,7 @@ pub(super) async fn book_held(
         tax_rate: dec!(0.1000),
         exchange_rate: Decimal::ONE,
         promo: None,
-    };
-    create_booking(pool, &new_booking, hold_minutes)
-        .await
-        .unwrap()
+    }
 }
 
 #[tokio::test]

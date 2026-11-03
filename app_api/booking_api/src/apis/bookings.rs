@@ -237,6 +237,17 @@ pub(super) async fn create_booking(
                     refusal,
                 )));
             }
+            // Expected: someone else can take the dates after a search.
+            Err(db_core::error::DbError::DateUnavailable) => {
+                tracing::warn!(
+                    listing_id = %req_data.listing_id,
+                    guest_id = %req_data.guest_id,
+                    check_in = %req_data.check_in,
+                    check_out = %req_data.check_out,
+                    "hold refused: dates unavailable"
+                );
+                return Err(ApiError::Database(db_core::error::DbError::DateUnavailable));
+            }
             Err(e) => {
                 tracing::error!(
                     listing_id = %req_data.listing_id,

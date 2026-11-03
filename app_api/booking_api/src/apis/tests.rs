@@ -2765,3 +2765,64 @@ mod gap_change_tests {
         assert_eq!(body["code"], "DATE_UNAVAILABLE");
     }
 }
+
+mod hold_conflict_tests {
+    use crate::apis::authz_tests::{booking_request, listing, settings, tax_settings, user};
+    use crate::apis::promo_hold_tests::capture_logs;
+    use actix_web::{App, test, web};
+    use db_core::models::UserRole;
+    use sqlx_db_tester::TestPg;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    fn bearer(id: Uuid) -> (&'static str, String) {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_conflicting_hold_is_a_409_and_not_logged_as_an_error() {
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let first = user(&pool, UserRole::Booker).await;
+        let second = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(settings()))
+                .app_data(web::Data::new(tax_settings()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        let post = |guest: Uuid| {
+            test::TestRequest::post()
+                .uri("/api/v1/bookings")
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(guest))
+                .set_json(booking_request(guest, villa))
+                .to_request()
+        };
+        let resp = test::call_service(&app, post(first)).await;
+        assert_eq!(resp.status(), 201);
+
+        let (logs, guard) = capture_logs();
+        let resp = test::call_service(&app, post(second)).await;
+        drop(guard);
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "DATE_UNAVAILABLE");
+        let text = logs.text();
+        assert!(text.contains("dates unavailable"), "{text}");
+        // Only the refusal's own lines: the first hold's confirmation email can
+        // log an error here too, when no Pub/Sub emulator is running.
+        assert!(!text.contains("failed to create booking"), "{text}");
+        assert!(!text.contains("request failed"), "{text}");
+    }
+}

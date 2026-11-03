@@ -185,7 +185,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p db_core gap_tests && devenv shell -- cargo test -p booking_api gap_change_tests`
   - **Dependencies:** Task 3
 
-- [ ] **Task 5: Apply the gap in holds**
+- [x] **Task 5: Apply the gap in holds**
   - **Scope:** S
   - **Description:** The overlap query in `create_booking` uses the same rule, after the listing row lock. Add `LEAST(GREATEST(days_between_bookings, 0), 365) AS "gap!"` to the lock query at `hold.rs:34`, and bind it in the overlap query as `date_from - $4::int4 < $3 AND date_to + $4::int4 > $2`. The cast is required: without it, `date + $4` is ambiguous and `date - $4` resolves to `date - date`. A conflict returns `DbError::DateUnavailable`. In `bookings.rs`, add an arm for it below ERROR, like the `PromoRefused` arm, since losing a race after a search is now a normal flow. Check that the status-only 400 assertions at `authz_tests.rs:899` and `:909` don't expect the old conflict 400. Also close an existing double-booking window: `lock_booking` computes `hold_active` with `NOW()` (`update.rs:73`), which is fixed when the transaction begins, so a confirmation that waited on the listing lock can succeed after its hold expired and a rival took the dates. Use `clock_timestamp()` there, as `keep_promo_use_on_confirmation` already does. Test it in a `#[cfg(test)] mod confirm_clock_tests` in `update.rs`, because `lock_booking` is private: inside one transaction, set the hold's `expires_at = clock_timestamp()`, then call `lock_booking`. That value is later than the transaction's `NOW()` and earlier than the next `clock_timestamp()`, so the old code reports the hold as active and the fix doesn't, with no sleep.
   - **Files Touched:**

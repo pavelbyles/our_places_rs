@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, guest_id, status as \"status: BookingStatus\" FROM booking \n        WHERE listing_id = $1 \n          AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))\n          AND date_from < $3 \n          AND date_to > $2\n        ",
+  "query": "\n        SELECT id, guest_id, status as \"status: BookingStatus\" FROM booking \n        WHERE listing_id = $1 \n          AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))\n          AND date_from - $4::int4 < $3\n          AND date_to + $4::int4 > $2\n        ",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,8 @@
       "Left": [
         "Uuid",
         "Date",
-        "Date"
+        "Date",
+        "Int4"
       ]
     },
     "nullable": [
@@ -44,5 +45,5 @@
       false
     ]
   },
-  "hash": "d08a8e3ccf4e6bf20ae91760cde18b90c1435d21d4b91bd9685d7b55bac9d57a"
+  "hash": "44dc3495ff320b8f6b6e465a7f06832c1d75d228e7b678cf5e05bf01ac80658f"
 }

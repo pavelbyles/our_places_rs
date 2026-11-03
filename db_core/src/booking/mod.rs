@@ -22,6 +22,8 @@ mod gap_tests;
 #[cfg(test)]
 mod hold_expiry_tests;
 #[cfg(test)]
+mod hold_gap_tests;
+#[cfg(test)]
 mod host_gross_tests;
 #[cfg(test)]
 mod retained_payout_tests;
