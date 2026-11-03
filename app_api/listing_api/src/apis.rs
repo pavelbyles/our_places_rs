@@ -153,6 +153,7 @@ pub async fn get_listings(
         user_id: query.user_id,
         host: query.host.clone(),
         include_inactive: query.include_inactive,
+        ..Default::default()
     };
 
     let listings = db_listing::get_listings(pool.get_ref(), page, per_page_clamped, Some(filter))

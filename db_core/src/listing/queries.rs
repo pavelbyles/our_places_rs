@@ -5,6 +5,41 @@ use crate::models::{Listing, ListingWithOwner};
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
+/// Limits a search to listings that can be booked for the whole stay: active,
+/// priced, long enough to meet the minimum stay (including overrides covering a
+/// night of it), and clear of bookings under the rule in `booking::availability`.
+fn push_stay_conditions(
+    query_builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    check_in: chrono::NaiveDate,
+    check_out: chrono::NaiveDate,
+) {
+    let nights = i32::try_from((check_out - check_in).num_days()).unwrap_or(i32::MAX);
+    query_builder.push(
+        " AND listing.is_active = TRUE AND listing.price_per_night IS NOT NULL AND listing.minimum_stay <= ",
+    );
+    query_builder.push_bind(nights);
+    query_builder.push(
+        " AND NOT EXISTS (SELECT 1 FROM listing_price_overrides o
+            WHERE o.listing_id = listing.id AND o.start_date < ",
+    );
+    query_builder.push_bind(check_out);
+    query_builder.push(" AND o.end_date > ");
+    query_builder.push_bind(check_in);
+    query_builder.push(" AND o.min_nights > ");
+    query_builder.push_bind(nights);
+    query_builder.push(
+        ") AND NOT EXISTS (SELECT 1 FROM booking b
+            WHERE b.listing_id = listing.id
+              AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+              AND b.date_from - LEAST(GREATEST(listing.days_between_bookings, 0), 365) < ",
+    );
+    query_builder.push_bind(check_out);
+    query_builder
+        .push(" AND b.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > ");
+    query_builder.push_bind(check_in);
+    query_builder.push(")");
+}
+
 /// Retrieves a paginated list of listings from the database with optional filtering.
 #[tracing::instrument(skip(executor))]
 pub async fn get_listings<'e, E>(
@@ -91,6 +126,15 @@ where
                 query_builder.push_bind(ids);
                 query_builder.push(")");
             }
+        }
+
+        if let (Some(check_in), Some(check_out)) = (f.check_in, f.check_out) {
+            push_stay_conditions(&mut query_builder, check_in, check_out);
+        }
+
+        if let Some(guests) = f.guests {
+            query_builder.push(" AND listing.max_guests >= ");
+            query_builder.push_bind(guests);
         }
 
         if let Some(host) = f.host.as_deref().map(str::trim).filter(|h| !h.is_empty()) {

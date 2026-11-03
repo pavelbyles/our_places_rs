@@ -382,8 +382,18 @@ pub struct ListingFilter {
     #[serde(default)]
     pub host: Option<String>,
     /// Also return inactive listings. Off by default so guests never see them.
+    /// Ignored when dates are given, because an inactive listing can't be booked.
     #[serde(default)]
     pub include_inactive: bool,
+    /// First night of a stay the listing must be free for. Applies with `check_out`.
+    #[serde(default)]
+    pub check_in: Option<NaiveDate>,
+    /// Departure date of a stay the listing must be free for. Applies with `check_in`.
+    #[serde(default)]
+    pub check_out: Option<NaiveDate>,
+    /// Party size the listing must fit.
+    #[serde(default)]
+    pub guests: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]

@@ -277,7 +277,7 @@ T22 full gates                 ← T12, T21
 
 ### Phase D: Search API
 
-- [ ] **Task 10: Add stay filters to `get_listings`**
+- [x] **Task 10: Add stay filters to `get_listings`**
   - **Scope:** S
   - **Description:** `ListingFilter` gains `check_in`, `check_out` and `guests`. `get_listings` adds the availability, guest, minimum-stay and bookable-only conditions from spec §3.3, with every value bound. Add `..Default::default()` to the field-by-field literal at `app_api/listing_api/src/apis.rs:144`, so the workspace still compiles, and Task 13 fills the fields and removes it.
   - **Files Touched:**
