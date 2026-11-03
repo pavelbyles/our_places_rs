@@ -8,6 +8,7 @@ use api_core::auth::Claims;
 use api_core::error::ApiError;
 use api_core::settings::Settings;
 use chrono::{NaiveDate, Utc};
+use common::availability::{StayInputError, validate_stay_dates};
 use common::currency::CurrencyCode;
 use common::models::{StayQuotePromo, StayQuoteRefusal, StayQuoteRequest, StayQuoteResponse};
 use common::pricing::{
@@ -64,6 +65,13 @@ pub(super) struct StayRequest<'a> {
     pub(super) promo: Option<PromoRequest<'a>>,
     /// Longest stay that may be priced.
     pub(super) max_stay_nights: i64,
+    /// Today in Jamaica: earlier check-ins are refused.
+    pub(super) today: NaiveDate,
+}
+
+/// Today's date for a stay being priced now.
+pub(super) fn stay_today() -> NaiveDate {
+    common::availability::jamaica_today(Utc::now())
 }
 
 /// A priced stay.
@@ -163,23 +171,21 @@ pub(super) async fn price_stay(
     request: StayRequest<'_>,
 ) -> Result<PricedStay, ApiError> {
     let listing = request.listing;
-    let nights = (request.check_out - request.check_in).num_days();
-    if nights <= 0 {
-        return Err(bad_request(
-            "Check-out date must be after check-in date".to_string(),
-        ));
-    }
-    if nights > request.max_stay_nights {
-        return Err(bad_request(format!(
-            "Stays can be at most {} nights",
-            request.max_stay_nights
-        )));
-    }
-    i32::try_from(nights).map_err(|_| {
-        bad_request(format!(
-            "Stays can be at most {} nights",
-            request.max_stay_nights
-        ))
+    validate_stay_dates(
+        request.check_in,
+        request.check_out,
+        request.today,
+        request.max_stay_nights,
+    )
+    .map_err(|refused| {
+        tracing::warn!(listing_id = %listing.id, code = refused.code(), "stay dates refused");
+        ApiError::Database(DbError::StayInput(refused))
+    })?;
+    // `max_stay_nights` has no upper bound, and the calculator counts in `i32`.
+    i32::try_from((request.check_out - request.check_in).num_days()).map_err(|_| {
+        ApiError::Database(DbError::StayInput(StayInputError::TooLong {
+            max_nights: request.max_stay_nights,
+        }))
     })?;
 
     let currency = request.currency.trim().to_ascii_uppercase();
@@ -405,6 +411,7 @@ pub(super) async fn public_listing_quote(
             currency: query.currency.as_deref().unwrap_or(&listing.base_currency),
             promo: None,
             max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
         },
     )
     .await?;
@@ -452,6 +459,7 @@ pub(super) async fn signed_in_quote(
                 on_refusal: OnRefusal::Report,
             }),
             max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
         },
     )
     .await?;

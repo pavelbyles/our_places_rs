@@ -2,6 +2,7 @@
 
 use super::stay_pricing::{
     OnRefusal, PromoRequest, StayRequest, check_guest_count, log_promo_refusal, price_stay,
+    stay_today,
 };
 use super::{
     CurrencyQuery, authorize_booking_party, caller, convert_booking_amounts, display_rate,
@@ -97,6 +98,7 @@ pub(super) async fn create_booking(
                 on_refusal: OnRefusal::Fail,
             }),
             max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
         },
     )
     .await?;

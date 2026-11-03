@@ -247,7 +247,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p common pricing_core_tests && devenv shell -- cargo test -p booking_api stay_pricing_pin_tests && devenv shell -- cargo test -p booking_api promo_hold_tests`
   - **Dependencies:** None
 
-- [ ] **Task 8: Refuse past dates at quote and hold**
+- [x] **Task 8: Refuse past dates at quote and hold**
   - **Scope:** S
   - **Description:** `StayRequest` gains `today: NaiveDate`, set by one helper at its three call sites, so tests can choose the date. `price_stay` uses `validate_stay_dates`, replacing its existing date and length checks. Keep the `i32::try_from` guard, because `max_stay_nights` is an `i64` with no upper bound.
   - **Files Touched:**

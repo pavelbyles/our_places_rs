@@ -312,6 +312,8 @@ async fn authorize_booking_party(
 #[cfg(test)]
 mod authz_tests;
 #[cfg(test)]
+mod past_date_tests;
+#[cfg(test)]
 mod promo_hold_tests;
 #[cfg(test)]
 mod rate_tests;
