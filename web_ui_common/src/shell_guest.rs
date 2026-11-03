@@ -5,11 +5,12 @@ use topcoat::{
     Result,
     asset::Asset,
     context::Cx,
+    router::request::uri,
     view::{Child, View, component, view},
 };
 
 use crate::assets::{HTMX_CONFIG, HTMX_JS, UI_JS};
-use crate::components::domain::currency_selector::currency_selector;
+use crate::components::domain::currency_selector::{currency_selector, search_params_from_query};
 use crate::components::navbar::theme_toggle;
 use crate::components::toast::toast_region;
 use crate::fonts::{INTER, NEWSREADER};
@@ -36,6 +37,9 @@ pub struct GuestShell {
     pub theme: ThemeChoice,
     /// Display currency for the selector.
     pub currency: Option<String>,
+    /// The search for the selector's links to keep. Comes from the request, so
+    /// [`guest_shell`] fills it in, and tests can render with no request.
+    pub search_params: Vec<String>,
 }
 
 /// Header, main landmark, footer and toast region. Separate from the
@@ -52,6 +56,7 @@ pub async fn guest_chrome(
         user,
         theme,
         currency,
+        search_params,
         ..
     } = shell;
     let pill = "inline-flex h-11 items-center whitespace-nowrap rounded-full px-3 text-sm font-medium sm:px-5";
@@ -65,7 +70,7 @@ pub async fn guest_chrome(
                     <a href="/about" class="text-foreground">"About"</a>
                 </nav>
                 <div class="flex items-center gap-1 sm:gap-2 [&>*]:shrink-0">
-                    currency_selector(current_currency: currency)
+                    currency_selector(current_currency: currency, search_params: search_params)
                     // Below 380px the toggle moves into the menu so the bar fits.
                     <span class="hidden min-[380px]:contents">
                         theme_toggle(theme: theme)
@@ -173,6 +178,7 @@ pub async fn guest_shell<'a>(
         user,
         theme: theme_for_request(__cx),
         currency,
+        search_params: search_params_from_query(uri(__cx).query().unwrap_or_default()),
     };
     Ok(view! {
         if partial {

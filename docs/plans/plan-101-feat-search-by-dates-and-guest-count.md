@@ -437,7 +437,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest listings_page_tests`
   - **Dependencies:** Tasks 16, 17
 
-- [ ] **Task 19: Keep the search when the currency changes**
+- [x] **Task 19: Keep the search when the currency changes**
   - **Scope:** M
   - **Description:** `currency_menu` builds links that keep `q`, `host`, `check_in`, `check_out` and `guests`, with `currency` first. A pure `search_params_from_query(&str)` picks them out by key, and forwards the pairs still encoded, so no decoder is needed. `guest_shell` reads the URI and passes them through a new `GuestShell.search_params` field, because reading it in `guest_chrome` would panic in `Cx::default()` tests. The checkout form's `action` uses the existing `checkout_url(...)` when a stay is valid, because re-rendering after a refusal otherwise has no query string to keep, and that's when the page tells guests to choose another currency.
   - **Files Touched:**

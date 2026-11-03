@@ -90,6 +90,21 @@ fn split_currency_suffix<'a>(slug: &'a str, codes: &[String]) -> Option<(&'a str
     })
 }
 
+/// Where the form posts. A valid stay stays in the URL, so a page re-rendered
+/// after a refusal still knows the stay when the guest switches currency. The
+/// handler books from the form's fields, never from this query.
+fn form_action(
+    slug: &str,
+    stay: Option<(NaiveDate, NaiveDate)>,
+    guests: u32,
+    currency: &str,
+) -> String {
+    match stay {
+        Some((check_in, check_out)) => checkout_url(slug, check_in, check_out, guests, currency),
+        None => format!("/checkout/{slug}"),
+    }
+}
+
 fn checkout_url(
     slug: &str,
     check_in: NaiveDate,
@@ -138,7 +153,7 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case tracking-normal font-normal";
     let today = jamaica_today().to_string();
     let current_step = if v.stay.is_some() { 1 } else { 0 };
-    let action = format!("/checkout/{}", v.slug);
+    let action = form_action(&v.slug, v.stay, v.guests, &v.currency);
     let (check_in, check_out) = v
         .stay
         .map(|(a, b)| (a.to_string(), b.to_string()))
@@ -581,5 +596,43 @@ mod booking_error_codes {
     fn an_unreadable_invalid_stay_dates_body_still_says_something_useful() {
         let message = booking_error_message("INVALID_STAY_DATES", 4);
         assert!(message.contains("valid dates"), "{message}");
+    }
+}
+
+#[cfg(test)]
+mod checkout_form_action {
+    use super::form_action;
+    use chrono::NaiveDate;
+
+    fn day(d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2030, 8, d).unwrap_or_default()
+    }
+
+    #[test]
+    fn a_valid_stay_stays_in_the_url() {
+        assert_eq!(
+            form_action("sea-grape", Some((day(1), day(4))), 2, "JMD"),
+            "/checkout/sea-grape?check_in=2030-08-01&check_out=2030-08-04&guests=2&currency=JMD"
+        );
+    }
+
+    #[test]
+    fn no_stay_posts_to_the_plain_url() {
+        assert_eq!(
+            form_action("sea-grape", None, 2, "JMD"),
+            "/checkout/sea-grape"
+        );
+    }
+
+    #[test]
+    fn the_currency_menu_keeps_the_stay_from_that_url() {
+        let action = form_action("sea-grape", Some((day(1), day(4))), 2, "JMD");
+        let query = action.split_once('?').map(|(_, q)| q).unwrap_or_default();
+        let kept =
+            web_ui_common::components::domain::currency_selector::search_params_from_query(query);
+        assert_eq!(
+            kept,
+            ["check_in=2030-08-01", "check_out=2030-08-04", "guests=2"]
+        );
     }
 }

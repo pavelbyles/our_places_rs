@@ -6,6 +6,30 @@ use topcoat::{
     view::{Attributes, View, class, component, view},
 };
 
+/// The search values a currency link keeps. Nothing else in the URL carries over.
+const KEPT_SEARCH_PARAMS: [&str; 5] = ["q", "host", "check_in", "check_out", "guests"];
+
+/// The search in a query string, as `key=value` pairs still encoded as they
+/// arrived, so nothing needs decoding and encoding again. Empty values are left out.
+pub fn search_params_from_query(query: &str) -> Vec<String> {
+    query
+        .split('&')
+        .filter(|pair| {
+            pair.split_once('=')
+                .is_some_and(|(key, value)| !value.is_empty() && KEPT_SEARCH_PARAMS.contains(&key))
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// The link that switches to `currency` and keeps the search.
+pub fn currency_href(currency: &str, search_params: &[String]) -> String {
+    std::iter::once(format!("?currency={currency}"))
+        .chain(search_params.iter().cloned())
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
 /// A pill showing the active display currency that opens a menu of the
 /// active currencies. Hidden when no currency list is available.
 #[component]
@@ -15,12 +39,17 @@ pub async fn currency_selector(
     /// Active currency, if one was chosen.
     #[default]
     current_currency: Option<String>,
+    /// The search for each link to keep, from [`search_params_from_query`].
+    #[default]
+    search_params: Vec<String>,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     attrs: Attributes,
 ) -> Result<impl View> {
     let codes = active_currency_codes(cx).await;
-    Ok(view! { currency_menu(codes: codes, current_currency: current_currency, attrs: attrs) })
+    Ok(
+        view! { currency_menu(codes: codes, current_currency: current_currency, search_params: search_params, attrs: attrs) },
+    )
 }
 
 /// The menu itself, rendered from a list of codes (no I/O; used by tests).
@@ -33,6 +62,9 @@ pub async fn currency_menu(
     /// Active currency, if one was chosen.
     #[default]
     current_currency: Option<String>,
+    /// The search for each link to keep, from [`search_params_from_query`].
+    #[default]
+    search_params: Vec<String>,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -61,7 +93,7 @@ pub async fn currency_menu(
                     for curr in codes {
                         <li>
                             <a
-                                href=(format!("?currency={curr}"))
+                                href=(currency_href(&curr, &search_params))
                                 aria-current=((Some(&curr) == active.as_ref()).then_some("true"))
                                 class="block rounded-lg px-3 py-2 text-sm aria-[current=true]:font-semibold"
                             >(curr.clone())</a>
@@ -199,6 +231,78 @@ mod currency_select_tests {
         assert_eq!(
             opts[0].label, "USD",
             "unknown status is not labelled inactive"
+        );
+    }
+}
+
+#[cfg(test)]
+mod currency_menu_search_tests {
+    use super::*;
+    use topcoat::context::Cx;
+    use topcoat::view::ViewExt;
+
+    #[test]
+    fn keeps_the_search_and_drops_everything_else() {
+        assert_eq!(
+            search_params_from_query(
+                "q=Runaway%20Bay&currency=USD&check_in=2030-08-01&check_out=2030-08-04&guests=2&host=sea&new_booking=true&page=3"
+            ),
+            [
+                "q=Runaway%20Bay",
+                "check_in=2030-08-01",
+                "check_out=2030-08-04",
+                "guests=2",
+                "host=sea"
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_values_and_an_empty_query_keep_nothing() {
+        assert!(search_params_from_query("").is_empty());
+        assert!(search_params_from_query("q=&check_in=&guests").is_empty());
+    }
+
+    #[test]
+    fn hostile_values_stay_encoded_and_add_no_parameter() {
+        for value in ["a%26currency%3DXXX%23", "a%2Bb", "a%3Db", "a%22b", "a%3Cb"] {
+            let kept = search_params_from_query(&format!("q={value}&currency=USD"));
+            assert_eq!(kept, [format!("q={value}")]);
+            assert_eq!(
+                currency_href("JMD", &kept),
+                format!("?currency=JMD&q={value}")
+            );
+        }
+    }
+
+    #[test]
+    fn a_second_currency_in_the_url_cant_get_through() {
+        let kept = search_params_from_query("q=x&currency=XXX&currency=YYY");
+        assert_eq!(currency_href("JMD", &kept), "?currency=JMD&q=x");
+    }
+
+    #[test]
+    fn with_no_search_links_are_just_the_currency() {
+        assert_eq!(currency_href("JMD", &[]), "?currency=JMD");
+    }
+
+    #[tokio::test]
+    async fn the_menu_links_carry_the_search() {
+        let __cx = &Cx::default();
+        let kept = search_params_from_query("q=x&check_in=2030-08-01&check_out=2030-08-04");
+        let codes = vec!["JMD".to_string()];
+        let out = match view! { currency_menu(codes: codes, search_params: kept) }
+            .first()
+            .await
+        {
+            Ok(handle) => handle.render(__cx),
+            Err(e) => panic!("render failed: {e}"),
+        };
+        assert!(
+            out.contains(
+                r#"href="?currency=JMD&amp;q=x&amp;check_in=2030-08-01&amp;check_out=2030-08-04""#
+            ),
+            "{out}"
         );
     }
 }
