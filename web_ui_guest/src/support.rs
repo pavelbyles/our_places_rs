@@ -90,7 +90,7 @@ pub async fn start_guest_session(cx: &Cx, user: &UserResponse) -> Result<(), Str
 
 /// Today's date in Jamaica (UTC-05:00, no DST): the listings' local day.
 pub fn jamaica_today() -> chrono::NaiveDate {
-    (chrono::Utc::now() - chrono::Duration::hours(5)).date_naive()
+    common::availability::jamaica_today(chrono::Utc::now())
 }
 
 /// Loads booking `id` as `guest`. Anything the guest does not own (or that

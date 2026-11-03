@@ -25,9 +25,9 @@ use web_ui_common::components::{
 };
 use web_ui_common::guard::guard_failure;
 
-use crate::pages::register::urlencode;
 use crate::quote::signed_in_quote;
 use crate::support::{display_currency, jamaica_today, service_token};
+use common::query::urlencode;
 
 path_param!(slug);
 path_param!(id);

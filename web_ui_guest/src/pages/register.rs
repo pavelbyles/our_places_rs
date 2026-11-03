@@ -1,4 +1,5 @@
 use common::models::{NewBookerProfile, NewUserRequest};
+use common::query::urlencode;
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -124,17 +125,4 @@ pub async fn register_submit(
         ..form
     };
     Ok(view! { register_form(form: form, error: error) })
-}
-
-/// Percent-encodes a query value.
-pub fn urlencode(value: &str) -> String {
-    value
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                char::from(b).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }

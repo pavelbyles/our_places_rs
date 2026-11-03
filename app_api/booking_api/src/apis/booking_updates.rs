@@ -145,7 +145,7 @@ fn check_term_change(old_booking: &Booking, body: &UpdatedBookingRequest) -> Res
         ));
     }
 
-    let jamaica_today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let jamaica_today = common::availability::jamaica_today(Utc::now());
     let new_check_in = body.date_from.unwrap_or(old_booking.date_from);
     let new_check_out = body.date_to.unwrap_or(old_booking.date_to);
 

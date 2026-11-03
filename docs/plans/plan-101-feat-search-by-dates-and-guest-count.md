@@ -111,7 +111,7 @@ T22 full gates                 ← T12, T21
 
 ### Phase A: Stay Rules and Errors
 
-- [ ] **Task 1: Add stay input validation to `common`**
+- [x] **Task 1: Add stay input validation to `common`**
   - **Scope:** S
   - **Description:** Add `jamaica_today`, `StayInputError`, `validate_stay_dates`, `parse_stay_search` and `StaySearch` (spec §3.2), including `q` handling. Replace every copy of the Jamaica date formula in the portal and `booking_api`, including those in `reservation_changes.rs`. Move `urlencode` from `web_ui_guest/src/pages/register.rs` to a new `common::query` module, because `web_ui_common` needs it in Task 17, and update its importers.
   - **Files Touched:**

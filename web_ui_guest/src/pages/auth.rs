@@ -8,8 +8,8 @@ use topcoat::{
 };
 use web_client::{auth::token_hash_to_hex, get_api_client, redirect::safe_redirect};
 
-use crate::pages::register::urlencode;
 use crate::support::start_guest_session;
+use common::query::urlencode;
 
 #[derive(Deserialize, Default)]
 struct LoginQuery {

@@ -19,6 +19,7 @@ pub mod payout;
 pub mod pricing;
 /// Promo code rules: validation, usage limits and discount amounts.
 pub mod promo;
+pub mod query;
 pub mod reference;
 pub mod slug;
 pub mod tax_document;
