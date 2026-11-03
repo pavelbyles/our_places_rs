@@ -1,17 +1,18 @@
-//! Booked date ranges for a listing, used to grey out nights in the
-//! booking calendar.
+//! Stay dates: the unavailable ranges that grey out nights in the booking
+//! calendar, and validating the dates and guests a stay is searched for.
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// A half-open range of booked nights: `date_from` is the first booked night
-/// and `date_to` is the checkout day, which is free for a new check-in.
+/// A half-open range of nights a new stay can't use: booked nights, plus the
+/// listing's gap on each side. `date_from` is the first such night and `date_to`
+/// is the first day free for a new check-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct UnavailableRange {
-    /// First booked night.
+    /// First unavailable night.
     pub date_from: NaiveDate,
-    /// Checkout day (not booked).
+    /// First day free for a new check-in.
     pub date_to: NaiveDate,
 }
 

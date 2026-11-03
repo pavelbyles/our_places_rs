@@ -274,8 +274,8 @@
   }
 
   // --- Stay-dates calendar (server-rendered by date_range_calendar). -------
-  // A booked night can still be the check-out day: the guest leaves that
-  // morning. A range may not include any booked or past night.
+  // An unavailable night can still be the check-out day: the guest leaves that
+  // morning. A range may not include any unavailable or past night.
   var DAY_MS = 86400000;
 
   function parseDay(iso) { return iso ? Date.parse(iso + 'T00:00:00Z') : Number.NaN; }
@@ -361,7 +361,7 @@
 
     if (choosingEnd) {
       if (state === 'past' || !rangeIsFree(root, start, iso)) {
-        announce(root, 'Those dates include booked nights. Choose an earlier check-out.');
+        announce(root, 'Those dates include unavailable nights. Choose an earlier check-out.');
         return;
       }
       p.checkOut.value = iso;

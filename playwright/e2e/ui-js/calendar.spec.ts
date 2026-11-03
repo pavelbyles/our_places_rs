@@ -54,7 +54,7 @@ test.describe('ui.js calendar', () => {
     await clickDay(page, '2027-01-06');
     await clickDay(page, '2027-01-12');
     await expect(checkOut(page)).toHaveValue('');
-    await expect(status(page)).toContainText('booked nights');
+    await expect(status(page)).toContainText('unavailable nights');
   });
 
   test('allows checking out on the first booked night', async ({ page }) => {

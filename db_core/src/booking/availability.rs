@@ -84,8 +84,9 @@ where
     Ok(overlapping.count == Some(0))
 }
 
-/// Returns the booked date ranges (pending holds and confirmed stays) that
-/// overlap `[date_from, date_to)` for a listing, ordered by start date.
+/// Returns the date ranges a new stay can't use that overlap
+/// `[date_from, date_to)` for a listing: pending holds and confirmed stays,
+/// each widened by the listing's gap, ordered by start date.
 ///
 /// Uses the same status set and overlap rule as [`check_availability`], so
 /// the calendar and the hold logic agree. Read-only and lock-free: it is for
@@ -102,12 +103,16 @@ where
 {
     let rows = sqlx::query!(
         r#"
-        SELECT date_from, date_to FROM booking
-        WHERE listing_id = $1
-          AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))
-          AND date_from < $3
-          AND date_to > $2
-        ORDER BY date_from
+        SELECT
+            b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) AS "date_from!",
+            b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) AS "date_to!"
+        FROM booking b
+        JOIN listing l ON l.id = b.listing_id
+        WHERE b.listing_id = $1
+          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+        ORDER BY b.date_from
         "#,
         listing_id,
         date_from,

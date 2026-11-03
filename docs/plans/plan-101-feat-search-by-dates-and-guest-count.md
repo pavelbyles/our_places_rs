@@ -205,7 +205,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `devenv shell -- cargo test -p db_core hold_gap_tests && devenv shell -- cargo test -p db_core confirm_clock_tests && devenv shell -- cargo test -p booking_api hold_conflict_tests`
   - **Dependencies:** Task 4
 
-- [ ] **Task 6: Show the gap on the calendar**
+- [x] **Task 6: Show the gap on the calendar**
   - **Scope:** M
   - **Description:** `get_unavailable_ranges` returns ranges widened by the gap, and finds bookings just outside the window whose gap reaches into it. Select `b.date_from - <gap> AS "date_from!"` and `b.date_to + <gap> AS "date_to!"`, because sqlx types computed columns as optional. Qualify `b.date_from` in `WHERE`. Doc comments and screen-reader text change from "booked" to "unavailable", and tests assert the new wording. Regenerate the rendered fixture with `UPDATE_FIXTURES=1 SQLX_OFFLINE=true cargo test -p web_ui_common --test date_range_calendar`. `data-state` and `ui.js`'s selection logic don't change.
   - **Files Touched:**
