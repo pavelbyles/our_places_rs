@@ -230,7 +230,7 @@ T22 full gates                 ← T12, T21
 
 ### Phase C: Shared Pricing
 
-- [ ] **Task 7: Move promo-free pricing into `common`**
+- [x] **Task 7: Move promo-free pricing into `common`**
   - **Scope:** M
   - **Description:** First add `common/testdata/stay_pricing_golden.json`, holding inputs and expected totals, and tests that pin `price_stay` to it. Then move the conversion and pricing steps into `price_before_promo` and `fits_booking_columns` (spec §3.2), with `price_stay` calling them. No price changes. Move the rounding asymmetry unchanged: the nightly rate always rounds, and `convert` skips rounding at a rate of 1. The file is read with `include_str!` by both services' tests in Task 15, so it adds no production code or shared test crate. It holds only 2-decimal inputs, because Task 15 stores them in `NUMERIC(_,2)` columns. Pin the tests through the HTTP endpoints, so Task 8's new `StayRequest` field doesn't affect them.
   - **Files Touched:**

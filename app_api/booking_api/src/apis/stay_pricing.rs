@@ -10,7 +10,9 @@ use api_core::settings::Settings;
 use chrono::{NaiveDate, Utc};
 use common::currency::CurrencyCode;
 use common::models::{StayQuotePromo, StayQuoteRefusal, StayQuoteRequest, StayQuoteResponse};
-use common::pricing::{BookingCalculator, Taxed};
+use common::pricing::{
+    BookingCalculator, StayPricingInput, Taxed, fits_booking_columns, price_before_promo,
+};
 use common::promo::{
     PromoRefusal, PromoStay, PromoTerms, check_status, check_stay_rules, check_usage,
     normalize_code,
@@ -25,9 +27,6 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
-
-/// Largest amount the booking table's `NUMERIC(10,2)` money columns can hold.
-const MAX_STORED_AMOUNT: Decimal = Decimal::from_parts(1_410_065_407, 2, 0, false, 2);
 
 /// What to do when a code can't be used.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -149,20 +148,7 @@ async fn resolve_promo(
 /// Refuses a stay whose amounts wouldn't fit the booking's money columns, rather
 /// than quoting a price the hold can't store.
 fn check_amounts_fit(calculator: &BookingCalculator<Taxed>) -> Result<(), ApiError> {
-    let too_large = [
-        calculator.sub_total_price,
-        calculator.discount_value.unwrap_or(Decimal::ZERO),
-        calculator.promo_stay_discount,
-        calculator.promo_cleaning_discount,
-        calculator.tax_value.unwrap_or(Decimal::ZERO),
-        calculator.cleaning_fee,
-        calculator.damage_deposit,
-        calculator.platform_fee,
-        calculator.total_price,
-    ]
-    .iter()
-    .any(|amount| *amount > MAX_STORED_AMOUNT);
-    if too_large {
+    if !fits_booking_columns(calculator) {
         return Err(bad_request(
             "This stay's total is too large to book online. Please choose fewer nights."
                 .to_string(),
@@ -189,7 +175,7 @@ pub(super) async fn price_stay(
             request.max_stay_nights
         )));
     }
-    let total_days = i32::try_from(nights).map_err(|_| {
+    i32::try_from(nights).map_err(|_| {
         bad_request(format!(
             "Stays can be at most {} nights",
             request.max_stay_nights
@@ -223,15 +209,6 @@ pub(super) async fn price_stay(
         );
         ApiError::Database(e)
     })?;
-    let convert = |amount: Decimal| {
-        if conversion_rate == Decimal::ONE {
-            amount
-        } else {
-            (amount * conversion_rate).round_dp(2)
-        }
-    };
-    let base_nightly_rate = (nightly_price(listing)? * conversion_rate).round_dp(2);
-
     let raw_overrides = db_listing::get_active_overrides_for_dates(
         pool,
         listing.id,
@@ -243,41 +220,22 @@ pub(super) async fn price_stay(
         tracing::error!(listing_id = %listing.id, error = %e, "failed to load price overrides for checkout");
         ApiError::Database(e)
     })?;
-    let converted_overrides: Vec<common::models::PriceOverride> = raw_overrides
-        .into_iter()
-        .map(|mut ovr| {
-            ovr.nightly_rate = convert(ovr.nightly_rate);
-            ovr
-        })
-        .collect();
-
-    let dynamic_quote = common::pricing::calculate_dynamic_quote(
-        base_nightly_rate,
-        listing.minimum_stay,
-        &converted_overrides,
-        request.check_in,
-        request.check_out,
-    )
+    let discounted = price_before_promo(StayPricingInput {
+        base_nightly_rate: nightly_price(listing)?,
+        minimum_stay: listing.minimum_stay,
+        overrides: &raw_overrides,
+        rate: conversion_rate,
+        check_in: request.check_in,
+        check_out: request.check_out,
+        number_of_persons: request.number_of_persons,
+        guests_included: listing.guests_included,
+        extra_guest_fee: listing.extra_guest_fee,
+        cleaning_fee: listing.cleaning_fee,
+        damage_deposit: listing.damage_deposit,
+        weekly_discount_percentage: listing.weekly_discount_percentage,
+        monthly_discount_percentage: listing.monthly_discount_percentage,
+    })
     .map_err(map_pricing_error)?;
-
-    let discounted = BookingCalculator::with_subtotal(
-        dynamic_quote.effective_daily_rate,
-        total_days,
-        dynamic_quote.subtotal,
-    )
-    .with_extra_guests(
-        request.number_of_persons,
-        listing.guests_included,
-        convert(listing.extra_guest_fee),
-    )
-    .apply_discounts(
-        listing.monthly_discount_percentage,
-        listing.weekly_discount_percentage,
-    )
-    .with_fees(
-        Some(convert(listing.cleaning_fee)),
-        Some(convert(listing.damage_deposit)),
-    );
 
     let mut resolved = None;
     let mut promo_refusal = None;
@@ -498,15 +456,4 @@ pub(super) async fn signed_in_quote(
     )
     .await?;
     Ok(HttpResponse::Ok().json(quote_response(priced)))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rust_decimal_macros::dec;
-
-    #[test]
-    fn the_stored_amount_limit_matches_the_column() {
-        assert_eq!(MAX_STORED_AMOUNT, dec!(99999999.99));
-    }
 }

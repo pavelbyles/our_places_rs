@@ -357,6 +357,112 @@ impl BookingCalculator<Taxed> {
     }
 }
 
+/// Largest amount the booking table's `NUMERIC(10,2)` money columns can hold.
+const MAX_STORED_AMOUNT: Decimal = Decimal::from_parts(1_410_065_407, 2, 0, false, 2);
+
+/// Whether every amount of a priced stay fits the booking's money columns.
+pub fn fits_booking_columns(calculator: &BookingCalculator<Taxed>) -> bool {
+    [
+        calculator.sub_total_price,
+        calculator.discount_value.unwrap_or(Decimal::ZERO),
+        calculator.promo_stay_discount,
+        calculator.promo_cleaning_discount,
+        calculator.tax_value.unwrap_or(Decimal::ZERO),
+        calculator.cleaning_fee,
+        calculator.damage_deposit,
+        calculator.platform_fee,
+        calculator.total_price,
+    ]
+    .iter()
+    .all(|amount| *amount <= MAX_STORED_AMOUNT)
+}
+
+/// Everything needed to price a stay. Amounts are in the listing's base currency.
+pub struct StayPricingInput<'a> {
+    /// The listing's nightly rate.
+    pub base_nightly_rate: Decimal,
+    /// The listing's minimum stay.
+    pub minimum_stay: i32,
+    /// Overrides touching the stay.
+    pub overrides: &'a [PriceOverride],
+    /// Listing currency to payment currency.
+    pub rate: Decimal,
+    /// First night.
+    pub check_in: NaiveDate,
+    /// Departure date.
+    pub check_out: NaiveDate,
+    /// Guests staying.
+    pub number_of_persons: i32,
+    /// Guests the nightly rate covers.
+    pub guests_included: i32,
+    /// Fee per extra guest per night.
+    pub extra_guest_fee: Decimal,
+    /// One-time cleaning fee.
+    pub cleaning_fee: Decimal,
+    /// Refundable damage deposit.
+    pub damage_deposit: Decimal,
+    /// Discount percentage for stays of 7 nights or more.
+    pub weekly_discount_percentage: Option<Decimal>,
+    /// Discount percentage for stays of 28 nights or more.
+    pub monthly_discount_percentage: Option<Decimal>,
+}
+
+/// Converts and prices a stay up to the promo step. Quotes, holds and search
+/// totals all start here, so they can't disagree.
+///
+/// The nightly rate always rounds to 2 places. Other amounts are left as they
+/// are at a rate of 1, and round otherwise.
+pub fn price_before_promo(
+    input: StayPricingInput<'_>,
+) -> Result<BookingCalculator<Discounted>, PricingError> {
+    let total_days = i32::try_from((input.check_out - input.check_in).num_days())
+        .map_err(|_| PricingError::InvalidDateRange)?;
+    let convert = |amount: Decimal| {
+        if input.rate == Decimal::ONE {
+            amount
+        } else {
+            (amount * input.rate).round_dp(2)
+        }
+    };
+    let base_nightly_rate = (input.base_nightly_rate * input.rate).round_dp(2);
+    let converted_overrides: Vec<PriceOverride> = input
+        .overrides
+        .iter()
+        .cloned()
+        .map(|mut ovr| {
+            ovr.nightly_rate = convert(ovr.nightly_rate);
+            ovr
+        })
+        .collect();
+
+    let dynamic_quote = calculate_dynamic_quote(
+        base_nightly_rate,
+        input.minimum_stay,
+        &converted_overrides,
+        input.check_in,
+        input.check_out,
+    )?;
+
+    Ok(BookingCalculator::with_subtotal(
+        dynamic_quote.effective_daily_rate,
+        total_days,
+        dynamic_quote.subtotal,
+    )
+    .with_extra_guests(
+        input.number_of_persons,
+        input.guests_included,
+        convert(input.extra_guest_fee),
+    )
+    .apply_discounts(
+        input.monthly_discount_percentage,
+        input.weekly_discount_percentage,
+    )
+    .with_fees(
+        Some(convert(input.cleaning_fee)),
+        Some(convert(input.damage_deposit)),
+    ))
+}
+
 /// The one formula for a host's gross payout, in the host's currency. It covers
 /// the net accommodation and the net cleaning fee. The refundable deposit, GCT
 /// and the guest platform fee are never part of it.
@@ -1158,5 +1264,230 @@ mod tests {
             validate_reservation_change_dates(pre_from, pre_to, pre_from, pre_from, today),
             Err(ReservationChangeValidationError::InvalidDateRange)
         );
+    }
+}
+
+#[cfg(test)]
+mod pricing_core_tests {
+    use super::*;
+    use crate::reference::SupportedCountry;
+    use rust_decimal_macros::dec;
+    use std::str::FromStr;
+    use uuid::Uuid;
+
+    const GOLDEN: &str = include_str!("../testdata/stay_pricing_golden.json");
+
+    fn amount(value: &serde_json::Value) -> Decimal {
+        let text = value.as_str().map(str::to_string).unwrap_or_default();
+        match Decimal::from_str(&text) {
+            Ok(amount) => amount,
+            Err(e) => panic!("bad amount {value}: {e}"),
+        }
+    }
+
+    fn optional(value: &serde_json::Value) -> Option<Decimal> {
+        (!value.is_null()).then(|| amount(value))
+    }
+
+    fn date(value: &serde_json::Value) -> NaiveDate {
+        match NaiveDate::parse_from_str(value.as_str().unwrap_or_default(), "%Y-%m-%d") {
+            Ok(date) => date,
+            Err(e) => panic!("bad date {value}: {e}"),
+        }
+    }
+
+    fn whole(value: &serde_json::Value) -> i32 {
+        match value.as_i64().and_then(|n| i32::try_from(n).ok()) {
+            Some(n) => n,
+            None => panic!("bad number {value}"),
+        }
+    }
+
+    fn override_row(
+        rate: Decimal,
+        from: NaiveDate,
+        to: NaiveDate,
+        min_nights: i32,
+    ) -> PriceOverride {
+        PriceOverride {
+            id: Uuid::new_v4(),
+            listing_id: Uuid::new_v4(),
+            start_date: from,
+            end_date: to,
+            nightly_rate: rate,
+            min_nights,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn finish(calculator: BookingCalculator<Discounted>) -> BookingCalculator<Taxed> {
+        calculator
+            .apply_promo(None)
+            .apply_taxes(SupportedCountry::tax_rate_for("Jamaica"))
+            .finalize()
+    }
+
+    #[test]
+    fn every_golden_case_prices_as_worked_out_by_hand() {
+        let cases: Vec<serde_json::Value> = match serde_json::from_str(GOLDEN) {
+            Ok(cases) => cases,
+            Err(e) => panic!("golden file: {e}"),
+        };
+        assert!(!cases.is_empty());
+        for case in cases {
+            let name = case["name"].as_str().unwrap_or_default();
+            let fields = &case["listing"];
+            let overrides: Vec<PriceOverride> = case["overrides"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|row| {
+                    override_row(
+                        amount(&row["nightly_rate"]),
+                        date(&row["start_date"]),
+                        date(&row["end_date"]),
+                        whole(&row["min_nights"]),
+                    )
+                })
+                .collect();
+            let priced = price_before_promo(StayPricingInput {
+                base_nightly_rate: amount(&fields["price_per_night"]),
+                minimum_stay: 1,
+                overrides: &overrides,
+                rate: optional(&case["rate"]).unwrap_or(Decimal::ONE),
+                check_in: date(&case["check_in"]),
+                check_out: date(&case["check_out"]),
+                number_of_persons: whole(&case["guests"]),
+                guests_included: whole(&fields["guests_included"]),
+                extra_guest_fee: amount(&fields["extra_guest_fee"]),
+                cleaning_fee: amount(&fields["cleaning_fee"]),
+                damage_deposit: amount(&fields["damage_deposit"]),
+                weekly_discount_percentage: optional(&fields["weekly"]),
+                monthly_discount_percentage: optional(&fields["monthly"]),
+            })
+            .map(finish);
+            let priced = match priced {
+                Ok(priced) => priced,
+                Err(e) => panic!("{name}: {e}"),
+            };
+            let expected = &case["expected"];
+            assert_eq!(priced.total_days, whole(&expected["nights"]), "{name}");
+            assert_eq!(
+                priced.sub_total_price,
+                amount(&expected["subtotal"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.discount_value.unwrap_or(Decimal::ZERO),
+                amount(&expected["stay_discount"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.cleaning_fee,
+                amount(&expected["cleaning_fee"]),
+                "{name}"
+            );
+            assert_eq!(priced.tax_value, Some(amount(&expected["tax"])), "{name}");
+            assert_eq!(
+                priced.platform_fee,
+                amount(&expected["platform_fee"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.damage_deposit,
+                amount(&expected["damage_deposit"]),
+                "{name}"
+            );
+            assert_eq!(priced.total_price, amount(&expected["total"]), "{name}");
+        }
+    }
+
+    fn three_decimal_input(rate: Decimal, overrides: &[PriceOverride]) -> StayPricingInput<'_> {
+        let day = |d| NaiveDate::from_ymd_opt(2030, 8, d).unwrap_or_default();
+        StayPricingInput {
+            base_nightly_rate: dec!(100.125),
+            minimum_stay: 1,
+            overrides,
+            rate,
+            check_in: day(1),
+            check_out: day(3),
+            number_of_persons: 1,
+            guests_included: 1,
+            extra_guest_fee: Decimal::ZERO,
+            cleaning_fee: dec!(33.335),
+            damage_deposit: dec!(10.005),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+        }
+    }
+
+    /// The nightly rate always rounds, and other amounts only round when
+    /// converted. Stored values have 2 places, so this can only show here.
+    #[test]
+    fn the_nightly_rate_always_rounds_and_other_amounts_only_when_converted() {
+        let at_one = match price_before_promo(three_decimal_input(Decimal::ONE, &[])) {
+            Ok(priced) => priced,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(at_one.sub_total_price, dec!(200.24), "100.12 × 2 nights");
+        assert_eq!(at_one.cleaning_fee, dec!(33.335));
+        assert_eq!(at_one.damage_deposit, dec!(10.005));
+
+        let converted = match price_before_promo(three_decimal_input(dec!(2), &[])) {
+            Ok(priced) => priced,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(converted.sub_total_price, dec!(400.50), "200.25 × 2 nights");
+        assert_eq!(converted.cleaning_fee, dec!(66.67));
+        assert_eq!(converted.damage_deposit, dec!(20.01));
+    }
+
+    #[test]
+    fn an_override_rate_is_left_as_it_is_at_a_rate_of_one() {
+        let day = |d| NaiveDate::from_ymd_opt(2030, 8, d).unwrap_or_default();
+        let overrides = [override_row(dec!(150.125), day(1), day(3), 1)];
+        let priced = match price_before_promo(three_decimal_input(Decimal::ONE, &overrides)) {
+            Ok(priced) => priced,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(priced.sub_total_price, dec!(300.250));
+    }
+
+    #[test]
+    fn a_stay_below_the_override_minimum_is_refused() {
+        let day = |d| NaiveDate::from_ymd_opt(2030, 8, d).unwrap_or_default();
+        let overrides = [override_row(dec!(150), day(1), day(3), 5)];
+        let refused = price_before_promo(three_decimal_input(Decimal::ONE, &overrides)).err();
+        assert_eq!(
+            refused,
+            Some(PricingError::MinNightsNotMet {
+                required: 5,
+                provided: 2
+            })
+        );
+    }
+
+    #[test]
+    fn the_stored_amount_limit_matches_the_column() {
+        assert_eq!(MAX_STORED_AMOUNT, dec!(99999999.99));
+    }
+
+    #[test]
+    fn amounts_too_large_for_the_booking_columns_are_flagged() {
+        let day = |d| NaiveDate::from_ymd_opt(2030, 8, d).unwrap_or_default();
+        let priced = |nightly: Decimal| {
+            let input = StayPricingInput {
+                base_nightly_rate: nightly,
+                ..three_decimal_input(Decimal::ONE, &[])
+            };
+            assert_eq!(input.check_in, day(1));
+            match price_before_promo(input) {
+                Ok(calculator) => finish(calculator),
+                Err(e) => panic!("{e}"),
+            }
+        };
+        assert!(fits_booking_columns(&priced(dec!(100))));
+        assert!(!fits_booking_columns(&priced(dec!(99999999))));
     }
 }
