@@ -452,7 +452,7 @@ T22 full gates                 ← T12, T21
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common currency_menu_search_tests && SQLX_OFFLINE=true cargo test -p web_ui_guest checkout_form_action`
   - **Dependencies:** Task 9
 
-- [ ] **Task 20: Default to 1 guest and update the home form**
+- [x] **Task 20: Default to 1 guest and update the home form**
   - **Scope:** S
   - **Description:** Add `DEFAULT_GUESTS` and `guests_or_default(Option<..>)` to `web_ui_guest/src/support.rs`, used by the listing page, where `guests` is `i32`, and checkout, where it's `u32`. Extract `#[component] home_search_form(today, currency)` from `home.rs`, so it can be tested. Date inputs get `min` set to today, and it has a hidden `currency` when one is chosen.
   - **Files Touched:**

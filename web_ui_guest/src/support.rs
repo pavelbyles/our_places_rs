@@ -88,6 +88,14 @@ pub async fn start_guest_session(cx: &Cx, user: &UserResponse) -> Result<(), Str
     Ok(())
 }
 
+/// The party size when a guest hasn't given one.
+pub const DEFAULT_GUESTS: u8 = 1;
+
+/// The guest count given, or the default. Pages read it as `i32` or `u32`.
+pub fn guests_or_default<T: From<u8>>(guests: Option<T>) -> T {
+    guests.unwrap_or_else(|| T::from(DEFAULT_GUESTS))
+}
+
 /// Today's date in Jamaica (UTC-05:00, no DST): the listings' local day.
 pub fn jamaica_today() -> chrono::NaiveDate {
     common::availability::jamaica_today(chrono::Utc::now())
@@ -116,4 +124,21 @@ pub async fn owned_booking(
 /// Parses a booking ID path segment; malformed IDs are a 404.
 pub fn parse_booking_id(raw: &str) -> topcoat::Result<uuid::Uuid> {
     uuid::Uuid::parse_str(raw).map_err(|_| topcoat::router::error::not_found().into())
+}
+
+#[cfg(test)]
+mod default_guests_tests {
+    use super::guests_or_default;
+
+    #[test]
+    fn no_guest_count_means_one_guest() {
+        assert_eq!(guests_or_default::<i32>(None), 1);
+        assert_eq!(guests_or_default::<u32>(None), 1);
+    }
+
+    #[test]
+    fn a_guest_count_given_is_kept() {
+        assert_eq!(guests_or_default(Some(3_i32)), 3);
+        assert_eq!(guests_or_default(Some(3_u32)), 3);
+    }
 }

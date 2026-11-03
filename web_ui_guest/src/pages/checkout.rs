@@ -26,7 +26,7 @@ use web_ui_common::components::{
 use web_ui_common::guard::guard_failure;
 
 use crate::quote::signed_in_quote;
-use crate::support::{display_currency, jamaica_today, service_token};
+use crate::support::{display_currency, guests_or_default, jamaica_today, service_token};
 use common::query::urlencode;
 
 path_param!(slug);
@@ -342,7 +342,7 @@ pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
         &details,
         &guest,
         stay,
-        q.guests.unwrap_or(2),
+        guests_or_default(q.guests),
         currency,
         String::new(),
     )
