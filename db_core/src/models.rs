@@ -32,82 +32,140 @@ pub struct BookingMetadata {
     pub business_tax_id: Option<String>,
 }
 
+/// A user account.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct User {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Email address.
     pub email: String,
     // Typically we don't return password_hash in the API model, but for the DB model it's fine.
+    /// Bcrypt hash of the password.
     #[serde(skip_serializing)]
     pub password_hash: String,
+    /// First name.
     pub first_name: String,
+    /// Last name.
     pub last_name: String,
+    /// Phone number, if given.
     pub phone_number: Option<String>,
+    /// Whether the account can be used.
     pub is_active: bool,
+    /// Whether the email address has been verified.
     pub is_verified: bool,
+    /// Pending email verification code.
     pub verification_code: Option<String>,
+    /// When the verification code stops working.
     pub verification_code_expires_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
+    /// Free-form attributes, as JSON.
     pub attributes: serde_json::Value,
+    /// Roles the user holds.
     pub roles: Vec<UserRole>,
+    /// Preferred currency code.
     pub default_currency: String,
+    /// When this was soft-deleted, if it was.
     pub deleted_at: Option<DateTime<Utc>>,
     /// Unique public handle, e.g. `jane-brown` (see `common::slug`).
     pub slug: String,
 }
 
+/// A guest's profile.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct BookerProfile {
+    /// The guest this profile belongs to.
     pub user_id: Uuid,
+    /// Emergency contacts, as JSON.
     pub emergency_contacts: Option<serde_json::Value>,
+    /// Booking preferences, as JSON.
     pub booking_preferences: Option<serde_json::Value>,
+    /// Loyalty details, as JSON.
     pub loyalty: Option<serde_json::Value>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
+/// A host's profile.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct HostProfile {
+    /// The host this profile belongs to.
     pub user_id: Uuid,
+    /// Host verification status.
     pub verified_status: Option<String>,
+    /// How the host is paid, as JSON.
     pub payout_details: Option<serde_json::Value>,
+    /// Bio shown to guests.
     pub description: Option<String>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
+/// Fields for creating a user.
 #[derive(Debug)]
 pub struct NewUser {
+    /// Unique identifier for the new user.
     pub id: Uuid,
+    /// Email address.
     pub email: String,
+    /// Bcrypt hash of the password.
     pub password_hash: String,
+    /// First name.
     pub first_name: String,
+    /// Last name.
     pub last_name: String,
+    /// Phone number, if given.
     pub phone_number: Option<String>,
+    /// Whether the account can be used.
     pub is_active: bool,
+    /// Whether the email address has been verified.
     pub is_verified: bool,
+    /// Pending email verification code.
     pub verification_code: Option<String>,
+    /// When the verification code stops working.
     pub verification_code_expires_at: Option<DateTime<Utc>>,
+    /// Free-form attributes, as JSON.
     pub attributes: serde_json::Value,
+    /// Roles the user holds.
     pub roles: Option<Vec<UserRole>>,
+    /// Preferred currency code.
     pub default_currency: String,
 }
 
 pub use common::models::{NewBookerProfile, NewHostProfile};
 
+/// Changes to a user. `None` leaves a field as it is.
 #[derive(Debug, Default, Clone)]
 pub struct UpdatedUser {
+    /// Updated email address.
     pub email: Option<String>,
+    /// Updated bcrypt hash of the password.
     pub password_hash: Option<String>,
+    /// Updated first name.
     pub first_name: Option<String>,
+    /// Updated last name.
     pub last_name: Option<String>,
+    /// Updated phone number, if given.
     pub phone_number: Option<String>,
+    /// Whether the account can be used.
     pub is_active: Option<bool>,
+    /// Updated whether the email address has been verified.
     pub is_verified: Option<bool>,
+    /// Updated pending email verification code.
     pub verification_code: Option<String>,
+    /// Updated when the verification code stops working.
     pub verification_code_expires_at: Option<DateTime<Utc>>,
+    /// Updated free-form attributes, as JSON.
     pub attributes: Option<serde_json::Value>,
+    /// Updated roles the user holds.
     pub roles: Option<Vec<UserRole>>,
+    /// Updated preferred currency code.
     pub default_currency: Option<String>,
     /// New slug, already cleaned up with `common::slug::user_slug`.
     pub slug: Option<String>,
@@ -115,10 +173,13 @@ pub struct UpdatedUser {
 
 pub use common::models::UserRole;
 
+/// Whether a user account is active.
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "user_status", rename_all = "lowercase")]
 pub enum UserStatus {
+    /// The account can be used.
     Active,
+    /// The account is disabled.
     Inactive,
 }
 
@@ -439,48 +500,86 @@ pub use common::tax_document::{TaxDocumentStatus, TaxDocumentType};
 /// Information identifying the Merchant of Record supplier issuing compliance documents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupplierInfo {
+    /// Legal name of the supplier.
     pub supplier_name: String,
+    /// Registered address of the supplier.
     pub supplier_address: String,
+    /// Tax registration number (TRN) of the supplier.
     pub supplier_trn: String,
 }
 
 /// DTO for inserting a new statutory tax document into the database.
 #[derive(Debug, Clone)]
 pub struct NewTaxDocument {
+    /// Kind of document.
     pub document_type: TaxDocumentType,
+    /// Human-readable document number.
     pub document_number: String,
+    /// Revision number of this document.
     pub revision: i32,
+    /// Whether the document is current.
     pub status: TaxDocumentStatus,
+    /// The document this one replaces, if any.
     pub supersedes_id: Option<Uuid>,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The booking history snapshot this was issued from, if any.
     pub booking_history_id: Option<Uuid>,
+    /// The user this was issued to.
     pub recipient_id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// When this was issued.
     pub issue_date: DateTime<Utc>,
+    /// Legal name of the supplier.
     pub supplier_name: String,
+    /// Registered address of the supplier.
     pub supplier_address: String,
+    /// Tax registration number (TRN) of the supplier.
     pub supplier_trn: String,
+    /// Name of the recipient.
     pub recipient_name: String,
+    /// Email address of the recipient.
     pub recipient_email: String,
+    /// Company of the recipient, for business stays.
     pub recipient_company_name: Option<String>,
+    /// Tax registration number (TRN) of the recipient, for business stays.
     pub recipient_trn: Option<String>,
+    /// Currency of the amounts.
     pub currency: String,
+    /// Listing currency to payment currency, locked on the booking.
     pub exchange_rate: Decimal,
+    /// Document currency to Jamaican dollars, effective at the issue date.
     pub jmd_exchange_rate: Decimal,
+    /// Accommodation after discounts.
     pub accommodation_net: Decimal,
+    /// One-time cleaning fee.
     pub cleaning_fee: Decimal,
+    /// Amount tax is charged on.
     pub taxable_amount: Decimal,
+    /// Tax rate as a fraction, such as `0.15` for 15%.
     pub tax_rate: Decimal,
+    /// Tax charged.
     pub tax_amount: Decimal,
+    /// Guest platform fee.
     pub platform_fee: Decimal,
+    /// Refundable damage deposit.
     pub damage_deposit: Decimal,
+    /// Total charged.
     pub total_amount: Decimal,
+    /// Amount already paid, on a revised document.
     pub amount_previously_paid: Option<Decimal>,
+    /// Amount still owed, on a revised document.
     pub balance_due: Option<Decimal>,
+    /// Refund percentage, on a cancellation document.
     pub refund_pct: Option<Decimal>,
+    /// Amount kept after a cancellation.
     pub retained_amount: Option<Decimal>,
+    /// Tax charged, in Jamaican dollars.
     pub jmd_tax_amount: Decimal,
+    /// Total charged, in Jamaican dollars.
     pub jmd_total_amount: Decimal,
+    /// Invoice line items.
     pub line_items: serde_json::Value,
     /// The code the booking redeemed, if any.
     pub promo_code: Option<String>,
@@ -491,46 +590,83 @@ pub struct NewTaxDocument {
 /// Row entity representation of a compliance tax document in PostgreSQL.
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone)]
 pub struct TaxDocumentRow {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Kind of document.
     pub document_type: TaxDocumentType,
+    /// Human-readable document number.
     pub document_number: String,
+    /// Revision number of this document.
     pub revision: i32,
+    /// Whether the document is current.
     pub status: TaxDocumentStatus,
+    /// The document this one replaces, if any.
     pub supersedes_id: Option<Uuid>,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The booking history snapshot this was issued from, if any.
     pub booking_history_id: Option<Uuid>,
+    /// The user this was issued to.
     pub recipient_id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// When this was issued.
     pub issue_date: DateTime<Utc>,
+    /// Legal name of the supplier.
     pub supplier_name: String,
+    /// Registered address of the supplier.
     pub supplier_address: String,
+    /// Tax registration number (TRN) of the supplier.
     pub supplier_trn: String,
+    /// Name of the recipient.
     pub recipient_name: String,
+    /// Email address of the recipient.
     pub recipient_email: String,
+    /// Company of the recipient, for business stays.
     pub recipient_company_name: Option<String>,
+    /// Tax registration number (TRN) of the recipient, for business stays.
     pub recipient_trn: Option<String>,
+    /// Currency of the amounts.
     pub currency: String,
+    /// Listing currency to payment currency, locked on the booking.
     pub exchange_rate: Decimal,
+    /// Document currency to Jamaican dollars, effective at the issue date.
     pub jmd_exchange_rate: Decimal,
+    /// Accommodation after discounts.
     pub accommodation_net: Decimal,
+    /// One-time cleaning fee.
     pub cleaning_fee: Decimal,
+    /// Amount tax is charged on.
     pub taxable_amount: Decimal,
+    /// Tax rate as a fraction, such as `0.15` for 15%.
     pub tax_rate: Decimal,
+    /// Tax charged.
     pub tax_amount: Decimal,
+    /// Guest platform fee.
     pub platform_fee: Decimal,
+    /// Refundable damage deposit.
     pub damage_deposit: Decimal,
+    /// Total charged.
     pub total_amount: Decimal,
+    /// Amount already paid, on a revised document.
     pub amount_previously_paid: Option<Decimal>,
+    /// Amount still owed, on a revised document.
     pub balance_due: Option<Decimal>,
+    /// Refund percentage, on a cancellation document.
     pub refund_pct: Option<Decimal>,
+    /// Amount kept after a cancellation.
     pub retained_amount: Option<Decimal>,
+    /// Tax charged, in Jamaican dollars.
     pub jmd_tax_amount: Decimal,
+    /// Total charged, in Jamaican dollars.
     pub jmd_total_amount: Decimal,
+    /// Invoice line items.
     pub line_items: serde_json::Value,
     /// The code the booking redeemed, if any.
     pub promo_code: Option<String>,
     /// The whole promo discount. Already reflected in the net amounts.
     pub promo_discount: Decimal,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
 }
 
@@ -584,39 +720,72 @@ impl From<TaxDocumentRow> for common::tax_document::TaxDocumentResponse {
 
 pub use common::models::FeeItem;
 
+/// A rental property.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct Listing {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The host who owns the listing.
     pub user_id: Uuid,
+    /// Display name.
     pub name: String,
+    /// Longer description.
     pub description: Option<String>,
+    /// Structure type ID, from `StructureType::id`.
     pub listing_structure_id: i32,
+    /// Country.
     pub country: String,
+    /// Base nightly rate in `base_currency`.
     pub price_per_night: Option<Decimal>,
+    /// Whether guests can see and book it.
     pub is_active: bool,
+    /// When the listing was added.
     pub added_at: DateTime<Utc>,
+    /// When this was soft-deleted, if it was.
     pub deleted_at: Option<DateTime<Utc>>,
+    /// URL of the primary photo, if any.
     pub primary_image_url: Option<String>,
+    /// Discount percentage for stays of 7 nights or more.
     pub weekly_discount_percentage: Option<Decimal>,
+    /// Discount percentage for stays of 28 nights or more.
     pub monthly_discount_percentage: Option<Decimal>,
+    /// Unique URL handle.
     pub slug: String,
+    /// Most guests allowed.
     pub max_guests: i32,
+    /// Number of bedrooms.
     pub bedrooms: i32,
+    /// Number of beds.
     pub beds: i32,
+    /// Number of full bathrooms.
     pub full_bathrooms: i32,
+    /// Number of half bathrooms.
     pub half_bathrooms: i32,
+    /// Floor area in square meters, if known.
     pub square_meters: Option<i32>,
+    /// Latitude, if known.
     pub latitude: Option<f64>,
+    /// Longitude, if known.
     pub longitude: Option<f64>,
+    /// Average overall rating, if it has reviews.
     pub overall_rating: Option<f64>,
+    /// Number of reviews.
     pub review_count: i32,
+    /// Amenities and other details, as JSON.
     pub listing_details: Json<serde_json::Value>,
+    /// City, if known.
     pub city: Option<String>,
+    /// Currency the listing is priced in.
     pub base_currency: String,
+    /// Minimum stay in nights.
     pub minimum_stay: i32,
+    /// Days to keep free between bookings, from 0 to 365.
     pub days_between_bookings: i32,
+    /// Platform commission on the host's gross, as a fraction such as `0.1000`.
     pub commission_pct: Decimal,
+    /// One-time cleaning fee.
     pub cleaning_fee: Decimal,
+    /// Refundable damage deposit.
     pub damage_deposit: Decimal,
     /// Number of guests included in the base nightly rate.
     pub guests_included: i32,
@@ -624,40 +793,74 @@ pub struct Listing {
     pub extra_guest_fee: Decimal,
 }
 
+/// A listing with its host's name, for search results.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct ListingWithOwner {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The host who owns the listing.
     pub user_id: Uuid,
+    /// Display name.
     pub name: String,
+    /// Longer description.
     pub description: Option<String>,
+    /// Structure type ID, from `StructureType::id`.
     pub listing_structure_id: i32,
+    /// Country.
     pub country: String,
+    /// Base nightly rate in `base_currency`.
     pub price_per_night: Option<Decimal>,
+    /// Whether guests can see and book it.
     pub is_active: bool,
+    /// When the listing was added.
     pub added_at: DateTime<Utc>,
+    /// When this was soft-deleted, if it was.
     pub deleted_at: Option<DateTime<Utc>>,
+    /// Display name of the host.
     pub owner_name: Option<String>,
+    /// URL handle of the host.
     pub owner_slug: Option<String>,
+    /// URL of the primary photo, if any.
     pub primary_image_url: Option<String>,
+    /// Discount percentage for stays of 7 nights or more.
     pub weekly_discount_percentage: Option<Decimal>,
+    /// Discount percentage for stays of 28 nights or more.
     pub monthly_discount_percentage: Option<Decimal>,
+    /// Most guests allowed.
     pub max_guests: i32,
+    /// Number of bedrooms.
     pub bedrooms: i32,
+    /// Number of beds.
     pub beds: i32,
+    /// Number of full bathrooms.
     pub full_bathrooms: i32,
+    /// Number of half bathrooms.
     pub half_bathrooms: i32,
+    /// Floor area in square meters, if known.
     pub square_meters: Option<i32>,
+    /// Latitude, if known.
     pub latitude: Option<f64>,
+    /// Longitude, if known.
     pub longitude: Option<f64>,
+    /// Average overall rating, if it has reviews.
     pub overall_rating: Option<f64>,
+    /// City, if known.
     pub city: Option<String>,
+    /// Currency the listing is priced in.
     pub base_currency: String,
+    /// Unique URL handle.
     pub slug: String,
+    /// Amenities and other details, as JSON.
     pub listing_details: Json<serde_json::Value>,
+    /// Minimum stay in nights.
     pub minimum_stay: i32,
+    /// Days to keep free between bookings, from 0 to 365.
     pub days_between_bookings: i32,
+    /// Platform commission on the host's gross, as a fraction such as `0.1000`.
     pub commission_pct: Decimal,
+    /// One-time cleaning fee.
     pub cleaning_fee: Decimal,
+    /// Refundable damage deposit.
     pub damage_deposit: Decimal,
     /// Number of guests included in the base nightly rate.
     pub guests_included: i32,
@@ -665,43 +868,68 @@ pub struct ListingWithOwner {
     pub extra_guest_fee: Decimal,
 }
 
+/// Fields for creating a listing.
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct NewListing {
+    /// The host who owns the listing.
     pub user_id: Uuid,
     /// Whether guests can see and book the listing.
     pub is_active: bool,
+    /// Display name.
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
 
+    /// Longer description.
     #[validate(length(
         max = 2000,
         message = "Description cannot be longer than 2000 characters"
     ))]
     pub description: Option<String>,
 
+    /// Structure type ID, from `StructureType::id`.
     #[validate(range(min = 1, message = "Invalid listing structure ID"))]
     pub listing_structure_id: i32,
 
+    /// Country.
     #[validate(length(min = 1, message = "Country cannot be empty"))]
     pub country: String,
+    /// Base nightly rate in `base_currency`.
     pub price_per_night: Option<Decimal>,
+    /// Discount percentage for stays of 7 nights or more.
     pub weekly_discount_percentage: Option<Decimal>,
+    /// Discount percentage for stays of 28 nights or more.
     pub monthly_discount_percentage: Option<Decimal>,
+    /// Most guests allowed.
     pub max_guests: i32,
+    /// Number of bedrooms.
     pub bedrooms: i32,
+    /// Number of beds.
     pub beds: i32,
+    /// Number of full bathrooms.
     pub full_bathrooms: i32,
+    /// Number of half bathrooms.
     pub half_bathrooms: i32,
+    /// Floor area in square meters, if known.
     pub square_meters: Option<i32>,
+    /// Latitude, if known.
     pub latitude: Option<f64>,
+    /// Longitude, if known.
     pub longitude: Option<f64>,
+    /// Amenities and other details, as JSON.
     pub listing_details: Option<serde_json::Value>,
+    /// City, if known.
     pub city: Option<String>,
+    /// Currency the listing is priced in.
     pub base_currency: String,
+    /// Minimum stay in nights.
     pub minimum_stay: i32,
+    /// Days to keep free between bookings, from 0 to 365.
     pub days_between_bookings: i32,
+    /// Platform commission on the host's gross, as a fraction such as `0.1000`.
     pub commission_pct: Option<Decimal>,
+    /// One-time cleaning fee.
     pub cleaning_fee: Option<Decimal>,
+    /// Refundable damage deposit.
     pub damage_deposit: Option<Decimal>,
     /// Optional number of guests included in base rate (defaults to `1`).
     pub guests_included: Option<i32>,
@@ -709,44 +937,69 @@ pub struct NewListing {
     pub extra_guest_fee: Option<Decimal>,
 }
 
+/// Changes to a listing. `None` leaves a field as it is.
 #[derive(Debug, Deserialize, Serialize, Validate, Default)]
 pub struct UpdatedListing {
+    /// Updated display name.
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: Option<String>,
 
+    /// Updated longer description.
     #[validate(length(
         max = 2000,
         message = "Description cannot be longer than 2000 characters"
     ))]
     pub description: Option<String>,
 
+    /// Updated structure type ID, from `StructureType::id`.
     #[validate(range(min = 1, message = "Invalid listing structure ID"))]
     pub listing_structure_id: Option<i32>,
 
+    /// Updated country.
     #[validate(length(min = 1, message = "Country cannot be empty"))]
     pub country: Option<String>,
 
+    /// Updated base nightly rate in `base_currency`.
     pub price_per_night: Option<Decimal>,
 
+    /// Updated whether guests can see and book it.
     pub is_active: Option<bool>,
 
+    /// Updated discount percentage for stays of 7 nights or more.
     pub weekly_discount_percentage: Option<Decimal>,
+    /// Updated discount percentage for stays of 28 nights or more.
     pub monthly_discount_percentage: Option<Decimal>,
+    /// Updated most guests allowed.
     pub max_guests: Option<i32>,
+    /// Updated number of bedrooms.
     pub bedrooms: Option<i32>,
+    /// Updated number of beds.
     pub beds: Option<i32>,
+    /// Updated number of full bathrooms.
     pub full_bathrooms: Option<i32>,
+    /// Updated number of half bathrooms.
     pub half_bathrooms: Option<i32>,
+    /// Updated floor area in square meters, if known.
     pub square_meters: Option<i32>,
+    /// Updated latitude, if known.
     pub latitude: Option<f64>,
+    /// Updated longitude, if known.
     pub longitude: Option<f64>,
+    /// Updated amenities and other details, as JSON.
     pub listing_details: Option<serde_json::Value>,
+    /// Updated city, if known.
     pub city: Option<String>,
+    /// Updated currency the listing is priced in.
     pub base_currency: Option<String>,
+    /// Updated minimum stay in nights.
     pub minimum_stay: Option<i32>,
+    /// Updated days to keep free between bookings, from 0 to 365.
     pub days_between_bookings: Option<i32>,
+    /// Updated platform commission on the host's gross, as a fraction such as `0.1000`.
     pub commission_pct: Option<Decimal>,
+    /// Updated one-time cleaning fee.
     pub cleaning_fee: Option<Decimal>,
+    /// Updated refundable damage deposit.
     pub damage_deposit: Option<Decimal>,
     /// Optional updated number of guests included in base rate.
     pub guests_included: Option<i32>,
@@ -754,22 +1007,29 @@ pub struct UpdatedListing {
     pub extra_guest_fee: Option<Decimal>,
 }
 
+/// What kind of building a listing is.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, sqlx::Type, EnumString)]
 #[sqlx(rename_all = "snake_case")]
 pub enum StructureType {
+    /// An apartment.
     #[strum(serialize = "Apartment")]
     Apartment,
+    /// A house.
     #[strum(serialize = "House")]
     House,
+    /// A townhouse.
     #[strum(serialize = "Townhouse")]
     Townhouse,
+    /// A studio.
     #[strum(serialize = "Studio")]
     Studio,
+    /// A villa.
     #[strum(serialize = "Villa")]
     Villa,
 }
 
 impl StructureType {
+    /// The value stored in `listing.listing_structure_id`.
     pub fn id(&self) -> i32 {
         match self {
             StructureType::Apartment => 1,
@@ -781,65 +1041,106 @@ impl StructureType {
     }
 }
 
+/// Where an image is in the upload pipeline.
 #[derive(
     Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
 )]
 #[sqlx(type_name = "image_status", rename_all = "PascalCase")]
 pub enum ImageStatus {
+    /// A signed URL was issued, and the upload hasn't arrived.
     PendingUpload,
+    /// The original has been uploaded.
     Uploaded,
+    /// The image worker is resizing it.
     Processing,
+    /// All sizes are ready.
     Processed,
+    /// Processing failed.
     Failed,
 }
 
+/// A stored size of an image.
 #[derive(
     Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq, EnumString,
 )]
 #[sqlx(type_name = "image_resolution", rename_all = "PascalCase")]
 pub enum ImageResolution {
+    /// The original upload.
     Raw,
+    /// 400 pixels wide.
     Thumbnail400w,
+    /// 720 pixels wide.
     Mobile720w,
+    /// 1280 pixels wide.
     Tablet1280w,
+    /// 1920 pixels wide.
     Desktop1920w,
+    /// 2560 pixels wide.
     HighRes2560w,
 }
 
+/// One stored size of a listing photo.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct ListingImage {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// The client's own ID for the file, used to match responses to uploads.
     pub client_file_id: String,
+    /// Where the image is in the upload pipeline.
     pub status: ImageStatus,
+    /// Image size.
     pub resolution: ImageResolution,
+    /// The original image, for a resized variant.
     pub parent_id: Option<Uuid>,
+    /// URL of the image.
     pub upload_url: Option<String>,
+    /// MIME type.
     pub content_type: Option<String>,
+    /// File size in bytes.
     pub size_bytes: Option<i64>,
+    /// Position among the listing's photos.
     pub display_order: i32,
+    /// Whether this is the primary photo.
     pub is_primary: bool,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
+/// A listing with everything its page needs.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListingDetails {
+    /// The listing.
     pub listing: Listing,
+    /// Its photos.
     pub images: Vec<ListingImage>,
+    /// Display name of the host.
     pub owner_name: Option<String>,
+    /// Its review ratings, if it has any.
     pub rating_summary: Option<common::models::ListingRatingSummary>,
 }
 
+/// A nightly rate for a date range, replacing the base rate.
 #[derive(Debug, FromRow, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct PriceOverride {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// First night the override covers.
     pub start_date: NaiveDate,
+    /// Night after the last one the override covers.
     pub end_date: NaiveDate,
+    /// Nightly rate during the override.
     pub nightly_rate: Decimal,
+    /// Minimum stay for a stay touching the override.
     pub min_nights: i32,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
@@ -873,50 +1174,86 @@ impl From<common::models::PriceOverride> for PriceOverride {
     }
 }
 
+/// A single-use token that lets a guest review a stay.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct ReviewToken {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Single-use review token.
     pub token: String,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The guest who may leave the review.
     pub guest_id: Uuid,
+    /// The listing to be reviewed.
     pub listing_id: Uuid,
+    /// When the token starts working.
     pub valid_from: DateTime<Utc>,
+    /// When the token stops working.
     pub expires_at: DateTime<Utc>,
+    /// When the token was used, if it was.
     pub used_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
 }
 
+/// A guest's review of a stay.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct Review {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// The guest.
     pub guest_id: Uuid,
+    /// Cleanliness rating, from 1 to 5.
     pub cleanliness_rating: i32,
+    /// Accuracy rating, from 1 to 5.
     pub accuracy_rating: i32,
+    /// Location rating, from 1 to 5.
     pub location_rating: i32,
+    /// Value rating, from 1 to 5.
     pub value_rating: i32,
+    /// Average of the four category ratings.
     pub overall_rating: Decimal,
+    /// Review text shown publicly.
     pub public_review_text: Option<String>,
+    /// Feedback only the host sees.
     pub private_host_feedback: Option<String>,
+    /// The host's public reply, if any.
     pub host_reply_text: Option<String>,
+    /// When the host replied, if they have.
     pub host_replied_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
 pub use common::models::MessageSenderRole;
+/// Database name for the shared message sender role.
 pub type DbMessageSenderRole = MessageSenderRole;
 
+/// A message between a guest and a host about a booking.
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct DbBookingMessage {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The user who sent the message.
     pub sender_id: Uuid,
+    /// Role the sender wrote as.
     pub sender_role: DbMessageSenderRole,
+    /// Display name of the sender.
     pub sender_name: String,
+    /// The message.
     pub message_text: String,
+    /// When the message was read, if it has been.
     pub read_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
 }
 
@@ -935,54 +1272,94 @@ impl From<DbBookingMessage> for common::models::BookingMessageResponse {
     }
 }
 
+/// Who is on a booking, for checking access to its messages.
 #[derive(Debug, sqlx::FromRow)]
 pub struct BookingParties {
+    /// The guest on the booking.
     pub guest_id: Uuid,
+    /// The host of the listing.
     pub host_id: Uuid,
+    /// Current status of the booking.
     pub status: BookingStatus,
 }
 
 pub use common::payout::PayoutStatus;
+/// Database name for the shared payout status.
 pub type DbPayoutStatus = PayoutStatus;
 
+/// A row of the host payout ledger.
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct HostPayoutLedger {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// The host.
     pub host_id: Uuid,
+    /// Currency of the amounts.
     pub currency: String,
+    /// Host's gross for the booking, before commission.
     pub gross_amount: Decimal,
+    /// Commission rate applied.
     pub platform_fee_pct: Decimal,
+    /// Commission taken.
     pub platform_fee_amount: Decimal,
+    /// Tax withheld from the payout.
     pub tax_withheld_amount: Decimal,
+    /// Booking currency to host currency, effective at confirmation.
     pub exchange_rate: Decimal,
+    /// What the host receives.
     pub net_payout_amount: Decimal,
+    /// Payout status.
     pub status: DbPayoutStatus,
+    /// Payment gateway reference, once sent.
     pub gateway_reference: Option<String>,
+    /// Why the payout failed or was cancelled, if it did.
     pub failure_reason: Option<String>,
+    /// When the payout was made, if it has been.
     pub payout_date: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
+/// A ledger row with its booking and listing details.
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct DbPayoutLedgerEntry {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// Confirmation code of the booking.
     pub booking_confirmation_code: Option<String>,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// Name of the listing.
     pub listing_name: Option<String>,
+    /// The host.
     pub host_id: Uuid,
+    /// Name of the host.
     pub host_name: Option<String>,
+    /// First night of the stay.
     pub check_in_date: Option<NaiveDate>,
+    /// Departure date of the stay.
     pub check_out_date: Option<NaiveDate>,
+    /// Currency of the amounts.
     pub currency: String,
+    /// Host's gross for the booking, before commission.
     pub gross_amount: Decimal,
+    /// Commission rate applied.
     pub platform_fee_pct: Decimal,
+    /// Commission taken.
     pub platform_fee_amount: Decimal,
+    /// Tax withheld from the payout.
     pub tax_withheld_amount: Decimal,
+    /// Booking currency to host currency, effective at confirmation.
     pub exchange_rate: Decimal,
+    /// What the host receives.
     pub net_payout_amount: Decimal,
     /// Part of the gross that is the cleaning fee, in this row's currency.
     pub cleaning_fee_amount: Decimal,
@@ -990,11 +1367,17 @@ pub struct DbPayoutLedgerEntry {
     pub promo_discount_amount: Decimal,
     /// The promo code the booking redeemed, if any.
     pub promo_code: Option<String>,
+    /// Payout status.
     pub status: DbPayoutStatus,
+    /// Payment gateway reference, once sent.
     pub gateway_reference: Option<String>,
+    /// Why the payout failed or was cancelled, if it did.
     pub failure_reason: Option<String>,
+    /// When the payout was made, if it has been.
     pub payout_date: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
@@ -1030,15 +1413,24 @@ impl From<DbPayoutLedgerEntry> for common::payout::PayoutLedgerEntry {
     }
 }
 
+/// Ledger totals. Sums are `None` when no rows match.
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct DbPayoutSummary {
+    /// Sum of gross amounts.
     pub total_gross: Option<Decimal>,
+    /// Sum of commission taken.
     pub total_platform_fee: Option<Decimal>,
+    /// Sum of tax withheld.
     pub total_tax_withheld: Option<Decimal>,
+    /// Sum of net payouts.
     pub total_net: Option<Decimal>,
+    /// Sum of net payouts already paid.
     pub total_paid: Option<Decimal>,
+    /// Sum of net payouts still pending.
     pub total_pending: Option<Decimal>,
+    /// Sum of net payouts being processed.
     pub total_processing: Option<Decimal>,
+    /// Number of ledger entries.
     pub count_entries: Option<i64>,
 }
 
@@ -1058,21 +1450,35 @@ impl From<DbPayoutSummary> for common::payout::PayoutSummary {
 }
 
 pub use common::email::EmailStatus;
+/// Database name for the shared email status.
 pub type DbEmailStatus = EmailStatus;
 
+/// An email waiting to be sent, or already sent.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct EmailOutbox {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Who the email goes to.
     pub recipient_email: String,
+    /// Subject line.
     pub subject: String,
+    /// Template to render.
     pub template_id: String,
+    /// Template data, as JSON.
     pub payload: serde_json::Value,
+    /// Delivery status.
     pub status: DbEmailStatus,
+    /// Delivery attempts so far.
     pub attempts: i32,
+    /// Attempts allowed before giving up.
     pub max_retries: i32,
+    /// Error from the latest attempt, if any.
     pub last_error: Option<String>,
+    /// When it was sent, if it has been.
     pub sent_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 

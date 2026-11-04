@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use reqwest::Response;
 use uuid::Uuid;
 
+/// Fetches a user's raw profile response.
 pub async fn fetch_user_profile(user_id: &str) -> Result<Response> {
     let url = format!("{}/api/v1/users/{}", user_api_url(), user_id);
     let audience = user_api_audience();
@@ -131,6 +132,7 @@ pub async fn restore_user(id: Uuid) -> Result<UserResponse> {
         .context("Failed to parse restored user response")
 }
 
+/// Changes a user.
 pub async fn update_user(id: Uuid, req: &UpdateUserRequest) -> Result<UserResponse> {
     let url = format!("{}/api/v1/users/user/{}", user_api_url(), id);
     let audience = user_api_audience();
@@ -150,6 +152,7 @@ pub async fn update_user(id: Uuid, req: &UpdateUserRequest) -> Result<UserRespon
         .context("Failed to parse updated user response")
 }
 
+/// Creates a user.
 pub async fn create_user(req: &NewUserRequest) -> Result<UserResponse> {
     let url = format!("{}/api/v1/users", user_api_url());
     let audience = user_api_audience();
@@ -169,6 +172,7 @@ pub async fn create_user(req: &NewUserRequest) -> Result<UserResponse> {
         .context("Failed to parse created user response")
 }
 
+/// Creates a session.
 pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionResponse> {
     let url = format!("{}/api/v1/sessions", user_api_url());
     let audience = user_api_audience();
@@ -189,6 +193,7 @@ pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionRespons
         .context("Failed to parse session creation response")
 }
 
+/// Fetches a session if it exists, optionally only from one portal.
 pub async fn get_session(
     token_hash: &str,
     namespace: Option<&str>,
@@ -223,6 +228,7 @@ pub async fn get_session(
     Ok(Some(session))
 }
 
+/// Deletes a session.
 pub async fn delete_session(token_hash: &str) -> Result<()> {
     let url = format!("{}/api/v1/sessions/{}", user_api_url(), token_hash);
     let audience = user_api_audience();
@@ -241,6 +247,7 @@ pub async fn delete_session(token_hash: &str) -> Result<()> {
     Ok(())
 }
 
+/// Ends a user's sessions, optionally only in one portal.
 pub async fn revoke_user_sessions(user_id: Uuid, namespace: Option<&str>) -> Result<()> {
     let api_url = user_api_url();
     let audience = user_api_audience();
@@ -263,6 +270,7 @@ pub async fn revoke_user_sessions(user_id: Uuid, namespace: Option<&str>) -> Res
     Ok(())
 }
 
+/// Checks a user's email and password.
 pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
     let api_url = user_api_url();
     let audience = user_api_audience();

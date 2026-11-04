@@ -298,6 +298,9 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
         review_count: None,
         host: None,
         price_unavailable_in: None,
+        stay_total: None,
+        stay_searched: false,
+        search_query: None,
     };
     let out = html(view! { listing_card(listing: listing) }, __cx).await;
     for text in [

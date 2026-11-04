@@ -11,7 +11,7 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
 
     // Main headings and filters
     await expect(page.locator('h1')).toHaveText('Explore All Listings');
-    await expect(page.locator('input[placeholder*="Search listing name"]')).toBeVisible();
+    await expect(page.locator('input[placeholder*="Search by name or place"]')).toBeVisible();
 
     // Listings grid should contain the seeded villa
     const grid = page.locator('#listings-grid');

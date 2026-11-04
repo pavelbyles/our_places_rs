@@ -18,7 +18,15 @@ pub use queries::{
 pub use update::{delete_booking, update_booking};
 
 #[cfg(test)]
+mod availability_parity_tests;
+#[cfg(test)]
+mod gap_calendar_tests;
+#[cfg(test)]
+mod gap_tests;
+#[cfg(test)]
 mod hold_expiry_tests;
+#[cfg(test)]
+mod hold_gap_tests;
 #[cfg(test)]
 mod host_gross_tests;
 #[cfg(test)]

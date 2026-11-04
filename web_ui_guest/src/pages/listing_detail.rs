@@ -19,7 +19,7 @@ use web_ui_common::components::{
 };
 
 use crate::quote::public_quote;
-use crate::support::{display_currency, jamaica_today};
+use crate::support::{display_currency, guests_or_default, jamaica_today};
 
 path_param!(slug);
 
@@ -161,7 +161,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let currency = display_currency(cx).await;
     let price = format!("{} {}", summary.currency, summary.price);
     let max_guests = listing.max_guests.max(1);
-    let default_guests = q.guests.unwrap_or(2).clamp(1, max_guests);
+    let default_guests = guests_or_default(q.guests).clamp(1, max_guests);
     let rating = details
         .rating_summary
         .as_ref()
@@ -311,7 +311,9 @@ async fn initial_breakdown(
     currency: Option<&str>,
 ) -> Option<web_ui_common::components::domain::price_breakdown::PriceBreakdown> {
     let (check_in, check_out) = stay_dates(q)?;
-    let guests = u32::try_from(q.guests.unwrap_or(1)).unwrap_or(1).max(1);
+    let guests = u32::try_from(guests_or_default(q.guests))
+        .unwrap_or(1)
+        .max(1);
     public_quote(
         cx,
         details.listing.id,

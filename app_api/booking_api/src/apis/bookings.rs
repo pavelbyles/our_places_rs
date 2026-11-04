@@ -2,6 +2,7 @@
 
 use super::stay_pricing::{
     OnRefusal, PromoRequest, StayRequest, check_guest_count, log_promo_refusal, price_stay,
+    stay_today,
 };
 use super::{
     CurrencyQuery, authorize_booking_party, caller, convert_booking_amounts, display_rate,
@@ -97,6 +98,7 @@ pub(super) async fn create_booking(
                 on_refusal: OnRefusal::Fail,
             }),
             max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
         },
     )
     .await?;
@@ -236,6 +238,17 @@ pub(super) async fn create_booking(
                 return Err(ApiError::Database(db_core::error::DbError::PromoRefused(
                     refusal,
                 )));
+            }
+            // Expected: someone else can take the dates after a search.
+            Err(db_core::error::DbError::DateUnavailable) => {
+                tracing::warn!(
+                    listing_id = %req_data.listing_id,
+                    guest_id = %req_data.guest_id,
+                    check_in = %req_data.check_in,
+                    check_out = %req_data.check_out,
+                    "hold refused: dates unavailable"
+                );
+                return Err(ApiError::Database(db_core::error::DbError::DateUnavailable));
             }
             Err(e) => {
                 tracing::error!(

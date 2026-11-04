@@ -56,7 +56,9 @@ const TRACE_HEADERS: [&str; 3] = [TRACEPARENT, TRACESTATE, CLOUD_TRACE_HEADER];
 /// Span fields [`continue_trace`] fills in. Declare them `Empty` on any span
 /// passed to it, or the values are dropped.
 pub const TRACE_ID_FIELD: &str = "trace_id";
+/// Span field holding the span ID.
 pub const SPAN_ID_FIELD: &str = "span_id";
+/// Span field saying whether the trace is sampled.
 pub const TRACE_SAMPLED_FIELD: &str = "trace_sampled";
 
 static PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();

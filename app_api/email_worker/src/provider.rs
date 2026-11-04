@@ -3,14 +3,18 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
+/// Something that can deliver an email.
 #[async_trait::async_trait]
 pub trait EmailProvider: Send + Sync {
+    /// Delivers one email.
     async fn send_email(&self, recipient: &str, subject: &str, body: &str) -> Result<(), String>;
 }
 
 /// Mock email provider used in development and tests.
 pub struct MockEmailProvider {
+    /// Recipient, subject and body of each email "sent".
     pub sent_emails: Arc<Mutex<Vec<(String, String, String)>>>,
+    /// Sends left to fail before they start succeeding.
     pub fail_count: AtomicU32,
 }
 
@@ -21,6 +25,7 @@ impl Default for MockEmailProvider {
 }
 
 impl MockEmailProvider {
+    /// A mock where every send succeeds.
     pub fn new() -> Self {
         Self {
             sent_emails: Arc::new(Mutex::new(Vec::new())),
@@ -28,6 +33,7 @@ impl MockEmailProvider {
         }
     }
 
+    /// A mock whose first `fail_attempts` sends fail.
     pub fn with_failures(fail_attempts: u32) -> Self {
         Self {
             sent_emails: Arc::new(Mutex::new(Vec::new())),
@@ -35,6 +41,7 @@ impl MockEmailProvider {
         }
     }
 
+    /// Recipient, subject and body of each email "sent".
     pub async fn get_sent_emails(&self) -> Vec<(String, String, String)> {
         self.sent_emails.lock().await.clone()
     }
@@ -99,6 +106,7 @@ pub struct LettreSmtpEmailProvider {
 }
 
 impl LettreSmtpEmailProvider {
+    /// A provider that sends through this SMTP server.
     pub fn new(
         smtp_host: String,
         smtp_port: u16,

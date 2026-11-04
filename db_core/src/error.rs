@@ -11,7 +11,12 @@ pub enum DbError {
     ValidationError(String),
     /// Foreign exchange rate unavailable for requested currency pair.
     #[error("Foreign exchange rate unavailable for currency pair: {base} -> {target}")]
-    FxRateUnavailable { base: String, target: String },
+    FxRateUnavailable {
+        /// Currency to convert from.
+        base: String,
+        /// Currency to convert to.
+        target: String,
+    },
     /// Requested calendar dates conflict with an existing reservation.
     #[error("The requested dates are no longer available")]
     DateUnavailable,
@@ -73,6 +78,9 @@ pub enum DbError {
     /// The promo code has already been deactivated.
     #[error("This promo code has already been deactivated")]
     PromoAlreadyDeactivated,
+    /// Stay dates, a guest count or search text were refused.
+    #[error("Stay input refused: {0}")]
+    StayInput(common::availability::StayInputError),
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),
@@ -111,4 +119,5 @@ impl DbError {
 }
 
 // A custom `Result` type that defaults to using our `DbError`.
+/// A result with a [`DbError`].
 pub type Result<T> = std::result::Result<T, DbError>;

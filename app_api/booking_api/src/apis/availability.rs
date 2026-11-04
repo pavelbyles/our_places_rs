@@ -11,21 +11,28 @@ use sqlx::PgPool;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+/// Query parameters of the availability check.
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct AvailabilityParams {
+    /// The listing to check.
     pub listing_id: Uuid,
+    /// First night of the stay.
     pub date_from: NaiveDate,
+    /// Departure date of the stay.
     pub date_to: NaiveDate,
 }
 
+/// Result of the availability check.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AvailabilityResponse {
+    /// Whether the stay is free.
     pub available: bool,
 }
 
 /// Longest window `unavailable-ranges` accepts, in days.
 const MAX_UNAVAILABLE_RANGE_DAYS: i64 = 366;
 
+/// Query parameters of the unavailable ranges endpoint.
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct UnavailableRangesParams {
     /// First day of the window (inclusive).

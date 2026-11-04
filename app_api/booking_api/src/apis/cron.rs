@@ -287,7 +287,7 @@ pub async fn complete_stays_cron(
 ) -> Result<HttpResponse, ApiError> {
     verify_cron_secret(&req, cron_settings.as_ref())?;
 
-    let today = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today = common::availability::jamaica_today(Utc::now());
     complete_stays_through(pool.get_ref(), tax_settings.as_ref(), today)
         .await
         .map(|stays| HttpResponse::Ok().json(stays))

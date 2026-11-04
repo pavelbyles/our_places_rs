@@ -64,7 +64,7 @@ fn past_beats_booked_and_labels_say_why() {
     );
     assert_eq!(
         day_label(d(2027, 1, 12), DayState::Booked),
-        "Tuesday, 12 January 2027, booked"
+        "Tuesday, 12 January 2027, unavailable"
     );
     assert_eq!(
         day_label(d(2027, 1, 25), DayState::Available),

@@ -13,7 +13,7 @@ use std::path::Path;
 /// Env var holding the test database URL.
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 
-async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
+pub(super) async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
     let id = Uuid::now_v7();
     let new_user = NewUser {
         id,
@@ -49,7 +49,7 @@ async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
 
 /// Helper to get default test settings.
 /// Returns settings with hard deletes ENABLED by default.
-fn get_test_settings() -> Settings {
+pub(super) fn get_test_settings() -> Settings {
     Settings {
         server: Server {
             host: "localhost".to_string(),
@@ -424,6 +424,7 @@ async fn test_xml_serialization_of_vec() {
 
     let response = vec![ListingResponse {
         price_unavailable_in: None,
+        stay_total: None,
         id: Uuid::now_v7(),
         user_id: Uuid::now_v7(),
         name: "Test".to_string(),
@@ -1356,5 +1357,432 @@ mod currency_inactive_tests {
         )
         .await;
         assert_eq!(status, 200);
+    }
+}
+
+mod gap_limit_tests {
+    use super::*;
+    use rust_decimal::Decimal;
+
+    fn listing(
+        user_id: Uuid,
+        gap: i32,
+        weekly: Option<Decimal>,
+    ) -> common::models::NewListingRequest {
+        common::models::NewListingRequest {
+            name: format!("Gap Villa {}", Uuid::now_v7()),
+            user_id,
+            description: None,
+            listing_structure: "Villa".to_string(),
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(250.00)),
+            weekly_discount_percentage: weekly,
+            monthly_discount_percentage: None,
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 2,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: gap,
+            commission_pct: None,
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: 1,
+            extra_guest_fee: None,
+            is_active: true,
+        }
+    }
+
+    #[actix_web::test]
+    async fn gap_and_discount_limits_apply_on_create_and_update() {
+        dotenvy::dotenv().ok();
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let user_id = create_test_user(&mut conn).await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let post = |body: common::models::NewListingRequest| {
+            test::TestRequest::post()
+                .uri("/api/v1/listings")
+                .set_json(body)
+                .to_request()
+        };
+
+        // Create: the limits are accepted, one past them is refused.
+        for (gap, expected) in [(0, 201), (365, 201), (-1, 400), (366, 400)] {
+            let resp = test::call_service(&app, post(listing(user_id, gap, None))).await;
+            assert_eq!(resp.status(), expected, "create with gap {gap}");
+        }
+        for (pct, expected) in [
+            (dec!(0), 201),
+            (dec!(100), 201),
+            (dec!(-1), 400),
+            (dec!(100.01), 400),
+        ] {
+            let resp = test::call_service(&app, post(listing(user_id, 0, Some(pct)))).await;
+            assert_eq!(resp.status(), expected, "create with discount {pct}");
+        }
+
+        let resp = test::call_service(&app, post(listing(user_id, 0, None))).await;
+        let created: ListingResponse = test::read_body_json(resp).await;
+        let uri = format!("/api/v1/listings/{}", created.id);
+
+        // Update: the same limits.
+        for (gap, expected) in [(0, 200), (365, 200), (-1, 400), (366, 400)] {
+            let req = test::TestRequest::patch()
+                .uri(&uri)
+                .set_json(UpdatedListingRequest {
+                    days_between_bookings: Some(gap),
+                    ..Default::default()
+                })
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), expected, "update with gap {gap}");
+        }
+        for (pct, expected) in [
+            (dec!(0), 200),
+            (dec!(100), 200),
+            (dec!(-1), 400),
+            (dec!(100.01), 400),
+        ] {
+            let req = test::TestRequest::patch()
+                .uri(&uri)
+                .set_json(UpdatedListingRequest {
+                    monthly_discount_percentage: Some(pct),
+                    ..Default::default()
+                })
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), expected, "update with discount {pct}");
+        }
+    }
+}
+
+/// Captures what the current test logs.
+///
+/// One process-wide subscriber routes each thread's lines to that thread's
+/// capture. `tracing` caches whether a log line is enabled, for all threads,
+/// and a line first reached by a thread with no subscriber can be cached as
+/// disabled. With a subscriber on every thread, that can't happen.
+pub(super) mod logs {
+    use std::cell::RefCell;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex, Once};
+
+    /// Everything the test's thread logged while the capture was held.
+    #[derive(Clone, Default)]
+    pub(in crate::apis) struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+    impl CapturedLogs {
+        pub(in crate::apis) fn text(&self) -> String {
+            String::from_utf8_lossy(&self.0.lock().expect("log buffer")).into_owned()
+        }
+    }
+
+    thread_local! {
+        static CURRENT: RefCell<Option<CapturedLogs>> = const { RefCell::new(None) };
+    }
+
+    /// Writes to the current thread's capture, if it has one.
+    #[derive(Clone, Copy)]
+    struct ToCurrentThread;
+
+    /// The destination of one log line.
+    struct Line(Option<CapturedLogs>);
+
+    impl Write for Line {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if let Some(logs) = &self.0 {
+                logs.0.lock().expect("log buffer").extend_from_slice(buf);
+            }
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ToCurrentThread {
+        type Writer = Line;
+        fn make_writer(&'a self) -> Self::Writer {
+            Line(CURRENT.with(|current| current.borrow().clone()))
+        }
+    }
+
+    /// Ends the capture when dropped.
+    pub(in crate::apis) struct Capture;
+
+    impl Drop for Capture {
+        fn drop(&mut self) {
+            CURRENT.with(|current| *current.borrow_mut() = None);
+        }
+    }
+
+    pub(in crate::apis) fn capture_logs() -> (CapturedLogs, Capture) {
+        static INSTALL: Once = Once::new();
+        INSTALL.call_once(|| {
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::TRACE)
+                .with_span_events(
+                    tracing_subscriber::fmt::format::FmtSpan::NEW
+                        | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+                )
+                .with_ansi(false)
+                .with_writer(ToCurrentThread)
+                .init();
+        });
+        let logs = CapturedLogs::default();
+        CURRENT.with(|current| *current.borrow_mut() = Some(logs.clone()));
+        (logs, Capture)
+    }
+}
+
+mod search_param_tests {
+    use super::logs::capture_logs;
+    use super::*;
+    use api_core::tracing_utils::CustomRootSpanBuilder;
+    use chrono::{Duration, TimeZone};
+    use common::availability::{StayInputError, jamaica_today};
+    use sqlx::postgres::PgPoolOptions;
+    use tracing_actix_web::TracingLogger;
+
+    /// Any query on this pool fails, so a 400 proves none ran.
+    fn no_database() -> PgPool {
+        PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(200))
+            .connect_lazy("postgres://postgres:password@127.0.0.1:1/none")
+            .expect("lazy pool")
+    }
+
+    fn today() -> chrono::NaiveDate {
+        jamaica_today(Utc::now())
+    }
+
+    async fn real_database() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+        TestPg::new(db_url, Path::new("../../db_core/migrations"))
+    }
+
+    #[actix_web::test]
+    async fn invalid_input_gets_a_typed_400_and_runs_no_query() {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(no_database()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let tomorrow = today() + Duration::days(1);
+        let cases = [
+            (
+                "check_in=abc&check_out=2099-01-02".to_string(),
+                "INVALID_STAY_DATES",
+                "Invalid date range: please enter valid dates.",
+            ),
+            (
+                format!("check_in={tomorrow}"),
+                "INVALID_STAY_DATES",
+                "Invalid date range: choose both check-in and check-out.",
+            ),
+            (
+                format!("check_in={tomorrow}&check_out={tomorrow}"),
+                "INVALID_STAY_DATES",
+                "Invalid date range: check-out must be after check-in.",
+            ),
+            (
+                format!(
+                    "check_in={}&check_out={tomorrow}",
+                    today() - Duration::days(1)
+                ),
+                "INVALID_STAY_DATES",
+                "Invalid date range: dates can't be in the past.",
+            ),
+            (
+                "guests=0".to_string(),
+                "INVALID_GUESTS",
+                "Guests must be at least 1.",
+            ),
+            (
+                "guests=abc".to_string(),
+                "INVALID_GUESTS",
+                "Guests must be at least 1.",
+            ),
+            (
+                format!("q={}", "x".repeat(201)),
+                "INVALID_SEARCH_TEXT",
+                "Please shorten your search and use only letters, numbers and punctuation.",
+            ),
+            (
+                "q=a%00b".to_string(),
+                "INVALID_SEARCH_TEXT",
+                "Please shorten your search and use only letters, numbers and punctuation.",
+            ),
+        ];
+        for (query, code, message) in cases {
+            let req = test::TestRequest::get()
+                .uri(&format!("/api/v1/listings?{query}"))
+                .insert_header(("Accept", "application/json"))
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 400, "{query}");
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(body["code"], code, "{query}");
+            assert_eq!(body["message"], message, "{query}");
+        }
+    }
+
+    #[actix_web::test]
+    async fn the_jamaica_date_decides_what_counts_as_past() {
+        // 03:00 UTC on the 15th is still the 14th in Jamaica.
+        let now = match Utc.with_ymd_and_hms(2030, 6, 15, 3, 0, 0).single() {
+            Some(now) => now,
+            None => panic!("bad test time"),
+        };
+        let query = |check_in: &str| common::models::ListingQueryParams {
+            check_in: Some(check_in.to_string()),
+            check_out: Some("2030-06-20".to_string()),
+            ..Default::default()
+        };
+        assert!(read_stay_search(&query("2030-06-14"), now, 30).is_ok());
+        match read_stay_search(&query("2030-06-13"), now, 30) {
+            Err(ApiError::Database(db_core::error::DbError::StayInput(StayInputError::InPast))) => {
+            }
+            other => panic!("expected InPast, got {other:?}"),
+        }
+    }
+
+    #[actix_web::test]
+    async fn a_refused_search_logs_no_error_and_no_search_text() {
+        let app = test::init_service(
+            App::new()
+                .wrap(TracingLogger::<CustomRootSpanBuilder>::new())
+                .app_data(web::Data::new(no_database()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let (logs, capture) = capture_logs();
+        let req = test::TestRequest::get()
+            .uri("/api/v1/listings?q=SEARCHMARKER&guests=0")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        drop(capture);
+
+        assert_eq!(resp.status(), 400);
+        let text = logs.text();
+        assert!(text.contains("search input refused"), "{text}");
+        assert!(text.contains("http.target=/api/v1/listings"), "{text}");
+        assert!(!text.contains("SEARCHMARKER"), "{text}");
+        assert!(!text.contains(" ERROR "), "{text}");
+    }
+
+    #[actix_web::test]
+    async fn a_valid_search_filters_and_logs_no_search_text() {
+        let test_db = real_database().await;
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let user_id = create_test_user(&mut conn).await;
+        drop(conn);
+        let app = test::init_service(
+            App::new()
+                .wrap(TracingLogger::<CustomRootSpanBuilder>::new())
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        for (city, max_guests) in [("Runaway Bay", 4), ("Runaway Bay", 2), ("Kingston", 4)] {
+            let listing = common::models::NewListingRequest {
+                name: format!("Search Villa {}", Uuid::now_v7()),
+                user_id,
+                description: None,
+                listing_structure: "Villa".to_string(),
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(250.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 2,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: Some(city.to_string()),
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: None,
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: 1,
+                extra_guest_fee: None,
+                is_active: true,
+            };
+            let req = test::TestRequest::post()
+                .uri("/api/v1/listings")
+                .set_json(&listing)
+                .to_request();
+            assert_eq!(test::call_service(&app, req).await.status(), 201);
+        }
+
+        let (check_in, check_out) = (today() + Duration::days(30), today() + Duration::days(33));
+        let search = |query: String| {
+            test::TestRequest::get()
+                .uri(&format!("/api/v1/listings?user_id={user_id}&{query}"))
+                .insert_header(("Accept", "application/json"))
+                .to_request()
+        };
+
+        // Text combines with guests and dates.
+        let found: Vec<ListingResponse> = test::call_and_read_body_json(
+            &app,
+            search(format!(
+                "q=runaway&guests=3&check_in={check_in}&check_out={check_out}"
+            )),
+        )
+        .await;
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].city.as_deref(), Some("Runaway Bay"));
+        assert_eq!(found[0].max_guests, 4);
+
+        // No new params: everything, as today. Empty values count as absent.
+        let found: Vec<ListingResponse> =
+            test::call_and_read_body_json(&app, search(String::new())).await;
+        assert_eq!(found.len(), 3);
+        let found: Vec<ListingResponse> = test::call_and_read_body_json(
+            &app,
+            search("q=&check_in=&check_out=&guests=".to_string()),
+        )
+        .await;
+        assert_eq!(found.len(), 3);
+
+        let (logs, capture) = capture_logs();
+        let resp = test::call_service(&app, search("q=SEARCHMARKER&guests=2".to_string())).await;
+        drop(capture);
+        assert_eq!(resp.status(), 200);
+        let text = logs.text();
+        assert!(text.contains("http.target=/api/v1/listings"), "{text}");
+        assert!(!text.contains("SEARCHMARKER"), "{text}");
     }
 }

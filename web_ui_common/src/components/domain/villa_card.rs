@@ -11,7 +11,7 @@ use topcoat::{
     view::{Attributes, View, attributes, class, component, view},
 };
 
-use super::listing_card::ListingSummary;
+use super::listing_card::{ListingSummary, StayTotalLines};
 use super::responsive_image::responsive_image;
 
 /// `"1 Bedroom"` / `"3 Bedrooms"`.
@@ -43,10 +43,11 @@ pub async fn villa_card(
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
-    let href = format!("/listings/{}", listing.slug);
+    let href = listing.href();
     let location = listing.location();
     let specs = villa_specs(&listing);
     let price = listing.price_text();
+    let stay_lines = listing.stay_total_lines();
     let ListingSummary {
         name,
         image_url,
@@ -90,6 +91,18 @@ pub async fn villa_card(
                         }
                     }
                 </p>
+                match stay_lines {
+                    Some(StayTotalLines::Total { amount, includes }) => {
+                        <div data-stay-total="" class="space-y-0.5 text-xs">
+                            <p class="font-medium">(amount)</p>
+                            <p class="text-muted-foreground">(includes)</p>
+                        </div>
+                    }
+                    Some(StayTotalLines::Unavailable) => {
+                        <p class="text-xs text-muted-foreground" data-stay-total-unavailable="">"Total unavailable for these dates"</p>
+                    }
+                    None => {}
+                }
             </div>
         </article>
     })
@@ -158,6 +171,9 @@ mod tests {
             review_count: None,
             host: None,
             price_unavailable_in: None,
+            stay_total: None,
+            stay_searched: false,
+            search_query: None,
         }
     }
 
@@ -196,6 +212,9 @@ mod villa_card_price_tests {
             review_count: None,
             host: None,
             price_unavailable_in: unavailable.map(str::to_string),
+            stay_total: None,
+            stay_searched: false,
+            search_query: None,
         }
     }
 

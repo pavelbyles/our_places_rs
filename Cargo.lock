@@ -6456,12 +6456,15 @@ dependencies = [
 name = "web_ui_guest"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "common",
  "dotenvy",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
+ "serde_json",
+ "serde_urlencoded",
  "tokio",
  "topcoat 0.10.0",
  "topcoat 0.11.0",

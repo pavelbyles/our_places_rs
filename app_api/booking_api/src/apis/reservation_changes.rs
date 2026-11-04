@@ -338,7 +338,7 @@ pub(super) async fn quote_reservation_change(
         .await
         .map_err(ApiError::Database)?;
 
-    let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today_jm = common::availability::jamaica_today(Utc::now());
     let quote = compute_reservation_change_quote(pool.get_ref(), &booking, &body, today_jm).await?;
 
     Ok(HttpResponse::Ok().json(quote))
@@ -379,7 +379,7 @@ pub(super) async fn create_reservation_change_request(
         .await
         .map_err(ApiError::Database)?;
 
-    let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today_jm = common::availability::jamaica_today(Utc::now());
     let quote_req = common::models::ReservationChangeQuoteRequest {
         date_from: body.date_from,
         date_to: body.date_to,
@@ -456,7 +456,7 @@ pub(super) async fn list_reservation_change_requests(
     let booking_id = *id;
     let _ = authorize_booking_party(&req, pool.get_ref(), booking_id).await?;
 
-    let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today_jm = common::availability::jamaica_today(Utc::now());
     let rows = db_core::reservation_change::list_change_requests_for_booking(
         pool.get_ref(),
         booking_id,
@@ -543,7 +543,7 @@ pub(super) async fn approve_reservation_change_request(
         }
     }
 
-    let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today_jm = common::availability::jamaica_today(Utc::now());
     if req_row.status == common::models::ReservationChangeStatus::Pending
         && req_row.expires_at_date <= today_jm
     {
@@ -709,7 +709,7 @@ pub(super) async fn decline_reservation_change_request(
         }
     }
 
-    let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today_jm = common::availability::jamaica_today(Utc::now());
     let response_note = body.as_ref().and_then(|b| b.response_note.as_deref());
     let declined_row = db_core::reservation_change::decline_change_request(
         pool.get_ref(),
@@ -771,7 +771,7 @@ pub(super) async fn cancel_reservation_change_request(
         ));
     }
 
-    let today_jm = (Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let today_jm = common::availability::jamaica_today(Utc::now());
     let cancelled_row = db_core::reservation_change::cancel_change_request(
         pool.get_ref(),
         request_id,

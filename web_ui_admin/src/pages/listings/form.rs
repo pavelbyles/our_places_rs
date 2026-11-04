@@ -229,6 +229,17 @@ impl Parser {
             }
         }
     }
+    fn int_between(&mut self, label: &str, v: &str, min: i32, max: i32) -> i32 {
+        match i32::from_str(v.trim()) {
+            Ok(n) if (min..=max).contains(&n) => n,
+            _ => {
+                self.errors.push(format!(
+                    "{label} must be a whole number from {min} to {max}."
+                ));
+                min
+            }
+        }
+    }
     fn opt_int(&mut self, label: &str, v: &str) -> Option<i32> {
         let v = v.trim();
         if v.is_empty() {
@@ -370,7 +381,12 @@ impl ListingFields {
             half_bathrooms: p.int("Half bathrooms", &self.half_bathrooms, 0),
             square_meters: p.opt_int("Floor area", &self.square_meters),
             minimum_stay: p.int("Minimum stay", &self.minimum_stay, 1),
-            days_between_bookings: p.int("Days between bookings", &self.days_between_bookings, 0),
+            days_between_bookings: p.int_between(
+                "Days between bookings",
+                &self.days_between_bookings,
+                0,
+                365,
+            ),
             latitude: p.coord("Latitude", &self.latitude, 90.0),
             longitude: p.coord("Longitude", &self.longitude, 180.0),
             is_active: self.is_active == "on",

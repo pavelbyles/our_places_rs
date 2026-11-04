@@ -1,4 +1,11 @@
 //! Date availability checks against confirmed bookings and live holds.
+//!
+//! A booking blocks a stay when `date_from - gap < check_out` and
+//! `date_to + gap > check_in`, where `gap` is the listing's
+//! `days_between_bookings` limited to 0–365. The limit stops a stored value
+//! from overflowing a date or shrinking the rule. Search and the hold have
+//! their own copies of this SQL, and `availability_parity_tests` keeps them
+//! in step.
 
 use crate::error::Result;
 use sqlx::PgExecutor;
@@ -21,11 +28,13 @@ where
 
     let overlapping = sqlx::query!(
         r#"
-        SELECT count(*) as count FROM booking 
-        WHERE listing_id = $1 
-          AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))
-          AND date_from < $3 
-          AND date_to > $2
+        SELECT count(*) as count
+        FROM booking b
+        JOIN listing l ON l.id = b.listing_id
+        WHERE b.listing_id = $1
+          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
         "#,
         listing_id,
         date_from,
@@ -55,12 +64,14 @@ where
 
     let overlapping = sqlx::query!(
         r#"
-        SELECT count(*) as count FROM booking 
-        WHERE listing_id = $1 
-          AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))
-          AND date_from < $3 
-          AND date_to > $2
-          AND id != $4
+        SELECT count(*) as count
+        FROM booking b
+        JOIN listing l ON l.id = b.listing_id
+        WHERE b.listing_id = $1
+          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+          AND b.id != $4
         "#,
         listing_id,
         date_from,
@@ -73,8 +84,9 @@ where
     Ok(overlapping.count == Some(0))
 }
 
-/// Returns the booked date ranges (pending holds and confirmed stays) that
-/// overlap `[date_from, date_to)` for a listing, ordered by start date.
+/// Returns the date ranges a new stay can't use that overlap
+/// `[date_from, date_to)` for a listing: pending holds and confirmed stays,
+/// each widened by the listing's gap, ordered by start date.
 ///
 /// Uses the same status set and overlap rule as [`check_availability`], so
 /// the calendar and the hold logic agree. Read-only and lock-free: it is for
@@ -91,12 +103,16 @@ where
 {
     let rows = sqlx::query!(
         r#"
-        SELECT date_from, date_to FROM booking
-        WHERE listing_id = $1
-          AND (status = 'confirmed' OR (status = 'pending' AND expires_at > NOW()))
-          AND date_from < $3
-          AND date_to > $2
-        ORDER BY date_from
+        SELECT
+            b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) AS "date_from!",
+            b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) AS "date_to!"
+        FROM booking b
+        JOIN listing l ON l.id = b.listing_id
+        WHERE b.listing_id = $1
+          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+        ORDER BY b.date_from
         "#,
         listing_id,
         date_from,

@@ -42,6 +42,7 @@ pub fn currency_cache_ttl() -> std::time::Duration {
 }
 
 // Env vars for API URLs
+/// Base URL of the listing API.
 pub fn listing_api_url() -> String {
     env::var("LISTING_API_URL")
         .unwrap_or_else(|_| "http://localhost:8082".to_string())
@@ -49,6 +50,7 @@ pub fn listing_api_url() -> String {
         .to_string()
 }
 
+/// Base URL of the booking API.
 pub fn booking_api_url() -> String {
     env::var("BOOKING_API_URL")
         .unwrap_or_else(|_| "http://localhost:8081".to_string())
@@ -56,6 +58,7 @@ pub fn booking_api_url() -> String {
         .to_string()
 }
 
+/// Base URL of the user API.
 pub fn user_api_url() -> String {
     env::var("USER_API_URL")
         .unwrap_or_else(|_| "http://localhost:8083".to_string())
@@ -63,6 +66,7 @@ pub fn user_api_url() -> String {
         .to_string()
 }
 
+/// Audience for tokens sent to the listing API. Defaults to its URL.
 pub fn listing_api_audience() -> String {
     env::var("LISTING_API_AUDIENCE")
         .unwrap_or_else(|_| listing_api_url())
@@ -70,6 +74,7 @@ pub fn listing_api_audience() -> String {
         .to_string()
 }
 
+/// Audience for tokens sent to the booking API. Defaults to its URL.
 pub fn booking_api_audience() -> String {
     env::var("BOOKING_API_AUDIENCE")
         .unwrap_or_else(|_| booking_api_url())
@@ -77,6 +82,7 @@ pub fn booking_api_audience() -> String {
         .to_string()
 }
 
+/// Audience for tokens sent to the user API. Defaults to its URL.
 pub fn user_api_audience() -> String {
     env::var("USER_API_AUDIENCE")
         .unwrap_or_else(|_| user_api_url())
@@ -98,9 +104,9 @@ pub use bookings::{
     send_booking_message, transfer_booking, update_booking, update_booking_with_auth,
 };
 pub use listings::{
-    ListingSearchParams, create_listing, create_price_override, delete_listing,
-    delete_listing_image, delete_price_override, get_listing_by_id, get_price_overrides,
-    search_listings, update_listing,
+    ListingSearchParams, ListingSearchRefusal, create_listing, create_price_override,
+    delete_listing, delete_listing_image, delete_price_override, get_listing_by_id,
+    get_price_overrides, search_listings, search_listings_at, update_listing,
 };
 pub use payouts::{get_host_payout_ledger, get_host_payout_summary, update_admin_payout_status};
 pub use promo::{get_public_stay_quote, get_stay_quote, promo_refusal_in_error};

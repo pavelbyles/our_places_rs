@@ -18,6 +18,7 @@ pub fn map_listing_to_response(
 
     common::models::ListingResponse {
         price_unavailable_in: None,
+        stay_total: None,
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,
@@ -81,6 +82,7 @@ pub fn photo_images(
         .collect()
 }
 
+/// Maps a listing with its images and ratings to its API response.
 pub fn map_listing_details_to_response(
     details: db_core::models::ListingDetails,
 ) -> common::models::ListingDetails {
@@ -107,6 +109,7 @@ pub fn map_listing_with_owner_to_response(
 
     common::models::ListingResponse {
         price_unavailable_in: None,
+        stay_total: None,
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,

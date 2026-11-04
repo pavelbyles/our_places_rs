@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 /// A trait for fetching OIDC Identity Tokens.
 #[async_trait::async_trait]
 pub trait TokenProvider: Send + Sync {
+    /// An identity token for `audience`.
     async fn get_token(&self, audience: &str) -> Result<String>;
 }
 
@@ -44,6 +45,7 @@ pub struct GoogleMetadataTokenProvider {
 }
 
 impl GoogleMetadataTokenProvider {
+    /// A provider with default settings.
     pub fn new() -> Self {
         Self {
             cache: Mutex::new(HashMap::new()),
@@ -114,6 +116,7 @@ pub struct LocalGcloudTokenProvider {
 }
 
 impl LocalGcloudTokenProvider {
+    /// A provider with default settings.
     pub fn new() -> Self {
         Self {
             cache: Mutex::new(HashMap::new()),

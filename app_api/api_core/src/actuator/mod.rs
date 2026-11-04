@@ -1,7 +1,12 @@
+/// Health and readiness endpoints.
 pub mod health;
+/// Build and version endpoint.
 pub mod info;
+/// Endpoints to read and change log levels.
 pub mod loggers;
+/// Metrics endpoint.
 pub mod metrics;
+/// Response types of the actuator endpoints.
 pub mod models;
 
 #[cfg(test)]
@@ -39,6 +44,7 @@ where
     }
 }
 
+/// Records request metrics around the wrapped service.
 pub struct ActuatorMetricsMiddlewareService<S> {
     service: S,
 }

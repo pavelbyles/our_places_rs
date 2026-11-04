@@ -2489,3 +2489,340 @@ async fn test_confirmation_code_collision_is_detected() {
         &db_core::error::DbError::DateUnavailable
     ));
 }
+
+mod gap_change_tests {
+    use crate::settings::TaxSettings;
+    use actix_web::{App, test, web};
+    use chrono::{Duration, NaiveDate};
+    use rust_decimal_macros::dec;
+    use sqlx::PgPool;
+    use sqlx_db_tester::TestPg;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    async fn user(pool: &PgPool, role: db_core::models::UserRole) -> Uuid {
+        let id = Uuid::now_v7();
+        db_core::user::create_user(
+            pool,
+            &db_core::models::NewUser {
+                id,
+                email: format!("gap_{id}@example.com"),
+                password_hash: "hash".to_string(),
+                first_name: "Gap".to_string(),
+                last_name: "User".to_string(),
+                phone_number: None,
+                is_active: true,
+                is_verified: true,
+                verification_code: None,
+                verification_code_expires_at: None,
+                attributes: serde_json::json!({}),
+                roles: Some(vec![role]),
+                default_currency: "USD".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn villa(pool: &PgPool, host_id: Uuid) -> Uuid {
+        db_core::user::create_host_profile(
+            pool,
+            host_id,
+            &db_core::models::NewHostProfile {
+                description: None,
+                verified_status: Some("verified".to_string()),
+                payout_details: None,
+            },
+        )
+        .await
+        .unwrap();
+        db_core::listing::create_listing(
+            pool,
+            &db_core::models::NewListing {
+                name: format!("Gap Villa {}", Uuid::now_v7()),
+                user_id: host_id,
+                description: None,
+                listing_structure_id: 1,
+                country: "Jamaica".to_string(),
+                price_per_night: Some(dec!(200.00)),
+                weekly_discount_percentage: None,
+                monthly_discount_percentage: None,
+                max_guests: 4,
+                bedrooms: 2,
+                beds: 2,
+                full_bathrooms: 1,
+                half_bathrooms: 0,
+                square_meters: None,
+                latitude: None,
+                longitude: None,
+                listing_details: None,
+                city: None,
+                base_currency: "USD".to_string(),
+                minimum_stay: 1,
+                days_between_bookings: 0,
+                commission_pct: Some(dec!(0.1000)),
+                cleaning_fee: None,
+                damage_deposit: None,
+                guests_included: None,
+                extra_guest_fee: None,
+                is_active: true,
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    async fn confirmed_booking(
+        pool: &PgPool,
+        guest_id: Uuid,
+        listing_id: Uuid,
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> Uuid {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO booking (
+                id, confirmation_code, guest_id, listing_id, status,
+                date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+                sub_total_price, discount_value, tax_value, fee_breakdown,
+                total_price, cancellation_policy, metadata,
+                cleaning_fee, damage_deposit, platform_fee, tax_rate, exchange_rate,
+                created_at, updated_at
+            )
+            VALUES (
+                $1, $2, $3, $4, 'confirmed'::booking_status,
+                $5, $6, 'USD', 200.00, 2, ($6 - $5),
+                800.00, 0.00, 120.00, '[]'::jsonb,
+                960.00, 'flexible'::cancellation_policy, '{"num_adults": 2}'::jsonb,
+                0.00, 0.00, 40.00, 0.1500, 1.000000,
+                NOW(), NOW()
+            )
+            "#,
+        )
+        .bind(id)
+        .bind(format!("G{}", Uuid::new_v4().simple())[..10].to_uppercase())
+        .bind(guest_id)
+        .bind(listing_id)
+        .bind(from)
+        .bind(to)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn set_gap(pool: &PgPool, listing_id: Uuid, gap: i32) {
+        sqlx::query("UPDATE listing SET days_between_bookings = $1 WHERE id = $2")
+            .bind(gap)
+            .bind(listing_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[actix_web::test]
+    async fn updates_and_reservation_changes_respect_the_gap() {
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+
+        let host_id = user(&pool, db_core::models::UserRole::Host).await;
+        let guest_id = user(&pool, db_core::models::UserRole::Booker).await;
+        let admin_id = user(&pool, db_core::models::UserRole::Admin).await;
+        let listing_id = villa(&pool, host_id).await;
+
+        let base = common::availability::jamaica_today(chrono::Utc::now()) + Duration::days(30);
+        let date = |offset: i64| base + Duration::days(offset);
+        let day = |offset: i64| date(offset).to_string();
+        let booking_id = confirmed_booking(&pool, guest_id, listing_id, date(0), date(4)).await;
+        confirmed_booking(&pool, guest_id, listing_id, date(14), date(19)).await;
+
+        let supplier = db_core::models::SupplierInfo {
+            supplier_name: "Our Places Jamaica Limited".to_string(),
+            supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+            supplier_trn: "000-111-222".to_string(),
+        };
+        let booking = db_core::booking::get_booking_by_id(&pool, booking_id)
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        db_core::tax_document::issue_payment_receipt(&mut tx, &booking, &supplier, None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(TaxSettings {
+                    taj_supplier_trn: "000-111-222".to_string(),
+                    supplier_name: "Our Places Jamaica Limited".to_string(),
+                    supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+                }))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+        let bearer = |id: Uuid| {
+            (
+                "Authorization",
+                format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+            )
+        };
+        let dates = |to: i64| serde_json::json!({ "date_from": day(0), "date_to": day(to) });
+        let change_requests = format!("/api/v1/bookings/{booking_id}/change-requests");
+        let change_quote = format!("/api/v1/bookings/{booking_id}/change-quote");
+        let booking_uri = format!("/api/v1/bookings/{booking_id}");
+
+        set_gap(&pool, listing_id, 3).await;
+
+        // The public availability check keeps the gap after the second booking.
+        for (from, available) in [(21, false), (22, true)] {
+            let req = test::TestRequest::get()
+                .uri(&format!(
+                    "/api/v1/bookings/availability?listing_id={listing_id}&date_from={}&date_to={}",
+                    day(from),
+                    day(from + 1)
+                ))
+                .to_request();
+            let body: serde_json::Value = test::call_and_read_body_json(&app, req).await;
+            assert_eq!(body["available"], available, "from day {from}");
+        }
+
+        // A direct update can't end inside the gap before the second booking.
+        let req = test::TestRequest::patch()
+            .uri(&booking_uri)
+            .insert_header(bearer(admin_id))
+            .set_json(dates(12))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "DATE_UNAVAILABLE");
+
+        let req = test::TestRequest::patch()
+            .uri(&booking_uri)
+            .insert_header(bearer(admin_id))
+            .set_json(dates(11))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // So can't a change quote.
+        let req = test::TestRequest::post()
+            .uri(&change_quote)
+            .insert_header(bearer(guest_id))
+            .set_json(dates(12))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "DATE_UNAVAILABLE");
+
+        let req = test::TestRequest::post()
+            .uri(&change_quote)
+            .insert_header(bearer(guest_id))
+            .set_json(dates(10))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // Or a change request.
+        let req = test::TestRequest::post()
+            .uri(&change_requests)
+            .insert_header(bearer(guest_id))
+            .set_json(dates(12))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "DATE_UNAVAILABLE");
+
+        // A request made before the gap was raised is rechecked at approval.
+        set_gap(&pool, listing_id, 0).await;
+        let req = test::TestRequest::post()
+            .uri(&change_requests)
+            .insert_header(bearer(guest_id))
+            .set_json(dates(13))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+        let created: common::models::ReservationChangeRequestResponse =
+            test::read_body_json(resp).await;
+
+        set_gap(&pool, listing_id, 3).await;
+        let req = test::TestRequest::post()
+            .uri(&format!("{change_requests}/{}/approve", created.id))
+            .insert_header(bearer(host_id))
+            .set_json(serde_json::json!({}))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "DATE_UNAVAILABLE");
+    }
+}
+
+mod hold_conflict_tests {
+    use crate::apis::authz_tests::{booking_request, listing, settings, tax_settings, user};
+    use crate::apis::promo_hold_tests::capture_logs;
+    use actix_web::{App, test, web};
+    use db_core::models::UserRole;
+    use sqlx_db_tester::TestPg;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    fn bearer(id: Uuid) -> (&'static str, String) {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(id)),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_conflicting_hold_is_a_409_and_not_logged_as_an_error() {
+        dotenvy::dotenv().ok();
+        let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+        let host = user(&pool, UserRole::Host).await;
+        let first = user(&pool, UserRole::Booker).await;
+        let second = user(&pool, UserRole::Booker).await;
+        let villa = listing(&pool, host).await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(settings()))
+                .app_data(web::Data::new(tax_settings()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+
+        let post = |guest: Uuid| {
+            test::TestRequest::post()
+                .uri("/api/v1/bookings")
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(guest))
+                .set_json(booking_request(guest, villa))
+                .to_request()
+        };
+        let resp = test::call_service(&app, post(first)).await;
+        assert_eq!(resp.status(), 201);
+
+        let (logs, guard) = capture_logs();
+        let resp = test::call_service(&app, post(second)).await;
+        drop(guard);
+        assert_eq!(resp.status(), 409);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["code"], "DATE_UNAVAILABLE");
+        let text = logs.text();
+        assert!(text.contains("dates unavailable"), "{text}");
+        // Only the refusal's own lines: the first hold's confirmation email can
+        // log an error here too, when no Pub/Sub emulator is running.
+        assert!(!text.contains("failed to create booking"), "{text}");
+        assert!(!text.contains("request failed"), "{text}");
+    }
+}

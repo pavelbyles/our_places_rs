@@ -13,6 +13,7 @@ Last updated: 2026-10-31
 - **Financial precision**: all money, rates and taxes use `rust_decimal::Decimal`. `f32`/`f64` are banned in pricing paths.
 - **No double bookings**: availability and holds are decided inside one PostgreSQL transaction holding a row lock on the listing (`SELECT ... FOR UPDATE`). No cache takes part.
 - **Holds expire by timestamp**: a hold blocks dates only while `expires_at > NOW()`. Correctness never depends on a background job running.
+- **One availability rule**: a booking blocks a stay when `date_from - gap < check_out` and `date_to + gap > check_in`, where `gap` is the listing's `days_between_bookings` limited to 0–365. Search, holds, booking updates, reservation changes and the calendar all apply it.
 
 ---
 
@@ -145,8 +146,8 @@ sequenceDiagram
     Portal->>API: POST /api/v1/bookings (ID token + user JWT)
     API->>API: Price stay (common::pricing, Decimal)
     Note over API,DB: BEGIN
-    API->>DB: SELECT id FROM listing WHERE id = $1 FOR UPDATE
-    API->>DB: Overlapping bookings: confirmed, or pending with expires_at > NOW()
+    API->>DB: SELECT gap FROM listing WHERE id = $1 FOR UPDATE
+    API->>DB: Bookings within the gap: confirmed, or pending with expires_at > NOW()
     alt Dates free (or only this guest's own pending hold overlaps)
         API->>DB: Cancel this guest's other pending holds (+ history rows)
         API->>DB: INSERT booking (status = 'pending', expires_at = NOW() + hold_minutes)
@@ -155,11 +156,13 @@ sequenceDiagram
         API-->>Portal: 201 Created (BookingResponse)
     else Dates taken
         Note over API,DB: ROLLBACK
-        API-->>Portal: 400 "Listing is not available for the selected dates"
+        API-->>Portal: 409 DATE_UNAVAILABLE
     end
 ```
 
 - **One lock per listing**: two attempts to book the same listing run one after the other, while different listings are booked in parallel. The same lock protects availability checks for change requests (`reservation_change.rs`) and reviews.
+- **Gap between bookings** (`listing.days_between_bookings`): the rule in §1 is one SQL condition, copied into each query because `sqlx::query!` needs literals. `availability_parity_tests` holds the copies to one answer. The value is limited to 0–365 on write and again in each query, so a stored value can't overflow a date or shrink the rule. Bookings already closer than a newly raised gap stay as they are, and are only rechecked if their dates change. Gap nights look the same as booked ones on the calendar.
+- **Confirming a hold** checks expiry with `clock_timestamp()`, not `NOW()`, which is fixed when the transaction begins. A confirmation that waited on the listing lock can't succeed after its hold ran out and a rival took the dates.
 - **Statuses** (`BookingStatus`): `pending` → `confirmed` → `completed`, or `cancelled` from `pending` or `confirmed`. Every transition writes a full row snapshot to `booking_history`.
 - **Confirmation codes**: generated randomly. If a code collides with an existing one, booking_api retries up to `application.max_attempts` times.
 - **Inactive listings** (`listing.is_active = false`): `GET /api/v1/listings` leaves them out unless `include_inactive=true`, which only the admin portal and the My Bookings name lookup send. The guest portal returns 404 for their listing and checkout pages. New quotes and holds get 409 `LISTING_UNAVAILABLE`; the hold re-reads the flag under the listing lock. Existing bookings are unaffected.
@@ -181,12 +184,14 @@ Base currency (listing price) --exchange rate--> Payment currency (guest) --GCT-
 ```
 
 1. **Base nightly rate**: comes from `listing.price_per_night`, or a matching `listing_price_overrides` row. Overlapping override date ranges are rejected by a GiST `EXCLUDE` constraint.
-2. **Price the stay**: `BookingCalculator` builds the total in typed steps: seasonal nights plus extra-guest fees → weekly/monthly discount → cleaning fee and deposit → promo code → tax → platform fee → total. The type-state makes the promo step impossible to skip. Tax is charged on the stay and cleaning fee after the promo. The guest platform fee is 5% of the stay after the promo. Neither the platform fee, the refundable deposit nor GCT is discounted. Quotes and holds share `stay_pricing::price_stay`, so they can't disagree, and the listing page and checkout show its total. Stays over `application.max_stay_nights`, or too large for the booking's money columns, are refused with a 400.
+2. **Price the stay**: `BookingCalculator` builds the total in typed steps: seasonal nights plus extra-guest fees → weekly/monthly discount → cleaning fee and deposit → promo code → tax → platform fee → total. The type-state makes the promo step impossible to skip. Tax is charged on the stay and cleaning fee after the promo. The guest platform fee is 5% of the stay after the promo. Neither the platform fee, the refundable deposit nor GCT is discounted. Quotes and holds share `stay_pricing::price_stay`, so they can't disagree, and the listing page and checkout show its total. Its promo-free steps are `common::pricing::price_before_promo`, which listing search also uses for card totals, and `common/testdata/stay_pricing_golden.json` holds both services to the same figures. Dates in the past (by the Jamaica date) and stays over `application.max_stay_nights` are refused with a 400 `INVALID_STAY_DATES`, and stays too large for the booking's money columns with a 400.
 3. **Convert currency**: the result is converted with `db_core::exchange_rate::get_rate`, the single, effective-dated lookup: the latest explicit `base → target` row with `effective_at <= at`, otherwise the latest `target → base` row inverted to 6 dp (banker's rounding, in Rust). There is never a fallback rate or currency: a missing pair is `422 FX_RATE_UNAVAILABLE`. Every caller states a `RateUse`:
    - `NewQuote` (listing search and detail, checkout hold): retired pairs are ignored (also as a derived source) and both currencies must be active.
    - `Settlement` (payout at confirmation, reservation-change payout, tax-document JMD rate, booking display): history is honoured even after retirement or deactivation.
 
    Listing search converts in one batched query; a listing that cannot be quoted keeps its base label, has no price and carries `price_unavailable_in` (cards show "Price unavailable in CUR").
+
+   **Search by dates and guests** (`GET /api/v1/listings`): `q` matches name, city or country, and `check_in`, `check_out` and `guests` filter inside the search query, so pages count only matching listings. A dated search returns only active, priced listings that are free under the rule in §1 and meet the minimum stay, including overrides covering a night of it. Each listing then carries a `stay_total`, priced on a blocking thread from one batched rate lookup and one batched override load. A listing that can't be priced stays in the results with no total. Invalid input is a 400 with `INVALID_STAY_DATES`, `INVALID_GUESTS` or `INVALID_SEARCH_TEXT` before any query runs, and search text stays out of logs: every API's root span records `http.target` as the path alone.
 4. **Rate locking**:
 
    | Conversion | Rate used |

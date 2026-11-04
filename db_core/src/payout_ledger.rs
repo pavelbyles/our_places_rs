@@ -267,6 +267,7 @@ pub async fn get_payout_ledger_entries(
     Ok((entries, count))
 }
 
+/// Ledger totals, optionally for one host or one listing.
 pub async fn get_payout_summary(
     pool: &PgPool,
     host_id: Option<Uuid>,
@@ -297,6 +298,8 @@ pub async fn get_payout_summary(
     Ok(summary)
 }
 
+/// Sets a payout's status, and its payout date when it's paid. It doesn't check
+/// that the transition is allowed.
 pub async fn update_payout_status(
     pool: &PgPool,
     id: Uuid,
@@ -365,6 +368,7 @@ pub async fn update_payout_status(
     Ok(updated)
 }
 
+/// Cancels a booking's payout if it hasn't been sent.
 pub async fn cancel_pending_payout_for_booking(
     conn: &mut PgConnection,
     booking_id: Uuid,

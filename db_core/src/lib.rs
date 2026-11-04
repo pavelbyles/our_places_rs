@@ -1,3 +1,6 @@
+//! PostgreSQL schema access: queries, row locks and migrations.
+#![deny(missing_docs)]
+
 /// Booking domain entities and operations.
 pub mod booking;
 /// Guest-to-host booking messaging operations.
@@ -38,6 +41,7 @@ pub mod user;
 pub use sqlx::PgPool;
 use tracing::info;
 
+/// Applies pending migrations, and stops the service if they fail.
 pub async fn run_migrations(pool: &PgPool) {
     info!("Running database migrations");
     sqlx::migrate!("./migrations")

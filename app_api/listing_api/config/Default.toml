@@ -19,6 +19,9 @@ env = "Development"
 
 [application]
 max_attempts = 5
+# Longest stay a search accepts, in nights. Keep in step with booking_api, or a
+# search could offer a stay a quote refuses.
+max_stay_nights = 3650
 
 [feature_flags]
 enable_hard_deletes = false

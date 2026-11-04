@@ -68,9 +68,11 @@ async fn lock_booking(conn: &mut PgConnection, id: Uuid) -> Result<CurrentBookin
     .fetch_one(&mut *conn)
     .await?;
 
+    // The clock, not `NOW()`, which is fixed when the transaction begins. This may
+    // have waited on the listing lock while the hold ran out and a rival took its dates.
     let row = sqlx::query!(
         r#"SELECT id, listing_id, status as "status: BookingStatus", date_from, date_to, number_of_persons,
-            COALESCE(expires_at > NOW(), FALSE) as "hold_active!", promo_code_id
+            COALESCE(expires_at > clock_timestamp(), FALSE) as "hold_active!", promo_code_id
         FROM booking WHERE id = $1 FOR UPDATE"#,
         id
     )
@@ -586,3 +588,7 @@ pub async fn delete_booking(pool: &PgPool, id: Uuid) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "confirm_clock_tests.rs"]
+mod confirm_clock_tests;

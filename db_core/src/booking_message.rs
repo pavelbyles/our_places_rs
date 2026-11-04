@@ -3,6 +3,7 @@ use crate::models::{BookingParties, DbBookingMessage, DbMessageSenderRole};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// Adds a message to a booking's thread.
 pub async fn insert_booking_message(
     pool: &PgPool,
     id: Uuid,
@@ -32,6 +33,7 @@ pub async fn insert_booking_message(
     Ok(msg)
 }
 
+/// A booking's messages, oldest first.
 pub async fn list_booking_messages(
     pool: &PgPool,
     booking_id: Uuid,
@@ -53,6 +55,7 @@ pub async fn list_booking_messages(
     Ok(msgs)
 }
 
+/// Marks the other party's messages as read, returning how many changed.
 pub async fn mark_booking_messages_as_read(
     pool: &PgPool,
     booking_id: Uuid,
@@ -73,6 +76,7 @@ pub async fn mark_booking_messages_as_read(
     Ok(result.rows_affected())
 }
 
+/// Who is on a booking, for checking access.
 pub async fn get_booking_parties(
     pool: &PgPool,
     booking_id: Uuid,

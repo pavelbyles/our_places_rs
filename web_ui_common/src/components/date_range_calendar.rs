@@ -1,6 +1,6 @@
 //! Server-rendered stay-dates calendar (decision D3). Two native date
 //! inputs (always visible: they can be typed into and they are what the form
-//! submits) above two months of day buttons with booked and past nights
+//! submits) above two months of day buttons with unavailable and past nights
 //! disabled; prev/next re-render the fragment over HTMX. `ui.js` adds range
 //! selection and keyboard support and marks the root `data-enhanced`; without
 //! it the grid stays hidden.
@@ -68,8 +68,9 @@ pub fn month_grid(first: NaiveDate) -> Vec<Option<NaiveDate>> {
     grid
 }
 
-/// Whether the night of `day` is booked (`date_from <= day < date_to`; the
-/// checkout day is free for a new check-in).
+/// Whether the night of `day` can't be used: it's booked, or inside the gap
+/// around a booking (`date_from <= day < date_to`; `date_to` is free for a new
+/// check-in).
 pub fn is_booked(day: NaiveDate, ranges: &[UnavailableRange]) -> bool {
     ranges.iter().any(|r| r.date_from <= day && day < r.date_to)
 }
@@ -89,8 +90,7 @@ pub fn day_state(day: NaiveDate, today: NaiveDate, ranges: &[UnavailableRange]) 
 pub fn day_label(day: NaiveDate, state: DayState) -> String {
     let status = match state {
         DayState::Available => "available",
-        DayState::Booked => "booked",
-        DayState::Past => "unavailable",
+        DayState::Booked | DayState::Past => "unavailable",
     };
     format!("{}, {status}", day.format("%A, %-d %B %Y"))
 }

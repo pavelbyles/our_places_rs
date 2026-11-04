@@ -1,33 +1,93 @@
 //! Listings, price overrides, images and pricing quotes.
 
 use super::{get_client, listing_api_audience, listing_api_url};
+use crate::http_client::AuthenticatedClient;
 use crate::models::{ListingDetails, ListingResponse, PriceOverride};
 use anyhow::{Context, Result, bail};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+/// What to search listings for. Absent fields don't filter.
 #[derive(Debug, Default, Clone)]
 pub struct ListingSearchParams {
+    /// Text the listing name must contain.
     pub name: Option<String>,
+    /// Host email address to match, in full or in part.
     pub owner_email: Option<String>,
     /// Optional canonical user ID to query listings belonging strictly to a specific host.
     pub user_id: Option<Uuid>,
+    /// Structure types to include.
     pub listing_structure: Option<Vec<String>>,
+    /// Highest nightly rate to include.
     pub max_price: Option<Decimal>,
+    /// Currency to convert prices into.
     pub currency: Option<String>,
+    /// Page number, starting at 1.
     pub page: Option<u32>,
+    /// Results per page.
     pub per_page: Option<u32>,
     /// Only this host's listings (their public slug).
     pub host: Option<String>,
     /// Also return inactive listings. Never set this for pages that offer stays.
     pub include_inactive: bool,
+    /// Text matched against the listing's name, city or country.
+    pub q: Option<String>,
+    /// First night of the stay, as the guest gave it. The API validates it.
+    pub check_in: Option<String>,
+    /// Departure date of the stay, as the guest gave it. The API validates it.
+    pub check_out: Option<String>,
+    /// Party size, as the guest gave it. The API validates it.
+    pub guests: Option<String>,
 }
 
+/// A search the API refused, with a message that's safe to show the guest.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("Listing search refused: {code}")]
+pub struct ListingSearchRefusal {
+    /// The API's error code.
+    pub code: String,
+    /// The message to show.
+    pub message: String,
+}
+
+/// The refusal in an error response's body, if it has a code whose message is
+/// meant for guests. Anything else stays an ordinary error, so its text never
+/// reaches a page.
+fn search_refusal(body: &str) -> Option<ListingSearchRefusal> {
+    let body: serde_json::Value = serde_json::from_str(body).ok()?;
+    let code = body["code"].as_str()?;
+    let for_guests = matches!(
+        code,
+        "INVALID_STAY_DATES" | "INVALID_GUESTS" | "INVALID_SEARCH_TEXT"
+    ) || code.starts_with("CURRENCY_");
+    for_guests.then_some(ListingSearchRefusal {
+        code: code.to_string(),
+        message: body["message"].as_str()?.to_string(),
+    })
+}
+
+/// Searches listings through the configured API.
 pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingResponse>> {
-    let api_url = listing_api_url();
+    search_listings_at(
+        get_client(),
+        &listing_api_url(),
+        &listing_api_audience(),
+        params,
+    )
+    .await
+}
+
+/// Searches listings through a given client and address. A refusal the page
+/// should show comes back as a [`ListingSearchRefusal`] inside the error.
+pub async fn search_listings_at(
+    client: &AuthenticatedClient,
+    base_url: &str,
+    audience: &str,
+    params: ListingSearchParams,
+) -> Result<Vec<ListingResponse>> {
     let page = params.page.unwrap_or(1);
     let per_page = params.per_page.unwrap_or(20);
-    let base_url = format!("{}/api/v1/listings", api_url);
+    let base_url = format!("{base_url}/api/v1/listings");
     let mut url =
         reqwest::Url::parse(&base_url).context("Failed to parse listings API base URL")?;
 
@@ -65,17 +125,32 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
         if params.include_inactive {
             query.append_pair("include_inactive", "true");
         }
+        for (key, value) in [
+            ("q", params.q),
+            ("check_in", params.check_in),
+            ("check_out", params.check_out),
+            ("guests", params.guests),
+        ] {
+            if let Some(value) = value.filter(|v| !v.trim().is_empty()) {
+                query.append_pair(key, &value);
+            }
+        }
     }
 
-    let url_str = url.to_string();
-    let audience = listing_api_audience();
-    let res = get_client()
-        .get(&url_str, &audience)
+    let res = client
+        .get(url.as_str(), audience)
         .await
         .context("Failed to connect to listing service")?;
 
     if !res.status().is_success() {
-        bail!("Failed to fetch listings: {}", res.status());
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        if status.is_client_error()
+            && let Some(refusal) = search_refusal(&body)
+        {
+            return Err(refusal.into());
+        }
+        bail!("Failed to fetch listings: {status}");
     }
 
     res.json::<Vec<ListingResponse>>()
@@ -83,6 +158,7 @@ pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingR
         .context("Failed to deserialize listings response")
 }
 
+/// Fetches a listing by ID or slug, with prices in `currency` when given.
 pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<ListingDetails> {
     let api_url = listing_api_url();
     let mut url = format!("{}/api/v1/listings/{}", api_url, id);
@@ -105,6 +181,7 @@ pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<Listi
         .context("Failed to deserialize listing details")
 }
 
+/// Creates a listing.
 pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<ListingResponse> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -126,6 +203,7 @@ pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<Li
         .context("Failed to parse listing response")
 }
 
+/// Changes a listing.
 pub async fn update_listing(
     id: &str,
     req: &crate::models::UpdatedListingRequest,
@@ -150,6 +228,7 @@ pub async fn update_listing(
         .context("Failed to parse listing response")
 }
 
+/// Deletes a listing.
 pub async fn delete_listing(id: &str) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -169,6 +248,7 @@ pub async fn delete_listing(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// A listing's price overrides.
 pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -188,6 +268,7 @@ pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>>
         .context("Failed to deserialize price overrides")
 }
 
+/// Adds a price override to a listing.
 pub async fn create_price_override(
     listing_id: Uuid,
     req: &crate::models::CreatePriceOverrideRequest,
@@ -235,6 +316,7 @@ pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid) -> Result<()
     Ok(())
 }
 
+/// Removes a price override from a listing.
 pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
