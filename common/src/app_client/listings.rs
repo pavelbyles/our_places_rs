@@ -7,16 +7,24 @@ use anyhow::{Context, Result, bail};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+/// What to search listings for. Absent fields don't filter.
 #[derive(Debug, Default, Clone)]
 pub struct ListingSearchParams {
+    /// Text the listing name must contain.
     pub name: Option<String>,
+    /// Host email address to match, in full or in part.
     pub owner_email: Option<String>,
     /// Optional canonical user ID to query listings belonging strictly to a specific host.
     pub user_id: Option<Uuid>,
+    /// Structure types to include.
     pub listing_structure: Option<Vec<String>>,
+    /// Highest nightly rate to include.
     pub max_price: Option<Decimal>,
+    /// Currency to convert prices into.
     pub currency: Option<String>,
+    /// Page number, starting at 1.
     pub page: Option<u32>,
+    /// Results per page.
     pub per_page: Option<u32>,
     /// Only this host's listings (their public slug).
     pub host: Option<String>,
@@ -58,6 +66,7 @@ fn search_refusal(body: &str) -> Option<ListingSearchRefusal> {
     })
 }
 
+/// Searches listings through the configured API.
 pub async fn search_listings(params: ListingSearchParams) -> Result<Vec<ListingResponse>> {
     search_listings_at(
         get_client(),
@@ -149,6 +158,7 @@ pub async fn search_listings_at(
         .context("Failed to deserialize listings response")
 }
 
+/// Fetches a listing by ID or slug, with prices in `currency` when given.
 pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<ListingDetails> {
     let api_url = listing_api_url();
     let mut url = format!("{}/api/v1/listings/{}", api_url, id);
@@ -171,6 +181,7 @@ pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<Listi
         .context("Failed to deserialize listing details")
 }
 
+/// Creates a listing.
 pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<ListingResponse> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -192,6 +203,7 @@ pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<Li
         .context("Failed to parse listing response")
 }
 
+/// Changes a listing.
 pub async fn update_listing(
     id: &str,
     req: &crate::models::UpdatedListingRequest,
@@ -216,6 +228,7 @@ pub async fn update_listing(
         .context("Failed to parse listing response")
 }
 
+/// Deletes a listing.
 pub async fn delete_listing(id: &str) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -235,6 +248,7 @@ pub async fn delete_listing(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// A listing's price overrides.
 pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -254,6 +268,7 @@ pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>>
         .context("Failed to deserialize price overrides")
 }
 
+/// Adds a price override to a listing.
 pub async fn create_price_override(
     listing_id: Uuid,
     req: &crate::models::CreatePriceOverrideRequest,
@@ -301,6 +316,7 @@ pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid) -> Result<()
     Ok(())
 }
 
+/// Removes a price override from a listing.
 pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();

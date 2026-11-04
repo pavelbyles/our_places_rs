@@ -4,6 +4,7 @@ use super::{booking_api_audience, booking_api_url, get_client};
 use anyhow::{Context, Result, bail};
 use uuid::Uuid;
 
+/// A page of a host's payout ledger.
 pub async fn get_host_payout_ledger(
     filter: &crate::payout::PayoutFilter,
     user_jwt: &str,
@@ -57,6 +58,7 @@ pub async fn get_host_payout_ledger(
         .context("Failed to parse payout ledger response")
 }
 
+/// A host's payout totals.
 pub async fn get_host_payout_summary(
     filter: &crate::payout::PayoutFilter,
     user_jwt: &str,
@@ -104,6 +106,7 @@ pub async fn get_host_payout_summary(
         .context("Failed to parse payout summary response")
 }
 
+/// Changes a payout's status, as an admin.
 pub async fn update_admin_payout_status(
     id: Uuid,
     req: &crate::payout::UpdatePayoutStatusRequest,

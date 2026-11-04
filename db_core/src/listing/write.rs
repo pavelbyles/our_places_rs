@@ -97,6 +97,7 @@ pub async fn create_listing_with_active_currency(
     Ok(listing)
 }
 
+/// Changes a listing.
 pub async fn update_listing(
     pool: &PgPool,
     id: Uuid,
@@ -108,6 +109,7 @@ pub async fn update_listing(
     Ok(updated)
 }
 
+/// Changes a listing on an open connection, under its row lock.
 pub async fn update_listing_with_conn(
     tx: &mut sqlx::PgConnection,
     id: Uuid,

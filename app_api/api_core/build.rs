@@ -1,3 +1,4 @@
+//! Records build and git details for the actuator info endpoint.
 use std::process::Command;
 
 fn main() {

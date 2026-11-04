@@ -4,14 +4,19 @@ use serde::{Deserialize, Serialize};
 /// Standard statutory fallback country code (Jamaica: 15% GCT).
 pub const DEFAULT_TAX_COUNTRY: &str = "JM";
 
+/// A country the platform operates in, with its tax rate.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SupportedCountry {
+    /// ISO 3166-1 alpha-2 code.
     pub iso2char: &'static str,
+    /// Country name.
     pub name: &'static str,
+    /// Statutory tax rate as a fraction.
     pub tax_rate: Decimal,
 }
 
 impl SupportedCountry {
+    /// Every supported country.
     pub const LIST: &'static [SupportedCountry] = &[
         SupportedCountry {
             iso2char: "JM",

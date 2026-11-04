@@ -49,46 +49,70 @@ impl std::str::FromStr for UserRole {
     }
 }
 
+/// Fields for creating a guest profile.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct NewBookerProfile {
+    /// Emergency contacts, as JSON.
     pub emergency_contacts: Option<serde_json::Value>,
+    /// Booking preferences, as JSON.
     pub booking_preferences: Option<serde_json::Value>,
+    /// Loyalty details, as JSON.
     pub loyalty: Option<serde_json::Value>,
 }
 
+/// Fields for creating a host profile.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct NewHostProfile {
+    /// Host verification status.
     pub verified_status: Option<String>,
+    /// How the host is paid, as JSON.
     pub payout_details: Option<serde_json::Value>,
+    /// Bio shown to guests.
     pub description: Option<String>,
 }
 
+/// Request to create a user.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
 pub struct NewUserRequest {
+    /// Email address.
     #[validate(email)]
     pub email: String,
+    /// Plain-text password. Never stored or logged.
     #[validate(length(min = 8))]
     pub password: String,
+    /// First name.
     #[validate(length(min = 1))]
     pub first_name: String,
+    /// Last name.
     #[validate(length(min = 1))]
     pub last_name: String,
+    /// Phone number, if given.
     pub phone_number: Option<String>,
+    /// Whether the account can be used.
     #[serde(default)]
     pub is_active: bool,
+    /// Whether the email address has been verified.
     #[serde(default)]
     pub is_verified: bool,
+    /// Free-form attributes, as JSON.
     pub attributes: Option<serde_json::Value>,
+    /// Role names to assign.
     pub roles: Option<Vec<String>>,
+    /// Guest profile to create with the account.
     pub booker_profile: Option<NewBookerProfile>,
+    /// Host profile to create with the account.
     pub host_profile: Option<NewHostProfile>,
+    /// Preferred currency code. Defaults when omitted.
     pub default_currency: Option<String>,
 }
 
+/// Request to sign in.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
 pub struct LoginRequest {
+    /// Email address.
     #[validate(email)]
     pub email: String,
+    /// Plain-text password. Never stored or logged.
     #[validate(length(min = 1))]
     pub password: String,
 }
@@ -385,16 +409,25 @@ fn default_listing_active() -> bool {
     true
 }
 
+/// What to search listings for. Absent fields don't filter.
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingFilter {
+    /// Text the listing name must contain.
     pub name: Option<String>,
+    /// Text the country must contain.
     pub country: Option<String>,
+    /// Lowest nightly rate to include.
     pub min_price: Option<Decimal>,
+    /// Highest nightly rate to include.
     pub max_price: Option<Decimal>,
+    /// Structure types to include.
     #[serde(default)]
     pub structure_type: Vec<String>,
+    /// Host email address to match, in full or in part.
     pub owner: Option<String>,
+    /// Image size to return.
     pub resolution: Option<String>,
+    /// Currency to convert prices into.
     pub currency: Option<String>,
     /// Optional owner user identifier filter for exact host scoping.
     #[serde(default)]
@@ -420,18 +453,29 @@ pub struct ListingFilter {
     pub q: Option<String>,
 }
 
+/// Query parameters of the listing search.
 #[derive(Debug, Deserialize, Serialize, IntoParams, ToSchema, Clone, Default)]
 pub struct ListingQueryParams {
+    /// Page number, starting at 1.
     pub page: Option<u32>,
+    /// Results per page.
     pub per_page: Option<u32>,
+    /// Text the listing name must contain.
     pub name: Option<String>,
+    /// Text the country must contain.
     pub country: Option<String>,
+    /// Lowest nightly rate to include.
     pub min_price: Option<Decimal>,
+    /// Highest nightly rate to include.
     pub max_price: Option<Decimal>,
+    /// Structure types to include. Read from the raw query string.
     #[serde(default, skip_deserializing)]
     pub structure_type: Vec<String>,
+    /// Host email address to match, in full or in part.
     pub owner: Option<String>,
+    /// Image size to return.
     pub resolution: Option<String>,
+    /// Currency to convert prices into.
     pub currency: Option<String>,
     /// Optional owner user identifier query parameter for host listings scoping.
     pub user_id: Option<Uuid>,
@@ -451,49 +495,77 @@ pub struct ListingQueryParams {
     pub guests: Option<String>,
 }
 
+/// A user, as the API returns one.
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq)]
 pub struct UserResponse {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Email address.
     pub email: String,
+    /// First name.
     pub first_name: String,
+    /// Last name.
     pub last_name: String,
+    /// Phone number, if given.
     pub phone_number: Option<String>,
+    /// Whether the account can be used.
     pub is_active: bool,
+    /// Whether the email address has been verified.
     pub is_verified: bool,
+    /// Pending email verification code.
     pub verification_code: Option<String>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
+    /// Free-form attributes, as JSON.
     pub attributes: serde_json::Value,
+    /// Role names the user holds.
     pub roles: Vec<String>,
+    /// Preferred currency code.
     pub default_currency: String,
+    /// When this was soft-deleted, if it was.
     pub deleted_at: Option<DateTime<Utc>>,
     /// Unique public handle, e.g. `jane-brown`.
     #[serde(default)]
     pub slug: String,
 }
 
+/// XML wrapper for a list of users.
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct UsersWrapper {
+    /// The users.
     pub user: Vec<UserResponse>,
 }
 
+/// Request for signed upload URLs.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct ImagePresignRequest {
+    /// The images to upload.
     pub images: Vec<PendingImageMetadata>,
 }
 
+/// An image a client is about to upload.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct PendingImageMetadata {
+    /// The client's own ID for the file, used to match responses to uploads.
     pub client_file_id: String, // Added to map the file UI-side
+    /// MIME type.
     pub content_type: String,
+    /// File size in bytes.
     pub size_bytes: u64,
+    /// Position among the listing's photos.
     pub display_order: i32,
 }
 
+/// Where to upload one image.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct ImagePresignResponse {
+    /// The client's own ID for the file, used to match responses to uploads.
     pub client_file_id: String, // Mirrored back to the client
+    /// ID of the new image record.
     pub file_id: uuid::Uuid,
+    /// V4 signed URL the client uploads to directly.
     pub upload_url: String, // The GCS v4 Signed URL
     /// Extra headers the upload must send because they are part of the
     /// signature (the trace context for the image worker).
@@ -641,19 +713,23 @@ pub struct TransferBookingRequest {
     pub guest_id: Uuid,
 }
 
+/// Request to create a listing.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone)]
 pub struct NewListingRequest {
     /// Whether guests can see and book the listing. Active if omitted.
     #[serde(default = "default_listing_active")]
     pub is_active: bool,
 
+    /// Display name.
     #[schema(value_type = String, example = "Zen Loft")]
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
 
+    /// The host who owns the listing.
     #[schema(value_type = String, format = "uuid")]
     pub user_id: Uuid,
 
+    /// Longer description.
     #[serde(default)]
     #[schema(value_type = String, example = "A zen place to be")]
     #[validate(length(
@@ -662,79 +738,97 @@ pub struct NewListingRequest {
     ))]
     pub description: Option<String>,
 
+    /// Structure type name, such as `Villa`.
     #[schema(value_type = String, example = "Apartment")]
     pub listing_structure: String,
 
+    /// Country.
     #[serde(default)]
     #[schema(value_type = String, example = "Jamaica")]
     #[validate(length(min = 1, message = "Country cannot be empty"))]
     pub country: String,
 
+    /// Base nightly rate in `base_currency`.
     #[serde(default)]
     #[schema(value_type = String, example = "150.00")]
     pub price_per_night: Option<Decimal>,
 
+    /// Discount percentage for stays of 7 nights or more.
     #[serde(default)]
     #[validate(custom(function = "validate_discount_percentage"))]
     pub weekly_discount_percentage: Option<Decimal>,
 
+    /// Discount percentage for stays of 28 nights or more.
     #[serde(default)]
     #[validate(custom(function = "validate_discount_percentage"))]
     pub monthly_discount_percentage: Option<Decimal>,
 
     // --- NEW: Capacity & Room Breakdown ---
+    /// Most guests allowed.
     #[schema(example = 2)]
     #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
     pub max_guests: i32,
 
+    /// Number of bedrooms.
     #[schema(example = 1)]
     #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
     pub bedrooms: i32,
 
+    /// Number of beds.
     #[schema(example = 1)]
     #[validate(range(min = 0, message = "Beds cannot be negative"))]
     pub beds: i32,
 
+    /// Number of full bathrooms.
     #[schema(example = 1)]
     #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
     pub full_bathrooms: i32,
 
+    /// Number of half bathrooms.
     #[serde(default)]
     #[schema(example = 0)]
     #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
     pub half_bathrooms: i32,
 
     // --- NEW: Dimensions & Location ---
+    /// Floor area in square meters, if known.
     #[serde(default)]
     #[schema(example = 65)]
     pub square_meters: Option<i32>,
 
+    /// Latitude, if known.
     #[serde(default)]
     #[schema(example = 18.2206)]
     pub latitude: Option<f64>,
 
+    /// Longitude, if known.
     #[serde(default)]
     #[schema(example = -77.7990)]
     pub longitude: Option<f64>,
 
     // --- NEW: Dynamic Property Definitions (JSONB) ---
+    /// Amenities and other details, as JSON.
     #[serde(default)]
     #[schema(value_type = Object)]
     pub listing_details: Option<serde_json::Value>,
 
+    /// City, if known.
     #[serde(default)]
     #[schema(value_type = String, example = "Kingston")]
     pub city: Option<String>,
 
+    /// Currency the listing is priced in.
     #[serde(default = "default_base_currency")]
     #[schema(value_type = String, example = "USD")]
     pub base_currency: String,
 
+    /// Minimum stay in nights.
     #[serde(default = "default_minimum_stay")]
     #[schema(example = 1)]
     #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
     pub minimum_stay: i32,
 
+    /// Days to keep free between bookings, from 0 to 365.
     #[serde(default = "default_days_between_bookings")]
     #[schema(example = 0)]
     #[validate(range(
@@ -744,15 +838,18 @@ pub struct NewListingRequest {
     ))]
     pub days_between_bookings: i32,
 
+    /// Platform commission on the host's gross, as a fraction such as `0.1000`.
     #[serde(default)]
     #[schema(value_type = String, example = "0.1000")]
     pub commission_pct: Option<Decimal>,
 
+    /// One-time cleaning fee.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "50.00")]
     #[validate(custom(function = "validate_fee"))]
     pub cleaning_fee: Option<Decimal>,
 
+    /// Refundable damage deposit.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "200.00")]
     #[validate(custom(function = "validate_fee"))]
@@ -797,25 +894,31 @@ pub fn default_guests_included() -> i32 {
     1
 }
 
+/// The minimum stay when the caller leaves it out.
 pub fn default_minimum_stay() -> i32 {
     1
 }
 
+/// The gap between bookings when the caller leaves it out.
 pub fn default_days_between_bookings() -> i32 {
     0
 }
 
+/// The base currency when the caller leaves it out.
 pub fn default_base_currency() -> String {
     "USD".to_string()
 }
 
+/// Request to change a listing. Absent fields stay as they are.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, Default)]
 pub struct UpdatedListingRequest {
+    /// Updated display name.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "Zen Loft")]
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: Option<String>,
 
+    /// Updated longer description.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "A zen place to be")]
     #[validate(length(
@@ -824,81 +927,99 @@ pub struct UpdatedListingRequest {
     ))]
     pub description: Option<String>,
 
+    /// Updated structure type name, such as `Villa`.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "Apartment")]
     pub listing_structure: Option<String>,
 
+    /// Updated country.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "Jamaica")]
     #[validate(length(min = 1, message = "Country cannot be empty"))]
     pub country: Option<String>,
 
+    /// Updated currency the listing is priced in.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "USD")]
     pub base_currency: Option<String>,
 
+    /// Updated base nightly rate in `base_currency`.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "150.00")]
     pub price_per_night: Option<Decimal>,
 
+    /// Updated discount percentage for stays of 7 nights or more.
     #[serde(default)]
     #[validate(custom(function = "validate_discount_percentage"))]
     pub weekly_discount_percentage: Option<Decimal>,
 
+    /// Updated discount percentage for stays of 28 nights or more.
     #[serde(default)]
     #[validate(custom(function = "validate_discount_percentage"))]
     pub monthly_discount_percentage: Option<Decimal>,
 
+    /// Updated most guests allowed.
     #[serde(default)]
     #[schema(example = 2)]
     #[validate(range(min = 1, message = "Must allow at least 1 guest"))]
     pub max_guests: Option<i32>,
 
+    /// Updated number of bedrooms.
     #[serde(default)]
     #[schema(example = 1)]
     #[validate(range(min = 0, message = "Bedrooms cannot be negative"))]
     pub bedrooms: Option<i32>,
 
+    /// Updated number of beds.
     #[serde(default)]
     #[schema(example = 1)]
     #[validate(range(min = 0, message = "Beds cannot be negative"))]
     pub beds: Option<i32>,
 
+    /// Updated number of full bathrooms.
     #[serde(default)]
     #[schema(example = 1)]
     #[validate(range(min = 0, message = "Bathrooms cannot be negative"))]
     pub full_bathrooms: Option<i32>,
 
+    /// Updated number of half bathrooms.
     #[serde(default)]
     #[schema(example = 0)]
     #[validate(range(min = 0, message = "Half bathrooms cannot be negative"))]
     pub half_bathrooms: Option<i32>,
 
+    /// Updated floor area in square meters, if known.
     #[serde(default)]
     #[schema(example = 65)]
     pub square_meters: Option<i32>,
 
+    /// Updated latitude, if known.
     #[serde(default)]
     #[schema(example = 18.2206)]
     pub latitude: Option<f64>,
 
+    /// Updated longitude, if known.
     #[serde(default)]
     #[schema(example = -77.7990)]
     pub longitude: Option<f64>,
 
+    /// Updated city, if known.
     #[serde(default)]
     #[schema(value_type = String, example = "Kingston")]
     pub city: Option<String>,
 
+    /// Updated amenities and other details, as JSON.
     #[serde(default)]
     #[schema(value_type = Object)]
     pub listing_details: Option<serde_json::Value>,
 
+    /// Updated minimum stay in nights.
     #[serde(default)]
     #[schema(example = 1)]
     #[validate(range(min = 1, message = "Minimum stay must be at least 1 night"))]
     pub minimum_stay: Option<i32>,
 
+    /// Updated days to keep free between bookings, from 0 to 365.
     #[serde(default)]
     #[schema(example = 0)]
     #[validate(range(
@@ -908,18 +1029,22 @@ pub struct UpdatedListingRequest {
     ))]
     pub days_between_bookings: Option<i32>,
 
+    /// Updated whether guests can see and book it.
     #[serde(default)]
     pub is_active: Option<bool>,
 
+    /// Updated platform commission on the host's gross, as a fraction such as `0.1000`.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "0.1000")]
     pub commission_pct: Option<Decimal>,
 
+    /// Updated one-time cleaning fee.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "50.00")]
     #[validate(custom(function = "validate_fee"))]
     pub cleaning_fee: Option<Decimal>,
 
+    /// Updated refundable damage deposit.
     #[serde(default)]
     #[schema(value_type = Option<String>, example = "200.00")]
     #[validate(custom(function = "validate_fee"))]
@@ -938,66 +1063,103 @@ pub struct UpdatedListingRequest {
     pub extra_guest_fee: Option<Decimal>,
 }
 
+/// A nightly rate for a date range, replacing the base rate.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct PriceOverride {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The listing this belongs to.
     pub listing_id: Uuid,
+    /// First night the override covers.
     pub start_date: NaiveDate,
+    /// Night after the last one the override covers.
     pub end_date: NaiveDate,
+    /// Nightly rate during the override.
     pub nightly_rate: Decimal,
+    /// Minimum stay for a stay touching the override.
     pub min_nights: i32,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
 }
 
+/// Request to add a price override.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
 pub struct CreatePriceOverrideRequest {
+    /// First night the override covers.
     pub start_date: NaiveDate,
+    /// Night after the last one the override covers.
     pub end_date: NaiveDate,
+    /// Nightly rate during the override.
     pub nightly_rate: Decimal,
+    /// Minimum stay for a stay touching the override.
     #[serde(default = "default_minimum_stay")]
     pub min_nights: i32,
 }
 
+/// Request to change a price override. Absent fields stay as they are.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
 pub struct UpdatePriceOverrideRequest {
+    /// Updated first night the override covers.
     pub start_date: Option<NaiveDate>,
+    /// Updated night after the last one the override covers.
     pub end_date: Option<NaiveDate>,
+    /// Updated nightly rate during the override.
     pub nightly_rate: Option<Decimal>,
+    /// Updated minimum stay for a stay touching the override.
     pub min_nights: Option<i32>,
 }
 
+/// The rate for one night of a stay.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct NightlyRateBreakdown {
+    /// The night.
     pub date: NaiveDate,
+    /// Rate for that night.
     pub rate: Decimal,
+    /// Whether a price override set the rate.
     pub is_override: bool,
 }
 
+/// A stay's accommodation price, before fees and tax.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct DynamicPricingQuote {
+    /// The rate for each night.
     pub nightly_breakdown: Vec<NightlyRateBreakdown>,
+    /// Sum of the nightly rates.
     pub subtotal: Decimal,
+    /// Average rate per night.
     pub effective_daily_rate: Decimal,
+    /// Minimum stay that applies to these dates.
     pub required_min_nights: i32,
 }
 
+/// Request to submit a review.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
 pub struct NewReviewRequest {
+    /// Single-use review token from the guest's email.
     pub token: String,
+    /// Cleanliness rating, from 1 to 5.
     #[validate(range(min = 1, max = 5))]
     pub cleanliness_rating: i32,
+    /// Accuracy rating, from 1 to 5.
     #[validate(range(min = 1, max = 5))]
     pub accuracy_rating: i32,
+    /// Location rating, from 1 to 5.
     #[validate(range(min = 1, max = 5))]
     pub location_rating: i32,
+    /// Value rating, from 1 to 5.
     #[validate(range(min = 1, max = 5))]
     pub value_rating: i32,
+    /// Review text shown publicly.
     pub public_review_text: Option<String>,
+    /// Feedback only the host sees.
     pub private_host_feedback: Option<String>,
 }
 
 impl NewReviewRequest {
+    /// The average of the four category ratings, to 2 decimal places.
     pub fn calculate_overall_rating(&self) -> Decimal {
         let sum = self.cleanliness_rating
             + self.accuracy_rating
@@ -1008,85 +1170,142 @@ impl NewReviewRequest {
     }
 }
 
+/// Request to reply to a review.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, ToSchema, PartialEq, Eq)]
 pub struct HostReplyRequest {
+    /// The reply to show under the review.
     #[validate(length(min = 1, max = 2000))]
     pub reply_text: String,
 }
 
+/// What a review token is for, and whether it still works.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct ReviewTokenInfoResponse {
+    /// Whether the token can still be used.
     pub is_valid: bool,
+    /// Name of the listing to review.
     pub listing_name: String,
+    /// First name of the guest.
     pub guest_first_name: String,
+    /// First night of the stay.
     pub check_in: NaiveDate,
+    /// Departure date of the stay.
     pub check_out: NaiveDate,
+    /// When this stops being valid.
     pub expires_at: DateTime<Utc>,
+    /// Why the token can't be used, if it can't.
     pub error_code: Option<String>,
 }
 
+/// A listing's review ratings.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct ListingRatingSummary {
+    /// Average overall rating.
     pub overall_rating: Option<f64>,
+    /// Average cleanliness rating.
     pub cleanliness_rating: Option<f64>,
+    /// Average accuracy rating.
     pub accuracy_rating: Option<f64>,
+    /// Average location rating.
     pub location_rating: Option<f64>,
+    /// Average value rating.
     pub value_rating: Option<f64>,
+    /// Number of reviews.
     pub review_count: i32,
+    /// Number of reviews at each star rating.
     pub rating_distribution: std::collections::HashMap<i32, i32>,
 }
 
+/// A review, as guests see it.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct ReviewResponse {
+    /// Unique identifier.
     pub id: Uuid,
+    /// First name of the guest.
     pub guest_first_name: String,
+    /// Cleanliness rating, from 1 to 5.
     pub cleanliness_rating: i32,
+    /// Accuracy rating, from 1 to 5.
     pub accuracy_rating: i32,
+    /// Location rating, from 1 to 5.
     pub location_rating: i32,
+    /// Value rating, from 1 to 5.
     pub value_rating: i32,
+    /// Average of the four category ratings.
     pub overall_rating: f64,
+    /// Review text shown publicly.
     pub public_review_text: Option<String>,
+    /// The host's public reply, if any.
     pub host_reply_text: Option<String>,
+    /// When the host replied, if they have.
     pub host_replied_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
 }
 
+/// Whether a guest can review a stay.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct BookingReviewEligibility {
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// Whether the guest can review this stay now.
     pub is_eligible: bool,
+    /// The review token, when they can.
     pub token: Option<String>,
+    /// Whether they already have.
     pub has_reviewed: bool,
+    /// Days left to review, while the window is open.
     pub days_remaining: Option<i64>,
+    /// Explanation to show the guest.
     pub status_message: String,
 }
 
+/// Request to create a session.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct CreateSessionRequest {
+    /// Hash of the session token. The raw token is never stored.
     pub token_hash: String,
+    /// The signed-in user.
     pub user_id: Uuid,
+    /// Email address of the user.
     pub email: String,
+    /// Display name of the user.
     pub name: String,
+    /// Role the session was signed in as.
     pub role: String,
+    /// Which portal the session belongs to, such as `guest`.
     pub namespace: String,
+    /// How long the session lasts, in seconds.
     pub ttl_seconds: i64,
 }
 
+/// A session, as the API returns one.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct SessionResponse {
+    /// Hash of the session token. The raw token is never stored.
     pub token_hash: String,
+    /// The signed-in user.
     pub user_id: Uuid,
+    /// Email address of the user.
     pub email: String,
+    /// Display name of the user.
     pub name: String,
+    /// Role the session was signed in as.
     pub role: String,
+    /// Which portal the session belongs to, such as `guest`.
     pub namespace: String,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When the session was last used.
     pub last_accessed_at: DateTime<Utc>,
+    /// When the session expires, as a Unix timestamp in seconds.
     pub expires_at: i64,
 }
 
+/// Request to touch a session.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct RefreshSessionRequest {
+    /// New length of the session in seconds. Keeps the current expiry when omitted.
     pub ttl_seconds: Option<i64>,
 }
 
@@ -1130,8 +1349,10 @@ impl std::str::FromStr for MessageSenderRole {
     }
 }
 
+/// Request to send a booking message.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema, Clone, PartialEq)]
 pub struct CreateBookingMessageRequest {
+    /// The message to send.
     #[validate(length(
         min = 1,
         max = 2000,
@@ -1140,26 +1361,40 @@ pub struct CreateBookingMessageRequest {
     pub message_text: String,
 }
 
+/// A message about a booking.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct BookingMessageResponse {
+    /// Unique identifier.
     pub id: Uuid,
+    /// The booking this belongs to.
     pub booking_id: Uuid,
+    /// The user who sent the message.
     pub sender_id: Uuid,
+    /// Role the sender wrote as.
     pub sender_role: MessageSenderRole,
+    /// Display name of the sender.
     pub sender_name: String,
+    /// The message.
     pub message_text: String,
+    /// When the message was read, if it has been.
     pub read_at: Option<DateTime<Utc>>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
 }
 
+/// A booking's message thread.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct BookingMessagesWrapper {
+    /// The messages in the thread.
     pub messages: Vec<BookingMessageResponse>,
+    /// Messages the caller hasn't read.
     pub unread_count: i64,
 }
 
+/// Result of marking messages as read.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
 pub struct MarkMessagesReadResponse {
+    /// Messages newly marked as read.
     pub updated_count: u64,
 }
 

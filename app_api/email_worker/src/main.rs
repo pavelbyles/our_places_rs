@@ -1,11 +1,15 @@
+//! Email worker: delivers queued emails on Pub/Sub events.
 use anyhow::Context;
 use api_core::{settings, startup::run, sys};
 use db_core::{connection::create_connection_pool, run_migrations};
 use std::net::TcpListener;
 
 mod apis;
+/// Worker configuration.
 pub mod config;
+/// Turns Pub/Sub events into sent emails.
 pub mod processor;
+/// Email delivery providers.
 pub mod provider;
 #[cfg(test)]
 mod tests;

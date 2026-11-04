@@ -1,3 +1,4 @@
+//! Seeds the database with an initial admin user.
 use anyhow::{Context, Result, bail};
 use sqlx::postgres::PgPoolOptions;
 use std::env;

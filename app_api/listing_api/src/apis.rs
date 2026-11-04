@@ -399,8 +399,10 @@ pub async fn get_listings(
     ))
 }
 
+/// Query parameter choosing a display currency.
 #[derive(Deserialize, Debug)]
 pub struct CurrencyQuery {
+    /// Currency to show amounts in.
     pub currency: Option<String>,
 }
 
@@ -676,8 +678,10 @@ async fn update_listing(
     ))
 }
 
+/// Query parameters of listing deletion.
 #[derive(Deserialize, IntoParams, Debug)]
 pub struct DeleteListingParams {
+    /// Delete permanently instead of soft-deleting, where enabled.
     pub hard_delete: Option<bool>,
 }
 
@@ -860,6 +864,7 @@ async fn delete_listing_image(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Registers the listing routes.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(

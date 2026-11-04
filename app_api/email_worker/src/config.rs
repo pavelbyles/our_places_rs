@@ -1,7 +1,11 @@
+/// Email worker settings.
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
+    /// Secret the Pub/Sub push must send, if one is set.
     pub pubsub_secret_token: Option<String>,
+    /// Delivery attempts allowed for an email.
     pub max_retries: i32,
+    /// Whether to use the mock provider rather than send real email.
     pub use_mock_provider: bool,
 }
 

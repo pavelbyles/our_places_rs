@@ -1,3 +1,4 @@
+//! Image worker: resizes uploaded listing photos on Pub/Sub events.
 use anyhow::Context;
 use api_core::{settings, startup::run, sys};
 use db_core::{connection::create_connection_pool, run_migrations};

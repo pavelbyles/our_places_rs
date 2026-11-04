@@ -23,6 +23,7 @@ pub use write::{
     update_listing_with_conn,
 };
 
+/// A URL handle from a listing's title.
 pub fn generate_listing_slug_native(title: &str) -> String {
     const MAX_SLUG_LEN: usize = 60;
     let mut slug = String::with_capacity(MAX_SLUG_LEN);

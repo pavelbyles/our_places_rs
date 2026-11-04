@@ -6,8 +6,11 @@ use serde::Deserialize;
 /// Tax compliance settings identifying the Merchant of Record.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TaxSettings {
+    /// Supplier's tax registration number (TRN) with Tax Administration Jamaica.
     pub taj_supplier_trn: String,
+    /// Legal name of the supplier.
     pub supplier_name: String,
+    /// Registered address of the supplier.
     pub supplier_address: String,
 }
 
@@ -66,6 +69,7 @@ impl TaxSettings {
 /// Typed settings for internal cron job authentication.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CronSettings {
+    /// Shared secret that cron requests must send.
     pub cron_secret: String,
 }
 

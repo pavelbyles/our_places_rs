@@ -5,19 +5,28 @@ use serde::Deserialize;
 use std::fmt;
 
 // Overarching settings model
+/// A service's configuration.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
+    /// Where the service listens.
     pub server: Server,
+    /// Database connection.
     pub database: DatabaseSettings,
+    /// Logging.
     pub log: Log,
+    /// Environment it runs in.
     pub env: Env,
+    /// Application behaviour.
     pub application: Application,
+    /// Feature switches.
     pub feature_flags: FeatureFlags,
 }
 
 // Feature flags model
+/// Feature switches.
 #[derive(Debug, Deserialize, Clone)]
 pub struct FeatureFlags {
+    /// Whether listings can be permanently deleted.
     pub enable_hard_deletes: bool,
 }
 
@@ -25,8 +34,10 @@ pub struct FeatureFlags {
 pub const DEFAULT_PENDING_HOLD_MINUTES: i32 = 120;
 
 // Application settings model
+/// Application behaviour settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Application {
+    /// Attempts allowed when generating a booking's confirmation code.
     pub max_attempts: u32,
     /// How long a new `pending` booking holds its dates, in minutes. Set via
     /// `[application] pending_hold_minutes` or `EA__APPLICATION__PENDING_HOLD_MINUTES`.
@@ -93,36 +104,54 @@ impl Application {
 }
 
 // Server model
+/// Where the service listens.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Server {
+    /// Address to bind.
     pub host: String,
+    /// Port to bind.
     pub port: u16,
 }
 
 // Database settings model
+/// Database connection settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct DatabaseSettings {
+    /// Database user.
     pub username: String,
+    /// Database password.
     pub password: String,
+    /// Database port.
     pub port: u16,
+    /// Database host.
     pub host: String,
+    /// Database name.
     pub database_name: String,
+    /// Whether to connect through the Cloud SQL socket.
     pub cloud: bool,
+    /// Cloud SQL instance, when `cloud` is set.
     pub instance_name: String,
+    /// Full connection URL, if given.
     pub database_url: Option<String>,
 }
 
 // Log level model
+/// Logging settings.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Log {
+    /// Log level filter.
     pub level: String,
 }
 
 // Environment model
+/// The environment a service runs in.
 #[derive(Clone, Debug, Deserialize)]
 pub enum Env {
+    /// A developer's machine.
     Development,
+    /// Automated tests.
     Testing,
+    /// The live service.
     Production,
 }
 

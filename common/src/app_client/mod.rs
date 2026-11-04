@@ -42,6 +42,7 @@ pub fn currency_cache_ttl() -> std::time::Duration {
 }
 
 // Env vars for API URLs
+/// Base URL of the listing API.
 pub fn listing_api_url() -> String {
     env::var("LISTING_API_URL")
         .unwrap_or_else(|_| "http://localhost:8082".to_string())
@@ -49,6 +50,7 @@ pub fn listing_api_url() -> String {
         .to_string()
 }
 
+/// Base URL of the booking API.
 pub fn booking_api_url() -> String {
     env::var("BOOKING_API_URL")
         .unwrap_or_else(|_| "http://localhost:8081".to_string())
@@ -56,6 +58,7 @@ pub fn booking_api_url() -> String {
         .to_string()
 }
 
+/// Base URL of the user API.
 pub fn user_api_url() -> String {
     env::var("USER_API_URL")
         .unwrap_or_else(|_| "http://localhost:8083".to_string())
@@ -63,6 +66,7 @@ pub fn user_api_url() -> String {
         .to_string()
 }
 
+/// Audience for tokens sent to the listing API. Defaults to its URL.
 pub fn listing_api_audience() -> String {
     env::var("LISTING_API_AUDIENCE")
         .unwrap_or_else(|_| listing_api_url())
@@ -70,6 +74,7 @@ pub fn listing_api_audience() -> String {
         .to_string()
 }
 
+/// Audience for tokens sent to the booking API. Defaults to its URL.
 pub fn booking_api_audience() -> String {
     env::var("BOOKING_API_AUDIENCE")
         .unwrap_or_else(|_| booking_api_url())
@@ -77,6 +82,7 @@ pub fn booking_api_audience() -> String {
         .to_string()
 }
 
+/// Audience for tokens sent to the user API. Defaults to its URL.
 pub fn user_api_audience() -> String {
     env::var("USER_API_AUDIENCE")
         .unwrap_or_else(|_| user_api_url())

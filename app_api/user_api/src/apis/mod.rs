@@ -24,71 +24,108 @@ mod profile;
 mod registration;
 mod sessions;
 
+/// Query parameter limiting sessions to one portal.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SessionNamespaceQuery {
+    /// Only sessions in this portal.
     pub namespace: Option<String>,
 }
 
+/// Query parameters of the user list.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct UserFilter {
+    /// Text to match against users.
     pub search: Option<String>,
+    /// Whether to list soft-deleted users rather than active ones.
     pub is_deleted: Option<bool>,
+    /// Whether to include active and soft-deleted users alike. Overrides `is_deleted`.
     pub all: Option<bool>,
 }
 
+/// Request to start a password change.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct PasswordChangeRequest {
+    /// Email address of the account.
     #[validate(email)]
     pub email: String,
+    /// Current password, to confirm it's the owner.
     pub current_password: String,
 }
 
+/// Request to finish a password change.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct PasswordChangeConfirm {
+    /// Email address of the account.
     #[validate(email)]
     pub email: String,
+    /// Verification code sent by email.
     pub code: String,
+    /// The new password.
     pub new_password: String,
 }
 
+/// Request to change an email address.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct EmailChangeRequest {
+    /// Current email address.
     #[validate(email)]
     pub email: String,
+    /// Current password, to confirm it's the owner.
     pub current_password: String,
+    /// The new email address.
     #[validate(email)]
     pub new_email: String,
 }
 
+/// Request to deactivate an account.
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct DeactivateRequest {
+    /// Email address of the account.
     #[validate(email)]
     pub email: String,
+    /// Current password, to confirm it's the owner.
     pub current_password: String,
 }
 
+/// A user, as the API returns one.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserResponse {
+    /// Unique identifier.
     pub id: Uuid,
+    /// Email address.
     pub email: String,
+    /// First name.
     pub first_name: String,
+    /// Last name.
     pub last_name: String,
+    /// Phone number, if given.
     pub phone_number: Option<String>,
+    /// Whether the account can be used.
     pub is_active: bool,
+    /// Whether the email address has been verified.
     pub is_verified: bool,
+    /// Pending email verification code.
     pub verification_code: Option<String>,
+    /// When this was created.
     pub created_at: DateTime<Utc>,
+    /// When this was last changed.
     pub updated_at: DateTime<Utc>,
+    /// Free-form attributes, as JSON.
     pub attributes: serde_json::Value,
+    /// Role names the user holds.
     pub roles: Vec<String>,
+    /// Preferred currency code.
     pub default_currency: String,
+    /// When this was soft-deleted, if it was.
     pub deleted_at: Option<DateTime<Utc>>,
     /// Unique public handle, e.g. `jane-brown`.
     pub slug: String,
 }
 
+/// XML wrapper for a list of users.
 #[derive(Serialize, ToSchema)]
 pub struct UsersWrapper {
+    /// The users.
     #[schema(xml(name = "user", wrapped))]
     pub user: Vec<UserResponse>,
 }
@@ -123,6 +160,7 @@ fn map_user_to_response(user: User) -> UserResponse {
     }
 }
 
+/// Registers the user, auth and session routes.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
     #[openapi(

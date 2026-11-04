@@ -94,6 +94,7 @@ fn is_confirmation_code_collision(err: &db_core::error::DbError) -> bool {
     }))
 }
 
+/// A random booking confirmation code.
 pub fn generate_confirmation_code() -> String {
     const CHARSET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
@@ -180,8 +181,10 @@ async fn enqueue_email(
     true
 }
 
+/// Query parameter choosing a display currency.
 #[derive(Deserialize, Debug)]
 pub struct CurrencyQuery {
+    /// Currency to show amounts in.
     pub currency: Option<String>,
 }
 

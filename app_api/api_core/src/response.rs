@@ -2,8 +2,11 @@ use actix_web::http::header::ACCEPT;
 use actix_web::{HttpRequest, HttpResponse};
 use serde::Serialize;
 
+/// What a response carries.
 pub enum Payload<T> {
+    /// One item.
     Item(T),
+    /// Several items.
     Collection(Vec<T>),
 }
 

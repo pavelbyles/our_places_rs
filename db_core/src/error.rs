@@ -11,7 +11,12 @@ pub enum DbError {
     ValidationError(String),
     /// Foreign exchange rate unavailable for requested currency pair.
     #[error("Foreign exchange rate unavailable for currency pair: {base} -> {target}")]
-    FxRateUnavailable { base: String, target: String },
+    FxRateUnavailable {
+        /// Currency to convert from.
+        base: String,
+        /// Currency to convert to.
+        target: String,
+    },
     /// Requested calendar dates conflict with an existing reservation.
     #[error("The requested dates are no longer available")]
     DateUnavailable,
@@ -114,4 +119,5 @@ impl DbError {
 }
 
 // A custom `Result` type that defaults to using our `DbError`.
+/// A result with a [`DbError`].
 pub type Result<T> = std::result::Result<T, DbError>;

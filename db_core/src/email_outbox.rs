@@ -3,6 +3,7 @@ use crate::models::{DbEmailStatus, EmailOutbox};
 use sqlx::{PgConnection, PgPool, Transaction};
 use uuid::Uuid;
 
+/// Queues an email.
 pub async fn insert_email_outbox(
     pool: &PgPool,
     recipient_email: &str,
@@ -33,6 +34,7 @@ pub async fn insert_email_outbox(
     Ok(record)
 }
 
+/// Queues an email inside a transaction.
 pub async fn insert_email_outbox_tx(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     recipient_email: &str,
@@ -63,6 +65,7 @@ pub async fn insert_email_outbox_tx(
     Ok(record)
 }
 
+/// Queues an email on an open connection.
 pub async fn insert_email_outbox_conn(
     conn: &mut PgConnection,
     recipient_email: &str,
@@ -93,6 +96,7 @@ pub async fn insert_email_outbox_conn(
     Ok(record)
 }
 
+/// Fetches a queued email.
 pub async fn get_email_outbox_by_id(pool: &PgPool, id: Uuid) -> Result<Option<EmailOutbox>> {
     let record = sqlx::query_as!(
         EmailOutbox,
@@ -112,6 +116,7 @@ pub async fn get_email_outbox_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Em
     Ok(record)
 }
 
+/// Fetches a queued email and locks its row.
 pub async fn get_email_outbox_for_update(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     id: Uuid,
@@ -135,6 +140,7 @@ pub async fn get_email_outbox_for_update(
     Ok(record)
 }
 
+/// Records a delivery attempt starting.
 pub async fn mark_email_processing(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     id: Uuid,
@@ -157,6 +163,7 @@ pub async fn mark_email_processing(
     Ok(())
 }
 
+/// Records that an email was sent.
 pub async fn mark_email_sent(pool: &PgPool, id: Uuid, attempts: i32) -> Result<()> {
     sqlx::query!(
         r#"
@@ -176,6 +183,7 @@ pub async fn mark_email_sent(pool: &PgPool, id: Uuid, attempts: i32) -> Result<(
     Ok(())
 }
 
+/// Records a failed delivery attempt.
 pub async fn mark_email_failed(
     pool: &PgPool,
     id: Uuid,
@@ -201,6 +209,7 @@ pub async fn mark_email_failed(
     Ok(())
 }
 
+/// Deletes sent emails older than `days`, returning how many.
 pub async fn delete_sent_emails_older_than(pool: &PgPool, days: i32) -> Result<u64> {
     let result = sqlx::query!(
         r#"

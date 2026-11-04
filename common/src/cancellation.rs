@@ -36,6 +36,7 @@ pub enum CancellationPolicy {
 }
 
 impl CancellationPolicy {
+    /// The policy's name, as stored.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Flexible => "flexible",
@@ -95,6 +96,7 @@ pub struct Limited;
 
 /// Policy-specific refund schedule evaluated at compile time.
 pub trait RefundSchedule {
+    /// Share of the accommodation refunded at this timing, as a percentage.
     fn accommodation_refund_pct(t: &CancellationTiming) -> Decimal;
 }
 
@@ -161,9 +163,13 @@ impl RefundSchedule for Limited {
 /// Evaluated timing intervals relative to check-in and booking creation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CancellationTiming {
+    /// Whole days from cancelling to check-in.
     pub days_before_check_in: i64,
+    /// Whole hours from cancelling to check-in.
     pub hours_before_check_in: i64,
+    /// Whole hours from booking to cancelling.
     pub hours_since_booking: i64,
+    /// Whole days from booking to check-in.
     pub days_booked_ahead: i64,
 }
 
@@ -182,15 +188,22 @@ pub struct Quoted;
 /// Financial component snapshot required to calculate a refund.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefundableAmounts {
+    /// Accommodation after discounts.
     pub accommodation_net: Decimal,
+    /// Cleaning fee paid.
     pub cleaning_fee: Decimal,
+    /// Refundable deposit paid.
     pub damage_deposit: Decimal,
+    /// Guest platform fee paid.
     pub platform_fee: Decimal,
+    /// Tax rate as a fraction.
     pub tax_rate: Decimal,
+    /// Total the guest paid.
     pub total_price: Decimal,
 }
 
 impl RefundableAmounts {
+    /// Collects a booking's amounts for a refund calculation.
     pub fn new(
         accommodation_net: Decimal,
         cleaning_fee: Decimal,
@@ -213,21 +226,31 @@ impl RefundableAmounts {
 /// Immutable result of a cancellation quote calculation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct RefundQuote {
+    /// Share of the accommodation the policy refunds, as a percentage.
     pub policy_pct: Decimal,
+    /// Accommodation refunded.
     pub accommodation_refund: Decimal,
+    /// Cleaning fee refunded.
     pub cleaning_refund: Decimal,
+    /// Deposit refunded.
     pub deposit_refund: Decimal,
+    /// Tax refunded.
     pub tax_refund: Decimal,
+    /// Platform fee refunded.
     pub platform_fee_refund: Decimal,
+    /// Total refunded.
     pub refund_total: Decimal,
+    /// Total kept.
     pub retained_total: Decimal,
 }
 
 impl RefundQuote {
+    /// Whether the guest gets everything back.
     pub fn is_full_refund(&self) -> bool {
         self.policy_pct == Decimal::ONE
     }
 
+    /// Whether the guest gets nothing back.
     pub fn is_zero_refund(&self) -> bool {
         self.policy_pct == Decimal::ZERO
     }
@@ -236,22 +259,30 @@ impl RefundQuote {
 /// Domain errors encountered during cancellation timing evaluation or quotation.
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum CancellationError {
+    /// Cancelling at or after check-in.
     #[error(
         "Cancellation attempted at or after check-in: cancelled_at ({cancelled_at}) >= check_in ({check_in})"
     )]
     AlreadyCheckedIn {
+        /// When cancellation was attempted.
         cancelled_at: DateTime<Utc>,
+        /// When check-in was.
         check_in: DateTime<Utc>,
     },
+    /// A cancellation time earlier than the booking.
     #[error(
         "Cancellation attempted before booking time: cancelled_at ({cancelled_at}) < booked_at ({booked_at})"
     )]
     CancelledBeforeBooking {
+        /// When cancellation was attempted.
         cancelled_at: DateTime<Utc>,
+        /// When the booking was made.
         booked_at: DateTime<Utc>,
     },
+    /// The text isn't a known policy.
     #[error("Unknown cancellation policy: '{0}'")]
     InvalidPolicy(String),
+    /// A date or time couldn't be worked out.
     #[error("Invalid date or time calculation")]
     InvalidDate,
 }

@@ -1,6 +1,7 @@
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tracing::info;
 
+/// Connects to the database with the service's pool settings.
 pub async fn create_connection_pool(db_url: &str) -> PgPool {
     info!("Creating database connection pool");
     PgPoolOptions::new()

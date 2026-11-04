@@ -26,9 +26,12 @@ pub fn jwt_secret() -> Result<String, MissingJwtSecret> {
         .ok_or(MissingJwtSecret)
 }
 
+/// What a signed user token says.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
+    /// The authenticated user.
     pub sub: Uuid,
+    /// When the token expires, as a Unix timestamp in seconds.
     pub exp: usize,
 }
 
@@ -102,6 +105,7 @@ pub async fn require_user(
     }
 }
 
+/// A valid token for `user_id`, for tests.
 pub fn generate_test_jwt(user_id: Uuid) -> String {
     use jsonwebtoken::{EncodingKey, Header, encode};
 

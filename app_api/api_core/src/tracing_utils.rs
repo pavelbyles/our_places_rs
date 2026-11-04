@@ -81,6 +81,7 @@ pub fn get_current_filter() -> String {
         .unwrap_or_else(|| "info".to_string())
 }
 
+/// Builds each request's root span.
 pub struct CustomRootSpanBuilder;
 
 impl RootSpanBuilder for CustomRootSpanBuilder {

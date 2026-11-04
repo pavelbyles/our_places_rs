@@ -303,6 +303,7 @@ impl ApiError {
 }
 
 // A helper function to format the error chain for logging.
+/// Writes an error and each of its causes.
 pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std::fmt::Result {
     writeln!(f, "{}\n", e)?;
     let mut current = e.source();
@@ -314,6 +315,7 @@ pub fn error_chain_fmt(e: &impl std::error::Error, f: &mut Formatter<'_>) -> std
 }
 
 // A custom `Result` type for our API.
+/// A result with an [`ApiError`].
 pub type Result<T> = std::result::Result<T, ApiError>;
 
 #[cfg(test)]

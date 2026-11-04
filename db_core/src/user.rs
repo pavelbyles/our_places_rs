@@ -137,6 +137,7 @@ where
     Ok(user)
 }
 
+/// Applies changes to a user.
 #[tracing::instrument(skip(pool))]
 pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) -> Result<User> {
     let mut tx = pool.begin().await?;
@@ -197,6 +198,7 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     Ok(updated)
 }
 
+/// Creates a guest profile.
 pub async fn create_booker_profile<'e, E>(
     executor: E,
     user_id: Uuid,
@@ -223,6 +225,7 @@ where
     Ok(profile)
 }
 
+/// Creates a host profile.
 pub async fn create_host_profile<'e, E>(
     executor: E,
     user_id: Uuid,
@@ -249,6 +252,7 @@ where
     Ok(profile)
 }
 
+/// Marks a user's email as verified and clears the code.
 #[tracing::instrument(skip(pool))]
 pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User> {
     let mut tx = pool.begin().await?;
@@ -274,6 +278,7 @@ pub async fn complete_user_verification(pool: &PgPool, id: Uuid) -> Result<User>
     Ok(updated)
 }
 
+/// Replaces a user's verification code.
 #[tracing::instrument(skip(pool))]
 pub async fn regenerate_verification_code(
     pool: &PgPool,

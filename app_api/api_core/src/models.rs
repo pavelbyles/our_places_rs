@@ -82,6 +82,7 @@ pub fn photo_images(
         .collect()
 }
 
+/// Maps a listing with its images and ratings to its API response.
 pub fn map_listing_details_to_response(
     details: db_core::models::ListingDetails,
 ) -> common::models::ListingDetails {

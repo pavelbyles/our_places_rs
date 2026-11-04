@@ -38,6 +38,7 @@ pub async fn create_booking(req: &NewBookingRequest, user_jwt: &str) -> Result<B
         .context("Failed to parse booking response")
 }
 
+/// Fetches a booking, with amounts in `currency` when given.
 pub async fn get_booking_by_id(id: Uuid, currency: Option<&str>) -> Result<BookingResponse> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -62,10 +63,12 @@ pub async fn get_booking_by_id(id: Uuid, currency: Option<&str>) -> Result<Booki
         .context("Failed to parse booking response")
 }
 
+/// Changes a booking with the service's own credentials.
 pub async fn update_booking(id: Uuid, req: &UpdatedBookingRequest) -> Result<BookingResponse> {
     update_booking_with_auth(id, req, None).await
 }
 
+/// Changes a booking as the user who owns `user_jwt`.
 pub async fn update_booking_with_auth(
     id: Uuid,
     req: &UpdatedBookingRequest,
@@ -100,6 +103,7 @@ pub async fn update_booking_with_auth(
         .context("Failed to parse booking response")
 }
 
+/// What cancelling a booking would refund.
 pub async fn get_cancellation_quote(id: Uuid) -> Result<crate::cancellation::RefundQuote> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -125,6 +129,7 @@ pub async fn get_cancellation_quote(id: Uuid) -> Result<crate::cancellation::Ref
         .context("Failed to parse cancellation quote response")
 }
 
+/// Deletes a booking.
 pub async fn delete_booking(id: Uuid) -> Result<()> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -144,6 +149,7 @@ pub async fn delete_booking(id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Moves a booking to another guest.
 pub async fn transfer_booking(id: Uuid, new_guest_id: Uuid) -> Result<BookingResponse> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -169,6 +175,7 @@ pub async fn transfer_booking(id: Uuid, new_guest_id: Uuid) -> Result<BookingRes
         .context("Failed to parse booking response")
 }
 
+/// A guest's bookings.
 pub async fn get_user_bookings(user_id: Uuid) -> Result<Vec<BookingResponse>> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -190,6 +197,7 @@ pub async fn get_user_bookings(user_id: Uuid) -> Result<Vec<BookingResponse>> {
         .context("Failed to parse user bookings response")
 }
 
+/// A listing's bookings.
 pub async fn get_listing_bookings(listing_id: Uuid) -> Result<Vec<BookingResponse>> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -253,6 +261,7 @@ pub async fn get_all_bookings(
         .context("Failed to parse bookings response")
 }
 
+/// A booking's message thread.
 pub async fn get_booking_messages(id: Uuid) -> Result<BookingMessagesWrapper> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -278,6 +287,7 @@ pub async fn get_booking_messages(id: Uuid) -> Result<BookingMessagesWrapper> {
         .context("Failed to parse booking messages response")
 }
 
+/// Sends a message on a booking.
 pub async fn send_booking_message(
     id: Uuid,
     req: &CreateBookingMessageRequest,
@@ -302,6 +312,7 @@ pub async fn send_booking_message(
         .context("Failed to parse booking message response")
 }
 
+/// Marks a booking's messages as read.
 pub async fn mark_booking_messages_read(id: Uuid) -> Result<MarkMessagesReadResponse> {
     let api_url = booking_api_url();
     let audience = booking_api_audience();
@@ -327,6 +338,7 @@ pub async fn mark_booking_messages_read(id: Uuid) -> Result<MarkMessagesReadResp
         .context("Failed to parse mark booking messages read response")
 }
 
+/// Fetches one tax document of a booking.
 pub async fn get_booking_document_by_number(
     booking_id: Uuid,
     document_number: &str,
@@ -359,6 +371,7 @@ pub async fn get_booking_document_by_number(
         .context("Failed to parse tax document response")
 }
 
+/// A booking's tax documents.
 pub async fn list_booking_documents(
     booking_id: Uuid,
     user_jwt: Option<&str>,

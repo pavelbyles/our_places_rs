@@ -8,6 +8,7 @@ use crate::models::{
 use anyhow::{Context, Result, bail};
 use uuid::Uuid;
 
+/// What a review token is for, and whether it still works.
 pub async fn get_review_token_info(token: &str) -> Result<ReviewTokenInfoResponse> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -27,6 +28,7 @@ pub async fn get_review_token_info(token: &str) -> Result<ReviewTokenInfoRespons
         .context("Failed to parse review token info")
 }
 
+/// Whether a booking's guest can review it, and the token if so.
 pub async fn get_booking_review_token(booking_id: Uuid) -> Result<BookingReviewEligibility> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -46,6 +48,7 @@ pub async fn get_booking_review_token(booking_id: Uuid) -> Result<BookingReviewE
         .context("Failed to parse booking review token")
 }
 
+/// Submits a review with a review token.
 pub async fn submit_review(token: &str, req: &NewReviewRequest) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -63,6 +66,7 @@ pub async fn submit_review(token: &str, req: &NewReviewRequest) -> Result<()> {
     Ok(())
 }
 
+/// Saves the host's reply to a review.
 pub async fn submit_host_reply(review_id: Uuid, req: &HostReplyRequest) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
@@ -80,6 +84,7 @@ pub async fn submit_host_reply(review_id: Uuid, req: &HostReplyRequest) -> Resul
     Ok(())
 }
 
+/// A page of a listing's reviews.
 pub async fn get_listing_reviews(
     listing_id: Uuid,
     page: i64,

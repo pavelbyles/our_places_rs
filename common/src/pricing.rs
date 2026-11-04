@@ -4,15 +4,24 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
+/// Why a stay can't be priced.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PricingError {
+    /// Check-out isn't after check-in.
     #[error("Invalid date range: check-out must be after check-in")]
     InvalidDateRange,
 
     #[error("Minimum night stay requirement not met: required {required}, requested {provided}")]
-    MinNightsNotMet { required: i32, provided: i32 },
+    /// The stay is shorter than the minimum.
+    MinNightsNotMet {
+        /// The minimum that applies.
+        required: i32,
+        /// The nights asked for.
+        provided: i32,
+    },
 }
 
+/// Adds up a stay's nightly rates, applying overrides and checking the minimum stay.
 pub fn calculate_dynamic_quote(
     base_nightly_rate: Decimal,
     base_min_nights: i32,
