@@ -590,7 +590,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p common app_client_requests`
   - **Dependencies:** Task 19, Task 21, Task 25, Task 30
 
-- [ ] **Task 32: Admin listing form booking mode**
+- [x] **Task 32: Admin listing form booking mode**
   - **Scope:** S
   - **Description:** A `select` on create and edit with help text, passed through to `listing_api`.
   - **Files Touched:**
