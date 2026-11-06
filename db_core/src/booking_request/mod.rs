@@ -10,11 +10,13 @@
 mod history;
 mod queries;
 mod request;
+mod respond;
 mod supersede;
 
 pub use history::{Actor, HistorySubject};
 pub use queries::{RequestDetail, get_request, list_for_guest, quotes_by_id};
 pub use request::{CreatedRequest, NewRequest, create_request};
+pub use respond::{accept_request, decline_request, withdraw_request};
 pub use supersede::Superseded;
 pub(crate) use supersede::supersede_for_instant_hold;
 
@@ -26,3 +28,5 @@ mod hold_request_tests;
 mod promo_request_tests;
 #[cfg(test)]
 mod request_tests;
+#[cfg(test)]
+mod respond_tests;

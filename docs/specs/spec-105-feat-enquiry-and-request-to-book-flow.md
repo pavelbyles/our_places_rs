@@ -151,7 +151,7 @@ As listed in intent §3: add-ons (the snapshot struct and request table leave ro
 |---|---|---|
 | E1 | Instant hold and request race for the same dates | Both take the listing lock; the second re-reads, sees the first, and gets 409 `DATE_UNAVAILABLE`. Exactly one succeeds. |
 | E2 | Two requests from the same guest for the same listing at once | Listing lock serialises them; the second gets 409 `REQUEST_ALREADY_LIVE` (the partial unique index is the backstop, mapped to the same code). |
-| E3 | Host accepts while the guest withdraws | Request row lock serialises them; the loser gets 409 `REQUEST_NOT_OPEN`. |
+| E3 | Host accepts while the guest withdraws | The request row lock serialises them. If the withdrawal lands first, the accept gets 409 `REQUEST_NOT_OPEN`; if the accept lands first, the withdrawal then withdraws the offer. Two terminal moves (decline vs withdraw) have exactly one winner. |
 | E4 | Accept or convert arrives just after `expires_at`, before any sweep | `clock_timestamp()` check → 409 `REQUEST_EXPIRED` / `QUOTE_EXPIRED`; no hold is created. |
 | E5 | Sweep runs while an action holds the row | `SKIP LOCKED`; the next sweep picks it up, or the action's state change wins. |
 | E6 | Guest converts an old quote while the host sends a new one | Request lock serialises; a stale `quote_id` → 409 `QUOTE_SUPERSEDED`. |

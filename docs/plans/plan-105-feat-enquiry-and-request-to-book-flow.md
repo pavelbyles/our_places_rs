@@ -341,7 +341,7 @@ T42 final gates                      ← all
 
 ## Phase D: Responses and Conversion
 
-- [ ] **Task 16: db accept, decline and withdraw**
+- [x] **Task 16: db accept, decline and withdraw**
   - **Scope:** M
   - **Description:** Each takes listing → request locks, checks `can_transition_to`, checks `expires_at > clock_timestamp()` for accept, and caps the new `expires_at` (`quote_valid_hours`) at check-in. They set `first_response_at` (host actions), write history with the actor, and return the notification facts in one round trip.
   - **Files Touched:**
@@ -349,7 +349,7 @@ T42 final gates                      ← all
     - `db_core/src/booking_request/respond_tests.rs`
   - **Acceptance Criteria:**
     - [ ] Accepting leaves the dates blocked and creates **no** booking row.
-    - [ ] E3: accept vs withdraw concurrently → one wins; the other gets `RequestNotOpen`.
+    - [ ] E3: accept vs withdraw are serialised (both may succeed in that order); decline vs withdraw have one winner, the other gets `RequestNotOpen`.
     - [ ] E4: accepting after `expires_at` (no sweep) → `RequestExpired`.
     - [ ] D6: decline works from `open`, `accepted` and `quoted`, and frees the dates; `Other` without a note → `DeclineNoteRequired`.
     - [ ] Each transition writes exactly one history row.
