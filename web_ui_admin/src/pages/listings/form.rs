@@ -477,6 +477,7 @@ impl ValidListing {
             damage_deposit: self.damage_deposit,
             guests_included: Some(self.guests_included),
             extra_guest_fee: self.extra_guest_fee,
+            booking_mode: None,
         }
     }
 }

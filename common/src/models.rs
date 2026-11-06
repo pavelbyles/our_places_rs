@@ -248,6 +248,9 @@ pub struct ListingResponse {
     /// Optional fee per extra guest per night above `guests_included` (base currency).
     #[serde(default)]
     pub extra_guest_fee: Option<Decimal>,
+    /// How the listing sells: instantly, on request, or both.
+    #[serde(default)]
+    pub booking_mode: crate::booking_request::BookingMode,
     /// Set by listing search when the requested currency cannot be quoted for
     /// this listing: prices are omitted rather than shown in another currency.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1061,6 +1064,9 @@ pub struct UpdatedListingRequest {
     #[schema(value_type = Option<String>, example = "25.00")]
     #[validate(custom(function = "validate_fee"))]
     pub extra_guest_fee: Option<Decimal>,
+    /// Updated booking mode. Open requests and offers carry on either way.
+    #[serde(default)]
+    pub booking_mode: Option<crate::booking_request::BookingMode>,
 }
 
 /// A nightly rate for a date range, replacing the base rate.

@@ -791,6 +791,8 @@ pub struct Listing {
     pub guests_included: i32,
     /// Fee per extra guest per night above `guests_included` (in `base_currency`).
     pub extra_guest_fee: Decimal,
+    /// How the listing sells: instantly, on request, or both.
+    pub booking_mode: common::booking_request::BookingMode,
 }
 
 /// A listing with its host's name, for search results.
@@ -866,6 +868,8 @@ pub struct ListingWithOwner {
     pub guests_included: i32,
     /// Fee per extra guest per night above `guests_included` (in `base_currency`).
     pub extra_guest_fee: Decimal,
+    /// How the listing sells: instantly, on request, or both.
+    pub booking_mode: common::booking_request::BookingMode,
 }
 
 /// Fields for creating a listing.
@@ -1005,6 +1009,9 @@ pub struct UpdatedListing {
     pub guests_included: Option<i32>,
     /// Optional updated fee per extra guest per night.
     pub extra_guest_fee: Option<Decimal>,
+    /// Updated booking mode; open requests and offers carry on either way.
+    #[serde(default)]
+    pub booking_mode: Option<common::booking_request::BookingMode>,
 }
 
 /// What kind of building a listing is.

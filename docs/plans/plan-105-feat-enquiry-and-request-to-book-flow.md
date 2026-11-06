@@ -209,19 +209,21 @@ T42 final gates                      ← all
 
 ## Phase B: Booking Mode
 
-- [ ] **Task 8: Listing `booking_mode` read and write**
+- [x] **Task 8: Listing `booking_mode` read and write**
   - **Scope:** M
   - **Description:** `common::models::Listing` and its create and update DTOs gain `booking_mode` (`#[serde(default)]`). The listing write and read queries and the `listing_history` snapshot include it. `listing_api` handlers pass it through.
   - **Files Touched:**
     - `common/src/models.rs`
+    - `db_core/src/models.rs` (`Listing`, `ListingWithOwner`, `UpdatedListing`)
     - `db_core/src/listing/write.rs`
     - `db_core/src/listing/queries.rs`
-    - `app_api/listing_api/src/` (handlers + tests)
+    - `app_api/api_core/src/models.rs` (response mappers)
+    - `app_api/listing_api/src/apis.rs`, `apis_test.rs`
   - **Acceptance Criteria:**
     - [ ] Create with no mode → `instant`; update to `both` → GET returns `both`; history row records it.
     - [ ] Public and admin listing DTOs expose the mode.
     - [ ] An unknown mode string → 400.
-  - **Verification Command:** `devenv shell -- cargo test -p db_core listing_booking_mode_tests && devenv shell -- cargo test -p listing_api booking_mode`
+  - **Verification Command:** `devenv shell -- cargo test -p listing_api booking_mode`
   - **Dependencies:** Task 1, Task 4
 
 - [x] **Task 9: Enforce booking mode on instant holds**

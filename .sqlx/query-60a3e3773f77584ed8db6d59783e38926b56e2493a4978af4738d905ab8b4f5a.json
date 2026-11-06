@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE listing\n        SET\n            name = COALESCE($2, name),\n            description = COALESCE($3, description),\n            listing_structure_id = COALESCE($4, listing_structure_id),\n            country = COALESCE($5, country),\n            price_per_night = COALESCE($6, price_per_night),\n            is_active = COALESCE($7, is_active),\n            weekly_discount_percentage = COALESCE($8, weekly_discount_percentage),\n            monthly_discount_percentage = COALESCE($9, monthly_discount_percentage),\n            max_guests = COALESCE($10, max_guests),\n            bedrooms = COALESCE($11, bedrooms),\n            beds = COALESCE($12, beds),\n            full_bathrooms = COALESCE($13, full_bathrooms),\n            half_bathrooms = COALESCE($14, half_bathrooms),\n            square_meters = COALESCE($15, square_meters),\n            latitude = COALESCE($16, latitude),\n            longitude = COALESCE($17, longitude),\n            listing_details = COALESCE($18, listing_details),\n            city = COALESCE($19, city),\n            base_currency = COALESCE($20, base_currency),\n            minimum_stay = COALESCE($21, minimum_stay),\n            days_between_bookings = COALESCE($22, days_between_bookings),\n            commission_pct = COALESCE($23, commission_pct),\n            cleaning_fee = COALESCE($24, cleaning_fee),\n            damage_deposit = COALESCE($25, damage_deposit),\n            guests_included = COALESCE($26, guests_included),\n            extra_guest_fee = COALESCE($27, extra_guest_fee)\n        WHERE id = $1\n        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee\n        ",
+  "query": "SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS \"booking_mode: common::booking_request::BookingMode\" FROM listing WHERE id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -172,37 +172,27 @@
         "ordinal": 33,
         "name": "extra_guest_fee",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 34,
+        "name": "booking_mode: common::booking_request::BookingMode",
+        "type_info": {
+          "Custom": {
+            "name": "booking_mode",
+            "kind": {
+              "Enum": [
+                "instant",
+                "request",
+                "both"
+              ]
+            }
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Text",
-        "Text",
-        "Int4",
-        "Text",
-        "Numeric",
-        "Bool",
-        "Numeric",
-        "Numeric",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Float8",
-        "Float8",
-        "Jsonb",
-        "Text",
-        "Varchar",
-        "Int4",
-        "Int4",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Int4",
-        "Numeric"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -239,8 +229,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "10fad6a2271c176802809dfe56fc9833e29be02ab73fb6509a8a0cc734afac48"
+  "hash": "60a3e3773f77584ed8db6d59783e38926b56e2493a4978af4738d905ab8b4f5a"
 }
