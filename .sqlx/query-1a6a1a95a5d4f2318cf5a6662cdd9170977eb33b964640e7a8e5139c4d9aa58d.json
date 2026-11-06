@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, booking_id, sender_id, sender_role AS \"sender_role: DbMessageSenderRole\", sender_name, message_text, read_at, created_at\n        FROM booking_message\n        WHERE booking_id = $1\n        ORDER BY created_at ASC\n        LIMIT 200\n        ",
+  "query": "\n        WITH conv AS (\n            INSERT INTO conversation (listing_id, guest_id)\n            SELECT listing_id, guest_id FROM booking WHERE id = $2\n            ON CONFLICT (listing_id, guest_id) DO UPDATE SET last_message_at = NOW()\n            RETURNING id\n        )\n        INSERT INTO booking_message (id, booking_id, conversation_id, sender_id, sender_role, sender_name, message_text)\n        SELECT $1, $2, conv.id, $3, $4, $5, $6 FROM conv\n        RETURNING id, booking_id AS \"booking_id!\", sender_id, sender_role AS \"sender_role: DbMessageSenderRole\", sender_name, message_text, read_at, created_at\n        ",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "booking_id",
+        "name": "booking_id!",
         "type_info": "Uuid"
       },
       {
@@ -57,12 +57,28 @@
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "message_sender_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Text"
       ]
     },
     "nullable": [
       false,
-      false,
+      true,
       false,
       false,
       false,
@@ -71,5 +87,5 @@
       false
     ]
   },
-  "hash": "555e16a7bdb98a4d21a4de759d8ba52a903c302a29d8584b390f48f56c95e110"
+  "hash": "1a6a1a95a5d4f2318cf5a6662cdd9170977eb33b964640e7a8e5139c4d9aa58d"
 }

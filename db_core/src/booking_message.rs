@@ -13,12 +13,20 @@ pub async fn insert_booking_message(
     sender_name: &str,
     message_text: &str,
 ) -> Result<DbBookingMessage> {
+    // Every message belongs to the guest × listing conversation of its
+    // booking; the conversation is created on first use.
     let msg = sqlx::query_as!(
         DbBookingMessage,
         r#"
-        INSERT INTO booking_message (id, booking_id, sender_id, sender_role, sender_name, message_text)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, booking_id, sender_id, sender_role AS "sender_role: DbMessageSenderRole", sender_name, message_text, read_at, created_at
+        WITH conv AS (
+            INSERT INTO conversation (listing_id, guest_id)
+            SELECT listing_id, guest_id FROM booking WHERE id = $2
+            ON CONFLICT (listing_id, guest_id) DO UPDATE SET last_message_at = NOW()
+            RETURNING id
+        )
+        INSERT INTO booking_message (id, booking_id, conversation_id, sender_id, sender_role, sender_name, message_text)
+        SELECT $1, $2, conv.id, $3, $4, $5, $6 FROM conv
+        RETURNING id, booking_id AS "booking_id!", sender_id, sender_role AS "sender_role: DbMessageSenderRole", sender_name, message_text, read_at, created_at
         "#,
         id,
         booking_id,
@@ -41,7 +49,7 @@ pub async fn list_booking_messages(
     let msgs = sqlx::query_as!(
         DbBookingMessage,
         r#"
-        SELECT id, booking_id, sender_id, sender_role AS "sender_role: DbMessageSenderRole", sender_name, message_text, read_at, created_at
+        SELECT id, booking_id AS "booking_id!", sender_id, sender_role AS "sender_role: DbMessageSenderRole", sender_name, message_text, read_at, created_at
         FROM booking_message
         WHERE booking_id = $1
         ORDER BY created_at ASC

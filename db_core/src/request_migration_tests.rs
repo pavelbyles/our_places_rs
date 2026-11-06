@@ -261,3 +261,44 @@ async fn a_closed_enquiry_needs_a_reason_and_an_open_one_has_none() {
     // A second open enquiry for the same pair is refused.
     assert!(insert("open", None).await.is_err());
 }
+
+#[tokio::test]
+async fn new_booking_messages_join_the_guest_and_listing_conversation() {
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let host = raw_user(&pool).await;
+    let guest = raw_user(&pool).await;
+    let villa = raw_listing(&pool, host).await;
+    let first = raw_booking(&pool, guest, villa, "completed").await;
+    let second = raw_booking(&pool, guest, villa, "confirmed").await;
+
+    let send = |booking: Uuid, sender: Uuid| {
+        let pool = pool.clone();
+        async move {
+            crate::booking_message::insert_booking_message(
+                &pool,
+                Uuid::now_v7(),
+                booking,
+                sender,
+                crate::models::DbMessageSenderRole::Guest,
+                "Guest",
+                "Hello",
+            )
+            .await
+            .expect("insert message")
+        }
+    };
+    let m1 = send(first, guest).await;
+    let m2 = send(second, host).await;
+    assert_eq!(m1.booking_id, first);
+
+    assert_eq!(
+        conversation_of(&pool, m1.id).await,
+        conversation_of(&pool, m2.id).await
+    );
+    let listed = crate::booking_message::list_booking_messages(&pool, first)
+        .await
+        .expect("list messages");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, m1.id);
+}

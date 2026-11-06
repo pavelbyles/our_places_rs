@@ -150,12 +150,13 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p common price_snapshot_tests`
   - **Dependencies:** Task 2
 
-- [ ] **Task 4: Migration**
+- [x] **Task 4: Migration**
   - **Scope:** M
   - **Description:** `devenv shell -- sqlx migrate add enquiries_and_booking_requests` with the full schema from spec §3.1: `booking_mode`, `conversation`, `booking_enquiry`, `booking_request`, `booking_request_quote`, `booking_request_history`, `request_notification_log`, the `booking_message` re-anchoring with backfill, and every index. No existing migration is edited.
   - **Files Touched:**
     - `db_core/migrations/<ts>_enquiries_and_booking_requests.sql`
-    - `db_core/src/migration_tests.rs` (new module, or the existing migration test file if present)
+    - `db_core/src/request_migration_tests.rs`
+    - `db_core/src/booking_message.rs` (inserts now upsert the pair's conversation, so messaging keeps working before T20)
   - **Acceptance Criteria:**
     - [ ] It applies cleanly on a fresh DB and on a DB seeded with bookings and messages (`devenv shell -- sqlx migrate run`).
     - [ ] Backfill: messages on two bookings of one guest × listing share one conversation; different guests get different conversations; `conversation_id` is `NOT NULL` afterwards.
@@ -167,7 +168,7 @@ T42 final gates                      ← all
 
 - [ ] **Task 5: db_core models and `DbError::RequestRefused`**
   - **Scope:** S
-  - **Description:** `sqlx::Type` enums mirroring T1, `DbBookingRequest`, `DbBookingEnquiry`, `DbRequestQuote`, `DbConversation`, `From` impls into the `common` DTOs, and `StayPriceSnapshot → NewBooking`. Add `DbError::RequestRefused(RequestRefusal)`. `DbBookingMessage` gains `conversation_id`, `enquiry_id`, `request_id`, and `booking_id: Option<Uuid>`; existing call sites compile.
+  - **Description:** `sqlx::Type` enums mirroring T1, `DbBookingRequest`, `DbBookingEnquiry`, `DbRequestQuote`, `DbConversation`, `From` impls into the `common` DTOs, and `StayPriceSnapshot → NewBooking`. Add `DbError::RequestRefused(RequestRefusal)`. The `DbBookingMessage` column changes move to T20, where the message queries are rewritten.
   - **Files Touched:**
     - `db_core/src/models.rs`
     - `db_core/src/error.rs`
