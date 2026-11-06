@@ -54,6 +54,48 @@ pub struct Application {
     /// `[application] max_stay_nights` or `EA__APPLICATION__MAX_STAY_NIGHTS`.
     #[serde(default = "default_max_stay_nights")]
     pub max_stay_nights: i64,
+    /// How long a host has to answer a request to book, in hours, before it
+    /// expires and releases its dates. Set via
+    /// `[application] request_response_hours` or
+    /// `EA__APPLICATION__REQUEST_RESPONSE_HOURS`; must be 1-720.
+    #[serde(default = "default_request_response_hours")]
+    pub request_response_hours: i64,
+    /// How long an offer (an accepted request or a custom quote) holds its
+    /// dates for the guest to proceed, in hours. Set via
+    /// `[application] quote_valid_hours` or `EA__APPLICATION__QUOTE_VALID_HOURS`;
+    /// must be 1-720.
+    #[serde(default = "default_quote_valid_hours")]
+    pub quote_valid_hours: i64,
+    /// The last share of a request's response window, in percent, that counts
+    /// as near expiry: the inbox badge and the host's one reminder email. Set
+    /// via `[application] request_near_expiry_pct` or
+    /// `EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT`; must be 1-99.
+    #[serde(default = "default_request_near_expiry_pct")]
+    pub request_near_expiry_pct: i64,
+}
+
+/// Hours a host has to answer a request when no setting is given.
+pub const DEFAULT_REQUEST_RESPONSE_HOURS: i64 = 24;
+
+/// Hours an offer stays open for the guest when no setting is given.
+pub const DEFAULT_QUOTE_VALID_HOURS: i64 = 48;
+
+/// Near-expiry share of a response window, in percent, when no setting is given.
+pub const DEFAULT_REQUEST_NEAR_EXPIRY_PCT: i64 = 25;
+
+/// Longest response or offer window allowed: 30 days.
+pub const MAX_REQUEST_WINDOW_HOURS: i64 = 720;
+
+fn default_request_response_hours() -> i64 {
+    DEFAULT_REQUEST_RESPONSE_HOURS
+}
+
+fn default_quote_valid_hours() -> i64 {
+    DEFAULT_QUOTE_VALID_HOURS
+}
+
+fn default_request_near_expiry_pct() -> i64 {
+    DEFAULT_REQUEST_NEAR_EXPIRY_PCT
 }
 
 /// Longest stay accepted when no setting is given: about 10 years.
@@ -87,6 +129,38 @@ impl Application {
                 self.max_stay_nights
             )
         })
+    }
+
+    /// Checks the request windows: both window lengths must be 1-720 hours and
+    /// the near-expiry share 1-99 percent.
+    pub fn validate_request_windows(&self) -> Result<(), String> {
+        let hours = 1..=MAX_REQUEST_WINDOW_HOURS;
+        let checks = [
+            (
+                "request_response_hours",
+                self.request_response_hours,
+                hours.contains(&self.request_response_hours),
+                "1-720",
+            ),
+            (
+                "quote_valid_hours",
+                self.quote_valid_hours,
+                hours.contains(&self.quote_valid_hours),
+                "1-720",
+            ),
+            (
+                "request_near_expiry_pct",
+                self.request_near_expiry_pct,
+                (1..=99).contains(&self.request_near_expiry_pct),
+                "1-99",
+            ),
+        ];
+        checks
+            .into_iter()
+            .find(|(_, _, ok, _)| !ok)
+            .map_or(Ok(()), |(key, value, _, range)| {
+                Err(format!("application.{key} must be {range}, got {value}"))
+            })
     }
 
     /// The rate grace window, or why the configured value is invalid.
@@ -241,4 +315,96 @@ pub fn get_settings() -> Result<Settings, ConfigError> {
         .build()?;
 
     settings.try_deserialize()
+}
+
+#[cfg(test)]
+mod request_settings_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn load(env: &[(&str, &str)]) -> Result<Application, ConfigError> {
+        let env: HashMap<String, String> = env
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        Config::builder()
+            .set_default("max_attempts", 5)?
+            .add_source(
+                config::Environment::with_prefix("EA__APPLICATION")
+                    .separator("__")
+                    .source(Some(env)),
+            )
+            .build()?
+            .try_deserialize()
+    }
+
+    fn app(env: &[(&str, &str)]) -> Application {
+        match load(env) {
+            Ok(app) => app,
+            Err(e) => panic!("settings: {e}"),
+        }
+    }
+
+    #[test]
+    fn request_windows_default_when_absent() {
+        let app = app(&[]);
+        assert_eq!(app.request_response_hours, 24);
+        assert_eq!(app.quote_valid_hours, 48);
+        assert_eq!(app.request_near_expiry_pct, 25);
+        assert_eq!(app.validate_request_windows(), Ok(()));
+    }
+
+    #[test]
+    fn request_windows_are_overridden_by_env_vars() {
+        let app = app(&[
+            ("EA__APPLICATION__REQUEST_RESPONSE_HOURS", "6"),
+            ("EA__APPLICATION__QUOTE_VALID_HOURS", "72"),
+            ("EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT", "10"),
+        ]);
+        assert_eq!(app.request_response_hours, 6);
+        assert_eq!(app.quote_valid_hours, 72);
+        assert_eq!(app.request_near_expiry_pct, 10);
+    }
+
+    #[test]
+    fn out_of_range_request_windows_are_refused_naming_the_key() {
+        for (key, value, name) in [
+            (
+                "EA__APPLICATION__REQUEST_RESPONSE_HOURS",
+                "0",
+                "request_response_hours",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_RESPONSE_HOURS",
+                "-3",
+                "request_response_hours",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_RESPONSE_HOURS",
+                "721",
+                "request_response_hours",
+            ),
+            (
+                "EA__APPLICATION__QUOTE_VALID_HOURS",
+                "0",
+                "quote_valid_hours",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT",
+                "0",
+                "request_near_expiry_pct",
+            ),
+            (
+                "EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT",
+                "100",
+                "request_near_expiry_pct",
+            ),
+        ] {
+            let err = app(&[(key, value)]).validate_request_windows();
+            match err {
+                Err(message) => assert!(message.contains(name), "{message}"),
+                Ok(()) => panic!("{key}={value} was accepted"),
+            }
+        }
+    }
 }

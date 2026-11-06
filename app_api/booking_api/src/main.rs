@@ -45,6 +45,17 @@ async fn main() -> anyhow::Result<()> {
         hold_minutes = config.application.pending_hold_minutes,
         "Pending booking hold window"
     );
+    config
+        .application
+        .validate_request_windows()
+        .map_err(anyhow::Error::msg)
+        .context("Refusing to start")?;
+    tracing::info!(
+        response_hours = config.application.request_response_hours,
+        quote_valid_hours = config.application.quote_valid_hours,
+        near_expiry_pct = config.application.request_near_expiry_pct,
+        "Request-to-book windows"
+    );
     let grace = config
         .application
         .rate_effective_grace()

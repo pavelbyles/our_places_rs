@@ -190,7 +190,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p api_core request_refusal_mapping`
   - **Dependencies:** Task 5
 
-- [ ] **Task 7: Request window settings**
+- [x] **Task 7: Request window settings**
   - **Scope:** XS
   - **Description:** Add `request_response_hours` (24), `quote_valid_hours` (48) and `request_near_expiry_pct` (25) to `ApplicationSettings` with serde defaults and to `Default.toml` with comments. Validate the ranges in `main.rs` next to `pending_hold_minutes` (1–720, 1–720, 1–99).
   - **Files Touched:**
@@ -202,7 +202,7 @@ T42 final gates                      ← all
     - [ ] Defaults load when the keys are absent.
     - [ ] `EA__APPLICATION__REQUEST_RESPONSE_HOURS=6` overrides the window.
     - [ ] 0, negative and out-of-range values fail validation with a message naming the key.
-  - **Verification Command:** `cargo test -p api_core request_settings_tests && cargo test -p booking_api request_settings_tests`
+  - **Verification Command:** `cargo test -p api_core request_settings_tests` (startup wiring in `booking_api` `main.rs`)
   - **Dependencies:** None
 
 ## Phase B: Booking Mode
