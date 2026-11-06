@@ -1,4 +1,6 @@
 use chrono::NaiveDate;
+use common::app_client::booking_requests::{api_error_code, create_booking_request};
+use common::booking_request::{BookingMode, CreateBookingRequestBody, RequestRefusal};
 use common::models::{ListingDetails, NewBookingRequest, StayQuoteRequest};
 use serde::Deserialize;
 use topcoat::{
@@ -11,6 +13,7 @@ use topcoat::{
     },
     view::{View, component, view},
 };
+use uuid::Uuid;
 use web_client::{
     get_api_client,
     session::{GuardError, GuestSession, login_redirect, require_guest},
@@ -45,6 +48,8 @@ struct StayQuery {
     check_in: Option<NaiveDate>,
     check_out: Option<NaiveDate>,
     guests: Option<u32>,
+    /// The guest's enquiry this request follows from, if any.
+    enquiry_id: Option<Uuid>,
 }
 
 /// Checkout form fields.
@@ -77,9 +82,47 @@ pub struct CheckoutForm {
     /// Promo code as typed.
     #[serde(default)]
     pub promo_code: String,
-    /// Which button was pressed: `apply_promo`, `remove_promo`, or empty to book.
+    /// Which button was pressed: `apply_promo`, `remove_promo`, `request` to
+    /// send a request to book, or empty to book.
     #[serde(default)]
     pub intent: String,
+    /// The guest's enquiry this request follows from, if any.
+    #[serde(default)]
+    pub enquiry_id: Option<Uuid>,
+}
+
+/// The submit buttons for a listing's booking mode: `(intent, label)`. An
+/// empty intent places an instant hold; `request` sends a request to book.
+pub fn checkout_actions(mode: BookingMode) -> Vec<(&'static str, &'static str)> {
+    match mode {
+        BookingMode::Instant => vec![("", "Confirm reservation")],
+        BookingMode::Request => vec![("request", "Send request to book")],
+        BookingMode::Both => vec![
+            ("", "Confirm reservation"),
+            ("request", "Request to book instead"),
+        ],
+    }
+}
+
+/// The note under the form for a listing's booking mode.
+fn checkout_note(mode: BookingMode) -> &'static str {
+    match mode {
+        BookingMode::Request => {
+            "Your card isn't charged. The host has 24 hours to respond, and your dates are held meanwhile."
+        }
+        _ => "Confirming places a hold on these dates for 2 hours while payment is arranged.",
+    }
+}
+
+/// What to tell the guest when a request to book is refused.
+pub fn request_error_message(err: &anyhow::Error, max_guests: u32) -> String {
+    match api_error_code(err) {
+        Some(code) => match RequestRefusal::from_code(code) {
+            Some(refusal) => refusal.message(),
+            None => booking_error_message(code, max_guests),
+        },
+        None => "We couldn't send your request. Please try again.".to_string(),
+    }
 }
 
 /// Legacy `{slug}-jmd` style URLs carry an (active) currency in the slug.
@@ -145,6 +188,8 @@ struct CheckoutView {
     error: Option<String>,
     promo_code: String,
     promo_refusal: Option<String>,
+    mode: BookingMode,
+    enquiry_id: Option<Uuid>,
 }
 
 #[component]
@@ -189,6 +234,9 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
                         <input type="hidden" name="check_out" value=(check_out.clone()) />
                         <input type="hidden" name="guests" value=(v.guests.to_string()) />
                         <input type="hidden" name="currency" value=(v.currency.clone()) />
+                        if let Some(enquiry) = v.enquiry_id {
+                            <input type="hidden" name="enquiry_id" value=(enquiry.to_string()) />
+                        }
                         <h2 class="font-serif text-2xl">"Your details"</h2>
                         <div class="grid gap-4 sm:grid-cols-2">
                             <label class=(label) for="guest-first-name">"First name"<input id="guest-first-name" name="first_name" required=(true) autocomplete="given-name" value=(v.first_name.clone()) class=(input) /></label>
@@ -219,11 +267,17 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
                         <label class=(label) for="guest-message">"Message to your host (optional)"
                             <textarea id="guest-message" name="message_to_host" rows="3" maxlength="2000" class=(format!("{input} h-auto py-2"))>(v.message.clone())</textarea>
                         </label>
-                        <p class="text-sm text-muted-foreground">"Confirming places a hold on these dates for 2 hours while payment is arranged."</p>
+                        <p id="checkout-mode-note" class="text-sm text-muted-foreground">(checkout_note(v.mode))</p>
                         if v.breakdown.is_none() {
                             <p id="checkout-no-quote" role="alert" class="text-sm text-destructive">"We couldn't price this stay right now. Please try again shortly, or choose different dates."</p>
                         }
-                        <button id="checkout-submit-btn" type="submit" disabled=(v.breakdown.is_none()) class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50">"Confirm reservation"</button>
+                        for (i, (intent, button_label)) in checkout_actions(v.mode).into_iter().enumerate() {
+                            if intent.is_empty() {
+                                <button id="checkout-submit-btn" type="submit" disabled=(v.breakdown.is_none()) class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50">(button_label)</button>
+                            } else {
+                                <button id="checkout-request-btn" type="submit" name="intent" value=(intent) disabled=(v.breakdown.is_none()) class=(if i == 0 { "h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50" } else { "h-11 w-full rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium disabled:opacity-50" })>(button_label)</button>
+                            }
+                        }
                     </form>
                 }
                 <aside aria-label="Your stay" class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
@@ -316,6 +370,8 @@ async fn build_view(
         error: None,
         promo_code,
         promo_refusal,
+        mode: details.listing.booking_mode,
+        enquiry_id: None,
     }
 }
 
@@ -337,7 +393,7 @@ pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
     .await?;
     let q = parse_query_params::<StayQuery>(cx).unwrap_or_default();
     let stay = valid_stay(q.check_in, q.check_out);
-    let view_data = build_view(
+    let mut view_data = build_view(
         cx,
         &details,
         &guest,
@@ -347,6 +403,7 @@ pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
         String::new(),
     )
     .await;
+    view_data.enquiry_id = q.enquiry_id;
     Ok(view! { checkout_view(v: view_data) })
 }
 
@@ -408,6 +465,7 @@ pub async fn checkout_submit(
     view_data.phone = form.phone.clone();
     view_data.arrival_time = form.arrival_time.clone();
     view_data.message = form.message_to_host.clone();
+    view_data.enquiry_id = form.enquiry_id;
 
     // Applying or removing a code only reprices the page. Pressing Enter in any
     // field also lands here, because Apply is the form's first button, so Enter
@@ -425,6 +483,21 @@ pub async fn checkout_submit(
         .await
         {
             Ok(()) => return Err(see_other("/bookings?new_booking=true").into()),
+            Err(message) => view_data.error = Some(message),
+        }
+    } else if form.intent == "request" {
+        match place_request(
+            cx,
+            &details,
+            &guest,
+            &form,
+            stay,
+            view_data.max_guests,
+            currency,
+        )
+        .await
+        {
+            Ok(id) => return Err(see_other(format!("/requests/{id}")).into()),
             Err(message) => view_data.error = Some(message),
         }
     }
@@ -489,6 +562,67 @@ async fn place_booking(
     }
 }
 
+/// Sends a request to book for the signed-in guest. `Err` carries the
+/// message to show; `Ok` is the new request's id.
+async fn place_request(
+    cx: &Cx,
+    details: &ListingDetails,
+    guest: &GuestSession,
+    form: &CheckoutForm,
+    stay: Option<(NaiveDate, NaiveDate)>,
+    max_guests: u32,
+    currency: String,
+) -> std::result::Result<Uuid, String> {
+    let (check_in, check_out) = stay.ok_or_else(|| {
+        "Please choose valid dates: check-out must be after check-in, starting today or later."
+            .to_string()
+    })?;
+    if form.guests == 0 || form.guests > max_guests {
+        return Err(format!("This stay allows 1 to {max_guests} guests."));
+    }
+    let body = CreateBookingRequestBody {
+        listing_id: details.listing.id,
+        check_in,
+        check_out,
+        num_adults: form.guests,
+        num_children: 0,
+        num_infants: 0,
+        num_pets: 0,
+        message: Some(form.message_to_host.trim().to_string()).filter(|m| !m.is_empty()),
+        estimated_arrival_time: ARRIVAL_TIMES
+            .contains(&form.arrival_time.as_str())
+            .then(|| form.arrival_time.clone()),
+        is_business_trip: false,
+        business_company_name: None,
+        business_tax_id: None,
+        currency: if currency.is_empty() {
+            details.listing.base_currency.clone()
+        } else {
+            currency
+        },
+        agreed_cancellation_policy: "Flexible".to_string(),
+        promo_code: Some(form.promo_code.trim().to_string()).filter(|code| !code.is_empty()),
+        enquiry_id: form.enquiry_id,
+    };
+    let token = service_token(cx, guest).map_err(|_| {
+        tracing::error!(guest_id = %guest.user_id, "request not sent: could not mint the guest's API token");
+        "We couldn't send your request. Please try again.".to_string()
+    })?;
+    match create_booking_request(&body, &token).await {
+        Ok(request) => {
+            tracing::info!(request_id = %request.id, "request to book sent");
+            Ok(request.id)
+        }
+        Err(e) => {
+            tracing::info!(
+                code = api_error_code(&e).unwrap_or("none"),
+                "request to book refused"
+            );
+            Err(request_error_message(&e, max_guests))
+        }
+    }
+}
+
 /// What to tell the guest when `booking_api` refuses a hold. A refused promo code
 /// comes first: nothing else should hide why the discount wasn't given.
 fn booking_error_message(text: &str, max_guests: u32) -> String {
@@ -496,6 +630,10 @@ fn booking_error_message(text: &str, max_guests: u32) -> String {
     // match the word check below.
     if let Some(refusal) = common::app_client::promo_refusal_in_error(text) {
         refusal.message()
+    } else if text.contains("DATE_UNAVAILABLE") {
+        "Those dates are no longer available. Please choose different dates.".to_string()
+    } else if text.contains("BOOKING_MODE_NOT_ALLOWED") {
+        "This property takes requests to book. Please send a request instead.".to_string()
     } else if text.contains("LISTING_UNAVAILABLE") {
         "This property is no longer taking bookings.".to_string()
     } else if text.contains("INVALID_STAY_DATES") {
@@ -633,6 +771,53 @@ mod checkout_form_action {
         assert_eq!(
             kept,
             ["check_in=2030-08-01", "check_out=2030-08-04", "guests=2"]
+        );
+    }
+}
+
+#[cfg(test)]
+mod checkout_request {
+    use super::*;
+    use common::app_client::booking_requests::ApiCallError;
+
+    #[test]
+    fn checkout_request_buttons_follow_the_booking_mode() {
+        let intents = |mode| {
+            checkout_actions(mode)
+                .into_iter()
+                .map(|(intent, _)| intent)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(intents(BookingMode::Instant), [""]);
+        assert_eq!(intents(BookingMode::Request), ["request"]);
+        assert_eq!(intents(BookingMode::Both), ["", "request"]);
+    }
+
+    #[test]
+    fn checkout_request_refusals_become_friendly_messages() {
+        let err = |code: &str| -> anyhow::Error {
+            ApiCallError::from_body(409, &format!(r#"{{"code":"{code}","message":"raw"}}"#)).into()
+        };
+        assert_eq!(
+            request_error_message(&err("REQUEST_ALREADY_LIVE"), 4),
+            RequestRefusal::RequestAlreadyLive.message()
+        );
+        assert_eq!(
+            request_error_message(&err("REQUEST_WINDOW_TOO_SHORT"), 4),
+            RequestRefusal::RequestWindowTooShort.message()
+        );
+        assert!(request_error_message(&err("DATE_UNAVAILABLE"), 4).contains("no longer available"));
+        assert_eq!(
+            request_error_message(&err("PROMO_EXPIRED"), 4),
+            "That promo code has expired."
+        );
+        assert!(request_error_message(&anyhow::anyhow!("network down"), 4).contains("try again"));
+    }
+
+    #[test]
+    fn checkout_request_a_hold_refused_by_mode_says_to_request() {
+        assert!(
+            booking_error_message(r#"{"code":"BOOKING_MODE_NOT_ALLOWED"}"#, 4).contains("request")
         );
     }
 }

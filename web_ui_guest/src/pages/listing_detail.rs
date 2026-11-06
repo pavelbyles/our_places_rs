@@ -1,4 +1,5 @@
 use chrono::{Months, NaiveDate};
+use common::booking_request::BookingMode;
 use common::models::{ListingDetails, ReviewResponse};
 use serde::Deserialize;
 use topcoat::{
@@ -92,21 +93,58 @@ fn checkout_href(slug: &str, q: &StayQuery, currency: Option<&str>) -> String {
     href
 }
 
-/// The quote area: price breakdown for valid dates, and the Reserve link.
+/// The booking card's call to action for a listing's booking mode: the main
+/// button's label and the note under it. Checkout offers the request option
+/// itself, so every mode links to the same checkout page.
+pub fn booking_cta(mode: BookingMode) -> (&'static str, &'static str) {
+    match mode {
+        BookingMode::Instant => (
+            "Reserve",
+            "Your dates are held while you complete checkout.",
+        ),
+        BookingMode::Request => (
+            "Request to book",
+            "The host approves each stay. You're not charged until you confirm.",
+        ),
+        BookingMode::Both => (
+            "Reserve",
+            "Book now, or send the host a request at checkout.",
+        ),
+    }
+}
+
+/// The enquiry form's URL, keeping the stay chosen so far.
+fn enquire_href(slug: &str, q: &StayQuery) -> String {
+    let mut href = format!("/listings/{slug}/enquire");
+    if let Some((a, b)) = stay_dates(q) {
+        href.push_str(&format!("?check_in={a}&check_out={b}"));
+        if let Some(g) = q.guests {
+            href.push_str(&format!("&guests={g}"));
+        }
+    }
+    href
+}
+
+/// The quote area: price breakdown for valid dates, the booking button and
+/// the "Ask a question" link.
 #[component]
 async fn quote_panel(
     slug: String,
     breakdown: Option<web_ui_common::components::domain::price_breakdown::PriceBreakdown>,
     href: String,
+    mode: BookingMode,
+    enquire: String,
 ) -> Result<impl View> {
+    let (label, note) = booking_cta(mode);
     Ok(view! {
         if let Some(b) = breakdown {
             <div id="quote-breakdown">price_breakdown(quote: b)</div>
         } else {
             <p class="text-sm text-muted-foreground">"Choose check-in and check-out dates to see the total."</p>
         }
-        <a href=(href) data-listing=(slug) class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground no-underline">"Reserve"</a>
-        <p class="text-center text-xs text-muted-foreground">"Your dates are held while you complete checkout."</p>
+        <a id="listing-book-cta" href=(href) data-listing=(slug) data-booking-mode=(mode.as_str()) class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground no-underline">(label)</a>
+        <p class="text-center text-xs text-muted-foreground">(note)</p>
+        <a id="listing-enquire-cta" href=(enquire) class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium no-underline">"Ask a question"</a>
     })
 }
 
@@ -194,6 +232,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let gallery = gallery_layout(images.len());
     let quote_url = format!("/listings/{}/quote", listing.slug);
     let href = checkout_href(&listing.slug, &q, currency.as_deref());
+    let enquire = enquire_href(&listing.slug, &q);
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     Ok(view! {
         <article class="space-y-10">
@@ -280,6 +319,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
 
                 <aside aria-label="Book this stay" class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground lg:sticky lg:top-6">
                     <p><span class="text-2xl font-medium">(price)</span><span class="text-muted-foreground">" per night"</span></p>
+                    if listing.booking_mode == BookingMode::Request {
+                        <span id="listing-approval-badge" class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">"Host approval required"</span>
+                    }
                     <form id="reserve-form" hx-get=(quote_url) hx-trigger="change" hx-target="#quote" hx-swap="innerHTML" class="space-y-4">
                         if let Some(c) = currency.clone() {
                             <input type="hidden" name="currency" value=(c) />
@@ -295,7 +337,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         </label>
                     </form>
                     <div id="quote" aria-live="polite" class="space-y-3">
-                        quote_panel(slug: listing.slug.clone(), breakdown: breakdown, href: href)
+                        quote_panel(slug: listing.slug.clone(), breakdown: breakdown, href: href, mode: listing.booking_mode, enquire: enquire)
                     </div>
                 </aside>
             </div>
@@ -335,7 +377,11 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     let href = checkout_href(&details.listing.slug, &q, currency.as_deref());
     let slug = details.listing.slug.clone();
-    Ok(view! { quote_panel(slug: slug, breakdown: breakdown, href: href) })
+    let mode = details.listing.booking_mode;
+    let enquire = enquire_href(&slug, &q);
+    Ok(
+        view! { quote_panel(slug: slug, breakdown: breakdown, href: href, mode: mode, enquire: enquire) },
+    )
 }
 
 /// Calendar fragment for prev/next month navigation.
@@ -351,6 +397,20 @@ pub async fn listing_calendar(cx: &Cx) -> Result<impl View> {
         .unwrap_or_else(jamaica_today);
     let props = calendar_props(cx, &details, month, &q).await;
     Ok(view! { date_range_calendar(props: props) })
+}
+
+#[cfg(test)]
+mod booking_mode_cta {
+    use super::{BookingMode, booking_cta};
+
+    #[test]
+    fn booking_mode_cta_labels_follow_the_mode() {
+        assert_eq!(booking_cta(BookingMode::Instant).0, "Reserve");
+        assert_eq!(booking_cta(BookingMode::Request).0, "Request to book");
+        assert_eq!(booking_cta(BookingMode::Both).0, "Reserve");
+        assert!(booking_cta(BookingMode::Both).1.contains("request"));
+        assert!(booking_cta(BookingMode::Request).1.contains("not charged"));
+    }
 }
 
 #[cfg(test)]

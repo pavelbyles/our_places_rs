@@ -601,9 +601,9 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_admin listing_booking_mode`
   - **Dependencies:** Task 8, Task 31
 
-- [ ] **Task 33: Guest listing buttons and request at checkout**
+- [x] **Task 33: Guest listing buttons and request at checkout**
   - **Scope:** M
-  - **Description:** `/listings/{slug}` shows buttons by mode, plus *Ask a question* and the "Host approval required" badge. `/checkout/{slug}` gets `action=book|request`, a message textarea and the request copy; a `request`-only listing hides *Book now*. Request success redirects to `/requests/{id}`.
+  - **Description:** `/listings/{slug}` labels its one booking button by mode (checkout itself offers the request option, so a second link to the same page would be redundant), adds *Ask a question* and the "Host approval required" badge. `/checkout/{slug}` gets `action=book|request`, a message textarea and the request copy; a `request`-only listing hides *Book now*. Request success redirects to `/requests/{id}`.
   - **Files Touched:**
     - `web_ui_guest/src/pages/listing_detail.rs`
     - `web_ui_guest/src/pages/checkout.rs`
