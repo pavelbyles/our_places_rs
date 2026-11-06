@@ -27,8 +27,8 @@ use super::reservation_changes::{
     list_reservation_change_requests, quote_reservation_change,
 };
 use super::{
-    availability, booking_requests, booking_updates, bookings, cron, documents, messages,
-    promo_codes, reservation_changes, stay_pricing,
+    availability, booking_requests, booking_updates, bookings, conversations, cron, documents,
+    messages, promo_codes, reservation_changes, stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -93,6 +93,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             booking_requests::decline_booking_request,
             booking_requests::withdraw_booking_request,
             booking_requests::checkout_booking_request,
+            conversations::get_conversation_messages,
+            conversations::post_conversation_message,
+            conversations::mark_conversation_read,
         ),
         components(
             schemas(
@@ -197,6 +200,24 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::resource("/api/v1/bookings/listing/{id}/unavailable-ranges")
             .route(web::get().to(get_unavailable_ranges)),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/conversations")
+            .wrap(from_fn(require_user))
+            .wrap(from_fn(content_negotiation_middleware))
+            .route(
+                "/{id}/messages",
+                web::get().to(conversations::get_conversation_messages),
+            )
+            .route(
+                "/{id}/messages",
+                web::post().to(conversations::post_conversation_message),
+            )
+            .route(
+                "/{id}/messages/read",
+                web::patch().to(conversations::mark_conversation_read),
+            ),
     );
 
     // Requests to book: signed-in users only; handlers check the caller is

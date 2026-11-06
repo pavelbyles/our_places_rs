@@ -418,7 +418,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core conversation_tests`
   - **Dependencies:** Task 5
 
-- [ ] **Task 21: API conversations and booking messages**
+- [x] **Task 21: API conversations and booking messages**
   - **Scope:** S
   - **Description:** `GET/POST /api/v1/conversations/{id}/messages` and `PATCH …/read`, limited to the parties and admins. `messages.rs` goes through the conversation with an unchanged contract; the cancelled-booking rule stays on the booking endpoint.
   - **Files Touched:**
