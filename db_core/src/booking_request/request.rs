@@ -406,6 +406,16 @@ async fn insert_request(
     )
     .await?;
 
+    // Last in the lock order. The guest's own holds here are already
+    // cancelled, so they don't count against them.
+    if let Some(promo) = &new.snapshot.promo {
+        let (code, usage) =
+            crate::promo::lock_and_count(tx, promo.promo_code_id, new.guest_id).await?;
+        common::promo::check_status(code.status(), Utc::now())
+            .and_then(|()| common::promo::check_usage(usage))
+            .map_err(DbError::PromoRefused)?;
+    }
+
     let conversation_id = upsert_conversation(tx, new.listing_id, new.guest_id).await?;
     let request = insert_row(tx, new, conversation_id, origin)
         .await

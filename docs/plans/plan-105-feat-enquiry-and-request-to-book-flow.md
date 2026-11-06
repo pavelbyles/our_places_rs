@@ -290,13 +290,13 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core hold_request_tests`
   - **Dependencies:** Task 9, Task 10
 
-- [ ] **Task 13: Promo usage counts live requests (D2)**
+- [x] **Task 13: Promo usage counts live requests (D2)**
   - **Scope:** S
   - **Description:** In `lock_and_count`, add live `booking_request` rows (`open`/`accepted`, `expires_at > NOW()`) to the total and per-guest counts, as a separate statement after the lock. `create_request` takes `lock_and_count` → `check_status` → `check_usage` when a code is present.
   - **Files Touched:**
     - `db_core/src/promo.rs`
     - `db_core/src/booking_request/request.rs`
-    - `db_core/src/promo_tests.rs`
+    - `db_core/src/booking_request/promo_request_tests.rs`
   - **Acceptance Criteria:**
     - [ ] With a limit-1 code, a live request makes another guest's hold refuse with `PROMO_USAGE_EXHAUSTED` (or the matching #106 code).
     - [ ] Withdrawing or expiring the request (without a sweep) frees the use.

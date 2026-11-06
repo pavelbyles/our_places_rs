@@ -21,4 +21,6 @@ pub(crate) mod fixtures;
 #[cfg(test)]
 mod hold_request_tests;
 #[cfg(test)]
+mod promo_request_tests;
+#[cfg(test)]
 mod request_tests;
