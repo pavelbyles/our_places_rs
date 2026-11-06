@@ -17,6 +17,7 @@ mod supersede;
 pub use convert::{Converted, OfferCheckout, convert_offer_to_hold};
 pub use history::{Actor, HistorySubject};
 pub use queries::{RequestDetail, get_request, list_for_guest, quotes_by_id};
+pub(crate) use request::upsert_conversation;
 pub use request::{CreatedRequest, NewRequest, create_request};
 pub use respond::{accept_request, decline_request, withdraw_request};
 pub use supersede::Superseded;

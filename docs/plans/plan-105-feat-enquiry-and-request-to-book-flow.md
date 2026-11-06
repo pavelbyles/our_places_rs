@@ -403,7 +403,7 @@ T42 final gates                      ← all
 
 ## Phase E: Threads, Enquiries and Quotes
 
-- [ ] **Task 20: db conversations**
+- [x] **Task 20: db conversations**
   - **Scope:** M
   - **Description:** `db_core/src/conversation.rs`: `upsert`, `get_with_parties`, `list_messages`, `insert_message` (sets `last_message_at`, and `first_response_at` on the pair's open enquiry or live request when a host or admin posts) and `mark_read`. `booking_message.rs` reads and writes by the booking's conversation. `transfer_booking_guest` re-anchors the messages (E18). Wire `create_request`'s optional message.
   - **Files Touched:**

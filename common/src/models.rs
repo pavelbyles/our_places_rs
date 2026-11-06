@@ -1366,8 +1366,17 @@ pub struct CreateBookingMessageRequest {
 pub struct BookingMessageResponse {
     /// Unique identifier.
     pub id: Uuid,
-    /// The booking this belongs to.
-    pub booking_id: Uuid,
+    /// The guest × listing conversation it belongs to.
+    #[serde(default)]
+    pub conversation_id: Option<Uuid>,
+    /// The booking it is about, if any.
+    pub booking_id: Option<Uuid>,
+    /// The enquiry it is about, if any.
+    #[serde(default)]
+    pub enquiry_id: Option<Uuid>,
+    /// The request to book it is about, if any.
+    #[serde(default)]
+    pub request_id: Option<Uuid>,
     /// The user who sent the message.
     pub sender_id: Uuid,
     /// Role the sender wrote as.

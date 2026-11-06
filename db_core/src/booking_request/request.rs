@@ -438,6 +438,29 @@ async fn insert_request(
     )
     .await?;
 
+    if let Some(text) = new.metadata.message_to_host.as_deref() {
+        let name = sqlx::query_scalar!(
+            r#"SELECT first_name FROM "user" WHERE id = $1"#,
+            new.guest_id
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+        crate::conversation::insert_message_tx(
+            tx,
+            &crate::conversation::NewMessage {
+                conversation_id,
+                sender_id: new.guest_id,
+                sender_role: DbMessageSenderRole::Guest,
+                sender_name: &name,
+                text,
+                booking_id: None,
+                enquiry_id: new.enquiry_id,
+                request_id: Some(request.id),
+            },
+        )
+        .await?;
+    }
+
     let closed_enquiry = match new.enquiry_id {
         Some(enquiry_id) => {
             close_source_enquiry(

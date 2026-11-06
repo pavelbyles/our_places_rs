@@ -9,6 +9,10 @@ pub mod booking_message;
 pub mod booking_request;
 /// Database connection pool initialization and health checks.
 pub mod connection;
+/// Guest × listing conversations and their messages.
+pub mod conversation;
+#[cfg(test)]
+mod conversation_tests;
 /// Currency exchange rates and conversions.
 pub mod currency;
 /// Transactional email outbox storage and lifecycle management.

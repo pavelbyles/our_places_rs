@@ -1236,13 +1236,19 @@ pub use common::models::MessageSenderRole;
 /// Database name for the shared message sender role.
 pub type DbMessageSenderRole = MessageSenderRole;
 
-/// A message between a guest and a host about a booking.
+/// A message in a guest × listing conversation, tagged with what it is about.
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct DbBookingMessage {
     /// Unique identifier.
     pub id: Uuid,
-    /// The booking this belongs to.
-    pub booking_id: Uuid,
+    /// The guest × listing conversation it belongs to.
+    pub conversation_id: Uuid,
+    /// The booking it is about, if any.
+    pub booking_id: Option<Uuid>,
+    /// The enquiry it is about, if any.
+    pub enquiry_id: Option<Uuid>,
+    /// The request to book it is about, if any.
+    pub request_id: Option<Uuid>,
     /// The user who sent the message.
     pub sender_id: Uuid,
     /// Role the sender wrote as.
@@ -1261,7 +1267,10 @@ impl From<DbBookingMessage> for common::models::BookingMessageResponse {
     fn from(msg: DbBookingMessage) -> Self {
         common::models::BookingMessageResponse {
             id: msg.id,
+            conversation_id: Some(msg.conversation_id),
             booking_id: msg.booking_id,
+            enquiry_id: msg.enquiry_id,
+            request_id: msg.request_id,
             sender_id: msg.sender_id,
             sender_role: msg.sender_role,
             sender_name: msg.sender_name,

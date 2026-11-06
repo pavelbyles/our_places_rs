@@ -360,6 +360,18 @@ pub async fn transfer_booking_guest(
     )
     .await?;
 
+    // The booking's messages follow it into the new guest's conversation.
+    let conversation_id =
+        crate::booking_request::upsert_conversation(&mut tx, booking.listing_id, new_guest_id)
+            .await?;
+    sqlx::query!(
+        "UPDATE booking_message SET conversation_id = $2 WHERE booking_id = $1",
+        booking.id,
+        conversation_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit().await?;
 
     Ok(booking)

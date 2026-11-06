@@ -277,7 +277,6 @@ async fn new_booking_messages_join_the_guest_and_listing_conversation() {
         async move {
             crate::booking_message::insert_booking_message(
                 &pool,
-                Uuid::now_v7(),
                 booking,
                 sender,
                 crate::models::DbMessageSenderRole::Guest,
@@ -290,7 +289,7 @@ async fn new_booking_messages_join_the_guest_and_listing_conversation() {
     };
     let m1 = send(first, guest).await;
     let m2 = send(second, host).await;
-    assert_eq!(m1.booking_id, first);
+    assert_eq!(m1.booking_id, Some(first));
 
     assert_eq!(
         conversation_of(&pool, m1.id).await,
@@ -299,6 +298,7 @@ async fn new_booking_messages_join_the_guest_and_listing_conversation() {
     let listed = crate::booking_message::list_booking_messages(&pool, first)
         .await
         .expect("list messages");
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].id, m1.id);
+    // A booking shows its whole guest × listing conversation.
+    let ids: Vec<Uuid> = listed.iter().map(|m| m.id).collect();
+    assert_eq!(ids, vec![m1.id, m2.id]);
 }
