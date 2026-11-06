@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.id, e.guest_id, g.email AS guest_email, g.first_name AS guest_name,\n            l.user_id AS host_id, h.email AS host_email, h.first_name AS host_name,\n            l.name AS listing_name, e.date_from, e.date_to, e.number_of_persons\n        FROM booking_enquiry e\n        JOIN listing l ON l.id = e.listing_id\n        JOIN \"user\" g ON g.id = e.guest_id\n        JOIN \"user\" h ON h.id = l.user_id\n        WHERE e.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "guest_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "host_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "78f8f512b1530bcedfd8fec2acb1e08bfe72ddafb55bd9b026911cb7268ecadb"
+}

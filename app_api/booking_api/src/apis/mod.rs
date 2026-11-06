@@ -29,6 +29,7 @@ mod ledger;
 mod messages;
 mod notifications;
 mod promo_codes;
+mod request_notifications;
 mod reservation_changes;
 mod routes;
 mod stay_pricing;
@@ -331,6 +332,8 @@ mod quote_api_tests;
 mod rate_tests;
 #[cfg(test)]
 mod request_api_tests;
+#[cfg(test)]
+mod request_notification_tests;
 #[cfg(test)]
 mod stay_override_tests;
 #[cfg(test)]

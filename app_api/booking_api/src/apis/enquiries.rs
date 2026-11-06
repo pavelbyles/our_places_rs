@@ -4,6 +4,7 @@
 use super::booking_requests::{
     PartyRole, QuoteStay, check_user_text, price_quote, request_response,
 };
+use super::request_notifications::{RequestEvent, Subject, notify};
 use super::stay_pricing::{check_guest_count, load_listing, stay_today};
 use super::{caller, is_admin, not_found};
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -135,6 +136,12 @@ pub(super) async fn create_enquiry(
     .await
     .map_err(ApiError::Database)?;
     tracing::info!(enquiry_id = %created.enquiry.id, chars = message.chars().count(), "enquiry sent");
+    notify(
+        pool.get_ref(),
+        RequestEvent::EnquirySent,
+        Subject::Enquiry(created.enquiry.id),
+        Some(message.to_string()),
+    );
     Ok(respond(
         &req,
         Payload::Item(enquiry_response(&created.enquiry)),
@@ -281,6 +288,12 @@ pub(super) async fn quote_enquiry(
     .await
     .map_err(ApiError::Database)?;
     tracing::info!(actor_id = %claims.sub, enquiry_id = %id, request_id = %sent.request.id, action = "quote", "custom quote sent on an enquiry");
+    notify(
+        pool.get_ref(),
+        RequestEvent::Quoted,
+        Subject::Request(sent.request.id),
+        None,
+    );
     Ok(respond(
         &req,
         Payload::Item(request_response(&sent.request, Some(&sent.quote))),

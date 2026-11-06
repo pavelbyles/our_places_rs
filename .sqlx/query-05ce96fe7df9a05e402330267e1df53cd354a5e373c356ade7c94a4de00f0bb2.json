@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id, r.guest_id, g.email AS guest_email, g.first_name AS guest_name,\n            l.user_id AS host_id, h.email AS host_email, h.first_name AS host_name,\n            l.name AS listing_name, r.date_from, r.date_to, r.number_of_persons,\n            COALESCE(q.price_snapshot ->> 'currency', r.price_snapshot ->> 'currency') AS currency,\n            COALESCE(q.price_snapshot ->> 'total_price', r.price_snapshot ->> 'total_price') AS total,\n            r.expires_at, r.decline_reason AS \"decline_reason: DeclineReason\", r.decline_note,\n            q.terms AS \"terms?\",\n            (r.status = 'quoted' AND r.promo_code_id IS NOT NULL) AS \"promo_dropped!\"\n        FROM booking_request r\n        JOIN listing l ON l.id = r.listing_id\n        JOIN \"user\" g ON g.id = r.guest_id\n        JOIN \"user\" h ON h.id = l.user_id\n        LEFT JOIN booking_request_quote q ON q.id = r.current_quote_id\n        WHERE r.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "guest_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "host_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "number_of_persons",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "total",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "decline_reason: DeclineReason",
+        "type_info": {
+          "Custom": {
+            "name": "decline_reason",
+            "kind": {
+              "Enum": [
+                "dates_unavailable",
+                "group_size",
+                "stay_length",
+                "event_not_permitted",
+                "other"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "decline_note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "terms?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "promo_dropped!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "05ce96fe7df9a05e402330267e1df53cd354a5e373c356ade7c94a4de00f0bb2"
+}

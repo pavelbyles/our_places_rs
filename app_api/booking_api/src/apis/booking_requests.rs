@@ -4,6 +4,7 @@
 //! Message text and promo codes never enter a log or span: handlers use
 //! `skip_all` and log ids only.
 
+use super::request_notifications::{RequestEvent, Subject, notify};
 use super::stay_pricing::{
     OnRefusal, PromoRequest, StayRequest, check_guest_count, load_listing, price_stay, stay_today,
 };
@@ -277,6 +278,12 @@ pub(super) async fn create_booking_request(
         superseded_holds = created.superseded_holds.len(),
         "request to book submitted"
     );
+    notify(
+        pool.get_ref(),
+        RequestEvent::Submitted,
+        Subject::Request(created.request.id),
+        created.request.metadata.message_to_host.clone(),
+    );
 
     Ok(respond(
         &req,
@@ -394,6 +401,12 @@ pub(super) async fn accept_booking_request(
     .await
     .map_err(ApiError::Database)?;
     tracing::info!(actor_id = %claims.sub, request_id = %id, action = "accept", "request accepted");
+    notify(
+        pool.get_ref(),
+        RequestEvent::Accepted,
+        Subject::Request(*id),
+        None,
+    );
     Ok(ok(&req, &accepted))
 }
 
@@ -441,6 +454,12 @@ pub(super) async fn decline_booking_request(
         reason = body.reason.as_str(),
         "request declined"
     );
+    notify(
+        pool.get_ref(),
+        RequestEvent::Declined,
+        Subject::Request(*id),
+        None,
+    );
     Ok(ok(&req, &declined))
 }
 
@@ -471,6 +490,12 @@ pub(super) async fn withdraw_booking_request(
         .await
         .map_err(ApiError::Database)?;
     tracing::info!(actor_id = %claims.sub, request_id = %id, action = "withdraw", "request withdrawn");
+    notify(
+        pool.get_ref(),
+        RequestEvent::Withdrawn,
+        Subject::Request(*id),
+        None,
+    );
     Ok(ok(&req, &withdrawn))
 }
 
@@ -523,6 +548,12 @@ pub(super) async fn checkout_booking_request(
                     booking_id = %converted.booking.id,
                     action = "checkout",
                     "offer converted to a pending hold"
+                );
+                notify(
+                    pool.get_ref(),
+                    RequestEvent::Converted,
+                    Subject::Request(*id),
+                    None,
                 );
                 return Ok(respond(
                     &req,
@@ -695,6 +726,12 @@ pub(super) async fn send_quote(
     .await
     .map_err(ApiError::Database)?;
     tracing::info!(actor_id = %claims.sub, request_id = %id, quote_id = %sent.quote.id, action = "quote", "custom quote sent");
+    notify(
+        pool.get_ref(),
+        RequestEvent::Quoted,
+        Subject::Request(*id),
+        None,
+    );
     Ok(respond(
         &req,
         Payload::Item(request_response(&sent.request, Some(&sent.quote))),

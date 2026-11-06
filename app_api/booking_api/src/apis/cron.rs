@@ -438,6 +438,9 @@ pub async fn run_sweeps(
             "expired requests to book"
         );
     }
+    for request in &requests {
+        super::request_notifications::notify_expired(pool.get_ref(), request.id).await;
+    }
     let enquiries_closed = db_core::booking_request::close_past_enquiries(
         pool.get_ref(),
         common::availability::jamaica_today(Utc::now()),

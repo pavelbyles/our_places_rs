@@ -523,11 +523,13 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p email_worker request_template_tests && cargo test -p common email_template`
   - **Dependencies:** Task 1
 
-- [ ] **Task 28: Request notification wiring**
+- [x] **Task 28: Request notification wiring**
   - **Scope:** M
   - **Description:** `notifications::dispatch_request_notifications(pool, event, facts)` enqueues the guest and host emails after commit. Call it from every handler (enquiry, request, accept, decline, quote, checkout, withdraw), from the `create_booking` supersession and from the sweep expiry (claimed in `request_notification_log` first). The message email links to the thread.
   - **Files Touched:**
-    - `app_api/booking_api/src/apis/notifications.rs`
+    - `app_api/booking_api/src/apis/request_notifications.rs`
+    - `db_core/src/booking_request/notify.rs`
+    - `app_api/booking_api/src/apis/bookings.rs`
     - `app_api/booking_api/src/apis/booking_requests.rs`
     - `app_api/booking_api/src/apis/enquiries.rs`
     - `app_api/booking_api/src/apis/cron.rs`
