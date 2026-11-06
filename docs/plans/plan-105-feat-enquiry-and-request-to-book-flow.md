@@ -108,7 +108,7 @@ T42 final gates                      ← all
 
 ## Phase A: Foundations
 
-- [ ] **Task 1: Request domain types in `common`**
+- [x] **Task 1: Request domain types in `common`**
   - **Scope:** S
   - **Description:** Add `common/src/booking_request.rs` with `BookingMode`, `RequestStatus` (`is_live`, `can_transition_to`), `EnquiryStatus`, `EnquiryClosedReason`, `DeclineReason` (`requires_note`), `RequestRefusal` (`code`, `message`, `http_status`), `response_window` (D4 cap at check-in 00:00 Jamaica = 05:00 UTC, 1h minimum) and `is_near_expiry`. Pure, with no I/O.
   - **Files Touched:**
