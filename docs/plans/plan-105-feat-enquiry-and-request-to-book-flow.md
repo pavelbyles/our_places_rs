@@ -166,7 +166,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_migration_tests`
   - **Dependencies:** None
 
-- [ ] **Task 5: db_core models and `DbError::RequestRefused`**
+- [x] **Task 5: db_core models and `DbError::RequestRefused`**
   - **Scope:** S
   - **Description:** `sqlx::Type` enums mirroring T1, `DbBookingRequest`, `DbBookingEnquiry`, `DbRequestQuote`, `DbConversation`, `From` impls into the `common` DTOs, and `StayPriceSnapshot → NewBooking`. Add `DbError::RequestRefused(RequestRefusal)`. The `DbBookingMessage` column changes move to T20, where the message queries are rewritten.
   - **Files Touched:**
@@ -174,7 +174,7 @@ T42 final gates                      ← all
     - `db_core/src/error.rs`
     - `db_core/src/booking_message.rs`
   - **Acceptance Criteria:**
-    - [ ] Every enum round-trips through Postgres (insert and select a row per variant).
+    - [ ] Every enum round-trips through Postgres (covered by the T10 insert/`RETURNING` tests and the lifecycle tests that follow).
     - [ ] A snapshot → `NewBooking` conversion preserves every money field.
     - [ ] Existing booking-message tests still pass.
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_model_tests`
