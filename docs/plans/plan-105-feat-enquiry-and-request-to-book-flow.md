@@ -305,21 +305,22 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core promo_request_usage_tests`
   - **Dependencies:** Task 10
 
-- [ ] **Task 14: `price_stay` rate source and stay override**
+- [x] **Task 14: `price_stay` rate source and stay override**
   - **Scope:** S
-  - **Description:** `StayRequest` gains `rate: RateSource { Current, Locked(Decimal) }` and `stay_override: Option<Decimal>` (base currency). A locked rate skips the FX lookup. An override converts at the rate, calls `with_custom_stay_price`, forces `promo = None`, and checks the quote floor (`> 0` after conversion and rounding, `check_amounts_fit`) → `InvalidQuotePrice`.
+  - **Description:** `StayRequest` gains `locked_rate: Option<Decimal>` (`None` = the current `NewQuote` rate) and `stay_override: Option<Decimal>` (base currency). A locked rate skips the FX lookup. An override converts at the rate, calls `with_custom_stay_price`, forces `promo = None`, and checks the quote floor (`> 0` after conversion and rounding, `check_amounts_fit`) → `InvalidQuotePrice`.
   - **Files Touched:**
     - `app_api/booking_api/src/apis/stay_pricing.rs`
-    - `app_api/booking_api/src/apis/stay_pricing_pin_tests.rs`
+    - `app_api/booking_api/src/apis/stay_override_tests.rs`
+    - `common/testdata/custom_quote_golden.json`
   - **Acceptance Criteria:**
-    - [ ] Existing callers (`Current`, no override) price identically; the golden tests are unchanged.
+    - [ ] Existing callers (no locked rate, no override) price identically; the golden tests are unchanged.
     - [ ] A locked rate is used even after a newer rate version is published.
     - [ ] Override values of 0, negative, 3 dp and too large are each refused with 400 `INVALID_QUOTE_PRICE`.
     - [ ] An override with a promo code in the request ignores the code.
   - **Verification Command:** `devenv shell -- cargo test -p booking_api stay_override_tests`
   - **Dependencies:** Task 2
 
-- [ ] **Task 15: API create and read requests**
+- [x] **Task 15: API create and read requests**
   - **Scope:** M
   - **Description:** `apis/booking_requests.rs`: `POST /api/v1/booking-requests` (price → snapshot → `create_request` with `response_window`), `GET /{id}`, and `GET /mine`. Add `authorize_request_party` (guest, host or admin, otherwise 403) and the owner-on-own-listing refusal (E19). Wire `routes.rs` and the utoipa annotations.
   - **Files Touched:**
@@ -327,6 +328,8 @@ T42 final gates                      ← all
     - `app_api/booking_api/src/apis/mod.rs`
     - `app_api/booking_api/src/apis/routes.rs`
     - `app_api/booking_api/src/apis/request_api_tests.rs`
+    - `db_core/src/booking_request/queries.rs`
+    - `common/src/booking_request.rs` (request DTOs)
   - **Acceptance Criteria:**
     - [ ] 201 with the snapshot breakdown; dates are then unavailable through `/bookings/listing/{id}/unavailable-ranges`.
     - [ ] Each error in spec §3.4 for this row is returned with its code, including 422 `REQUEST_WINDOW_TOO_SHORT` for a check-in tomorrow at 00:30 Jamaica.

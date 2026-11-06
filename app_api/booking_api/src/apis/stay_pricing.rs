@@ -9,10 +9,12 @@ use api_core::error::ApiError;
 use api_core::settings::Settings;
 use chrono::{NaiveDate, Utc};
 use common::availability::{StayInputError, validate_stay_dates};
+use common::booking_request::RequestRefusal;
 use common::currency::CurrencyCode;
 use common::models::{StayQuotePromo, StayQuoteRefusal, StayQuoteRequest, StayQuoteResponse};
 use common::pricing::{
-    BookingCalculator, StayPricingInput, Taxed, fits_booking_columns, price_before_promo,
+    BookingCalculator, Discounted, StayPricingInput, Taxed, custom_stay_total,
+    fits_booking_columns, price_before_promo,
 };
 use common::promo::{
     PromoRefusal, PromoStay, PromoTerms, check_status, check_stay_rules, check_usage,
@@ -67,6 +69,12 @@ pub(super) struct StayRequest<'a> {
     pub(super) max_stay_nights: i64,
     /// Today in Jamaica: earlier check-ins are refused.
     pub(super) today: NaiveDate,
+    /// A rate frozen on a request's snapshot, so a quote on it doesn't move
+    /// with later rate changes. `None` uses the current rate for a new quote.
+    pub(super) locked_rate: Option<Decimal>,
+    /// A host's custom stay price in the listing's base currency. It replaces
+    /// the accommodation subtotal, and drops any promo code.
+    pub(super) stay_override: Option<Decimal>,
 }
 
 /// Today's date for a stay being priced now.
@@ -165,6 +173,22 @@ fn check_amounts_fit(calculator: &BookingCalculator<Taxed>) -> Result<(), ApiErr
     Ok(())
 }
 
+/// Replaces a stay's accommodation subtotal with a host's custom price, given
+/// in the listing's base currency and converted at `rate`. The price must be
+/// above zero with at most 2 decimal places, and still above zero once
+/// converted; anything else is [`RequestRefusal::InvalidQuotePrice`].
+pub(super) fn apply_stay_override(
+    discounted: BookingCalculator<Discounted>,
+    base_price: Decimal,
+    rate: Decimal,
+) -> Result<BookingCalculator<Discounted>, RequestRefusal> {
+    let valid_input = base_price > Decimal::ZERO && base_price.normalize().scale() <= 2;
+    let stay_total = custom_stay_total(base_price, rate);
+    (valid_input && stay_total > Decimal::ZERO)
+        .then(|| discounted.with_custom_stay_price(stay_total))
+        .ok_or(RequestRefusal::InvalidQuotePrice)
+}
+
 /// Prices a stay in the requested currency, with any promo code.
 pub(super) async fn price_stay(
     pool: &PgPool,
@@ -196,25 +220,28 @@ pub(super) async fn price_stay(
 
     // Every amount is priced in the checkout currency. A missing rate is a 422,
     // never a silent fallback that would label base-currency amounts wrongly.
-    let conversion_rate = get_rate_pool(
-        pool,
-        &listing.base_currency,
-        &currency,
-        Utc::now(),
-        RateUse::NewQuote,
-    )
-    .await
-    .map_err(|e| {
-        // A warning: visitors can ask for any currency on the public quote.
-        tracing::warn!(
-            listing_id = %listing.id,
-            from = %listing.base_currency,
-            to = %currency,
-            error = %e,
-            "checkout currency conversion failed"
-        );
-        ApiError::Database(e)
-    })?;
+    let conversion_rate = match request.locked_rate {
+        Some(rate) => rate,
+        None => get_rate_pool(
+            pool,
+            &listing.base_currency,
+            &currency,
+            Utc::now(),
+            RateUse::NewQuote,
+        )
+        .await
+        .map_err(|e| {
+            // A warning: visitors can ask for any currency on the public quote.
+            tracing::warn!(
+                listing_id = %listing.id,
+                from = %listing.base_currency,
+                to = %currency,
+                error = %e,
+                "checkout currency conversion failed"
+            );
+            ApiError::Database(e)
+        })?,
+    };
     let raw_overrides = db_listing::get_active_overrides_for_dates(
         pool,
         listing.id,
@@ -242,10 +269,20 @@ pub(super) async fn price_stay(
         monthly_discount_percentage: listing.monthly_discount_percentage,
     })
     .map_err(map_pricing_error)?;
+    let discounted = match request.stay_override {
+        Some(base_price) => apply_stay_override(discounted, base_price, conversion_rate)
+            .map_err(|refused| {
+                tracing::warn!(listing_id = %listing.id, code = refused.code(), "custom stay price refused");
+                ApiError::Database(DbError::RequestRefused(refused))
+            })?,
+        None => discounted,
+    };
 
     let mut resolved = None;
     let mut promo_refusal = None;
-    let requested = match request.promo {
+    // A custom quote sets the final price, so a promo code never applies to it.
+    let promo_request = request.promo.filter(|_| request.stay_override.is_none());
+    let requested = match promo_request {
         Some(promo) => match normalize_code(promo.raw_code) {
             Ok(Some(code)) => Some((promo, Ok(code))),
             Ok(None) => None,
@@ -290,6 +327,11 @@ pub(super) async fn price_stay(
             &listing.country,
         ))
         .finalize();
+    if request.stay_override.is_some() && !fits_booking_columns(&calculator) {
+        return Err(ApiError::Database(DbError::RequestRefused(
+            RequestRefusal::InvalidQuotePrice,
+        )));
+    }
     check_amounts_fit(&calculator)?;
 
     let promo = resolved.map(|(found, terms)| NewBookingPromo {
@@ -412,6 +454,8 @@ pub(super) async fn public_listing_quote(
             promo: None,
             max_stay_nights: settings.application.max_stay_nights,
             today: stay_today(),
+            locked_rate: None,
+            stay_override: None,
         },
     )
     .await?;
@@ -460,6 +504,8 @@ pub(super) async fn signed_in_quote(
             }),
             max_stay_nights: settings.application.max_stay_nights,
             today: stay_today(),
+            locked_rate: None,
+            stay_override: None,
         },
     )
     .await?;

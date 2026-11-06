@@ -518,6 +518,185 @@ impl StayPriceSnapshot {
     }
 }
 
+/// A request-to-book submission from a signed-in guest.
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, utoipa::ToSchema)]
+pub struct CreateBookingRequestBody {
+    /// The listing to book.
+    pub listing_id: Uuid,
+    /// First night.
+    pub check_in: NaiveDate,
+    /// Departure date.
+    pub check_out: NaiveDate,
+    /// Number of adults; at least 1.
+    pub num_adults: u32,
+    /// Number of children.
+    #[serde(default)]
+    pub num_children: u32,
+    /// Number of infants.
+    #[serde(default)]
+    pub num_infants: u32,
+    /// Number of pets.
+    #[serde(default)]
+    pub num_pets: u32,
+    /// A note to the host (user text; never logged).
+    #[serde(default)]
+    #[validate(length(max = 2000))]
+    pub message: Option<String>,
+    /// Estimated time of arrival.
+    #[serde(default)]
+    #[validate(length(max = 64))]
+    pub estimated_arrival_time: Option<String>,
+    /// Whether the stay is for business.
+    #[serde(default)]
+    pub is_business_trip: bool,
+    /// Company name for a business stay.
+    #[serde(default)]
+    #[validate(length(max = 200))]
+    pub business_company_name: Option<String>,
+    /// Taxpayer registration number for a business stay.
+    #[serde(default)]
+    #[validate(length(max = 64))]
+    pub business_tax_id: Option<String>,
+    /// Payment currency.
+    #[validate(length(min = 3, max = 3))]
+    pub currency: String,
+    /// The cancellation policy the guest agrees to.
+    pub agreed_cancellation_policy: String,
+    /// Promo code as typed. Blank means no code.
+    #[serde(default)]
+    #[validate(length(max = 256))]
+    pub promo_code: Option<String>,
+    /// The guest's enquiry this request follows from, if any.
+    #[serde(default)]
+    pub enquiry_id: Option<Uuid>,
+}
+
+/// A stay's price, line by line, in the payment currency.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct PriceBreakdown {
+    /// Payment currency.
+    pub currency: String,
+    /// Number of nights.
+    pub nights: i32,
+    /// Nightly rate, for display.
+    #[schema(value_type = String)]
+    pub nightly_rate: Decimal,
+    /// Accommodation before weekly or monthly discounts.
+    #[schema(value_type = String)]
+    pub subtotal: Decimal,
+    /// Weekly or monthly discount.
+    #[schema(value_type = String)]
+    pub stay_discount: Decimal,
+    /// Promo discount on the stay and cleaning fee.
+    #[schema(value_type = String)]
+    pub promo_discount: Decimal,
+    /// Cleaning fee.
+    #[schema(value_type = String)]
+    pub cleaning_fee: Decimal,
+    /// Statutory tax.
+    #[schema(value_type = String)]
+    pub tax: Decimal,
+    /// Guest platform fee.
+    #[schema(value_type = String)]
+    pub platform_fee: Decimal,
+    /// Refundable damage deposit.
+    #[schema(value_type = String)]
+    pub damage_deposit: Decimal,
+    /// Total the guest pays.
+    #[schema(value_type = String)]
+    pub total: Decimal,
+}
+
+impl From<&StayPriceSnapshot> for PriceBreakdown {
+    fn from(s: &StayPriceSnapshot) -> Self {
+        let promo_discount = s
+            .promo
+            .as_ref()
+            .map_or(Decimal::ZERO, |p| p.stay_discount + p.cleaning_discount);
+        Self {
+            currency: s.currency.clone(),
+            nights: s.total_days,
+            nightly_rate: s.daily_rate,
+            subtotal: s.sub_total_price,
+            stay_discount: s.discount_value.unwrap_or(Decimal::ZERO),
+            promo_discount,
+            cleaning_fee: s.cleaning_fee,
+            tax: s.tax_value.unwrap_or(Decimal::ZERO),
+            platform_fee: s.platform_fee,
+            damage_deposit: s.damage_deposit,
+            total: s.total_price,
+        }
+    }
+}
+
+/// A host's custom quote, as the guest and host see it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct QuoteSummary {
+    /// Quote id; the guest names it when accepting.
+    pub id: Uuid,
+    /// The stay price the host entered, in the listing's base currency.
+    #[schema(value_type = String)]
+    pub stay_price_base: Decimal,
+    /// The host's special terms (user text).
+    pub terms: String,
+    /// The quoted price.
+    pub price: PriceBreakdown,
+    /// When the quote expires.
+    pub valid_until: DateTime<Utc>,
+    /// When it was sent.
+    pub created_at: DateTime<Utc>,
+}
+
+/// A request to book, as the guest, host or admin sees it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct BookingRequestResponse {
+    /// Request id.
+    pub id: Uuid,
+    /// The guest × listing thread.
+    pub conversation_id: Uuid,
+    /// The listing.
+    pub listing_id: Uuid,
+    /// The guest.
+    pub guest_id: Uuid,
+    /// The enquiry it came from, if any.
+    pub enquiry_id: Option<Uuid>,
+    /// How it came about.
+    pub origin: RequestOrigin,
+    /// Where it is in its lifecycle.
+    pub status: RequestStatus,
+    /// First night.
+    pub check_in: NaiveDate,
+    /// Departure date.
+    pub check_out: NaiveDate,
+    /// Total guests.
+    pub guests: i32,
+    /// The price as requested.
+    pub requested_price: PriceBreakdown,
+    /// Whether the requested price includes a promo code.
+    pub promo_applied: bool,
+    /// The live custom quote, if the host sent one.
+    pub quote: Option<QuoteSummary>,
+    /// When the request or offer stops holding its dates.
+    pub expires_at: DateTime<Utc>,
+    /// When the host first responded.
+    pub first_response_at: Option<DateTime<Utc>>,
+    /// Why the host declined.
+    pub decline_reason: Option<DeclineReason>,
+    /// The host's note with a decline (user text).
+    pub decline_note: Option<String>,
+    /// The booking it became, once converted.
+    pub booking_id: Option<Uuid>,
+    /// When it was submitted.
+    pub created_at: DateTime<Utc>,
+}
+
+/// A guest's requests, newest first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct BookingRequestList {
+    /// The requests.
+    pub requests: Vec<BookingRequestResponse>,
+}
+
 /// When a new request's response window ends: `hours` from `now`, but never
 /// after check-in day starts in Jamaica. A window capped below
 /// [`MIN_REQUEST_WINDOW_MINUTES`] is refused, so the host always has time.

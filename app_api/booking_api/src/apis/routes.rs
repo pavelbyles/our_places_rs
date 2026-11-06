@@ -27,8 +27,8 @@ use super::reservation_changes::{
     list_reservation_change_requests, quote_reservation_change,
 };
 use super::{
-    availability, booking_updates, bookings, cron, documents, messages, promo_codes,
-    reservation_changes, stay_pricing,
+    availability, booking_requests, booking_updates, bookings, cron, documents, messages,
+    promo_codes, reservation_changes, stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -86,11 +86,23 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             promo_codes::get_promo_code,
             promo_codes::create_promo_code,
             promo_codes::deactivate_promo_code,
+            booking_requests::create_booking_request,
+            booking_requests::get_booking_request,
+            booking_requests::my_booking_requests,
         ),
         components(
             schemas(
                 NewBookingRequest,
                 UpdatedBookingRequest,
+                common::booking_request::CreateBookingRequestBody,
+                common::booking_request::BookingRequestResponse,
+                common::booking_request::BookingRequestList,
+                common::booking_request::PriceBreakdown,
+                common::booking_request::QuoteSummary,
+                common::booking_request::RequestStatus,
+                common::booking_request::RequestOrigin,
+                common::booking_request::DeclineReason,
+                common::booking_request::BookingMode,
                 common::models::TransferBookingRequest,
                 AvailabilityResponse,
                 common::availability::UnavailableRange,
@@ -151,7 +163,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             (name = "bookings", description = "Booking management endpoints"),
             (name = "currencies", description = "Currency reference data"),
             (name = "exchange-rates", description = "Exchange-rate administration"),
-            (name = "promo-codes", description = "Promo code administration")
+            (name = "promo-codes", description = "Promo code administration"),
+            (name = "booking-requests", description = "Enquiries and requests to book")
         ),
     )]
     struct ApiDoc;
@@ -178,6 +191,23 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::resource("/api/v1/bookings/listing/{id}/unavailable-ranges")
             .route(web::get().to(get_unavailable_ranges)),
+    );
+
+    // Requests to book: signed-in users only; handlers check the caller is
+    // the request's guest, the listing's host or an admin.
+    cfg.service(
+        web::scope("/api/v1/booking-requests")
+            .wrap(from_fn(require_user))
+            .wrap(from_fn(content_negotiation_middleware))
+            .route("", web::post().to(booking_requests::create_booking_request))
+            .route(
+                "/mine",
+                web::get().to(booking_requests::my_booking_requests),
+            )
+            .route(
+                "/{id}",
+                web::get().to(booking_requests::get_booking_request),
+            ),
     );
 
     // Everything else needs a signed-in user; handlers then check that the

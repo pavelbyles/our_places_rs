@@ -99,6 +99,8 @@ pub(super) async fn create_booking(
             }),
             max_stay_nights: settings.application.max_stay_nights,
             today: stay_today(),
+            locked_rate: None,
+            stay_override: None,
         },
     )
     .await?;

@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 mod availability;
 mod booking_policy;
+mod booking_requests;
 mod booking_updates;
 mod bookings;
 mod cron;
@@ -322,6 +323,8 @@ mod promo_hold_tests;
 mod rate_tests;
 #[cfg(test)]
 mod request_api_tests;
+#[cfg(test)]
+mod stay_override_tests;
 #[cfg(test)]
 mod stay_pricing_pin_tests;
 #[cfg(test)]
