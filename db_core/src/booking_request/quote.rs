@@ -43,17 +43,34 @@ pub struct SentQuote {
     pub quote: DbRequestQuote,
 }
 
+/// When a quote is sent and how it is recorded.
+struct Sending<'a> {
+    /// The request's status before the quote; `None` for one just created.
+    from: Option<RequestStatus>,
+    /// Who sent it.
+    actor: Actor,
+    /// When the quote expires.
+    valid_until: DateTime<Utc>,
+    /// The database clock, read under the locks.
+    now: DateTime<Utc>,
+    /// The history reason.
+    reason: &'a str,
+}
+
 /// Inserts a quote, replacing any live one, and marks the request quoted.
 async fn insert_quote(
     conn: &mut PgConnection,
     request: &DbBookingRequest,
-    from: Option<RequestStatus>,
-    actor: Actor,
     quote: &NewQuote<'_>,
-    valid_until: DateTime<Utc>,
-    now: DateTime<Utc>,
-    reason: &str,
+    sending: Sending<'_>,
 ) -> Result<SentQuote> {
+    let Sending {
+        from,
+        actor,
+        valid_until,
+        now,
+        reason,
+    } = sending;
     sqlx::query!(
         "UPDATE booking_request_quote SET superseded_at = $2
          WHERE request_id = $1 AND superseded_at IS NULL",
@@ -140,12 +157,14 @@ pub async fn send_quote(
     let sent = insert_quote(
         &mut tx,
         &locked.request,
-        Some(locked.request.status),
-        actor,
         quote,
-        valid_until,
-        locked.now,
-        "Custom quote sent",
+        Sending {
+            from: Some(locked.request.status),
+            actor,
+            valid_until,
+            now: locked.now,
+            reason: "Custom quote sent",
+        },
     )
     .await?;
     tx.commit().await?;
@@ -228,12 +247,14 @@ pub async fn quote_enquiry(
     let sent = insert_quote(
         &mut tx,
         &request,
-        None,
-        actor,
         quote,
-        valid_until,
-        now,
-        "Custom quote on an enquiry",
+        Sending {
+            from: None,
+            actor,
+            valid_until,
+            now,
+            reason: "Custom quote on an enquiry",
+        },
     )
     .await?;
     close_open(
