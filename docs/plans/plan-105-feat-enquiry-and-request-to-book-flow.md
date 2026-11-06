@@ -179,11 +179,12 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_model_tests`
   - **Dependencies:** Task 1, Task 4
 
-- [ ] **Task 6: API error mapping for request refusals**
+- [x] **Task 6: API error mapping for request refusals**
   - **Scope:** XS
-  - **Description:** Add `status_code` and `error_response` arms for `DbError::RequestRefused(r)` → `{code, message}` with `r.http_status()`, plus a `warn!` with the code.
+  - **Description:** Add `DbError::RequestRefused(RequestRefusal)` (moved here from T5 so it could land before the database was available), plus `status_code` and `error_response` arms for `DbError::RequestRefused(r)` → `{code, message}` with `r.http_status()`, plus a `warn!` with the code.
   - **Files Touched:**
     - `app_api/api_core/src/error.rs`
+    - `db_core/src/error.rs`
   - **Acceptance Criteria:**
     - [ ] Each variant gives its status code and body code (mirrors `every_refusal_is_a_422_with_its_code_and_message`).
     - [ ] `status_code` and `error_response` agree for every variant.

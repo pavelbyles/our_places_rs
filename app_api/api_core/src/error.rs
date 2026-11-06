@@ -99,6 +99,9 @@ impl ResponseError for ApiError {
             ) => StatusCode::CONFLICT,
             ApiError::Database(DbError::LockContention(_)) => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Database(DbError::PromoRefused(_)) => StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::Database(DbError::RequestRefused(refusal)) => {
+                StatusCode::from_u16(refusal.http_status()).unwrap_or(StatusCode::CONFLICT)
+            }
             ApiError::Database(DbError::PromoCodeExists | DbError::PromoAlreadyDeactivated) => {
                 StatusCode::CONFLICT
             }
@@ -123,6 +126,13 @@ impl ResponseError for ApiError {
             return response;
         }
         match self {
+            ApiError::Database(DbError::RequestRefused(refusal)) => {
+                tracing::warn!(code = refusal.code(), "request action refused");
+                HttpResponse::build(self.status_code()).json(serde_json::json!({
+                    "code": refusal.code(),
+                    "message": refusal.message(),
+                }))
+            }
             ApiError::Database(DbError::HoldExpired) => {
                 HttpResponse::Conflict().json(serde_json::json!({
                     "code": "HOLD_EXPIRED",
@@ -370,6 +380,24 @@ mod promo_error_tests {
         );
         let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
         (status, serde_json::from_slice(&bytes).expect("json body"))
+    }
+
+    #[tokio::test]
+    async fn request_refusal_mapping_gives_each_status_and_code() {
+        use common::booking_request::RequestRefusal;
+        for refusal in RequestRefusal::ALL {
+            let api = ApiError::Database(DbError::RequestRefused(refusal));
+            assert_eq!(
+                api.status_code().as_u16(),
+                refusal.http_status(),
+                "{refusal:?}"
+            );
+            let (status, body) = render(DbError::RequestRefused(refusal)).await;
+            assert_eq!(status.as_u16(), refusal.http_status(), "{refusal:?}");
+            assert!(!status.is_server_error(), "{refusal:?}");
+            assert_eq!(body["code"], refusal.code());
+            assert_eq!(body["message"], refusal.message());
+        }
     }
 
     #[tokio::test]

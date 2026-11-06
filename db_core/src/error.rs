@@ -81,6 +81,9 @@ pub enum DbError {
     /// Stay dates, a guest count or search text were refused.
     #[error("Stay input refused: {0}")]
     StayInput(common::availability::StayInputError),
+    /// An enquiry or request action was refused (#105).
+    #[error("Request refused: {0}")]
+    RequestRefused(common::booking_request::RequestRefusal),
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),
