@@ -99,6 +99,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             enquiries::create_enquiry,
             enquiries::get_enquiry,
             enquiries::close_enquiry,
+            enquiries::quote_enquiry,
+            booking_requests::preview_quote,
+            booking_requests::send_quote,
         ),
         components(
             schemas(
@@ -110,6 +113,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::booking_request::DeclineRequestBody,
                 common::booking_request::CheckoutRequestBody,
                 common::booking_request::CreateEnquiryBody,
+                common::booking_request::QuoteRequestBody,
                 common::booking_request::EnquiryResponse,
                 common::booking_request::EnquiryStatus,
                 common::booking_request::EnquiryClosedReason,
@@ -233,7 +237,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .wrap(from_fn(content_negotiation_middleware))
             .route("", web::post().to(enquiries::create_enquiry))
             .route("/{id}", web::get().to(enquiries::get_enquiry))
-            .route("/{id}/close", web::post().to(enquiries::close_enquiry)),
+            .route("/{id}/close", web::post().to(enquiries::close_enquiry))
+            .route("/{id}/quote", web::post().to(enquiries::quote_enquiry)),
     );
 
     // Requests to book: signed-in users only; handlers check the caller is
@@ -266,7 +271,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/{id}/checkout",
                 web::post().to(booking_requests::checkout_booking_request),
-            ),
+            )
+            .route(
+                "/{id}/quote-preview",
+                web::post().to(booking_requests::preview_quote),
+            )
+            .route("/{id}/quote", web::post().to(booking_requests::send_quote)),
     );
 
     // Everything else needs a signed-in user; handlers then check that the

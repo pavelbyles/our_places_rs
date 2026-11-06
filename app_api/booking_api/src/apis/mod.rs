@@ -326,6 +326,8 @@ mod past_date_tests;
 #[cfg(test)]
 mod promo_hold_tests;
 #[cfg(test)]
+mod quote_api_tests;
+#[cfg(test)]
 mod rate_tests;
 #[cfg(test)]
 mod request_api_tests;

@@ -18,8 +18,8 @@ use api_core::settings::Settings;
 use chrono::Utc;
 use common::booking_request::{
     BookingRequestList, BookingRequestResponse, CheckoutRequestBody, CreateBookingRequestBody,
-    DeclineRequestBody, PriceBreakdown, QuoteSummary, RequestRefusal, StayPriceSnapshot,
-    response_window,
+    DeclineRequestBody, PriceBreakdown, QuoteRequestBody, QuoteSummary, RequestRefusal,
+    StayPriceSnapshot, response_window,
 };
 use db_core::booking_request as db_request;
 use db_core::error::DbError;
@@ -47,7 +47,7 @@ pub(super) enum PartyRole {
 impl PartyRole {
     /// The history and message role for a host-side action, or a refusal if
     /// the caller is the guest.
-    fn host_side_actor(self, id: Uuid) -> Result<db_request::Actor, ApiError> {
+    pub(super) fn host_side_actor(self, id: Uuid) -> Result<db_request::Actor, ApiError> {
         let role = match self {
             Self::Host => DbMessageSenderRole::Host,
             Self::Admin => DbMessageSenderRole::Admin,
@@ -543,4 +543,162 @@ pub(super) async fn checkout_booking_request(
             Err(e) => return Err(ApiError::Database(e)),
         }
     }
+}
+
+/// What to price a custom quote on.
+pub(super) struct QuoteStay<'a> {
+    /// The listing.
+    pub(super) listing_id: Uuid,
+    /// First night.
+    pub(super) check_in: chrono::NaiveDate,
+    /// Departure date.
+    pub(super) check_out: chrono::NaiveDate,
+    /// Total guests.
+    pub(super) guests: i32,
+    /// Payment currency.
+    pub(super) currency: &'a str,
+    /// The request's frozen rate, or `None` for the current one.
+    pub(super) locked_rate: Option<rust_decimal::Decimal>,
+    /// The policy the quote carries.
+    pub(super) policy: CancellationPolicy,
+}
+
+/// Prices a host's custom stay price into a promo-free snapshot.
+pub(super) async fn price_quote(
+    pool: &PgPool,
+    settings: &Settings,
+    stay: QuoteStay<'_>,
+    body: &QuoteRequestBody,
+) -> Result<StayPriceSnapshot, ApiError> {
+    check_user_text(&body.terms)?;
+    let listing = load_listing(pool, stay.listing_id).await?;
+    let priced = price_stay(
+        pool,
+        StayRequest {
+            listing: &listing,
+            check_in: stay.check_in,
+            check_out: stay.check_out,
+            number_of_persons: stay.guests,
+            currency: stay.currency,
+            promo: None,
+            max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
+            locked_rate: stay.locked_rate,
+            stay_override: Some(body.stay_price),
+        },
+    )
+    .await?;
+    Ok(StayPriceSnapshot::from_calculator(
+        &priced.calculator,
+        priced.currency,
+        priced.conversion_rate,
+        stay.policy,
+        None,
+    ))
+}
+
+fn request_quote_stay(request: &DbBookingRequest) -> QuoteStay<'_> {
+    QuoteStay {
+        listing_id: request.listing_id,
+        check_in: request.date_from,
+        check_out: request.date_to,
+        guests: request.number_of_persons,
+        currency: &request.currency,
+        locked_rate: Some(request.price_snapshot.0.exchange_rate),
+        policy: request.price_snapshot.0.cancellation_policy,
+    }
+}
+
+#[tracing::instrument(skip_all, fields(request_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/booking-requests/{id}/quote-preview",
+    tag = "booking-requests",
+    request_body = QuoteRequestBody,
+    responses(
+        (status = 200, description = "What the guest would pay; nothing is saved", body = PriceBreakdown),
+        (status = 400, description = "INVALID_QUOTE_PRICE"),
+        (status = 403, description = "NOT_REQUEST_PARTY")
+    )
+)]
+/// Prices a custom quote without sending it, for the host's form.
+pub(super) async fn preview_quote(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
+    id: web::Path<Uuid>,
+    body: web::Json<QuoteRequestBody>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    body.validate().map_err(ApiError::ValidationError)?;
+    let (detail, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    role.host_side_actor(claims.sub)?;
+    let snapshot = price_quote(
+        pool.get_ref(),
+        &settings,
+        request_quote_stay(&detail.request),
+        &body,
+    )
+    .await?;
+    Ok(respond(
+        &req,
+        Payload::Item(PriceBreakdown::from(&snapshot)),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument(skip_all, fields(request_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/booking-requests/{id}/quote",
+    tag = "booking-requests",
+    request_body = QuoteRequestBody,
+    responses(
+        (status = 201, description = "Quote sent; the dates are held until it expires", body = BookingRequestResponse),
+        (status = 400, description = "INVALID_QUOTE_PRICE or invalid terms"),
+        (status = 403, description = "NOT_REQUEST_PARTY"),
+        (status = 409, description = "REQUEST_NOT_OPEN, REQUEST_EXPIRED, QUOTE_EXPIRED or LISTING_UNAVAILABLE")
+    )
+)]
+/// The host or an admin sends a custom quote on a request. The quote drops
+/// any promo code; the response says so through `promo_applied` and the quote.
+pub(super) async fn send_quote(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
+    id: web::Path<Uuid>,
+    body: web::Json<QuoteRequestBody>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    body.validate().map_err(ApiError::ValidationError)?;
+    let (detail, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let actor = role.host_side_actor(claims.sub)?;
+    let snapshot = price_quote(
+        pool.get_ref(),
+        &settings,
+        request_quote_stay(&detail.request),
+        &body,
+    )
+    .await?;
+    let sent = db_request::send_quote(
+        pool.get_ref(),
+        *id,
+        actor,
+        &db_request::NewQuote {
+            stay_price_base: body.stay_price,
+            terms: &body.terms,
+            snapshot,
+            valid_hours: settings.application.quote_valid_hours,
+        },
+    )
+    .await
+    .map_err(ApiError::Database)?;
+    tracing::info!(actor_id = %claims.sub, request_id = %id, quote_id = %sent.quote.id, action = "quote", "custom quote sent");
+    Ok(respond(
+        &req,
+        Payload::Item(request_response(&sent.request, Some(&sent.quote))),
+        |_| (),
+        actix_web::http::StatusCode::CREATED,
+    ))
 }

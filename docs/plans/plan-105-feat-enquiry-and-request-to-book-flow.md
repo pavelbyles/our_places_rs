@@ -474,7 +474,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_quote_tests`
   - **Dependencies:** Task 14, Task 16, Task 22
 
-- [ ] **Task 25: API quotes and preview**
+- [x] **Task 25: API quotes and preview**
   - **Scope:** M
   - **Description:** `POST /booking-requests/{id}/quote-preview` (prices only, saves nothing), `POST /booking-requests/{id}/quote` (a locked rate from the snapshot), and `POST /enquiries/{id}/quote` (a `Current` rate, then snapshotted). The body's `stay_price` is a Decimal string. The response includes the promo-dropped flag, never the code.
   - **Files Touched:**

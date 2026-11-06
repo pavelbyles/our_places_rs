@@ -710,6 +710,37 @@ pub struct CheckoutRequestBody {
     pub quote_id: Option<Uuid>,
 }
 
+/// Reads a decimal that must arrive as a JSON string, so a price never
+/// passes through a float.
+fn decimal_from_string<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let text = String::deserialize(deserializer)?;
+    text.trim()
+        .parse::<Decimal>()
+        .map_err(|_| serde::de::Error::custom("stay_price must be a decimal string"))
+}
+
+/// A host's custom quote.
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, utoipa::ToSchema)]
+pub struct QuoteRequestBody {
+    /// The whole stay's accommodation price, in the listing's base currency,
+    /// as a decimal string (for example `"1500.00"`). Fees, GCT and the
+    /// platform fee are added on top.
+    #[serde(deserialize_with = "decimal_from_string")]
+    #[schema(value_type = String, example = "1500.00")]
+    pub stay_price: Decimal,
+    /// Special terms for the guest (user text).
+    #[serde(default)]
+    #[validate(length(max = 2000))]
+    pub terms: String,
+    /// For a quote on an enquiry, the cancellation policy offered; defaults
+    /// to Flexible. A quote on a request keeps the policy the guest agreed to.
+    #[serde(default)]
+    pub cancellation_policy: Option<String>,
+}
+
 /// A guest's question about a listing, with dates and a guest count.
 #[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, utoipa::ToSchema)]
 pub struct CreateEnquiryBody {
@@ -1022,6 +1053,31 @@ mod booking_request_tests {
         {
             assert_eq!(check_decline(reason, None), Ok(()));
             assert_eq!(DeclineReason::parse(reason.as_str()), Some(reason));
+        }
+    }
+}
+
+#[cfg(test)]
+mod quote_body_tests {
+    use super::QuoteRequestBody;
+
+    #[test]
+    fn stay_price_is_read_only_from_a_string() {
+        let ok: Result<QuoteRequestBody, _> =
+            serde_json::from_value(serde_json::json!({ "stay_price": "1500.50" }));
+        assert_eq!(
+            ok.map(|b| b.stay_price.to_string()).ok().as_deref(),
+            Some("1500.50")
+        );
+        for bad in [
+            serde_json::json!({ "stay_price": 1500.5 }),
+            serde_json::json!({ "stay_price": "abc" }),
+            serde_json::json!({}),
+        ] {
+            assert!(
+                serde_json::from_value::<QuoteRequestBody>(bad.clone()).is_err(),
+                "{bad}"
+            );
         }
     }
 }

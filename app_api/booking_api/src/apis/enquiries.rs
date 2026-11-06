@@ -1,7 +1,9 @@
 //! Enquiries (#105): a guest's question with dates and a guest count. They
 //! start the conversation and never hold dates. Text is never logged.
 
-use super::booking_requests::{PartyRole, check_user_text};
+use super::booking_requests::{
+    PartyRole, QuoteStay, check_user_text, price_quote, request_response,
+};
 use super::stay_pricing::{check_guest_count, load_listing, stay_today};
 use super::{caller, is_admin, not_found};
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -10,11 +12,13 @@ use api_core::error::ApiError;
 use api_core::response::{Payload, respond};
 use api_core::settings::Settings;
 use common::availability::validate_stay_dates;
-use common::booking_request::{CreateEnquiryBody, EnquiryResponse, RequestRefusal};
+use common::booking_request::{
+    BookingRequestResponse, CreateEnquiryBody, EnquiryResponse, QuoteRequestBody, RequestRefusal,
+};
 use common::currency::CurrencyCode;
 use db_core::booking_request as db_request;
 use db_core::error::DbError;
-use db_core::models::{DbBookingEnquiry, DbMessageSenderRole};
+use db_core::models::{CancellationPolicy, DbBookingEnquiry, DbMessageSenderRole};
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
@@ -210,5 +214,77 @@ pub(super) async fn close_enquiry(
         Payload::Item(enquiry_response(&detail.enquiry)),
         |_| (),
         actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument(skip_all, fields(enquiry_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/enquiries/{id}/quote",
+    tag = "booking-requests",
+    request_body = QuoteRequestBody,
+    responses(
+        (status = 201, description = "Quote sent; the enquiry is now a quoted request holding its dates", body = BookingRequestResponse),
+        (status = 400, description = "INVALID_QUOTE_PRICE or invalid terms"),
+        (status = 403, description = "NOT_REQUEST_PARTY"),
+        (status = 409, description = "DATE_UNAVAILABLE, REQUEST_ALREADY_LIVE, REQUEST_NOT_OPEN or LISTING_UNAVAILABLE"),
+        (status = 422, description = "FX_RATE_UNAVAILABLE")
+    )
+)]
+/// The host or an admin quotes straight on an enquiry, at today's rate.
+pub(super) async fn quote_enquiry(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
+    id: web::Path<Uuid>,
+    body: web::Json<QuoteRequestBody>,
+) -> Result<HttpResponse, ApiError> {
+    body.validate().map_err(ApiError::ValidationError)?;
+    let (detail, _, role) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
+    let actor = role.host_side_actor(claims.sub)?;
+    let policy = match body.cancellation_policy.as_deref() {
+        None | Some("") => CancellationPolicy::Flexible,
+        Some(name) => name.parse::<CancellationPolicy>().map_err(|_| {
+            ApiError::Database(DbError::ValidationError(format!(
+                "Unknown cancellation policy '{name}'"
+            )))
+        })?,
+    };
+    let enquiry = &detail.enquiry;
+    let snapshot = price_quote(
+        pool.get_ref(),
+        &settings,
+        QuoteStay {
+            listing_id: enquiry.listing_id,
+            check_in: enquiry.date_from,
+            check_out: enquiry.date_to,
+            guests: enquiry.number_of_persons,
+            currency: &enquiry.currency,
+            locked_rate: None,
+            policy,
+        },
+        &body,
+    )
+    .await?;
+    let sent = db_request::quote_enquiry(
+        pool.get_ref(),
+        *id,
+        actor,
+        &db_request::NewQuote {
+            stay_price_base: body.stay_price,
+            terms: &body.terms,
+            snapshot,
+            valid_hours: settings.application.quote_valid_hours,
+        },
+    )
+    .await
+    .map_err(ApiError::Database)?;
+    tracing::info!(actor_id = %claims.sub, enquiry_id = %id, request_id = %sent.request.id, action = "quote", "custom quote sent on an enquiry");
+    Ok(respond(
+        &req,
+        Payload::Item(request_response(&sent.request, Some(&sent.quote))),
+        |_| (),
+        actix_web::http::StatusCode::CREATED,
     ))
 }
