@@ -433,7 +433,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p booking_api conversation_api_tests`
   - **Dependencies:** Task 6, Task 20
 
-- [ ] **Task 22: db enquiries**
+- [x] **Task 22: db enquiries**
   - **Scope:** S
   - **Description:** `create_enquiry` (upserts the conversation, posts the message, supersedes the previous open enquiry, history) and `close_enquiry` (`closed_by_host`). No availability check.
   - **Files Touched:**

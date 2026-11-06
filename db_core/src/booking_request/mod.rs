@@ -8,6 +8,7 @@
 //! NOW()`, so expiry never waits for a sweep.
 
 mod convert;
+mod enquiry;
 mod history;
 mod queries;
 mod request;
@@ -15,6 +16,10 @@ mod respond;
 mod supersede;
 
 pub use convert::{Converted, OfferCheckout, convert_offer_to_hold};
+pub use enquiry::{
+    CreatedEnquiry, EnquiryDetail, NewEnquiry, close_enquiry, create_enquiry, get_enquiry,
+    list_enquiries_for_guest,
+};
 pub use history::{Actor, HistorySubject};
 pub use queries::{RequestDetail, get_request, list_for_guest, quotes_by_id};
 pub(crate) use request::upsert_conversation;
@@ -25,6 +30,8 @@ pub(crate) use supersede::supersede_for_instant_hold;
 
 #[cfg(test)]
 mod convert_tests;
+#[cfg(test)]
+mod enquiry_tests;
 #[cfg(test)]
 pub(crate) mod fixtures;
 #[cfg(test)]
