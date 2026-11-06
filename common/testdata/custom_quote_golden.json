@@ -1,0 +1,23 @@
+[
+  {
+    "name": "custom price replaces a weekly-discounted stay with extra guests",
+    "listing": { "price_per_night": "100.00", "cleaning_fee": "80.00", "damage_deposit": "300.00", "guests_included": 2, "extra_guest_fee": "20.00", "weekly": "10", "monthly": null },
+    "check_in": "2030-08-01", "check_out": "2030-08-08", "guests": 4, "rate": null,
+    "custom_stay_price": "650.00",
+    "expected": { "nights": 7, "daily_rate": "92.86", "subtotal": "650.00", "stay_discount": "0", "cleaning_fee": "80.00", "tax": "109.50", "platform_fee": "32.50", "damage_deposit": "300.00", "total": "1172.00" }
+  },
+  {
+    "name": "custom price in base currency converted at the locked rate",
+    "listing": { "price_per_night": "20000.00", "cleaning_fee": "5000.00", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": null, "monthly": null },
+    "check_in": "2030-08-01", "check_out": "2030-08-04", "guests": 1, "rate": "0.0064",
+    "custom_stay_price": "30000.00",
+    "expected": { "nights": 3, "daily_rate": "64.00", "subtotal": "192.00", "stay_discount": "0", "cleaning_fee": "32.00", "tax": "33.60", "platform_fee": "9.60", "damage_deposit": "0.00", "total": "267.20" }
+  },
+  {
+    "name": "custom price above the listed price",
+    "listing": { "price_per_night": "200.00", "cleaning_fee": "0.00", "damage_deposit": "0.00", "guests_included": 1, "extra_guest_fee": "0.00", "weekly": null, "monthly": null },
+    "check_in": "2030-08-01", "check_out": "2030-08-03", "guests": 1, "rate": null,
+    "custom_stay_price": "1000.00",
+    "expected": { "nights": 2, "daily_rate": "500.00", "subtotal": "1000.00", "stay_discount": "0", "cleaning_fee": "0.00", "tax": "150.00", "platform_fee": "50.00", "damage_deposit": "0.00", "total": "1200.00" }
+  }
+]

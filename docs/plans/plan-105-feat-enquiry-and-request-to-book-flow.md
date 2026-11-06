@@ -124,17 +124,17 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p common booking_request_tests`
   - **Dependencies:** None
 
-- [ ] **Task 2: `BookingCalculator::with_custom_stay_price`**
+- [x] **Task 2: `BookingCalculator::with_custom_stay_price`**
   - **Scope:** S
-  - **Description:** Add `impl BookingCalculator<Discounted> { pub fn with_custom_stay_price(self, stay_total) -> Self }` as in spec §3.2: it replaces the subtotal, sets `discount_value = None`, zeroes the extra-guest fee, and sets the display `actual_daily_rate = round(total / days, 2)`. Add a golden case to `common/testdata/stay_pricing_golden.json`.
+  - **Description:** Add `impl BookingCalculator<Discounted> { pub fn with_custom_stay_price(self, stay_total) -> Self }` as in spec §3.2: it replaces the subtotal, sets `discount_value = None`, zeroes the extra-guest fee, and sets the display `actual_daily_rate = round(total / days, 2)`. Add `custom_stay_total` (base → payment currency) and golden cases in a separate `common/testdata/custom_quote_golden.json`, because `stay_pricing_golden.json` is also replayed by listing search, which can't apply a custom price.
   - **Files Touched:**
     - `common/src/pricing.rs`
-    - `common/testdata/stay_pricing_golden.json`
+    - `common/testdata/custom_quote_golden.json`
   - **Acceptance Criteria:**
     - [ ] Weekly or monthly discounts and extra-guest fees are discarded and replaced by the custom total.
     - [ ] Cleaning fee and deposit are untouched; GCT 15% and the 5% platform fee are recalculated from the custom total.
     - [ ] `host_gross` on the result equals `round((custom + cleaning) × rate)`.
-    - [ ] The golden case passes in both `common` and `booking_api` golden tests.
+    - [ ] The custom-quote golden cases pass in `common` (T14 replays them through `price_stay`).
   - **Verification Command:** `cargo test -p common custom_stay_price_tests`
   - **Dependencies:** None
 
