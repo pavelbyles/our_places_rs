@@ -92,6 +92,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             booking_requests::accept_booking_request,
             booking_requests::decline_booking_request,
             booking_requests::withdraw_booking_request,
+            booking_requests::checkout_booking_request,
         ),
         components(
             schemas(
@@ -101,6 +102,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::booking_request::BookingRequestResponse,
                 common::booking_request::BookingRequestList,
                 common::booking_request::DeclineRequestBody,
+                common::booking_request::CheckoutRequestBody,
                 common::booking_request::PriceBreakdown,
                 common::booking_request::QuoteSummary,
                 common::booking_request::RequestStatus,
@@ -223,6 +225,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/{id}/withdraw",
                 web::post().to(booking_requests::withdraw_booking_request),
+            )
+            .route(
+                "/{id}/checkout",
+                web::post().to(booking_requests::checkout_booking_request),
             ),
     );
 

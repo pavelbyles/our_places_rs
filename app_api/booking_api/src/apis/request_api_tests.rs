@@ -476,3 +476,67 @@ async fn request_respond_api_inactive_listings_refuse_accepts_but_not_declines()
     .await;
     assert_eq!(status, 200);
 }
+
+#[tokio::test]
+async fn request_checkout_api_an_accepted_offer_becomes_a_pending_booking() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let app = app!(pool);
+    let id = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
+
+    // Not yet accepted: nothing to check out.
+    let (status, body) = act(&app, guest, &id, "checkout", serde_json::json!({})).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (409, Some("REQUEST_NOT_OPEN"))
+    );
+
+    assert_eq!(
+        act(&app, host, &id, "accept", serde_json::json!({}))
+            .await
+            .0,
+        200
+    );
+    // Only the guest can check out.
+    let (status, body) = act(&app, host, &id, "checkout", serde_json::json!({})).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (403, Some("NOT_REQUEST_PARTY"))
+    );
+
+    let (status, booking) = act(&app, guest, &id, "checkout", serde_json::json!({})).await;
+    assert_eq!(status, 201, "{booking}");
+    assert_eq!(booking["status"], "Pending");
+    let booking_id: Uuid = booking["id"].as_str().expect("id").parse().expect("uuid");
+    let held = db_core::booking::get_booking_by_id(&pool, booking_id)
+        .await
+        .expect("booking");
+    assert_eq!(held.status, db_core::models::BookingStatus::Pending);
+    assert_eq!(
+        (held.date_from.to_string(), held.guest_id),
+        ("2030-08-01".to_string(), guest)
+    );
+
+    // The resulting hold confirms through the usual status endpoint.
+    let admin = user(&pool, UserRole::Admin).await;
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/bookings/{booking_id}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(admin))
+            .set_json(serde_json::json!({ "status": "confirmed" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    // A second checkout of the same offer is refused.
+    let (status, body) = act(&app, guest, &id, "checkout", serde_json::json!({})).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (409, Some("REQUEST_NOT_OPEN"))
+    );
+}

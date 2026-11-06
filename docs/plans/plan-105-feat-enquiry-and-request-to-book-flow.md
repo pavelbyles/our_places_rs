@@ -387,7 +387,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_convert_tests`
   - **Dependencies:** Task 13, Task 16
 
-- [ ] **Task 19: API checkout endpoint**
+- [x] **Task 19: API checkout endpoint**
   - **Scope:** S
   - **Description:** `POST /api/v1/booking-requests/{id}/checkout` `{quote_id}` → 201 `BookingResponse`. Only the guest may call it. A confirmation code is generated with the same retry loop as `create_booking`.
   - **Files Touched:**

@@ -7,7 +7,9 @@
 use super::stay_pricing::{
     OnRefusal, PromoRequest, StayRequest, check_guest_count, load_listing, price_stay, stay_today,
 };
-use super::{caller, is_admin, not_found};
+use super::{
+    caller, generate_confirmation_code, is_admin, is_confirmation_code_collision, not_found,
+};
 use actix_web::{HttpRequest, Responder, web};
 use api_core::auth::Claims;
 use api_core::error::ApiError;
@@ -15,8 +17,9 @@ use api_core::response::{Payload, respond};
 use api_core::settings::Settings;
 use chrono::Utc;
 use common::booking_request::{
-    BookingRequestList, BookingRequestResponse, CreateBookingRequestBody, DeclineRequestBody,
-    PriceBreakdown, QuoteSummary, RequestRefusal, StayPriceSnapshot, response_window,
+    BookingRequestList, BookingRequestResponse, CheckoutRequestBody, CreateBookingRequestBody,
+    DeclineRequestBody, PriceBreakdown, QuoteSummary, RequestRefusal, StayPriceSnapshot,
+    response_window,
 };
 use db_core::booking_request as db_request;
 use db_core::error::DbError;
@@ -459,4 +462,75 @@ pub(super) async fn withdraw_booking_request(
         .map_err(ApiError::Database)?;
     tracing::info!(actor_id = %claims.sub, request_id = %id, action = "withdraw", "request withdrawn");
     Ok(ok(&req, &withdrawn))
+}
+
+#[tracing::instrument(skip_all, fields(request_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/booking-requests/{id}/checkout",
+    tag = "booking-requests",
+    request_body = CheckoutRequestBody,
+    responses(
+        (status = 201, description = "The offer is now a pending hold", body = api_core::models::BookingResponse),
+        (status = 403, description = "NOT_REQUEST_PARTY"),
+        (status = 404, description = "No such request"),
+        (status = 409, description = "REQUEST_NOT_OPEN, REQUEST_EXPIRED, QUOTE_EXPIRED, QUOTE_SUPERSEDED, LISTING_UNAVAILABLE or DATE_UNAVAILABLE"),
+        (status = 422, description = "CURRENCY_INACTIVE"),
+        (status = 503, description = "No unique confirmation code; retry")
+    )
+)]
+/// The guest takes up an accepted request or a quote: it becomes a `pending`
+/// hold at the price they accepted, and payment continues as for any hold.
+pub(super) async fn checkout_booking_request(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
+    id: web::Path<Uuid>,
+    body: Option<web::Json<CheckoutRequestBody>>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    let quote_id = body.and_then(|b| b.into_inner().quote_id);
+    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    if role != PartyRole::Guest {
+        return Err(refused(RequestRefusal::NotParty));
+    }
+    let max_attempts = settings.application.max_attempts.max(1);
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let checkout = db_request::OfferCheckout {
+            request_id: *id,
+            guest_id: claims.sub,
+            quote_id,
+            confirmation_code: generate_confirmation_code(),
+            hold_minutes: settings.application.pending_hold_minutes,
+        };
+        match db_request::convert_offer_to_hold(pool.get_ref(), &checkout).await {
+            Ok(converted) => {
+                tracing::info!(
+                    actor_id = %claims.sub,
+                    request_id = %id,
+                    booking_id = %converted.booking.id,
+                    action = "checkout",
+                    "offer converted to a pending hold"
+                );
+                return Ok(respond(
+                    &req,
+                    Payload::Item(api_core::models::map_booking_to_response(converted.booking)),
+                    |_| (),
+                    actix_web::http::StatusCode::CREATED,
+                ));
+            }
+            Err(e) if is_confirmation_code_collision(&e) && attempts < max_attempts => {
+                tracing::warn!(request_id = %id, attempt = attempts, "confirmation code collision, retrying");
+            }
+            Err(e) if is_confirmation_code_collision(&e) => {
+                tracing::error!(request_id = %id, attempts, "gave up generating a unique confirmation code");
+                return Err(ApiError::ServiceUnavailable(
+                    "We couldn't reserve a confirmation code. Please try again.".to_string(),
+                ));
+            }
+            Err(e) => return Err(ApiError::Database(e)),
+        }
+    }
 }

@@ -701,6 +701,15 @@ pub struct DeclineRequestBody {
     pub note: Option<String>,
 }
 
+/// The guest takes up an offer and goes to checkout.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct CheckoutRequestBody {
+    /// The quote the guest saw, for a quoted request. Leave out for an
+    /// accepted request.
+    #[serde(default)]
+    pub quote_id: Option<Uuid>,
+}
+
 /// A guest's requests, newest first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct BookingRequestList {
