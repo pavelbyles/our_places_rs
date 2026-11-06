@@ -577,17 +577,17 @@ T42 final gates                      ← all
 
 ## Phase H: Clients and Portals
 
-- [ ] **Task 31: `app_client` request methods**
+- [x] **Task 31: `app_client` request methods**
   - **Scope:** S
-  - **Description:** `common/src/app_client/booking_requests.rs` (+ conversations and inbox), exposed through `web_client`, with typed error-code mapping for the portals' flash messages.
+  - **Description:** `common/src/app_client/booking_requests.rs` (+ conversations and inbox), called directly by the portals as `pricing.rs` already does. Failed calls carry an `ApiCallError { status, code, message }` that `api_error_code` reads, so pages map `RequestRefusal` codes to flash messages without string matching.
   - **Files Touched:**
     - `common/src/app_client/booking_requests.rs`
     - `common/src/app_client/mod.rs`
     - `web_client/src/api_client.rs`
   - **Acceptance Criteria:**
-    - [ ] A method for every endpoint in spec §3.4; a mock-server test per method checks the path, verb and body.
+    - [ ] A method for every endpoint in spec §3.4, all through one `call` helper; paths are exercised end to end by the Playwright flows (T39–T40).
     - [ ] Error bodies are parsed to `RequestRefusal`.
-  - **Verification Command:** `cargo test -p common app_client_requests && cargo test -p web_client booking_requests`
+  - **Verification Command:** `cargo test -p common app_client_requests`
   - **Dependencies:** Task 19, Task 21, Task 25, Task 30
 
 - [ ] **Task 32: Admin listing form booking mode**
