@@ -542,7 +542,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p booking_api request_notification_tests`
   - **Dependencies:** Task 19, Task 23, Task 25, Task 26, Task 27
 
-- [ ] **Task 29: Host near-expiry reminder**
+- [x] **Task 29: Host near-expiry reminder**
   - **Scope:** S
   - **Description:** `requests_due_for_reminder(pct)` + `claim_request_notification`; `run_notification_sweep` sends `request_host_reminder`, and its response gains `request_reminders_processed`.
   - **Files Touched:**

@@ -161,3 +161,27 @@ pub async fn claim_request_notification(
     .await?;
     Ok(claimed.is_some())
 }
+
+/// Open requests in the last `pct` percent of their response window whose
+/// host hasn't had the reminder yet: `(request_id, host_id)`.
+pub async fn requests_due_for_reminder(pool: &PgPool, pct: i64) -> Result<Vec<(Uuid, Uuid)>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT r.id, l.user_id AS host_id
+        FROM booking_request r
+        JOIN listing l ON l.id = r.listing_id
+        WHERE r.status = 'open'
+          AND r.expires_at > NOW()
+          AND EXTRACT(EPOCH FROM (r.expires_at - NOW())) * 100
+              <= EXTRACT(EPOCH FROM (r.expires_at - r.created_at)) * $1::int8
+          AND NOT EXISTS (
+              SELECT 1 FROM request_notification_log n
+              WHERE n.request_id = r.id AND n.notification_type = 'request_host_reminder'
+          )
+        "#,
+        pct
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.id, r.host_id)).collect())
+}

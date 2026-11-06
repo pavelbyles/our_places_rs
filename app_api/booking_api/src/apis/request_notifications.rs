@@ -28,6 +28,8 @@ pub(super) enum RequestEvent {
     Withdrawn,
     /// The window passed.
     Expired,
+    /// An unanswered request is about to expire (host only).
+    Reminder,
 }
 
 impl RequestEvent {
@@ -42,6 +44,7 @@ impl RequestEvent {
             Self::Converted => (T::RequestConvertedGuest, T::RequestConvertedHost),
             Self::Withdrawn => (T::RequestWithdrawnGuest, T::RequestWithdrawnHost),
             Self::Expired => (T::RequestExpiredGuest, T::RequestExpiredHost),
+            Self::Reminder => (T::RequestHostReminder, T::RequestHostReminder),
         }
     }
 
@@ -55,6 +58,7 @@ impl RequestEvent {
             Self::Converted => ("Complete your booking", "Your guest is checking out"),
             Self::Withdrawn => ("Request withdrawn", "Request withdrawn"),
             Self::Expired => ("Your request expired", "Request expired"),
+            Self::Reminder => ("", "A request is about to expire"),
         }
     }
 }
@@ -200,6 +204,42 @@ pub(super) async fn notify_expired(pool: &PgPool, request_id: Uuid) -> usize {
             Err(e) => {
                 tracing::error!(%request_id, error = ?e, "expiry email not claimed");
             }
+        }
+    }
+    sent
+}
+
+/// Reminds each host once about open requests in the near-expiry window.
+pub(super) async fn send_host_reminders(pool: &PgPool, pct: i64) -> usize {
+    let due = match db_request::requests_due_for_reminder(pool, pct).await {
+        Ok(due) => due,
+        Err(e) => {
+            tracing::error!(error = ?e, "host reminders not sent: candidate lookup failed");
+            return 0;
+        }
+    };
+    let mut sent = 0;
+    for (request_id, host_id) in due {
+        match db_request::claim_request_notification(
+            pool,
+            request_id,
+            "request_host_reminder",
+            host_id,
+        )
+        .await
+        {
+            Ok(true) => match db_request::request_facts(pool, request_id).await {
+                Ok(facts) => {
+                    if send_side(pool, RequestEvent::Reminder, Side::Host, &facts, None).await {
+                        sent += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(%request_id, error = ?e, "host reminder not sent: facts lookup failed")
+                }
+            },
+            Ok(false) => {}
+            Err(e) => tracing::error!(%request_id, error = ?e, "host reminder not claimed"),
         }
     }
     sent

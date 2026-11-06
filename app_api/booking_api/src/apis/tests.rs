@@ -349,6 +349,7 @@ fn test_cron_sweep_response_serde() {
         status: "success".to_string(),
         pre_arrival_processed: 5,
         hold_reminders_processed: 2,
+        request_reminders_processed: 1,
     };
 
     let json = serde_json::to_string(&resp).unwrap();

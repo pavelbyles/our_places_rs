@@ -25,7 +25,10 @@ pub use enquiry::{
 };
 pub use expiry::{ExpiredRequest, close_past_enquiries, expire_stale_requests};
 pub use history::{Actor, HistorySubject};
-pub use notify::{NotificationFacts, claim_request_notification, enquiry_facts, request_facts};
+pub use notify::{
+    NotificationFacts, claim_request_notification, enquiry_facts, request_facts,
+    requests_due_for_reminder,
+};
 pub use queries::{RequestDetail, get_request, list_for_guest, quotes_by_id};
 pub use quote::{NewQuote, SentQuote, quote_enquiry, send_quote};
 pub(crate) use request::upsert_conversation;

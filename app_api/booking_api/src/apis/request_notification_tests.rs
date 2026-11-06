@@ -224,3 +224,81 @@ async fn request_notification_tests_expiry_emails_go_out_once() {
         ["request_received_host", "request_expired_host"]
     );
 }
+
+/// Sets a request's window to `[now - elapsed_h, now + remaining_h)`.
+async fn place_window(pool: &PgPool, id: &str, elapsed_h: i32, remaining_h: i32) {
+    sqlx::query(
+        "UPDATE booking_request
+         SET created_at = NOW() - make_interval(hours => $2),
+             expires_at = NOW() + make_interval(hours => $3)
+         WHERE id = $1::uuid",
+    )
+    .bind(id)
+    .bind(elapsed_h)
+    .bind(remaining_h)
+    .execute(pool)
+    .await
+    .expect("place window");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn request_reminder_tests_the_host_is_reminded_once_inside_the_window() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let host_email = email_of(&pool, host).await;
+    let app = app!(pool);
+    let id = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
+    wait_for(&pool, &host_email, 1).await;
+    let remind = || super::request_notifications::send_host_reminders(&pool, 25);
+
+    place_window(&pool, &id, 1, 23).await; // 96% left: too early
+    assert_eq!(remind().await, 0);
+    place_window(&pool, &id, 20, 4).await; // 17% left: inside 25%
+    assert_eq!(remind().await, 1);
+    assert_eq!(remind().await, 0, "exactly once");
+    assert_eq!(
+        templates_for(&pool, &host_email).await,
+        ["request_received_host", "request_host_reminder"]
+    );
+
+    // A smaller share moves the window: 17% left is outside 10%.
+    let other_guest = user(&pool, UserRole::Booker).await;
+    let other = submit(&app, other_guest, villa, "2030-09-01", "2030-09-04").await;
+    place_window(&pool, &other, 20, 4).await;
+    assert_eq!(
+        super::request_notifications::send_host_reminders(&pool, 10).await,
+        0
+    );
+    assert_eq!(
+        super::request_notifications::send_host_reminders(&pool, 25).await,
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn request_reminder_tests_offers_and_lapsed_requests_get_no_reminder() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let (a, b) = (
+        user(&pool, UserRole::Booker).await,
+        user(&pool, UserRole::Booker).await,
+    );
+    let app = app!(pool);
+    let accepted = submit(&app, a, villa, "2030-08-01", "2030-08-04").await;
+    assert_eq!(
+        act(&app, host, &accepted, "accept", serde_json::json!({}))
+            .await
+            .0,
+        200
+    );
+    place_window(&pool, &accepted, 20, 4).await;
+    let lapsed = submit(&app, b, villa, "2030-09-01", "2030-09-04").await;
+    place_window(&pool, &lapsed, 25, -1).await;
+    assert_eq!(
+        super::request_notifications::send_host_reminders(&pool, 25).await,
+        0
+    );
+}
