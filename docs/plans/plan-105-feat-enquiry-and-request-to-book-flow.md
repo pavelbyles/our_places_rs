@@ -138,7 +138,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p common custom_stay_price_tests`
   - **Dependencies:** None
 
-- [ ] **Task 3: `StayPriceSnapshot`**
+- [x] **Task 3: `StayPriceSnapshot`**
   - **Scope:** S
   - **Description:** Add a serde struct holding every money field `NewBooking` needs, plus currency, exchange rate, cancellation policy and the optional promo `{id, terms, stay_discount, cleaning_discount}`. `from_calculator` is the only constructor. Add `to_new_booking` (in db_core models, T5) later.
   - **Files Touched:**

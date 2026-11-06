@@ -4,8 +4,14 @@
 //! Pure rules only. Storage and locking live in `db_core::booking_request`.
 
 use crate::availability::jamaica_midnight_utc;
+use crate::cancellation::CancellationPolicy;
+use crate::models::FeeItem;
+use crate::pricing::{BookingCalculator, Taxed};
+use crate::promo::PromoTerms;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Shortest response window a new request may have, in minutes. A request
 /// whose window would be capped below this by an imminent check-in is refused.
@@ -422,6 +428,96 @@ impl RequestRefusal {
     }
 }
 
+/// The promo part of a [`StayPriceSnapshot`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotPromo {
+    /// The code being redeemed.
+    pub promo_code_id: Uuid,
+    /// The code's terms when the stay was priced.
+    pub terms: PromoTerms,
+    /// Discount taken from the stay.
+    pub stay_discount: Decimal,
+    /// Discount taken from the cleaning fee.
+    pub cleaning_discount: Decimal,
+}
+
+/// Everything a `pending` booking needs about its price, frozen when a
+/// request is submitted or a quote is sent. Converting the offer copies these
+/// amounts as they are, so a later rate, price or exchange-rate change can't
+/// reprice what the guest accepted. Amounts serialize as strings, keeping
+/// their scale.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StayPriceSnapshot {
+    /// Payment currency.
+    pub currency: String,
+    /// Listing base currency to payment currency rate used.
+    pub exchange_rate: Decimal,
+    /// Nightly rate, for display.
+    pub daily_rate: Decimal,
+    /// Number of nights.
+    pub total_days: i32,
+    /// Accommodation subtotal before weekly or monthly discounts.
+    pub sub_total_price: Decimal,
+    /// Weekly or monthly discount, if any.
+    pub discount_value: Option<Decimal>,
+    /// Accommodation after every discount, including the promo.
+    pub discounted_subtotal: Decimal,
+    /// Cleaning fee before any promo discount.
+    pub cleaning_fee: Decimal,
+    /// Refundable damage deposit.
+    pub damage_deposit: Decimal,
+    /// Guest platform fee.
+    pub platform_fee: Decimal,
+    /// Statutory tax rate applied.
+    pub tax_rate: Decimal,
+    /// Statutory tax charged.
+    pub tax_value: Option<Decimal>,
+    /// Itemized fees.
+    pub fee_breakdown: Vec<FeeItem>,
+    /// Total the guest pays.
+    pub total_price: Decimal,
+    /// The cancellation policy the guest agreed to.
+    pub cancellation_policy: CancellationPolicy,
+    /// The promo code applied, if any.
+    pub promo: Option<SnapshotPromo>,
+}
+
+impl StayPriceSnapshot {
+    /// Freezes a priced stay. `promo` is the redeemed code's id and terms;
+    /// its discounts are read from the calculator, so they can't disagree.
+    pub fn from_calculator(
+        calculator: &BookingCalculator<Taxed>,
+        currency: String,
+        exchange_rate: Decimal,
+        cancellation_policy: CancellationPolicy,
+        promo: Option<(Uuid, PromoTerms)>,
+    ) -> Self {
+        Self {
+            currency,
+            exchange_rate,
+            daily_rate: calculator.actual_daily_rate,
+            total_days: calculator.total_days,
+            sub_total_price: calculator.sub_total_price,
+            discount_value: calculator.discount_value,
+            discounted_subtotal: calculator.discounted_subtotal,
+            cleaning_fee: calculator.cleaning_fee,
+            damage_deposit: calculator.damage_deposit,
+            platform_fee: calculator.platform_fee,
+            tax_rate: calculator.tax_rate,
+            tax_value: calculator.tax_value,
+            fee_breakdown: calculator.fee_breakdown.clone(),
+            total_price: calculator.total_price,
+            cancellation_policy,
+            promo: promo.map(|(promo_code_id, terms)| SnapshotPromo {
+                promo_code_id,
+                terms,
+                stay_discount: calculator.promo_stay_discount,
+                cleaning_discount: calculator.promo_cleaning_discount,
+            }),
+        }
+    }
+}
+
 /// When a new request's response window ends: `hours` from `now`, but never
 /// after check-in day starts in Jamaica. A window capped below
 /// [`MIN_REQUEST_WINDOW_MINUTES`] is refused, so the host always has time.
@@ -676,5 +772,104 @@ mod booking_request_tests {
             assert_eq!(check_decline(reason, None), Ok(()));
             assert_eq!(DeclineReason::parse(reason.as_str()), Some(reason));
         }
+    }
+}
+
+#[cfg(test)]
+mod price_snapshot_tests {
+    use super::*;
+    use crate::promo::{PromoDiscountType, PromoScope};
+    use rust_decimal_macros::dec;
+
+    fn terms() -> PromoTerms {
+        PromoTerms {
+            code: "SUMMER-10".to_string(),
+            discount_type: PromoDiscountType::Percentage,
+            discount_value: dec!(10),
+            scope: PromoScope::StayAndCleaning,
+            currency: None,
+            exchange_rate: Decimal::ONE,
+            min_nights: None,
+            min_booking_value: None,
+            stay_from: None,
+            stay_to: None,
+        }
+    }
+
+    fn priced(promo: Option<&PromoTerms>) -> BookingCalculator<Taxed> {
+        BookingCalculator::with_subtotal(dec!(150.00), 3, dec!(450.00))
+            .apply_discounts(None, None)
+            .with_fees(Some(dec!(60.00)), Some(dec!(250.00)))
+            .apply_promo(promo)
+            .apply_taxes(dec!(0.15))
+            .finalize()
+    }
+
+    fn snapshot(promo: bool) -> (BookingCalculator<Taxed>, StayPriceSnapshot) {
+        let terms = terms();
+        let calculator = priced(promo.then_some(&terms));
+        let snapshot = StayPriceSnapshot::from_calculator(
+            &calculator,
+            "USD".to_string(),
+            dec!(1.000000),
+            CancellationPolicy::Moderate,
+            promo.then(|| (Uuid::nil(), terms)),
+        );
+        (calculator, snapshot)
+    }
+
+    #[test]
+    fn snapshot_matches_the_calculator_field_for_field() {
+        let (calc, snap) = snapshot(true);
+        assert_eq!(snap.daily_rate, calc.actual_daily_rate);
+        assert_eq!(snap.total_days, calc.total_days);
+        assert_eq!(snap.sub_total_price, calc.sub_total_price);
+        assert_eq!(snap.discount_value, calc.discount_value);
+        assert_eq!(snap.discounted_subtotal, calc.discounted_subtotal);
+        assert_eq!(snap.cleaning_fee, calc.cleaning_fee);
+        assert_eq!(snap.damage_deposit, calc.damage_deposit);
+        assert_eq!(snap.platform_fee, calc.platform_fee);
+        assert_eq!(snap.tax_rate, calc.tax_rate);
+        assert_eq!(snap.tax_value, calc.tax_value);
+        assert_eq!(snap.fee_breakdown, calc.fee_breakdown);
+        assert_eq!(snap.total_price, calc.total_price);
+        let promo = snap
+            .promo
+            .as_ref()
+            .map(|p| (p.stay_discount, p.cleaning_discount));
+        assert_eq!(
+            promo,
+            Some((calc.promo_stay_discount, calc.promo_cleaning_discount))
+        );
+        assert!(calc.promo_stay_discount > Decimal::ZERO);
+    }
+
+    #[test]
+    fn snapshot_without_a_promo_has_none() {
+        let (_, snap) = snapshot(false);
+        assert_eq!(snap.promo, None);
+    }
+
+    #[test]
+    fn json_round_trip_keeps_every_amount_and_its_scale() {
+        let (_, snap) = snapshot(true);
+        let json = match serde_json::to_value(&snap) {
+            Ok(json) => json,
+            Err(e) => panic!("serialize: {e}"),
+        };
+        // Amounts are strings, so JSONB can't turn them into floats.
+        assert_eq!(
+            json["total_price"],
+            serde_json::json!(snap.total_price.to_string())
+        );
+        assert_eq!(json["exchange_rate"], serde_json::json!("1.000000"));
+        let back: StayPriceSnapshot = match serde_json::from_value(json) {
+            Ok(back) => back,
+            Err(e) => panic!("deserialize: {e}"),
+        };
+        assert_eq!(back, snap);
+        assert_eq!(back.exchange_rate.scale(), 6);
+        assert_eq!(back.total_price.to_string(), snap.total_price.to_string());
+        assert_eq!(back.cleaning_fee.to_string(), "60.00");
     }
 }
