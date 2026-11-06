@@ -25,6 +25,7 @@ mod currencies;
 mod documents;
 mod enquiries;
 mod exchange_rates;
+mod inbox;
 mod ledger;
 mod messages;
 mod notifications;

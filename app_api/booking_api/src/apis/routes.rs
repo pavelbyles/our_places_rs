@@ -28,7 +28,7 @@ use super::reservation_changes::{
 };
 use super::{
     availability, booking_requests, booking_updates, bookings, conversations, cron, documents,
-    enquiries, messages, promo_codes, reservation_changes, stay_pricing,
+    enquiries, inbox, messages, promo_codes, reservation_changes, stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -102,6 +102,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             enquiries::quote_enquiry,
             booking_requests::preview_quote,
             booking_requests::send_quote,
+            inbox::get_inbox,
         ),
         components(
             schemas(
@@ -114,6 +115,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::booking_request::CheckoutRequestBody,
                 common::booking_request::CreateEnquiryBody,
                 common::booking_request::QuoteRequestBody,
+                common::booking_request::InboxItem,
+                common::booking_request::InboxResponse,
+                common::booking_request::HostResponseMetrics,
                 common::booking_request::EnquiryResponse,
                 common::booking_request::EnquiryStatus,
                 common::booking_request::EnquiryClosedReason,
@@ -239,6 +243,13 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/{id}", web::get().to(enquiries::get_enquiry))
             .route("/{id}/close", web::post().to(enquiries::close_enquiry))
             .route("/{id}/quote", web::post().to(enquiries::quote_enquiry)),
+    );
+
+    cfg.service(
+        web::resource("/api/v1/inbox")
+            .wrap(from_fn(content_negotiation_middleware))
+            .wrap(from_fn(require_user))
+            .route(web::get().to(inbox::get_inbox)),
     );
 
     // Requests to book: signed-in users only; handlers check the caller is

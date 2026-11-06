@@ -557,7 +557,7 @@ T42 final gates                      ← all
 
 ## Phase G: Inbox
 
-- [ ] **Task 30: Inbox and response metrics**
+- [x] **Task 30: Inbox and response metrics**
   - **Scope:** M
   - **Description:** `inbox_items(scope, filter, page)` is one `UNION ALL` query joined to listing and user, 50 per page, ordered per spec §1.10. `host_response_metrics` is one 90-day `percentile_cont(0.5)` aggregate plus the expired-unanswered share. `GET /api/v1/inbox` is staff only, and hosts are scoped to their own listings in SQL.
   - **Files Touched:**

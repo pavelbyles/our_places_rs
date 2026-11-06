@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT kind AS \"kind!\", id AS \"id!\", conversation_id AS \"conversation_id!\",\n            listing_id AS \"listing_id!\", listing_name AS \"listing_name!\", host_id AS \"host_id!\",\n            guest_id AS \"guest_id!\", guest_name AS \"guest_name!\", date_from AS \"date_from!\",\n            date_to AS \"date_to!\", guests AS \"guests!\", status AS \"status!\",\n            created_at AS \"created_at!\", first_response_at, expires_at,\n            last_message_at AS \"last_message_at!\"\n        FROM (\n            SELECT 'enquiry'::text AS kind, e.id, e.conversation_id, e.listing_id,\n                l.name AS listing_name, l.user_id AS host_id, e.guest_id,\n                g.first_name AS guest_name, e.date_from, e.date_to,\n                e.number_of_persons AS guests, e.status::text AS status, e.created_at,\n                e.first_response_at, NULL::timestamptz AS expires_at, c.last_message_at\n            FROM booking_enquiry e\n            JOIN listing l ON l.id = e.listing_id\n            JOIN \"user\" g ON g.id = e.guest_id\n            JOIN conversation c ON c.id = e.conversation_id\n            WHERE e.status = 'open'\n            UNION ALL\n            SELECT 'request'::text, r.id, r.conversation_id, r.listing_id, l.name, l.user_id,\n                r.guest_id, g.first_name, r.date_from, r.date_to, r.number_of_persons,\n                r.status::text, r.created_at, r.first_response_at, r.expires_at,\n                c.last_message_at\n            FROM booking_request r\n            JOIN listing l ON l.id = r.listing_id\n            JOIN \"user\" g ON g.id = r.guest_id\n            JOIN conversation c ON c.id = r.conversation_id\n            WHERE r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()\n        ) items\n        WHERE ($1::uuid IS NULL OR host_id = $1)\n          AND ($2::uuid IS NULL OR listing_id = $2)\n          AND ($3::text IS NULL OR kind = $3)\n        ORDER BY expires_at ASC NULLS LAST, last_message_at DESC\n        LIMIT $4 OFFSET $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "conversation_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "host_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "guest_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "guest_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "date_from!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "date_to!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "guests!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "first_response_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "last_message_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "132d7bc0aa44a2bd049699102b616415bffc80729c7b4724cfb372451c0bdc07"
+}

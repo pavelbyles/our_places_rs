@@ -11,6 +11,7 @@ mod convert;
 mod enquiry;
 mod expiry;
 mod history;
+mod inbox;
 mod notify;
 mod queries;
 mod quote;
@@ -25,6 +26,7 @@ pub use enquiry::{
 };
 pub use expiry::{ExpiredRequest, close_past_enquiries, expire_stale_requests};
 pub use history::{Actor, HistorySubject};
+pub use inbox::{HostMetrics, InboxFilter, InboxRow, host_response_metrics, inbox_items};
 pub use notify::{
     NotificationFacts, claim_request_notification, enquiry_facts, request_facts,
     requests_due_for_reminder,
@@ -47,6 +49,8 @@ mod expiry_tests;
 pub(crate) mod fixtures;
 #[cfg(test)]
 mod hold_request_tests;
+#[cfg(test)]
+mod inbox_tests;
 #[cfg(test)]
 mod promo_request_tests;
 #[cfg(test)]

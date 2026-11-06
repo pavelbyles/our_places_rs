@@ -800,6 +800,91 @@ pub struct BookingRequestList {
     pub enquiries: Vec<EnquiryResponse>,
 }
 
+/// Filters for the inbox.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+pub struct InboxQuery {
+    /// `enquiry` or `request`.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Only this listing.
+    #[serde(default)]
+    pub listing_id: Option<Uuid>,
+    /// 1-based page.
+    #[serde(default)]
+    pub page: Option<u32>,
+}
+
+/// An open enquiry or live request in the inbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct InboxItem {
+    /// `enquiry` or `request`.
+    pub kind: String,
+    /// The enquiry or request id.
+    pub id: Uuid,
+    /// The thread.
+    pub conversation_id: Uuid,
+    /// The listing.
+    pub listing_id: Uuid,
+    /// The listing's name.
+    pub listing_name: String,
+    /// The guest.
+    pub guest_id: Uuid,
+    /// The guest's first name.
+    pub guest_name: String,
+    /// Check-in.
+    pub check_in: NaiveDate,
+    /// Check-out.
+    pub check_out: NaiveDate,
+    /// Guests.
+    pub guests: i32,
+    /// Status.
+    pub status: String,
+    /// When it arrived.
+    pub created_at: DateTime<Utc>,
+    /// Seconds since it arrived.
+    pub age_secs: i64,
+    /// Seconds from arrival to the host's first response, if any.
+    pub first_response_secs: Option<i64>,
+    /// When a request's window ends.
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Seconds left in a request's window.
+    pub time_left_secs: Option<i64>,
+    /// Whether a request is in the last part of its window.
+    pub near_expiry: bool,
+}
+
+/// A host's response times over the last 90 days.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct HostResponseMetrics {
+    /// The host.
+    pub host_id: Uuid,
+    /// The host's first name.
+    pub host_name: String,
+    /// Median seconds to first response, if any were answered.
+    pub median_first_response_secs: Option<i64>,
+    /// Enquiries and requests received.
+    pub received: i64,
+    /// Requests received.
+    pub requests: i64,
+    /// Requests that expired with no response.
+    pub expired_unanswered: i64,
+    /// Share of requests that expired with no response, in whole percent.
+    pub expired_unanswered_pct: i64,
+}
+
+/// The inbox page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct InboxResponse {
+    /// Items, soonest-expiring requests first.
+    pub items: Vec<InboxItem>,
+    /// Response metrics per host (only the caller's for a host).
+    pub host_metrics: Vec<HostResponseMetrics>,
+    /// This page, 1-based.
+    pub page: u32,
+    /// Items per page.
+    pub per_page: u32,
+}
+
 /// When a new request's response window ends: `hours` from `now`, but never
 /// after check-in day starts in Jamaica. A window capped below
 /// [`MIN_REQUEST_WINDOW_MINUTES`] is refused, so the host always has time.

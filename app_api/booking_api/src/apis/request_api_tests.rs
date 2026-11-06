@@ -540,3 +540,63 @@ async fn request_checkout_api_an_accepted_offer_becomes_a_pending_booking() {
         (409, Some("REQUEST_NOT_OPEN"))
     );
 }
+
+#[tokio::test]
+async fn inbox_api_hosts_see_their_own_admins_all_and_guests_none() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let (other_villa, other_host) = request_listing(&pool).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let app = app!(pool);
+    let mine = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
+    let theirs = submit(&app, guest, other_villa, "2030-08-01", "2030-08-04").await;
+
+    let get = |who: Uuid, query: &str| {
+        test::TestRequest::get()
+            .uri(&format!("/api/v1/inbox{query}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(who))
+            .to_request()
+    };
+    let resp = test::call_service(&app, get(host, "")).await;
+    assert_eq!(resp.status(), 200);
+    let inbox: serde_json::Value = test::read_body_json(resp).await;
+    let ids: Vec<&str> = inbox["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    assert_eq!(ids, [mine.as_str()]);
+    assert_eq!(inbox["items"][0]["near_expiry"], false);
+    assert!(inbox["items"][0]["time_left_secs"].as_i64().is_some());
+    assert_eq!(inbox["host_metrics"].as_array().map(Vec::len), Some(1));
+    assert_eq!(inbox["host_metrics"][0]["host_id"], host.to_string());
+
+    let resp = test::call_service(&app, get(admin, "")).await;
+    let all: serde_json::Value = test::read_body_json(resp).await;
+    let all_ids: Vec<&str> = all["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|i| i["id"].as_str())
+        .collect();
+    assert!(all_ids.contains(&mine.as_str()) && all_ids.contains(&theirs.as_str()));
+    assert!(
+        all["host_metrics"]
+            .as_array()
+            .expect("metrics")
+            .iter()
+            .any(|m| m["host_id"] == other_host.to_string())
+    );
+
+    assert_eq!(test::call_service(&app, get(guest, "")).await.status(), 403);
+    assert_eq!(
+        test::call_service(&app, get(host, "?kind=booking"))
+            .await
+            .status(),
+        400
+    );
+}
