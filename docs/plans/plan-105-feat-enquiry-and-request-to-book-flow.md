@@ -492,7 +492,7 @@ T42 final gates                      ← all
 
 ## Phase F: Expiry and Email
 
-- [ ] **Task 26: Expiry sweeps**
+- [x] **Task 26: Expiry sweeps**
   - **Scope:** S
   - **Description:** `expire_stale_requests` (`FOR UPDATE SKIP LOCKED`, history, returns facts) and `close_past_enquiries(today_jamaica)`. Call both from `run_sweeps`; the response gains `requests_expired` and `enquiries_closed`.
   - **Files Touched:**

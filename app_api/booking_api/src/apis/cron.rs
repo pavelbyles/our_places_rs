@@ -372,6 +372,10 @@ async fn complete_stays_through(
 pub struct CronSweepsResponse {
     /// Pending holds released because their `expires_at` had passed.
     pub holds_expired: usize,
+    /// Requests and offers expired because their window had passed.
+    pub requests_expired: usize,
+    /// Open enquiries closed because their check-in day arrived.
+    pub enquiries_closed: u64,
     /// Result of the scheduled notification sweep.
     pub notifications: CronSweepResponse,
     /// Result of the stay completion sweep.
@@ -424,6 +428,22 @@ pub async fn run_sweeps(
             "released expired booking holds"
         );
     }
+    let requests = db_core::booking_request::expire_stale_requests(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?;
+    if !requests.is_empty() {
+        tracing::info!(
+            count = requests.len(),
+            request_ids = ?requests.iter().map(|r| r.id).collect::<Vec<_>>(),
+            "expired requests to book"
+        );
+    }
+    let enquiries_closed = db_core::booking_request::close_past_enquiries(
+        pool.get_ref(),
+        common::availability::jamaica_today(Utc::now()),
+    )
+    .await
+    .map_err(ApiError::Database)?;
     let notifications = run_notification_sweep(pool.get_ref()).await?;
     let stays = complete_stays_through(
         pool.get_ref(),
@@ -433,6 +453,8 @@ pub async fn run_sweeps(
     .await?;
     Ok(HttpResponse::Ok().json(CronSweepsResponse {
         holds_expired: expired.len(),
+        requests_expired: requests.len(),
+        enquiries_closed,
         notifications,
         stays,
     }))

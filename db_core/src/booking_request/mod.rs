@@ -9,6 +9,7 @@
 
 mod convert;
 mod enquiry;
+mod expiry;
 mod history;
 mod queries;
 mod quote;
@@ -21,6 +22,7 @@ pub use enquiry::{
     CreatedEnquiry, EnquiryDetail, NewEnquiry, close_enquiry, create_enquiry, get_enquiry,
     list_enquiries_for_guest,
 };
+pub use expiry::{ExpiredRequest, close_past_enquiries, expire_stale_requests};
 pub use history::{Actor, HistorySubject};
 pub use queries::{RequestDetail, get_request, list_for_guest, quotes_by_id};
 pub use quote::{NewQuote, SentQuote, quote_enquiry, send_quote};
@@ -34,6 +36,8 @@ pub(crate) use supersede::supersede_for_instant_hold;
 mod convert_tests;
 #[cfg(test)]
 mod enquiry_tests;
+#[cfg(test)]
+mod expiry_tests;
 #[cfg(test)]
 pub(crate) mod fixtures;
 #[cfg(test)]
