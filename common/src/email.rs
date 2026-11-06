@@ -93,9 +93,64 @@ pub enum EmailTemplate {
     ReservationChangeApproved,
     /// Notification delivered to initiator when a reservation change request is declined.
     ReservationChangeDeclined,
+    /// Confirms to the guest that their enquiry reached the host.
+    EnquirySentGuest,
+    /// Tells the host a guest has a question about their listing.
+    EnquiryReceivedHost,
+    /// Confirms to the guest that their request to book was sent.
+    RequestSubmittedGuest,
+    /// Asks the host to answer a new request to book.
+    RequestReceivedHost,
+    /// Tells the guest the host accepted their request and when the offer ends.
+    RequestAcceptedGuest,
+    /// Confirms to the host that they accepted a request.
+    RequestAcceptedHost,
+    /// Tells the guest the host declined, with the reason and note.
+    RequestDeclinedGuest,
+    /// Confirms to the host that a request was declined.
+    RequestDeclinedHost,
+    /// Sends the guest a custom quote with its price, terms and expiry.
+    QuoteSentGuest,
+    /// Confirms to the host that their custom quote was sent.
+    QuoteSentHost,
+    /// Asks the guest to pay for the hold created from their offer.
+    RequestConvertedGuest,
+    /// Tells the host the guest took up the offer and is paying.
+    RequestConvertedHost,
+    /// Tells the guest their request or offer expired and the dates were released.
+    RequestExpiredGuest,
+    /// Tells the host a request or offer expired and the dates were released.
+    RequestExpiredHost,
+    /// Confirms to the guest that their request was withdrawn or replaced.
+    RequestWithdrawnGuest,
+    /// Tells the host a guest withdrew or replaced their request.
+    RequestWithdrawnHost,
+    /// Reminds the host once that an unanswered request is about to expire.
+    RequestHostReminder,
 }
 
 impl EmailTemplate {
+    /// The enquiry and request-to-book emails, rendered through one shared layout.
+    pub const REQUEST_EMAILS: [Self; 17] = [
+        Self::EnquirySentGuest,
+        Self::EnquiryReceivedHost,
+        Self::RequestSubmittedGuest,
+        Self::RequestReceivedHost,
+        Self::RequestAcceptedGuest,
+        Self::RequestAcceptedHost,
+        Self::RequestDeclinedGuest,
+        Self::RequestDeclinedHost,
+        Self::QuoteSentGuest,
+        Self::QuoteSentHost,
+        Self::RequestConvertedGuest,
+        Self::RequestConvertedHost,
+        Self::RequestExpiredGuest,
+        Self::RequestExpiredHost,
+        Self::RequestWithdrawnGuest,
+        Self::RequestWithdrawnHost,
+        Self::RequestHostReminder,
+    ];
+
     /// Returns the static template identifier string matching filesystem HTML template filenames.
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -116,6 +171,23 @@ impl EmailTemplate {
             Self::ReservationChangeRequested => "reservation_change_requested",
             Self::ReservationChangeApproved => "reservation_change_approved",
             Self::ReservationChangeDeclined => "reservation_change_declined",
+            Self::EnquirySentGuest => "enquiry_sent_guest",
+            Self::EnquiryReceivedHost => "enquiry_received_host",
+            Self::RequestSubmittedGuest => "request_submitted_guest",
+            Self::RequestReceivedHost => "request_received_host",
+            Self::RequestAcceptedGuest => "request_accepted_guest",
+            Self::RequestAcceptedHost => "request_accepted_host",
+            Self::RequestDeclinedGuest => "request_declined_guest",
+            Self::RequestDeclinedHost => "request_declined_host",
+            Self::QuoteSentGuest => "quote_sent_guest",
+            Self::QuoteSentHost => "quote_sent_host",
+            Self::RequestConvertedGuest => "request_converted_guest",
+            Self::RequestConvertedHost => "request_converted_host",
+            Self::RequestExpiredGuest => "request_expired_guest",
+            Self::RequestExpiredHost => "request_expired_host",
+            Self::RequestWithdrawnGuest => "request_withdrawn_guest",
+            Self::RequestWithdrawnHost => "request_withdrawn_host",
+            Self::RequestHostReminder => "request_host_reminder",
         }
     }
 }
@@ -148,6 +220,23 @@ impl std::str::FromStr for EmailTemplate {
             "reservation_change_requested" => Ok(Self::ReservationChangeRequested),
             "reservation_change_approved" => Ok(Self::ReservationChangeApproved),
             "reservation_change_declined" => Ok(Self::ReservationChangeDeclined),
+            "enquiry_sent_guest" => Ok(Self::EnquirySentGuest),
+            "enquiry_received_host" => Ok(Self::EnquiryReceivedHost),
+            "request_submitted_guest" => Ok(Self::RequestSubmittedGuest),
+            "request_received_host" => Ok(Self::RequestReceivedHost),
+            "request_accepted_guest" => Ok(Self::RequestAcceptedGuest),
+            "request_accepted_host" => Ok(Self::RequestAcceptedHost),
+            "request_declined_guest" => Ok(Self::RequestDeclinedGuest),
+            "request_declined_host" => Ok(Self::RequestDeclinedHost),
+            "quote_sent_guest" => Ok(Self::QuoteSentGuest),
+            "quote_sent_host" => Ok(Self::QuoteSentHost),
+            "request_converted_guest" => Ok(Self::RequestConvertedGuest),
+            "request_converted_host" => Ok(Self::RequestConvertedHost),
+            "request_expired_guest" => Ok(Self::RequestExpiredGuest),
+            "request_expired_host" => Ok(Self::RequestExpiredHost),
+            "request_withdrawn_guest" => Ok(Self::RequestWithdrawnGuest),
+            "request_withdrawn_host" => Ok(Self::RequestWithdrawnHost),
+            "request_host_reminder" => Ok(Self::RequestHostReminder),
             other => Err(format!("Unknown email template: {}", other)),
         }
     }
@@ -860,5 +949,27 @@ mod tests {
             failed.last_error.as_deref(),
             Some("SMTP Connection Timeout")
         );
+    }
+}
+
+#[cfg(test)]
+mod email_template_request_tests {
+    use super::EmailTemplate;
+    use std::str::FromStr;
+
+    #[test]
+    fn email_template_request_names_are_unique_and_round_trip() {
+        let mut names: Vec<_> = EmailTemplate::REQUEST_EMAILS
+            .iter()
+            .map(EmailTemplate::as_str)
+            .collect();
+        for template in EmailTemplate::REQUEST_EMAILS {
+            assert_eq!(EmailTemplate::from_str(template.as_str()), Ok(template));
+            assert_eq!(template.to_string(), template.as_str());
+        }
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), EmailTemplate::REQUEST_EMAILS.len());
+        assert!(!names.contains(&"guest_host_message_notification"));
     }
 }

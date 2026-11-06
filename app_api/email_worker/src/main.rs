@@ -11,6 +11,8 @@ pub mod config;
 pub mod processor;
 /// Email delivery providers.
 pub mod provider;
+/// Enquiry and request-to-book emails.
+mod request_emails;
 #[cfg(test)]
 mod tests;
 

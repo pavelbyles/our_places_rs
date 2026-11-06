@@ -501,14 +501,15 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_expiry_tests && devenv shell -- cargo test -p booking_api run_sweeps`
   - **Dependencies:** Task 16, Task 22
 
-- [ ] **Task 27: Email templates**
+- [x] **Task 27: Email templates**
   - **Scope:** M
-  - **Description:** Add the `EmailTemplate` variants and HTML templates for every row of spec §1.9, rendered through `render_email_body`, with `escape_html` on every user-supplied value.
+  - **Description:** Add the `EmailTemplate` variants for every row of spec §1.9. They share one layout (`request_notification.html`), with per-event copy in `email_worker/src/request_emails.rs`, rather than 17 near-identical HTML files. `escape_html` is applied to every value, and only http(s) action links are rendered. Also fixes the existing message notification, which inserted `sender_name` and `message_text` unescaped.
   - **Files Touched:**
     - `common/src/email.rs`
     - `app_api/email_worker/src/processor.rs`
-    - `app_api/email_worker/templates/*.html` (19 new)
-    - `app_api/email_worker/src/tests.rs`
+    - `app_api/email_worker/templates/request_notification.html`
+    - `app_api/email_worker/src/request_emails.rs`
+    - `app_api/email_worker/src/main.rs`
   - **Acceptance Criteria:**
     - [ ] Every template renders with a sample payload, with no unreplaced `{{…}}`.
     - [ ] `<script>` in `message_text`, `terms`, `decline_note` and names comes out escaped.

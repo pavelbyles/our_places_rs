@@ -82,6 +82,9 @@ pub fn load_template(filename: &str) -> String {
         "reservation_change_declined.html" => {
             include_str!("../templates/reservation_change_declined.html").to_string()
         }
+        "request_notification.html" => {
+            include_str!("../templates/request_notification.html").to_string()
+        }
         _ => include_str!("../templates/default_notification.html").to_string(),
     }
 }
@@ -127,6 +130,9 @@ fn promo_paragraph(code: &str, discount: &str, currency: &str) -> String {
 
 /// Renders transactional email HTML templates with dynamic variable interpolation.
 pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> String {
+    if let Some(body) = crate::request_emails::render(template_id, payload) {
+        return body;
+    }
     let get_val = |key: &str| -> String {
         payload
             .get(key)
@@ -421,12 +427,15 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
                 .get("message_text")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            // Both are user-typed: escape them, or a message could inject HTML.
+            let sender = escape_html(sender);
+            let message = escape_html(message).replace('\n', "<br>");
             let template = load_template("guest_host_message_notification.html");
             template
-                .replace("{{sender_name}}", sender)
-                .replace("{sender_name}", sender)
-                .replace("{{message_text}}", message)
-                .replace("{message_text}", message)
+                .replace("{{sender_name}}", &sender)
+                .replace("{sender_name}", &sender)
+                .replace("{{message_text}}", &message)
+                .replace("{message_text}", &message)
         }
         "reservation_change_requested" | "ReservationChangeRequested" => {
             let template = load_template("reservation_change_requested.html");
@@ -534,7 +543,8 @@ pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> Stri
     }
 }
 
-fn escape_html(input: &str) -> String {
+/// Escapes text for HTML element content and attribute values.
+pub(crate) fn escape_html(input: &str) -> String {
     input
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -646,6 +656,20 @@ pub async fn process_email_event(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn message_notification_escapes_sender_and_text() {
+        let body = super::render_email_body(
+            "guest_host_message_notification",
+            &serde_json::json!({
+                "sender_name": "<b>Sam</b>",
+                "message_text": "<script>alert(1)</script>\nsecond line",
+            }),
+        );
+        assert!(!body.contains("<script>"));
+        assert!(!body.contains("<b>Sam</b>"));
+        assert!(body.contains("&lt;script&gt;alert(1)&lt;/script&gt;<br>second line"));
+    }
+
     use super::*;
 
     #[test]

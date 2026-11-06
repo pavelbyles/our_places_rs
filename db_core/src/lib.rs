@@ -27,6 +27,8 @@ pub mod payout_ledger;
 pub mod promo;
 #[cfg(test)]
 mod promo_tests;
+#[cfg(test)]
+mod request_migration_tests;
 /// Bilateral reservation change requests and lifecycle operations.
 pub mod reservation_change;
 /// Guest reviews and verification tokens.
