@@ -5,6 +5,8 @@
 pub mod booking;
 /// Guest-to-host booking messaging operations.
 pub mod booking_message;
+/// Enquiries and requests to book: creation, responses, conversion and expiry.
+pub mod booking_request;
 /// Database connection pool initialization and health checks.
 pub mod connection;
 /// Currency exchange rates and conversions.

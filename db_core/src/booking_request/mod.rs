@@ -1,0 +1,19 @@
+//! Enquiries and requests to book (#105): creation, host responses,
+//! conversion to a `pending` hold, expiry and the inbox.
+//!
+//! Every transaction that changes whether dates are blocked takes the listing
+//! row lock first, the same lock holds take, then (in order) request rows,
+//! currency, the guest's pending bookings and a promo code. A request blocks
+//! its dates while `status IN ('open','accepted','quoted') AND expires_at >
+//! NOW()`, so expiry never waits for a sweep.
+
+mod history;
+mod request;
+
+pub use history::{Actor, HistorySubject};
+pub use request::{CreatedRequest, NewRequest, create_request};
+
+#[cfg(test)]
+pub(crate) mod fixtures;
+#[cfg(test)]
+mod request_tests;

@@ -240,7 +240,7 @@ T42 final gates                      ← all
 
 ## Phase C: Requests Block Dates (highest risk)
 
-- [ ] **Task 10: `db_core::booking_request::create_request`**
+- [x] **Task 10: `db_core::booking_request::create_request`**
   - **Scope:** M
   - **Description:** One transaction (spec §1.3.3): listing lock and mode check; inline expiry of this guest's lapsed rows on the listing; `REQUEST_ALREADY_LIVE`; availability against confirmed bookings, other guests' live holds and live requests (with the gap); supersession of the guest's own live hold on the listing; insert; history; close the source enquiry; optional message (stored once T20 lands; until then the column is left out). Promo usage arrives in T13. Unique-violation mapping goes to `RequestAlreadyLive`.
   - **Files Touched:**
