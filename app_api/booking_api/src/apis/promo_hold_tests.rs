@@ -337,6 +337,15 @@ impl CapturedLogs {
 }
 
 pub(super) fn capture_logs() -> (CapturedLogs, tracing::subscriber::DefaultGuard) {
+    // A global subscriber that is interested in everything, installed once.
+    // Otherwise a test thread with no subscriber can cache a callsite as never
+    // enabled while this test runs, and this test misses that line.
+    static GLOBAL: std::sync::Once = std::sync::Once::new();
+    GLOBAL.call_once(|| {
+        if tracing::subscriber::set_global_default(tracing_subscriber::registry()).is_err() {
+            eprintln!("capture_logs: a global subscriber was already set");
+        }
+    });
     let logs = CapturedLogs::default();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::TRACE)
