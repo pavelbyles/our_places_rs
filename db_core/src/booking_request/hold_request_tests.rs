@@ -145,3 +145,92 @@ async fn a_lapsed_own_request_is_expired_not_cancelled_by_the_hold() {
     assert_eq!(superseded.request, None);
     assert_eq!(request_status(&pool, mine.request.id).await, "expired");
 }
+
+#[tokio::test]
+async fn booking_mode_hold_tests_request_only_listings_refuse_instant_holds() {
+    use common::booking_request::RequestRefusal;
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let guest = raw_user(&pool).await;
+
+    let (request_only, _) = listing_in_mode(&pool, "request", 0).await;
+    let result = create_booking(
+        &pool,
+        &new_hold(request_only, guest, day(3, 1), day(3, 4)),
+        HOLD_MINUTES,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(DbError::RequestRefused(
+            RequestRefusal::BookingModeNotAllowed
+        ))
+    ));
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM booking WHERE listing_id = $1")
+        .bind(request_only)
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(rows, 0);
+
+    for mode in ["instant", "both"] {
+        let (villa, _) = listing_in_mode(&pool, mode, 0).await;
+        create_booking(
+            &pool,
+            &new_hold(villa, guest, day(4, 1), day(4, 4)),
+            HOLD_MINUTES,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{mode}: {e:?}"));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn booking_mode_hold_tests_a_mode_change_committed_while_a_hold_waits_is_seen() {
+    use common::booking_request::RequestRefusal;
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, _) = listing_in_mode(&pool, "both", 0).await;
+    let guest = raw_user(&pool).await;
+
+    // Hold the listing lock while switching to request-only, so the hold waits.
+    let mut switch = pool.begin().await.expect("begin");
+    sqlx::query("SELECT 1 FROM listing WHERE id = $1 FOR UPDATE")
+        .bind(villa)
+        .execute(&mut *switch)
+        .await
+        .expect("lock listing");
+    let hold = new_hold(villa, guest, day(3, 1), day(3, 4));
+    let pending = tokio::spawn({
+        let pool = pool.clone();
+        async move { create_booking(&pool, &hold, HOLD_MINUTES).await }
+    });
+    // The hold is now queued behind the lock.
+    loop {
+        let waiting: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+             WHERE wait_event_type = 'Lock' AND query ILIKE '%FROM listing WHERE id = $1 FOR UPDATE%')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("pg_stat_activity");
+        if waiting {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    sqlx::query("UPDATE listing SET booking_mode = 'request' WHERE id = $1")
+        .bind(villa)
+        .execute(&mut *switch)
+        .await
+        .expect("switch mode");
+    switch.commit().await.expect("commit");
+
+    let result = pending.await.expect("join");
+    assert!(matches!(
+        result,
+        Err(DbError::RequestRefused(
+            RequestRefusal::BookingModeNotAllowed
+        ))
+    ));
+}

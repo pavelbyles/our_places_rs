@@ -224,13 +224,13 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core listing_booking_mode_tests && devenv shell -- cargo test -p listing_api booking_mode`
   - **Dependencies:** Task 1, Task 4
 
-- [ ] **Task 9: Enforce booking mode on instant holds**
+- [x] **Task 9: Enforce booking mode on instant holds**
   - **Scope:** S
   - **Description:** `create_booking` reads `booking_mode` with `is_active` under the listing lock and refuses `request` listings with `RequestRefusal::BookingModeNotAllowed`.
   - **Files Touched:**
     - `db_core/src/booking/hold.rs`
-    - `db_core/src/booking/tests.rs`
-    - `app_api/booking_api/src/apis/tests.rs`
+    - `db_core/src/booking_request/hold_request_tests.rs`
+    - `app_api/booking_api/src/apis/request_api_tests.rs`
   - **Acceptance Criteria:**
     - [ ] `POST /api/v1/bookings` on a `request` listing → 409 `BOOKING_MODE_NOT_ALLOWED`, with no booking row.
     - [ ] `instant` and `both` listings book as before.

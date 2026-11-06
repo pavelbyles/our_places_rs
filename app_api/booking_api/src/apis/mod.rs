@@ -321,6 +321,8 @@ mod promo_hold_tests;
 #[cfg(test)]
 mod rate_tests;
 #[cfg(test)]
+mod request_api_tests;
+#[cfg(test)]
 mod stay_pricing_pin_tests;
 #[cfg(test)]
 mod stay_total_golden_tests;

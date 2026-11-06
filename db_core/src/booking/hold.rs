@@ -48,7 +48,8 @@ pub async fn create_booking_superseding(
 
     // The gap is read under the lock, so it can't change before this hold commits.
     let listing = sqlx::query!(
-        r#"SELECT is_active, LEAST(GREATEST(days_between_bookings, 0), 365) as "gap!"
+        r#"SELECT is_active, booking_mode AS "booking_mode: common::booking_request::BookingMode",
+            LEAST(GREATEST(days_between_bookings, 0), 365) as "gap!"
         FROM listing WHERE id = $1 FOR UPDATE"#,
         new_booking.listing_id
     )
@@ -57,6 +58,12 @@ pub async fn create_booking_superseding(
     .ok_or(crate::error::DbError::Sqlx(sqlx::Error::RowNotFound))?;
     if !listing.is_active {
         return Err(crate::error::DbError::ListingUnavailable);
+    }
+    // Read under the lock, so a mode change can't slip in before this commits.
+    if !listing.booking_mode.allows_instant() {
+        return Err(crate::error::DbError::RequestRefused(
+            common::booking_request::RequestRefusal::BookingModeNotAllowed,
+        ));
     }
 
     // Another guest's live request on these dates blocks like a live hold.
