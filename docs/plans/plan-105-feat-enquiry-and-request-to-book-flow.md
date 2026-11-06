@@ -460,7 +460,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p booking_api enquiry_api_tests`
   - **Dependencies:** Task 15, Task 21, Task 22
 
-- [ ] **Task 24: db quotes**
+- [x] **Task 24: db quotes**
   - **Scope:** M
   - **Description:** `send_quote` on a request (`open|quoted → quoted`; supersedes the previous quote; sets `current_quote_id`, the capped `expires_at` and `first_response_at`; the promo is dropped by status). `quote_enquiry` takes the listing lock, checks availability and `REQUEST_ALREADY_LIVE`, inserts a `quoted` request (`origin = enquiry_quote`), and closes the enquiry with `quoted`. Both write history with `quote_id`.
   - **Files Touched:**

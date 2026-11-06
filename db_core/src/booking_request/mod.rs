@@ -11,6 +11,7 @@ mod convert;
 mod enquiry;
 mod history;
 mod queries;
+mod quote;
 mod request;
 mod respond;
 mod supersede;
@@ -22,6 +23,7 @@ pub use enquiry::{
 };
 pub use history::{Actor, HistorySubject};
 pub use queries::{RequestDetail, get_request, list_for_guest, quotes_by_id};
+pub use quote::{NewQuote, SentQuote, quote_enquiry, send_quote};
 pub(crate) use request::upsert_conversation;
 pub use request::{CreatedRequest, NewRequest, create_request};
 pub use respond::{accept_request, decline_request, withdraw_request};
@@ -38,6 +40,8 @@ pub(crate) mod fixtures;
 mod hold_request_tests;
 #[cfg(test)]
 mod promo_request_tests;
+#[cfg(test)]
+mod quote_tests;
 #[cfg(test)]
 mod request_tests;
 #[cfg(test)]

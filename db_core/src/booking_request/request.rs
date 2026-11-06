@@ -275,7 +275,7 @@ pub(crate) async fn upsert_conversation(
 
 /// Inserts a request row (status `open`, or `quoted` for a quote on an
 /// enquiry, set by the caller afterwards) and returns it.
-async fn insert_row(
+pub(super) async fn insert_row(
     conn: &mut PgConnection,
     new: &NewRequest,
     conversation_id: Uuid,
