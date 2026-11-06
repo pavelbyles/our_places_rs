@@ -336,9 +336,19 @@ pub(super) async fn my_booking_requests(
         .iter()
         .map(|(request, quote)| request_response(request, quote.as_ref()))
         .collect();
+    let enquiries =
+        db_request::list_enquiries_for_guest(pool.get_ref(), claims.sub, GUEST_LIST_LIMIT)
+            .await
+            .map_err(ApiError::Database)?
+            .iter()
+            .map(super::enquiries::enquiry_response)
+            .collect();
     Ok(respond(
         &req,
-        Payload::Item(BookingRequestList { requests }),
+        Payload::Item(BookingRequestList {
+            requests,
+            enquiries,
+        }),
         |_| (),
         actix_web::http::StatusCode::OK,
     ))

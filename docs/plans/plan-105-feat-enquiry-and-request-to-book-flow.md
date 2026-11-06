@@ -446,7 +446,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core enquiry_tests`
   - **Dependencies:** Task 20
 
-- [ ] **Task 23: API enquiries**
+- [x] **Task 23: API enquiries**
   - **Scope:** S
   - **Description:** `POST /api/v1/enquiries` (stay-input and guest-count validation, the inactive-listing check, E19), `GET /{id}`, `POST /{id}/close`. `/booking-requests/mine` includes enquiries. `POST /booking-requests` with `enquiry_id` validates ownership and the listing match.
   - **Files Touched:**

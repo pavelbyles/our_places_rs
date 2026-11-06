@@ -23,6 +23,7 @@ mod conversations;
 mod cron;
 mod currencies;
 mod documents;
+mod enquiries;
 mod exchange_rates;
 mod ledger;
 mod messages;
@@ -318,6 +319,8 @@ async fn authorize_booking_party(
 mod authz_tests;
 #[cfg(test)]
 mod conversation_api_tests;
+#[cfg(test)]
+mod enquiry_api_tests;
 #[cfg(test)]
 mod past_date_tests;
 #[cfg(test)]

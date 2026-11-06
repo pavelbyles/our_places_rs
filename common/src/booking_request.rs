@@ -710,11 +710,63 @@ pub struct CheckoutRequestBody {
     pub quote_id: Option<Uuid>,
 }
 
-/// A guest's requests, newest first.
+/// A guest's question about a listing, with dates and a guest count.
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, utoipa::ToSchema)]
+pub struct CreateEnquiryBody {
+    /// The listing asked about.
+    pub listing_id: Uuid,
+    /// Check-in date asked about.
+    pub check_in: NaiveDate,
+    /// Check-out date asked about.
+    pub check_out: NaiveDate,
+    /// Guests asked about.
+    #[validate(range(min = 1, max = 100))]
+    pub guests: u32,
+    /// The guest's display currency, used if the host quotes on it.
+    #[validate(length(min = 3, max = 3))]
+    pub currency: String,
+    /// The question (user text; never logged).
+    #[validate(length(min = 1, max = 2000))]
+    pub message: String,
+}
+
+/// An enquiry, as the guest, host or admin sees it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct EnquiryResponse {
+    /// Enquiry id.
+    pub id: Uuid,
+    /// The guest × listing thread.
+    pub conversation_id: Uuid,
+    /// The listing.
+    pub listing_id: Uuid,
+    /// The guest.
+    pub guest_id: Uuid,
+    /// Check-in date asked about.
+    pub check_in: NaiveDate,
+    /// Check-out date asked about.
+    pub check_out: NaiveDate,
+    /// Guests asked about.
+    pub guests: i32,
+    /// The guest's display currency.
+    pub currency: String,
+    /// Open or closed.
+    pub status: EnquiryStatus,
+    /// Why it closed.
+    pub closed_reason: Option<EnquiryClosedReason>,
+    /// When the host first responded.
+    pub first_response_at: Option<DateTime<Utc>>,
+    /// When it was sent.
+    pub created_at: DateTime<Utc>,
+}
+
+/// A guest's requests and enquiries, newest first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct BookingRequestList {
     /// The requests.
     pub requests: Vec<BookingRequestResponse>,
+    /// The enquiries.
+    #[serde(default)]
+    pub enquiries: Vec<EnquiryResponse>,
 }
 
 /// When a new request's response window ends: `hours` from `now`, but never

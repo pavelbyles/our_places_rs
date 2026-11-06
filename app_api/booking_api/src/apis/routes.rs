@@ -28,7 +28,7 @@ use super::reservation_changes::{
 };
 use super::{
     availability, booking_requests, booking_updates, bookings, conversations, cron, documents,
-    messages, promo_codes, reservation_changes, stay_pricing,
+    enquiries, messages, promo_codes, reservation_changes, stay_pricing,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -96,6 +96,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             conversations::get_conversation_messages,
             conversations::post_conversation_message,
             conversations::mark_conversation_read,
+            enquiries::create_enquiry,
+            enquiries::get_enquiry,
+            enquiries::close_enquiry,
         ),
         components(
             schemas(
@@ -106,6 +109,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::booking_request::BookingRequestList,
                 common::booking_request::DeclineRequestBody,
                 common::booking_request::CheckoutRequestBody,
+                common::booking_request::CreateEnquiryBody,
+                common::booking_request::EnquiryResponse,
+                common::booking_request::EnquiryStatus,
+                common::booking_request::EnquiryClosedReason,
                 common::booking_request::PriceBreakdown,
                 common::booking_request::QuoteSummary,
                 common::booking_request::RequestStatus,
@@ -218,6 +225,15 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/{id}/messages/read",
                 web::patch().to(conversations::mark_conversation_read),
             ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/enquiries")
+            .wrap(from_fn(require_user))
+            .wrap(from_fn(content_negotiation_middleware))
+            .route("", web::post().to(enquiries::create_enquiry))
+            .route("/{id}", web::get().to(enquiries::get_enquiry))
+            .route("/{id}/close", web::post().to(enquiries::close_enquiry)),
     );
 
     // Requests to book: signed-in users only; handlers check the caller is
