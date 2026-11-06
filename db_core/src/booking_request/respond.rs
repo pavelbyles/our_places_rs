@@ -22,6 +22,7 @@ use uuid::Uuid;
 pub(super) struct Locked {
     pub(super) request: DbBookingRequest,
     pub(super) listing_active: bool,
+    pub(super) gap: i32,
     pub(super) now: DateTime<Utc>,
 }
 
@@ -34,8 +35,9 @@ pub(super) async fn lock_request(conn: &mut PgConnection, request_id: Uuid) -> R
     .fetch_optional(&mut *conn)
     .await?
     .ok_or(DbError::Sqlx(sqlx::Error::RowNotFound))?;
-    let listing_active = sqlx::query_scalar!(
-        "SELECT is_active FROM listing WHERE id = $1 FOR UPDATE",
+    let listing = sqlx::query!(
+        r#"SELECT is_active, LEAST(GREATEST(days_between_bookings, 0), 365) AS "gap!"
+        FROM listing WHERE id = $1 FOR UPDATE"#,
         listing_id
     )
     .fetch_one(&mut *conn)
@@ -62,7 +64,8 @@ pub(super) async fn lock_request(conn: &mut PgConnection, request_id: Uuid) -> R
         .await?;
     Ok(Locked {
         request,
-        listing_active,
+        listing_active: listing.is_active,
+        gap: listing.gap,
         now,
     })
 }

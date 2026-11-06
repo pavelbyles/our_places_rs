@@ -10,6 +10,7 @@ mod update;
 pub use availability::{check_availability, check_availability_excluding, get_unavailable_ranges};
 pub use history::get_booking_history;
 pub(crate) use history::record_booking_history;
+pub(crate) use hold::{cancel_guest_holds, insert_hold};
 pub use hold::{
     create_booking, create_booking_superseding, expire_stale_holds, transfer_booking_guest,
 };

@@ -125,6 +125,30 @@ pub async fn create_booking_superseding(
         return Err(crate::error::DbError::DateUnavailable);
     }
 
+    cancel_guest_holds(&mut tx, new_booking.guest_id).await?;
+
+    if let Some(promo) = &new_booking.promo {
+        let (code, usage) =
+            crate::promo::lock_and_count(&mut tx, promo.promo_code_id, new_booking.guest_id)
+                .await?;
+        common::promo::check_status(code.status(), Utc::now())
+            .and_then(|()| common::promo::check_usage(usage))
+            .map_err(crate::error::DbError::PromoRefused)?;
+    }
+
+    let booking = insert_hold(&mut tx, new_booking, hold_minutes, "Booking created").await?;
+
+    tx.commit().await?;
+
+    Ok((booking, superseded))
+}
+
+/// Cancels every `pending` hold of the guest, on any listing, with history: a
+/// guest has at most one hold at a time.
+pub(crate) async fn cancel_guest_holds(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    guest_id: Uuid,
+) -> Result<()> {
     // Cancel any existing pending holds for this guest across all listings
     let existing_guest_holds = sqlx::query_as!(
         Booking,
@@ -143,31 +167,34 @@ pub async fn create_booking_superseding(
             promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
-        new_booking.guest_id,
+        guest_id,
         Utc::now()
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
 
     for cancelled in existing_guest_holds {
         record_booking_history(
-            &mut tx,
+            tx,
             &cancelled,
             "Cancelled previous pending hold due to new booking placement",
-            Some(new_booking.guest_id),
+            Some(guest_id),
         )
         .await?;
     }
 
-    if let Some(promo) = &new_booking.promo {
-        let (code, usage) =
-            crate::promo::lock_and_count(&mut tx, promo.promo_code_id, new_booking.guest_id)
-                .await?;
-        common::promo::check_status(code.status(), Utc::now())
-            .and_then(|()| common::promo::check_usage(usage))
-            .map_err(crate::error::DbError::PromoRefused)?;
-    }
+    Ok(())
+}
 
+/// Inserts a `pending` booking holding its dates for `hold_minutes`, its promo
+/// redemption (if any) and its first history row, inside the caller's
+/// transaction. The caller has taken every lock and checked availability.
+pub(crate) async fn insert_hold(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    new_booking: &NewBooking,
+    hold_minutes: i32,
+    reason: &str,
+) -> Result<Booking> {
     let promo = new_booking.promo.as_ref();
     let booking = sqlx::query_as!(
         Booking,
@@ -226,7 +253,7 @@ pub async fn create_booking_superseding(
         promo.map_or(Decimal::ZERO, |p| p.stay_discount),
         promo.map_or(Decimal::ZERO, |p| p.cleaning_discount)
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
     if let Some(promo) = promo {
@@ -235,16 +262,14 @@ pub async fn create_booking_superseding(
             promo.promo_code_id,
             booking.id
         )
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
     // Record initial history
-    record_booking_history(&mut tx, &booking, "Booking created", None).await?;
+    record_booking_history(tx, &booking, reason, None).await?;
 
-    tx.commit().await?;
-
-    Ok((booking, superseded))
+    Ok(booking)
 }
 
 /// Cancels every `pending` hold whose `expires_at` has passed and records a

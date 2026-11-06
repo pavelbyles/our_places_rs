@@ -369,12 +369,13 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p booking_api request_respond_api`
   - **Dependencies:** Task 15, Task 16
 
-- [ ] **Task 18: `convert_offer_to_hold`**
+- [x] **Task 18: `convert_offer_to_hold`**
   - **Scope:** M
   - **Description:** One transaction (spec §1.6.2). Locks listing → request (status, owner, `clock_timestamp()` expiry, current `quote_id`) → currency. Re-checks availability excluding this request, cancels the guest's other pending holds, then for the promo: `lock_code` + redemption insert **without** `check_usage`. Inserts the booking from the snapshot (with `pending_hold_minutes`), writes both histories, and sets the request to `converted` with `booking_id`.
   - **Files Touched:**
     - `db_core/src/booking_request/convert.rs`
-    - `db_core/src/booking/hold.rs` (shared insert helper)
+    - `db_core/src/booking/hold.rs` (shared `insert_hold` and `cancel_guest_holds`)
+    - `db_core/src/booking_request/respond.rs` (`lock_request` reads the gap)
     - `db_core/src/booking_request/convert_tests.rs`
   - **Acceptance Criteria:**
     - [ ] The booking's money fields equal the snapshot exactly, even after a rate, price or override change (E13).
