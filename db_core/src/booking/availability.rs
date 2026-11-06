@@ -6,6 +6,9 @@
 //! from overflowing a date or shrinking the rule. Search and the hold have
 //! their own copies of this SQL, and `availability_parity_tests` keeps them
 //! in step.
+//!
+//! Live requests to book (#105) block the same way: `status IN ('open',
+//! 'accepted', 'quoted') AND expires_at > NOW()`, widened by the same gap.
 
 use crate::error::Result;
 use sqlx::PgExecutor;
@@ -26,15 +29,26 @@ where
         return Ok(false);
     }
 
-    let overlapping = sqlx::query!(
+    let blocked = sqlx::query_scalar!(
         r#"
-        SELECT count(*) as count
-        FROM booking b
-        JOIN listing l ON l.id = b.listing_id
-        WHERE b.listing_id = $1
-          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
-          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
-          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+        SELECT (
+            EXISTS (
+                SELECT 1 FROM booking b
+                JOIN listing l ON l.id = b.listing_id
+                WHERE b.listing_id = $1
+                  AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+                  AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+                  AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+            )
+            OR EXISTS (
+                SELECT 1 FROM booking_request r
+                JOIN listing l ON l.id = r.listing_id
+                WHERE r.listing_id = $1
+                  AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+                  AND r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+                  AND r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+            )
+        ) AS "blocked!"
         "#,
         listing_id,
         date_from,
@@ -43,7 +57,7 @@ where
     .fetch_one(executor)
     .await?;
 
-    Ok(overlapping.count == Some(0))
+    Ok(!blocked)
 }
 
 /// Checks if a listing is available for a specified date range, excluding a specific booking.
@@ -62,16 +76,27 @@ where
         return Ok(false);
     }
 
-    let overlapping = sqlx::query!(
+    let blocked = sqlx::query_scalar!(
         r#"
-        SELECT count(*) as count
-        FROM booking b
-        JOIN listing l ON l.id = b.listing_id
-        WHERE b.listing_id = $1
-          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
-          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
-          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
-          AND b.id != $4
+        SELECT (
+            EXISTS (
+                SELECT 1 FROM booking b
+                JOIN listing l ON l.id = b.listing_id
+                WHERE b.listing_id = $1
+                  AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+                  AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+                  AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+                  AND b.id != $4
+            )
+            OR EXISTS (
+                SELECT 1 FROM booking_request r
+                JOIN listing l ON l.id = r.listing_id
+                WHERE r.listing_id = $1
+                  AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+                  AND r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+                  AND r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+            )
+        ) AS "blocked!"
         "#,
         listing_id,
         date_from,
@@ -81,12 +106,13 @@ where
     .fetch_one(executor)
     .await?;
 
-    Ok(overlapping.count == Some(0))
+    Ok(!blocked)
 }
 
 /// Returns the date ranges a new stay can't use that overlap
-/// `[date_from, date_to)` for a listing: pending holds and confirmed stays,
-/// each widened by the listing's gap, ordered by start date.
+/// `[date_from, date_to)` for a listing: pending holds, confirmed stays and
+/// live requests to book, each widened by the listing's gap, ordered by start
+/// date.
 ///
 /// Uses the same status set and overlap rule as [`check_availability`], so
 /// the calendar and the hold logic agree. Read-only and lock-free: it is for
@@ -103,16 +129,29 @@ where
 {
     let rows = sqlx::query!(
         r#"
-        SELECT
-            b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) AS "date_from!",
-            b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) AS "date_to!"
-        FROM booking b
-        JOIN listing l ON l.id = b.listing_id
-        WHERE b.listing_id = $1
-          AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
-          AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
-          AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
-        ORDER BY b.date_from
+        SELECT blocked.date_from AS "date_from!", blocked.date_to AS "date_to!"
+        FROM (
+            SELECT
+                b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) AS date_from,
+                b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) AS date_to
+            FROM booking b
+            JOIN listing l ON l.id = b.listing_id
+            WHERE b.listing_id = $1
+              AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))
+              AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+              AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+            UNION ALL
+            SELECT
+                r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365),
+                r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365)
+            FROM booking_request r
+            JOIN listing l ON l.id = r.listing_id
+            WHERE r.listing_id = $1
+              AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+              AND r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3
+              AND r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2
+        ) AS blocked
+        ORDER BY blocked.date_from
         "#,
         listing_id,
         date_from,

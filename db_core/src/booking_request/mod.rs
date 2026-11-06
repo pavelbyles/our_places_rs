@@ -9,11 +9,16 @@
 
 mod history;
 mod request;
+mod supersede;
 
 pub use history::{Actor, HistorySubject};
 pub use request::{CreatedRequest, NewRequest, create_request};
+pub use supersede::Superseded;
+pub(crate) use supersede::supersede_for_instant_hold;
 
 #[cfg(test)]
 pub(crate) mod fixtures;
+#[cfg(test)]
+mod hold_request_tests;
 #[cfg(test)]
 mod request_tests;

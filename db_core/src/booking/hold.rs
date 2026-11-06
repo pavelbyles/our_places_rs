@@ -19,15 +19,31 @@ use uuid::Uuid;
 /// A promo code is checked here, under its row lock, after the guest's other
 /// holds are cancelled, so a guest replacing their own hold doesn't count against
 /// themselves. A refusal rolls everything back, including those cancellations.
-#[tracing::instrument(
-    skip(pool, new_booking),
-    fields(listing_id = %new_booking.listing_id, guest_id = %new_booking.guest_id)
-)]
 pub async fn create_booking(
     pool: &PgPool,
     new_booking: &NewBooking,
     hold_minutes: i32,
 ) -> Result<Booking> {
+    create_booking_superseding(pool, new_booking, hold_minutes)
+        .await
+        .map(|(booking, _)| booking)
+}
+
+/// [`create_booking`], also returning the guest's request and enquiry on the
+/// listing that the hold replaced, so the caller can tell both parties.
+///
+/// Another guest's live request on the dates blocks the hold like a live hold
+/// does. The guest's own live request on the listing is cancelled and their
+/// open enquiry there closed, in the same transaction.
+#[tracing::instrument(
+    skip(pool, new_booking),
+    fields(listing_id = %new_booking.listing_id, guest_id = %new_booking.guest_id)
+)]
+pub async fn create_booking_superseding(
+    pool: &PgPool,
+    new_booking: &NewBooking,
+    hold_minutes: i32,
+) -> Result<(Booking, crate::booking_request::Superseded)> {
     let mut tx = pool.begin().await?;
 
     // The gap is read under the lock, so it can't change before this hold commits.
@@ -42,6 +58,36 @@ pub async fn create_booking(
     if !listing.is_active {
         return Err(crate::error::DbError::ListingUnavailable);
     }
+
+    // Another guest's live request on these dates blocks like a live hold.
+    let requested = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+            SELECT 1 FROM booking_request r
+            WHERE r.listing_id = $1 AND r.guest_id <> $2
+              AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+              AND r.date_from - $5::int4 < $4
+              AND r.date_to + $5::int4 > $3
+        ) AS "blocked!""#,
+        new_booking.listing_id,
+        new_booking.guest_id,
+        new_booking.date_from,
+        new_booking.date_to,
+        listing.gap
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if requested {
+        return Err(crate::error::DbError::DateUnavailable);
+    }
+
+    // Lock order: listing, then request rows, then currency. The guest's own
+    // request on the listing gives way to this hold.
+    let superseded = crate::booking_request::supersede_for_instant_hold(
+        &mut tx,
+        new_booking.listing_id,
+        new_booking.guest_id,
+    )
+    .await?;
 
     // Lock order: listing, then currency. A concurrent deactivation waits for
     // this hold (and then sees it), or this hold sees the deactivation.
@@ -191,7 +237,7 @@ pub async fn create_booking(
 
     tx.commit().await?;
 
-    Ok(booking)
+    Ok((booking, superseded))
 }
 
 /// Cancels every `pending` hold whose `expires_at` has passed and records a

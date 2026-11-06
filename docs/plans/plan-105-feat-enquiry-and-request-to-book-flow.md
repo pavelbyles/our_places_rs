@@ -259,9 +259,9 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_create_tests`
   - **Dependencies:** Task 3, Task 5
 
-- [ ] **Task 11: Availability queries include live requests**
+- [x] **Task 11: Availability queries include live requests**
   - **Scope:** M
-  - **Description:** Add the live-request predicate to `check_availability`, `check_availability_excluding`, `get_unavailable_ranges` (`UNION ALL`) and `push_stay_conditions`. Add `check_availability_excluding_request`. Extend `availability_parity_tests` with request fixtures.
+  - **Description:** Add the live-request predicate to `check_availability`, `check_availability_excluding`, `get_unavailable_ranges` (`UNION ALL`) and `push_stay_conditions`. Extend `availability_parity_tests` with nine request states and two more paths (`check_availability_excluding`, a new request). Conversion reuses `check_dates_free`, which already takes `exclude_request`, so no `check_availability_excluding_request` is needed.
   - **Files Touched:**
     - `db_core/src/booking/availability.rs`
     - `db_core/src/listing/queries.rs`
@@ -273,16 +273,16 @@ T42 final gates                      ← all
     - [ ] Expiry on read: `expires_at` in the past with no sweep → free in all four at once.
     - [ ] E24: a reservation change into request-held dates → `DateUnavailable`.
     - [ ] The parity tests agree across every copy.
-  - **Verification Command:** `devenv shell -- cargo test -p db_core availability_parity && devenv shell -- cargo test -p db_core request_availability_tests`
+  - **Verification Command:** `devenv shell -- cargo test -p db_core availability_parity`
   - **Dependencies:** Task 10
 
-- [ ] **Task 12: Instant holds respect and supersede requests**
+- [x] **Task 12: Instant holds respect and supersede requests**
   - **Scope:** S
   - **Description:** The `create_booking` overlap check adds other guests' live requests. The same guest's live request on the listing is set to `cancelled` (`superseded_by_instant_booking`), and their open enquiry to `closed/booked`, both with history in the same transaction. The function returns the superseded ids for T28's emails.
   - **Files Touched:**
-    - `db_core/src/booking/hold.rs`
-    - `db_core/src/booking/hold_request_tests.rs`
-    - `app_api/booking_api/src/apis/bookings.rs`
+    - `db_core/src/booking/hold.rs` (`create_booking_superseding`; `create_booking` wraps it)
+    - `db_core/src/booking_request/supersede.rs`
+    - `db_core/src/booking_request/hold_request_tests.rs`
   - **Acceptance Criteria:**
     - [ ] E1: an instant hold and a request racing for the same dates → exactly one success.
     - [ ] Another guest's live request → `DateUnavailable`.

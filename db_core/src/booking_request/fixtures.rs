@@ -1,7 +1,7 @@
 //! Shared fixtures for enquiry and request tests.
 
 use super::NewRequest;
-use crate::models::BookingMetadata;
+use crate::models::{BookingMetadata, NewBooking};
 pub(crate) use crate::promo_tests::{migrated_db, raw_listing, raw_user};
 use chrono::{Duration, NaiveDate, Utc};
 use common::booking_request::StayPriceSnapshot;
@@ -140,4 +140,53 @@ pub(crate) async fn request_history(
     .fetch_all(pool)
     .await
     .expect("request history")
+}
+
+/// An instant hold for `[from, to)` by `guest`.
+pub(crate) fn new_hold(listing: Uuid, guest: Uuid, from: NaiveDate, to: NaiveDate) -> NewBooking {
+    NewBooking {
+        confirmation_code: format!("H{}", Uuid::new_v4().simple())[..10].to_uppercase(),
+        guest_id: guest,
+        listing_id: listing,
+        date_from: from,
+        date_to: to,
+        currency: "USD".to_string(),
+        daily_rate: dec!(100.00),
+        number_of_persons: 2,
+        total_days: i32::try_from((to - from).num_days()).unwrap_or(1),
+        sub_total_price: dec!(300.00),
+        discount_value: None,
+        tax_value: Some(dec!(45.00)),
+        fee_breakdown: vec![],
+        total_price: dec!(360.00),
+        cancellation_policy: CancellationPolicy::Flexible,
+        metadata: BookingMetadata::default(),
+        door_access_code: None,
+        cleaning_fee: dec!(0),
+        damage_deposit: dec!(0),
+        platform_fee: dec!(15.00),
+        tax_rate: dec!(0.15),
+        exchange_rate: dec!(1),
+        promo: None,
+    }
+}
+
+/// An open enquiry by `guest` on `listing`.
+pub(crate) async fn raw_enquiry(pool: &PgPool, listing: Uuid, guest: Uuid) -> Uuid {
+    sqlx::query_scalar(
+        "WITH conv AS (
+             INSERT INTO conversation (listing_id, guest_id) VALUES ($1, $2)
+             ON CONFLICT (listing_id, guest_id) DO UPDATE SET last_message_at = NOW()
+             RETURNING id
+         )
+         INSERT INTO booking_enquiry (conversation_id, listing_id, guest_id, date_from, date_to,
+             number_of_persons, currency)
+         SELECT conv.id, $1, $2, '2030-03-01', '2030-03-04', 2, 'USD' FROM conv
+         RETURNING id",
+    )
+    .bind(listing)
+    .bind(guest)
+    .fetch_one(pool)
+    .await
+    .expect("insert enquiry")
 }

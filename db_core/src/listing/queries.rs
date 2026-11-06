@@ -44,6 +44,17 @@ fn push_stay_conditions(
     query_builder
         .push(" AND b.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > ");
     query_builder.push_bind(check_in);
+    // Live requests to book (#105) block like holds.
+    query_builder.push(
+        ") AND NOT EXISTS (SELECT 1 FROM booking_request r
+            WHERE r.listing_id = listing.id
+              AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+              AND r.date_from - LEAST(GREATEST(listing.days_between_bookings, 0), 365) < ",
+    );
+    query_builder.push_bind(check_out);
+    query_builder
+        .push(" AND r.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > ");
+    query_builder.push_bind(check_in);
     query_builder.push(")");
 }
 
