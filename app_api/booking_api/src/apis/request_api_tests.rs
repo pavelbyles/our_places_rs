@@ -313,3 +313,166 @@ async fn request_api_tests_message_and_promo_text_stay_out_of_logs() {
     assert!(!text.contains("PRIVATE-MESSAGE-TEXT"), "{text}");
     assert!(!text.contains("NOTAREALCODE"), "{text}");
 }
+
+/// Submits a request as `guest` and returns its id.
+pub(super) async fn submit<S, B>(app: &S, guest: Uuid, villa: Uuid, from: &str, to: &str) -> String
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse<B>,
+            Error = actix_web::Error,
+        >,
+    B: actix_web::body::MessageBody,
+{
+    let resp = test::call_service(
+        app,
+        test::TestRequest::post()
+            .uri("/api/v1/booking-requests")
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(request_body(villa, from, to))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let created: serde_json::Value = test::read_body_json(resp).await;
+    created["id"].as_str().expect("id").to_string()
+}
+
+/// POSTs an action on a request and returns the status and JSON body.
+pub(super) async fn act<S, B>(
+    app: &S,
+    who: Uuid,
+    id: &str,
+    action: &str,
+    body: serde_json::Value,
+) -> (u16, serde_json::Value)
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse<B>,
+            Error = actix_web::Error,
+        >,
+    B: actix_web::body::MessageBody,
+{
+    let resp = test::call_service(
+        app,
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/booking-requests/{id}/{action}"))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(who))
+            .set_json(body)
+            .to_request(),
+    )
+    .await;
+    let status = resp.status().as_u16();
+    let bytes = test::read_body(resp).await;
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn request_respond_api_roles_are_enforced() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let other_host = user(&pool, UserRole::Host).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let app = app!(pool);
+    let decline = serde_json::json!({ "reason": "group_size", "note": "Max 8." });
+
+    let id = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
+    // Another host can't touch it; the guest can't answer for the host.
+    assert_eq!(
+        act(&app, other_host, &id, "accept", serde_json::json!({}))
+            .await
+            .0,
+        403
+    );
+    assert_eq!(
+        act(&app, other_host, &id, "decline", decline.clone())
+            .await
+            .0,
+        403
+    );
+    let (status, body) = act(&app, guest, &id, "accept", serde_json::json!({})).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (403, Some("NOT_REQUEST_PARTY"))
+    );
+    // A host can't withdraw the guest's request.
+    assert_eq!(
+        act(&app, host, &id, "withdraw", serde_json::json!({}))
+            .await
+            .0,
+        403
+    );
+
+    let (status, body) = act(&app, host, &id, "accept", serde_json::json!({})).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["status"], "accepted");
+    let (status, body) = act(&app, host, &id, "accept", serde_json::json!({})).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (409, Some("REQUEST_NOT_OPEN"))
+    );
+
+    // An admin can decline (withdraw the offer) on any listing.
+    let (status, body) = act(&app, admin, &id, "decline", decline.clone()).await;
+    assert_eq!(status, 200);
+    assert_eq!(body["decline_reason"], "group_size");
+    assert_eq!(body["decline_note"], "Max 8.");
+
+    // The guest withdraws their own new request.
+    let id = submit(&app, guest, villa, "2030-09-01", "2030-09-04").await;
+    let (status, body) = act(&app, guest, &id, "withdraw", serde_json::json!({})).await;
+    assert_eq!((status, body["status"].as_str()), (200, Some("withdrawn")));
+
+    // `other` needs a note.
+    let id = submit(&app, guest, villa, "2030-10-01", "2030-10-04").await;
+    let (status, body) = act(
+        &app,
+        host,
+        &id,
+        "decline",
+        serde_json::json!({ "reason": "other" }),
+    )
+    .await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (400, Some("DECLINE_NOTE_REQUIRED"))
+    );
+}
+
+#[tokio::test]
+async fn request_respond_api_inactive_listings_refuse_accepts_but_not_declines() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let app = app!(pool);
+    let id = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
+    sqlx::query("UPDATE listing SET is_active = FALSE WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .expect("deactivate");
+
+    let (status, body) = act(&app, host, &id, "accept", serde_json::json!({})).await;
+    assert_eq!(
+        (status, body["code"].as_str()),
+        (409, Some("LISTING_UNAVAILABLE"))
+    );
+    let (status, _) = act(
+        &app,
+        host,
+        &id,
+        "decline",
+        serde_json::json!({ "reason": "dates_unavailable" }),
+    )
+    .await;
+    assert_eq!(status, 200);
+}

@@ -356,7 +356,7 @@ T42 final gates                      ← all
   - **Verification Command:** `devenv shell -- cargo test -p db_core request_respond_tests`
   - **Dependencies:** Task 10
 
-- [ ] **Task 17: API accept, decline and withdraw**
+- [x] **Task 17: API accept, decline and withdraw**
   - **Scope:** S
   - **Description:** `POST /{id}/accept`, `/decline` and `/withdraw`, with role checks (host or admin for accept and decline, guest for withdraw) and an `info!` log with `actor_id`, `request_id` and the action.
   - **Files Touched:**

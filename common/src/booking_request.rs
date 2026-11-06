@@ -690,6 +690,17 @@ pub struct BookingRequestResponse {
     pub created_at: DateTime<Utc>,
 }
 
+/// A host's decline.
+#[derive(Debug, Clone, Serialize, Deserialize, validator::Validate, utoipa::ToSchema)]
+pub struct DeclineRequestBody {
+    /// Why, from the fixed list.
+    pub reason: DeclineReason,
+    /// More detail for the guest (user text); required when `reason` is `other`.
+    #[serde(default)]
+    #[validate(length(max = 1000))]
+    pub note: Option<String>,
+}
+
 /// A guest's requests, newest first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct BookingRequestList {

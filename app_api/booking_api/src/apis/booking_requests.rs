@@ -15,12 +15,14 @@ use api_core::response::{Payload, respond};
 use api_core::settings::Settings;
 use chrono::Utc;
 use common::booking_request::{
-    BookingRequestList, BookingRequestResponse, CreateBookingRequestBody, PriceBreakdown,
-    QuoteSummary, RequestRefusal, StayPriceSnapshot, response_window,
+    BookingRequestList, BookingRequestResponse, CreateBookingRequestBody, DeclineRequestBody,
+    PriceBreakdown, QuoteSummary, RequestRefusal, StayPriceSnapshot, response_window,
 };
 use db_core::booking_request as db_request;
 use db_core::error::DbError;
-use db_core::models::{BookingMetadata, CancellationPolicy, DbBookingRequest, DbRequestQuote};
+use db_core::models::{
+    BookingMetadata, CancellationPolicy, DbBookingRequest, DbMessageSenderRole, DbRequestQuote,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
@@ -37,6 +39,19 @@ pub(super) enum PartyRole {
     Host,
     /// An admin, acting for the host.
     Admin,
+}
+
+impl PartyRole {
+    /// The history and message role for a host-side action, or a refusal if
+    /// the caller is the guest.
+    fn host_side_actor(self, id: Uuid) -> Result<db_request::Actor, ApiError> {
+        let role = match self {
+            Self::Host => DbMessageSenderRole::Host,
+            Self::Admin => DbMessageSenderRole::Admin,
+            Self::Guest => return Err(refused(RequestRefusal::NotParty)),
+        };
+        Ok(db_request::Actor { id, role })
+    }
 }
 
 fn refused(refusal: RequestRefusal) -> ApiError {
@@ -324,4 +339,124 @@ pub(super) async fn my_booking_requests(
         |_| (),
         actix_web::http::StatusCode::OK,
     ))
+}
+
+fn ok(req: &HttpRequest, request: &DbBookingRequest) -> actix_web::HttpResponse {
+    respond(
+        req,
+        Payload::Item(request_response(request, None)),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    )
+}
+
+#[tracing::instrument(skip_all, fields(request_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/booking-requests/{id}/accept",
+    tag = "booking-requests",
+    responses(
+        (status = 200, description = "Accepted; the dates are held as an offer", body = BookingRequestResponse),
+        (status = 403, description = "NOT_REQUEST_PARTY"),
+        (status = 404, description = "No such request"),
+        (status = 409, description = "REQUEST_NOT_OPEN, REQUEST_EXPIRED or LISTING_UNAVAILABLE")
+    )
+)]
+/// The listing's host or an admin accepts a request at its requested price.
+pub(super) async fn accept_booking_request(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
+    id: web::Path<Uuid>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let actor = role.host_side_actor(claims.sub)?;
+    let accepted = db_request::accept_request(
+        pool.get_ref(),
+        *id,
+        actor,
+        settings.application.quote_valid_hours,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+    tracing::info!(actor_id = %claims.sub, request_id = %id, action = "accept", "request accepted");
+    Ok(ok(&req, &accepted))
+}
+
+#[tracing::instrument(skip_all, fields(request_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/booking-requests/{id}/decline",
+    tag = "booking-requests",
+    request_body = DeclineRequestBody,
+    responses(
+        (status = 200, description = "Declined; the dates are released", body = BookingRequestResponse),
+        (status = 400, description = "DECLINE_NOTE_REQUIRED or invalid text"),
+        (status = 403, description = "NOT_REQUEST_PARTY"),
+        (status = 404, description = "No such request"),
+        (status = 409, description = "REQUEST_NOT_OPEN, REQUEST_EXPIRED or QUOTE_EXPIRED")
+    )
+)]
+/// The listing's host or an admin declines a request, or withdraws an offer.
+pub(super) async fn decline_booking_request(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+    body: web::Json<DeclineRequestBody>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    body.validate().map_err(ApiError::ValidationError)?;
+    if let Some(note) = &body.note {
+        check_user_text(note)?;
+    }
+    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let actor = role.host_side_actor(claims.sub)?;
+    let declined = db_request::decline_request(
+        pool.get_ref(),
+        *id,
+        actor,
+        body.reason,
+        body.note.as_deref(),
+    )
+    .await
+    .map_err(ApiError::Database)?;
+    tracing::info!(
+        actor_id = %claims.sub,
+        request_id = %id,
+        action = "decline",
+        reason = body.reason.as_str(),
+        "request declined"
+    );
+    Ok(ok(&req, &declined))
+}
+
+#[tracing::instrument(skip_all, fields(request_id = %id))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/booking-requests/{id}/withdraw",
+    tag = "booking-requests",
+    responses(
+        (status = 200, description = "Withdrawn; the dates are released", body = BookingRequestResponse),
+        (status = 403, description = "NOT_REQUEST_PARTY"),
+        (status = 404, description = "No such request"),
+        (status = 409, description = "REQUEST_NOT_OPEN, REQUEST_EXPIRED or QUOTE_EXPIRED")
+    )
+)]
+/// The guest withdraws their own request or offer.
+pub(super) async fn withdraw_booking_request(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    id: web::Path<Uuid>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    if role != PartyRole::Guest {
+        return Err(refused(RequestRefusal::NotParty));
+    }
+    let withdrawn = db_request::withdraw_request(pool.get_ref(), *id, claims.sub)
+        .await
+        .map_err(ApiError::Database)?;
+    tracing::info!(actor_id = %claims.sub, request_id = %id, action = "withdraw", "request withdrawn");
+    Ok(ok(&req, &withdrawn))
 }
