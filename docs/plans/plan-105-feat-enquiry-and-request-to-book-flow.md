@@ -627,7 +627,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_guest enquiry_pages`
   - **Dependencies:** Task 31, Task 33
 
-- [ ] **Task 35: Guest My requests and request detail**
+- [x] **Task 35: Guest My requests and request detail**
   - **Scope:** M
   - **Description:** `/requests` lists cards with status badges and "expires in …" (an HTMX `every 60s` fragment refresh). `/requests/{id}` shows the history timeline, the breakdown, the quote terms, the promo-dropped notice, the decline reason and note, *Proceed to checkout* / *Accept quote* (POST with `quote_id` → `/bookings?new_booking=true`), *Withdraw* (with a confirm modal) and the thread. Add a nav link.
   - **Files Touched:**
