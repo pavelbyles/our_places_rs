@@ -145,9 +145,17 @@ async fn request_notification_tests_enquiries_quotes_and_declines() {
     )
     .await;
     assert_eq!(resp.status(), 201);
+    // Each step's emails come from a detached task; wait for them before the
+    // next step so the queued order is deterministic.
+    wait_for(&pool, &guest_email, 1).await;
+    wait_for(&pool, &host_email, 1).await;
     let id = submit(&app, guest, villa, "2030-09-01", "2030-09-04").await;
+    wait_for(&pool, &guest_email, 2).await;
+    wait_for(&pool, &host_email, 2).await;
     let quote = serde_json::json!({ "stay_price": "500.00", "terms": "No parties." });
     assert_eq!(act(&app, host, &id, "quote", quote).await.0, 201);
+    wait_for(&pool, &guest_email, 3).await;
+    wait_for(&pool, &host_email, 3).await;
     let decline = serde_json::json!({ "reason": "other", "note": "Changed plans." });
     assert_eq!(act(&app, host, &id, "decline", decline).await.0, 200);
 
