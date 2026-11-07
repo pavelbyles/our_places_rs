@@ -1794,7 +1794,7 @@ mod search_param_tests {
 #[actix_web::test]
 async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
     dotenvy::dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
     let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
     let pool = test_db.get_pool().await;
     let mut conn = pool.acquire().await.unwrap();
