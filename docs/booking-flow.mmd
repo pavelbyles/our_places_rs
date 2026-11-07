@@ -45,7 +45,7 @@ flowchart TB
     R_ACC & R_QUO -- "Guest checks out<br/>quote_id must be current" --> R_CONV
     R_CONV -- "same transaction<br/>request stops blocking, hold starts" --> B_PEND
 
-    B_PEND -- "Payment arranged · admin confirms" --> B_CONF
+    B_PEND -- "Payment arranged · host or admin confirms" --> B_CONF
     B_PEND -- "Hold expires (sweep) · newer hold by guest · cancelled" --> B_CANC
     B_CONF -- "Reservation change approved<br/>balance charged or refunded" --> B_CONF
     B_CONF -- "Stay ends (complete-stays cron)" --> B_COMP

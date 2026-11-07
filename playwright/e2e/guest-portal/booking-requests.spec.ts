@@ -65,7 +65,7 @@ test.describe('Guest Portal - Enquiries and requests to book (#105)', () => {
 
     await page.goto(`/requests/${id}`);
     await expect(page.locator('#request-quote-terms')).toHaveText('Wedding allowed until 10pm.');
-    const shownTotal = await page.locator('#breakdown-total').innerText();
+    const shownTotal = (await page.locator('#breakdown-total').innerText()).replaceAll(',', '');
     await page.locator('#request-accept-quote').click();
     await expect(page).toHaveURL(/\/bookings\?new_booking=true$/);
     const stored = psql(`SELECT total_price FROM booking WHERE guest_id = '${guest.id}' ORDER BY created_at DESC LIMIT 1;`);

@@ -1,7 +1,6 @@
-//! The redesigned price breakdown must show exactly the same figures as the
-//! legacy component did (spec: tri-currency display stays identical). The
-//! expected texts were captured from the legacy `web_app_common_tc`
-//! component before that crate was removed.
+//! The price breakdown shows the same figures (and rounding) as the legacy
+//! component did, now with thousands separators and currency symbols: line
+//! items show only the symbol, the total names the currency too.
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -48,7 +47,7 @@ async fn compare(q: PriceBreakdown, legacy: [Option<&str>; 6], legacy_discount: 
             q.currency
         );
     }
-    let discount = redesigned.contains(&format!("-{} ", q.currency));
+    let discount = redesigned.contains("Discount applied");
     assert_eq!(discount, legacy_discount, "discount row");
 }
 
@@ -70,66 +69,66 @@ fn quote(currency: &str, scale: Decimal) -> PriceBreakdown {
 }
 
 #[tokio::test]
-async fn matches_legacy_for_every_display_currency() {
+async fn every_display_currency_gets_its_symbol_and_separators() {
     let cases = [
         (
             "USD",
             dec!(1),
             [
-                "5 night(s) × USD 650.00",
-                "USD 3250.00",
-                "USD 75.00",
-                "USD 498.75",
-                "USD 150.00",
-                "USD 3648.62",
+                "$650.00 × 5 nights",
+                "$3,250.00",
+                "$75.00",
+                "$498.75",
+                "$150.00",
+                "USD $3,648.62",
             ],
         ),
         (
             "JMD",
             dec!(157.3245),
             [
-                "5 night(s) × JMD 102260.92",
-                "JMD 511304.62",
-                "JMD 11799.33",
-                "JMD 78465.59",
-                "JMD 23598.67",
-                "JMD 574018.10",
+                "$102,260.92 × 5 nights",
+                "$511,304.62",
+                "$11,799.33",
+                "$78,465.59",
+                "$23,598.67",
+                "JMD $574,018.10",
             ],
         ),
         (
             "EUR",
             dec!(0.9213),
             [
-                "5 night(s) × EUR 598.84",
-                "EUR 2994.22",
-                "EUR 69.09",
-                "EUR 459.49",
-                "EUR 138.19",
-                "EUR 3361.47",
+                "598.84 × 5 nights",
+                "2,994.22",
+                "69.09",
+                "459.49",
+                "138.19",
+                "EUR 3,361.47",
             ],
         ),
         (
             "GBP",
             dec!(0.7891),
             [
-                "5 night(s) × GBP 512.91",
-                "GBP 2564.57",
-                "GBP 59.18",
-                "GBP 393.56",
-                "GBP 118.36",
-                "GBP 2879.12",
+                "£512.91 × 5 nights",
+                "£2,564.57",
+                "£59.18",
+                "£393.56",
+                "£118.36",
+                "GBP £2,879.12",
             ],
         ),
         (
             "CAD",
             dec!(1.3602),
             [
-                "5 night(s) × CAD 884.13",
-                "CAD 4420.65",
-                "CAD 102.01",
-                "CAD 678.39",
-                "CAD 204.03",
-                "CAD 4962.85",
+                "$884.13 × 5 nights",
+                "$4,420.65",
+                "$102.01",
+                "$678.39",
+                "$204.03",
+                "CAD $4,962.85",
             ],
         ),
     ];
@@ -139,7 +138,7 @@ async fn matches_legacy_for_every_display_currency() {
 }
 
 #[tokio::test]
-async fn matches_legacy_when_optional_fees_are_absent_or_zero() {
+async fn optional_fees_that_are_absent_or_zero_are_left_off() {
     compare(
         PriceBreakdown {
             discount_amount: None,
@@ -151,16 +150,43 @@ async fn matches_legacy_when_optional_fees_are_absent_or_zero() {
             ..quote("USD", dec!(1))
         },
         [
-            Some("5 night(s) × USD 650.00"),
-            Some("USD 3250.00"),
+            Some("$650.00 × 5 nights"),
+            Some("$3,250.00"),
             None,
-            Some("USD 498.75"),
+            Some("$498.75"),
             None,
-            Some("USD 3648.62"),
+            Some("USD $3,648.62"),
         ],
         false,
     )
     .await;
+}
+
+#[test]
+fn grouped_inserts_thousands_separators() {
+    use web_ui_common::components::domain::price_breakdown::{grouped, total_amount};
+    assert_eq!(grouped(dec!(0)), "0.00");
+    assert_eq!(grouped(dec!(999.5)), "999.50");
+    assert_eq!(grouped(dec!(1000)), "1,000.00");
+    assert_eq!(grouped(dec!(11240)), "11,240.00");
+    assert_eq!(grouped(dec!(1234567.891)), "1,234,567.89");
+    assert_eq!(grouped(dec!(-325125.5)), "-325,125.50");
+    assert_eq!(total_amount("USD", dec!(14133)), "USD $14,133.00");
+    assert_eq!(total_amount("GBP", dec!(14133)), "GBP £14,133.00");
+}
+
+#[tokio::test]
+async fn one_night_is_singular() {
+    let __cx = &Cx::default();
+    let q = PriceBreakdown {
+        nights: 1,
+        ..quote("USD", dec!(1))
+    };
+    let out = html(view! { price_breakdown(quote: q) }, __cx).await;
+    assert_eq!(
+        text_of(&out, "breakdown-nights-label").as_deref(),
+        Some("$650.00 × 1 night")
+    );
 }
 
 #[tokio::test]

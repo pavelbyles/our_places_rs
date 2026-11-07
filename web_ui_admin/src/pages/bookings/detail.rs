@@ -107,14 +107,16 @@ struct DialogData {
 }
 
 /// Statuses `role` may pick for a booking currently in `current`. Mirrors
-/// booking_api: hosts may only cancel; confirming and completing are for
-/// admins (and the stay-completion job).
+/// booking_api: hosts may confirm a pending booking (standing in for payment
+/// confirmation) and cancel; completing is for admins (and the stay-completion
+/// job).
 fn status_options(role: AdminRole, current: &str) -> Vec<&'static str> {
     STATUSES
         .into_iter()
         .filter(|s| {
             *s == current
                 || role == AdminRole::Admin
+                || (*s == "confirmed" && current == "pending")
                 || (*s == "cancelled" && matches!(current, "pending" | "confirmed"))
         })
         .collect()
@@ -481,10 +483,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hosts_are_only_offered_cancellation() {
+    fn hosts_may_confirm_pending_or_cancel() {
         assert_eq!(
             status_options(AdminRole::Host, "pending"),
-            ["pending", "cancelled"]
+            ["pending", "confirmed", "cancelled"]
         );
         assert_eq!(
             status_options(AdminRole::Host, "confirmed"),
