@@ -713,7 +713,7 @@ T42 final gates                      ← all
   - **Verification Command:** `for f in openapi.yaml openapi-prod.yaml; do for p in '/api/v1/booking-requests:' '/api/v1/booking-requests/{id}/checkout:' '/api/v1/enquiries:' '/api/v1/inbox:' '/api/v1/conversations/{id}/messages:'; do rg -qF "$p" "$f" || exit 1; done; done && rg -q 'request_response_hours' docs/ARCHITECTURE.md docs/ENVIRONMENT.md && cargo test -p booking_api openapi_includes_requests`
   - **Dependencies:** Task 29, Task 30
 
-- [ ] **Task 42: Final gates**
+- [x] **Task 42: Final gates**
   - **Scope:** S
   - **Description:** Run the full CONSTRAINTS §2 suite once and fix anything it finds. Run `/audit-booking-flow` against the new lock and history paths.
   - **Files Touched:** as needed
