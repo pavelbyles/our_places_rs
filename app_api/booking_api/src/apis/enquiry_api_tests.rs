@@ -164,7 +164,8 @@ async fn enquiry_api_tests_a_request_from_the_guests_enquiry_closes_it() {
     .await;
     let enquiry: serde_json::Value = test::read_body_json(resp).await;
     let mut body = request_body(villa, "2030-08-01", "2030-08-04");
-    body["enquiry_id"] = enquiry["id"].clone();
+    let enquiry_id = enquiry["id"].as_str().expect("id");
+    body["enquiry_id"] = enquiry_id.into();
     let resp = test::call_service(
         &app,
         test::TestRequest::post()
@@ -177,12 +178,12 @@ async fn enquiry_api_tests_a_request_from_the_guests_enquiry_closes_it() {
     .await;
     assert_eq!(resp.status(), 201);
     let request: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(request["enquiry_id"], enquiry["id"]);
+    assert_eq!(request["enquiry_id"], enquiry_id);
     assert_eq!(request["conversation_id"], enquiry["conversation_id"]);
 
     let reason: String =
         sqlx::query_scalar("SELECT closed_reason::text FROM booking_enquiry WHERE id = $1::uuid")
-            .bind(enquiry["id"].as_str().expect("id"))
+            .bind(enquiry_id)
             .fetch_one(&pool)
             .await
             .expect("reason");

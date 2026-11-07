@@ -134,7 +134,7 @@ async fn request_api_tests_submit_and_read_a_request() {
         created["requested_price"]["total"].is_string(),
         "amounts are strings"
     );
-    assert_eq!(created["promo_applied"], false);
+    assert_eq!(created["promo_applied"].as_bool(), Some(false));
     let id = created["id"].as_str().expect("id").to_string();
 
     // The dates are now held.
@@ -570,7 +570,7 @@ async fn inbox_api_hosts_see_their_own_admins_all_and_guests_none() {
         .filter_map(|i| i["id"].as_str())
         .collect();
     assert_eq!(ids, [mine.as_str()]);
-    assert_eq!(inbox["items"][0]["near_expiry"], false);
+    assert_eq!(inbox["items"][0]["near_expiry"].as_bool(), Some(false));
     assert!(inbox["items"][0]["time_left_secs"].as_i64().is_some());
     assert_eq!(inbox["host_metrics"].as_array().map(Vec::len), Some(1));
     assert_eq!(inbox["host_metrics"][0]["host_id"], host.to_string());

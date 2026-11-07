@@ -68,7 +68,7 @@ pub(super) async fn authorize_request_party(
     pool: &PgPool,
     claims: &Claims,
     request_id: Uuid,
-) -> Result<(db_request::RequestDetail, db_core::models::User, PartyRole), ApiError> {
+) -> Result<(db_request::RequestDetail, PartyRole), ApiError> {
     let detail = db_request::get_request(pool, request_id)
         .await
         .map_err(|e| {
@@ -87,7 +87,7 @@ pub(super) async fn authorize_request_party(
         tracing::warn!(%request_id, user_id = %claims.sub, "request access denied: caller is not a party");
         return Err(refused(RequestRefusal::NotParty));
     };
-    Ok((detail, user, role))
+    Ok((detail, role))
 }
 
 fn quote_summary(quote: &DbRequestQuote) -> QuoteSummary {
@@ -311,7 +311,7 @@ pub(super) async fn get_booking_request(
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<impl Responder, ApiError> {
-    let (detail, _, _) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (detail, _) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     Ok(respond(
         &req,
         Payload::Item(request_response(&detail.request, detail.quote.as_ref())),
@@ -390,7 +390,7 @@ pub(super) async fn accept_booking_request(
     settings: web::Data<Settings>,
     id: web::Path<Uuid>,
 ) -> Result<actix_web::HttpResponse, ApiError> {
-    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (_, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     let actor = role.host_side_actor(claims.sub)?;
     let accepted = db_request::accept_request(
         pool.get_ref(),
@@ -436,7 +436,7 @@ pub(super) async fn decline_booking_request(
     if let Some(note) = &body.note {
         check_user_text(note)?;
     }
-    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (_, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     let actor = role.host_side_actor(claims.sub)?;
     let declined = db_request::decline_request(
         pool.get_ref(),
@@ -482,7 +482,7 @@ pub(super) async fn withdraw_booking_request(
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<actix_web::HttpResponse, ApiError> {
-    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (_, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     if role != PartyRole::Guest {
         return Err(refused(RequestRefusal::NotParty));
     }
@@ -525,7 +525,7 @@ pub(super) async fn checkout_booking_request(
     body: Option<web::Json<CheckoutRequestBody>>,
 ) -> Result<actix_web::HttpResponse, ApiError> {
     let quote_id = body.and_then(|b| b.into_inner().quote_id);
-    let (_, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (_, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     if role != PartyRole::Guest {
         return Err(refused(RequestRefusal::NotParty));
     }
@@ -662,7 +662,7 @@ pub(super) async fn preview_quote(
     body: web::Json<QuoteRequestBody>,
 ) -> Result<actix_web::HttpResponse, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
-    let (detail, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (detail, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     role.host_side_actor(claims.sub)?;
     let snapshot = price_quote(
         pool.get_ref(),
@@ -703,7 +703,7 @@ pub(super) async fn send_quote(
     body: web::Json<QuoteRequestBody>,
 ) -> Result<actix_web::HttpResponse, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
-    let (detail, _, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
+    let (detail, role) = authorize_request_party(pool.get_ref(), &claims, *id).await?;
     let actor = role.host_side_actor(claims.sub)?;
     let snapshot = price_quote(
         pool.get_ref(),

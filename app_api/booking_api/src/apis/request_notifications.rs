@@ -96,11 +96,11 @@ fn payload(
         }
         (Side::Host, _, Some(id), _) => format!("{}/admin/requests/{id}", admin_base_url()),
         (Side::Host, _, None, Some(id)) => format!("{}/admin/enquiries/{id}", admin_base_url()),
-        _ => String::new(),
+        _ => String::default(),
     };
     let total = match (&facts.currency, facts.total) {
         (Some(currency), Some(total)) => format!("{currency} {}", total.round_dp(2)),
-        _ => String::new(),
+        _ => String::default(),
     };
     serde_json::json!({
         "recipient_name": match side { Side::Guest => &facts.guest_name, Side::Host => &facts.host_name },

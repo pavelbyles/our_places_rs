@@ -128,419 +128,560 @@ fn promo_paragraph(code: &str, discount: &str, currency: &str) -> String {
     )
 }
 
+/// A template renderer, keyed by its snake_case id and its legacy PascalCase id.
+type Renderer = (&'static str, &'static str, fn(&serde_json::Value) -> String);
+
+/// Every non-request template, each rendered by its own function.
+const RENDERERS: &[Renderer] = &[
+    (
+        "user_verification_otp",
+        "UserVerificationOtp",
+        render_user_verification_otp,
+    ),
+    (
+        "password_reset_otp",
+        "PasswordResetOtp",
+        render_password_reset_otp,
+    ),
+    (
+        "booking_confirmation",
+        "BookingConfirmation",
+        render_booking_confirmation,
+    ),
+    (
+        "booking_confirmation_guest",
+        "BookingConfirmationGuest",
+        render_booking_confirmation_guest,
+    ),
+    (
+        "booking_confirmation_host",
+        "BookingConfirmationHost",
+        render_booking_confirmation_host,
+    ),
+    (
+        "booking_updated_guest",
+        "BookingUpdatedGuest",
+        render_booking_updated_guest,
+    ),
+    (
+        "booking_updated_host",
+        "BookingUpdatedHost",
+        render_booking_updated_host,
+    ),
+    (
+        "booking_cancelled_guest",
+        "BookingCancelledGuest",
+        render_booking_cancelled_guest,
+    ),
+    (
+        "booking_cancelled_host",
+        "BookingCancelledHost",
+        render_booking_cancelled_host,
+    ),
+    (
+        "booking_completed_guest",
+        "BookingCompletedGuest",
+        render_booking_completed_guest,
+    ),
+    (
+        "pre_arrival_guide_guest",
+        "PreArrivalGuideGuest",
+        render_pre_arrival_guide_guest,
+    ),
+    (
+        "host_upcoming_arrival",
+        "HostUpcomingArrival",
+        render_host_upcoming_arrival,
+    ),
+    (
+        "payment_hold_expiry_reminder",
+        "PaymentHoldExpiryReminder",
+        render_payment_hold_expiry_reminder,
+    ),
+    (
+        "guest_host_message_notification",
+        "GuestHostMessageNotification",
+        render_guest_host_message_notification,
+    ),
+    (
+        "reservation_change_requested",
+        "ReservationChangeRequested",
+        render_reservation_change_requested,
+    ),
+    (
+        "reservation_change_approved",
+        "ReservationChangeApproved",
+        render_reservation_change_approved,
+    ),
+    (
+        "reservation_change_declined",
+        "ReservationChangeDeclined",
+        render_reservation_change_declined,
+    ),
+];
+
 /// Renders transactional email HTML templates with dynamic variable interpolation.
 pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> String {
-    if let Some(body) = crate::request_emails::render(template_id, payload) {
-        return body;
-    }
-    let get_val = |key: &str| -> String {
-        payload
-            .get(key)
-            .map(|v| match v {
-                serde_json::Value::String(s) => s.clone(),
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                serde_json::Value::Null => String::default(),
-                other => other.to_string(),
-            })
-            .unwrap_or_default()
+    crate::request_emails::render(template_id, payload)
+        .or_else(|| {
+            RENDERERS
+                .iter()
+                .find(|(snake, pascal, _)| *snake == template_id || *pascal == template_id)
+                .map(|(_, _, render)| render(payload))
+        })
+        .unwrap_or_else(|| render_default(payload))
+}
+
+/// A payload value as display text; missing and null are empty.
+fn val(payload: &serde_json::Value, key: &str) -> String {
+    payload
+        .get(key)
+        .map(|v| match v {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::Bool(b) => b.to_string(),
+            serde_json::Value::Null => String::default(),
+            other => other.to_string(),
+        })
+        .unwrap_or_default()
+}
+
+fn render_user_verification_otp(payload: &serde_json::Value) -> String {
+    let code = payload
+        .get("code")
+        .and_then(|v| v.as_str())
+        .unwrap_or("------");
+    let template = load_template("user_verification_otp.html");
+    template.replace("{{code}}", code).replace("{code}", code)
+}
+
+fn render_password_reset_otp(payload: &serde_json::Value) -> String {
+    let token = payload
+        .get("token")
+        .or_else(|| payload.get("code"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("------");
+    let template = load_template("password_reset_otp.html");
+    template
+        .replace("{{token}}", token)
+        .replace("{token}", token)
+        .replace("{{code}}", token)
+        .replace("{code}", token)
+}
+
+fn render_booking_confirmation(payload: &serde_json::Value) -> String {
+    let code = payload
+        .get("confirmation_code")
+        .and_then(|v| v.as_str())
+        .unwrap_or("N/A");
+    let dates = payload
+        .get("dates")
+        .and_then(|v| v.as_str())
+        .unwrap_or("your stay");
+    let total = payload
+        .get("total_price")
+        .and_then(|v| v.as_str())
+        .unwrap_or("paid");
+    let template = load_template("booking_confirmation.html");
+    template
+        .replace(
+            "{{promo_line}}",
+            &promo_paragraph(
+                &val(payload, "promo_code"),
+                &val(payload, "promo_discount"),
+                &val(payload, "currency"),
+            ),
+        )
+        .replace("{{confirmation_code}}", code)
+        .replace("{confirmation_code}", code)
+        .replace("{{dates}}", dates)
+        .replace("{dates}", dates)
+        .replace("{{total_price}}", total)
+        .replace("{total_price}", total)
+}
+
+fn render_booking_confirmation_guest(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_confirmation_guest.html");
+    let tax_rate_raw = val(payload, "tax_rate");
+    let tax_rate_disp = if let Ok(dec) = tax_rate_raw.parse::<rust_decimal::Decimal>() {
+        if dec < rust_decimal::Decimal::ONE && dec > rust_decimal::Decimal::ZERO {
+            let pct = dec * rust_decimal::Decimal::from(100);
+            let s = format!("{:.2}", pct);
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            let s = format!("{:.2}", dec);
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        }
+    } else if !tax_rate_raw.is_empty() {
+        tax_rate_raw
+    } else {
+        "15".to_string()
     };
 
-    match template_id {
-        "user_verification_otp" | "UserVerificationOtp" => {
-            let code = payload
-                .get("code")
-                .and_then(|v| v.as_str())
-                .unwrap_or("------");
-            let template = load_template("user_verification_otp.html");
-            template.replace("{{code}}", code).replace("{code}", code)
-        }
-        "password_reset_otp" | "PasswordResetOtp" => {
-            let token = payload
-                .get("token")
-                .or_else(|| payload.get("code"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("------");
-            let template = load_template("password_reset_otp.html");
-            template
-                .replace("{{token}}", token)
-                .replace("{token}", token)
-                .replace("{{code}}", token)
-                .replace("{code}", token)
-        }
-        "booking_confirmation" | "BookingConfirmation" => {
-            let code = payload
-                .get("confirmation_code")
-                .and_then(|v| v.as_str())
-                .unwrap_or("N/A");
-            let dates = payload
-                .get("dates")
-                .and_then(|v| v.as_str())
-                .unwrap_or("your stay");
-            let total = payload
-                .get("total_price")
-                .and_then(|v| v.as_str())
-                .unwrap_or("paid");
-            let template = load_template("booking_confirmation.html");
-            template
-                .replace(
-                    "{{promo_line}}",
-                    &promo_paragraph(
-                        &get_val("promo_code"),
-                        &get_val("promo_discount"),
-                        &get_val("currency"),
-                    ),
-                )
-                .replace("{{confirmation_code}}", code)
-                .replace("{confirmation_code}", code)
-                .replace("{{dates}}", dates)
-                .replace("{dates}", dates)
-                .replace("{{total_price}}", total)
-                .replace("{total_price}", total)
-        }
-        "booking_confirmation_guest" | "BookingConfirmationGuest" => {
-            let template = load_template("booking_confirmation_guest.html");
-            let tax_rate_raw = get_val("tax_rate");
-            let tax_rate_disp = if let Ok(dec) = tax_rate_raw.parse::<rust_decimal::Decimal>() {
-                if dec < rust_decimal::Decimal::ONE && dec > rust_decimal::Decimal::ZERO {
-                    let pct = dec * rust_decimal::Decimal::from(100);
-                    let s = format!("{:.2}", pct);
-                    s.trim_end_matches('0').trim_end_matches('.').to_string()
-                } else {
-                    let s = format!("{:.2}", dec);
-                    s.trim_end_matches('0').trim_end_matches('.').to_string()
-                }
-            } else if !tax_rate_raw.is_empty() {
-                tax_rate_raw
-            } else {
-                "15".to_string()
-            };
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{guest_name}}", &val(payload, "guest_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{accommodation_net}}", &val(payload, "accommodation_net"))
+        .replace("{{cleaning_fee}}", &val(payload, "cleaning_fee"))
+        .replace("{{tax_rate}}", &tax_rate_disp)
+        .replace("{{tax_amount}}", &val(payload, "tax_amount"))
+        .replace("{{platform_fee}}", &val(payload, "platform_fee"))
+        .replace("{{damage_deposit}}", &val(payload, "damage_deposit"))
+        .replace("{{receipt_url}}", &val(payload, "receipt_url"))
+        .replace(
+            "{{promo_line}}",
+            &promo_table_row(
+                &val(payload, "promo_code"),
+                &val(payload, "promo_discount"),
+                &val(payload, "currency"),
+            ),
+        )
+}
 
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{guest_name}}", &get_val("guest_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{total_price}}", &get_val("total_price"))
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{accommodation_net}}", &get_val("accommodation_net"))
-                .replace("{{cleaning_fee}}", &get_val("cleaning_fee"))
-                .replace("{{tax_rate}}", &tax_rate_disp)
-                .replace("{{tax_amount}}", &get_val("tax_amount"))
-                .replace("{{platform_fee}}", &get_val("platform_fee"))
-                .replace("{{damage_deposit}}", &get_val("damage_deposit"))
-                .replace("{{receipt_url}}", &get_val("receipt_url"))
-                .replace(
-                    "{{promo_line}}",
-                    &promo_table_row(
-                        &get_val("promo_code"),
-                        &get_val("promo_discount"),
-                        &get_val("currency"),
-                    ),
-                )
+fn render_booking_confirmation_host(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_confirmation_host.html");
+    template
+        .replace(
+            "{{payout_line}}",
+            &payout_paragraph(
+                "Host Payout",
+                &val(payload, "total_payout"),
+                &val(payload, "currency"),
+            ),
+        )
+        .replace(
+            "{{promo_line}}",
+            &promo_paragraph(
+                &val(payload, "promo_code"),
+                &val(payload, "promo_discount"),
+                &val(payload, "currency"),
+            ),
+        )
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{host_name}}", &val(payload, "host_name"))
+        .replace("{{guest_name}}", &val(payload, "guest_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{total_payout}}", &val(payload, "total_payout"))
+        .replace("{{currency}}", &val(payload, "currency"))
+}
+
+fn render_booking_updated_guest(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_updated_guest.html");
+    let balance_due_raw = val(payload, "balance_due");
+    let balance_due_disp = if balance_due_raw.is_empty() {
+        "0.00".to_string()
+    } else {
+        balance_due_raw
+    };
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{balance_due}}", &balance_due_disp)
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{changes_summary}}", &val(payload, "changes_summary"))
+        .replace("{{receipt_url}}", &val(payload, "receipt_url"))
+}
+
+fn render_booking_updated_host(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_updated_host.html");
+    template
+        .replace(
+            "{{payout_line}}",
+            &payout_paragraph(
+                "Adjusted Host Payout",
+                &val(payload, "total_payout"),
+                &val(payload, "currency"),
+            ),
+        )
+        .replace(
+            "{{promo_line}}",
+            &promo_paragraph(
+                &val(payload, "promo_code"),
+                &val(payload, "promo_discount"),
+                &val(payload, "currency"),
+            ),
+        )
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{guest_name}}", &val(payload, "guest_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{total_payout}}", &val(payload, "total_payout"))
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{changes_summary}}", &val(payload, "changes_summary"))
+}
+
+fn render_booking_cancelled_guest(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_cancelled_guest.html");
+    let refund_pct_raw = val(payload, "refund_pct");
+    let refund_pct_disp = if let Ok(dec) = refund_pct_raw.parse::<rust_decimal::Decimal>() {
+        if dec <= rust_decimal::Decimal::ONE && dec >= rust_decimal::Decimal::ZERO {
+            let pct = (dec * rust_decimal::Decimal::from(100)).round_dp(0);
+            pct.to_string()
+        } else {
+            dec.round_dp(0).to_string()
         }
-        "booking_confirmation_host" | "BookingConfirmationHost" => {
-            let template = load_template("booking_confirmation_host.html");
-            template
-                .replace(
-                    "{{payout_line}}",
-                    &payout_paragraph(
-                        "Host Payout",
-                        &get_val("total_payout"),
-                        &get_val("currency"),
-                    ),
-                )
-                .replace(
-                    "{{promo_line}}",
-                    &promo_paragraph(
-                        &get_val("promo_code"),
-                        &get_val("promo_discount"),
-                        &get_val("currency"),
-                    ),
-                )
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{host_name}}", &get_val("host_name"))
-                .replace("{{guest_name}}", &get_val("guest_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{total_payout}}", &get_val("total_payout"))
-                .replace("{{currency}}", &get_val("currency"))
-        }
-        "booking_updated_guest" | "BookingUpdatedGuest" => {
-            let template = load_template("booking_updated_guest.html");
-            let balance_due_raw = get_val("balance_due");
-            let balance_due_disp = if balance_due_raw.is_empty() {
-                "0.00".to_string()
-            } else {
-                balance_due_raw
-            };
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{total_price}}", &get_val("total_price"))
-                .replace("{{balance_due}}", &balance_due_disp)
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{changes_summary}}", &get_val("changes_summary"))
-                .replace("{{receipt_url}}", &get_val("receipt_url"))
-        }
-        "booking_updated_host" | "BookingUpdatedHost" => {
-            let template = load_template("booking_updated_host.html");
-            template
-                .replace(
-                    "{{payout_line}}",
-                    &payout_paragraph(
-                        "Adjusted Host Payout",
-                        &get_val("total_payout"),
-                        &get_val("currency"),
-                    ),
-                )
-                .replace(
-                    "{{promo_line}}",
-                    &promo_paragraph(
-                        &get_val("promo_code"),
-                        &get_val("promo_discount"),
-                        &get_val("currency"),
-                    ),
-                )
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{guest_name}}", &get_val("guest_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{total_payout}}", &get_val("total_payout"))
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{changes_summary}}", &get_val("changes_summary"))
-        }
-        "booking_cancelled_guest" | "BookingCancelledGuest" => {
-            let template = load_template("booking_cancelled_guest.html");
-            let refund_pct_raw = get_val("refund_pct");
-            let refund_pct_disp = if let Ok(dec) = refund_pct_raw.parse::<rust_decimal::Decimal>() {
-                if dec <= rust_decimal::Decimal::ONE && dec >= rust_decimal::Decimal::ZERO {
-                    let pct = (dec * rust_decimal::Decimal::from(100)).round_dp(0);
-                    pct.to_string()
-                } else {
-                    dec.round_dp(0).to_string()
-                }
-            } else if !refund_pct_raw.is_empty() {
-                refund_pct_raw
-            } else {
-                "0".to_string()
-            };
-            let retained = get_val("retained_amount");
-            let retained_disp = if retained.is_empty() {
-                "0.00".to_string()
-            } else {
-                retained
-            };
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{refund_amount}}", &get_val("refund_amount"))
-                .replace("{{refund_pct}}", &refund_pct_disp)
-                .replace("{{retained_amount}}", &retained_disp)
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{cancellation_policy}}", &get_val("cancellation_policy"))
-        }
-        "booking_cancelled_host" | "BookingCancelledHost" => {
-            let template = load_template("booking_cancelled_host.html");
-            template
-                .replace(
-                    "{{payout_line}}",
-                    &payout_paragraph(
-                        "Net Payout Impact",
-                        &get_val("payout_impact"),
-                        &get_val("currency"),
-                    ),
-                )
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{guest_name}}", &get_val("guest_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{payout_impact}}", &get_val("payout_impact"))
-                .replace("{{currency}}", &get_val("currency"))
-        }
-        "booking_completed_guest" | "BookingCompletedGuest" => {
-            let template = load_template("booking_completed_guest.html");
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{total_price}}", &get_val("total_price"))
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{invoice_url}}", &get_val("invoice_url"))
-                .replace("{{invoice_number}}", &get_val("invoice_number"))
-                .replace("{{accommodation_net}}", &get_val("accommodation_net"))
-                .replace("{{cleaning_fee}}", &get_val("cleaning_fee"))
-                .replace("{{tax_amount}}", &get_val("tax_amount"))
-        }
-        "pre_arrival_guide_guest" | "PreArrivalGuideGuest" => {
-            let template = load_template("pre_arrival_guide_guest.html");
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{address}}", &get_val("address"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{door_access_code}}", &get_val("door_access_code"))
-                .replace("{{wifi_ssid}}", &get_val("wifi_ssid"))
-                .replace("{{wifi_password}}", &get_val("wifi_password"))
-                .replace(
-                    "{{check_in_instructions}}",
-                    &get_val("check_in_instructions"),
-                )
-        }
-        "host_upcoming_arrival" | "HostUpcomingArrival" => {
-            let template = load_template("host_upcoming_arrival.html");
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{guest_name}}", &get_val("guest_name"))
-                .replace("{{number_of_persons}}", &get_val("number_of_persons"))
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{door_access_code}}", &get_val("door_access_code"))
-        }
-        "payment_hold_expiry_reminder" | "PaymentHoldExpiryReminder" => {
-            let template = load_template("payment_hold_expiry_reminder.html");
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &get_val("listing_name"))
-                .replace("{{expires_at}}", &get_val("expires_at"))
-                .replace("{{total_price}}", &get_val("total_price"))
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{checkout_url}}", &get_val("checkout_url"))
-        }
-        "guest_host_message_notification" | "GuestHostMessageNotification" => {
-            let sender = payload
-                .get("sender_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Someone");
-            let message = payload
-                .get("message_text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            // Both are user-typed: escape them, or a message could inject HTML.
-            let sender = escape_html(sender);
-            let message = escape_html(message).replace('\n', "<br>");
-            let template = load_template("guest_host_message_notification.html");
-            template
-                .replace("{{sender_name}}", &sender)
-                .replace("{sender_name}", &sender)
-                .replace("{{message_text}}", &message)
-                .replace("{message_text}", &message)
-        }
-        "reservation_change_requested" | "ReservationChangeRequested" => {
-            let template = load_template("reservation_change_requested.html");
-            let reason_raw = get_val("reason");
-            let reason_disp = if reason_raw.is_empty() {
-                "No additional note provided.".to_string()
-            } else {
-                escape_html(&reason_raw)
-            };
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &escape_html(&get_val("listing_name")))
-                .replace(
-                    "{{recipient_name}}",
-                    &escape_html(&get_val("recipient_name")),
-                )
-                .replace(
-                    "{{initiator_name}}",
-                    &escape_html(&get_val("initiator_name")),
-                )
-                .replace("{{initiated_by_role}}", &get_val("initiated_by_role"))
-                .replace("{{previous_date_from}}", &get_val("previous_date_from"))
-                .replace("{{previous_date_to}}", &get_val("previous_date_to"))
-                .replace("{{proposed_date_from}}", &get_val("proposed_date_from"))
-                .replace("{{proposed_date_to}}", &get_val("proposed_date_to"))
-                .replace(
-                    "{{previous_number_of_persons}}",
-                    &get_val("previous_number_of_persons"),
-                )
-                .replace(
-                    "{{proposed_number_of_persons}}",
-                    &get_val("proposed_number_of_persons"),
-                )
-                .replace("{{previous_total_price}}", &get_val("previous_total_price"))
-                .replace("{{proposed_total_price}}", &get_val("proposed_total_price"))
-                .replace("{{balance_due}}", &get_val("balance_due"))
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{reason}}", &reason_disp)
-                .replace("{{action_url}}", &get_val("action_url"))
-        }
-        "reservation_change_approved" | "ReservationChangeApproved" => {
-            let template = load_template("reservation_change_approved.html");
-            let note_raw = get_val("response_note");
-            let note_disp = if note_raw.is_empty() {
-                "No additional note provided.".to_string()
-            } else {
-                escape_html(&note_raw)
-            };
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &escape_html(&get_val("listing_name")))
-                .replace(
-                    "{{recipient_name}}",
-                    &escape_html(&get_val("recipient_name")),
-                )
-                .replace(
-                    "{{responder_name}}",
-                    &escape_html(&get_val("responder_name")),
-                )
-                .replace("{{date_from}}", &get_val("date_from"))
-                .replace("{{date_to}}", &get_val("date_to"))
-                .replace("{{number_of_persons}}", &get_val("number_of_persons"))
-                .replace("{{total_price}}", &get_val("total_price"))
-                .replace("{{balance_due}}", &get_val("balance_due"))
-                .replace("{{currency}}", &get_val("currency"))
-                .replace("{{settlement_status}}", &get_val("settlement_status"))
-                .replace("{{response_note}}", &note_disp)
-                .replace("{{receipt_url}}", &get_val("receipt_url"))
-        }
-        "reservation_change_declined" | "ReservationChangeDeclined" => {
-            let template = load_template("reservation_change_declined.html");
-            let note_raw = get_val("response_note");
-            let note_disp = if note_raw.is_empty() {
-                "No additional note provided.".to_string()
-            } else {
-                escape_html(&note_raw)
-            };
-            template
-                .replace("{{confirmation_code}}", &get_val("confirmation_code"))
-                .replace("{{listing_name}}", &escape_html(&get_val("listing_name")))
-                .replace(
-                    "{{recipient_name}}",
-                    &escape_html(&get_val("recipient_name")),
-                )
-                .replace(
-                    "{{responder_name}}",
-                    &escape_html(&get_val("responder_name")),
-                )
-                .replace("{{proposed_date_from}}", &get_val("proposed_date_from"))
-                .replace("{{proposed_date_to}}", &get_val("proposed_date_to"))
-                .replace(
-                    "{{proposed_number_of_persons}}",
-                    &get_val("proposed_number_of_persons"),
-                )
-                .replace("{{response_note}}", &note_disp)
-                .replace("{{booking_url}}", &get_val("booking_url"))
-        }
-        _ => {
-            let pretty_json = serde_json::to_string_pretty(payload).unwrap_or_default();
-            let template = load_template("default_notification.html");
-            template
-                .replace("{{payload}}", &pretty_json)
-                .replace("{payload}", &pretty_json)
-        }
-    }
+    } else if !refund_pct_raw.is_empty() {
+        refund_pct_raw
+    } else {
+        "0".to_string()
+    };
+    let retained = val(payload, "retained_amount");
+    let retained_disp = if retained.is_empty() {
+        "0.00".to_string()
+    } else {
+        retained
+    };
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{refund_amount}}", &val(payload, "refund_amount"))
+        .replace("{{refund_pct}}", &refund_pct_disp)
+        .replace("{{retained_amount}}", &retained_disp)
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace(
+            "{{cancellation_policy}}",
+            &val(payload, "cancellation_policy"),
+        )
+}
+
+fn render_booking_cancelled_host(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_cancelled_host.html");
+    template
+        .replace(
+            "{{payout_line}}",
+            &payout_paragraph(
+                "Net Payout Impact",
+                &val(payload, "payout_impact"),
+                &val(payload, "currency"),
+            ),
+        )
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{guest_name}}", &val(payload, "guest_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{payout_impact}}", &val(payload, "payout_impact"))
+        .replace("{{currency}}", &val(payload, "currency"))
+}
+
+fn render_booking_completed_guest(payload: &serde_json::Value) -> String {
+    let template = load_template("booking_completed_guest.html");
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{invoice_url}}", &val(payload, "invoice_url"))
+        .replace("{{invoice_number}}", &val(payload, "invoice_number"))
+        .replace("{{accommodation_net}}", &val(payload, "accommodation_net"))
+        .replace("{{cleaning_fee}}", &val(payload, "cleaning_fee"))
+        .replace("{{tax_amount}}", &val(payload, "tax_amount"))
+}
+
+fn render_pre_arrival_guide_guest(payload: &serde_json::Value) -> String {
+    let template = load_template("pre_arrival_guide_guest.html");
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{address}}", &val(payload, "address"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{door_access_code}}", &val(payload, "door_access_code"))
+        .replace("{{wifi_ssid}}", &val(payload, "wifi_ssid"))
+        .replace("{{wifi_password}}", &val(payload, "wifi_password"))
+        .replace(
+            "{{check_in_instructions}}",
+            &val(payload, "check_in_instructions"),
+        )
+}
+
+fn render_host_upcoming_arrival(payload: &serde_json::Value) -> String {
+    let template = load_template("host_upcoming_arrival.html");
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{guest_name}}", &val(payload, "guest_name"))
+        .replace("{{number_of_persons}}", &val(payload, "number_of_persons"))
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{door_access_code}}", &val(payload, "door_access_code"))
+}
+
+fn render_payment_hold_expiry_reminder(payload: &serde_json::Value) -> String {
+    let template = load_template("payment_hold_expiry_reminder.html");
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace("{{listing_name}}", &val(payload, "listing_name"))
+        .replace("{{expires_at}}", &val(payload, "expires_at"))
+        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{checkout_url}}", &val(payload, "checkout_url"))
+}
+
+fn render_guest_host_message_notification(payload: &serde_json::Value) -> String {
+    let sender = payload
+        .get("sender_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Someone");
+    let message = payload
+        .get("message_text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    // Both are user-typed: escape them, or a message could inject HTML.
+    let sender = escape_html(sender);
+    let message = escape_html(message).replace('\n', "<br>");
+    let template = load_template("guest_host_message_notification.html");
+    template
+        .replace("{{sender_name}}", &sender)
+        .replace("{sender_name}", &sender)
+        .replace("{{message_text}}", &message)
+        .replace("{message_text}", &message)
+}
+
+fn render_reservation_change_requested(payload: &serde_json::Value) -> String {
+    let template = load_template("reservation_change_requested.html");
+    let reason_raw = val(payload, "reason");
+    let reason_disp = if reason_raw.is_empty() {
+        "No additional note provided.".to_string()
+    } else {
+        escape_html(&reason_raw)
+    };
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace(
+            "{{listing_name}}",
+            &escape_html(&val(payload, "listing_name")),
+        )
+        .replace(
+            "{{recipient_name}}",
+            &escape_html(&val(payload, "recipient_name")),
+        )
+        .replace(
+            "{{initiator_name}}",
+            &escape_html(&val(payload, "initiator_name")),
+        )
+        .replace("{{initiated_by_role}}", &val(payload, "initiated_by_role"))
+        .replace(
+            "{{previous_date_from}}",
+            &val(payload, "previous_date_from"),
+        )
+        .replace("{{previous_date_to}}", &val(payload, "previous_date_to"))
+        .replace(
+            "{{proposed_date_from}}",
+            &val(payload, "proposed_date_from"),
+        )
+        .replace("{{proposed_date_to}}", &val(payload, "proposed_date_to"))
+        .replace(
+            "{{previous_number_of_persons}}",
+            &val(payload, "previous_number_of_persons"),
+        )
+        .replace(
+            "{{proposed_number_of_persons}}",
+            &val(payload, "proposed_number_of_persons"),
+        )
+        .replace(
+            "{{previous_total_price}}",
+            &val(payload, "previous_total_price"),
+        )
+        .replace(
+            "{{proposed_total_price}}",
+            &val(payload, "proposed_total_price"),
+        )
+        .replace("{{balance_due}}", &val(payload, "balance_due"))
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{reason}}", &reason_disp)
+        .replace("{{action_url}}", &val(payload, "action_url"))
+}
+
+fn render_reservation_change_approved(payload: &serde_json::Value) -> String {
+    let template = load_template("reservation_change_approved.html");
+    let note_raw = val(payload, "response_note");
+    let note_disp = if note_raw.is_empty() {
+        "No additional note provided.".to_string()
+    } else {
+        escape_html(&note_raw)
+    };
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace(
+            "{{listing_name}}",
+            &escape_html(&val(payload, "listing_name")),
+        )
+        .replace(
+            "{{recipient_name}}",
+            &escape_html(&val(payload, "recipient_name")),
+        )
+        .replace(
+            "{{responder_name}}",
+            &escape_html(&val(payload, "responder_name")),
+        )
+        .replace("{{date_from}}", &val(payload, "date_from"))
+        .replace("{{date_to}}", &val(payload, "date_to"))
+        .replace("{{number_of_persons}}", &val(payload, "number_of_persons"))
+        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{balance_due}}", &val(payload, "balance_due"))
+        .replace("{{currency}}", &val(payload, "currency"))
+        .replace("{{settlement_status}}", &val(payload, "settlement_status"))
+        .replace("{{response_note}}", &note_disp)
+        .replace("{{receipt_url}}", &val(payload, "receipt_url"))
+}
+
+fn render_reservation_change_declined(payload: &serde_json::Value) -> String {
+    let template = load_template("reservation_change_declined.html");
+    let note_raw = val(payload, "response_note");
+    let note_disp = if note_raw.is_empty() {
+        "No additional note provided.".to_string()
+    } else {
+        escape_html(&note_raw)
+    };
+    template
+        .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
+        .replace(
+            "{{listing_name}}",
+            &escape_html(&val(payload, "listing_name")),
+        )
+        .replace(
+            "{{recipient_name}}",
+            &escape_html(&val(payload, "recipient_name")),
+        )
+        .replace(
+            "{{responder_name}}",
+            &escape_html(&val(payload, "responder_name")),
+        )
+        .replace(
+            "{{proposed_date_from}}",
+            &val(payload, "proposed_date_from"),
+        )
+        .replace("{{proposed_date_to}}", &val(payload, "proposed_date_to"))
+        .replace(
+            "{{proposed_number_of_persons}}",
+            &val(payload, "proposed_number_of_persons"),
+        )
+        .replace("{{response_note}}", &note_disp)
+        .replace("{{booking_url}}", &val(payload, "booking_url"))
+}
+
+fn render_default(payload: &serde_json::Value) -> String {
+    let pretty_json = serde_json::to_string_pretty(payload).unwrap_or_default();
+    let template = load_template("default_notification.html");
+    template
+        .replace("{{payload}}", &pretty_json)
+        .replace("{payload}", &pretty_json)
 }
 
 /// Escapes text for HTML element content and attribute values.

@@ -56,8 +56,20 @@ pub struct EmailNotificationEvent {
 }
 
 /// Identifiers for transactional email templates supported by the notification pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Names come from `strum` (`as_str`, `FromStr`), matching the serde names.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum_macros::IntoStaticStr,
+    strum_macros::EnumString,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum EmailTemplate {
     /// One-time password verification email for new user registration.
     UserVerificationOtp,
@@ -153,92 +165,13 @@ impl EmailTemplate {
 
     /// Returns the static template identifier string matching filesystem HTML template filenames.
     pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::UserVerificationOtp => "user_verification_otp",
-            Self::PasswordResetOtp => "password_reset_otp",
-            Self::BookingConfirmation => "booking_confirmation",
-            Self::BookingConfirmationGuest => "booking_confirmation_guest",
-            Self::BookingConfirmationHost => "booking_confirmation_host",
-            Self::BookingUpdatedGuest => "booking_updated_guest",
-            Self::BookingUpdatedHost => "booking_updated_host",
-            Self::BookingCancelledGuest => "booking_cancelled_guest",
-            Self::BookingCancelledHost => "booking_cancelled_host",
-            Self::PreArrivalGuideGuest => "pre_arrival_guide_guest",
-            Self::HostUpcomingArrival => "host_upcoming_arrival",
-            Self::PaymentHoldExpiryReminder => "payment_hold_expiry_reminder",
-            Self::GuestHostMessageNotification => "guest_host_message_notification",
-            Self::BookingCompletedGuest => "booking_completed_guest",
-            Self::ReservationChangeRequested => "reservation_change_requested",
-            Self::ReservationChangeApproved => "reservation_change_approved",
-            Self::ReservationChangeDeclined => "reservation_change_declined",
-            Self::EnquirySentGuest => "enquiry_sent_guest",
-            Self::EnquiryReceivedHost => "enquiry_received_host",
-            Self::RequestSubmittedGuest => "request_submitted_guest",
-            Self::RequestReceivedHost => "request_received_host",
-            Self::RequestAcceptedGuest => "request_accepted_guest",
-            Self::RequestAcceptedHost => "request_accepted_host",
-            Self::RequestDeclinedGuest => "request_declined_guest",
-            Self::RequestDeclinedHost => "request_declined_host",
-            Self::QuoteSentGuest => "quote_sent_guest",
-            Self::QuoteSentHost => "quote_sent_host",
-            Self::RequestConvertedGuest => "request_converted_guest",
-            Self::RequestConvertedHost => "request_converted_host",
-            Self::RequestExpiredGuest => "request_expired_guest",
-            Self::RequestExpiredHost => "request_expired_host",
-            Self::RequestWithdrawnGuest => "request_withdrawn_guest",
-            Self::RequestWithdrawnHost => "request_withdrawn_host",
-            Self::RequestHostReminder => "request_host_reminder",
-        }
+        self.into()
     }
 }
 
 impl fmt::Display for EmailTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
-    }
-}
-
-impl std::str::FromStr for EmailTemplate {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "user_verification_otp" => Ok(Self::UserVerificationOtp),
-            "password_reset_otp" => Ok(Self::PasswordResetOtp),
-            "booking_confirmation" => Ok(Self::BookingConfirmation),
-            "booking_confirmation_guest" => Ok(Self::BookingConfirmationGuest),
-            "booking_confirmation_host" => Ok(Self::BookingConfirmationHost),
-            "booking_updated_guest" => Ok(Self::BookingUpdatedGuest),
-            "booking_updated_host" => Ok(Self::BookingUpdatedHost),
-            "booking_cancelled_guest" => Ok(Self::BookingCancelledGuest),
-            "booking_cancelled_host" => Ok(Self::BookingCancelledHost),
-            "pre_arrival_guide_guest" => Ok(Self::PreArrivalGuideGuest),
-            "host_upcoming_arrival" => Ok(Self::HostUpcomingArrival),
-            "payment_hold_expiry_reminder" => Ok(Self::PaymentHoldExpiryReminder),
-            "guest_host_message_notification" => Ok(Self::GuestHostMessageNotification),
-            "booking_completed_guest" => Ok(Self::BookingCompletedGuest),
-            "reservation_change_requested" => Ok(Self::ReservationChangeRequested),
-            "reservation_change_approved" => Ok(Self::ReservationChangeApproved),
-            "reservation_change_declined" => Ok(Self::ReservationChangeDeclined),
-            "enquiry_sent_guest" => Ok(Self::EnquirySentGuest),
-            "enquiry_received_host" => Ok(Self::EnquiryReceivedHost),
-            "request_submitted_guest" => Ok(Self::RequestSubmittedGuest),
-            "request_received_host" => Ok(Self::RequestReceivedHost),
-            "request_accepted_guest" => Ok(Self::RequestAcceptedGuest),
-            "request_accepted_host" => Ok(Self::RequestAcceptedHost),
-            "request_declined_guest" => Ok(Self::RequestDeclinedGuest),
-            "request_declined_host" => Ok(Self::RequestDeclinedHost),
-            "quote_sent_guest" => Ok(Self::QuoteSentGuest),
-            "quote_sent_host" => Ok(Self::QuoteSentHost),
-            "request_converted_guest" => Ok(Self::RequestConvertedGuest),
-            "request_converted_host" => Ok(Self::RequestConvertedHost),
-            "request_expired_guest" => Ok(Self::RequestExpiredGuest),
-            "request_expired_host" => Ok(Self::RequestExpiredHost),
-            "request_withdrawn_guest" => Ok(Self::RequestWithdrawnGuest),
-            "request_withdrawn_host" => Ok(Self::RequestWithdrawnHost),
-            "request_host_reminder" => Ok(Self::RequestHostReminder),
-            other => Err(format!("Unknown email template: {}", other)),
-        }
     }
 }
 
@@ -970,6 +903,28 @@ mod email_template_request_tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), EmailTemplate::REQUEST_EMAILS.len());
+        assert_eq!(
+            EmailTemplate::REQUEST_EMAILS.map(|t| t.as_str()),
+            [
+                "enquiry_sent_guest",
+                "enquiry_received_host",
+                "request_submitted_guest",
+                "request_received_host",
+                "request_accepted_guest",
+                "request_accepted_host",
+                "request_declined_guest",
+                "request_declined_host",
+                "quote_sent_guest",
+                "quote_sent_host",
+                "request_converted_guest",
+                "request_converted_host",
+                "request_expired_guest",
+                "request_expired_host",
+                "request_withdrawn_guest",
+                "request_withdrawn_host",
+                "request_host_reminder",
+            ]
+        );
         assert!(!names.contains(&"guest_host_message_notification"));
     }
 }

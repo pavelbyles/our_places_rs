@@ -51,7 +51,7 @@ pub(super) async fn authorize_enquiry_party(
     pool: &PgPool,
     claims: &Claims,
     enquiry_id: Uuid,
-) -> Result<(db_request::EnquiryDetail, db_core::models::User, PartyRole), ApiError> {
+) -> Result<(db_request::EnquiryDetail, PartyRole), ApiError> {
     let detail = db_request::get_enquiry(pool, enquiry_id)
         .await
         .map_err(ApiError::Database)?
@@ -67,7 +67,7 @@ pub(super) async fn authorize_enquiry_party(
         tracing::warn!(%enquiry_id, user_id = %claims.sub, "enquiry access denied");
         return Err(refused(RequestRefusal::NotParty));
     };
-    Ok((detail, user, role))
+    Ok((detail, role))
 }
 
 #[tracing::instrument(skip_all, fields(listing_id))]
@@ -168,7 +168,7 @@ pub(super) async fn get_enquiry(
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<HttpResponse, ApiError> {
-    let (detail, _, _) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
+    let (detail, _) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
     Ok(respond(
         &req,
         Payload::Item(enquiry_response(&detail.enquiry)),
@@ -195,7 +195,7 @@ pub(super) async fn close_enquiry(
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<HttpResponse, ApiError> {
-    let (_, _, role) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
+    let (_, role) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
     let role = match role {
         PartyRole::Host => DbMessageSenderRole::Host,
         PartyRole::Admin => DbMessageSenderRole::Admin,
@@ -248,7 +248,7 @@ pub(super) async fn quote_enquiry(
     body: web::Json<QuoteRequestBody>,
 ) -> Result<HttpResponse, ApiError> {
     body.validate().map_err(ApiError::ValidationError)?;
-    let (detail, _, role) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
+    let (detail, role) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
     let actor = role.host_side_actor(claims.sub)?;
     let policy = match body.cancellation_policy.as_deref() {
         None | Some("") => CancellationPolicy::Flexible,

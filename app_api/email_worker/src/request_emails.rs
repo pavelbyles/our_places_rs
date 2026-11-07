@@ -118,7 +118,7 @@ fn field(payload: &serde_json::Value, key: &str) -> String {
         .get(key)
         .map(|v| match v {
             serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Null => String::new(),
+            serde_json::Value::Null => String::default(),
             other => other.to_string(),
         })
         .unwrap_or_default()
@@ -126,7 +126,7 @@ fn field(payload: &serde_json::Value, key: &str) -> String {
 
 fn detail_row(label: &str, value: &str) -> String {
     if value.is_empty() {
-        return String::new();
+        return String::default();
     }
     format!(
         "      <p style=\"margin: 0 0 8px 0;\"><strong>{label}:</strong> {}</p>\n",
@@ -136,7 +136,7 @@ fn detail_row(label: &str, value: &str) -> String {
 
 fn block(label: &str, text: &str, accent: &str) -> String {
     if text.trim().is_empty() {
-        return String::new();
+        return String::default();
     }
     // Line breaks in user text become <br>, after escaping.
     let body = escape_html(text).replace('\n', "<br>");
@@ -148,7 +148,7 @@ fn block(label: &str, text: &str, accent: &str) -> String {
 /// Only absolute http(s) links become buttons; anything else is dropped.
 fn cta(url: &str, label: &str) -> String {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return String::new();
+        return String::default();
     }
     format!(
         "    <div style=\"text-align: center; margin: 28px 0;\">\n      <a href=\"{}\" style=\"background-color: #0284c7; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;\">{label}</a>\n    </div>\n",
@@ -177,7 +177,7 @@ pub fn render(template_id: &str, payload: &serde_json::Value) -> Option<String> 
 
     let dates = match (field(payload, "date_from"), field(payload, "date_to")) {
         (from, to) if !from.is_empty() && !to.is_empty() => format!("{from} to {to}"),
-        _ => String::new(),
+        _ => String::default(),
     };
     let details = [
         detail_row("Property", &field(payload, "listing_name")),
