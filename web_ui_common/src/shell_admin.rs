@@ -62,6 +62,7 @@ pub async fn admin_chrome(
                         <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
                         <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
                         <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
+                        <a href="/admin/inbox" class=(NAV_LINK)>"Inbox"</a>
                         <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
                         <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
                         <a href="/admin/exchange-rates" class=(NAV_LINK)>"Exchange rates"</a>
@@ -80,6 +81,7 @@ pub async fn admin_chrome(
                                 <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
                                 <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
                                 <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
+                                <a href="/admin/inbox" class=(NAV_LINK)>"Inbox"</a>
                                 <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
                                 <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
                                 if is_admin {

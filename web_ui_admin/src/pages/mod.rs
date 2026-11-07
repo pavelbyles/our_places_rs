@@ -22,5 +22,7 @@ pub mod pricing;
 pub mod promo_codes;
 /// Host sign-up and verification.
 pub mod register;
+/// Inbox, request and enquiry detail (#105).
+pub mod requests;
 /// User administration.
 pub mod users;

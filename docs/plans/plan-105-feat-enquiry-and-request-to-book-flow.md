@@ -640,11 +640,11 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_guest request_pages`
   - **Dependencies:** Task 31, Task 34
 
-- [ ] **Task 36: Admin inbox page**
+- [x] **Task 36: Admin inbox page**
   - **Scope:** M
-  - **Description:** `/admin/inbox`: a table, filters, pagination, the near-expiry badge, a metrics stats card, and a nav entry with an open-count indicator.
+  - **Description:** `/admin/inbox`: a table, a kind filter, pagination, the near-expiry badge, a metrics card, and an Inbox nav entry. (The open-count indicator was left out: it would call the API on every admin page render.)
   - **Files Touched:**
-    - `web_ui_admin/src/pages/inbox.rs`
+    - `web_ui_admin/src/pages/requests.rs` (inbox, request and enquiry pages)
     - `web_ui_admin/src/pages/mod.rs`
     - `web_ui_common/src/` (admin shell nav entry)
   - **Acceptance Criteria:**
@@ -653,7 +653,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_admin inbox_page`
   - **Dependencies:** Task 31
 
-- [ ] **Task 37: Admin request detail and actions**
+- [x] **Task 37: Admin request detail and actions**
   - **Scope:** M
   - **Description:** `/admin/requests/{id}`: *Accept*, *Decline* (reason select + note), *Send quote* (base-currency text input, terms, and an `hx-post` preview fragment), plus the thread and history.
   - **Files Touched:**
@@ -666,7 +666,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_admin request_detail_page`
   - **Dependencies:** Task 36
 
-- [ ] **Task 38: Admin enquiry detail**
+- [x] **Task 38: Admin enquiry detail**
   - **Scope:** S
   - **Description:** `/admin/enquiries/{id}`: thread, reply, *Send quote* (reusing T37's form component) and *Close*.
   - **Files Touched:**

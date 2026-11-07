@@ -11,7 +11,6 @@ use common::booking_request::{
     BookingRequestList, BookingRequestResponse, EnquiryResponse, EnquiryStatus, PriceBreakdown,
     RequestRefusal, RequestStatus,
 };
-use rust_decimal::Decimal;
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -92,21 +91,7 @@ pub fn notice_message(code: &str) -> String {
 
 /// The breakdown component's view of an API price.
 pub fn breakdown_view(price: &PriceBreakdown) -> BreakdownView {
-    let some = |amount: Decimal| (amount > Decimal::ZERO).then_some(amount);
-    BreakdownView {
-        nights: i64::from(price.nights),
-        effective_nightly_rate: price.nightly_rate,
-        subtotal: price.subtotal,
-        discount_amount: some(price.stay_discount),
-        promo_code: None,
-        promo_discount: some(price.promo_discount),
-        cleaning_fee: some(price.cleaning_fee),
-        damage_deposit: some(price.damage_deposit),
-        platform_fee: some(price.platform_fee),
-        tax_amount: price.tax,
-        total_amount: price.total,
-        currency: price.currency.clone(),
-    }
+    BreakdownView::from(price)
 }
 
 /// The price the guest would pay now: the live quote's, else as requested.
@@ -458,6 +443,7 @@ pub async fn request_reply(
 mod request_pages {
     use super::*;
     use chrono::Duration;
+    use rust_decimal::Decimal;
 
     #[test]
     fn request_pages_actions_follow_the_status() {
