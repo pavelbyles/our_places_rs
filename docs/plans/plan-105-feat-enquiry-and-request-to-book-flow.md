@@ -699,7 +699,7 @@ T42 final gates                      ← all
 
 ## Phase I: Finish
 
-- [ ] **Task 41: Docs and API contracts**
+- [x] **Task 41: Docs and API contracts**
   - **Scope:** S
   - **Description:** `openapi.yaml` and `openapi-prod.yaml` gain every new path and schema. `docs/ARCHITECTURE.md` gets a request lifecycle section next to §Pending Hold Lifecycle (with a state diagram), the §3.1 module tables, the §4.2.2 usage rule (D2), and the §6 config rows. `docs/ENVIRONMENT.md` gets the three env vars.
   - **Files Touched:**

@@ -600,3 +600,40 @@ async fn inbox_api_hosts_see_their_own_admins_all_and_guests_none() {
         400
     );
 }
+
+#[tokio::test]
+async fn openapi_includes_requests() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let app = app!(pool);
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api-docs/openapi.json")
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let doc: serde_json::Value = test::read_body_json(resp).await;
+    for (path, method) in [
+        ("/api/v1/enquiries", "post"),
+        ("/api/v1/enquiries/{id}", "get"),
+        ("/api/v1/enquiries/{id}/close", "post"),
+        ("/api/v1/enquiries/{id}/quote", "post"),
+        ("/api/v1/booking-requests", "post"),
+        ("/api/v1/booking-requests/mine", "get"),
+        ("/api/v1/booking-requests/{id}", "get"),
+        ("/api/v1/booking-requests/{id}/accept", "post"),
+        ("/api/v1/booking-requests/{id}/decline", "post"),
+        ("/api/v1/booking-requests/{id}/withdraw", "post"),
+        ("/api/v1/booking-requests/{id}/checkout", "post"),
+        ("/api/v1/booking-requests/{id}/quote-preview", "post"),
+        ("/api/v1/booking-requests/{id}/quote", "post"),
+        ("/api/v1/conversations/{id}/messages", "get"),
+        ("/api/v1/conversations/{id}/messages", "post"),
+        ("/api/v1/conversations/{id}/messages/read", "patch"),
+        ("/api/v1/inbox", "get"),
+    ] {
+        assert!(doc["paths"][path][method].is_object(), "{method} {path}");
+    }
+}
