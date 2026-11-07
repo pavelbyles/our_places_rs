@@ -37,6 +37,27 @@ pub struct PriceBreakdown {
     pub currency: String,
 }
 
+impl From<&common::booking_request::PriceBreakdown> for PriceBreakdown {
+    /// A request's or quote's price; zero amounts are left off.
+    fn from(price: &common::booking_request::PriceBreakdown) -> Self {
+        let some = |amount: Decimal| (amount > Decimal::ZERO).then_some(amount);
+        Self {
+            nights: i64::from(price.nights),
+            effective_nightly_rate: price.nightly_rate,
+            subtotal: price.subtotal,
+            discount_amount: some(price.stay_discount),
+            promo_code: None,
+            promo_discount: some(price.promo_discount),
+            cleaning_fee: some(price.cleaning_fee),
+            damage_deposit: some(price.damage_deposit),
+            platform_fee: some(price.platform_fee),
+            tax_amount: price.tax,
+            total_amount: price.total,
+            currency: price.currency.clone(),
+        }
+    }
+}
+
 /// Formats an amount the way every portal shows money: `"USD 1234.50"`.
 pub fn money(currency: &str, amount: Decimal) -> String {
     format!("{currency} {amount:.2}")

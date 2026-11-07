@@ -90,6 +90,8 @@ pub fn user_api_audience() -> String {
         .to_string()
 }
 
+/// Enquiries, requests to book, conversations and the inbox.
+pub mod booking_requests;
 mod bookings;
 mod listings;
 mod payouts;

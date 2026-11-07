@@ -124,7 +124,6 @@ pub(super) async fn send_booking_message(
 
     let msg = db_booking_message::insert_booking_message(
         pool.get_ref(),
-        Uuid::now_v7(),
         *id,
         claims.sub,
         role,

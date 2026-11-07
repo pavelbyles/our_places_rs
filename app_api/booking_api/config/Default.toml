@@ -25,6 +25,16 @@ pending_hold_minutes = 120
 rate_effective_grace_seconds = 60
 # Longest stay a quote or hold accepts, in nights. Only stops absurd date ranges.
 max_stay_nights = 3650
+# Hours a host has to answer a request to book before it expires and releases
+# its dates (1-720). Override: EA__APPLICATION__REQUEST_RESPONSE_HOURS=12
+request_response_hours = 24
+# Hours an accepted request or custom quote holds its dates for the guest to
+# proceed to checkout (1-720). Override: EA__APPLICATION__QUOTE_VALID_HOURS=72
+quote_valid_hours = 48
+# Last share of a response window, in percent, that counts as near expiry: the
+# inbox badge and the host's one reminder email (1-99).
+# Override: EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT=25
+request_near_expiry_pct = 25
 
 [feature_flags]
 enable_hard_deletes = false

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, status::text AS from_status FROM booking_request\n            WHERE listing_id = $1 AND guest_id = $2\n              AND status IN ('open', 'accepted', 'quoted')\n              AND expires_at <= clock_timestamp()\n            FOR UPDATE\n        )\n        UPDATE booking_request r\n        SET status = 'expired', updated_at = NOW()\n        FROM due\n        WHERE r.id = due.id\n        RETURNING r.id, due.from_status AS \"from_status!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_status!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "ddc86e62fa74adcaa9d1f569333d8c3b9435fdeb038764a9d100b9f7195d5ea5"
+}

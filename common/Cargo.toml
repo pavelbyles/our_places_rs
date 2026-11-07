@@ -19,6 +19,8 @@ thiserror.workspace = true
 tracing.workspace = true
 validator = { workspace = true }
 serde_json = { workspace = true }
+strum = "0.28.0"
+strum_macros = "0.28.0"
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 sqlx = { workspace = true, optional = true }

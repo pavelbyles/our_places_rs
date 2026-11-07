@@ -349,6 +349,7 @@ fn test_cron_sweep_response_serde() {
         status: "success".to_string(),
         pre_arrival_processed: 5,
         hold_reminders_processed: 2,
+        request_reminders_processed: 1,
     };
 
     let json = serde_json::to_string(&resp).unwrap();
@@ -2245,6 +2246,9 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
             max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
+            request_response_hours: api_core::settings::DEFAULT_REQUEST_RESPONSE_HOURS,
+            quote_valid_hours: api_core::settings::DEFAULT_QUOTE_VALID_HOURS,
+            request_near_expiry_pct: api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,

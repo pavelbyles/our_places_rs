@@ -151,6 +151,9 @@ pub(super) async fn app(
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
             max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
+            request_response_hours: api_core::settings::DEFAULT_REQUEST_RESPONSE_HOURS,
+            quote_valid_hours: api_core::settings::DEFAULT_QUOTE_VALID_HOURS,
+            request_near_expiry_pct: api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -1096,6 +1099,9 @@ mod exchange_rate_api_tests {
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: secs,
             max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
+            request_response_hours: api_core::settings::DEFAULT_REQUEST_RESPONSE_HOURS,
+            quote_valid_hours: api_core::settings::DEFAULT_QUOTE_VALID_HOURS,
+            request_near_expiry_pct: api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT,
         };
         assert!(app_settings(0).rate_effective_grace().is_err());
         assert!(app_settings(301).rate_effective_grace().is_err());

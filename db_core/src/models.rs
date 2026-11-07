@@ -791,6 +791,8 @@ pub struct Listing {
     pub guests_included: i32,
     /// Fee per extra guest per night above `guests_included` (in `base_currency`).
     pub extra_guest_fee: Decimal,
+    /// How the listing sells: instantly, on request, or both.
+    pub booking_mode: common::booking_request::BookingMode,
 }
 
 /// A listing with its host's name, for search results.
@@ -866,6 +868,8 @@ pub struct ListingWithOwner {
     pub guests_included: i32,
     /// Fee per extra guest per night above `guests_included` (in `base_currency`).
     pub extra_guest_fee: Decimal,
+    /// How the listing sells: instantly, on request, or both.
+    pub booking_mode: common::booking_request::BookingMode,
 }
 
 /// Fields for creating a listing.
@@ -1005,6 +1009,9 @@ pub struct UpdatedListing {
     pub guests_included: Option<i32>,
     /// Optional updated fee per extra guest per night.
     pub extra_guest_fee: Option<Decimal>,
+    /// Updated booking mode; open requests and offers carry on either way.
+    #[serde(default)]
+    pub booking_mode: Option<common::booking_request::BookingMode>,
 }
 
 /// What kind of building a listing is.
@@ -1236,13 +1243,19 @@ pub use common::models::MessageSenderRole;
 /// Database name for the shared message sender role.
 pub type DbMessageSenderRole = MessageSenderRole;
 
-/// A message between a guest and a host about a booking.
+/// A message in a guest × listing conversation, tagged with what it is about.
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct DbBookingMessage {
     /// Unique identifier.
     pub id: Uuid,
-    /// The booking this belongs to.
-    pub booking_id: Uuid,
+    /// The guest × listing conversation it belongs to.
+    pub conversation_id: Uuid,
+    /// The booking it is about, if any.
+    pub booking_id: Option<Uuid>,
+    /// The enquiry it is about, if any.
+    pub enquiry_id: Option<Uuid>,
+    /// The request to book it is about, if any.
+    pub request_id: Option<Uuid>,
     /// The user who sent the message.
     pub sender_id: Uuid,
     /// Role the sender wrote as.
@@ -1261,7 +1274,10 @@ impl From<DbBookingMessage> for common::models::BookingMessageResponse {
     fn from(msg: DbBookingMessage) -> Self {
         common::models::BookingMessageResponse {
             id: msg.id,
+            conversation_id: Some(msg.conversation_id),
             booking_id: msg.booking_id,
+            enquiry_id: msg.enquiry_id,
+            request_id: msg.request_id,
             sender_id: msg.sender_id,
             sender_role: msg.sender_role,
             sender_name: msg.sender_name,
@@ -1653,6 +1669,174 @@ impl From<ReservationChangeRequestRow> for ReservationChangeRequestResponse {
     }
 }
 
+// ============================================================================
+// Enquiries and requests to book (#105)
+// ============================================================================
+
+/// The thread between one guest and one listing's host. Enquiries, requests,
+/// quotes and bookings for the pair all post into it.
+#[derive(Debug, Clone, FromRow, PartialEq, Eq)]
+pub struct DbConversation {
+    /// Unique identifier.
+    pub id: Uuid,
+    /// The listing.
+    pub listing_id: Uuid,
+    /// The guest.
+    pub guest_id: Uuid,
+    /// When the thread started.
+    pub created_at: DateTime<Utc>,
+    /// When the last message was posted, for inbox ordering.
+    pub last_message_at: DateTime<Utc>,
+}
+
+/// A guest's question with dates and a guest count. Never blocks dates.
+#[derive(Debug, Clone, FromRow)]
+pub struct DbBookingEnquiry {
+    /// Unique identifier.
+    pub id: Uuid,
+    /// The guest × listing thread.
+    pub conversation_id: Uuid,
+    /// The listing asked about.
+    pub listing_id: Uuid,
+    /// The guest asking.
+    pub guest_id: Uuid,
+    /// Check-in date asked about.
+    pub date_from: NaiveDate,
+    /// Check-out date asked about.
+    pub date_to: NaiveDate,
+    /// Guests asked about.
+    pub number_of_persons: i32,
+    /// The guest's display currency, used if the host quotes on it.
+    pub currency: String,
+    /// Open or closed.
+    pub status: common::booking_request::EnquiryStatus,
+    /// Why it closed, once closed.
+    pub closed_reason: Option<common::booking_request::EnquiryClosedReason>,
+    /// When the host or an admin first responded.
+    pub first_response_at: Option<DateTime<Utc>>,
+    /// When it was sent.
+    pub created_at: DateTime<Utc>,
+    /// Last change.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A request to book, priced when submitted. Blocks its dates while live.
+///
+/// `Debug` includes the snapshot's promo terms, which hold the code string:
+/// never log this struct, only its ids.
+#[derive(Debug, Clone, FromRow)]
+pub struct DbBookingRequest {
+    /// Unique identifier.
+    pub id: Uuid,
+    /// The guest × listing thread.
+    pub conversation_id: Uuid,
+    /// The listing requested.
+    pub listing_id: Uuid,
+    /// The guest requesting.
+    pub guest_id: Uuid,
+    /// The enquiry it came from, if any.
+    pub enquiry_id: Option<Uuid>,
+    /// How it came about.
+    pub origin: common::booking_request::RequestOrigin,
+    /// Where it is in its lifecycle.
+    pub status: common::booking_request::RequestStatus,
+    /// Check-in date.
+    pub date_from: NaiveDate,
+    /// Check-out date.
+    pub date_to: NaiveDate,
+    /// Total guests.
+    pub number_of_persons: i32,
+    /// Payment currency.
+    pub currency: String,
+    /// The price as requested.
+    pub price_snapshot: Json<common::booking_request::StayPriceSnapshot>,
+    /// Guest breakdown and arrival details, copied to the booking.
+    pub metadata: Json<BookingMetadata>,
+    /// The promo code whose use this request reserves, while open or accepted.
+    pub promo_code_id: Option<Uuid>,
+    /// The live custom quote, once quoted.
+    pub current_quote_id: Option<Uuid>,
+    /// When the request or offer stops blocking its dates.
+    pub expires_at: DateTime<Utc>,
+    /// When the host or an admin first responded.
+    pub first_response_at: Option<DateTime<Utc>>,
+    /// Why the host declined, once declined.
+    pub decline_reason: Option<common::booking_request::DeclineReason>,
+    /// The host's note with a decline.
+    pub decline_note: Option<String>,
+    /// The booking it became, once converted.
+    pub booking_id: Option<Uuid>,
+    /// When it was submitted.
+    pub created_at: DateTime<Utc>,
+    /// Last change.
+    pub updated_at: DateTime<Utc>,
+}
+
+impl DbBookingRequest {
+    /// The `pending` booking this request becomes when the guest takes up the
+    /// offer, priced exactly as `snapshot` (the request's own, or its current
+    /// quote's).
+    pub fn to_new_booking(
+        &self,
+        snapshot: &common::booking_request::StayPriceSnapshot,
+        confirmation_code: String,
+    ) -> NewBooking {
+        NewBooking {
+            confirmation_code,
+            guest_id: self.guest_id,
+            listing_id: self.listing_id,
+            date_from: self.date_from,
+            date_to: self.date_to,
+            currency: snapshot.currency.clone(),
+            daily_rate: snapshot.daily_rate,
+            number_of_persons: self.number_of_persons,
+            total_days: snapshot.total_days,
+            sub_total_price: snapshot.sub_total_price,
+            discount_value: snapshot.discount_value,
+            tax_value: snapshot.tax_value,
+            fee_breakdown: snapshot.fee_breakdown.clone(),
+            total_price: snapshot.total_price,
+            cancellation_policy: snapshot.cancellation_policy,
+            metadata: self.metadata.0.clone(),
+            door_access_code: None,
+            cleaning_fee: snapshot.cleaning_fee,
+            damage_deposit: snapshot.damage_deposit,
+            platform_fee: snapshot.platform_fee,
+            tax_rate: snapshot.tax_rate,
+            exchange_rate: snapshot.exchange_rate,
+            promo: snapshot.promo.as_ref().map(|p| NewBookingPromo {
+                promo_code_id: p.promo_code_id,
+                terms: p.terms.clone(),
+                stay_discount: p.stay_discount,
+                cleaning_discount: p.cleaning_discount,
+            }),
+        }
+    }
+}
+
+/// A host's custom quote on a request. A newer quote supersedes it.
+#[derive(Debug, Clone, FromRow)]
+pub struct DbRequestQuote {
+    /// Unique identifier.
+    pub id: Uuid,
+    /// The request quoted on.
+    pub request_id: Uuid,
+    /// The stay price the host entered, in the listing's base currency.
+    pub stay_price_base: Decimal,
+    /// The host's special terms (user text).
+    pub terms: String,
+    /// The quoted price, promo-free.
+    pub price_snapshot: Json<common::booking_request::StayPriceSnapshot>,
+    /// When the quote expires.
+    pub valid_until: DateTime<Utc>,
+    /// When a newer quote replaced it.
+    pub superseded_at: Option<DateTime<Utc>>,
+    /// The host or admin who sent it.
+    pub created_by: Uuid,
+    /// When it was sent.
+    pub created_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1721,5 +1905,141 @@ mod tests {
                 assert_eq!(from.can_transition_to(to), expected, "{from:?} -> {to:?}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod request_model_tests {
+    use super::*;
+    use common::booking_request::{RequestOrigin, RequestStatus, SnapshotPromo, StayPriceSnapshot};
+    use common::cancellation::CancellationPolicy;
+    use common::models::FeeItem;
+    use common::promo::{PromoDiscountType, PromoScope, PromoTerms};
+    use rust_decimal_macros::dec;
+
+    fn snapshot() -> StayPriceSnapshot {
+        StayPriceSnapshot {
+            currency: "EUR".to_string(),
+            exchange_rate: dec!(0.920000),
+            daily_rate: dec!(92.86),
+            total_days: 7,
+            sub_total_price: dec!(700.00),
+            discount_value: Some(dec!(70.00)),
+            discounted_subtotal: dec!(567.00),
+            cleaning_fee: dec!(80.00),
+            damage_deposit: dec!(300.00),
+            platform_fee: dec!(28.35),
+            tax_rate: dec!(0.15),
+            tax_value: Some(dec!(97.05)),
+            fee_breakdown: vec![FeeItem {
+                name: "Cleaning Fee".to_string(),
+                amount: dec!(80.00),
+            }],
+            total_price: dec!(1072.40),
+            cancellation_policy: CancellationPolicy::Strict,
+            promo: Some(SnapshotPromo {
+                promo_code_id: Uuid::nil(),
+                terms: PromoTerms {
+                    code: "SUMMER-10".to_string(),
+                    discount_type: PromoDiscountType::Percentage,
+                    discount_value: dec!(10),
+                    scope: PromoScope::Stay,
+                    currency: None,
+                    exchange_rate: Decimal::ONE,
+                    min_nights: None,
+                    min_booking_value: None,
+                    stay_from: None,
+                    stay_to: None,
+                },
+                stay_discount: dec!(63.00),
+                cleaning_discount: dec!(0),
+            }),
+        }
+    }
+
+    fn request(snapshot: StayPriceSnapshot) -> DbBookingRequest {
+        let now = Utc::now();
+        DbBookingRequest {
+            id: Uuid::now_v7(),
+            conversation_id: Uuid::now_v7(),
+            listing_id: Uuid::now_v7(),
+            guest_id: Uuid::now_v7(),
+            enquiry_id: None,
+            origin: RequestOrigin::GuestRequest,
+            status: RequestStatus::Accepted,
+            date_from: NaiveDate::from_ymd_opt(2030, 8, 1).unwrap_or_default(),
+            date_to: NaiveDate::from_ymd_opt(2030, 8, 8).unwrap_or_default(),
+            number_of_persons: 4,
+            currency: "EUR".to_string(),
+            price_snapshot: Json(snapshot),
+            metadata: Json(BookingMetadata {
+                num_adults: 3,
+                num_children: 1,
+                message_to_host: Some("Anniversary trip".to_string()),
+                ..BookingMetadata::default()
+            }),
+            promo_code_id: Some(Uuid::nil()),
+            current_quote_id: None,
+            expires_at: now,
+            first_response_at: Some(now),
+            decline_reason: None,
+            decline_note: None,
+            booking_id: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn the_new_booking_carries_every_snapshot_amount_exactly() {
+        let snap = snapshot();
+        let req = request(snap.clone());
+        let booking = req.to_new_booking(&snap, "ABC123".to_string());
+        assert_eq!(booking.confirmation_code, "ABC123");
+        assert_eq!(booking.guest_id, req.guest_id);
+        assert_eq!(booking.listing_id, req.listing_id);
+        assert_eq!(
+            (booking.date_from, booking.date_to),
+            (req.date_from, req.date_to)
+        );
+        assert_eq!(booking.number_of_persons, 4);
+        assert_eq!(booking.currency, "EUR");
+        assert_eq!(booking.exchange_rate, dec!(0.920000));
+        assert_eq!(booking.daily_rate, snap.daily_rate);
+        assert_eq!(booking.total_days, 7);
+        assert_eq!(booking.sub_total_price, snap.sub_total_price);
+        assert_eq!(booking.discount_value, snap.discount_value);
+        assert_eq!(booking.tax_value, snap.tax_value);
+        assert_eq!(booking.tax_rate, snap.tax_rate);
+        assert_eq!(booking.cleaning_fee, snap.cleaning_fee);
+        assert_eq!(booking.damage_deposit, snap.damage_deposit);
+        assert_eq!(booking.platform_fee, snap.platform_fee);
+        assert_eq!(booking.total_price, snap.total_price);
+        assert_eq!(booking.fee_breakdown, snap.fee_breakdown);
+        assert_eq!(booking.cancellation_policy, CancellationPolicy::Strict);
+        assert_eq!(booking.metadata.num_adults, 3);
+        assert_eq!(
+            booking.metadata.message_to_host.as_deref(),
+            Some("Anniversary trip")
+        );
+        assert_eq!(booking.door_access_code, None);
+        let promo = booking
+            .promo
+            .as_ref()
+            .map(|p| (p.promo_code_id, p.stay_discount));
+        assert_eq!(promo, Some((Uuid::nil(), dec!(63.00))));
+    }
+
+    #[test]
+    fn a_quote_snapshot_without_a_promo_gives_a_booking_without_one() {
+        let req = request(snapshot());
+        let quoted = StayPriceSnapshot {
+            promo: None,
+            total_price: dec!(999.00),
+            ..snapshot()
+        };
+        let booking = req.to_new_booking(&quoted, "Q1".to_string());
+        assert!(booking.promo.is_none());
+        assert_eq!(booking.total_price, dec!(999.00));
     }
 }

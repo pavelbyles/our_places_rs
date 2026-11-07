@@ -253,6 +253,28 @@ impl BookingCalculator<BaseRate> {
 }
 
 impl BookingCalculator<Discounted> {
+    /// Replaces the whole accommodation subtotal (seasonal nights, extra-guest
+    /// fees and any weekly or monthly discount) with a host's custom quote,
+    /// already in the payment currency. Cleaning fee and deposit are kept, and
+    /// the promo, tax and platform-fee steps that follow recalculate from it.
+    ///
+    /// The nightly rate becomes the total spread over the nights, for display.
+    pub fn with_custom_stay_price(mut self, stay_total: Decimal) -> Self {
+        let stay_total = stay_total.round_dp(2);
+        self.actual_daily_rate = if self.total_days > 0 {
+            (stay_total / Decimal::from(self.total_days)).round_dp(2)
+        } else {
+            stay_total
+        };
+        self.extra_guests = 0;
+        self.extra_guest_fee_per_night = Decimal::ZERO;
+        self.extra_guest_fee_total = Decimal::ZERO;
+        self.sub_total_price = stay_total;
+        self.discount_value = None;
+        self.discounted_subtotal = stay_total;
+        self
+    }
+
     /// Configures host cleaning fee and security damage deposit.
     pub fn with_fees(
         mut self,
@@ -470,6 +492,13 @@ pub fn price_before_promo(
         Some(convert(input.cleaning_fee)),
         Some(convert(input.damage_deposit)),
     ))
+}
+
+/// Converts a host's custom stay price from the listing's base currency into
+/// the payment currency at `rate`, rounded to 2 places like every converted
+/// amount.
+pub fn custom_stay_total(base_price: Decimal, rate: Decimal) -> Decimal {
+    (base_price * rate).round_dp(2)
 }
 
 /// The one formula for a host's gross payout, in the host's currency. It covers
@@ -1498,5 +1527,152 @@ mod pricing_core_tests {
         };
         assert!(fits_booking_columns(&priced(dec!(100))));
         assert!(!fits_booking_columns(&priced(dec!(99999999))));
+    }
+}
+
+#[cfg(test)]
+mod custom_stay_price_tests {
+    use super::*;
+    use crate::reference::SupportedCountry;
+    use rust_decimal_macros::dec;
+    use std::str::FromStr;
+
+    const GOLDEN: &str = include_str!("../testdata/custom_quote_golden.json");
+
+    fn amount(value: &serde_json::Value) -> Decimal {
+        match Decimal::from_str(value.as_str().unwrap_or_default()) {
+            Ok(amount) => amount,
+            Err(e) => panic!("bad amount {value}: {e}"),
+        }
+    }
+
+    fn optional(value: &serde_json::Value) -> Option<Decimal> {
+        (!value.is_null()).then(|| amount(value))
+    }
+
+    fn date(value: &serde_json::Value) -> NaiveDate {
+        match NaiveDate::parse_from_str(value.as_str().unwrap_or_default(), "%Y-%m-%d") {
+            Ok(date) => date,
+            Err(e) => panic!("bad date {value}: {e}"),
+        }
+    }
+
+    fn whole(value: &serde_json::Value) -> i32 {
+        match value.as_i64().and_then(|n| i32::try_from(n).ok()) {
+            Some(n) => n,
+            None => panic!("bad number {value}"),
+        }
+    }
+
+    fn quote(case: &serde_json::Value) -> BookingCalculator<Taxed> {
+        let fields = &case["listing"];
+        let rate = optional(&case["rate"]).unwrap_or(Decimal::ONE);
+        let discounted = match price_before_promo(StayPricingInput {
+            base_nightly_rate: amount(&fields["price_per_night"]),
+            minimum_stay: 1,
+            overrides: &[],
+            rate,
+            check_in: date(&case["check_in"]),
+            check_out: date(&case["check_out"]),
+            number_of_persons: whole(&case["guests"]),
+            guests_included: whole(&fields["guests_included"]),
+            extra_guest_fee: amount(&fields["extra_guest_fee"]),
+            cleaning_fee: amount(&fields["cleaning_fee"]),
+            damage_deposit: amount(&fields["damage_deposit"]),
+            weekly_discount_percentage: optional(&fields["weekly"]),
+            monthly_discount_percentage: optional(&fields["monthly"]),
+        }) {
+            Ok(discounted) => discounted,
+            Err(e) => panic!("{}: {e}", case["name"]),
+        };
+        discounted
+            .with_custom_stay_price(custom_stay_total(amount(&case["custom_stay_price"]), rate))
+            .apply_promo(None)
+            .apply_taxes(SupportedCountry::tax_rate_for("Jamaica"))
+            .finalize()
+    }
+
+    #[test]
+    fn every_custom_quote_golden_case_prices_as_worked_out_by_hand() {
+        let cases: Vec<serde_json::Value> = match serde_json::from_str(GOLDEN) {
+            Ok(cases) => cases,
+            Err(e) => panic!("golden file: {e}"),
+        };
+        assert!(!cases.is_empty());
+        for case in &cases {
+            let name = case["name"].as_str().unwrap_or_default();
+            let priced = quote(case);
+            let expected = &case["expected"];
+            assert_eq!(priced.total_days, whole(&expected["nights"]), "{name}");
+            assert_eq!(
+                priced.actual_daily_rate,
+                amount(&expected["daily_rate"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.sub_total_price,
+                amount(&expected["subtotal"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.discounted_subtotal,
+                amount(&expected["subtotal"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.discount_value.unwrap_or(Decimal::ZERO),
+                amount(&expected["stay_discount"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.cleaning_fee,
+                amount(&expected["cleaning_fee"]),
+                "{name}"
+            );
+            assert_eq!(priced.tax_value, Some(amount(&expected["tax"])), "{name}");
+            assert_eq!(
+                priced.platform_fee,
+                amount(&expected["platform_fee"]),
+                "{name}"
+            );
+            assert_eq!(
+                priced.damage_deposit,
+                amount(&expected["damage_deposit"]),
+                "{name}"
+            );
+            assert_eq!(priced.total_price, amount(&expected["total"]), "{name}");
+        }
+    }
+
+    #[test]
+    fn custom_price_discards_extra_guest_fees_and_stay_discounts() {
+        let cases: Vec<serde_json::Value> = serde_json::from_str(GOLDEN).unwrap_or_default();
+        let priced = quote(&cases[0]);
+        assert_eq!(priced.extra_guests, 0);
+        assert_eq!(priced.extra_guest_fee_total, Decimal::ZERO);
+        assert_eq!(priced.extra_guest_fee_per_night, Decimal::ZERO);
+        assert_eq!(priced.discount_value, None);
+        assert_eq!(priced.promo_stay_discount, Decimal::ZERO);
+    }
+
+    #[test]
+    fn host_gross_of_a_custom_quote_covers_the_custom_stay_and_cleaning() {
+        let cases: Vec<serde_json::Value> = serde_json::from_str(GOLDEN).unwrap_or_default();
+        let priced = quote(&cases[0]);
+        assert_eq!(
+            host_gross(
+                priced.discounted_subtotal,
+                priced.cleaning_net,
+                Decimal::ONE
+            ),
+            dec!(730.00)
+        );
+    }
+
+    #[test]
+    fn custom_stay_total_rounds_once_to_two_places() {
+        assert_eq!(custom_stay_total(dec!(30000), dec!(0.0064)), dec!(192.00));
+        assert_eq!(custom_stay_total(dec!(100.01), dec!(0.333333)), dec!(33.34));
+        assert_eq!(custom_stay_total(dec!(650.00), Decimal::ONE), dec!(650.00));
     }
 }

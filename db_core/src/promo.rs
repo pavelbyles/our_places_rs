@@ -166,15 +166,27 @@ pub async fn lock_and_count(
         let usage = code.usage(0, 0);
         return Ok((code, usage));
     }
+    // A live open or accepted request with the code reserves a use (#105),
+    // so the offer can always convert at the price the guest accepted.
     let row = sqlx::query!(
         r#"
-        SELECT COUNT(*) as "total!", COUNT(*) FILTER (WHERE b.guest_id = $2) as "guest!"
-        FROM promo_code_redemption r
-        JOIN booking b ON b.id = r.booking_id
-        WHERE r.promo_code_id = $1
-          AND r.released_at IS NULL
-          AND (b.status IN ('confirmed', 'completed')
-               OR (b.status = 'pending' AND b.expires_at > NOW()))
+        WITH bookings AS (
+            SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE b.guest_id = $2) AS guest
+            FROM promo_code_redemption r
+            JOIN booking b ON b.id = r.booking_id
+            WHERE r.promo_code_id = $1
+              AND r.released_at IS NULL
+              AND (b.status IN ('confirmed', 'completed')
+                   OR (b.status = 'pending' AND b.expires_at > NOW()))
+        ), requests AS (
+            SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE q.guest_id = $2) AS guest
+            FROM booking_request q
+            WHERE q.promo_code_id = $1
+              AND q.status IN ('open', 'accepted') AND q.expires_at > NOW()
+        )
+        SELECT bookings.total + requests.total AS "total!",
+            bookings.guest + requests.guest AS "guest!"
+        FROM bookings, requests
         "#,
         code_id,
         guest_id
@@ -222,8 +234,9 @@ pub async fn release_redemption(conn: &mut PgConnection, booking_id: Uuid) -> Re
 }
 
 /// The usage a quote should show, without a lock. A guest's own pending holds
-/// are left out of both counts, because placing the hold cancels them first, so
-/// a quote can't refuse a code that the hold would accept.
+/// and live requests are left out of both counts, because placing a hold or
+/// request on the listing cancels or replaces them first, so a quote can't
+/// refuse a code that the hold would accept.
 pub async fn usage_for_quote<'e, E>(
     executor: E,
     code: &PromoCode,
@@ -237,13 +250,22 @@ where
     }
     let row = sqlx::query!(
         r#"
-        SELECT COUNT(*) as "total!", COUNT(*) FILTER (WHERE b.guest_id = $2) as "guest!"
-        FROM promo_code_redemption r
-        JOIN booking b ON b.id = r.booking_id
-        WHERE r.promo_code_id = $1
-          AND r.released_at IS NULL
-          AND (b.status IN ('confirmed', 'completed')
-               OR (b.status = 'pending' AND b.expires_at > NOW() AND b.guest_id <> $2))
+        WITH bookings AS (
+            SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE b.guest_id = $2) AS guest
+            FROM promo_code_redemption r
+            JOIN booking b ON b.id = r.booking_id
+            WHERE r.promo_code_id = $1
+              AND r.released_at IS NULL
+              AND (b.status IN ('confirmed', 'completed')
+                   OR (b.status = 'pending' AND b.expires_at > NOW() AND b.guest_id <> $2))
+        ), requests AS (
+            SELECT COUNT(*) AS total
+            FROM booking_request q
+            WHERE q.promo_code_id = $1 AND q.guest_id <> $2
+              AND q.status IN ('open', 'accepted') AND q.expires_at > NOW()
+        )
+        SELECT bookings.total + requests.total AS "total!", bookings.guest AS "guest!"
+        FROM bookings, requests
         "#,
         code.id,
         guest_id

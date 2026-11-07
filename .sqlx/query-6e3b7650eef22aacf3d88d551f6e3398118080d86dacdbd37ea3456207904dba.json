@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, status::text AS from_status FROM booking_request\n            WHERE status IN ('open', 'accepted', 'quoted') AND expires_at <= NOW()\n            FOR UPDATE SKIP LOCKED\n        )\n        UPDATE booking_request r\n        SET status = 'expired', updated_at = NOW()\n        FROM due, listing l\n        WHERE r.id = due.id AND l.id = r.listing_id\n        RETURNING r.id, r.listing_id, r.guest_id, l.user_id AS host_id,\n            due.from_status AS \"from_status!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "guest_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "host_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "from_status!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "6e3b7650eef22aacf3d88d551f6e3398118080d86dacdbd37ea3456207904dba"
+}

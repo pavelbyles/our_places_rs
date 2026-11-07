@@ -10,6 +10,8 @@ pub mod bookings;
 pub mod checkout;
 /// Tax documents.
 pub mod documents;
+/// Enquiries and the guest–host thread.
+pub mod enquiries;
 /// Landing page.
 pub mod home;
 /// Listing detail, quote and calendar fragments.
@@ -22,6 +24,8 @@ pub mod messages;
 pub mod profile;
 /// Guest registration.
 pub mod register;
+/// The guest's requests to book and their detail.
+pub mod requests;
 /// Verified reviews.
 pub mod reviews;
 /// Email verification and resend.
