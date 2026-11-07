@@ -10,6 +10,8 @@ pub mod bookings;
 pub mod checkout;
 /// Tax documents.
 pub mod documents;
+/// Enquiries and the guest–host thread.
+pub mod enquiries;
 /// Landing page.
 pub mod home;
 /// Listing detail, quote and calendar fragments.

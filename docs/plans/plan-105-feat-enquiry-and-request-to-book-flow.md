@@ -615,7 +615,7 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_guest booking_mode_cta && cargo test -p web_ui_guest checkout_request`
   - **Dependencies:** Task 31
 
-- [ ] **Task 34: Guest enquiry pages**
+- [x] **Task 34: Guest enquiry pages**
   - **Scope:** S
   - **Description:** `/listings/{slug}/enquire` (GET/POST, prefilled from the query) and `/requests/enquiries/{id}` (thread, reply form, and *Submit request to book* linking to checkout with `mode=request&enquiry_id`).
   - **Files Touched:**
