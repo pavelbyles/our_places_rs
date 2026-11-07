@@ -676,18 +676,18 @@ T42 final gates                      ← all
   - **Verification Command:** `cargo test -p web_ui_admin enquiry_detail_page`
   - **Dependencies:** Task 37
 
-- [ ] **Task 39: Playwright guest flows**
+- [x] **Task 39: Playwright guest flows**
   - **Scope:** M
   - **Description:** Guest specs from spec §6 E2E: request mode, accept → pay, quote accept, decline, enquiry → request, and both mode. Seed listings in each mode through fixtures.
   - **Files Touched:**
     - `playwright/e2e/guest-portal/booking-requests.spec.ts`
-    - `playwright/e2e/fixtures/` (request fixtures)
+    - `playwright/e2e/fixtures/requests-data.ts`
   - **Acceptance Criteria:**
     - [ ] All flows pass on chromium and firefox.
   - **Verification Command:** `devenv shell -- test-e2e-guest booking-requests`
   - **Dependencies:** Task 32, Task 33, Task 34, Task 35, Task 37
 
-- [ ] **Task 40: Playwright admin flows**
+- [x] **Task 40: Playwright admin flows**
   - **Scope:** S
   - **Description:** Inbox badge, accept, decline, quote with preview, enquiry quote and close, and the listing booking-mode change.
   - **Files Touched:**
