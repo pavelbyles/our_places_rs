@@ -37,7 +37,7 @@ pub struct ListingSummary {
     pub name: String,
     /// Primary photo URL, if any.
     pub image_url: Option<String>,
-    /// Nightly price, already formatted (e.g. `650`).
+    /// Nightly price, already formatted (e.g. `1,650`).
     pub price: String,
     /// Currency of `price`.
     pub currency: String,
@@ -121,9 +121,9 @@ impl SearchLink {
 pub enum StayTotalLines {
     /// The total, and what it includes.
     Total {
-        /// E.g. `USD 3420.00 total for 5 nights`.
+        /// E.g. `USD $3,420.00 total for 5 nights`.
         amount: String,
-        /// E.g. `Includes taxes, fees and a USD 500.00 refundable deposit`.
+        /// E.g. `Includes taxes, fees and a USD $500.00 refundable deposit`.
         includes: String,
     },
     /// The stay was searched, but this listing couldn't be priced.
@@ -131,12 +131,17 @@ pub enum StayTotalLines {
 }
 
 impl ListingSummary {
-    /// The card's price line: `Ok("USD 650")`, or `Err("Price unavailable in JMD")`
+    /// The card's price line: `Ok("USD $1,650")`, or `Err("Price unavailable in JMD")`
     /// when no rate could quote it (never a made-up amount).
     pub fn price_text(&self) -> std::result::Result<String, String> {
         match &self.price_unavailable_in {
             Some(code) => Err(format!("Price unavailable in {code}")),
-            None => Ok(format!("{} {}", self.currency, self.price)),
+            None => Ok(format!(
+                "{} {}{}",
+                self.currency,
+                common::money::currency_symbol(&self.currency).unwrap_or(""),
+                self.price
+            )),
         }
     }
 
@@ -266,10 +271,10 @@ impl From<&common::models::ListingResponse> for ListingSummary {
             slug: l.slug.clone(),
             name: l.name.clone(),
             image_url: l.primary_image_url.clone(),
-            // Same rounding as the legacy grid ("USD 650").
+            // Whole units, grouped ("1,650").
             price: l
                 .price_per_night
-                .map(|p| format!("{p:.0}"))
+                .map(common::money::grouped_whole)
                 .unwrap_or_else(|| "0".to_string()),
             currency: l.base_currency.clone(),
             country: l.country.clone(),
@@ -354,12 +359,12 @@ mod stay_card_tests {
             ..summary()
         };
         for out in both_cards(listing).await {
-            assert!(out.contains("USD 3420.50 total for 5 nights"), "{out}");
+            assert!(out.contains("USD $3,420.50 total for 5 nights"), "{out}");
             assert!(
-                out.contains("Includes taxes, fees and a USD 500.00 refundable deposit"),
+                out.contains("Includes taxes, fees and a USD $500.00 refundable deposit"),
                 "{out}"
             );
-            assert!(out.contains("USD 650"), "the nightly line stays: {out}");
+            assert!(out.contains("USD $650"), "the nightly line stays: {out}");
         }
     }
 
@@ -371,7 +376,7 @@ mod stay_card_tests {
             ..summary()
         };
         for out in both_cards(listing).await {
-            assert!(out.contains("USD 3420.50 total for 1 night"), "{out}");
+            assert!(out.contains("USD $3,420.50 total for 1 night"), "{out}");
             assert!(!out.contains("1 nights"), "{out}");
             assert!(out.contains("Includes taxes and fees"), "{out}");
             assert!(!out.contains("deposit"), "{out}");

@@ -130,7 +130,9 @@ fn doc(kind: TaxDocumentType, status: TaxDocumentStatus, currency: &str) -> TaxD
 
 /// Legacy texts for `DOC_IDS`, in order, for a document in `currency`.
 fn legacy_doc_texts(title: &str, status: &str, currency: &str) -> Vec<String> {
-    let money = |amount: &str| format!("{currency} {amount}");
+    // Line amounts carry the symbol only; the total names the currency too.
+    let sym = symbol(currency);
+    let item = |amount: &str| format!("{sym}{amount}");
     let mut texts = vec![
         title.to_string(),
         status.to_string(),
@@ -144,11 +146,21 @@ fn legacy_doc_texts(title: &str, status: &str, currency: &str) -> Vec<String> {
         "Company: Tester &amp; Co".into(),
         "Recipient TRN: 123-456-789".into(),
         format!("1 {currency} = 160.1234 JMD"),
-        "JMD 48637.68".into(),
-        "JMD 404912.04".into(),
+        "JMD $48,637.68".into(),
+        "JMD $404,912.04".into(),
     ];
-    texts.extend(["1950.00", "75.00", "2025.00", "303.75", "50.00", "2528.75"].map(money));
+    texts.extend(["1,950.00", "75.00", "2,025.00", "303.75", "50.00"].map(item));
+    texts.push(format!("{currency} {sym}2,528.75"));
     texts
+}
+
+/// The symbol shown before amounts in `currency` in these fixtures.
+fn symbol(currency: &str) -> &'static str {
+    match currency {
+        "USD" => "$",
+        "GBP" => "£",
+        _ => "",
+    }
 }
 
 #[tokio::test]
@@ -194,17 +206,17 @@ async fn tax_document_matches_legacy_figures_and_ids() {
                 d.document_type
             );
         }
-        let c = &d.currency;
+        let c = symbol(&d.currency);
         assert_eq!(
             text_of(&redesigned, "tax-line-items"),
             Some(format!(
-                "Accommodation (3 nights)3{c} 650.00GCT15.0%{c} 292.50{c} 1950.00"
+                "Accommodation (3 nights)3{c}650.00GCT15.0%{c}292.50{c}1,950.00"
             )),
             "line items"
         );
         let phrases = [
             "Refund Due:",
-            "USD 71.25",
+            "USD $71.25",
             "50%",
             "Amount Retained by Host:",
             "SUPERSEDED DOCUMENT",
@@ -304,7 +316,7 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
     };
     let out = html(view! { listing_card(listing: listing) }, __cx).await;
     for text in [
-        "USD 650",
+        "USD $650",
         "New Kingston, Jamaica",
         "4 Guests",
         "View Listing",
@@ -336,5 +348,5 @@ async fn tax_document_shows_the_promo_discount_only_when_there_is_one() {
     assert!(!without.contains("tot-promo"), "{without}");
     let with = html(view! { tax_document_view(doc: promo) }, __cx).await;
     assert!(with.contains("Includes promo discount (SUMMER):"), "{with}");
-    assert!(with.contains("-USD 100.00"), "{with}");
+    assert!(with.contains("-$100.00"), "{with}");
 }

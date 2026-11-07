@@ -197,7 +197,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let summary = ListingSummary::from(&details.listing);
     let listing = details.listing.clone();
     let currency = display_currency(cx).await;
-    let price = format!("{} {}", summary.currency, summary.price);
+    let price = summary
+        .price_text()
+        .unwrap_or_else(|unavailable| unavailable);
     let max_guests = listing.max_guests.max(1);
     let default_guests = guests_or_default(q.guests).clamp(1, max_guests);
     let rating = details
@@ -322,7 +324,10 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     if listing.booking_mode == BookingMode::Request {
                         <span id="listing-approval-badge" class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">"Host approval required"</span>
                     }
-                    <form id="reserve-form" hx-get=(quote_url) hx-trigger="change" hx-target="#quote" hx-swap="innerHTML" class="space-y-4">
+                    // novalidate: htmx validates forms even for GET, and a check-in
+                    // without a check-out yet must still refresh the quote (which
+                    // clears the breakdown for the previous dates).
+                    <form id="reserve-form" novalidate=(true) hx-get=(quote_url) hx-trigger="change" hx-target="#quote" hx-swap="innerHTML" class="space-y-4">
                         if let Some(c) = currency.clone() {
                             <input type="hidden" name="currency" value=(c) />
                         }

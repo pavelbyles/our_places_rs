@@ -19,7 +19,7 @@ function freeStay(): { checkIn: string; checkOut: string } {
   return { checkIn, checkOut: plusDays(checkIn, 5) };
 }
 
-// "USD 1234.50" (card) and "USD $1,234.50" (breakdown) both give "USD 1234.50".
+// "USD $1,234.50" (card or breakdown) gives "USD 1234.50".
 const amountIn = (text: string) => {
   const m = /([A-Z]{3}) [^\d-]*(-?[\d,]+\.\d{2})/.exec(text);
   return m ? `${m[1]} ${m[2].replaceAll(',', '')}` : '';

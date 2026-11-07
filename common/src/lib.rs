@@ -27,6 +27,8 @@ pub mod geocode;
 pub mod http_client;
 /// Request and response types shared across services.
 pub mod models;
+/// How money amounts are shown to people.
+pub mod money;
 /// Host payout states and ledger types.
 pub mod payout;
 /// Stay pricing.

@@ -59,55 +59,12 @@ impl From<&common::booking_request::PriceBreakdown> for PriceBreakdown {
     }
 }
 
-/// Formats an amount the way every portal shows money: `"USD 1234.50"`.
+pub use common::money::{currency_symbol, grouped, item_amount, total_amount};
+
+/// Formats a standalone amount the way every portal shows money:
+/// `"USD $1,234.50"`. Line items inside a breakdown use [`item_amount`].
 pub fn money(currency: &str, amount: Decimal) -> String {
-    format!("{currency} {amount:.2}")
-}
-
-/// The symbol shown before amounts in `currency`: `$` for JMD, USD and CAD,
-/// `£` for GBP, none for anything else.
-pub fn currency_symbol(currency: &str) -> Option<&'static str> {
-    match currency.to_ascii_uppercase().as_str() {
-        "JMD" | "USD" | "CAD" => Some("$"),
-        "GBP" => Some("£"),
-        _ => None,
-    }
-}
-
-/// An amount to 2 decimal places with comma thousands separators:
-/// `11240` → `"11,240.00"`, `-325.5` → `"-325.50"`.
-pub fn grouped(amount: Decimal) -> String {
-    let fixed = format!("{amount:.2}");
-    let (sign, unsigned) = fixed
-        .strip_prefix('-')
-        .map_or(("", fixed.as_str()), |rest| ("-", rest));
-    let (whole, cents) = unsigned.split_once('.').unwrap_or((unsigned, "00"));
-    let digits: Vec<char> = whole.chars().collect();
-    let with_commas: String = digits
-        .iter()
-        .enumerate()
-        .flat_map(|(i, d)| {
-            let comma = (i > 0 && (digits.len() - i).is_multiple_of(3)).then_some(',');
-            comma.into_iter().chain(std::iter::once(*d))
-        })
-        .collect();
-    format!("{sign}{with_commas}.{cents}")
-}
-
-/// A line-item amount: the currency's symbol (if it has one) and the grouped
-/// figure, e.g. `"$11,240.00"`, `"£512.91"` or `"2,994.22"` for EUR.
-pub fn item_amount(currency: &str, amount: Decimal) -> String {
-    format!(
-        "{}{}",
-        currency_symbol(currency).unwrap_or(""),
-        grouped(amount)
-    )
-}
-
-/// The total: currency code, symbol and grouped figure, e.g.
-/// `"USD $14,133.00"`, `"GBP £2,879.12"` or `"EUR 3,361.47"`.
-pub fn total_amount(currency: &str, amount: Decimal) -> String {
-    format!("{currency} {}", item_amount(currency, amount))
+    total_amount(currency, amount)
 }
 
 fn positive(amount: Option<Decimal>) -> Option<Decimal> {

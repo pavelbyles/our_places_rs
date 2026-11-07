@@ -57,7 +57,7 @@ test.describe('Admin Portal - Inbox (#105)', () => {
     await expect(page.locator('#quote-preview-result')).toContainText('number above zero');
     await page.locator('#quote-stay-price').fill('1500');
     await page.locator('#quote-preview').click();
-    await expect(page.locator('#quote-preview-breakdown')).toContainText('2036.25');
+    await expect(page.locator('#quote-preview-breakdown')).toContainText('2,036.25');
     await page.locator('#quote-send').click();
     await expect(page.locator('#request-notice')).toContainText('Quote sent');
     await expect(page.locator('#request-quote')).toBeVisible();
@@ -121,7 +121,7 @@ test.describe('Admin Portal - Inbox (#105)', () => {
 
     await page.goto(`/admin/enquiries/${enquiry}`);
     await expect(page.locator('#enquiry-earnings')).toContainText('Commission (10%)');
-    await expect(page.locator('#enquiry-earnings-net')).toHaveText('USD 585.00');
+    await expect(page.locator('#enquiry-earnings-net')).toHaveText('USD $585.00');
 
     // Opening the thread marked it read.
     await page.goto('/admin/inbox');

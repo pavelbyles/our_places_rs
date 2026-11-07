@@ -69,13 +69,13 @@ async fn test_render_booking_confirmation_guest_itemized_gct_and_receipt_link() 
     let html = render_email_body("booking_confirmation_guest", &payload);
     assert!(html.contains("BK-100"));
     assert!(html.contains("Seaside Sanctuary Villa"));
-    assert!(html.contains("USD 1000.00"));
-    assert!(html.contains("USD 150.00"));
+    assert!(html.contains("USD $1,000.00"));
+    assert!(html.contains("USD $150.00"));
     assert!(html.contains("15%"));
-    assert!(html.contains("USD 172.50"));
-    assert!(html.contains("USD 102.50"));
-    assert!(html.contains("USD 300.00"));
-    assert!(html.contains("USD 1725.00"));
+    assert!(html.contains("USD $172.50"));
+    assert!(html.contains("USD $102.50"));
+    assert!(html.contains("USD $300.00"));
+    assert!(html.contains("USD $1,725.00"));
     assert!(html.contains("http://localhost:8080/bookings/00000000-0000-0000-0000-000000000001/documents/REC-2026-BK-100"));
     assert!(html.contains("View Payment Receipt"));
 }
@@ -292,7 +292,7 @@ async fn promo_line_shows_on_guest_emails_with_a_code() {
     });
     let html = render_email_body("booking_confirmation_guest", &payload);
     assert!(html.contains("Includes promo discount (SUMMER)"), "{html}");
-    assert!(html.contains("-USD 100.00"), "{html}");
+    assert!(html.contains("-USD $100.00"), "{html}");
     assert!(!html.contains("{{promo_line}}"), "{html}");
 
     let hold = serde_json::json!({
@@ -305,7 +305,7 @@ async fn promo_line_shows_on_guest_emails_with_a_code() {
     });
     let html = render_email_body("booking_confirmation", &hold);
     assert!(
-        html.contains("Includes promo discount (SUMMER): -USD 100.00"),
+        html.contains("Includes promo discount (SUMMER): -USD $100.00"),
         "{html}"
     );
 }
@@ -340,11 +340,11 @@ async fn host_payout_shows_the_ledger_figure_and_promo() {
     ] {
         let html = render_email_body(template, &payload);
         assert!(
-            html.contains(&format!("<strong>{label}:</strong> JMD 129600.00")),
+            html.contains(&format!("<strong>{label}:</strong> JMD $129,600.00")),
             "{template}: {html}"
         );
         assert!(
-            html.contains("Includes promo discount (SUMMER): -JMD 16000.00"),
+            html.contains("Includes promo discount (SUMMER): -JMD $16,000.00"),
             "{template}: {html}"
         );
     }
@@ -378,7 +378,7 @@ async fn host_payout_on_a_cancellation_shows_the_retained_figure() {
     });
     let html = render_email_body("booking_cancelled_host", &payload);
     assert!(
-        html.contains("<strong>Net Payout Impact:</strong> USD 180.00"),
+        html.contains("<strong>Net Payout Impact:</strong> USD $180.00"),
         "{html}"
     );
 }

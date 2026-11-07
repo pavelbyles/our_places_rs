@@ -1,6 +1,7 @@
 //! Statutory tax documents (payment receipts, tax invoices, refund receipts)
-//! with the Jamaican GCT figures in JMD. Element IDs and every formatted
-//! figure match the legacy component (tests/domain_parity.rs).
+//! with the Jamaican GCT figures in JMD. Element IDs match the legacy
+//! component (tests/domain_parity.rs). Line amounts show the currency symbol
+//! (`$1,240.00`); totals and statutory JMD figures also name the currency.
 
 use common::tax_document::{
     InvoiceTaxCategory, TaxDocumentResponse, TaxDocumentStatus, TaxDocumentType,
@@ -11,7 +12,7 @@ use topcoat::{
     view::{View, class, component, view},
 };
 
-use super::price_breakdown::money;
+use super::price_breakdown::{item_amount, money};
 
 fn percent(rate: Decimal, places: usize) -> String {
     format!("{:.*}%", places, rate * Decimal::ONE_HUNDRED)
@@ -53,20 +54,21 @@ pub async fn tax_document_view(
     let fx = format!("1 {cur} = {:.4} JMD", doc.jmd_exchange_rate);
     let jmd_tax = money("JMD", doc.jmd_tax_amount);
     let jmd_total = money("JMD", doc.jmd_total_amount);
-    let acc = money(&cur, doc.accommodation_net);
+    let item = |amount: Decimal| item_amount(&cur, amount);
+    let acc = item(doc.accommodation_net);
     let promo = doc.promo_code.clone().map(|code| {
         (
             format!("Includes promo discount ({code}):"),
-            format!("-{}", money(&cur, doc.promo_discount)),
+            format!("-{}", item(doc.promo_discount)),
         )
     });
-    let cleaning = (doc.cleaning_fee > Decimal::ZERO).then(|| money(&cur, doc.cleaning_fee));
-    let taxable = money(&cur, doc.taxable_amount);
-    let tax = money(&cur, doc.tax_amount);
-    let platform = (doc.platform_fee > Decimal::ZERO).then(|| money(&cur, doc.platform_fee));
-    let deposit = (doc.damage_deposit > Decimal::ZERO).then(|| money(&cur, doc.damage_deposit));
+    let cleaning = (doc.cleaning_fee > Decimal::ZERO).then(|| item(doc.cleaning_fee));
+    let taxable = item(doc.taxable_amount);
+    let tax = item(doc.tax_amount);
+    let platform = (doc.platform_fee > Decimal::ZERO).then(|| item(doc.platform_fee));
+    let deposit = (doc.damage_deposit > Decimal::ZERO).then(|| item(doc.damage_deposit));
     let total = money(&cur, doc.total_amount);
-    let previously_paid = doc.amount_previously_paid.map(|p| money(&cur, p));
+    let previously_paid = doc.amount_previously_paid.map(item);
     let balance = doc.balance_due.map(|b| {
         if b > Decimal::ZERO {
             ("Balance Due:", money(&cur, b))
@@ -77,21 +79,21 @@ pub async fn tax_document_view(
         }
     });
     let refund_pct = doc.refund_pct.map(|p| percent(p, 0));
-    let retained = doc.retained_amount.map(|r| money(&cur, r));
+    let retained = doc.retained_amount.map(item);
     let lines: Vec<LineRow> = doc
         .line_items
         .iter()
         .map(|i| LineRow {
             description: i.description.clone(),
             quantity: i.quantity.to_string(),
-            unit_price: money(&cur, i.unit_price),
+            unit_price: item(i.unit_price),
             category: match i.tax_category {
                 InvoiceTaxCategory::Gct => "GCT",
                 InvoiceTaxCategory::Exempt => "Exempt",
             },
             tax_rate: percent(i.tax_rate, 1),
-            tax_amount: money(&cur, i.tax_amount),
-            total: money(&cur, i.total_amount),
+            tax_amount: item(i.tax_amount),
+            total: item(i.total_amount),
         })
         .collect();
     let row = "flex justify-between gap-4";

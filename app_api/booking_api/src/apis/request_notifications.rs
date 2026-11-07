@@ -99,7 +99,7 @@ fn payload(
         _ => String::default(),
     };
     let total = match (&facts.currency, facts.total) {
-        (Some(currency), Some(total)) => format!("{currency} {}", total.round_dp(2)),
+        (Some(currency), Some(total)) => common::money::total_amount(currency, total),
         _ => String::default(),
     };
     serde_json::json!({

@@ -246,6 +246,41 @@ fn val(payload: &serde_json::Value, key: &str) -> String {
         .unwrap_or_default()
 }
 
+/// A money field shown with the currency's symbol and thousands separators
+/// (`$14,133.00`); templates put `{{currency}}` before it. Empty when the
+/// field is absent, so optional lines can be left out. A value that is not a
+/// number is shown as sent, with a warning.
+fn amt(payload: &serde_json::Value, key: &str) -> String {
+    let raw = val(payload, key);
+    if raw.is_empty() {
+        return raw;
+    }
+    match raw.parse::<rust_decimal::Decimal>() {
+        Ok(amount) => common::money::item_amount(&val(payload, "currency"), amount),
+        Err(e) => {
+            tracing::warn!(key, value = %raw, error = %e, "email money field is not a number; shown as sent");
+            raw
+        }
+    }
+}
+
+/// A money field with its currency code too (`USD $14,133.00`), for amounts
+/// the template shows without `{{currency}}`. Empty when absent.
+fn total_amt(payload: &serde_json::Value, key: &str) -> String {
+    let shown = amt(payload, key);
+    if shown.is_empty() {
+        shown
+    } else {
+        format!("{} {shown}", val(payload, "currency"))
+    }
+}
+
+/// Zero in the payload's currency (`$0.00`), for a balance or retained
+/// amount the event left out.
+fn zero_amt(payload: &serde_json::Value) -> String {
+    common::money::item_amount(&val(payload, "currency"), rust_decimal::Decimal::ZERO)
+}
+
 fn render_user_verification_otp(payload: &serde_json::Value) -> String {
     let code = payload
         .get("code")
@@ -278,17 +313,19 @@ fn render_booking_confirmation(payload: &serde_json::Value) -> String {
         .get("dates")
         .and_then(|v| v.as_str())
         .unwrap_or("your stay");
-    let total = payload
-        .get("total_price")
-        .and_then(|v| v.as_str())
-        .unwrap_or("paid");
+    let total_amount = total_amt(payload, "total_price");
+    let total = if total_amount.is_empty() {
+        "paid"
+    } else {
+        total_amount.as_str()
+    };
     let template = load_template("booking_confirmation.html");
     template
         .replace(
             "{{promo_line}}",
             &promo_paragraph(
                 &val(payload, "promo_code"),
-                &val(payload, "promo_discount"),
+                &amt(payload, "promo_discount"),
                 &val(payload, "currency"),
             ),
         )
@@ -324,20 +361,20 @@ fn render_booking_confirmation_guest(payload: &serde_json::Value) -> String {
         .replace("{{guest_name}}", &val(payload, "guest_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{total_price}}", &amt(payload, "total_price"))
         .replace("{{currency}}", &val(payload, "currency"))
-        .replace("{{accommodation_net}}", &val(payload, "accommodation_net"))
-        .replace("{{cleaning_fee}}", &val(payload, "cleaning_fee"))
+        .replace("{{accommodation_net}}", &amt(payload, "accommodation_net"))
+        .replace("{{cleaning_fee}}", &amt(payload, "cleaning_fee"))
         .replace("{{tax_rate}}", &tax_rate_disp)
-        .replace("{{tax_amount}}", &val(payload, "tax_amount"))
-        .replace("{{platform_fee}}", &val(payload, "platform_fee"))
-        .replace("{{damage_deposit}}", &val(payload, "damage_deposit"))
+        .replace("{{tax_amount}}", &amt(payload, "tax_amount"))
+        .replace("{{platform_fee}}", &amt(payload, "platform_fee"))
+        .replace("{{damage_deposit}}", &amt(payload, "damage_deposit"))
         .replace("{{receipt_url}}", &val(payload, "receipt_url"))
         .replace(
             "{{promo_line}}",
             &promo_table_row(
                 &val(payload, "promo_code"),
-                &val(payload, "promo_discount"),
+                &amt(payload, "promo_discount"),
                 &val(payload, "currency"),
             ),
         )
@@ -350,7 +387,7 @@ fn render_booking_confirmation_host(payload: &serde_json::Value) -> String {
             "{{payout_line}}",
             &payout_paragraph(
                 "Host Payout",
-                &val(payload, "total_payout"),
+                &amt(payload, "total_payout"),
                 &val(payload, "currency"),
             ),
         )
@@ -358,7 +395,7 @@ fn render_booking_confirmation_host(payload: &serde_json::Value) -> String {
             "{{promo_line}}",
             &promo_paragraph(
                 &val(payload, "promo_code"),
-                &val(payload, "promo_discount"),
+                &amt(payload, "promo_discount"),
                 &val(payload, "currency"),
             ),
         )
@@ -368,15 +405,15 @@ fn render_booking_confirmation_host(payload: &serde_json::Value) -> String {
         .replace("{{guest_name}}", &val(payload, "guest_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{total_payout}}", &val(payload, "total_payout"))
+        .replace("{{total_payout}}", &amt(payload, "total_payout"))
         .replace("{{currency}}", &val(payload, "currency"))
 }
 
 fn render_booking_updated_guest(payload: &serde_json::Value) -> String {
     let template = load_template("booking_updated_guest.html");
-    let balance_due_raw = val(payload, "balance_due");
+    let balance_due_raw = amt(payload, "balance_due");
     let balance_due_disp = if balance_due_raw.is_empty() {
-        "0.00".to_string()
+        zero_amt(payload)
     } else {
         balance_due_raw
     };
@@ -385,7 +422,7 @@ fn render_booking_updated_guest(payload: &serde_json::Value) -> String {
         .replace("{{listing_name}}", &val(payload, "listing_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{total_price}}", &amt(payload, "total_price"))
         .replace("{{balance_due}}", &balance_due_disp)
         .replace("{{currency}}", &val(payload, "currency"))
         .replace("{{changes_summary}}", &val(payload, "changes_summary"))
@@ -399,7 +436,7 @@ fn render_booking_updated_host(payload: &serde_json::Value) -> String {
             "{{payout_line}}",
             &payout_paragraph(
                 "Adjusted Host Payout",
-                &val(payload, "total_payout"),
+                &amt(payload, "total_payout"),
                 &val(payload, "currency"),
             ),
         )
@@ -407,7 +444,7 @@ fn render_booking_updated_host(payload: &serde_json::Value) -> String {
             "{{promo_line}}",
             &promo_paragraph(
                 &val(payload, "promo_code"),
-                &val(payload, "promo_discount"),
+                &amt(payload, "promo_discount"),
                 &val(payload, "currency"),
             ),
         )
@@ -416,7 +453,7 @@ fn render_booking_updated_host(payload: &serde_json::Value) -> String {
         .replace("{{guest_name}}", &val(payload, "guest_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{total_payout}}", &val(payload, "total_payout"))
+        .replace("{{total_payout}}", &amt(payload, "total_payout"))
         .replace("{{currency}}", &val(payload, "currency"))
         .replace("{{changes_summary}}", &val(payload, "changes_summary"))
 }
@@ -436,9 +473,9 @@ fn render_booking_cancelled_guest(payload: &serde_json::Value) -> String {
     } else {
         "0".to_string()
     };
-    let retained = val(payload, "retained_amount");
+    let retained = amt(payload, "retained_amount");
     let retained_disp = if retained.is_empty() {
-        "0.00".to_string()
+        zero_amt(payload)
     } else {
         retained
     };
@@ -447,7 +484,7 @@ fn render_booking_cancelled_guest(payload: &serde_json::Value) -> String {
         .replace("{{listing_name}}", &val(payload, "listing_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{refund_amount}}", &val(payload, "refund_amount"))
+        .replace("{{refund_amount}}", &amt(payload, "refund_amount"))
         .replace("{{refund_pct}}", &refund_pct_disp)
         .replace("{{retained_amount}}", &retained_disp)
         .replace("{{currency}}", &val(payload, "currency"))
@@ -464,7 +501,7 @@ fn render_booking_cancelled_host(payload: &serde_json::Value) -> String {
             "{{payout_line}}",
             &payout_paragraph(
                 "Net Payout Impact",
-                &val(payload, "payout_impact"),
+                &amt(payload, "payout_impact"),
                 &val(payload, "currency"),
             ),
         )
@@ -473,7 +510,7 @@ fn render_booking_cancelled_host(payload: &serde_json::Value) -> String {
         .replace("{{guest_name}}", &val(payload, "guest_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{payout_impact}}", &val(payload, "payout_impact"))
+        .replace("{{payout_impact}}", &amt(payload, "payout_impact"))
         .replace("{{currency}}", &val(payload, "currency"))
 }
 
@@ -484,13 +521,13 @@ fn render_booking_completed_guest(payload: &serde_json::Value) -> String {
         .replace("{{listing_name}}", &val(payload, "listing_name"))
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
-        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{total_price}}", &amt(payload, "total_price"))
         .replace("{{currency}}", &val(payload, "currency"))
         .replace("{{invoice_url}}", &val(payload, "invoice_url"))
         .replace("{{invoice_number}}", &val(payload, "invoice_number"))
-        .replace("{{accommodation_net}}", &val(payload, "accommodation_net"))
-        .replace("{{cleaning_fee}}", &val(payload, "cleaning_fee"))
-        .replace("{{tax_amount}}", &val(payload, "tax_amount"))
+        .replace("{{accommodation_net}}", &amt(payload, "accommodation_net"))
+        .replace("{{cleaning_fee}}", &amt(payload, "cleaning_fee"))
+        .replace("{{tax_amount}}", &amt(payload, "tax_amount"))
 }
 
 fn render_pre_arrival_guide_guest(payload: &serde_json::Value) -> String {
@@ -528,7 +565,7 @@ fn render_payment_hold_expiry_reminder(payload: &serde_json::Value) -> String {
         .replace("{{confirmation_code}}", &val(payload, "confirmation_code"))
         .replace("{{listing_name}}", &val(payload, "listing_name"))
         .replace("{{expires_at}}", &val(payload, "expires_at"))
-        .replace("{{total_price}}", &val(payload, "total_price"))
+        .replace("{{total_price}}", &amt(payload, "total_price"))
         .replace("{{currency}}", &val(payload, "currency"))
         .replace("{{checkout_url}}", &val(payload, "checkout_url"))
 }
@@ -596,13 +633,13 @@ fn render_reservation_change_requested(payload: &serde_json::Value) -> String {
         )
         .replace(
             "{{previous_total_price}}",
-            &val(payload, "previous_total_price"),
+            &amt(payload, "previous_total_price"),
         )
         .replace(
             "{{proposed_total_price}}",
-            &val(payload, "proposed_total_price"),
+            &amt(payload, "proposed_total_price"),
         )
-        .replace("{{balance_due}}", &val(payload, "balance_due"))
+        .replace("{{balance_due}}", &amt(payload, "balance_due"))
         .replace("{{currency}}", &val(payload, "currency"))
         .replace("{{reason}}", &reason_disp)
         .replace("{{action_url}}", &val(payload, "action_url"))
@@ -633,8 +670,8 @@ fn render_reservation_change_approved(payload: &serde_json::Value) -> String {
         .replace("{{date_from}}", &val(payload, "date_from"))
         .replace("{{date_to}}", &val(payload, "date_to"))
         .replace("{{number_of_persons}}", &val(payload, "number_of_persons"))
-        .replace("{{total_price}}", &val(payload, "total_price"))
-        .replace("{{balance_due}}", &val(payload, "balance_due"))
+        .replace("{{total_price}}", &amt(payload, "total_price"))
+        .replace("{{balance_due}}", &amt(payload, "balance_due"))
         .replace("{{currency}}", &val(payload, "currency"))
         .replace("{{settlement_status}}", &val(payload, "settlement_status"))
         .replace("{{response_note}}", &note_disp)
@@ -891,8 +928,8 @@ mod tests {
         assert!(body.contains("CANCEL123"));
         assert!(body.contains("Azure Haven"));
         assert!(body.contains("50%"));
-        assert!(body.contains("USD 500.00"));
-        assert!(body.contains("USD 327.50"));
+        assert!(body.contains("USD $500.00"));
+        assert!(body.contains("USD $327.50"));
     }
 
     #[test]
@@ -912,8 +949,8 @@ mod tests {
         let body = render_email_body("booking_updated_guest", &payload);
         assert!(body.contains("UPDATE123"));
         assert!(body.contains("Azure Haven"));
-        assert!(body.contains("USD 1200.00"));
-        assert!(body.contains("USD 350.00"));
+        assert!(body.contains("USD $1,200.00"));
+        assert!(body.contains("USD $350.00"));
         assert!(body.contains("https://ourplaces.co/bookings/123/documents/REC-2026-UPDATE123-R2"));
     }
 
@@ -937,10 +974,10 @@ mod tests {
         assert!(body.contains("COMP123"));
         assert!(body.contains("Azure Haven"));
         assert!(body.contains("INV-2026-COMP123"));
-        assert!(body.contains("USD 1000.00"));
-        assert!(body.contains("USD 800.00"));
-        assert!(body.contains("USD 50.00"));
-        assert!(body.contains("USD 127.50"));
+        assert!(body.contains("USD $1,000.00"));
+        assert!(body.contains("USD $800.00"));
+        assert!(body.contains("USD $50.00"));
+        assert!(body.contains("USD $127.50"));
         assert!(body.contains("https://ourplaces.co/bookings/123/documents/INV-2026-COMP123"));
     }
 
@@ -973,7 +1010,7 @@ mod tests {
         assert!(req_body.contains("Marcus Host"));
         assert!(req_body.contains("Elena Guest"));
         assert!(req_body.contains("2026-12-06"));
-        assert!(req_body.contains("USD 550.00"));
+        assert!(req_body.contains("USD $550.00"));
         assert!(req_body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
         assert!(!req_body.contains("{{"));
         assert!(!req_body.contains("}}"));

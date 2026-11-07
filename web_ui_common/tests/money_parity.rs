@@ -1,5 +1,5 @@
-//! The price breakdown shows the same figures (and rounding) as the legacy
-//! component did, now with thousands separators and currency symbols: line
+//! The price breakdown shows each figure rounded to cents (as pricing rounds,
+//! not truncated), with thousands separators and currency symbols: line
 //! items show only the symbol, the total names the currency too.
 
 use rust_decimal::Decimal;
@@ -89,9 +89,9 @@ async fn every_display_currency_gets_its_symbol_and_separators() {
             [
                 "$102,260.92 × 5 nights",
                 "$511,304.62",
-                "$11,799.33",
+                "$11,799.34",
                 "$78,465.59",
-                "$23,598.67",
+                "$23,598.68",
                 "JMD $574,018.10",
             ],
         ),
@@ -101,22 +101,22 @@ async fn every_display_currency_gets_its_symbol_and_separators() {
             [
                 "598.84 × 5 nights",
                 "2,994.22",
-                "69.09",
-                "459.49",
-                "138.19",
-                "EUR 3,361.47",
+                "69.10",
+                "459.50",
+                "138.20",
+                "EUR 3,361.48",
             ],
         ),
         (
             "GBP",
             dec!(0.7891),
             [
-                "£512.91 × 5 nights",
-                "£2,564.57",
+                "£512.92 × 5 nights",
+                "£2,564.58",
                 "£59.18",
                 "£393.56",
                 "£118.36",
-                "GBP £2,879.12",
+                "GBP £2,879.13",
             ],
         ),
         (
@@ -125,10 +125,10 @@ async fn every_display_currency_gets_its_symbol_and_separators() {
             [
                 "$884.13 × 5 nights",
                 "$4,420.65",
-                "$102.01",
-                "$678.39",
+                "$102.02",
+                "$678.40",
                 "$204.03",
-                "CAD $4,962.85",
+                "CAD $4,962.86",
             ],
         ),
     ];

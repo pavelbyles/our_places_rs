@@ -56,6 +56,37 @@ test.describe('Guest Portal - Stay Dates Calendar', () => {
     await expect(page.locator('#breakdown-total')).toBeVisible();
   });
 
+  test('keeps a picked check-in across month pages, and quotes on a check-out clicked there', NEW_ONLY, async ({ page }) => {
+    const plus = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    // A far-future month clear of seeded bookings. Open it with a short stay
+    // already chosen, then pick a new one that ends in the following month.
+    const month = `${2040 + Math.floor(Math.random() * 5)}-0${1 + Math.floor(Math.random() * 9)}`;
+    const checkIn = `${month}-27`;
+    const checkOut = plus(checkIn, 7);
+    await page.goto(`/listings/${villa.slug}?check_in=${month}-01&check_out=${month}-06`);
+    const calendar = page.locator('#booking-dates');
+    await expect(calendar).toHaveAttribute('data-enhanced', /.*/);
+    await expect(page.locator('#breakdown-total')).toBeVisible();
+
+    // A new check-in clears the breakdown for the old dates.
+    await calendar.locator(`button[data-date="${checkIn}"]`).click();
+    await expect(page.locator('#reserve-check-in')).toHaveValue(checkIn);
+    await expect(page.locator('#reserve-check-out')).toHaveValue('');
+    await expect(page.locator('#breakdown-total')).toHaveCount(0);
+
+    // Page until the check-out day shows (one or two months are shown); the
+    // picked check-in must survive each swap.
+    while (!(await calendar.locator(`button[data-date="${checkOut}"]`).isVisible())) {
+      const caption = await calendar.locator('caption').first().textContent();
+      await page.getByRole('button', { name: 'Next month' }).click();
+      await expect(calendar.locator('caption').first()).not.toHaveText(caption ?? '');
+      await expect(page.locator('#reserve-check-in')).toHaveValue(checkIn);
+    }
+    await calendar.locator(`button[data-date="${checkOut}"]`).click();
+    await expect(page.locator('#reserve-check-out')).toHaveValue(checkOut);
+    await expect(page.locator('#breakdown-total')).toBeVisible();
+  });
+
   test('moves to the next month over HTMX', NEW_ONLY, async ({ page }) => {
     await page.goto(`/listings/${villa.slug}`);
     const firstCaption = await page.locator('#booking-dates caption').first().textContent();

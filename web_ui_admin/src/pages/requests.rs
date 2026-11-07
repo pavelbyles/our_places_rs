@@ -593,7 +593,7 @@ async fn managed_enquiry(
 
 /// The estimate card's rows: label, then amount in the listing's currency.
 pub fn earnings_rows(e: &HostEarningsEstimate) -> Vec<(String, String)> {
-    let money = |amount: Decimal| format!("{} {}", e.currency, amount.round_dp(2));
+    let money = |amount: Decimal| common::money::item_amount(&e.currency, amount);
     let pct = (e.commission_pct * Decimal::from(100)).normalize();
     let nights = if e.nights == 1 { "night" } else { "nights" };
     vec![
@@ -626,7 +626,7 @@ async fn earnings_card(
                     }
                     <div class="flex justify-between gap-4 border-t border-border pt-1 font-semibold">
                         <dt>"You could earn about"</dt>
-                        <dd id="enquiry-earnings-net">(format!("{} {}", estimate.currency, estimate.net.round_dp(2)))</dd>
+                        <dd id="enquiry-earnings-net">(common::money::total_amount(&estimate.currency, estimate.net))</dd>
                     </div>
                 </dl>
                 <p class="text-xs text-muted-foreground">"Approximate: standard rates for these dates, before any custom quote. GCT, guest fees and the refundable deposit aren't part of your payout."</p>
@@ -748,10 +748,10 @@ mod admin_request_pages {
         assert_eq!(
             earnings_rows(&estimate),
             vec![
-                ("Stay (3 nights)".to_string(), "USD 600.00".to_string()),
-                ("Cleaning fee".to_string(), "USD 50.00".to_string()),
-                ("Gross".to_string(), "USD 650.00".to_string()),
-                ("Commission (10%)".to_string(), "− USD 65.00".to_string()),
+                ("Stay (3 nights)".to_string(), "$600.00".to_string()),
+                ("Cleaning fee".to_string(), "$50.00".to_string()),
+                ("Gross".to_string(), "$650.00".to_string()),
+                ("Commission (10%)".to_string(), "− $65.00".to_string()),
             ]
         );
         assert_eq!(estimate.net, dec(58500, 2));

@@ -185,7 +185,7 @@ async fn request_notification_tests_enquiries_quotes_and_declines() {
     .await
     .expect("payload");
     assert_eq!(payload["terms"], "No parties.");
-    assert_eq!(payload["total"], "USD 600.00");
+    assert_eq!(payload["total"], "USD $600.00");
 }
 
 #[tokio::test(flavor = "multi_thread")]
