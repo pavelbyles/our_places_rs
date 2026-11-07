@@ -5,21 +5,23 @@ use super::booking_requests::{
     PartyRole, QuoteStay, check_user_text, price_quote, request_response,
 };
 use super::request_notifications::{RequestEvent, Subject, notify};
-use super::stay_pricing::{check_guest_count, load_listing, stay_today};
+use super::stay_pricing::{StayRequest, check_guest_count, load_listing, price_stay, stay_today};
 use super::{caller, is_admin, not_found};
-use actix_web::{HttpRequest, HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use api_core::auth::Claims;
 use api_core::error::ApiError;
 use api_core::response::{Payload, respond};
 use api_core::settings::Settings;
 use common::availability::validate_stay_dates;
 use common::booking_request::{
-    BookingRequestResponse, CreateEnquiryBody, EnquiryResponse, QuoteRequestBody, RequestRefusal,
+    BookingRequestResponse, CreateEnquiryBody, EnquiryResponse, HostEarningsEstimate,
+    QuoteRequestBody, RequestRefusal,
 };
 use common::currency::CurrencyCode;
 use db_core::booking_request as db_request;
 use db_core::error::DbError;
 use db_core::models::{CancellationPolicy, DbBookingEnquiry, DbMessageSenderRole};
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
@@ -39,6 +41,57 @@ pub(super) fn enquiry_response(e: &DbBookingEnquiry) -> EnquiryResponse {
         closed_reason: e.closed_reason,
         first_response_at: e.first_response_at,
         created_at: e.created_at,
+        host_estimate: None,
+    }
+}
+
+/// What the host could earn from an enquiry's stay: the standard price in the
+/// listing's base currency (no FX, promo or custom quote) minus commission.
+/// `None` when the stay can't be priced; the enquiry still loads.
+async fn host_estimate(
+    pool: &PgPool,
+    settings: &Settings,
+    enquiry: &DbBookingEnquiry,
+) -> Option<HostEarningsEstimate> {
+    let listing = match load_listing(pool, enquiry.listing_id).await {
+        Ok(listing) => listing,
+        Err(e) => {
+            tracing::warn!(enquiry_id = %enquiry.id, error = %e, "enquiry listing not loaded; no earnings estimate");
+            return None;
+        }
+    };
+    let priced = price_stay(
+        pool,
+        StayRequest {
+            listing: &listing,
+            check_in: enquiry.date_from,
+            check_out: enquiry.date_to,
+            number_of_persons: enquiry.number_of_persons,
+            currency: &listing.base_currency,
+            promo: None,
+            max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
+            locked_rate: Some(Decimal::ONE),
+            stay_override: None,
+        },
+    )
+    .await;
+    match priced {
+        Ok(priced) => Some(HostEarningsEstimate::from_stay(
+            listing.base_currency.clone(),
+            (enquiry.date_to - enquiry.date_from).num_days(),
+            priced.calculator.discounted_subtotal,
+            priced.calculator.cleaning_net,
+            listing.commission_pct,
+        )),
+        Err(e) if e.status_code().is_server_error() => {
+            tracing::error!(enquiry_id = %enquiry.id, error = ?e, "enquiry earnings estimate failed");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(enquiry_id = %enquiry.id, error = %e, "enquiry stay can't be priced; no earnings estimate");
+            None
+        }
     }
 }
 
@@ -161,17 +214,23 @@ pub(super) async fn create_enquiry(
         (status = 404, description = "No such enquiry")
     )
 )]
-/// An enquiry, for its guest, the listing's host or an admin.
+/// An enquiry, for its guest, the listing's host or an admin. The host and
+/// admins also get `host_estimate`, what the stay could earn at standard rates.
 pub(super) async fn get_enquiry(
     req: HttpRequest,
     claims: Claims,
     pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
     id: web::Path<Uuid>,
 ) -> Result<HttpResponse, ApiError> {
-    let (detail, _) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
+    let (detail, role) = authorize_enquiry_party(pool.get_ref(), &claims, *id).await?;
+    let mut response = enquiry_response(&detail.enquiry);
+    if role != PartyRole::Guest {
+        response.host_estimate = host_estimate(pool.get_ref(), &settings, &detail.enquiry).await;
+    }
     Ok(respond(
         &req,
-        Payload::Item(enquiry_response(&detail.enquiry)),
+        Payload::Item(response),
         |_| (),
         actix_web::http::StatusCode::OK,
     ))

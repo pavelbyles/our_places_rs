@@ -1327,7 +1327,7 @@ paths:
           required: true
       responses:
         "200":
-          description: "The enquiry"
+          description: "The enquiry; the host and admins also get host_estimate (approximate payout at standard rates)"
           content:
             application/json:
               schema:
@@ -1749,6 +1749,24 @@ paths:
                 type: object
         "403":
           description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/unread-count:
+    get:
+      summary: "Unread messages from guests on the caller's listings (admin: all listings)"
+      operationId: getUnreadMessageCount
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "The count, as { unread_messages }"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "Hosts and admins only"
         "401":
           description: "Missing or invalid token"
   /api/v1/inbox:

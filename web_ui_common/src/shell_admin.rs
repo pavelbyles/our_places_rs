@@ -25,6 +25,19 @@ pub struct AdminNavUser {
     pub email: String,
     /// Role; user management links are shown to admins only.
     pub role: AdminRole,
+    /// Unread messages from guests across the user's listings (every
+    /// listing for an admin); shown as "Inbox (n)" when above 0.
+    pub unread_messages: i64,
+}
+
+/// The unread suffix after "Inbox", as in "Inbox (1)": `None` at 0, the
+/// count up to 99, then "(99+)".
+pub fn unread_badge_label(unread: i64) -> Option<String> {
+    match unread {
+        n if n <= 0 => None,
+        n if n > 99 => Some("(99+)".to_string()),
+        n => Some(format!("({n})")),
+    }
 }
 
 /// Per-request data the admin shell needs.
@@ -55,6 +68,8 @@ pub async fn admin_chrome(
         if let Some(user) = user {
             let is_admin = user.role == AdminRole::Admin;
             let role_label = if is_admin { "Administrator" } else { "Host" };
+            let unread = unread_badge_label(user.unread_messages);
+            let unread_aria = format!("{} unread messages", user.unread_messages);
             <div class="flex min-h-screen">
                 <aside class="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar p-4 md:block">
                     <a href="/admin" class="mb-6 block font-serif text-xl text-sidebar-foreground no-underline">"Our Places"</a>
@@ -62,7 +77,12 @@ pub async fn admin_chrome(
                         <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
                         <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
                         <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
-                        <a href="/admin/inbox" class=(NAV_LINK)>"Inbox"</a>
+                        <a href="/admin/inbox" class=(NAV_LINK)>
+                            "Inbox"
+                            if let Some(label) = unread.clone() {
+                                " " <span id="admin-nav-unread" class="ml-1 font-semibold" aria-label=(unread_aria.clone())>(label)</span>
+                            }
+                        </a>
                         <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
                         <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
                         <a href="/admin/exchange-rates" class=(NAV_LINK)>"Exchange rates"</a>
@@ -81,7 +101,12 @@ pub async fn admin_chrome(
                                 <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
                                 <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
                                 <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
-                                <a href="/admin/inbox" class=(NAV_LINK)>"Inbox"</a>
+                                <a href="/admin/inbox" class=(NAV_LINK)>
+                                    "Inbox"
+                                    if let Some(label) = unread.clone() {
+                                        " " <span id="admin-mobile-nav-unread" class="ml-1 font-semibold" aria-label=(unread_aria.clone())>(label)</span>
+                                    }
+                                </a>
                                 <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
                                 <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
                                 if is_admin {

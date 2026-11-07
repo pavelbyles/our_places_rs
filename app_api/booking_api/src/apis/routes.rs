@@ -96,6 +96,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             conversations::get_conversation_messages,
             conversations::post_conversation_message,
             conversations::mark_conversation_read,
+            conversations::get_unread_message_count,
             enquiries::create_enquiry,
             enquiries::get_enquiry,
             enquiries::close_enquiry,
@@ -153,6 +154,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::BookingMessagesWrapper,
                 common::models::CreateBookingMessageRequest,
                 common::models::MarkMessagesReadResponse,
+                common::models::UnreadMessagesResponse,
                 CronSweepResponse,
                 CompleteStaysResponse,
                 CronSweepsResponse,
@@ -221,6 +223,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         web::scope("/api/v1/conversations")
             .wrap(from_fn(require_user))
             .wrap(from_fn(content_negotiation_middleware))
+            .route(
+                "/unread-count",
+                web::get().to(conversations::get_unread_message_count),
+            )
             .route(
                 "/{id}/messages",
                 web::get().to(conversations::get_conversation_messages),

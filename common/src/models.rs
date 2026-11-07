@@ -1413,6 +1413,14 @@ pub struct MarkMessagesReadResponse {
     pub updated_count: u64,
 }
 
+/// Unread messages from guests across a host's listings (every listing for
+/// an admin), for the admin portal's navigation badge.
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct UnreadMessagesResponse {
+    /// Unread guest-sent messages.
+    pub unread_messages: i64,
+}
+
 /// Lifecycle status of a bilateral reservation change request.
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]

@@ -98,6 +98,36 @@ test.describe('Admin Portal - Inbox (#105)', () => {
     await expect(page.locator('#enquiry-status')).toHaveText('Closed');
   });
 
+  test('an enquiry shows the estimated payout, and its unread message shows as Inbox (1)', async ({ page }) => {
+    const villa = listingInMode('both');
+    // 3 nights at 200.00, 50.00 cleaning, 10% commission: 650.00 gross, 585.00 payout.
+    psql(`UPDATE listing SET price_per_night = 200.00, cleaning_fee = 50.00, commission_pct = 0.1000,
+            weekly_discount_percentage = NULL, monthly_discount_percentage = NULL,
+            guests_included = 2, extra_guest_fee = 0 WHERE id = '${villa.id}';`);
+    psql(`DELETE FROM listing_price_overrides WHERE listing_id = '${villa.id}';`);
+    const stay = farStay();
+    const guest = createGuest();
+    const conv = returned(`INSERT INTO conversation (listing_id, guest_id) VALUES ('${villa.id}', '${guest.id}') RETURNING id;`);
+    const enquiry = returned(`
+      INSERT INTO booking_enquiry (conversation_id, listing_id, guest_id, date_from, date_to, number_of_persons, currency)
+      VALUES ('${conv}', '${villa.id}', '${guest.id}', '${stay.checkIn}', '${stay.checkOut}', 2, 'USD') RETURNING id;`);
+    psql(`INSERT INTO booking_message (id, conversation_id, enquiry_id, sender_id, sender_role, sender_name, message_text)
+          VALUES (gen_random_uuid(), '${conv}', '${enquiry}', '${guest.id}', 'guest', 'Guest', 'Is the pool heated?');`);
+    await loginAdminAs(page, villa.host);
+
+    await page.goto('/admin/inbox');
+    await expect(page.locator('#admin-nav-unread')).toHaveText('(1)');
+    await expect(page.locator('aside nav a[href="/admin/inbox"]')).toHaveText(/Inbox\s+\(1\)/);
+
+    await page.goto(`/admin/enquiries/${enquiry}`);
+    await expect(page.locator('#enquiry-earnings')).toContainText('Commission (10%)');
+    await expect(page.locator('#enquiry-earnings-net')).toHaveText('USD 585.00');
+
+    // Opening the thread marked it read.
+    await page.goto('/admin/inbox');
+    await expect(page.locator('#admin-nav-unread')).toHaveCount(0);
+  });
+
   test('changes a listing to request-only from the listing form', async ({ page }) => {
     const villa = listingInMode('instant');
     await loginAdminAs(page, villa.host);

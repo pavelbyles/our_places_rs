@@ -139,6 +139,18 @@ Admin actions email the host and the guest in the same way. Scheduled emails (re
 1. `/admin/inbox` lists open enquiries and live requests (host: own listings; admin: all). Filters: listing, kind, status. Ordered by `expires_at` ascending (requests first), then `last_message_at`. Paginated at 50 per page.
 2. Each row shows the kind, listing, guest first name, dates, guests, status, **age** (`now - created_at`), **time to first response** (`first_response_at - created_at`, or "awaiting"), **time left** (`expires_at - now`, requests only), and a **near-expiry badge** when time left ≤ `request_near_expiry_pct`% of the window.
 3. A header card shows each host's **median first-response time** over items created in the last 90 days (`percentile_cont(0.5)`), plus the count and share of requests that expired unanswered. Hosts see only their own; admins see every host.
+4. **Estimated earnings on an enquiry** (added 2026-11-07). `/admin/enquiries/{id}` shows what the host could earn from the stay asked about:
+   - **Pricing**: the enquiry's dates and guests are priced through `price_stay` in the listing's **base currency** (`locked_rate = 1`, so no FX lookup), with no promo and no stay override. Nightly overrides, length discounts, the extra-guest fee and the cleaning fee all apply, as for a request.
+   - **Payout**: `gross = host_gross(discounted_subtotal, cleaning_net, 1)`, then `(commission, net) = calculate_host_payout(gross, listing.commission_pct, 0)`. This is the formula the payout ledger uses, so the estimate matches what a booking at standard rates would pay out. GCT, the guest platform fee and the damage deposit are never part of it.
+   - **Display**: a card with the stay subtotal, cleaning fee, gross, commission (with its %) and the estimated payout, labelled "Approximate: standard rates for these dates, before any custom quote".
+   - **Who sees it**: the host and admins only. `GET /api/v1/enquiries/{id}` returns `host_estimate` for those roles; the guest's response never includes it, because commission is the host's business.
+   - **Can't price**: if the stay can't be priced (dates now in the past, stay too long, listing unavailable), `host_estimate` is `null`, the API logs a `warn!` with the refusal code, and the page says "An estimate isn't available for these dates". The enquiry itself still loads.
+5. **Unread guest messages in the left panel** (added 2026-11-07). The admin portal's left navigation (desktop sidebar and mobile menu) shows the number of unread messages from guests next to **Inbox**, as "Inbox (1)":
+   - **Counted**: `booking_message` rows with `read_at IS NULL` and `sender_id = conversation.guest_id`, on conversations whose listing the caller owns (every listing, for an admin). This covers enquiry, request and booking threads, since they share the guest × listing conversation. Messages from hosts and admins never count.
+   - **Clearing**: opening a thread marks it read (the existing `…/messages/read` endpoints, which mark the whole conversation), so the count drops on the next page load.
+   - **Display**: "Inbox" alone at 0, "Inbox (n)" up to 99, "Inbox (99+)" above, with `aria-label="N unread messages"` on the count.
+   - **API**: `GET /api/v1/conversations/unread-count`, for hosts and admins (403 otherwise), returns `{ "unread_messages": n }`. It is one `COUNT` on `idx_booking_message_conv_unread`.
+   - **Failure**: if the count can't be fetched, the shell renders plain "Inbox" and logs a `warn!`. A page never fails because of the count.
 
 ### 1.11. Exclusions / Non-Goals
 As listed in intent §3: add-ons (the snapshot struct and request table leave room for them later), pre-authorisation of cards, changing dates or guests in a quote, line-item overrides, signed-out or shadow-user enquiries, auto-mode rules, more than one live quote per request, non-email channels, auto-accept, calendar sync, and rate limiting (#110). Extending the `cleanup_stale_pending_holds` pg_cron job is also out of scope (D5).
@@ -370,7 +382,7 @@ New module `apis/booking_requests.rs` (handlers) and `apis/conversations.rs`. Ro
 | Method & Path | Caller | Success | Notable errors |
 |---|---|---|---|
 | `POST /api/v1/enquiries` | Guest | 201 `EnquiryResponse` | 400 stay input / message, 403 own listing, 404 listing, 409 `LISTING_UNAVAILABLE` |
-| `GET /api/v1/enquiries/{id}` | Guest (own), host (own listing), admin | 200 | 403, 404 |
+| `GET /api/v1/enquiries/{id}` | Guest (own), host (own listing), admin | 200 (`host_estimate` for host and admin only, §1.10.4) | 403, 404 |
 | `POST /api/v1/enquiries/{id}/close` | Host / admin | 200 | 403, 409 `REQUEST_NOT_OPEN` |
 | `POST /api/v1/enquiries/{id}/quote` | Host / admin | 201 `BookingRequestResponse` | 400 `INVALID_QUOTE_PRICE`, 403, 409 `DATE_UNAVAILABLE` / `REQUEST_ALREADY_LIVE` / `REQUEST_NOT_OPEN`, 422 `FX_RATE_UNAVAILABLE` |
 | `POST /api/v1/booking-requests` | Guest | 201 `BookingRequestResponse` | 400 stay input, 403 own listing, 409 `BOOKING_MODE_NOT_ALLOWED` / `DATE_UNAVAILABLE` / `REQUEST_ALREADY_LIVE` / `LISTING_UNAVAILABLE`, 422 `PROMO_*` / `FX_RATE_UNAVAILABLE` / `REQUEST_WINDOW_TOO_SHORT`, 503 lock timeout |
@@ -386,6 +398,7 @@ New module `apis/booking_requests.rs` (handlers) and `apis/conversations.rs`. Ro
 | `GET /api/v1/conversations/{id}/messages` | Party / admin | 200 `ConversationMessagesWrapper` | 403, 404 |
 | `POST /api/v1/conversations/{id}/messages` | Party / admin | 201 | 400, 403 |
 | `PATCH /api/v1/conversations/{id}/messages/read` | Party / admin | 200 | 403 |
+| `GET /api/v1/conversations/unread-count` | Host (own listings) / admin (all) | 200 `UnreadMessagesResponse` (§1.10.5) | 403 for non-staff |
 
 - **Error payloads**: `{ "code", "message" }` via a new `ApiError::Database(DbError::RequestRefused(r))` arm in `api_core::error`, mirroring `PromoRefused` (status from `r.http_status()`: 400, 403, 409 or 422). `warn!` with `code`, `request_id` and `actor_id` on every refusal.
 - **Authorization helper**: `authorize_request_party(req, pool, request_id) -> (RequestParties, User, PartyRole)`, the counterpart of `authorize_booking_party`. Host actions require `PartyRole::Host | Admin`, and guest actions require `PartyRole::Guest`.
@@ -421,9 +434,9 @@ New module `apis/booking_requests.rs` (handlers) and `apis/conversations.rs`. Ro
 **Admin portal (`web_ui_admin`)**
 | Route | Purpose |
 |---|---|
-| `/admin/inbox` | `table` of items (§1.10) with a near-expiry `badge-warning`, filters (`select`) and pagination; a `stats` card with the host median response time and the expired-unanswered share. A nav entry with a count `indicator` of open items. |
+| `/admin/inbox` | `table` of items (§1.10) with a near-expiry `badge-warning`, filters (`select`) and pagination; a `stats` card with the host median response time and the expired-unanswered share. The left-panel entry reads "Inbox (n)" with the unread guest messages (§1.10.5). |
 | `/admin/requests/{id}` | Detail and actions: *Accept* (POST), *Decline* (`select` reason + `textarea` note), *Send quote* (stay price `input` in the base currency with the currency label, terms `textarea`, and an HTMX `hx-post` to the preview fragment showing the guest total, GCT and platform fee before sending). Thread and history. |
-| `/admin/enquiries/{id}` | Thread, *Send quote*, *Close*. |
+| `/admin/enquiries/{id}` | Thread, *Send quote*, *Close*, and the estimated-earnings card (§1.10.4). |
 | `/admin/listings/{id}/edit` | A `booking_mode` `select` (Instant / Request / Both) with help text about open requests continuing. |
 
 Form money fields are parsed with `Decimal::from_str` on the server. The HTML input is `type="text" inputmode="decimal"`, so the client never does float maths.
@@ -438,6 +451,7 @@ Form money fields are parsed with `Decimal::from_str` on the server. The HTML in
 ## 4. Performance Considerations
 - **Availability**: each query adds one `NOT EXISTS` / `UNION ALL` probe on `idx_request_live_dates` (a partial index over live rows only, which stays tiny). That is O(log n) per check, with no extra round trip. Listing search adds a correlated `NOT EXISTS` per candidate listing on the same partial index, so there's no N+1.
 - **Transactions**: the request, accept, quote and convert transactions each do ≤ 8 statements under one listing lock, the same order of cost as `create_booking`. Pricing (FX lookup, overrides) runs **before** the transaction, as `create_booking` does today, so the lock is held only for the checks and writes.
+- **Unread count**: one indexed `COUNT` per full-page admin render (HTMX partials skip the shell, so they skip it too), on the partial index `idx_booking_message_conv_unread`. The enquiry estimate prices one stay with no FX lookup.
 - **Inbox**: one paginated query plus one aggregate. The median is over ≤ 90 days of rows for ≤ N hosts and is bounded by the `listing_id` and `created_at` indexes. No per-row lookups.
 - **Sweeps**: `expire_stale_requests` uses `idx_request_live_expiry`; the reminder candidate query uses the same index plus an anti-join on `uq_request_notification`.
 - **Cold start**: no new dependencies, background tasks or startup I/O beyond reading three config ints. Budget unchanged (<300ms p50, <1s p95, 256MB).
@@ -460,6 +474,7 @@ Form money fields are parsed with `Decimal::from_str` on the server. The HTML in
 | CSRF on portal POSTs | Same session-cookie and form guard as the existing checkout and admin actions (SameSite cookies + existing CSRF handling). |
 | AuthN | Claims extractor + active-user check (401 for deactivated accounts). Cron endpoints keep the OIDC + constant-time `x-cron-secret`. |
 | Audit and repudiation | `booking_request_history` records actor id, role, reason and quote id for every transition. `info!` logs with `actor_id`, `request_id` and `action` for accept, decline and quote. |
+| Commission disclosure | The enquiry earnings estimate (with commission) is built only for the host and admins; the guest's enquiry response omits `host_estimate`. The unread count is scoped in SQL to the caller's listings. |
 | Panics | No `unwrap`/`expect` (CI grep). All new public items have `///` docs (`missing_docs`). |
 
 ---
@@ -477,6 +492,8 @@ Database tests run against the local devenv Postgres (`devenv shell`), not Docke
 - `StayPriceSnapshot` serde round trip preserves Decimal scale exactly.
 - `DeclineReason::Other` requires a note.
 - `RequestRefusal::code()` and HTTP status are unique and stable.
+- `HostEarningsEstimate::from_stay`: gross, commission and net match `host_gross` + `calculate_host_payout` on a fixed case, with 0% commission and a net floored at 0.
+- The unread label: none at 0, "(n)" up to 99, "(99+)" above, so the link reads "Inbox (n)".
 
 ### Integration Tests (`cargo test -p db_core -p booking_api`)
 - **Race**: instant hold vs request on the same dates (two connections, `tokio::join!`) → exactly one success; request vs request from different guests → one success.
@@ -498,6 +515,8 @@ Database tests run against the local devenv Postgres (`devenv shell`), not Docke
 - **Error mapping**: each `RequestRefusal` gives its status code and `{code, message}` body (mirrors the promo refusal test).
 - **listing_api**: `booking_mode` round trip and history snapshot.
 - **email_worker**: each new template renders, with `<script>` escaped in message, terms and note.
+- **Enquiry estimate**: the host and an admin get `host_estimate` equal to the payout formula at the listing's commission; the guest gets none; an enquiry whose dates have passed returns `host_estimate: null` and still 200.
+- **Unread count**: counts only unread guest-sent messages on the host's listings (another host's listing, host-sent and admin-sent messages, and read messages excluded); an admin counts every listing; a guest gets 403; marking the thread read drops the count.
 
 ### E2E Tests (Playwright — `playwright/`)
 - **Guest, request mode**: the listing shows "Request to book" only → submit with a message → the request appears in My requests with a countdown.
@@ -507,6 +526,7 @@ Database tests run against the local devenv Postgres (`devenv shell`), not Docke
 - **Enquiry → request**: the guest asks a question → the host replies → the guest submits a prefilled request from the thread → the same thread shows on the booking.
 - **Both mode**: checkout shows both buttons; *Book now* still works.
 - **Admin listing form**: change the booking mode and see the guest's buttons change.
+- **Enquiry earnings and unread badge**: a guest sends an enquiry → the host's left panel reads "Inbox (1)" → the enquiry page shows the estimated payout → after opening the thread it reads "Inbox" again.
 
 ### Gates
 `cargo fmt --check` · `SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings -D missing_docs` · `cargo sqlx prepare --workspace --check` · the backend and web UI test commands from CONSTRAINTS §2 · the float, `unwrap` and `env::var` greps · `npx playwright test`.
@@ -534,3 +554,5 @@ Database tests run against the local devenv Postgres (`devenv shell`), not Docke
 - [ ] 18. Config keys `request_response_hours`, `quote_valid_hours` and `request_near_expiry_pct` are documented, env-overridable and validated at startup.
 - [ ] 19. `openapi.yaml`, `openapi-prod.yaml`, `.sqlx/`, `docs/ARCHITECTURE.md` (request lifecycle next to §Pending Hold Lifecycle, §6 config table, §3.1 module tables) and `docs/ENVIRONMENT.md` are updated.
 - [ ] 20. All CONSTRAINTS.md gates pass (fmt, clippy `-D warnings -D missing_docs`, sqlx check, backend and UI tests, float, unwrap and env greps), plus the Playwright flows in §6.
+- [ ] 21. The host's enquiry page shows an approximate earnings figure (standard price for the dates minus commission, base currency), to the host and admins only (§1.10.4).
+- [ ] 22. The admin portal's left panel shows the number of unread guest messages across the host's listings (all for admins), and it clears as threads are read (§1.10.5).

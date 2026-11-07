@@ -788,6 +788,67 @@ pub struct EnquiryResponse {
     pub first_response_at: Option<DateTime<Utc>>,
     /// When it was sent.
     pub created_at: DateTime<Utc>,
+    /// What the host could earn at standard rates. Only the host and admins
+    /// get it; it is never sent to the guest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_estimate: Option<HostEarningsEstimate>,
+}
+
+/// An approximate host payout for an enquiry: the listing's standard price
+/// for the dates (no promo, no custom quote) minus the platform commission,
+/// in the listing's base currency. GCT, the guest platform fee and the
+/// damage deposit are never part of a payout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct HostEarningsEstimate {
+    /// The listing's base currency.
+    pub currency: String,
+    /// Nights asked about.
+    pub nights: i64,
+    /// Accommodation after length discounts and the extra-guest fee.
+    #[schema(value_type = String)]
+    pub stay_subtotal: Decimal,
+    /// Cleaning fee.
+    #[schema(value_type = String)]
+    pub cleaning_fee: Decimal,
+    /// What the host's payout is computed from.
+    #[schema(value_type = String)]
+    pub gross: Decimal,
+    /// The listing's commission, as a fraction (0.10 is 10%).
+    #[schema(value_type = String)]
+    pub commission_pct: Decimal,
+    /// The platform's commission.
+    #[schema(value_type = String)]
+    pub commission: Decimal,
+    /// The estimated payout.
+    #[schema(value_type = String)]
+    pub net: Decimal,
+}
+
+impl HostEarningsEstimate {
+    /// Builds the estimate with the shared payout formula
+    /// (`host_gross`, then `calculate_host_payout`), so it matches what the
+    /// payout ledger would record for a booking at these figures.
+    pub fn from_stay(
+        currency: String,
+        nights: i64,
+        stay_subtotal: Decimal,
+        cleaning_fee: Decimal,
+        commission_pct: Decimal,
+    ) -> Self {
+        let gross = crate::pricing::host_gross(stay_subtotal, cleaning_fee, Decimal::ONE);
+        let (commission, net) =
+            crate::pricing::calculate_host_payout(gross, commission_pct, Decimal::ZERO);
+        Self {
+            currency,
+            nights,
+            stay_subtotal,
+            cleaning_fee,
+            gross,
+            commission_pct,
+            commission,
+            net,
+        }
+    }
 }
 
 /// A guest's requests and enquiries, newest first.
@@ -1263,5 +1324,52 @@ mod price_snapshot_tests {
         assert_eq!(back.exchange_rate.scale(), 6);
         assert_eq!(back.total_price.to_string(), snap.total_price.to_string());
         assert_eq!(back.cleaning_fee.to_string(), "60.00");
+    }
+}
+
+#[cfg(test)]
+mod host_earnings_tests {
+    use super::HostEarningsEstimate;
+    use rust_decimal_macros::dec;
+
+    fn estimate(
+        subtotal: rust_decimal::Decimal,
+        pct: rust_decimal::Decimal,
+    ) -> HostEarningsEstimate {
+        HostEarningsEstimate::from_stay("USD".into(), 3, subtotal, dec!(80.00), pct)
+    }
+
+    #[test]
+    fn host_earnings_follow_the_payout_formula() {
+        let e = estimate(dec!(900.00), dec!(0.1000));
+        assert_eq!(e.gross, dec!(980.00));
+        assert_eq!(e.commission, dec!(98.00));
+        assert_eq!(e.net, dec!(882.00));
+        let (commission, net) = crate::pricing::calculate_host_payout(
+            crate::pricing::host_gross(dec!(900.00), dec!(80.00), rust_decimal::Decimal::ONE),
+            dec!(0.1000),
+            rust_decimal::Decimal::ZERO,
+        );
+        assert_eq!((e.commission, e.net), (commission, net));
+    }
+
+    #[test]
+    fn host_earnings_at_zero_commission_are_the_gross() {
+        let e = estimate(dec!(333.33), dec!(0));
+        assert_eq!(e.commission, dec!(0));
+        assert_eq!(e.net, dec!(413.33));
+    }
+
+    #[test]
+    fn host_earnings_never_go_negative() {
+        let e = estimate(dec!(20.00), dec!(1.5));
+        assert_eq!(e.net, dec!(0));
+    }
+
+    #[test]
+    fn host_earnings_amounts_serialize_as_strings() {
+        let json = serde_json::to_value(estimate(dec!(900.00), dec!(0.1000))).expect("json");
+        assert_eq!(json["net"], "882.00");
+        assert_eq!(json["commission_pct"], "0.1000");
     }
 }

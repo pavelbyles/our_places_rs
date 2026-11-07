@@ -173,6 +173,27 @@ pub(crate) async fn record_first_response(
     Ok(())
 }
 
+/// Unread messages sent by guests on `host_id`'s listings, or on every
+/// listing when `host_id` is `None` (admins). Host and admin messages never
+/// count. Uses the partial index over unread messages.
+pub async fn unread_guest_messages(pool: &PgPool, host_id: Option<Uuid>) -> Result<i64> {
+    let count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "count!"
+        FROM booking_message m
+        JOIN conversation c ON c.id = m.conversation_id
+        JOIN listing l ON l.id = c.listing_id
+        WHERE m.read_at IS NULL
+          AND m.sender_id = c.guest_id
+          AND ($1::uuid IS NULL OR l.user_id = $1)
+        "#,
+        host_id
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(count)
+}
+
 /// Marks the other party's messages read, returning how many changed.
 pub async fn mark_read(pool: &PgPool, conversation_id: Uuid, reader_id: Uuid) -> Result<u64> {
     let result = sqlx::query!(

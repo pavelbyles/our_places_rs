@@ -215,3 +215,81 @@ async fn conversation_tests_a_promoted_guest_takes_the_bookings_messages_along()
     .expect("conversation");
     assert_eq!((listing, guest), (villa, promoted));
 }
+
+async fn conversation_of_enquiry(pool: &PgPool, enquiry: Uuid) -> Uuid {
+    sqlx::query_scalar("SELECT conversation_id FROM booking_enquiry WHERE id = $1")
+        .bind(enquiry)
+        .fetch_one(pool)
+        .await
+        .expect("conversation")
+}
+
+#[tokio::test]
+async fn unread_guest_messages_count_only_guest_messages_on_the_hosts_listings() {
+    use crate::conversation::{mark_read, unread_guest_messages};
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = listing_in_mode(&pool, "both", 0).await;
+    let (cabin, other_host) = listing_in_mode(&pool, "both", 0).await;
+    let guest = raw_user(&pool).await;
+    let other_guest = raw_user(&pool).await;
+    let admin = raw_user(&pool).await;
+
+    let first = conversation_of_enquiry(&pool, raw_enquiry(&pool, villa, guest).await).await;
+    let second = conversation_of_enquiry(&pool, raw_enquiry(&pool, villa, other_guest).await).await;
+    let elsewhere = conversation_of_enquiry(&pool, raw_enquiry(&pool, cabin, guest).await).await;
+
+    post(&pool, first, guest, DbMessageSenderRole::Guest, "One").await;
+    post(&pool, first, guest, DbMessageSenderRole::Guest, "Two").await;
+    post(&pool, first, host, DbMessageSenderRole::Host, "Host reply").await;
+    post(
+        &pool,
+        first,
+        admin,
+        DbMessageSenderRole::Admin,
+        "Admin note",
+    )
+    .await;
+    post(
+        &pool,
+        second,
+        other_guest,
+        DbMessageSenderRole::Guest,
+        "Three",
+    )
+    .await;
+    post(
+        &pool,
+        elsewhere,
+        guest,
+        DbMessageSenderRole::Guest,
+        "Other listing",
+    )
+    .await;
+
+    assert_eq!(
+        unread_guest_messages(&pool, Some(host))
+            .await
+            .expect("count"),
+        3
+    );
+    assert_eq!(
+        unread_guest_messages(&pool, Some(other_host))
+            .await
+            .expect("count"),
+        1
+    );
+    assert_eq!(
+        unread_guest_messages(&pool, None).await.expect("count"),
+        4,
+        "admins count every listing"
+    );
+
+    mark_read(&pool, first, host).await.expect("mark read");
+    assert_eq!(
+        unread_guest_messages(&pool, Some(host))
+            .await
+            .expect("count"),
+        1
+    );
+}

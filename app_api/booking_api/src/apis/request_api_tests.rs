@@ -632,6 +632,7 @@ async fn openapi_includes_requests() {
         ("/api/v1/conversations/{id}/messages", "get"),
         ("/api/v1/conversations/{id}/messages", "post"),
         ("/api/v1/conversations/{id}/messages/read", "patch"),
+        ("/api/v1/conversations/unread-count", "get"),
         ("/api/v1/inbox", "get"),
     ] {
         assert!(doc["paths"][path][method].is_object(), "{method} {path}");

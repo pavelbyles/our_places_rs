@@ -140,3 +140,85 @@ async fn conversation_api_tests_the_request_thread_shows_on_the_booking_it_becam
         "We're celebrating an anniversary."
     );
 }
+
+#[tokio::test]
+async fn unread_count_api_tests_staff_see_their_guests_unread_messages() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = request_listing(&pool).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let other_host = user(&pool, UserRole::Host).await;
+    let admin = user(&pool, UserRole::Admin).await;
+    let app = app!(pool);
+    let id = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
+    let conversation: Uuid =
+        sqlx::query_scalar("SELECT conversation_id FROM booking_request WHERE id = $1::uuid")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .expect("conversation");
+    // Clear whatever the request itself posted, so the test counts only its own.
+    sqlx::query("UPDATE booking_message SET read_at = NOW() WHERE conversation_id = $1")
+        .bind(conversation)
+        .execute(&pool)
+        .await
+        .expect("baseline");
+    for (who, text) in [
+        (guest, "Pool heated?"),
+        (guest, "Late check-in?"),
+        (host, "Yes"),
+    ] {
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/v1/conversations/{conversation}/messages"))
+                .insert_header(("Accept", "application/json"))
+                .insert_header(bearer(who))
+                .set_json(serde_json::json!({ "message_text": text }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let count = |who: Uuid| {
+        let app = &app;
+        async move {
+            let resp = test::call_service(
+                app,
+                test::TestRequest::get()
+                    .uri("/api/v1/conversations/unread-count")
+                    .insert_header(("Accept", "application/json"))
+                    .insert_header(bearer(who))
+                    .to_request(),
+            )
+            .await;
+            let status = resp.status().as_u16();
+            if status != 200 {
+                return (status, None);
+            }
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            (status, body["unread_messages"].as_i64())
+        }
+    };
+    assert_eq!(count(host).await, (200, Some(2)));
+    assert_eq!(count(other_host).await, (200, Some(0)));
+    let (status, admin_count) = count(admin).await;
+    assert_eq!(status, 200);
+    assert!(admin_count >= Some(2), "an admin counts every listing");
+    assert_eq!(count(guest).await.0, 403);
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!(
+                "/api/v1/conversations/{conversation}/messages/read"
+            ))
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(host))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(count(host).await, (200, Some(0)));
+}

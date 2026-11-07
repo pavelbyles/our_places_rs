@@ -29,6 +29,8 @@ Today a guest with a question has nowhere to ask it. Messaging (#81) only exists
 7. **Expiry**: requests with no response and offers (accepted requests or quotes) the guest doesn't take up expire through the existing sweeps. Expiry releases the dates and notifies the guest and host. The host gets one reminder email when an unanswered request enters the near-expiry window.
 8. **Notifications**: email to both guest and host at every step: enquiry received, message received, request submitted, accepted, declined, quote sent, quote accepted, expired and withdrawn.
 9. **Admin inbox**: the admin portal lists open enquiries and requests. Each item shows its age, time to first host response, and time left before expiry, with a badge when it is close to expiring. The inbox also shows each host's median first-response time.
+10. **Host earnings on an enquiry** (added 2026-11-07): the host's enquiry page shows an approximate amount they could earn from the stay: the listing's standard price for the dates and guests (length discounts and cleaning fee included, no promo) minus the platform commission, in the listing's base currency. It is labelled as an estimate, made before any custom quote, and is shown only to the host and admins.
+11. **Unread messages in the left panel** (added 2026-11-07): the admin/host portal's left navigation shows the total number of unread messages from guests and potential guests next to Inbox ("Inbox (1)") across all of the host's listings (every listing, for an admin). It covers enquiry, request and booking threads, and clears as the host opens each thread.
 
 ---
 
@@ -49,6 +51,7 @@ Today a guest with a question has nowhere to ask it. Messaging (#81) only exists
 - Email templates for each step through the existing outbox (`email_outbox`), deduplicated with `booking_notification_log` or an equivalent.
 - Guest portal: booking-mode-aware CTAs on the listing and checkout pages, an enquiry form, a request form, a "My requests" view showing status, the quote and a countdown, quote acceptance into checkout, and the thread view.
 - Admin/host portal: an inbox of open enquiries and requests with the response-time metrics described above, request detail, accept, decline and quote actions, and the thread.
+- Admin/host portal: an estimated-earnings card on the enquiry page (host and admin only; never sent to the guest), and an unread-guest-messages count on the left-panel navigation.
 - Updates to `openapi.yaml`, `openapi-prod.yaml`, `.sqlx/`, `docs/ARCHITECTURE.md` (request lifecycle section next to §Pending Hold Lifecycle), and Playwright coverage for the guest and admin portals.
 
 ### Out of Scope / Non-Goals
@@ -122,6 +125,8 @@ Today a guest with a question has nowhere to ask it. Messaging (#81) only exists
   - Test: the thread started on an enquiry is visible on the resulting booking.
   - Test: promo codes on requests follow #106 rules and are redeemed only when the request converts.
   - Test: every transition writes history, and every step enqueues the expected emails to both parties.
+  - Test: the enquiry earnings estimate equals the shared host payout formula (`host_gross` then `calculate_host_payout` at the listing's commission) and is absent for the guest.
+  - Test: the unread count includes only unread messages sent by guests, only on the host's own listings (all for an admin), and drops when a thread is marked read.
   - Database tests run against the local Postgres in the devenv shell, not Docker.
 - **Lagging Indicators**:
   - Share of bookings that start as an enquiry or request.
@@ -150,3 +155,7 @@ Today a guest with a question has nowhere to ask it. Messaging (#81) only exists
 - [x] **Thread model**: one conversation per guest × listing.
 - [x] **Near-expiry badge**: configurable (`request_near_expiry_pct`, default 25).
 - [x] **Host reminder**: yes, one email per unanswered request when it enters the near-expiry window.
+
+### Added (originator, 2026-11-07)
+- [x] **Enquiry earnings**: the host's enquiry page shows an approximate amount they could earn from the stay.
+- [x] **Unread messages**: the left panel shows the sum of all unread messages from guests and potential guests across all the host's listings.

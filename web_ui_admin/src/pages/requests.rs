@@ -8,8 +8,8 @@ use common::app_client::booking_requests::{
     post_conversation_message, preview_quote, quote_enquiry, send_quote,
 };
 use common::booking_request::{
-    BookingRequestResponse, DeclineReason, DeclineRequestBody, EnquiryStatus, HostResponseMetrics,
-    InboxItem, InboxQuery, QuoteRequestBody, RequestRefusal, RequestStatus,
+    BookingRequestResponse, DeclineReason, DeclineRequestBody, EnquiryStatus, HostEarningsEstimate,
+    HostResponseMetrics, InboxItem, InboxQuery, QuoteRequestBody, RequestRefusal, RequestStatus,
 };
 use common::models::{BookingMessageResponse, MessageSenderRole};
 use rust_decimal::Decimal;
@@ -591,6 +591,52 @@ async fn managed_enquiry(
     Ok((enquiry, token))
 }
 
+/// The estimate card's rows: label, then amount in the listing's currency.
+pub fn earnings_rows(e: &HostEarningsEstimate) -> Vec<(String, String)> {
+    let money = |amount: Decimal| format!("{} {}", e.currency, amount.round_dp(2));
+    let pct = (e.commission_pct * Decimal::from(100)).normalize();
+    let nights = if e.nights == 1 { "night" } else { "nights" };
+    vec![
+        (
+            format!("Stay ({} {nights})", e.nights),
+            money(e.stay_subtotal),
+        ),
+        ("Cleaning fee".to_string(), money(e.cleaning_fee)),
+        ("Gross".to_string(), money(e.gross)),
+        (
+            format!("Commission ({pct}%)"),
+            format!("− {}", money(e.commission)),
+        ),
+    ]
+}
+
+/// What the host could earn from the enquiry, or why there is no figure.
+#[component]
+async fn earnings_card(
+    /// The estimate, if the stay could be priced.
+    estimate: Option<HostEarningsEstimate>,
+) -> Result<impl View> {
+    Ok(view! {
+        <section id="enquiry-earnings" class="rounded-lg border border-border p-4 space-y-2">
+            <h2 class="text-sm font-semibold">"Estimated earnings"</h2>
+            if let Some(estimate) = estimate {
+                <dl class="space-y-1 text-sm">
+                    for (label, value) in earnings_rows(&estimate) {
+                        <div class="flex justify-between gap-4"><dt class="text-muted-foreground">(label)</dt><dd>(value)</dd></div>
+                    }
+                    <div class="flex justify-between gap-4 border-t border-border pt-1 font-semibold">
+                        <dt>"You could earn about"</dt>
+                        <dd id="enquiry-earnings-net">(format!("{} {}", estimate.currency, estimate.net.round_dp(2)))</dd>
+                    </div>
+                </dl>
+                <p class="text-xs text-muted-foreground">"Approximate: standard rates for these dates, before any custom quote. GCT, guest fees and the refundable deposit aren't part of your payout."</p>
+            } else {
+                <p id="enquiry-earnings-unavailable" class="text-sm text-muted-foreground">"An estimate isn't available for these dates."</p>
+            }
+        </section>
+    })
+}
+
 /// An enquiry with its thread, a quote form and Close.
 #[page("/admin/enquiries/{id}")]
 pub async fn enquiry_page(cx: &Cx) -> Result<impl View> {
@@ -604,6 +650,7 @@ pub async fn enquiry_page(cx: &Cx) -> Result<impl View> {
     let notice = notice(cx);
     let open = enquiry.status == EnquiryStatus::Open;
     let id = enquiry.id;
+    let estimate = enquiry.host_estimate.clone();
     Ok(view! {
         <div class="mx-auto max-w-4xl space-y-6">
             <div class="space-y-1">
@@ -615,6 +662,7 @@ pub async fn enquiry_page(cx: &Cx) -> Result<impl View> {
             if let Some(notice) = notice {
                 <div id="enquiry-notice" role="status" class="rounded-lg border border-border p-4 text-sm">(notice)</div>
             }
+            earnings_card(estimate: estimate)
             if open {
                 <div class="grid gap-4 md:grid-cols-2">
                     quote_form(action: format!("/admin/enquiries/{id}/quote"), preview: None, base_currency: details.listing.base_currency.clone())
@@ -686,6 +734,28 @@ pub async fn enquiry_reply(
 #[cfg(test)]
 mod admin_request_pages {
     use super::*;
+
+    #[test]
+    fn enquiry_page_earnings_rows_show_the_payout_breakdown() {
+        let dec = |cents: i64, scale: u32| Decimal::new(cents, scale);
+        let estimate = HostEarningsEstimate::from_stay(
+            "USD".into(),
+            3,
+            dec(60000, 2),
+            dec(5000, 2),
+            dec(1000, 4),
+        );
+        assert_eq!(
+            earnings_rows(&estimate),
+            vec![
+                ("Stay (3 nights)".to_string(), "USD 600.00".to_string()),
+                ("Cleaning fee".to_string(), "USD 50.00".to_string()),
+                ("Gross".to_string(), "USD 650.00".to_string()),
+                ("Commission (10%)".to_string(), "− USD 65.00".to_string()),
+            ]
+        );
+        assert_eq!(estimate.net, dec(58500, 2));
+    }
 
     #[test]
     fn inbox_page_durations_read_naturally() {

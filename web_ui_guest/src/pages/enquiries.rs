@@ -387,6 +387,7 @@ mod enquiry_pages {
             closed_reason: None,
             first_response_at: None,
             created_at: chrono::Utc::now(),
+            host_estimate: None,
         };
         assert_eq!(
             request_from_enquiry_href("sea-grape", &enquiry),

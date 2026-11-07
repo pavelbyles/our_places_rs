@@ -12,7 +12,7 @@ use crate::booking_request::{
 };
 use crate::models::{
     BookingMessageResponse, BookingMessagesWrapper, BookingResponse, CreateBookingMessageRequest,
-    MarkMessagesReadResponse,
+    MarkMessagesReadResponse, UnreadMessagesResponse,
 };
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -260,6 +260,17 @@ pub async fn post_conversation_message(
 pub async fn mark_conversation_read(id: Uuid, user_jwt: &str) -> Result<MarkMessagesReadResponse> {
     let path = format!("/api/v1/conversations/{id}/messages/read");
     call(reqwest::Method::PATCH, &path, NO_BODY, user_jwt).await
+}
+
+/// Unread guest messages across the caller's listings (all for an admin).
+pub async fn get_unread_message_count(user_jwt: &str) -> Result<UnreadMessagesResponse> {
+    call(
+        reqwest::Method::GET,
+        "/api/v1/conversations/unread-count",
+        NO_BODY,
+        user_jwt,
+    )
+    .await
 }
 
 /// The inbox (a host's own listings, or all for an admin).

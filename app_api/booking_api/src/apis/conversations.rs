@@ -12,11 +12,11 @@ use api_core::response::{Payload, respond};
 use common::booking_request::RequestRefusal;
 use common::models::{
     BookingMessageResponse, BookingMessagesWrapper, CreateBookingMessageRequest,
-    MarkMessagesReadResponse,
+    MarkMessagesReadResponse, UnreadMessagesResponse,
 };
 use db_core::conversation as db_conversation;
 use db_core::error::DbError;
-use db_core::models::DbMessageSenderRole;
+use db_core::models::{DbMessageSenderRole, UserRole};
 use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
@@ -211,6 +211,46 @@ pub(super) async fn mark_conversation_read(
         Payload::Item(MarkMessagesReadResponse {
             updated_count: updated,
         }),
+        |_| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    get,
+    path = "/api/v1/conversations/unread-count",
+    tag = "booking-requests",
+    responses(
+        (status = 200, description = "Unread guest messages on the caller's listings (all for an admin)", body = UnreadMessagesResponse),
+        (status = 403, description = "Hosts and admins only")
+    )
+)]
+/// Unread messages from guests across the caller's listings, or every
+/// listing for an admin.
+pub(super) async fn get_unread_message_count(
+    req: HttpRequest,
+    claims: Claims,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ApiError> {
+    let user = caller(pool.get_ref(), &claims).await?;
+    let admin = is_admin(&user);
+    if !admin && !user.roles.contains(&UserRole::Host) {
+        tracing::warn!(user_id = %claims.sub, "unread count refused: not a host or admin");
+        return Err(ApiError::Forbidden(
+            "Only hosts and admins have unread guest messages".to_string(),
+        ));
+    }
+    let host_id = (!admin).then_some(claims.sub);
+    let unread_messages = db_conversation::unread_guest_messages(pool.get_ref(), host_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(user_id = %claims.sub, error = ?e, "failed to count unread guest messages");
+            ApiError::Database(e)
+        })?;
+    Ok(respond(
+        &req,
+        Payload::Item(UnreadMessagesResponse { unread_messages }),
         |_| (),
         actix_web::http::StatusCode::OK,
     ))

@@ -723,3 +723,43 @@ T42 final gates                      ← all
     - [ ] Every acceptance criterion in spec §7 is ticked.
   - **Verification Command:** `cargo fmt --check && SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings && devenv shell -- cargo sqlx prepare --workspace --check && devenv shell -- cargo test --workspace --exclude protoproj && devenv shell -- test-e2e`
   - **Dependencies:** All
+
+## Phase J: Enquiry Earnings and Unread Count (added 2026-11-07)
+
+Spec §1.10.4–5, acceptance criteria 21–22.
+
+- [x] **Task 43: Earnings estimate type**
+  - **Scope:** XS
+  - **Description:** `common::booking_request::HostEarningsEstimate` (currency, nights, stay subtotal, cleaning fee, gross, commission %, commission, net; Decimals as strings) with `from_stay`, built only from `host_gross` and `calculate_host_payout`. `EnquiryResponse.host_estimate: Option<…>` (serde default, skipped when `None`).
+  - **Files Touched:** `common/src/booking_request.rs`
+  - **Acceptance Criteria:**
+    - [ ] Figures match the payout formula on a fixed case, at 0% commission, and with net floored at 0.
+  - **Verification Command:** `cargo test -p common host_earnings`
+  - **Dependencies:** None
+
+- [x] **Task 44: Estimate on the enquiry API**
+  - **Scope:** S
+  - **Description:** `GET /api/v1/enquiries/{id}` prices the enquiry in the listing's base currency (`locked_rate = 1`, no promo or override) for the host and admins, and attaches `host_estimate`. A pricing refusal gives `null` plus a `warn!`, never an error.
+  - **Files Touched:** `app_api/booking_api/src/apis/enquiries.rs`, `app_api/booking_api/src/apis/enquiry_api_tests.rs`
+  - **Acceptance Criteria:**
+    - [ ] Host and admin get the estimate; the guest doesn't; past dates give `null` with 200.
+  - **Verification Command:** `devenv shell -- cargo test -p booking_api enquiry_estimate`
+  - **Dependencies:** Task 43
+
+- [x] **Task 45: Unread count API**
+  - **Scope:** S
+  - **Description:** `db_core::conversation::unread_guest_messages(pool, host_id: Option<Uuid>)` and `GET /api/v1/conversations/unread-count` (staff only), plus `app_client::get_unread_message_count`.
+  - **Files Touched:** `db_core/src/conversation.rs`, `db_core/src/conversation_tests.rs`, `app_api/booking_api/src/apis/conversations.rs`, `app_api/booking_api/src/apis/routes.rs`, `app_api/booking_api/src/apis/conversation_api_tests.rs`, `common/src/models.rs`, `common/src/app_client/booking_requests.rs`, `.sqlx/`
+  - **Acceptance Criteria:**
+    - [ ] Only unread, guest-sent messages on the caller's listings count (all listings for admins); a guest gets 403; marking read drops the count.
+  - **Verification Command:** `devenv shell -- cargo test -p db_core unread_guest && devenv shell -- cargo test -p booking_api unread_count`
+  - **Dependencies:** None
+
+- [x] **Task 46: Portal: estimate card and "Inbox (n)" count**
+  - **Scope:** M
+  - **Description:** The enquiry page renders the estimate card (or the "not available" line). `AdminNavUser` gains `unread_messages`; `nav_user` fetches it (warn and 0 on failure); both admin navs show "Inbox (n)". Playwright flow per spec §6. `openapi*.yaml` and `docs/ARCHITECTURE.md` updated.
+  - **Files Touched:** `web_ui_common/src/shell_admin.rs`, `web_ui_admin/src/support.rs`, `web_ui_admin/src/pages/requests.rs`, `playwright/e2e/admin-portal/inbox.spec.ts`, `openapi.yaml`, `openapi-prod.yaml`, `docs/ARCHITECTURE.md`
+  - **Acceptance Criteria:**
+    - [ ] "Inbox" at 0, "Inbox (n)" up to 99, "Inbox (99+)" above; the card shows the estimated payout; e2e flow passes.
+  - **Verification Command:** `cargo test -p web_ui_common -p web_ui_admin && devenv shell -- npx playwright test admin-portal/inbox.spec.ts`
+  - **Dependencies:** Task 44, Task 45
