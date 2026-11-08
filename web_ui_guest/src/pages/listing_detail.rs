@@ -21,6 +21,7 @@ use web_ui_common::components::{
 
 use crate::quote::{NoQuote, public_quote};
 use crate::support::{display_currency, guests_or_default, jamaica_today};
+use common::app_client::booking_requests::{ApiCallError, api_error_code};
 
 path_param!(slug);
 
@@ -159,14 +160,60 @@ async fn quote_panel(
     })
 }
 
-async fn load(cx: &Cx, slug: &str) -> Result<ListingDetails> {
+/// A listing priced for the page.
+struct Loaded {
+    details: ListingDetails,
+    /// The currency prices are in: the display currency, or `None` (the
+    /// listing's own currency) when there is no rate to it.
+    currency: Option<String>,
+    /// The display currency that had no exchange rate, for the notice.
+    no_rate_for: Option<String>,
+}
+
+/// The active listing in the guest's display currency. With no exchange rate
+/// to that currency right now, the listing is shown in its own currency
+/// (labelled as such) with a notice, rather than failing. Only a listing the
+/// API cannot find, or an inactive one, is a 404.
+async fn load(cx: &Cx, slug: &str) -> Result<Loaded> {
     let currency = display_currency(cx).await;
-    get_api_client(cx)
-        .get_listing_by_id(slug, currency.as_deref())
-        .await
-        .ok()
-        .filter(|details| details.listing.is_active)
-        .ok_or_else(|| not_found().into())
+    let api = get_api_client(cx);
+    let loaded = match api.get_listing_by_id(slug, currency.as_deref()).await {
+        Ok(details) => Loaded {
+            details,
+            currency,
+            no_rate_for: None,
+        },
+        Err(e) if api_error_code(&e) == Some("FX_RATE_UNAVAILABLE") => {
+            tracing::warn!(slug, currency = ?currency, error = %e, "no exchange rate for the display currency; showing the listing's own currency");
+            let details = api
+                .get_listing_by_id(slug, None)
+                .await
+                .map_err(|e| listing_error(slug, None, e))?;
+            Loaded {
+                details,
+                currency: None,
+                no_rate_for: currency,
+            }
+        }
+        Err(e) => return Err(listing_error(slug, currency.as_deref(), e)),
+    };
+    if loaded.details.listing.is_active {
+        Ok(loaded)
+    } else {
+        Err(not_found().into())
+    }
+}
+
+/// A 404 when the API has no such listing; otherwise the failure is logged
+/// and shown as an error page (not a misleading "not found").
+fn listing_error(slug: &str, currency: Option<&str>, e: anyhow::Error) -> topcoat::Error {
+    let status = e.downcast_ref::<ApiCallError>().map(|c| c.status);
+    if status == Some(404) {
+        not_found().into()
+    } else {
+        tracing::error!(slug, currency, status, error = ?e, "failed to load listing");
+        web_client::app_error(e).into()
+    }
 }
 
 /// Most photos shown on the page; the rest are in the gallery dialog.
@@ -201,7 +248,11 @@ fn gallery_layout(count: usize) -> (&'static str, Vec<(&'static str, &'static st
 #[page("/listings/{slug}")]
 pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
-    let details = load(cx, slug).await?;
+    let Loaded {
+        details,
+        currency,
+        no_rate_for,
+    } = load(cx, slug).await?;
     let q = stay_query(cx);
     let month = q.check_in.unwrap_or_else(jamaica_today);
     let (calendar, reviews) = tokio::join!(
@@ -211,7 +262,6 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let reviews: Vec<ReviewResponse> = reviews.unwrap_or_default();
     let summary = ListingSummary::from(&details.listing);
     let listing = details.listing.clone();
-    let currency = display_currency(cx).await;
     let price = summary
         .price_text()
         .unwrap_or_else(|unavailable| unavailable);
@@ -259,6 +309,11 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     <span>(summary.location())</span>
                     star_rating(rating: rating, review_count: review_count)
                 </p>
+                if let Some(code) = no_rate_for {
+                    <p id="currency-notice" role="status" class="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+                        (format!("Prices in {code} aren't available right now, so they're shown in {}.", listing.base_currency))
+                    </p>
+                }
             </header>
 
             if !images.is_empty() {
@@ -393,9 +448,10 @@ async fn initial_breakdown(
 #[page("/listings/{slug}/quote")]
 pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
-    let details = load(cx, slug).await?;
+    let Loaded {
+        details, currency, ..
+    } = load(cx, slug).await?;
     let q = stay_query(cx);
-    let currency = display_currency(cx).await;
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     let href = checkout_href(&details.listing.slug, &q, currency.as_deref());
     let slug = details.listing.slug.clone();
@@ -410,7 +466,7 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
 #[page("/listings/{slug}/calendar")]
 pub async fn listing_calendar(cx: &Cx) -> Result<impl View> {
     let slug: &str = path_param::<Slug>(cx);
-    let details = load(cx, slug).await?;
+    let details = load(cx, slug).await?.details;
     let q = stay_query(cx);
     let month = q
         .month

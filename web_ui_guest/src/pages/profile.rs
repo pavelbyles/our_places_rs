@@ -9,7 +9,7 @@ use topcoat::{
 use web_client::get_api_client;
 use web_ui_common::components::domain::currency_selector::currency_option_list;
 
-use crate::support::guest;
+use crate::support::{guest, remember_currency};
 
 /// Editable profile fields.
 #[derive(Deserialize)]
@@ -140,8 +140,15 @@ pub async fn profile_submit(
             host_profile: None,
             slug: slug.clone(),
         };
+        let currency = request.default_currency.clone();
         match api.update_user(guest.user_id, &request).await {
-            Ok(_) => return Err(see_other("/profile?saved=1").into()),
+            Ok(_) => {
+                // The saved currency is also what they browse in from now on.
+                if let Some(code) = currency {
+                    remember_currency(cx, &code);
+                }
+                return Err(see_other("/profile?saved=1").into());
+            }
             Err(e) if e.to_string().contains("already taken") => Some(format!(
                 "“{}” is already taken. Try another profile URL.",
                 slug.unwrap_or_default()

@@ -89,8 +89,8 @@ test.describe('Guest Portal - Search by dates and guests', () => {
     const stay = `check_in=${checkIn}&check_out=${checkOut}&guests=2`;
     const switchToJmd = async () => {
       await page.locator('summary[aria-label^="Display currency"], summary[aria-label^="Choose a display"]').click();
-      await page.locator('a[href^="?currency=JMD"]').click();
-      await expect(page).toHaveURL(/currency=JMD/);
+      await page.locator('a[href^="/currency/JMD"]').click();
+      await expect(page.locator('summary[aria-label="Display currency: JMD"]')).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`check_in=${checkIn}`));
       await expect(page).toHaveURL(new RegExp(`check_out=${checkOut}`));
       await expect(page).toHaveURL(/guests=2/);

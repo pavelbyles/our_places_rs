@@ -8,6 +8,8 @@ pub mod booking_change;
 pub mod bookings;
 /// Checkout and legacy per-currency checkout redirects.
 pub mod checkout;
+/// Choosing the display currency.
+pub mod currency;
 /// Tax documents.
 pub mod documents;
 /// Enquiries and the guest–host thread.

@@ -172,8 +172,13 @@ pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<Listi
         .await
         .context("Failed to connect to listing service")?;
 
-    if !res.status().is_success() {
-        bail!("Failed to fetch listing details: {}", res.status());
+    let status = res.status();
+    if !status.is_success() {
+        let body = res.text().await.unwrap_or_default();
+        return Err(
+            crate::app_client::booking_requests::ApiCallError::from_body(status.as_u16(), &body)
+                .into(),
+        );
     }
 
     res.json::<ListingDetails>()

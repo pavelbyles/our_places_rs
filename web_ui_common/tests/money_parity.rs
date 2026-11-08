@@ -204,7 +204,7 @@ async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     .await;
     for c in &codes {
         assert!(
-            out.contains(&format!(r#"href="?currency={c}""#)),
+            out.contains(&format!(r#"href="/currency/{c}?next=%2F""#)),
             "{c}: {out}"
         );
     }
