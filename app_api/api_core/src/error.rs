@@ -35,6 +35,10 @@ pub enum ApiError {
     #[error("The requested dates are no longer available")]
     DateUnavailable,
 
+    /// The stay can't be priced as asked, such as below its minimum stay.
+    #[error("Stay refused: {0}")]
+    StayPricing(common::pricing::PricingError),
+
     /// Reservation is in a terminal status or dates cannot be modified.
     #[error("Booking not modifiable: {0}")]
     BookingNotModifiable(String),
@@ -71,7 +75,7 @@ impl ResponseError for ApiError {
                 StatusCode::UNPROCESSABLE_ENTITY
             }
             // Validation errors are always 400 Bad Request
-            ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            ApiError::ValidationError(_) | ApiError::StayPricing(_) => StatusCode::BAD_REQUEST,
             ApiError::Database(DbError::DateUnavailable) | ApiError::DateUnavailable => {
                 StatusCode::CONFLICT
             }
@@ -146,6 +150,20 @@ impl ResponseError for ApiError {
                     "message": msg
                 })),
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
+            ApiError::StayPricing(refused) => {
+                tracing::warn!(code = refused.code(), %refused, "stay refused");
+                let required = match refused {
+                    common::pricing::PricingError::MinNightsNotMet { required, .. } => {
+                        Some(*required)
+                    }
+                    common::pricing::PricingError::InvalidDateRange => None,
+                };
+                HttpResponse::BadRequest().json(serde_json::json!({
+                    "code": refused.code(),
+                    "message": refused.message(),
+                    "required_nights": required,
+                }))
+            }
             ApiError::Database(DbError::ValidationError(msg)) => {
                 HttpResponse::BadRequest().json(serde_json::json!({ "error": msg }))
             }
@@ -360,6 +378,30 @@ mod stay_input_error_tests {
             assert_eq!(body["code"], refused.code(), "{refused:?}");
             assert_eq!(body["message"], refused.message(), "{refused:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_short_stay_is_a_400_naming_the_minimum() {
+        use common::pricing::PricingError;
+        let api = ApiError::StayPricing(PricingError::MinNightsNotMet {
+            required: 5,
+            provided: 4,
+        });
+        assert_eq!(api.status_code(), StatusCode::BAD_REQUEST);
+        let bytes = match to_bytes(api.error_response().into_body()).await {
+            Ok(bytes) => bytes,
+            Err(e) => panic!("body: {e}"),
+        };
+        let body: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(body) => body,
+            Err(e) => panic!("json: {e}"),
+        };
+        assert_eq!(body["code"], "MINIMUM_STAY_NOT_MET");
+        assert_eq!(
+            body["message"],
+            "These dates need a stay of at least 5 nights."
+        );
+        assert_eq!(body["required_nights"], 5);
     }
 }
 

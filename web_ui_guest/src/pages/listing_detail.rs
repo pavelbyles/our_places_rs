@@ -19,7 +19,7 @@ use web_ui_common::components::{
     star_rating::star_rating,
 };
 
-use crate::quote::public_quote;
+use crate::quote::{NoQuote, public_quote};
 use crate::support::{display_currency, guests_or_default, jamaica_today};
 
 path_param!(slug);
@@ -125,20 +125,31 @@ fn enquire_href(slug: &str, q: &StayQuery) -> String {
     href
 }
 
-/// The quote area: price breakdown for valid dates, the booking button and
-/// the "Ask a question" link.
+/// The quote for the chosen dates: `None` until both are chosen.
+type StayQuote =
+    Option<Result<web_ui_common::components::domain::price_breakdown::PriceBreakdown, NoQuote>>;
+
+/// The quote area: price breakdown for valid dates (or why there is none),
+/// the booking button and the "Ask a question" link.
 #[component]
 async fn quote_panel(
     slug: String,
-    breakdown: Option<web_ui_common::components::domain::price_breakdown::PriceBreakdown>,
+    quote: StayQuote,
     href: String,
     mode: BookingMode,
     enquire: String,
 ) -> Result<impl View> {
     let (label, note) = booking_cta(mode);
+    let (breakdown, no_quote) = match quote {
+        Some(Ok(b)) => (Some(b), None),
+        Some(Err(why)) => (None, Some(why.message())),
+        None => (None, None),
+    };
     Ok(view! {
         if let Some(b) = breakdown {
             <div id="quote-breakdown">price_breakdown(quote: b)</div>
+        } else if let Some(why) = no_quote {
+            <p id="quote-refusal" role="alert" class="text-sm text-destructive">(why)</p>
         } else {
             <p class="text-sm text-muted-foreground">"Choose check-in and check-out dates to see the total."</p>
         }
@@ -342,7 +353,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         </label>
                     </form>
                     <div id="quote" aria-live="polite" class="space-y-3">
-                        quote_panel(slug: listing.slug.clone(), breakdown: breakdown, href: href, mode: listing.booking_mode, enquire: enquire)
+                        quote_panel(slug: listing.slug.clone(), quote: breakdown, href: href, mode: listing.booking_mode, enquire: enquire)
                     </div>
                 </aside>
             </div>
@@ -350,26 +361,28 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     })
 }
 
-/// The breakdown for the request's dates, if they form a valid stay.
+/// The quote for the request's dates, if they form a valid stay.
 async fn initial_breakdown(
     cx: &Cx,
     details: &ListingDetails,
     q: &StayQuery,
     currency: Option<&str>,
-) -> Option<web_ui_common::components::domain::price_breakdown::PriceBreakdown> {
+) -> StayQuote {
     let (check_in, check_out) = stay_dates(q)?;
     let guests = u32::try_from(guests_or_default(q.guests))
         .unwrap_or(1)
         .max(1);
-    public_quote(
-        cx,
-        details.listing.id,
-        check_in,
-        check_out,
-        guests,
-        currency,
+    Some(
+        public_quote(
+            cx,
+            details.listing.id,
+            check_in,
+            check_out,
+            guests,
+            currency,
+        )
+        .await,
     )
-    .await
 }
 
 /// Quote fragment for the booking card (`hx-get` on date/guest change).
@@ -385,7 +398,7 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let mode = details.listing.booking_mode;
     let enquire = enquire_href(&slug, &q);
     Ok(
-        view! { quote_panel(slug: slug, breakdown: breakdown, href: href, mode: mode, enquire: enquire) },
+        view! { quote_panel(slug: slug, quote: breakdown, href: href, mode: mode, enquire: enquire) },
     )
 }
 

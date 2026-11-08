@@ -115,6 +115,7 @@ pub fn stay_refusal_message_in_error(text: &str) -> Option<String> {
         "INVALID_STAY_DATES",
         "INVALID_GUESTS",
         "INVALID_SEARCH_TEXT",
+        crate::pricing::MINIMUM_STAY_NOT_MET,
     ]
     .contains(&code)
     .then(|| body["message"].as_str().map(str::to_string))
@@ -418,6 +419,11 @@ mod stay_input_tests {
         assert_eq!(
             stay_refusal_message_in_error(refused).as_deref(),
             Some("Invalid date range: dates can't be in the past.")
+        );
+        let short = r#"Failed to quote stay (400 Bad Request): {"code":"MINIMUM_STAY_NOT_MET","message":"These dates need a stay of at least 5 nights.","required_nights":5}"#;
+        assert_eq!(
+            stay_refusal_message_in_error(short).as_deref(),
+            Some("These dates need a stay of at least 5 nights.")
         );
         for other in [
             r#"Failed (409): {"code":"DATE_UNAVAILABLE","message":"gone"}"#,

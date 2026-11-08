@@ -181,7 +181,8 @@ pub(super) async fn create_booking(
                 let pool_clone = pool.get_ref().clone();
                 let guest_id = booking.guest_id;
                 let conf_code = booking.confirmation_code.clone();
-                let total_price = format!("{} {}", booking.total_price, booking.currency);
+                // A plain figure: the email worker adds the code and symbol.
+                let total_price = booking.total_price.to_string();
                 let dates = format!("{} to {}", booking.date_from, booking.date_to);
                 let currency = booking.currency.clone();
                 let (promo_code, promo_discount) = super::notifications::promo_summary(&booking);

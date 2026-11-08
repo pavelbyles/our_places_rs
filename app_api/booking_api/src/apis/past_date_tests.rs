@@ -196,3 +196,87 @@ async fn the_date_passed_in_decides_what_counts_as_past() {
         Ok(_) => panic!("expected InPast, got a price"),
     }
 }
+
+#[tokio::test]
+async fn a_stay_below_a_seasonal_minimum_is_refused_with_the_minimum_everywhere() {
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let host = user(&pool, UserRole::Host).await;
+    let guest = user(&pool, UserRole::Booker).await;
+    let villa = listing(&pool, host).await;
+    let check_in = today() + Duration::days(30);
+    let check_out = check_in + Duration::days(4);
+    sqlx::query(
+        "INSERT INTO listing_price_overrides (listing_id, start_date, end_date, nightly_rate, min_nights)
+         VALUES ($1, $2, $3, 300.00, 5)",
+    )
+    .bind(villa)
+    .bind(check_in)
+    .bind(check_out + Duration::days(10))
+    .execute(&pool)
+    .await
+    .expect("insert seasonal minimum");
+    let app = app!(pool);
+    let refused_as_short = |body: serde_json::Value, step: &str| {
+        assert_eq!(body["code"], "MINIMUM_STAY_NOT_MET", "{step}: {body}");
+        assert_eq!(
+            body["message"], "These dates need a stay of at least 5 nights.",
+            "{step}: {body}"
+        );
+        assert_eq!(body["required_nights"], 5, "{step}: {body}");
+    };
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/listing/{villa}/quote?check_in={check_in}&check_out={check_out}"
+            ))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 400, "public quote");
+    refused_as_short(test::read_body_json(resp).await, "public quote");
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/bookings/quote")
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(serde_json::json!({
+                "listing_id": villa,
+                "check_in": check_in,
+                "check_out": check_out,
+                "guests": 1,
+                "currency": "USD",
+            }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 400, "signed-in quote");
+    refused_as_short(test::read_body_json(resp).await, "signed-in quote");
+
+    let mut hold = booking_request(guest, villa);
+    hold["check_in"] = serde_json::json!(check_in);
+    hold["check_out"] = serde_json::json!(check_out);
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/bookings")
+            .insert_header(("Accept", "application/json"))
+            .insert_header(bearer(guest))
+            .set_json(hold)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 400, "hold");
+    refused_as_short(test::read_body_json(resp).await, "hold");
+
+    let holds: i64 = sqlx::query_scalar("SELECT count(*) FROM booking WHERE guest_id = $1")
+        .bind(guest)
+        .fetch_one(&pool)
+        .await
+        .expect("count holds");
+    assert_eq!(holds, 0);
+}

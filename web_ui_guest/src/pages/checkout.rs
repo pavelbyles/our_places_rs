@@ -28,7 +28,7 @@ use web_ui_common::components::{
 };
 use web_ui_common::guard::guard_failure;
 
-use crate::quote::signed_in_quote;
+use crate::quote::{NoQuote, signed_in_quote};
 use crate::support::{display_currency, guests_or_default, jamaica_today, service_token};
 use common::query::urlencode;
 
@@ -179,6 +179,8 @@ struct CheckoutView {
     guests: u32,
     currency: String,
     breakdown: Option<PriceBreakdown>,
+    /// Why there is no breakdown for the chosen dates, as shown to the guest.
+    no_quote: Option<String>,
     first_name: String,
     last_name: String,
     email: String,
@@ -268,8 +270,8 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
                             <textarea id="guest-message" name="message_to_host" rows="3" maxlength="2000" class=(format!("{input} h-auto py-2"))>(v.message.clone())</textarea>
                         </label>
                         <p id="checkout-mode-note" class="text-sm text-muted-foreground">(checkout_note(v.mode))</p>
-                        if v.breakdown.is_none() {
-                            <p id="checkout-no-quote" role="alert" class="text-sm text-destructive">"We couldn't price this stay right now. Please try again shortly, or choose different dates."</p>
+                        if let Some(why) = v.no_quote.clone() {
+                            <p id="checkout-no-quote" role="alert" class="text-sm text-destructive">(why)</p>
                         }
                         for (i, (intent, button_label)) in checkout_actions(v.mode).into_iter().enumerate() {
                             if intent.is_empty() {
@@ -335,19 +337,21 @@ async fn build_view(
                 currency: Some(currency.clone()).filter(|c| !c.is_empty()),
                 promo_code: Some(promo_code.clone()).filter(|code| !code.trim().is_empty()),
             };
-            match service_token(cx, guest) {
+            let quote = match service_token(cx, guest) {
                 Ok(token) => signed_in_quote(cx, &token, &request).await,
                 Err(e) => {
                     tracing::error!(guest_id = %guest.user_id, error = ?e, "no checkout quote: could not mint the guest's API token");
-                    None
+                    Err(NoQuote::Failed)
                 }
-            }
+            };
+            Some(quote)
         }
         None => None,
     };
-    let (breakdown, promo_refusal) = match quoted {
-        Some((breakdown, refusal)) => (Some(breakdown), refusal),
-        None => (None, None),
+    let (breakdown, promo_refusal, no_quote) = match quoted {
+        Some(Ok((breakdown, refusal))) => (Some(breakdown), refusal, None),
+        Some(Err(why)) => (None, None, Some(why.message())),
+        None => (None, None, None),
     };
     CheckoutView {
         summary: ListingSummary::from(&details.listing),
@@ -357,6 +361,7 @@ async fn build_view(
         guests: guests.clamp(1, max_guests),
         currency,
         breakdown,
+        no_quote,
         first_name,
         last_name,
         email: guest.email.clone(),
@@ -636,7 +641,9 @@ fn booking_error_message(text: &str, max_guests: u32) -> String {
         "This property takes requests to book. Please send a request instead.".to_string()
     } else if text.contains("LISTING_UNAVAILABLE") {
         "This property is no longer taking bookings.".to_string()
-    } else if text.contains("INVALID_STAY_DATES") {
+    } else if text.contains("INVALID_STAY_DATES")
+        || text.contains(common::pricing::MINIMUM_STAY_NOT_MET)
+    {
         common::availability::stay_refusal_message_in_error(text)
             .unwrap_or_else(|| "Please choose valid dates.".to_string())
     } else if text.contains("CURRENCY_INACTIVE") {
@@ -700,6 +707,11 @@ mod promo_tests {
         assert!(booking_error_message("exceeds listing max_guests", 4).contains("1 to 4"));
         assert!(booking_error_message("FX_RATE_UNAVAILABLE", 4).contains("currency"));
         assert!(booking_error_message("boom", 4).contains("try again"));
+        let short = r#"Failed to create booking (400 Bad Request): {"code":"MINIMUM_STAY_NOT_MET","message":"These dates need a stay of at least 5 nights.","required_nights":5}"#;
+        assert_eq!(
+            booking_error_message(short, 4),
+            "These dates need a stay of at least 5 nights."
+        );
     }
 }
 

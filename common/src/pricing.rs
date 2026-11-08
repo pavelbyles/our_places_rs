@@ -21,6 +21,31 @@ pub enum PricingError {
     },
 }
 
+impl PricingError {
+    /// The machine-readable error code an API returns for this refusal.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::InvalidDateRange => "INVALID_STAY_DATES",
+            Self::MinNightsNotMet { .. } => MINIMUM_STAY_NOT_MET,
+        }
+    }
+
+    /// The message a guest sees.
+    pub fn message(&self) -> String {
+        match self {
+            Self::InvalidDateRange => {
+                crate::availability::StayInputError::CheckOutNotAfterCheckIn.message()
+            }
+            Self::MinNightsNotMet { required, .. } => {
+                format!("These dates need a stay of at least {required} nights.")
+            }
+        }
+    }
+}
+
+/// The code for a stay shorter than the minimum for its dates.
+pub const MINIMUM_STAY_NOT_MET: &str = "MINIMUM_STAY_NOT_MET";
+
 /// Adds up a stay's nightly rates, applying overrides and checking the minimum stay.
 pub fn calculate_dynamic_quote(
     base_nightly_rate: Decimal,

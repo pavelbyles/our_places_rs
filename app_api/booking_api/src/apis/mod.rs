@@ -64,20 +64,10 @@ fn admin_base_url() -> String {
         .to_string()
 }
 
+/// A stay that can't be priced as asked, as a typed 400 (`MINIMUM_STAY_NOT_MET`
+/// or `INVALID_STAY_DATES`) that the portals show to the guest.
 fn map_pricing_error(err: common::pricing::PricingError) -> ApiError {
-    match err {
-        common::pricing::PricingError::InvalidDateRange => {
-            ApiError::Database(db_core::error::DbError::ValidationError(
-                "Check-out date must be after check-in date".to_string(),
-            ))
-        }
-        common::pricing::PricingError::MinNightsNotMet { required, provided } => {
-            ApiError::Database(db_core::error::DbError::ValidationError(format!(
-                "Minimum night stay requirement not met for seasonal period: required {}, provided {}",
-                required, provided
-            )))
-        }
-    }
+    ApiError::StayPricing(err)
 }
 
 /// The listing's base nightly price. A listing without one cannot be priced,
