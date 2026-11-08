@@ -350,7 +350,14 @@ async fn a_failed_pricing_task_gives_no_totals_and_a_logged_error() {
 #[actix_web::test]
 async fn query_count_doesnt_depend_on_how_many_listings_there_are() {
     let test_db = test_db();
-    let pool = test_db.get_pool().await;
+    // One connection, so the warm-ups below warm the connection that is
+    // counted. A fresh pool connection looks up types first (`regtype`,
+    // `pg_type`, `pg_enum`), which would add three queries at random.
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&test_db.url())
+        .await
+        .expect("single-connection pool");
     set_rate(&pool, "JMD", dec!(160)).await;
     let one_host = host(&pool).await;
     villa(&pool, one_host).await;
