@@ -76,6 +76,9 @@ pub(super) fn get_test_settings() -> Settings {
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
             max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
+            request_response_hours: api_core::settings::DEFAULT_REQUEST_RESPONSE_HOURS,
+            quote_valid_hours: api_core::settings::DEFAULT_QUOTE_VALID_HOURS,
+            request_near_expiry_pct: api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT,
         },
         feature_flags: FeatureFlags {
             enable_hard_deletes: true,
@@ -459,6 +462,7 @@ async fn test_xml_serialization_of_vec() {
         damage_deposit: None,
         guests_included: 1,
         extra_guest_fee: None,
+        booking_mode: common::booking_request::BookingMode::Instant,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -1785,4 +1789,108 @@ mod search_param_tests {
         assert!(text.contains("http.target=/api/v1/listings"), "{text}");
         assert!(!text.contains("SEARCHMARKER"), "{text}");
     }
+}
+
+#[actix_web::test]
+async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let user_id = create_test_user(&mut conn).await;
+    let created = db_listing::create_listing(
+        &mut *conn,
+        &NewListing {
+            name: "Mode Villa".to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 1,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(100.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 2,
+            bedrooms: 1,
+            beds: 1,
+            full_bathrooms: 1,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: None,
+            base_currency: "USD".to_string(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+            is_active: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        created.booking_mode,
+        common::booking_request::BookingMode::Instant
+    );
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/listings/{}", created.id))
+            .set_json(serde_json::json!({ "booking_mode": "both" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let body: ListingResponse = test::read_body_json(resp).await;
+    assert_eq!(
+        body.booking_mode,
+        common::booking_request::BookingMode::Both
+    );
+
+    // The previous mode is kept in the history snapshot.
+    let previous: Option<String> =
+        sqlx::query_scalar("SELECT booking_mode::text FROM listing_history WHERE listing_id = $1")
+            .bind(created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(previous.as_deref(), Some("instant"));
+
+    // A later update that doesn't mention the mode leaves it alone.
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/listings/{}", created.id))
+            .set_json(serde_json::json!({ "name": "Renamed" }))
+            .to_request(),
+    )
+    .await;
+    let body: ListingResponse = test::read_body_json(resp).await;
+    assert_eq!(
+        body.booking_mode,
+        common::booking_request::BookingMode::Both
+    );
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::patch()
+            .uri(&format!("/api/v1/listings/{}", created.id))
+            .set_json(serde_json::json!({ "booking_mode": "sometimes" }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 400);
 }

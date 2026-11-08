@@ -50,6 +50,13 @@ pub fn jamaica_today(now: DateTime<Utc>) -> NaiveDate {
     (now - chrono::Duration::hours(JAMAICA_UTC_OFFSET_HOURS)).date_naive()
 }
 
+/// The instant a date starts in Jamaica (00:00 local, 05:00 UTC; Jamaica has
+/// no daylight saving time).
+pub fn jamaica_midnight_utc(date: NaiveDate) -> DateTime<Utc> {
+    date.and_time(chrono::NaiveTime::MIN).and_utc()
+        + chrono::Duration::hours(JAMAICA_UTC_OFFSET_HOURS)
+}
+
 /// Why stay dates, a guest count or search text were refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum StayInputError {

@@ -6,40 +6,57 @@ skinparam component {
   BorderColor darkblue
 }
 
-[web_app] as WA <<Leptos Web App>>
-[web_app_admin] as WAA <<Leptos Admin App>>
+package "Portals (Topcoat SSR)" {
+    [web_ui_guest] as WG <<Guest Portal>>
+    [web_ui_admin] as WA <<Admin & Host Portal>>
+    [web_ui_common] as WUC <<Shared UI>>
+    [web_client] as WC <<API Client & Sessions>>
+}
 
 package "app_api" {
     [api_core] as AC <<API Infrastructure>>
     [booking_api] as BA <<Service>>
-    [image_worker] as IW <<Service>>
     [listing_api] as LA <<Service>>
     [user_api] as UA <<Service>>
+    [image_worker] as IW <<Worker>>
+    [email_worker] as EW <<Worker>>
 }
 
+[common] as COM <<Shared Domain>>
 [db_core] as DC <<Database Access>>
-[web_app_common] as WAC <<Shared Common>>
 
-' Frontends usage of common
-WA ..> WAC : <<shared>>
-WAA ..> WAC : <<shared>>
+' Portals: UI layer over the HTTP client; never the database
+WG ..> WUC
+WA ..> WUC
+WG ..> WC
+WA ..> WC
+WUC ..> WC
+WG ..> COM
+WA ..> COM
+WUC ..> COM
+WC ..> COM
+WC ..> BA : HTTP
+WC ..> LA : HTTP
+WC ..> UA : HTTP
 
-' Frontends usage of core (SSR)
-WA ..> AC
-WA ..> DC
-WAA ..> AC
-WAA ..> DC
-
-' API dependencies
+' API dependencies (APIs never depend on each other)
 BA ..> AC
-BA ..> DC
-IW ..> AC
-IW ..> DC
 LA ..> AC
-LA ..> DC
 UA ..> AC
+IW ..> AC
+EW ..> AC
+BA ..> COM
+LA ..> COM
+UA ..> COM
+IW ..> COM
+EW ..> COM
+BA ..> DC
+LA ..> DC
 UA ..> DC
-
+IW ..> DC
+EW ..> DC
 AC ..> DC
+AC ..> COM
+DC ..> COM
 
 @enduml

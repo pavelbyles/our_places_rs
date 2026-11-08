@@ -1,0 +1,239 @@
+//! Instant holds and requests on the same listing (#105, plan T12).
+
+use super::create_request;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_hold, new_request, raw_enquiry, raw_user,
+    request_history, request_status,
+};
+use crate::booking::{create_booking, create_booking_superseding};
+use crate::error::DbError;
+
+const HOLD_MINUTES: i32 = 120;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_instant_hold_and_a_request_racing_for_the_same_dates_get_one_winner() {
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    for _ in 0..5 {
+        let (villa, _) = listing_in_mode(&pool, "both", 0).await;
+        let (booker, requester) = (raw_user(&pool).await, raw_user(&pool).await);
+        let hold = new_hold(villa, booker, day(3, 1), day(3, 4));
+        let request = new_request(villa, requester, day(3, 2), day(3, 5));
+        let (h, r) = tokio::join!(
+            create_booking(&pool, &hold, HOLD_MINUTES),
+            create_request(&pool, &request)
+        );
+        assert_eq!(
+            [h.is_ok(), r.is_ok()].iter().filter(|ok| **ok).count(),
+            1,
+            "hold {:?} / request {:?}",
+            h.as_ref().err(),
+            r.as_ref().err()
+        );
+        match (h, r) {
+            (Err(DbError::DateUnavailable), Ok(_)) | (Ok(_), Err(DbError::DateUnavailable)) => {}
+            (h, r) => panic!("unexpected: {:?} / {:?}", h.err(), r.err()),
+        }
+    }
+}
+
+#[tokio::test]
+async fn another_guests_live_request_blocks_an_instant_hold_until_it_lapses() {
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, _) = listing_in_mode(&pool, "both", 1).await;
+    let (requester, booker) = (raw_user(&pool).await, raw_user(&pool).await);
+    let created = create_request(&pool, &new_request(villa, requester, day(3, 1), day(3, 4)))
+        .await
+        .expect("request");
+
+    // Check-in on the request's check-out day falls inside the 1-night gap.
+    let hold = new_hold(villa, booker, day(3, 4), day(3, 6));
+    assert!(matches!(
+        create_booking(&pool, &hold, HOLD_MINUTES).await,
+        Err(DbError::DateUnavailable)
+    ));
+    // The day after the gap is free.
+    create_booking(
+        &pool,
+        &new_hold(villa, booker, day(3, 5), day(3, 7)),
+        HOLD_MINUTES,
+    )
+    .await
+    .expect("free after the gap");
+
+    lapse_request(&pool, created.request.id).await;
+    let other = raw_user(&pool).await;
+    create_booking(
+        &pool,
+        &new_hold(villa, other, day(3, 1), day(3, 3)),
+        HOLD_MINUTES,
+    )
+    .await
+    .expect("a lapsed request no longer blocks");
+}
+
+#[tokio::test]
+async fn the_guests_own_request_and_enquiry_give_way_to_their_instant_hold() {
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, _) = listing_in_mode(&pool, "both", 0).await;
+    let (other_villa, _) = listing_in_mode(&pool, "both", 0).await;
+    let guest = raw_user(&pool).await;
+    let mine = create_request(&pool, &new_request(villa, guest, day(3, 1), day(3, 4)))
+        .await
+        .expect("request");
+    let elsewhere = create_request(
+        &pool,
+        &new_request(other_villa, guest, day(3, 1), day(3, 4)),
+    )
+    .await
+    .expect("request on another listing");
+    let enquiry = raw_enquiry(&pool, villa, guest).await;
+
+    let (booking, superseded) = create_booking_superseding(
+        &pool,
+        &new_hold(villa, guest, day(3, 1), day(3, 4)),
+        HOLD_MINUTES,
+    )
+    .await
+    .expect("the guest's own request doesn't block their hold");
+    assert_eq!(booking.listing_id, villa);
+    assert_eq!(superseded.request, Some(mine.request.id));
+    assert_eq!(superseded.enquiry, Some(enquiry));
+
+    assert_eq!(request_status(&pool, mine.request.id).await, "cancelled");
+    assert_eq!(
+        request_history(&pool, mine.request.id)
+            .await
+            .last()
+            .cloned(),
+        Some((
+            Some("open".to_string()),
+            "cancelled".to_string(),
+            Some(guest)
+        ))
+    );
+    let closed: (String, Option<String>) = sqlx::query_as(
+        "SELECT status::text, closed_reason::text FROM booking_enquiry WHERE id = $1",
+    )
+    .bind(enquiry)
+    .fetch_one(&pool)
+    .await
+    .expect("enquiry");
+    assert_eq!(closed, ("closed".to_string(), Some("booked".to_string())));
+
+    // Supersession is per listing.
+    assert_eq!(request_status(&pool, elsewhere.request.id).await, "open");
+}
+
+#[tokio::test]
+async fn a_lapsed_own_request_is_expired_not_cancelled_by_the_hold() {
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, _) = listing_in_mode(&pool, "both", 0).await;
+    let guest = raw_user(&pool).await;
+    let mine = create_request(&pool, &new_request(villa, guest, day(3, 1), day(3, 4)))
+        .await
+        .expect("request");
+    lapse_request(&pool, mine.request.id).await;
+
+    let (_, superseded) = create_booking_superseding(
+        &pool,
+        &new_hold(villa, guest, day(5, 1), day(5, 4)),
+        HOLD_MINUTES,
+    )
+    .await
+    .expect("hold");
+    assert_eq!(superseded.request, None);
+    assert_eq!(request_status(&pool, mine.request.id).await, "expired");
+}
+
+#[tokio::test]
+async fn booking_mode_hold_tests_request_only_listings_refuse_instant_holds() {
+    use common::booking_request::RequestRefusal;
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let guest = raw_user(&pool).await;
+
+    let (request_only, _) = listing_in_mode(&pool, "request", 0).await;
+    let result = create_booking(
+        &pool,
+        &new_hold(request_only, guest, day(3, 1), day(3, 4)),
+        HOLD_MINUTES,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(DbError::RequestRefused(
+            RequestRefusal::BookingModeNotAllowed
+        ))
+    ));
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM booking WHERE listing_id = $1")
+        .bind(request_only)
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(rows, 0);
+
+    for mode in ["instant", "both"] {
+        let (villa, _) = listing_in_mode(&pool, mode, 0).await;
+        create_booking(
+            &pool,
+            &new_hold(villa, guest, day(4, 1), day(4, 4)),
+            HOLD_MINUTES,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{mode}: {e:?}"));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn booking_mode_hold_tests_a_mode_change_committed_while_a_hold_waits_is_seen() {
+    use common::booking_request::RequestRefusal;
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, _) = listing_in_mode(&pool, "both", 0).await;
+    let guest = raw_user(&pool).await;
+
+    // Hold the listing lock while switching to request-only, so the hold waits.
+    let mut switch = pool.begin().await.expect("begin");
+    sqlx::query("SELECT 1 FROM listing WHERE id = $1 FOR UPDATE")
+        .bind(villa)
+        .execute(&mut *switch)
+        .await
+        .expect("lock listing");
+    let hold = new_hold(villa, guest, day(3, 1), day(3, 4));
+    let pending = tokio::spawn({
+        let pool = pool.clone();
+        async move { create_booking(&pool, &hold, HOLD_MINUTES).await }
+    });
+    // The hold is now queued behind the lock.
+    loop {
+        let waiting: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+             WHERE wait_event_type = 'Lock' AND query ILIKE '%FROM listing WHERE id = $1 FOR UPDATE%')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("pg_stat_activity");
+        if waiting {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    sqlx::query("UPDATE listing SET booking_mode = 'request' WHERE id = $1")
+        .bind(villa)
+        .execute(&mut *switch)
+        .await
+        .expect("switch mode");
+    switch.commit().await.expect("commit");
+
+    let result = pending.await.expect("join");
+    assert!(matches!(
+        result,
+        Err(DbError::RequestRefused(
+            RequestRefusal::BookingModeNotAllowed
+        ))
+    ));
+}

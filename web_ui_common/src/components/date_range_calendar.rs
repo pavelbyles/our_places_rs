@@ -174,6 +174,7 @@ pub async fn date_range_calendar(
                 <div class="flex items-center justify-between">
                     <button
                         type="button"
+                        data-calendar-nav=""
                         aria-label="Previous month"
                         disabled=(!can_go_back)
                         hx-get=(prev_url)
@@ -184,6 +185,7 @@ pub async fn date_range_calendar(
                     <p aria-live="polite" data-calendar-status="" class="text-sm text-muted-foreground"></p>
                     <button
                         type="button"
+                        data-calendar-nav=""
                         aria-label="Next month"
                         hx-get=(next_url)
                         hx-target="#booking-dates"

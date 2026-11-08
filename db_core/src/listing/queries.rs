@@ -44,6 +44,17 @@ fn push_stay_conditions(
     query_builder
         .push(" AND b.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > ");
     query_builder.push_bind(check_in);
+    // Live requests to book (#105) block like holds.
+    query_builder.push(
+        ") AND NOT EXISTS (SELECT 1 FROM booking_request r
+            WHERE r.listing_id = listing.id
+              AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+              AND r.date_from - LEAST(GREATEST(listing.days_between_bookings, 0), 365) < ",
+    );
+    query_builder.push_bind(check_out);
+    query_builder
+        .push(" AND r.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > ");
+    query_builder.push_bind(check_in);
     query_builder.push(")");
 }
 
@@ -73,7 +84,7 @@ where
 
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee,
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.city, listing.slug, listing.base_currency, listing.listing_details, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode,
         "user".first_name || ' ' || "user".last_name as owner_name,
         "user".slug as owner_slug,
         primary_img.upload_url as primary_image_url
@@ -199,7 +210,7 @@ where
     let listings = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS "booking_mode: common::booking_request::BookingMode"
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -235,7 +246,7 @@ where
     let listing = sqlx::query_as!(
         Listing,
         r#"
-        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
+        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS "booking_mode: common::booking_request::BookingMode"
         FROM listing
         LEFT JOIN LATERAL (
             SELECT thumb_img.upload_url
@@ -298,7 +309,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS "booking_mode: common::booking_request::BookingMode"
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url
@@ -320,7 +331,7 @@ where
         sqlx::query_as!(
             Listing,
             r#"
-            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee
+            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS "booking_mode: common::booking_request::BookingMode"
             FROM listing
             LEFT JOIN LATERAL (
                 SELECT thumb_img.upload_url

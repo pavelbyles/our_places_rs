@@ -99,6 +99,8 @@ pub(super) async fn create_booking(
             }),
             max_stay_nights: settings.application.max_stay_nights,
             today: stay_today(),
+            locked_rate: None,
+            stay_override: None,
         },
     )
     .await?;
@@ -158,15 +160,23 @@ pub(super) async fn create_booking(
             promo: priced.promo.clone(),
         };
 
-        match db_booking::create_booking(
+        match db_booking::create_booking_superseding(
             pool.get_ref(),
             &new_booking,
             settings.application.pending_hold_minutes,
         )
         .await
         {
-            Ok(booking) => {
+            Ok((booking, superseded)) => {
                 tracing::info!(booking_id = %booking.id, "Successfully created booking");
+                if let Some(request_id) = superseded.request {
+                    super::request_notifications::notify(
+                        pool.get_ref(),
+                        super::request_notifications::RequestEvent::Withdrawn,
+                        super::request_notifications::Subject::Request(request_id),
+                        None,
+                    );
+                }
 
                 let pool_clone = pool.get_ref().clone();
                 let guest_id = booking.guest_id;

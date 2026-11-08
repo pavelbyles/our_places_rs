@@ -183,6 +183,8 @@ async fn the_date_passed_in_decides_what_counts_as_past() {
                 promo: None,
                 max_stay_nights: 3650,
                 today: chosen,
+                locked_rate: None,
+                stay_override: None,
             },
         )
     };

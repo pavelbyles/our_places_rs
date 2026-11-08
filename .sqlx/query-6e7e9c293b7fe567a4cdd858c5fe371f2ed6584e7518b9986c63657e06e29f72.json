@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO booking_request_quote (request_id, stay_price_base, terms, price_snapshot,\n            valid_until, created_by)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING id, request_id, stay_price_base, terms,\n            price_snapshot AS \"price_snapshot: Json<StayPriceSnapshot>\",\n            valid_until, superseded_at, created_by, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "request_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "stay_price_base",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "terms",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "price_snapshot: Json<StayPriceSnapshot>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "valid_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "superseded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Numeric",
+        "Text",
+        "Jsonb",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "6e7e9c293b7fe567a4cdd858c5fe371f2ed6584e7518b9986c63657e06e29f72"
+}

@@ -1283,6 +1283,512 @@ paths:
         "500":
           description: Internal server error
 
+  /api/v1/enquiries:
+    post:
+      summary: "Send an enquiry about a stay (holds no dates)"
+      operationId: createEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The enquiry"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Invalid stay, guests or text"
+        "403":
+          description: "OWN_LISTING"
+        "409":
+          description: "LISTING_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/enquiries/{id}:
+    get:
+      summary: "An enquiry, for its guest, the host or an admin"
+      operationId: getEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The enquiry; the host and admins also get host_estimate (approximate payout at standard rates)"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "404":
+          description: "No such enquiry"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/enquiries/{id}/close:
+    post:
+      summary: "Close an enquiry (host or admin)"
+      operationId: closeEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The closed enquiry"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/enquiries/{id}/quote:
+    post:
+      summary: "Quote straight on an enquiry; it becomes a quoted request holding its dates"
+      operationId: quoteEnquiry
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The quoted request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "INVALID_QUOTE_PRICE"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "DATE_UNAVAILABLE, REQUEST_ALREADY_LIVE, REQUEST_NOT_OPEN or LISTING_UNAVAILABLE"
+        "422":
+          description: "FX_RATE_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests:
+    post:
+      summary: "Submit a request to book; the stay is priced and its dates held"
+      operationId: createBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Invalid stay, guests or text"
+        "403":
+          description: "OWN_LISTING"
+        "409":
+          description: "BOOKING_MODE_NOT_ALLOWED, DATE_UNAVAILABLE, REQUEST_ALREADY_LIVE or LISTING_UNAVAILABLE"
+        "422":
+          description: "PROMO_*, FX_RATE_UNAVAILABLE or REQUEST_WINDOW_TOO_SHORT"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/mine:
+    get:
+      summary: "The signed-in guest's requests and enquiries"
+      operationId: myBookingRequests
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "Requests and enquiries, newest first"
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}:
+    get:
+      summary: "A request, for its guest, the host or an admin"
+      operationId: getBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "404":
+          description: "No such request"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/accept:
+    post:
+      summary: "Accept a request at its requested price (host or admin)"
+      operationId: acceptBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The accepted request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or LISTING_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/decline:
+    post:
+      summary: "Decline a request, or withdraw an offer (host or admin)"
+      operationId: declineBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The declined request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "DECLINE_NOTE_REQUIRED"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or QUOTE_EXPIRED"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/withdraw:
+    post:
+      summary: "Withdraw a request or offer (guest)"
+      operationId: withdrawBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The withdrawn request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or QUOTE_EXPIRED"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/checkout:
+    post:
+      summary: "Take up an offer; it becomes a pending hold at the accepted price"
+      operationId: checkoutBookingRequest
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The pending booking"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED, QUOTE_EXPIRED, QUOTE_SUPERSEDED, LISTING_UNAVAILABLE or DATE_UNAVAILABLE"
+        "422":
+          description: "CURRENCY_INACTIVE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/quote-preview:
+    post:
+      summary: "Price a custom quote without sending it (host or admin)"
+      operationId: previewQuote
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The guest's price"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "INVALID_QUOTE_PRICE"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/booking-requests/{id}/quote:
+    post:
+      summary: "Send a custom quote on a request (host or admin)"
+      operationId: sendQuote
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The quoted request"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "INVALID_QUOTE_PRICE"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "409":
+          description: "REQUEST_NOT_OPEN, REQUEST_EXPIRED or LISTING_UNAVAILABLE"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/{id}/messages:
+    get:
+      summary: "A guest x listing conversation's messages"
+      operationId: getConversationMessages
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "The thread"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "404":
+          description: "No such conversation"
+        "401":
+          description: "Missing or invalid token"
+    post:
+      summary: "Post a message to a conversation"
+      operationId: postConversationMessage
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: "The message"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Empty or invalid text"
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/{id}/messages/read:
+    patch:
+      summary: "Mark the other party's messages read"
+      operationId: markConversationRead
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+      responses:
+        "200":
+          description: "How many were marked"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "NOT_REQUEST_PARTY"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/conversations/unread-count:
+    get:
+      summary: "Unread messages from guests on the caller's listings (admin: all listings)"
+      operationId: getUnreadMessageCount
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "The count, as { unread_messages }"
+          content:
+            application/json:
+              schema:
+                type: object
+        "403":
+          description: "Hosts and admins only"
+        "401":
+          description: "Missing or invalid token"
+  /api/v1/inbox:
+    get:
+      summary: "Open enquiries and live requests with response times (host: own listings; admin: all)"
+      operationId: getInbox
+      tags:
+        - booking-requests
+      x-google-backend: booking-backend
+      responses:
+        "200":
+          description: "The inbox page"
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: "Unknown kind"
+        "403":
+          description: "Hosts and admins only"
+        "401":
+          description: "Missing or invalid token"
 components:
   securitySchemes:
     api_key:

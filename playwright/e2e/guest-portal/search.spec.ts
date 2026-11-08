@@ -19,7 +19,11 @@ function freeStay(): { checkIn: string; checkOut: string } {
   return { checkIn, checkOut: plusDays(checkIn, 5) };
 }
 
-const amountIn = (text: string) => /[A-Z]{3} [\d.]+/.exec(text)?.[0] ?? '';
+// "USD $1,234.50" (card or breakdown) gives "USD 1234.50".
+const amountIn = (text: string) => {
+  const m = /([A-Z]{3}) [^\d-]*(-?[\d,]+\.\d{2})/.exec(text);
+  return m ? `${m[1]} ${m[2].replaceAll(',', '')}` : '';
+};
 
 test.describe('Guest Portal - Search by dates and guests', () => {
   test('a home search reaches /listings with its filters, and reloads the same', async ({ page }) => {

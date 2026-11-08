@@ -19,20 +19,37 @@ use uuid::Uuid;
 /// A promo code is checked here, under its row lock, after the guest's other
 /// holds are cancelled, so a guest replacing their own hold doesn't count against
 /// themselves. A refusal rolls everything back, including those cancellations.
-#[tracing::instrument(
-    skip(pool, new_booking),
-    fields(listing_id = %new_booking.listing_id, guest_id = %new_booking.guest_id)
-)]
 pub async fn create_booking(
     pool: &PgPool,
     new_booking: &NewBooking,
     hold_minutes: i32,
 ) -> Result<Booking> {
+    create_booking_superseding(pool, new_booking, hold_minutes)
+        .await
+        .map(|(booking, _)| booking)
+}
+
+/// [`create_booking`], also returning the guest's request and enquiry on the
+/// listing that the hold replaced, so the caller can tell both parties.
+///
+/// Another guest's live request on the dates blocks the hold like a live hold
+/// does. The guest's own live request on the listing is cancelled and their
+/// open enquiry there closed, in the same transaction.
+#[tracing::instrument(
+    skip(pool, new_booking),
+    fields(listing_id = %new_booking.listing_id, guest_id = %new_booking.guest_id)
+)]
+pub async fn create_booking_superseding(
+    pool: &PgPool,
+    new_booking: &NewBooking,
+    hold_minutes: i32,
+) -> Result<(Booking, crate::booking_request::Superseded)> {
     let mut tx = pool.begin().await?;
 
     // The gap is read under the lock, so it can't change before this hold commits.
     let listing = sqlx::query!(
-        r#"SELECT is_active, LEAST(GREATEST(days_between_bookings, 0), 365) as "gap!"
+        r#"SELECT is_active, booking_mode AS "booking_mode: common::booking_request::BookingMode",
+            LEAST(GREATEST(days_between_bookings, 0), 365) as "gap!"
         FROM listing WHERE id = $1 FOR UPDATE"#,
         new_booking.listing_id
     )
@@ -42,6 +59,42 @@ pub async fn create_booking(
     if !listing.is_active {
         return Err(crate::error::DbError::ListingUnavailable);
     }
+    // Read under the lock, so a mode change can't slip in before this commits.
+    if !listing.booking_mode.allows_instant() {
+        return Err(crate::error::DbError::RequestRefused(
+            common::booking_request::RequestRefusal::BookingModeNotAllowed,
+        ));
+    }
+
+    // Another guest's live request on these dates blocks like a live hold.
+    let requested = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+            SELECT 1 FROM booking_request r
+            WHERE r.listing_id = $1 AND r.guest_id <> $2
+              AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()
+              AND r.date_from - $5::int4 < $4
+              AND r.date_to + $5::int4 > $3
+        ) AS "blocked!""#,
+        new_booking.listing_id,
+        new_booking.guest_id,
+        new_booking.date_from,
+        new_booking.date_to,
+        listing.gap
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if requested {
+        return Err(crate::error::DbError::DateUnavailable);
+    }
+
+    // Lock order: listing, then request rows, then currency. The guest's own
+    // request on the listing gives way to this hold.
+    let superseded = crate::booking_request::supersede_for_instant_hold(
+        &mut tx,
+        new_booking.listing_id,
+        new_booking.guest_id,
+    )
+    .await?;
 
     // Lock order: listing, then currency. A concurrent deactivation waits for
     // this hold (and then sees it), or this hold sees the deactivation.
@@ -72,6 +125,30 @@ pub async fn create_booking(
         return Err(crate::error::DbError::DateUnavailable);
     }
 
+    cancel_guest_holds(&mut tx, new_booking.guest_id).await?;
+
+    if let Some(promo) = &new_booking.promo {
+        let (code, usage) =
+            crate::promo::lock_and_count(&mut tx, promo.promo_code_id, new_booking.guest_id)
+                .await?;
+        common::promo::check_status(code.status(), Utc::now())
+            .and_then(|()| common::promo::check_usage(usage))
+            .map_err(crate::error::DbError::PromoRefused)?;
+    }
+
+    let booking = insert_hold(&mut tx, new_booking, hold_minutes, "Booking created").await?;
+
+    tx.commit().await?;
+
+    Ok((booking, superseded))
+}
+
+/// Cancels every `pending` hold of the guest, on any listing, with history: a
+/// guest has at most one hold at a time.
+pub(crate) async fn cancel_guest_holds(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    guest_id: Uuid,
+) -> Result<()> {
     // Cancel any existing pending holds for this guest across all listings
     let existing_guest_holds = sqlx::query_as!(
         Booking,
@@ -90,31 +167,34 @@ pub async fn create_booking(
             promo_stay_discount, promo_cleaning_discount,
             created_at, updated_at
         "#,
-        new_booking.guest_id,
+        guest_id,
         Utc::now()
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
 
     for cancelled in existing_guest_holds {
         record_booking_history(
-            &mut tx,
+            tx,
             &cancelled,
             "Cancelled previous pending hold due to new booking placement",
-            Some(new_booking.guest_id),
+            Some(guest_id),
         )
         .await?;
     }
 
-    if let Some(promo) = &new_booking.promo {
-        let (code, usage) =
-            crate::promo::lock_and_count(&mut tx, promo.promo_code_id, new_booking.guest_id)
-                .await?;
-        common::promo::check_status(code.status(), Utc::now())
-            .and_then(|()| common::promo::check_usage(usage))
-            .map_err(crate::error::DbError::PromoRefused)?;
-    }
+    Ok(())
+}
 
+/// Inserts a `pending` booking holding its dates for `hold_minutes`, its promo
+/// redemption (if any) and its first history row, inside the caller's
+/// transaction. The caller has taken every lock and checked availability.
+pub(crate) async fn insert_hold(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    new_booking: &NewBooking,
+    hold_minutes: i32,
+    reason: &str,
+) -> Result<Booking> {
     let promo = new_booking.promo.as_ref();
     let booking = sqlx::query_as!(
         Booking,
@@ -173,7 +253,7 @@ pub async fn create_booking(
         promo.map_or(Decimal::ZERO, |p| p.stay_discount),
         promo.map_or(Decimal::ZERO, |p| p.cleaning_discount)
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
 
     if let Some(promo) = promo {
@@ -182,14 +262,12 @@ pub async fn create_booking(
             promo.promo_code_id,
             booking.id
         )
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
     // Record initial history
-    record_booking_history(&mut tx, &booking, "Booking created", None).await?;
-
-    tx.commit().await?;
+    record_booking_history(tx, &booking, reason, None).await?;
 
     Ok(booking)
 }
@@ -280,6 +358,18 @@ pub async fn transfer_booking_guest(
         "Transferred booking from guest placeholder to authenticated user",
         Some(new_guest_id),
     )
+    .await?;
+
+    // The booking's messages follow it into the new guest's conversation.
+    let conversation_id =
+        crate::booking_request::upsert_conversation(&mut tx, booking.listing_id, new_guest_id)
+            .await?;
+    sqlx::query!(
+        "UPDATE booking_message SET conversation_id = $2 WHERE booking_id = $1",
+        booking.id,
+        conversation_id
+    )
+    .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;

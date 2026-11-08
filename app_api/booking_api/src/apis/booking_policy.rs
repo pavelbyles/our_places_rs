@@ -18,9 +18,10 @@ pub(super) enum BookingRole {
 /// Checks `req` against the caller's role. `Err` is the reason for a 403.
 ///
 /// - Anyone on the booking may cancel it.
-/// - Confirming is admin-only: it stands in for payment confirmation until a
-///   payment webhook exists. Completing is done by the stay-completion cron
-///   (or an admin).
+/// - Confirming: the listing's host or an admin. It stands in for payment
+///   confirmation until a payment webhook exists; `db_core` only allows it
+///   from `pending`. Completing is done by the stay-completion cron (or an
+///   admin).
 /// - Door codes and metadata (guest counts, notes, business tax details):
 ///   host or admin. Direct date/guest-count changes, which reprice the stay:
 ///   admin only; guests and hosts file a reservation change request instead.
@@ -32,8 +33,8 @@ pub(super) fn authorize_update(
         return Ok(());
     }
     match req.status {
-        Some(BookingStatus::Confirmed) => {
-            return Err("Only administrators can confirm bookings");
+        Some(BookingStatus::Confirmed) if role != BookingRole::Host => {
+            return Err("Only the host or an administrator can confirm bookings");
         }
         Some(BookingStatus::Completed) => {
             return Err("Only administrators can mark bookings completed");
@@ -41,7 +42,7 @@ pub(super) fn authorize_update(
         Some(BookingStatus::Pending) => {
             return Err("Only administrators can set a booking back to pending");
         }
-        Some(BookingStatus::Cancelled) | None => {}
+        Some(BookingStatus::Confirmed | BookingStatus::Cancelled) | None => {}
     }
     if req.door_access_code.is_some() && role != BookingRole::Host {
         return Err("Only hosts and administrators can configure property door access codes");
@@ -77,12 +78,16 @@ mod tests {
     }
 
     #[test]
-    fn only_admins_confirm_complete_or_reopen() {
-        for s in [
-            BookingStatus::Confirmed,
-            BookingStatus::Completed,
-            BookingStatus::Pending,
-        ] {
+    fn hosts_and_admins_confirm_guests_do_not() {
+        let req = status(BookingStatus::Confirmed);
+        assert!(authorize_update(Guest, &req).is_err());
+        assert!(authorize_update(Host, &req).is_ok());
+        assert!(authorize_update(Admin, &req).is_ok());
+    }
+
+    #[test]
+    fn only_admins_complete_or_reopen() {
+        for s in [BookingStatus::Completed, BookingStatus::Pending] {
             assert!(
                 authorize_update(Guest, &status(s)).is_err(),
                 "guest -> {s:?}"

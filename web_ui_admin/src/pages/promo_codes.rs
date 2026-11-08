@@ -189,10 +189,9 @@ fn describe(err: &UserCallError) -> String {
 fn discount_text(code: &PromoCodeResponse) -> String {
     match code.discount_type {
         PromoDiscountType::Percentage => format!("{}%", code.discount_value.normalize()),
-        PromoDiscountType::Fixed => format!(
-            "{} {:.2}",
+        PromoDiscountType::Fixed => common::money::total_amount(
             code.currency.as_deref().unwrap_or_default(),
-            code.discount_value
+            code.discount_value,
         ),
     }
 }

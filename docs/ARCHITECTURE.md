@@ -101,7 +101,12 @@ Dependency rules:
 | `promo_codes.rs` | Promo code management |
 | `booking_updates.rs` | Status changes, delete, guest transfer |
 | `reservation_changes.rs` | Change quotes and bilateral change requests |
-| `messages.rs` | Booking messaging |
+| `messages.rs` | Booking messaging (the booking's guest × listing conversation) |
+| `booking_requests.rs` | Requests to book: submit, read, accept, decline, withdraw, quote, checkout |
+| `enquiries.rs` | Enquiries: send, read, close, quote |
+| `conversations.rs` | Guest × listing conversations |
+| `inbox.rs` | Host and admin inbox with response times |
+| `request_notifications.rs` | Enquiry and request emails, expiry and reminder emails |
 | `ledger.rs` | Host ledger, payout status, admin exchange rates |
 | `documents.rs` | Cancellation quotes, tax documents |
 | `notifications.rs` | Transactional email dispatch |
@@ -118,6 +123,8 @@ Dependency rules:
 | `update.rs` | Status transitions and host payout bookkeeping |
 | `availability.rs` | Availability checks and unavailable ranges |
 | `history.rs` | Immutable `booking_history` snapshots |
+
+`db_core/src/booking_request/` holds enquiries and requests: `request` (submit), `respond` (accept, decline, withdraw), `quote`, `convert` (offer → hold), `supersede` (instant hold replaces the guest's request), `enquiry`, `expiry`, `inbox`, `notify` and the append-only `history`. `db_core/src/conversation.rs` holds the guest × listing threads.
 | `*tests.rs` | Integration tests and shared fixtures |
 
 The other large modules follow the same pattern: one file per area, re-exported from `mod.rs` so public paths are unchanged.
@@ -163,9 +170,42 @@ sequenceDiagram
 - **One lock per listing**: two attempts to book the same listing run one after the other, while different listings are booked in parallel. The same lock protects availability checks for change requests (`reservation_change.rs`) and reviews.
 - **Gap between bookings** (`listing.days_between_bookings`): the rule in §1 is one SQL condition, copied into each query because `sqlx::query!` needs literals. `availability_parity_tests` holds the copies to one answer. The value is limited to 0–365 on write and again in each query, so a stored value can't overflow a date or shrink the rule. Bookings already closer than a newly raised gap stay as they are, and are only rechecked if their dates change. Gap nights look the same as booked ones on the calendar.
 - **Confirming a hold** checks expiry with `clock_timestamp()`, not `NOW()`, which is fixed when the transaction begins. A confirmation that waited on the listing lock can't succeed after its hold ran out and a rival took the dates.
-- **Statuses** (`BookingStatus`): `pending` → `confirmed` → `completed`, or `cancelled` from `pending` or `confirmed`. Every transition writes a full row snapshot to `booking_history`.
+- **Statuses** (`BookingStatus`): `pending` → `confirmed` → `completed`, or `cancelled` from `pending` or `confirmed`. Every transition writes a full row snapshot to `booking_history`. The whole guest journey, from enquiry and request to book through to completion or cancellation, is in [`booking-flow.mmd`](booking-flow.mmd).
 - **Confirmation codes**: generated randomly. If a code collides with an existing one, booking_api retries up to `application.max_attempts` times.
 - **Inactive listings** (`listing.is_active = false`): `GET /api/v1/listings` leaves them out unless `include_inactive=true`, which only the admin portal and the My Bookings name lookup send. The guest portal returns 404 for their listing and checkout pages. New quotes and holds get 409 `LISTING_UNAVAILABLE`; the hold re-reads the flag under the listing lock. Existing bookings are unaffected.
+
+#### Booking Modes, Enquiries and Requests to Book (#105)
+
+Each listing sells `instant`, `request` or `both` (`listing.booking_mode`, default `instant`). A hold on a request-only listing, or a request on an instant-only one, is a 409 `BOOKING_MODE_NOT_ALLOWED`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> open: Guest submits (priced, snapshotted, dates held)
+    open --> accepted: Host accepts
+    open --> quoted: Host sends a custom quote
+    quoted --> quoted: Newer quote
+    open --> declined
+    accepted --> declined
+    quoted --> declined
+    open --> withdrawn
+    accepted --> withdrawn
+    quoted --> withdrawn
+    open --> cancelled: Guest books the listing instantly
+    accepted --> converted: Guest proceeds to checkout
+    quoted --> converted: Guest accepts the quote
+    open --> expired
+    accepted --> expired
+    quoted --> expired
+```
+
+- **Enquiries** are questions with dates and a guest count. They start the guest × listing `conversation` and never hold dates. A host can quote straight on one, which turns it into a quoted request under the listing lock.
+- **Live requests block like live holds.** `open`, `accepted` and `quoted` requests with `expires_at > NOW()` block every availability path (check, calendar, search, holds, reservation changes), widened by the same gap. `availability_parity_tests` covers nine request states.
+- **Windows.** A request waits `application.request_response_hours` (24) for the host; an accepted request or quote is held `application.quote_valid_hours` (48). Both are capped at check-in day 00:00 in Jamaica; a request whose capped window is under an hour is refused with `REQUEST_WINDOW_TOO_SHORT`.
+- **One live request per guest and listing** (partial unique index). The guest's own lapsed request is expired inline first. An instant hold by the same guest cancels their live request on that listing and closes their open enquiry there.
+- **Price integrity.** The request stores a `StayPriceSnapshot`; a custom quote stores its own (the host's stay price in base currency, at the request's frozen rate, with fees, GCT and platform fee recalculated and any promo dropped). Conversion copies the snapshot into a `pending` hold with `pending_hold_minutes`, and the request becomes `converted`, in one transaction under listing → request → currency → guest bookings → promo locks, so the dates are never free or double-held in between. A quoted request converts only with the quote id the guest saw (`QUOTE_SUPERSEDED` otherwise).
+- **Host earnings estimate.** `GET /api/v1/enquiries/{id}` gives the host and admins (never the guest) `host_estimate`: the enquiry's stay priced by `price_stay` in the listing's base currency (rate 1, no promo or quote), then `host_gross` and `calculate_host_payout` at the listing's `commission_pct`, which is the payout ledger's formula. A stay that can't be priced gives `null` with a `warn!`; the enquiry still loads.
+- **Unread count.** The admin portal's left-panel link reads "Inbox (n)" with the unread guest-sent messages across the user's listings (all listings for admins), from `GET /api/v1/conversations/unread-count`: one `COUNT` on the partial unread index. It covers enquiry, request and booking threads (one conversation per guest × listing) and clears as threads are marked read. A failed fetch shows plain "Inbox" and logs a `warn!`; the page still renders.
+- **Audit and housekeeping.** Every enquiry and request change is appended to `booking_request_history` with the actor. `run_sweeps` expires lapsed requests and closes enquiries on check-in day, emailing both parties once (`request_notification_log`); the notification sweep reminds the host once in the last `request_near_expiry_pct` (25%) of a response window.
 
 #### Pending Hold Lifecycle
 1. **Window is configuration, not code.** The hold length is `application.pending_hold_minutes`: 120 by default, set in `app_api/booking_api/config/Default.toml`. Override it per deploy, with no rebuild, via the env var `EA__APPLICATION__PENDING_HOLD_MINUTES`. booking_api refuses to start if the value is not positive. `create_booking` stores `expires_at` once, at insert time.
@@ -220,7 +260,7 @@ On a cancellation the cleaning fee is refunded in full, so a retained payout is 
 
 Admins manage every code and hosts their own, on `/admin/promo-codes`. Terms never change after creation, and codes are deactivated, never deleted. A host-owned code only applies to that host's current listings.
 
-- **Usage is derived, not counted.** A use counts while its redemption isn't released and its booking is `confirmed`, `completed`, or `pending` with `expires_at` in the future. So expiry sweeps and cancellations free a use with no bookkeeping.
+- **Usage is derived, not counted.** A use counts while its redemption isn't released and its booking is `confirmed`, `completed`, or `pending` with `expires_at` in the future. A live `open` or `accepted` request carrying the code also counts (#105), so the offer can always convert at the accepted price; a custom quote drops the code and frees the use. So expiry sweeps and cancellations free a use with no bookkeeping.
 - **Locks**: a hold takes listing → currency → the guest's other pending bookings → promo code. Confirming a promo booking takes listing → booking → promo code, then re-reads the time, so a hold that lost its use at expiry can't be confirmed. The count is a separate statement after the lock, which gives it a fresh snapshot.
 - **Bookings keep a snapshot** in `promo_terms`, so later changes can't reprice them. A reservation change re-checks only the stay rules against that snapshot: minimum nights, stay window and minimum value. If they fail, the discount is removed and the use is freed, and the guest is told before accepting.
 - **Logs**: code strings never enter a log or span. Refused attempts log the guest, the reason and a SHA-256 hash. Attempts aren't rate-limited yet (#110).
@@ -295,6 +335,9 @@ Each API loads `config/Default.toml`, then `config/{RUN_ENV}.toml`, then any `EA
 | `application.pending_hold_minutes` | 120 | `EA__APPLICATION__PENDING_HOLD_MINUTES` |
 | `application.max_attempts` | 5 | `EA__APPLICATION__MAX_ATTEMPTS` |
 | `application.max_stay_nights` | 3650 | `EA__APPLICATION__MAX_STAY_NIGHTS` |
+| `application.request_response_hours` | 24 | `EA__APPLICATION__REQUEST_RESPONSE_HOURS` |
+| `application.quote_valid_hours` | 48 | `EA__APPLICATION__QUOTE_VALID_HOURS` |
+| `application.request_near_expiry_pct` | 25 | `EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT` |
 | `feature_flags.enable_hard_deletes` | false | `EA__FEATURE_FLAGS__ENABLE_HARD_DELETES` |
 
 Secrets and per-environment variables are listed in [ENVIRONMENT.md](ENVIRONMENT.md).

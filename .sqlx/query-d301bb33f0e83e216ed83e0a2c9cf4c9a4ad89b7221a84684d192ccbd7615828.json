@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO booking_message (id, conversation_id, booking_id, enquiry_id, request_id,\n            sender_id, sender_role, sender_name, message_text)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        RETURNING id, conversation_id, booking_id, enquiry_id, request_id, sender_id,\n            sender_role AS \"sender_role: DbMessageSenderRole\", sender_name, message_text,\n            read_at, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "booking_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "enquiry_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "request_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "sender_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "sender_role: DbMessageSenderRole",
+        "type_info": {
+          "Custom": {
+            "name": "message_sender_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sender_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "message_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "read_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "message_sender_role",
+            "kind": {
+              "Enum": [
+                "guest",
+                "host",
+                "admin"
+              ]
+            }
+          }
+        },
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "d301bb33f0e83e216ed83e0a2c9cf4c9a4ad89b7221a84684d192ccbd7615828"
+}

@@ -436,6 +436,22 @@
     paintCalendar(root);
   });
 
+  // Prev/next month URLs were built when the calendar was rendered, so carry
+  // the dates picked since then; otherwise a check-in picked before paging is
+  // lost and the next pick starts a new stay instead of ending this one.
+  document.addEventListener('htmx:configRequest', function (event) {
+    var elt = event.detail?.elt;
+    if (!(elt instanceof Element) || !elt.matches('[data-calendar] [data-calendar-nav]')) return;
+    var p = calendarParts(elt.closest('[data-calendar]'));
+    var url = new URL(event.detail.path, window.location.origin);
+    [['check_in', p.checkIn], ['check_out', p.checkOut]].forEach(function (pair) {
+      var value = pair[1] ? pair[1].value : '';
+      if (value) url.searchParams.set(pair[0], value);
+      else url.searchParams.delete(pair[0]);
+    });
+    event.detail.path = url.pathname + url.search;
+  });
+
   // Re-enhance calendars that htmx swaps in (prev/next month), and open
   // dialogs that arrive with data-auto-open (e.g. the cancel confirmation).
   document.addEventListener('htmx:load', function (event) {

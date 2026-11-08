@@ -83,6 +83,7 @@ pub async fn guest_chrome(
                             <div class="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-sm">
                                 <p id="nav-user-email" class="px-3 py-2 text-xs text-muted-foreground">(user.email)</p>
                                 <a href="/bookings" class="block rounded-lg px-3 py-2 text-sm">"My bookings"</a>
+                                <a href="/requests" class="block rounded-lg px-3 py-2 text-sm">"My requests"</a>
                                 <a href="/profile" class="block rounded-lg px-3 py-2 text-sm">"Profile"</a>
                                 <form method="post" action="/logout">
                                     <button type="submit" class="w-full rounded-lg px-3 py-2 text-left text-sm">"Sign out"</button>
@@ -105,6 +106,7 @@ pub async fn guest_chrome(
                             </div>
                             if user.is_some() {
                                 <a href="/bookings" class="rounded-lg px-3 py-2 text-sm">"My bookings"</a>
+                                <a href="/requests" class="rounded-lg px-3 py-2 text-sm">"My requests"</a>
                             } else {
                                 <a href="/register" class="rounded-lg px-3 py-2 text-sm">"Create account"</a>
                             }

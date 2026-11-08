@@ -28,13 +28,35 @@ pub async fn admin_only(cx: &Cx) -> topcoat::Result<AdminSession> {
         .map_err(|e| guard_failure(cx, e))
 }
 
-/// The signed-in user for the shell, if any.
+/// The signed-in user for the shell, if any, with their unread guest
+/// messages. The badge is optional: if the count can't be fetched it is
+/// logged and left at 0, so a page never fails because of it.
 pub async fn nav_user(cx: &Cx) -> Option<AdminNavUser> {
-    require_admin(cx).await.ok().map(|s| AdminNavUser {
-        name: s.name,
-        email: s.email,
-        role: s.role,
+    let session = require_admin(cx).await.ok()?;
+    let unread_messages = unread_guest_messages(cx, &session).await;
+    Some(AdminNavUser {
+        name: session.name,
+        email: session.email,
+        role: session.role,
+        unread_messages,
     })
+}
+
+async fn unread_guest_messages(cx: &Cx, session: &AdminSession) -> i64 {
+    let token = match service_token(cx, session) {
+        Ok(token) => token,
+        Err(e) => {
+            tracing::warn!(user_id = %session.user_id, error = ?e, "no token for the unread badge");
+            return 0;
+        }
+    };
+    match common::app_client::booking_requests::get_unread_message_count(&token).await {
+        Ok(count) => count.unread_messages,
+        Err(e) => {
+            tracing::warn!(user_id = %session.user_id, error = %e, "unread guest messages not fetched; badge hidden");
+            0
+        }
+    }
 }
 
 /// A short-lived token for calling the backend as `user`.

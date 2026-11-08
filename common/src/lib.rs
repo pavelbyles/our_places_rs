@@ -6,6 +6,8 @@ pub mod app_client;
 /// User permission attributes.
 pub mod auth;
 pub mod availability;
+/// Enquiries and requests to book: booking modes, the request lifecycle and response windows.
+pub mod booking_request;
 pub mod cancellation;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cloud_logging;
@@ -25,6 +27,8 @@ pub mod geocode;
 pub mod http_client;
 /// Request and response types shared across services.
 pub mod models;
+/// How money amounts are shown to people.
+pub mod money;
 /// Host payout states and ledger types.
 pub mod payout;
 /// Stay pricing.

@@ -5,8 +5,14 @@
 pub mod booking;
 /// Guest-to-host booking messaging operations.
 pub mod booking_message;
+/// Enquiries and requests to book: creation, responses, conversion and expiry.
+pub mod booking_request;
 /// Database connection pool initialization and health checks.
 pub mod connection;
+/// Guest × listing conversations and their messages.
+pub mod conversation;
+#[cfg(test)]
+mod conversation_tests;
 /// Currency exchange rates and conversions.
 pub mod currency;
 /// Transactional email outbox storage and lifecycle management.
@@ -27,6 +33,8 @@ pub mod payout_ledger;
 pub mod promo;
 #[cfg(test)]
 mod promo_tests;
+#[cfg(test)]
+mod request_migration_tests;
 /// Bilateral reservation change requests and lifecycle operations.
 pub mod reservation_change;
 /// Guest reviews and verification tokens.

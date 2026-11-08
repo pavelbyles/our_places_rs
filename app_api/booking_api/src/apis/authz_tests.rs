@@ -111,6 +111,9 @@ pub(super) fn settings() -> api_core::settings::Settings {
             pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
             rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
             max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
+            request_response_hours: api_core::settings::DEFAULT_REQUEST_RESPONSE_HOURS,
+            quote_valid_hours: api_core::settings::DEFAULT_QUOTE_VALID_HOURS,
+            request_near_expiry_pct: api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT,
         },
         feature_flags: api_core::settings::FeatureFlags {
             enable_hard_deletes: false,
@@ -331,14 +334,14 @@ async fn test_booking_routes_enforce_user_and_booking_authorization() {
         assert_eq!(found, sees_it, "booking list as {who}");
     }
 
-    // Status changes by role. Only admins confirm or complete; anyone on the
-    // booking may cancel; a cancelled booking can never be revived.
+    // Status changes by role. The listing's host or an admin confirms; only
+    // admins complete; anyone on the booking may cancel; a cancelled booking
+    // can never be revived.
     let patch = |who: Uuid, body: serde_json::Value| {
         call(test::TestRequest::patch(), one.clone(), Some(who)).set_json(body)
     };
     let to = |s: &str| serde_json::json!({ "status": s });
     assert_eq!(status!(patch(guest, to("confirmed"))), 403);
-    assert_eq!(status!(patch(host, to("confirmed"))), 403);
     assert_eq!(status!(patch(host, to("completed"))), 403);
     assert_eq!(status!(patch(guest, to("pending"))), 403);
     assert_eq!(
@@ -348,8 +351,10 @@ async fn test_booking_routes_enforce_user_and_booking_authorization() {
         )),
         403
     );
-    assert_eq!(status!(patch(admin, to("confirmed"))), 200);
+    assert_eq!(status!(patch(other_host, to("confirmed"))), 404);
+    assert_eq!(status!(patch(host, to("confirmed"))), 200);
     assert_eq!(status!(patch(guest, to("cancelled"))), 200);
+    assert_eq!(status!(patch(host, to("confirmed"))), 409);
     let resp = test::call_service(&app, patch(admin, to("confirmed")).to_request()).await;
     assert_eq!(resp.status(), 409);
     let body: serde_json::Value = test::read_body_json(resp).await;

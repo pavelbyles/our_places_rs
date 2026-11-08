@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT is_active, user_id, booking_mode AS \"booking_mode: BookingMode\",\n            LEAST(GREATEST(days_between_bookings, 0), 365) AS \"gap!\"\n        FROM listing WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "booking_mode: BookingMode",
+        "type_info": {
+          "Custom": {
+            "name": "booking_mode",
+            "kind": {
+              "Enum": [
+                "instant",
+                "request",
+                "both"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "gap!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "2f37058a9a12792c7e5c1306915d64343cc6a2d2d4171e4633bef1f557724277"
+}

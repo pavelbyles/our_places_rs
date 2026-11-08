@@ -82,9 +82,41 @@ fn admin(role: Option<AdminRole>) -> AdminShell {
             name: "Sam".into(),
             email: "sam@x.io".into(),
             role,
+            unread_messages: 0,
         }),
         theme: ThemeChoice::Light,
     }
+}
+
+#[test]
+fn unread_badge_label_hides_at_zero_and_caps_at_99() {
+    use web_ui_common::shell_admin::unread_badge_label;
+    assert_eq!(unread_badge_label(0), None);
+    assert_eq!(unread_badge_label(-1), None);
+    assert_eq!(unread_badge_label(7).as_deref(), Some("(7)"));
+    assert_eq!(unread_badge_label(99).as_deref(), Some("(99)"));
+    assert_eq!(unread_badge_label(100).as_deref(), Some("(99+)"));
+}
+
+#[tokio::test]
+async fn admin_nav_shows_unread_guest_messages_on_inbox() {
+    let __cx = &Cx::default();
+    let quiet_shell = admin(Some(AdminRole::Host));
+    let quiet = html(view! { admin_chrome(shell: quiet_shell) }, __cx).await;
+    assert!(
+        !quiet.contains("admin-nav-unread"),
+        "no badge at 0: {quiet}"
+    );
+
+    let mut shell = admin(Some(AdminRole::Host));
+    if let Some(user) = shell.user.as_mut() {
+        user.unread_messages = 3;
+    }
+    let out = html(view! { admin_chrome(shell: shell) }, __cx).await;
+    assert!(out.contains(r#"id="admin-nav-unread""#), "{out}");
+    assert!(out.contains(r#"id="admin-mobile-nav-unread""#), "{out}");
+    assert!(out.contains(r#"aria-label="3 unread messages""#), "{out}");
+    assert!(out.contains(">(3)</span>"), "reads as Inbox (3): {out}");
 }
 
 #[tokio::test]

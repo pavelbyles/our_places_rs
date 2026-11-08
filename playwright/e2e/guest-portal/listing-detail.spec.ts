@@ -18,7 +18,7 @@ test.describe('Guest Portal - Listing Detail & Dynamic Pricing', () => {
 
     // 2. Location and pricing badge
     await expect(page.locator('text=New Kingston, Jamaica').first()).toBeVisible();
-    await expect(page.locator('text=USD 650').first()).toBeVisible();
+    await expect(page.locator('text=USD $650').first()).toBeVisible();
 
     // 3. Amenities section
     await expect(page.locator('text=What this place offers')).toBeVisible();

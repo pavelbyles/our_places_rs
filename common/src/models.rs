@@ -248,6 +248,9 @@ pub struct ListingResponse {
     /// Optional fee per extra guest per night above `guests_included` (base currency).
     #[serde(default)]
     pub extra_guest_fee: Option<Decimal>,
+    /// How the listing sells: instantly, on request, or both.
+    #[serde(default)]
+    pub booking_mode: crate::booking_request::BookingMode,
     /// Set by listing search when the requested currency cannot be quoted for
     /// this listing: prices are omitted rather than shown in another currency.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1061,6 +1064,9 @@ pub struct UpdatedListingRequest {
     #[schema(value_type = Option<String>, example = "25.00")]
     #[validate(custom(function = "validate_fee"))]
     pub extra_guest_fee: Option<Decimal>,
+    /// Updated booking mode. Open requests and offers carry on either way.
+    #[serde(default)]
+    pub booking_mode: Option<crate::booking_request::BookingMode>,
 }
 
 /// A nightly rate for a date range, replacing the base rate.
@@ -1366,8 +1372,17 @@ pub struct CreateBookingMessageRequest {
 pub struct BookingMessageResponse {
     /// Unique identifier.
     pub id: Uuid,
-    /// The booking this belongs to.
-    pub booking_id: Uuid,
+    /// The guest × listing conversation it belongs to.
+    #[serde(default)]
+    pub conversation_id: Option<Uuid>,
+    /// The booking it is about, if any.
+    pub booking_id: Option<Uuid>,
+    /// The enquiry it is about, if any.
+    #[serde(default)]
+    pub enquiry_id: Option<Uuid>,
+    /// The request to book it is about, if any.
+    #[serde(default)]
+    pub request_id: Option<Uuid>,
     /// The user who sent the message.
     pub sender_id: Uuid,
     /// Role the sender wrote as.
@@ -1396,6 +1411,14 @@ pub struct BookingMessagesWrapper {
 pub struct MarkMessagesReadResponse {
     /// Messages newly marked as read.
     pub updated_count: u64,
+}
+
+/// Unread messages from guests across a host's listings (every listing for
+/// an admin), for the admin portal's navigation badge.
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq)]
+pub struct UnreadMessagesResponse {
+    /// Unread guest-sent messages.
+    pub unread_messages: i64,
 }
 
 /// Lifecycle status of a bilateral reservation change request.

@@ -24,6 +24,8 @@ pub struct CronSweepResponse {
     pub pre_arrival_processed: usize,
     /// Number of payment hold expiry reminders dispatched.
     pub hold_reminders_processed: usize,
+    /// Number of near-expiry reminders sent to hosts about open requests.
+    pub request_reminders_processed: usize,
 }
 
 fn verify_cron_secret(
@@ -73,10 +75,11 @@ pub async fn process_scheduled_notifications(
     req: HttpRequest,
     pool: web::Data<PgPool>,
     cron_settings: Option<web::Data<CronSettings>>,
+    settings: Option<web::Data<api_core::settings::Settings>>,
 ) -> Result<HttpResponse, ApiError> {
     verify_cron_secret(&req, cron_settings.as_ref())?;
 
-    run_notification_sweep(pool.get_ref())
+    run_notification_sweep(pool.get_ref(), near_expiry_pct(settings.as_ref()))
         .await
         .map(|sweep| HttpResponse::Ok().json(sweep))
 }
@@ -84,7 +87,18 @@ pub async fn process_scheduled_notifications(
 /// Sends the due pre-arrival guides, host arrival reminders and expiring-hold
 /// warnings. Each notification is claimed in `notification_log` first, so
 /// repeated runs never send one twice.
-async fn run_notification_sweep(pool: &PgPool) -> Result<CronSweepResponse, ApiError> {
+/// The configured near-expiry share, or the default when settings aren't
+/// registered (as in some tests).
+fn near_expiry_pct(settings: Option<&web::Data<api_core::settings::Settings>>) -> i64 {
+    settings.map_or(api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT, |s| {
+        s.application.request_near_expiry_pct
+    })
+}
+
+async fn run_notification_sweep(
+    pool: &PgPool,
+    request_near_expiry_pct: i64,
+) -> Result<CronSweepResponse, ApiError> {
     let mut pre_arrival_count = 0;
     let mut hold_reminders_count = 0;
 
@@ -250,10 +264,14 @@ async fn run_notification_sweep(pool: &PgPool) -> Result<CronSweepResponse, ApiE
         }
     }
 
+    let request_reminders =
+        super::request_notifications::send_host_reminders(pool, request_near_expiry_pct).await;
+
     Ok(CronSweepResponse {
         status: "success".to_string(),
         pre_arrival_processed: pre_arrival_count,
         hold_reminders_processed: hold_reminders_count,
+        request_reminders_processed: request_reminders,
     })
 }
 
@@ -372,6 +390,10 @@ async fn complete_stays_through(
 pub struct CronSweepsResponse {
     /// Pending holds released because their `expires_at` had passed.
     pub holds_expired: usize,
+    /// Requests and offers expired because their window had passed.
+    pub requests_expired: usize,
+    /// Open enquiries closed because their check-in day arrived.
+    pub enquiries_closed: u64,
     /// Result of the scheduled notification sweep.
     pub notifications: CronSweepResponse,
     /// Result of the stay completion sweep.
@@ -412,6 +434,7 @@ pub async fn run_sweeps(
     pool: web::Data<PgPool>,
     tax_settings: Option<web::Data<TaxSettings>>,
     cron_settings: Option<web::Data<CronSettings>>,
+    settings: Option<web::Data<api_core::settings::Settings>>,
 ) -> Result<HttpResponse, ApiError> {
     verify_cron_secret(&req, cron_settings.as_ref())?;
     let expired = db_booking::expire_stale_holds(pool.get_ref())
@@ -424,7 +447,27 @@ pub async fn run_sweeps(
             "released expired booking holds"
         );
     }
-    let notifications = run_notification_sweep(pool.get_ref()).await?;
+    let requests = db_core::booking_request::expire_stale_requests(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?;
+    if !requests.is_empty() {
+        tracing::info!(
+            count = requests.len(),
+            request_ids = ?requests.iter().map(|r| r.id).collect::<Vec<_>>(),
+            "expired requests to book"
+        );
+    }
+    for request in &requests {
+        super::request_notifications::notify_expired(pool.get_ref(), request.id).await;
+    }
+    let enquiries_closed = db_core::booking_request::close_past_enquiries(
+        pool.get_ref(),
+        common::availability::jamaica_today(Utc::now()),
+    )
+    .await
+    .map_err(ApiError::Database)?;
+    let notifications =
+        run_notification_sweep(pool.get_ref(), near_expiry_pct(settings.as_ref())).await?;
     let stays = complete_stays_through(
         pool.get_ref(),
         tax_settings.as_ref(),
@@ -433,6 +476,8 @@ pub async fn run_sweeps(
     .await?;
     Ok(HttpResponse::Ok().json(CronSweepsResponse {
         holds_expired: expired.len(),
+        requests_expired: requests.len(),
+        enquiries_closed,
         notifications,
         stays,
     }))

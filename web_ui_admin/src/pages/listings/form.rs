@@ -2,6 +2,7 @@
 
 use std::str::FromStr;
 
+use common::booking_request::BookingMode;
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -93,6 +94,8 @@ pub struct ListingFields {
     pub is_active: String,
     /// Amenities, one per line.
     pub amenities: String,
+    /// How the listing sells: `instant`, `request` or `both`.
+    pub booking_mode: String,
 }
 
 fn opt(v: Option<Decimal>) -> String {
@@ -134,6 +137,7 @@ impl ListingFields {
                 String::new()
             },
             amenities: amenities_of(l.listing_details.as_ref()).join("\n"),
+            booking_mode: l.booking_mode.as_str().into(),
         }
     }
 
@@ -153,6 +157,7 @@ impl ListingFields {
             days_between_bookings: "0".into(),
             owner_id: owner.to_string(),
             is_active: "on".into(),
+            booking_mode: BookingMode::Instant.as_str().into(),
             ..Default::default()
         }
     }
@@ -188,6 +193,7 @@ pub struct ValidListing {
     longitude: Option<f64>,
     is_active: bool,
     amenities: Vec<String>,
+    booking_mode: BookingMode,
 }
 
 struct Parser {
@@ -391,6 +397,7 @@ impl ListingFields {
             longitude: p.coord("Longitude", &self.longitude, 180.0),
             is_active: self.is_active == "on",
             amenities: p.amenities(&self.amenities),
+            booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
         if valid.guests_included > valid.max_guests {
             p.errors
@@ -401,6 +408,18 @@ impl ListingFields {
         } else {
             Err(p.errors)
         }
+    }
+}
+
+/// The booking mode as posted; a blank value (the create form has no select)
+/// means instant.
+fn parse_booking_mode(p: &mut Parser, value: &str) -> BookingMode {
+    match value.trim() {
+        "" => BookingMode::Instant,
+        v => BookingMode::parse(v).unwrap_or_else(|| {
+            p.errors.push("Choose a valid booking mode.".into());
+            BookingMode::Instant
+        }),
     }
 }
 
@@ -477,6 +496,7 @@ impl ValidListing {
             damage_deposit: self.damage_deposit,
             guests_included: Some(self.guests_included),
             extra_guest_fee: self.extra_guest_fee,
+            booking_mode: Some(self.booking_mode),
         }
     }
 }
@@ -509,6 +529,9 @@ pub async fn listing_form(
                value: String,
                step: &'static str,
                required: bool| (name, title, value, step, required);
+    // The create endpoint has no booking mode, so new listings start as
+    // instant and the mode is set when editing.
+    let editing = action != "/admin/listings";
     let money_fields = [
         num(
             "price_per_night",
@@ -645,6 +668,16 @@ pub async fn listing_form(
                         </select>
                     </label>
                 }
+                if editing {
+                    <label class=(label)>"Booking mode"
+                        <select id="listing-booking-mode" name="booking_mode" aria-describedby="listing-booking-mode-help" class=(input)>
+                            for mode in BookingMode::ALL {
+                                <option value=(mode.as_str()) selected=(f.booking_mode == mode.as_str())>(mode.label())</option>
+                            }
+                        </select>
+                        <span id="listing-booking-mode-help" class="mt-1 block text-xs text-muted-foreground">"Request to book lets you approve each stay first. Open requests and offers carry on if you change this."</span>
+                    </label>
+                }
                 <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" checked=(f.is_active == "on") class="size-4" />"Bookable (active)"</label>
             </fieldset>
             <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
@@ -707,4 +740,52 @@ pub fn api_rejection_messages(err: &dyn std::fmt::Display) -> Option<Vec<String>
         })
         .collect();
     Some(messages).filter(|m| !m.is_empty())
+}
+
+#[cfg(test)]
+mod listing_booking_mode {
+    use super::*;
+
+    fn fields(mode: &str) -> ListingFields {
+        ListingFields {
+            name: "Villa".into(),
+            price_per_night: "200".into(),
+            booking_mode: mode.into(),
+            ..ListingFields::blank(Uuid::nil())
+        }
+    }
+
+    #[test]
+    fn the_chosen_mode_is_sent_on_update() {
+        for mode in BookingMode::ALL {
+            let update = fields(mode.as_str())
+                .validate(Some(Uuid::nil()), false)
+                .map(|v| v.into_update(None));
+            assert_eq!(update.ok().and_then(|u| u.booking_mode), Some(mode));
+        }
+    }
+
+    #[test]
+    fn a_blank_mode_is_instant_and_an_unknown_one_is_refused() {
+        let blank = fields("")
+            .validate(Some(Uuid::nil()), false)
+            .map(|v| v.into_update(None));
+        assert_eq!(
+            blank.ok().and_then(|u| u.booking_mode),
+            Some(BookingMode::Instant)
+        );
+        let errors = fields("sometimes")
+            .validate(Some(Uuid::nil()), false)
+            .err()
+            .unwrap_or_default();
+        assert!(
+            errors.iter().any(|e| e.contains("booking mode")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn a_listing_fills_the_form_with_its_mode() {
+        assert_eq!(ListingFields::blank(Uuid::nil()).booking_mode, "instant");
+    }
 }

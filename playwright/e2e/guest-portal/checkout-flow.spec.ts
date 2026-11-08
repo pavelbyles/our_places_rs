@@ -29,12 +29,12 @@ test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
     await page.locator('#btn-guest-login').click();
 
     await expect(page).toHaveURL(new RegExp(`/checkout/${targetVilla.slug}\\?check_in=${checkIn}`));
-    await expect(page.locator('#breakdown-subtotal')).toContainText('3250.00');
+    await expect(page.locator('#breakdown-subtotal')).toContainText('$3,250.00');
     await expect(page.locator('#breakdown-cleaning-fee')).toContainText('75.00');
     await expect(page.locator('#breakdown-tax')).toContainText('498.75');
     await expect(page.locator('#breakdown-damage-deposit')).toContainText('150.00');
     await expect(page.locator('#breakdown-platform-fee')).toContainText('162.50');
-    await expect(page.locator('#breakdown-total')).toContainText('4136.25');
+    await expect(page.locator('#breakdown-total')).toContainText('USD $4,136.25');
     await expect(page.locator('#guest-email')).toHaveValue(guest.email);
   });
 
@@ -53,7 +53,7 @@ test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
     await page.locator('#checkout-submit-btn').click();
     await expect(page).toHaveURL(/\/bookings\?new_booking=true$/);
     const stored = psql(`SELECT total_price FROM booking WHERE guest_id = '${guest.id}' ORDER BY created_at DESC LIMIT 1;`);
-    expect(listingTotal).toContain(stored);
+    expect(listingTotal.replaceAll(',', '')).toContain(stored);
   });
 
   test('places a hold for the signed-in guest on the chosen dates', NEW_ONLY, async ({ page }) => {
@@ -136,7 +136,7 @@ test.describe('Guest Portal - Checkout Flow & Date Hold', () => {
       const row = psql(`SELECT total_price, promo_stay_discount, promo_terms->>'code' FROM booking
                         WHERE guest_id = '${guest.id}' ORDER BY created_at DESC LIMIT 1;`);
       const [total, discount, stored] = row.split('|');
-      expect(discountedTotal).toContain(total);
+      expect(discountedTotal.replaceAll(',', '')).toContain(total);
       expect(discount).toBe('325.00');
       expect(stored).toBe(code);
 

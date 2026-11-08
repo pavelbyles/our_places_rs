@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH items AS (\n            SELECT l.user_id AS host_id, e.created_at, e.first_response_at,\n                FALSE AS is_request, FALSE AS expired_unanswered\n            FROM booking_enquiry e JOIN listing l ON l.id = e.listing_id\n            WHERE e.created_at > NOW() - INTERVAL '90 days'\n            UNION ALL\n            SELECT l.user_id, r.created_at, r.first_response_at, TRUE,\n                (r.status = 'expired' AND r.first_response_at IS NULL)\n            FROM booking_request r JOIN listing l ON l.id = r.listing_id\n            WHERE r.created_at > NOW() - INTERVAL '90 days' AND r.origin = 'guest_request'\n        )\n        SELECT i.host_id AS \"host_id!\", h.first_name AS \"host_name!\",\n            (percentile_cont(0.5) WITHIN GROUP (\n                ORDER BY EXTRACT(EPOCH FROM (i.first_response_at - i.created_at))\n            ) FILTER (WHERE i.first_response_at IS NOT NULL))::int8 AS median_secs,\n            COUNT(*) AS \"received!\",\n            COUNT(*) FILTER (WHERE i.is_request) AS \"requests!\",\n            COUNT(*) FILTER (WHERE i.expired_unanswered) AS \"expired_unanswered!\"\n        FROM items i JOIN \"user\" h ON h.id = i.host_id\n        WHERE ($1::uuid IS NULL OR i.host_id = $1)\n        GROUP BY i.host_id, h.first_name\n        ORDER BY h.first_name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "host_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "median_secs",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "received!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "requests!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "expired_unanswered!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "8e7095c1b5588f3983abb81cd0420a21b2b1b5a2469d0d64e7756734fa22dcaf"
+}

@@ -665,6 +665,7 @@ async fn update_listing(
         damage_deposit: req_data.damage_deposit,
         guests_included: req_data.guests_included,
         extra_guest_fee: req_data.extra_guest_fee,
+        booking_mode: req_data.booking_mode,
     };
 
     let updated_listing =

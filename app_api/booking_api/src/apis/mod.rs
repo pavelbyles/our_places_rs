@@ -16,16 +16,21 @@ use uuid::Uuid;
 
 mod availability;
 mod booking_policy;
+mod booking_requests;
 mod booking_updates;
 mod bookings;
+mod conversations;
 mod cron;
 mod currencies;
 mod documents;
+mod enquiries;
 mod exchange_rates;
+mod inbox;
 mod ledger;
 mod messages;
 mod notifications;
 mod promo_codes;
+mod request_notifications;
 mod reservation_changes;
 mod routes;
 mod stay_pricing;
@@ -315,11 +320,23 @@ async fn authorize_booking_party(
 #[cfg(test)]
 mod authz_tests;
 #[cfg(test)]
+mod conversation_api_tests;
+#[cfg(test)]
+mod enquiry_api_tests;
+#[cfg(test)]
 mod past_date_tests;
 #[cfg(test)]
 mod promo_hold_tests;
 #[cfg(test)]
+mod quote_api_tests;
+#[cfg(test)]
 mod rate_tests;
+#[cfg(test)]
+mod request_api_tests;
+#[cfg(test)]
+mod request_notification_tests;
+#[cfg(test)]
+mod stay_override_tests;
 #[cfg(test)]
 mod stay_pricing_pin_tests;
 #[cfg(test)]

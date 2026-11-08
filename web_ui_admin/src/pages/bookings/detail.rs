@@ -17,7 +17,8 @@ use topcoat::{
 use uuid::Uuid;
 use web_client::{get_api_client, session::AdminRole};
 use web_ui_common::components::domain::{
-    price_breakdown::money, tax_document_view::tax_document_view,
+    price_breakdown::{item_amount, money},
+    tax_document_view::tax_document_view,
 };
 
 use super::{STATUSES, managed_booking};
@@ -107,14 +108,16 @@ struct DialogData {
 }
 
 /// Statuses `role` may pick for a booking currently in `current`. Mirrors
-/// booking_api: hosts may only cancel; confirming and completing are for
-/// admins (and the stay-completion job).
+/// booking_api: hosts may confirm a pending booking (standing in for payment
+/// confirmation) and cancel; completing is for admins (and the stay-completion
+/// job).
 fn status_options(role: AdminRole, current: &str) -> Vec<&'static str> {
     STATUSES
         .into_iter()
         .filter(|s| {
             *s == current
                 || role == AdminRole::Admin
+                || (*s == "confirmed" && current == "pending")
                 || (*s == "cancelled" && matches!(current, "pending" | "confirmed"))
         })
         .collect()
@@ -147,15 +150,15 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
                 <section class="space-y-2 rounded-lg border border-border p-4">
                     <h3 class="text-sm font-semibold">"Statutory Tri-Currency Financial Audit"</h3>
                     <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                        <dt>"Subtotal"</dt><dd id="detail-subtotal" class="text-right tabular-nums">(money(&cur, b.sub_total_price))</dd>
-                        <dt>"Discount"</dt><dd class="text-right tabular-nums">(b.discount_value.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
+                        <dt>"Subtotal"</dt><dd id="detail-subtotal" class="text-right tabular-nums">(item_amount(&cur, b.sub_total_price))</dd>
+                        <dt>"Discount"</dt><dd class="text-right tabular-nums">(b.discount_value.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
                         if let Some(code) = b.promo_code.clone() {
-                            <dt>(format!("Promo code {code}"))</dt><dd id="detail-promo" class="text-right tabular-nums">(format!("-{}", money(&cur, b.promo_discount)))</dd>
+                            <dt>(format!("Promo code {code}"))</dt><dd id="detail-promo" class="text-right tabular-nums">(format!("-{}", item_amount(&cur, b.promo_discount)))</dd>
                         }
-                        <dt>"Cleaning fee"</dt><dd class="text-right tabular-nums">(b.cleaning_fee.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
-                        <dt>"Jamaican GCT"</dt><dd id="detail-tax" class="text-right tabular-nums">(b.tax_value.map(|d| money(&cur, d)).unwrap_or_else(|| money(&cur, rust_decimal::Decimal::ZERO)))</dd>
-                        <dt>"Platform fee"</dt><dd class="text-right tabular-nums">(b.platform_fee.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
-                        <dt>"Damage deposit"</dt><dd class="text-right tabular-nums">(b.damage_deposit.map(|d| money(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
+                        <dt>"Cleaning fee"</dt><dd class="text-right tabular-nums">(b.cleaning_fee.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
+                        <dt>"Jamaican GCT"</dt><dd id="detail-tax" class="text-right tabular-nums">(b.tax_value.map(|d| item_amount(&cur, d)).unwrap_or_else(|| item_amount(&cur, rust_decimal::Decimal::ZERO)))</dd>
+                        <dt>"Platform fee"</dt><dd class="text-right tabular-nums">(b.platform_fee.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
+                        <dt>"Damage deposit"</dt><dd class="text-right tabular-nums">(b.damage_deposit.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
                         <dt class="font-semibold">"Total"</dt><dd id="detail-total" class="text-right font-semibold tabular-nums">(money(&cur, b.total_price))</dd>
                         <dt class="text-muted-foreground">"Exchange rate at booking"</dt><dd class="text-right text-muted-foreground">(rate)</dd>
                     </dl>
@@ -481,10 +484,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hosts_are_only_offered_cancellation() {
+    fn hosts_may_confirm_pending_or_cancel() {
         assert_eq!(
             status_options(AdminRole::Host, "pending"),
-            ["pending", "cancelled"]
+            ["pending", "confirmed", "cancelled"]
         );
         assert_eq!(
             status_options(AdminRole::Host, "confirmed"),
