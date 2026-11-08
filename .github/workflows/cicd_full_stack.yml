@@ -196,6 +196,9 @@ jobs:
           RUN_ENV: Development
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
+          # No Pub/Sub on the runner: queued emails stay in the outbox instead
+          # of each publish failing against the GCP metadata server.
+          DISABLE_PUBSUB_PUBLISH: "true"
         run: cargo test --locked --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj
 
   test-web-ui:

@@ -56,7 +56,7 @@ pub async fn shutdown_telemetry() {
 /// Dynamically updates the global tracing subscriber filter at runtime.
 pub fn reload_filter(filter_directive: &str) -> Result<(), String> {
     if RELOAD_HANDLE.get().is_none() {
-        init_subscriber(env!("CARGO_PKG_NAME"));
+        init_filter_only();
     }
 
     let handle = RELOAD_HANDLE
@@ -71,6 +71,19 @@ pub fn reload_filter(filter_directive: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// A reloadable filter with no output, for a process that never called
+/// [`init_subscriber`]: in practice a test calling the loggers actuator. The
+/// full subscriber would print every later log line of the test binary to
+/// stdout, which the test harness does not capture.
+fn init_filter_only() {
+    let default_filter = "info".to_string();
+    let (filter_layer, reload_handle) =
+        tracing_subscriber::reload::Layer::new(EnvFilter::new(&default_filter));
+    let _ = RELOAD_HANDLE.set(reload_handle);
+    let _ = CURRENT_FILTER.set(RwLock::new(default_filter));
+    let _ = tracing_subscriber::registry().with(filter_layer).try_init();
 }
 
 /// Retrieves the current active filter directive string.
