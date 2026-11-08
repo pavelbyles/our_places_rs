@@ -1,10 +1,16 @@
 //! Display-currency switcher. The offered currencies come from the database
-//! (the cached active list); selecting one reloads the page with `?currency=`.
+//! (the cached active list). Choosing one goes through `/currency/{code}`,
+//! which remembers it in the [`CURRENCY_COOKIE`] and returns to the page, so
+//! every later page shows prices in it too.
 
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
 };
+
+/// The cookie holding the guest's chosen display currency (a code such as
+/// `CAD`). Read on every page; a `?currency=` in the URL takes precedence.
+pub const CURRENCY_COOKIE: &str = "op_currency";
 
 /// The search values a currency link keeps. Nothing else in the URL carries over.
 const KEPT_SEARCH_PARAMS: [&str; 5] = ["q", "host", "check_in", "check_out", "guests"];
@@ -22,12 +28,23 @@ pub fn search_params_from_query(query: &str) -> Vec<String> {
         .collect()
 }
 
-/// The link that switches to `currency` and keeps the search.
-pub fn currency_href(currency: &str, search_params: &[String]) -> String {
-    std::iter::once(format!("?currency={currency}"))
-        .chain(search_params.iter().cloned())
-        .collect::<Vec<_>>()
-        .join("&")
+/// Where a currency link returns to: `path` with the search from `query`
+/// (anything else, including an old `currency=`, is dropped so the new
+/// choice applies).
+pub fn return_to(path: &str, query: &str) -> String {
+    let kept = search_params_from_query(query);
+    if kept.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{}", kept.join("&"))
+    }
+}
+
+/// The link that makes `currency` the display currency, then returns to
+/// `return_to` (a path from [`return_to`]).
+pub fn currency_href(currency: &str, return_to: &str) -> String {
+    let next: String = form_urlencoded::byte_serialize(return_to.as_bytes()).collect();
+    format!("/currency/{currency}?next={next}")
 }
 
 /// A pill showing the active display currency that opens a menu of the
@@ -39,16 +56,16 @@ pub async fn currency_selector(
     /// Active currency, if one was chosen.
     #[default]
     current_currency: Option<String>,
-    /// The search for each link to keep, from [`search_params_from_query`].
+    /// The page each link returns to, from [`return_to`]; the home page if empty.
     #[default]
-    search_params: Vec<String>,
+    return_to: String,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     attrs: Attributes,
 ) -> Result<impl View> {
     let codes = active_currency_codes(cx).await;
     Ok(
-        view! { currency_menu(codes: codes, current_currency: current_currency, search_params: search_params, attrs: attrs) },
+        view! { currency_menu(codes: codes, current_currency: current_currency, return_to: return_to, attrs: attrs) },
     )
 }
 
@@ -62,9 +79,9 @@ pub async fn currency_menu(
     /// Active currency, if one was chosen.
     #[default]
     current_currency: Option<String>,
-    /// The search for each link to keep, from [`search_params_from_query`].
+    /// The page each link returns to, from [`return_to`]; the home page if empty.
     #[default]
-    search_params: Vec<String>,
+    return_to: String,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -82,6 +99,11 @@ pub async fn currency_menu(
         .map(|a| format!("Display currency: {a}"))
         .unwrap_or_else(|| "Choose a display currency".to_string());
     let hidden = codes.is_empty();
+    let return_to = if return_to.is_empty() {
+        "/".to_string()
+    } else {
+        return_to
+    };
     Ok(view! {
         if !hidden {
             <details data-dismiss-outside="" class=(class!("relative", attrs.remove("class"))) (attrs)>
@@ -93,7 +115,7 @@ pub async fn currency_menu(
                     for curr in codes {
                         <li>
                             <a
-                                href=(currency_href(&curr, &search_params))
+                                href=(currency_href(&curr, &return_to))
                                 aria-current=((Some(&curr) == active.as_ref()).then_some("true"))
                                 class="block rounded-lg px-3 py-2 text-sm aria-[current=true]:font-semibold"
                             >(curr.clone())</a>
@@ -264,34 +286,43 @@ mod currency_menu_search_tests {
     }
 
     #[test]
-    fn hostile_values_stay_encoded_and_add_no_parameter() {
+    fn hostile_values_stay_inside_next_and_add_no_parameter() {
         for value in ["a%26currency%3DXXX%23", "a%2Bb", "a%3Db", "a%22b", "a%3Cb"] {
-            let kept = search_params_from_query(&format!("q={value}&currency=USD"));
-            assert_eq!(kept, [format!("q={value}")]);
-            assert_eq!(
-                currency_href("JMD", &kept),
-                format!("?currency=JMD&q={value}")
+            let back = return_to("/listings", &format!("q={value}&currency=USD"));
+            assert_eq!(back, format!("/listings?q={value}"));
+            let href = currency_href("JMD", &back);
+            assert!(
+                href.starts_with("/currency/JMD?next=%2Flistings%3Fq%3D"),
+                "{href}"
             );
+            assert_eq!(href.matches('&').count(), 0, "{href}");
+            assert_eq!(href.matches('?').count(), 1, "{href}");
         }
     }
 
     #[test]
-    fn a_second_currency_in_the_url_cant_get_through() {
-        let kept = search_params_from_query("q=x&currency=XXX&currency=YYY");
-        assert_eq!(currency_href("JMD", &kept), "?currency=JMD&q=x");
+    fn the_old_currency_is_dropped_so_the_new_choice_applies() {
+        assert_eq!(
+            return_to(
+                "/listings/villa",
+                "currency=XXX&check_in=2030-08-01&currency=YYY"
+            ),
+            "/listings/villa?check_in=2030-08-01"
+        );
     }
 
     #[test]
-    fn with_no_search_links_are_just_the_currency() {
-        assert_eq!(currency_href("JMD", &[]), "?currency=JMD");
+    fn with_no_search_links_return_to_the_path() {
+        assert_eq!(return_to("/", ""), "/");
+        assert_eq!(currency_href("JMD", "/"), "/currency/JMD?next=%2F");
     }
 
     #[tokio::test]
-    async fn the_menu_links_carry_the_search() {
+    async fn the_menu_links_return_to_the_page_and_its_search() {
         let __cx = &Cx::default();
-        let kept = search_params_from_query("q=x&check_in=2030-08-01&check_out=2030-08-04");
+        let back = return_to("/listings", "q=x&check_in=2030-08-01&check_out=2030-08-04");
         let codes = vec!["JMD".to_string()];
-        let out = match view! { currency_menu(codes: codes, search_params: kept) }
+        let out = match view! { currency_menu(codes: codes, return_to: back) }
             .first()
             .await
         {
@@ -300,7 +331,7 @@ mod currency_menu_search_tests {
         };
         assert!(
             out.contains(
-                r#"href="?currency=JMD&amp;q=x&amp;check_in=2030-08-01&amp;check_out=2030-08-04""#
+                r#"href="/currency/JMD?next=%2Flistings%3Fq%3Dx%26check_in%3D2030-08-01%26check_out%3D2030-08-04""#
             ),
             "{out}"
         );

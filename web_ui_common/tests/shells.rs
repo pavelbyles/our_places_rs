@@ -21,7 +21,7 @@ fn guest(user: Option<NavUser>) -> GuestShell {
         user,
         theme: ThemeChoice::Dim,
         currency: None,
-        search_params: Vec::new(),
+        return_to: "/".into(),
     }
 }
 
