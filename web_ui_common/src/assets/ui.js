@@ -440,7 +440,7 @@
   // the dates picked since then; otherwise a check-in picked before paging is
   // lost and the next pick starts a new stay instead of ending this one.
   document.addEventListener('htmx:configRequest', function (event) {
-    var elt = event.detail && event.detail.elt;
+    var elt = event.detail?.elt;
     if (!(elt instanceof Element) || !elt.matches('[data-calendar] [data-calendar-nav]')) return;
     var p = calendarParts(elt.closest('[data-calendar]'));
     var url = new URL(event.detail.path, window.location.origin);

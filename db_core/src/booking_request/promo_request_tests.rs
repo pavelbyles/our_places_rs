@@ -1,7 +1,9 @@
 //! A live request with a promo code reserves a use of it (#105 D2, plan T13).
 
 use super::create_request;
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_hold, new_request, raw_user,
+};
 use crate::booking::create_booking;
 use crate::error::DbError;
 use crate::models::NewBookingPromo;

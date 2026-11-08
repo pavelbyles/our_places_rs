@@ -1,6 +1,9 @@
 //! Accepting, declining and withdrawing requests (#105, plan T16).
 
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_request, raw_user, request_history,
+    request_status,
+};
 use super::{Actor, accept_request, create_request, decline_request, withdraw_request};
 use crate::booking::check_availability;
 use crate::error::DbError;

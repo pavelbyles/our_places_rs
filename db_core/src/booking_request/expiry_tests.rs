@@ -1,6 +1,9 @@
 //! Request and enquiry sweeps (#105, plan T26).
 
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_request, raw_user, request_history,
+    request_status,
+};
 use super::{
     NewEnquiry, close_past_enquiries, create_enquiry, create_request, expire_stale_requests,
     withdraw_request,

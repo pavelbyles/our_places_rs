@@ -1,6 +1,9 @@
 //! Custom quotes (#105, plan T24).
 
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_request, raw_stay, raw_user,
+    request_history, snapshot,
+};
 use super::{
     Actor, NewEnquiry, NewQuote, create_enquiry, create_request, quote_enquiry, send_quote,
 };

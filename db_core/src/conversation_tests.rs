@@ -1,6 +1,8 @@
 //! One thread per guest × listing (#105, plan T20).
 
-use crate::booking_request::fixtures::*;
+use crate::booking_request::fixtures::{
+    day, listing_in_mode, migrated_db, new_request, raw_enquiry, raw_stay, raw_user,
+};
 use crate::booking_request::{Actor, accept_request, convert_offer_to_hold, create_request};
 use crate::conversation::{NewMessage, insert_message, list_messages};
 use crate::models::DbMessageSenderRole;

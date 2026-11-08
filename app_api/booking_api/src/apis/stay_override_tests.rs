@@ -14,7 +14,7 @@ fn discounted() -> BookingCalculator<Discounted> {
 }
 
 mod pure {
-    use super::*;
+    use super::{Decimal, RequestRefusal, apply_stay_override, dec, discounted};
 
     #[test]
     fn a_valid_price_replaces_the_subtotal_at_the_rate() {
@@ -57,7 +57,7 @@ mod db {
         OnRefusal, PromoRequest, StayRequest, load_listing, price_stay,
     };
     use super::super::stay_pricing_pin_tests::{amount, seed_case, test_db};
-    use super::*;
+    use super::{Decimal, RequestRefusal, dec};
     use api_core::error::ApiError;
     use chrono::NaiveDate;
     use db_core::error::DbError;

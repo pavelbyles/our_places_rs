@@ -23,7 +23,7 @@ fn previous_migrations_dir() -> PathBuf {
     std::fs::create_dir_all(&dir).expect("create temp migrations dir");
     let mut names: Vec<_> = std::fs::read_dir("migrations")
         .expect("read migrations dir")
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.ends_with(".sql"))
         .collect();

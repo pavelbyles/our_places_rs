@@ -1,6 +1,6 @@
 //! Enquiries (#105, plan T22).
 
-use super::fixtures::*;
+use super::fixtures::{day, listing_in_mode, migrated_db, raw_stay, raw_user};
 use super::{Actor, NewEnquiry, close_enquiry, create_enquiry, get_enquiry};
 use crate::booking::check_availability;
 use crate::error::DbError;

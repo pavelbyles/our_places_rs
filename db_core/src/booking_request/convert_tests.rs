@@ -1,6 +1,9 @@
 //! Converting offers into `pending` holds (#105, plan T18).
 
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_hold, new_request, raw_user,
+    request_history, request_status, snapshot,
+};
 use super::{Actor, OfferCheckout, accept_request, convert_offer_to_hold, create_request};
 use crate::booking::create_booking;
 use crate::error::DbError;

@@ -1,6 +1,8 @@
 //! Inbox and response metrics (#105, plan T30).
 
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_request, raw_enquiry, raw_user,
+};
 use super::{InboxFilter, create_request, host_response_metrics, inbox_items};
 use sqlx::PgPool;
 use uuid::Uuid;

@@ -135,5 +135,9 @@ test.describe('Admin Portal - Inbox (#105)', () => {
     await page.locator('#listing-booking-mode').selectOption('request');
     await page.locator('#btn-save-listing').click();
     await expect.poll(() => psql(`SELECT booking_mode FROM listing WHERE id = '${villa.id}';`)).toBe('request');
+
+    // The saved mode is what the form shows when reopened.
+    await page.goto(`/admin/listings/${villa.id}/edit`);
+    await expect(page.locator('#listing-booking-mode')).toHaveValue('request');
   });
 });

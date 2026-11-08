@@ -1,7 +1,10 @@
 //! Instant holds and requests on the same listing (#105, plan T12).
 
 use super::create_request;
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_hold, new_request, raw_enquiry, raw_user,
+    request_history, request_status,
+};
 use crate::booking::{create_booking, create_booking_superseding};
 use crate::error::DbError;
 

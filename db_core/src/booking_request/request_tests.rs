@@ -1,7 +1,10 @@
 //! Submitting a request to book (#105, plan T10).
 
 use super::create_request;
-use super::fixtures::*;
+use super::fixtures::{
+    day, lapse_request, listing_in_mode, migrated_db, new_request, raw_stay, raw_user,
+    request_history, request_status,
+};
 use crate::error::DbError;
 use common::booking_request::RequestRefusal;
 
