@@ -105,6 +105,9 @@
     var counter = viewer.querySelector('[data-lightbox-counter]');
     viewer.setAttribute('data-index', String(i));
     if (img) {
+      // srcset first, so the browser picks a variant fitting the viewer
+      // (its `sizes`) instead of fetching the full-size fallback.
+      img.srcset = items[i].getAttribute('data-full-srcset') || '';
       img.src = items[i].getAttribute('data-full-src') || '';
       img.alt = items[i].getAttribute('data-alt') || '';
     }

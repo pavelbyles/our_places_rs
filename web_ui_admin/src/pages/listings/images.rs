@@ -136,7 +136,7 @@ pub async fn photo_grid(
                 <ul id="listing-photos" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     for (i, photo) in photos.into_iter().enumerate() {
                         <li class="relative">
-                            responsive_image(src: photo.url, alt: name.clone(), attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" })
+                            responsive_image(src: photo.url, alt: name.clone(), sizes: Some("(min-width: 640px) 25vw, 50vw".to_string()), attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" })
                             <form method="post" action=(remove.clone()) hx-post=(remove.clone()) hx-target="#listing-photos-slot" hx-swap="outerHTML" hx-confirm="Delete this photo? This cannot be undone." class="absolute top-2 right-2">
                                 <input type="hidden" name="image_id" value=(photo.id.to_string()) />
                                 <button type="submit" aria-label=(format!("Remove photo {}", i + 1)) class="rounded-md bg-card/90 px-2 py-1 text-xs font-medium text-destructive shadow-xs">"Remove"</button>

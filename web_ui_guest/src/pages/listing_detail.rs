@@ -14,7 +14,7 @@ use web_ui_common::components::{
     domain::{
         listing_card::ListingSummary,
         price_breakdown::price_breakdown,
-        responsive_image::{responsive_image, variant_url},
+        responsive_image::{responsive_image, variant_srcset, variant_url},
     },
     star_rating::star_rating,
 };
@@ -175,15 +175,19 @@ const GALLERY_TILES: usize = 5;
 /// The photo grid for `count` photos: the section's classes and one class
 /// list per tile shown. Phones show only the first photo; from `md` the
 /// grid has a fixed height and the tiles fill it, so no column is left empty.
-fn gallery_layout(count: usize) -> (&'static str, Vec<&'static str>) {
+fn gallery_layout(count: usize) -> (&'static str, Vec<(&'static str, &'static str)>) {
     const SECTION: &str = "grid gap-3 md:h-[460px] md:grid-cols-4 md:grid-rows-2";
-    const LEAD: &str = "md:col-span-2 md:row-span-2";
-    const HIDDEN_WIDE: &str = "hidden md:block md:col-span-2";
-    const HIDDEN_SMALL: &str = "hidden md:block";
+    // `sizes` per tile width: the page is capped at 1540px less 48px padding.
+    const FULL: &str = "(min-width: 1540px) 1492px, 100vw";
+    const HALF: &str = "(min-width: 1540px) 746px, (min-width: 768px) 50vw, 100vw";
+    const QUARTER: &str = "(min-width: 1540px) 373px, (min-width: 768px) 25vw, 100vw";
+    const LEAD: (&str, &str) = ("md:col-span-2 md:row-span-2", HALF);
+    const HIDDEN_WIDE: (&str, &str) = ("hidden md:block md:col-span-2", HALF);
+    const HIDDEN_SMALL: (&str, &str) = ("hidden md:block", QUARTER);
     let tiles = match count.min(GALLERY_TILES) {
         0 => Vec::new(),
-        1 => vec!["md:col-span-4 md:row-span-2"],
-        2 => vec![LEAD, "hidden md:block md:col-span-2 md:row-span-2"],
+        1 => vec![("md:col-span-4 md:row-span-2", FULL)],
+        2 => vec![LEAD, ("hidden md:block md:col-span-2 md:row-span-2", HALF)],
         3 => vec![LEAD, HIDDEN_WIDE, HIDDEN_WIDE],
         4 => vec![LEAD, HIDDEN_WIDE, HIDDEN_SMALL, HIDDEN_SMALL],
         n => std::iter::once(LEAD)
@@ -259,9 +263,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
 
             if !images.is_empty() {
                 <section aria-label="Photos" class=(gallery.0)>
-                    for (i, ((src, alt), span)) in images.iter().cloned().zip(gallery.1.iter().copied()).enumerate() {
+                    for (i, ((src, alt), (span, sizes))) in images.iter().cloned().zip(gallery.1.iter().copied()).enumerate() {
                         <button type="button" data-dialog-open="gallery-dialog" aria-label=(format!("Open photo {} of {}", i + 1, images.len())) class=(format!("overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/3] md:aspect-auto {span}"))>
-                            responsive_image(src: src, alt: alt)
+                            responsive_image(src: src, alt: alt, sizes: Some(sizes.to_string()))
                         </button>
                     }
                 </section>
@@ -272,15 +276,15 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     </div>
                     <div id="gallery-grid" data-lightbox-group="photo-viewer" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
                         for (i, (src, alt)) in images.iter().cloned().enumerate() {
-                            <button type="button" data-lightbox-index=(i.to_string()) data-full-src=(variant_url(&src, "highres").unwrap_or_else(|| src.clone())) data-alt=(alt.clone()) aria-label=(format!("View photo {} of {} full size", i + 1, images.len())) class="block aspect-[4/3] cursor-zoom-in overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
-                                responsive_image(src: src, alt: alt)
+                            <button type="button" data-lightbox-index=(i.to_string()) data-full-src=(variant_url(&src, "highres").unwrap_or_else(|| src.clone())) data-full-srcset=(variant_srcset(&src).unwrap_or_default()) data-alt=(alt.clone()) aria-label=(format!("View photo {} of {} full size", i + 1, images.len())) class="block aspect-[4/3] cursor-zoom-in overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
+                                responsive_image(src: src, alt: alt, sizes: Some("(min-width: 768px) 48vw, 96vw".to_string()))
                             </button>
                         }
                     </div>
                 </dialog>
                 <dialog id="photo-viewer" data-lightbox="" aria-label="Photo viewer" class="m-0 h-dvh max-h-none w-screen max-w-none bg-black/95 p-0 text-white backdrop:bg-black/80">
                     <div class="relative flex h-full w-full items-center justify-center">
-                        <img id="photo-viewer-img" data-lightbox-img="" alt="" class="max-h-[88dvh] max-w-[92vw] object-contain" />
+                        <img id="photo-viewer-img" data-lightbox-img="" sizes="92vw" alt="" class="max-h-[88dvh] max-w-[92vw] object-contain" />
                         if images.len() > 1 {
                             <button type="button" data-lightbox-step="-1" aria-label="Previous photo" class="absolute top-1/2 left-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25">"‹"</button>
                             <button type="button" data-lightbox-step="1" aria-label="Next photo" class="absolute top-1/2 right-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25">"›"</button>
@@ -452,7 +456,7 @@ mod tests {
             let (_, tiles) = gallery_layout(count);
             assert_eq!(tiles.len(), count.min(5), "{count} photos");
             assert_eq!(
-                tiles.iter().map(|t| cells(t)).sum::<usize>(),
+                tiles.iter().map(|(t, _)| cells(t)).sum::<usize>(),
                 8,
                 "{count} photos"
             );
@@ -463,7 +467,30 @@ mod tests {
     #[test]
     fn phones_show_only_the_first_photo() {
         let (_, tiles) = gallery_layout(5);
-        assert!(!tiles[0].contains("hidden"));
-        assert!(tiles[1..].iter().all(|t| t.starts_with("hidden ")));
+        assert!(!tiles[0].0.contains("hidden"));
+        assert!(tiles[1..].iter().all(|(t, _)| t.starts_with("hidden ")));
+    }
+
+    /// Each tile's `sizes` matches its width, so the browser loads the photo
+    /// variant nearest the drawn size rather than one for the whole screen.
+    #[test]
+    fn tile_sizes_match_their_column_span() {
+        for count in 1..=8 {
+            for (tile, sizes) in gallery_layout(count).1 {
+                let cols = tile
+                    .split_whitespace()
+                    .find_map(|c| c.strip_prefix("md:col-span-"))
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .unwrap_or(1);
+                let capped = format!("(min-width: 1540px) {}px", 1492 / 4 * cols);
+                let md = format!("(min-width: 768px) {}vw", cols * 25);
+                assert!(sizes.starts_with(&capped), "{count}: {tile} -> {sizes}");
+                assert!(
+                    cols == 4 || sizes.contains(&md),
+                    "{count}: {tile} -> {sizes}"
+                );
+                assert!(sizes.ends_with("100vw"), "{count}: {tile} -> {sizes}");
+            }
+        }
     }
 }

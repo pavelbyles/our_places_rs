@@ -228,7 +228,7 @@ pub async fn listing_card(
         <article class=(class!("flex flex-col gap-3", attrs.remove("class"))) (attrs)>
             <a href=(href.clone()) tabindex="-1" aria-hidden="true" class="block overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/5]">
                 if let Some(src) = image_url {
-                    responsive_image(src: src, alt: alt)
+                    responsive_image(src: src, alt: alt, sizes: Some("(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw".to_string()))
                 }
             </a>
             <div class="flex items-start justify-between gap-3">
