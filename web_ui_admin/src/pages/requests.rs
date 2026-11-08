@@ -10,6 +10,7 @@ use common::app_client::booking_requests::{
 use common::booking_request::{
     BookingRequestResponse, DeclineReason, DeclineRequestBody, EnquiryStatus, HostEarningsEstimate,
     HostResponseMetrics, InboxItem, InboxQuery, QuoteRequestBody, RequestRefusal, RequestStatus,
+    ThreadSubject, UnreadThread,
 };
 use common::models::{BookingMessageResponse, MessageSenderRole};
 use rust_decimal::Decimal;
@@ -135,6 +136,88 @@ async fn metrics_card(metrics: Vec<HostResponseMetrics>) -> Result<impl View> {
     })
 }
 
+/// Where an unread thread opens: the booking's messages, or the request or
+/// enquiry page (each shows the whole thread and marks it read).
+pub fn thread_href(subject: &ThreadSubject) -> String {
+    match subject {
+        ThreadSubject::Booking {
+            confirmation_code, ..
+        } => format!("/admin/bookings/{confirmation_code}/messages"),
+        ThreadSubject::Request { id } => format!("/admin/requests/{id}"),
+        ThreadSubject::Enquiry { id } => format!("/admin/enquiries/{id}"),
+    }
+}
+
+/// What a thread is about, as in "Booking HMEJYC3P9B · 3 Mar → 6 Mar 2027".
+pub fn thread_context(thread: &UnreadThread) -> String {
+    let what = match &thread.subject {
+        Some(ThreadSubject::Booking {
+            confirmation_code, ..
+        }) => format!("Booking {confirmation_code}"),
+        Some(ThreadSubject::Request { .. }) => "Request to book".to_string(),
+        Some(ThreadSubject::Enquiry { .. }) => "Enquiry".to_string(),
+        None => "Conversation".to_string(),
+    };
+    match thread.check_in.zip(thread.check_out) {
+        Some((from, to)) => format!(
+            "{what} · {} → {}",
+            from.format("%-d %b"),
+            to.format("%-d %b %Y")
+        ),
+        None => what,
+    }
+}
+
+/// The first `max` characters of `text`, with "…" if it was longer.
+pub fn preview(text: &str, max: usize) -> String {
+    let mut chars = text.chars();
+    let head: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        format!("{}…", head.trim_end())
+    } else {
+        head
+    }
+}
+
+#[component]
+async fn unread_thread_row(
+    thread: UnreadThread,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<impl View> {
+    let href = thread.subject.as_ref().map(thread_href);
+    let context = thread_context(&thread);
+    let heading = format!("{} · {}", thread.guest_name, thread.listing_name);
+    let unread = if thread.unread == 1 {
+        "1 unread".to_string()
+    } else {
+        format!("{} unread", thread.unread)
+    };
+    let ago = format!(
+        "{} ago",
+        format_duration((now - thread.latest_at).num_seconds())
+    );
+    let text = preview(&thread.latest_text, 140);
+    Ok(view! {
+        <li id=(format!("unread-{}", thread.conversation_id)) class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-4 py-3">
+            <div class="min-w-0 flex-1 space-y-0.5">
+                <p class="font-semibold">
+                    if let Some(href) = href {
+                        <a href=(href) class="hover:underline underline-offset-4">(heading)</a>
+                    } else {
+                        (heading)
+                    }
+                </p>
+                <p class="text-sm">(context)</p>
+                <p class="truncate text-sm text-muted-foreground">(format!("“{text}”"))</p>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-1 text-xs text-muted-foreground">
+                <span class="badge badge-primary">(unread)</span>
+                <span>(ago)</span>
+            </div>
+        </li>
+    })
+}
+
 #[component]
 async fn inbox_row(item: InboxItem) -> Result<impl View> {
     let href = if item.kind == "request" {
@@ -175,10 +258,21 @@ pub async fn inbox_page(cx: &Cx) -> Result<impl View> {
         .map_err(web_client::app_error)?;
     let kind = query.kind.clone().unwrap_or_default();
     let more = inbox.items.len() as u32 >= inbox.per_page;
+    let now = chrono::Utc::now();
     Ok(view! {
         <div class="space-y-6">
             <h1 class="text-2xl font-semibold">"Inbox"</h1>
             metrics_card(metrics: inbox.host_metrics.clone())
+            if !inbox.unread_threads.is_empty() {
+                <section aria-labelledby="inbox-unread-heading" class="space-y-3">
+                    <h2 id="inbox-unread-heading" class="text-lg font-semibold">"Unread messages"</h2>
+                    <ul id="inbox-unread" class="divide-y divide-border rounded-xl border border-border">
+                        for thread in inbox.unread_threads.clone() {
+                            unread_thread_row(thread: thread, now: now)
+                        }
+                    </ul>
+                </section>
+            }
             <form method="get" action="/admin/inbox" class="flex flex-wrap items-end gap-3">
                 <label class="text-sm">"Show"
                     <select name="kind" class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm">
@@ -190,7 +284,9 @@ pub async fn inbox_page(cx: &Cx) -> Result<impl View> {
                 <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Filter"</button>
             </form>
             if inbox.items.is_empty() {
-                <p id="inbox-empty" class="text-sm text-muted-foreground">"Nothing waiting for a response."</p>
+                <p id="inbox-empty" class="text-sm text-muted-foreground">
+                    (if inbox.unread_threads.is_empty() { "Nothing waiting for a response." } else { "No open enquiries or requests." })
+                </p>
             } else {
                 <div class="overflow-x-auto rounded-xl border border-border">
                     <table id="inbox-table" class="w-full text-left text-sm">
@@ -799,5 +895,74 @@ mod admin_request_pages {
             RequestRefusal::RequestAlreadyLive.message()
         );
         assert!(notice_message("quoted").contains("Quote sent"));
+    }
+}
+
+#[cfg(test)]
+mod unread_thread_tests {
+    use super::{preview, thread_context, thread_href};
+    use chrono::{NaiveDate, Utc};
+    use common::booking_request::{ThreadSubject, UnreadThread};
+    use uuid::Uuid;
+
+    fn thread(subject: Option<ThreadSubject>, dates: bool) -> UnreadThread {
+        UnreadThread {
+            conversation_id: Uuid::nil(),
+            listing_id: Uuid::nil(),
+            listing_name: "Villa Azure".into(),
+            guest_name: "Casey".into(),
+            unread: 1,
+            latest_at: Utc::now(),
+            latest_text: "Is the pool heated?".into(),
+            subject,
+            check_in: dates.then(|| NaiveDate::from_ymd_opt(2027, 3, 3)).flatten(),
+            check_out: dates.then(|| NaiveDate::from_ymd_opt(2027, 3, 6)).flatten(),
+        }
+    }
+
+    #[test]
+    fn each_subject_links_to_its_thread() {
+        let id = Uuid::nil();
+        let booking = ThreadSubject::Booking {
+            id,
+            confirmation_code: "HMEJYC3P9B".into(),
+        };
+        assert_eq!(thread_href(&booking), "/admin/bookings/HMEJYC3P9B/messages");
+        assert_eq!(
+            thread_href(&ThreadSubject::Request { id }),
+            format!("/admin/requests/{id}")
+        );
+        assert_eq!(
+            thread_href(&ThreadSubject::Enquiry { id }),
+            format!("/admin/enquiries/{id}")
+        );
+    }
+
+    #[test]
+    fn context_names_the_booking_and_its_dates() {
+        let booking = ThreadSubject::Booking {
+            id: Uuid::nil(),
+            confirmation_code: "HMEJYC3P9B".into(),
+        };
+        assert_eq!(
+            thread_context(&thread(Some(booking), true)),
+            "Booking HMEJYC3P9B · 3 Mar → 6 Mar 2027"
+        );
+        assert_eq!(
+            thread_context(&thread(
+                Some(ThreadSubject::Enquiry { id: Uuid::nil() }),
+                false
+            )),
+            "Enquiry"
+        );
+        assert_eq!(thread_context(&thread(None, false)), "Conversation");
+    }
+
+    #[test]
+    fn preview_cuts_long_text_on_characters() {
+        assert_eq!(preview("short", 10), "short");
+        assert_eq!(preview("exactly10!", 10), "exactly10!");
+        assert_eq!(preview("Is the pool heated?", 7), "Is the…");
+        assert_eq!(preview("Ça va très bien", 4), "Ça v…");
     }
 }

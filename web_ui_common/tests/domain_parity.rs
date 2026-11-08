@@ -234,28 +234,26 @@ async fn tax_document_matches_legacy_figures_and_ids() {
 
 /// Not a legacy-parity check: the legacy `_<width>.webp` srcset never
 /// matched what image_worker writes (`optimized/<size>/<name>.webp`), so
-/// every Cloud Storage photo 404'd. The sources must point at real variants.
+/// every Cloud Storage photo 404'd. The srcset must point at real variants,
+/// each tagged with its width so the browser picks the one nearest the
+/// drawn size.
 #[tokio::test]
-async fn responsive_image_sources_point_at_image_worker_variants() {
+async fn responsive_image_srcset_points_at_image_worker_variants() {
     let __cx = &Cx::default();
     let gcs = "https://storage.googleapis.com/b/optimized";
     let emulator = "http://localhost:4443/b/optimized";
+    let all = |base: &str| {
+        format!(
+            "{base}/thumbnail/l_i.webp 400w, {base}/mobile/l_i.webp 720w, \
+             {base}/tablet/l_i.webp 1280w, {base}/desktop/l_i.webp 1920w, \
+             {base}/highres/l_i.webp 2560w"
+        )
+    };
     let cases: [(String, Vec<String>); 4] = [
-        (
-            format!("{gcs}/desktop/l_i.webp"),
-            vec![
-                format!("{gcs}/desktop/l_i.webp"),
-                format!("{gcs}/tablet/l_i.webp"),
-                format!("{gcs}/mobile/l_i.webp"),
-            ],
-        ),
+        (format!("{gcs}/desktop/l_i.webp"), vec![all(gcs)]),
         (
             format!("{emulator}/thumbnail/l_i.webp"),
-            vec![
-                format!("{emulator}/desktop/l_i.webp"),
-                format!("{emulator}/tablet/l_i.webp"),
-                format!("{emulator}/mobile/l_i.webp"),
-            ],
+            vec![all(emulator)],
         ),
         ("https://storage.googleapis.com/b/villa".into(), vec![]),
         ("/static/local.jpg".into(), vec![]),
@@ -268,6 +266,11 @@ async fn responsive_image_sources_point_at_image_worker_variants() {
             .map(|(i, _)| redesigned[i..].split('"').nth(1).unwrap_or("").to_string())
             .collect::<Vec<_>>();
         assert_eq!(srcsets, expected, "{src}");
+        assert_eq!(
+            redesigned.contains(r#"sizes="100vw""#),
+            !expected.is_empty(),
+            "{redesigned}"
+        );
         assert!(
             redesigned.contains(&format!(r#"src="{src}""#)),
             "{redesigned}"
@@ -275,21 +278,14 @@ async fn responsive_image_sources_point_at_image_worker_variants() {
         assert!(redesigned.contains(r#"alt="Pool""#) && redesigned.contains(r#"loading="lazy""#));
     }
 
-    // `widest` drops the larger variants; the rest still cover wide screens.
+    // `sizes` tells the browser how wide the image is drawn.
     let src = format!("{emulator}/thumbnail/l_i.webp");
-    let capped = html(
-        view! { responsive_image(src: src, alt: "Pool".into(), widest: Some("mobile".into())) },
+    let narrow = html(
+        view! { responsive_image(src: src, alt: "Pool".into(), sizes: Some("280px".into())) },
         __cx,
     )
     .await;
-    assert!(
-        !capped.contains("/desktop/") && !capped.contains("/tablet/"),
-        "{capped}"
-    );
-    assert!(
-        capped.contains(&format!(r#"<source srcset="{emulator}/mobile/l_i.webp""#)),
-        "{capped}"
-    );
+    assert!(narrow.contains(r#"sizes="280px""#), "{narrow}");
 }
 
 #[tokio::test]

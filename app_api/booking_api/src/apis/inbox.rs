@@ -9,15 +9,45 @@ use api_core::response::{Payload, respond};
 use api_core::settings::Settings;
 use chrono::Utc;
 use common::booking_request::{
-    HostResponseMetrics, InboxItem, InboxQuery, InboxResponse, is_near_expiry,
+    HostResponseMetrics, InboxItem, InboxQuery, InboxResponse, ThreadSubject, UnreadThread,
+    is_near_expiry,
 };
 use db_core::booking_request as db_request;
+use db_core::conversation as db_conversation;
 use db_core::error::DbError;
 use db_core::models::UserRole;
 use sqlx::PgPool;
 
 /// Items per inbox page.
 const PER_PAGE: u32 = 50;
+
+/// Most threads with unread guest messages listed at once.
+const UNREAD_THREADS: i64 = 50;
+
+fn unread_thread(t: db_conversation::UnreadThread) -> UnreadThread {
+    UnreadThread {
+        conversation_id: t.conversation_id,
+        listing_id: t.listing_id,
+        listing_name: t.listing_name,
+        guest_name: t.guest_name,
+        unread: t.unread,
+        latest_at: t.latest_at,
+        latest_text: t.latest_text,
+        subject: t.subject.map(|s| match s {
+            db_conversation::ThreadSubject::Booking {
+                id,
+                confirmation_code,
+            } => ThreadSubject::Booking {
+                id,
+                confirmation_code,
+            },
+            db_conversation::ThreadSubject::Request(id) => ThreadSubject::Request { id },
+            db_conversation::ThreadSubject::Enquiry(id) => ThreadSubject::Enquiry { id },
+        }),
+        check_in: t.dates.map(|(from, _)| from),
+        check_out: t.dates.map(|(_, to)| to),
+    }
+}
 
 fn item(row: db_request::InboxRow, now: chrono::DateTime<Utc>, pct: i64) -> InboxItem {
     InboxItem {
@@ -69,7 +99,7 @@ fn metrics(m: db_request::HostMetrics) -> HostResponseMetrics {
     tag = "booking-requests",
     params(InboxQuery),
     responses(
-        (status = 200, description = "Open enquiries and live requests", body = InboxResponse),
+        (status = 200, description = "Unread guest threads, open enquiries and live requests", body = InboxResponse),
         (status = 400, description = "Unknown kind"),
         (status = 403, description = "Hosts and admins only")
     )
@@ -116,11 +146,18 @@ pub(super) async fn get_inbox(
     let host_metrics = db_request::host_response_metrics(pool.get_ref(), host_id)
         .await
         .map_err(ApiError::Database)?;
+    let unread_threads = db_conversation::unread_threads(pool.get_ref(), host_id, UNREAD_THREADS)
+        .await
+        .map_err(|e| {
+            tracing::error!(user_id = %claims.sub, error = ?e, "failed to list unread threads");
+            ApiError::Database(e)
+        })?;
     let now = Utc::now();
     let pct = settings.application.request_near_expiry_pct;
     Ok(respond(
         &req,
         Payload::Item(InboxResponse {
+            unread_threads: unread_threads.into_iter().map(unread_thread).collect(),
             items: rows.into_iter().map(|r| item(r, now, pct)).collect(),
             host_metrics: host_metrics.into_iter().map(metrics).collect(),
             page,

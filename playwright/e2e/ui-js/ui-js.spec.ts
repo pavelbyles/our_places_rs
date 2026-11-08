@@ -120,7 +120,7 @@ const GALLERY = `
 <html><body>
   <div data-lightbox-group="viewer">
     <button id="p0" data-lightbox-index="0" data-full-src="/a.webp" data-alt="Pool">A</button>
-    <button id="p1" data-lightbox-index="1" data-full-src="/b.webp" data-alt="Deck">B</button>
+    <button id="p1" data-lightbox-index="1" data-full-src="/b.webp" data-full-srcset="/b-720.webp 720w, /b-1280.webp 1280w" data-alt="Deck">B</button>
     <button id="p2" data-lightbox-index="2" data-full-src="/c.webp" data-alt="Bedroom">C</button>
   </div>
   <dialog id="viewer" data-lightbox>
@@ -147,10 +147,13 @@ test.describe('ui.js photo viewer and counters', () => {
     await expect(page.locator('#viewer')).toHaveAttribute('open', '');
     await expect(img).toHaveAttribute('src', '/b.webp');
     await expect(img).toHaveAttribute('alt', 'Deck');
+    await expect(img).toHaveAttribute('srcset', '/b-720.webp 720w, /b-1280.webp 1280w');
     await expect(page.locator('#counter')).toHaveText('2 / 3');
 
     await page.locator('#next').click();
     await expect(img).toHaveAttribute('src', '/c.webp');
+    // A photo without variants clears the previous photo's srcset.
+    await expect(img).toHaveAttribute('srcset', '');
     await page.locator('#next').click();
     await expect(img).toHaveAttribute('src', '/a.webp');
     await expect(page.locator('#counter')).toHaveText('1 / 3');

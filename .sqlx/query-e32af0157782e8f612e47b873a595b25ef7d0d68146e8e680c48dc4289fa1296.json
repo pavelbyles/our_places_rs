@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH unread AS (\n            SELECT m.conversation_id, COUNT(*) AS unread, MAX(m.created_at) AS latest_at\n            FROM booking_message m\n            JOIN conversation c ON c.id = m.conversation_id\n            JOIN listing l ON l.id = c.listing_id\n            WHERE m.read_at IS NULL\n              AND m.sender_id = c.guest_id\n              AND ($1::uuid IS NULL OR l.user_id = $1)\n            GROUP BY m.conversation_id\n            ORDER BY latest_at DESC\n            LIMIT $2\n        )\n        SELECT u.conversation_id AS \"conversation_id!\", u.unread AS \"unread!\",\n            u.latest_at AS \"latest_at!\", c.listing_id, l.name AS listing_name,\n            g.first_name AS guest_name, lm.message_text AS \"latest_text!\",\n            s.kind AS \"subject_kind?\", s.id AS \"subject_id?\", s.code AS \"subject_code?\",\n            s.date_from AS \"date_from?\", s.date_to AS \"date_to?\"\n        FROM unread u\n        JOIN conversation c ON c.id = u.conversation_id\n        JOIN listing l ON l.id = c.listing_id\n        JOIN \"user\" g ON g.id = c.guest_id\n        JOIN LATERAL (\n            SELECT m.message_text, m.booking_id, m.request_id, m.enquiry_id\n            FROM booking_message m\n            WHERE m.conversation_id = c.id AND m.read_at IS NULL AND m.sender_id = c.guest_id\n            ORDER BY m.created_at DESC\n            LIMIT 1\n        ) lm ON TRUE\n        LEFT JOIN LATERAL (\n            SELECT kind, id, code, date_from, date_to FROM (\n                SELECT 1 AS prio, 'booking'::text AS kind, b.id, b.confirmation_code::text AS code,\n                    b.date_from, b.date_to, b.created_at\n                FROM booking b WHERE b.id = lm.booking_id\n                UNION ALL\n                SELECT 2, 'request', r.id, NULL, r.date_from, r.date_to, r.created_at\n                FROM booking_request r WHERE r.id = lm.request_id\n                UNION ALL\n                SELECT 3, 'enquiry', e.id, NULL, e.date_from, e.date_to, e.created_at\n                FROM booking_enquiry e WHERE e.id = lm.enquiry_id\n                UNION ALL\n                SELECT 4, 'booking', b.id, b.confirmation_code::text, b.date_from, b.date_to,\n                    b.created_at\n                FROM booking b WHERE b.listing_id = c.listing_id AND b.guest_id = c.guest_id\n                UNION ALL\n                SELECT 5, 'request', r.id, NULL, r.date_from, r.date_to, r.created_at\n                FROM booking_request r WHERE r.conversation_id = c.id\n                UNION ALL\n                SELECT 6, 'enquiry', e.id, NULL, e.date_from, e.date_to, e.created_at\n                FROM booking_enquiry e WHERE e.conversation_id = c.id\n            ) candidates\n            ORDER BY prio, created_at DESC\n            LIMIT 1\n        ) s ON TRUE\n        ORDER BY u.latest_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "conversation_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "unread!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "latest_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "guest_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "latest_text!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "subject_kind?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "subject_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "subject_code?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "date_from?",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 11,
+        "name": "date_to?",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e32af0157782e8f612e47b873a595b25ef7d0d68146e8e680c48dc4289fa1296"
+}

@@ -208,3 +208,145 @@ pub async fn mark_read(pool: &PgPool, conversation_id: Uuid, reader_id: Uuid) ->
     .await?;
     Ok(result.rows_affected())
 }
+
+/// What a thread with unread guest messages is about, so the inbox can link
+/// to the right page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThreadSubject {
+    /// A booking, by id and confirmation code.
+    Booking {
+        /// The booking.
+        id: Uuid,
+        /// Its confirmation code.
+        confirmation_code: String,
+    },
+    /// A request to book.
+    Request(Uuid),
+    /// An enquiry.
+    Enquiry(Uuid),
+}
+
+/// A conversation with unread guest messages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnreadThread {
+    /// The conversation.
+    pub conversation_id: Uuid,
+    /// The listing.
+    pub listing_id: Uuid,
+    /// The listing's name.
+    pub listing_name: String,
+    /// The guest's first name.
+    pub guest_name: String,
+    /// Unread guest messages in the thread.
+    pub unread: i64,
+    /// When the newest unread message arrived.
+    pub latest_at: chrono::DateTime<chrono::Utc>,
+    /// The newest unread message (user content; never logged).
+    pub latest_text: String,
+    /// What the newest unread message is about, else the thread's latest
+    /// booking, request or enquiry; `None` if it has none.
+    pub subject: Option<ThreadSubject>,
+    /// The subject's stay dates.
+    pub dates: Option<(chrono::NaiveDate, chrono::NaiveDate)>,
+}
+
+/// Threads with unread guest messages on `host_id`'s listings (every listing
+/// when `None`), newest first, at most `limit`. Counts the same messages as
+/// [`unread_guest_messages`], so the list matches the nav badge.
+#[tracing::instrument(skip(pool))]
+pub async fn unread_threads(
+    pool: &PgPool,
+    host_id: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<UnreadThread>> {
+    let rows = sqlx::query!(
+        r#"
+        WITH unread AS (
+            SELECT m.conversation_id, COUNT(*) AS unread, MAX(m.created_at) AS latest_at
+            FROM booking_message m
+            JOIN conversation c ON c.id = m.conversation_id
+            JOIN listing l ON l.id = c.listing_id
+            WHERE m.read_at IS NULL
+              AND m.sender_id = c.guest_id
+              AND ($1::uuid IS NULL OR l.user_id = $1)
+            GROUP BY m.conversation_id
+            ORDER BY latest_at DESC
+            LIMIT $2
+        )
+        SELECT u.conversation_id AS "conversation_id!", u.unread AS "unread!",
+            u.latest_at AS "latest_at!", c.listing_id, l.name AS listing_name,
+            g.first_name AS guest_name, lm.message_text AS "latest_text!",
+            s.kind AS "subject_kind?", s.id AS "subject_id?", s.code AS "subject_code?",
+            s.date_from AS "date_from?", s.date_to AS "date_to?"
+        FROM unread u
+        JOIN conversation c ON c.id = u.conversation_id
+        JOIN listing l ON l.id = c.listing_id
+        JOIN "user" g ON g.id = c.guest_id
+        JOIN LATERAL (
+            SELECT m.message_text, m.booking_id, m.request_id, m.enquiry_id
+            FROM booking_message m
+            WHERE m.conversation_id = c.id AND m.read_at IS NULL AND m.sender_id = c.guest_id
+            ORDER BY m.created_at DESC
+            LIMIT 1
+        ) lm ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT kind, id, code, date_from, date_to FROM (
+                SELECT 1 AS prio, 'booking'::text AS kind, b.id, b.confirmation_code::text AS code,
+                    b.date_from, b.date_to, b.created_at
+                FROM booking b WHERE b.id = lm.booking_id
+                UNION ALL
+                SELECT 2, 'request', r.id, NULL, r.date_from, r.date_to, r.created_at
+                FROM booking_request r WHERE r.id = lm.request_id
+                UNION ALL
+                SELECT 3, 'enquiry', e.id, NULL, e.date_from, e.date_to, e.created_at
+                FROM booking_enquiry e WHERE e.id = lm.enquiry_id
+                UNION ALL
+                SELECT 4, 'booking', b.id, b.confirmation_code::text, b.date_from, b.date_to,
+                    b.created_at
+                FROM booking b WHERE b.listing_id = c.listing_id AND b.guest_id = c.guest_id
+                UNION ALL
+                SELECT 5, 'request', r.id, NULL, r.date_from, r.date_to, r.created_at
+                FROM booking_request r WHERE r.conversation_id = c.id
+                UNION ALL
+                SELECT 6, 'enquiry', e.id, NULL, e.date_from, e.date_to, e.created_at
+                FROM booking_enquiry e WHERE e.conversation_id = c.id
+            ) candidates
+            ORDER BY prio, created_at DESC
+            LIMIT 1
+        ) s ON TRUE
+        ORDER BY u.latest_at DESC
+        "#,
+        host_id,
+        limit
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let subject = match (r.subject_kind.as_deref(), r.subject_id) {
+                (Some("booking"), Some(id)) => {
+                    r.subject_code
+                        .map(|confirmation_code| ThreadSubject::Booking {
+                            id,
+                            confirmation_code,
+                        })
+                }
+                (Some("request"), Some(id)) => Some(ThreadSubject::Request(id)),
+                (Some("enquiry"), Some(id)) => Some(ThreadSubject::Enquiry(id)),
+                _ => None,
+            };
+            UnreadThread {
+                conversation_id: r.conversation_id,
+                listing_id: r.listing_id,
+                listing_name: r.listing_name,
+                guest_name: r.guest_name,
+                unread: r.unread,
+                latest_at: r.latest_at,
+                latest_text: r.latest_text,
+                dates: r.date_from.zip(r.date_to),
+                subject,
+            }
+        })
+        .collect())
+}

@@ -5,6 +5,7 @@ use crate::booking_request::fixtures::{
 };
 use crate::booking_request::{Actor, accept_request, convert_offer_to_hold, create_request};
 use crate::conversation::{NewMessage, insert_message, list_messages};
+use crate::conversation::{ThreadSubject, mark_read, unread_threads};
 use crate::models::DbMessageSenderRole;
 use chrono::Duration;
 use sqlx::PgPool;
@@ -293,5 +294,101 @@ async fn unread_guest_messages_count_only_guest_messages_on_the_hosts_listings()
             .await
             .expect("count"),
         1
+    );
+}
+
+#[tokio::test]
+async fn conversation_tests_unread_threads_name_what_the_guest_wrote_about() {
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, host) = listing_in_mode(&pool, "both", 0).await;
+    let guest = raw_user(&pool).await;
+    let enquiry = raw_enquiry(&pool, villa, guest).await;
+    let conversation: Uuid =
+        sqlx::query_scalar("SELECT conversation_id FROM booking_enquiry WHERE id = $1")
+            .bind(enquiry)
+            .fetch_one(&pool)
+            .await
+            .expect("conversation");
+
+    // A message tied to nothing falls back to the thread's enquiry.
+    post(&pool, conversation, guest, DbMessageSenderRole::Guest, "Hi").await;
+    post(
+        &pool,
+        conversation,
+        host,
+        DbMessageSenderRole::Host,
+        "Hello",
+    )
+    .await;
+    let threads = unread_threads(&pool, Some(host), 50)
+        .await
+        .expect("threads");
+    assert_eq!(threads.len(), 1);
+    assert_eq!(threads[0].unread, 1, "the host's own message is not unread");
+    assert_eq!(threads[0].subject, Some(ThreadSubject::Enquiry(enquiry)));
+    assert_eq!(threads[0].dates, Some((day(3, 1), day(3, 4))));
+    assert_eq!(threads[0].latest_text, "Hi");
+
+    // A message on a booking names the booking.
+    let booking = raw_stay(&pool, guest, villa, day(5, 1), day(5, 5), "confirmed", 0).await;
+    let code: String = sqlx::query_scalar("SELECT confirmation_code FROM booking WHERE id = $1")
+        .bind(booking)
+        .fetch_one(&pool)
+        .await
+        .expect("code");
+    crate::booking_message::insert_booking_message(
+        &pool,
+        booking,
+        guest,
+        DbMessageSenderRole::Guest,
+        "Guest",
+        "What time is check-in?",
+    )
+    .await
+    .expect("booking message");
+    let threads = unread_threads(&pool, Some(host), 50)
+        .await
+        .expect("threads");
+    assert_eq!(threads.len(), 1);
+    assert_eq!(threads[0].unread, 2);
+    assert_eq!(threads[0].latest_text, "What time is check-in?");
+    assert_eq!(
+        threads[0].subject,
+        Some(ThreadSubject::Booking {
+            id: booking,
+            confirmation_code: code
+        })
+    );
+    assert_eq!(threads[0].dates, Some((day(5, 1), day(5, 5))));
+    assert_eq!(
+        crate::conversation::unread_guest_messages(&pool, Some(host))
+            .await
+            .expect("count"),
+        2,
+        "the list counts what the badge counts"
+    );
+
+    // Other hosts don't see it; admins (no host) do; reading clears it.
+    let other = raw_user(&pool).await;
+    assert!(
+        unread_threads(&pool, Some(other), 50)
+            .await
+            .expect("other")
+            .is_empty()
+    );
+    assert!(
+        unread_threads(&pool, None, 500)
+            .await
+            .expect("admin")
+            .iter()
+            .any(|t| t.conversation_id == conversation)
+    );
+    mark_read(&pool, conversation, host).await.expect("read");
+    assert!(
+        unread_threads(&pool, Some(host), 50)
+            .await
+            .expect("read")
+            .is_empty()
     );
 }

@@ -933,9 +933,61 @@ pub struct HostResponseMetrics {
     pub expired_unanswered_pct: i64,
 }
 
+/// What a thread with unread guest messages is about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ThreadSubject {
+    /// A booking.
+    Booking {
+        /// The booking.
+        id: Uuid,
+        /// Its confirmation code.
+        confirmation_code: String,
+    },
+    /// A request to book.
+    Request {
+        /// The request.
+        id: Uuid,
+    },
+    /// An enquiry.
+    Enquiry {
+        /// The enquiry.
+        id: Uuid,
+    },
+}
+
+/// A conversation with unread messages from the guest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct UnreadThread {
+    /// The thread.
+    pub conversation_id: Uuid,
+    /// The listing.
+    pub listing_id: Uuid,
+    /// The listing's name.
+    pub listing_name: String,
+    /// The guest's first name.
+    pub guest_name: String,
+    /// Unread guest messages in the thread.
+    pub unread: i64,
+    /// When the newest unread message arrived.
+    pub latest_at: DateTime<Utc>,
+    /// The newest unread message.
+    pub latest_text: String,
+    /// What it is about: the newest unread message's booking, request or
+    /// enquiry, else the thread's latest one.
+    pub subject: Option<ThreadSubject>,
+    /// The subject's check-in.
+    pub check_in: Option<NaiveDate>,
+    /// The subject's check-out.
+    pub check_out: Option<NaiveDate>,
+}
+
 /// The inbox page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct InboxResponse {
+    /// Threads with unread guest messages, newest first (any page).
+    #[serde(default)]
+    pub unread_threads: Vec<UnreadThread>,
     /// Items, soonest-expiring requests first.
     pub items: Vec<InboxItem>,
     /// Response metrics per host (only the caller's for a host).

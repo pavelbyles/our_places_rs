@@ -59,8 +59,7 @@ pub async fn villa_card(
         <article class=(class!("group flex w-[240px] shrink-0 snap-start flex-col sm:w-[280px]", attrs.remove("class"))) (attrs)>
             <a href=(href.clone()) tabindex="-1" aria-hidden="true" class="block aspect-[4/5] overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
                 if let Some(src) = image_url {
-                    // 280px wide at most: 720px covers 2x screens.
-                    responsive_image(src: src, alt: alt, widest: Some("mobile".to_string()), attrs: attributes! { class="transition-transform duration-700 ease-out group-hover:scale-[1.04] motion-reduce:transition-none" })
+                    responsive_image(src: src, alt: alt, sizes: Some("(min-width: 640px) 280px, 240px".to_string()), attrs: attributes! { class="transition-transform duration-700 ease-out group-hover:scale-[1.04] motion-reduce:transition-none" })
                 }
             </a>
             <div class="flex flex-col items-center gap-1.5 px-2 pt-5 text-center">

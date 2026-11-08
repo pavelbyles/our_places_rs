@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { loginAdminAs } from '../fixtures/admin-data.js';
-import { createGuest, psql } from '../fixtures/bookings-data.js';
+import { createBooking, createGuest, psql } from '../fixtures/bookings-data.js';
 import { farStay, listingInMode } from '../fixtures/requests-data.js';
 
 /** The value a `RETURNING` query printed (psql also prints the command tag). */
@@ -125,6 +125,34 @@ test.describe('Admin Portal - Inbox (#105)', () => {
 
     // Opening the thread marked it read.
     await page.goto('/admin/inbox');
+    await expect(page.locator('#admin-nav-unread')).toHaveCount(0);
+  });
+
+  test('an unread message on a booking is listed with its listing and code, linking to the thread', async ({ page, request }) => {
+    const villa = listingInMode('instant');
+    const guest = createGuest();
+    const booking = await createBooking(request, guest.id, { confirmed: true, listingId: villa.id });
+    const conv = returned(`
+      INSERT INTO conversation (listing_id, guest_id) VALUES ('${villa.id}', '${guest.id}')
+      ON CONFLICT (listing_id, guest_id) DO UPDATE SET last_message_at = NOW() RETURNING id;`);
+    psql(`INSERT INTO booking_message (id, conversation_id, booking_id, sender_id, sender_role, sender_name, message_text)
+          VALUES (gen_random_uuid(), '${conv}', '${booking.id}', '${guest.id}', 'guest', 'Casey', 'What time is check-in?');`);
+    await loginAdminAs(page, villa.host);
+
+    await page.goto('/admin/inbox');
+    const row = page.locator(`#unread-${conv}`);
+    await expect(row).toContainText(villa.name);
+    await expect(row).toContainText(`Booking ${booking.confirmationCode}`);
+    await expect(row).toContainText('What time is check-in?');
+    await expect(row).toContainText('1 unread');
+
+    await row.locator('a').click();
+    await expect(page).toHaveURL(new RegExp(`/admin/bookings/${booking.confirmationCode}/messages$`));
+    await expect(page.locator('#admin-messages-list')).toContainText('What time is check-in?');
+
+    // Opening the thread marked it read, so it leaves the list.
+    await page.goto('/admin/inbox');
+    await expect(page.locator(`#unread-${conv}`)).toHaveCount(0);
     await expect(page.locator('#admin-nav-unread')).toHaveCount(0);
   });
 

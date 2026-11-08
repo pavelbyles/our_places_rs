@@ -7,20 +7,19 @@ use topcoat::{
     view::{Attributes, View, class, component, view},
 };
 
-/// Size folders image_worker writes (400, 720, 1280, 1920 and 2560 px wide).
-const SIZE_FOLDERS: [&str; 5] = ["thumbnail", "mobile", "tablet", "desktop", "highres"];
-
-/// The `<source>` sizes used, widest first, with the viewport each serves.
-const SOURCES: [(&str, Option<&str>); 3] = [
-    ("desktop", Some("(min-width: 1024px)")),
-    ("tablet", Some("(min-width: 640px)")),
-    ("mobile", None),
+/// Size folders image_worker writes, with each variant's pixel width.
+const VARIANTS: [(&str, u32); 5] = [
+    ("thumbnail", 400),
+    ("mobile", 720),
+    ("tablet", 1280),
+    ("desktop", 1920),
+    ("highres", 2560),
 ];
 
-/// URL of the `size` variant (a folder in [`SIZE_FOLDERS`]) of an
+/// URL of the `size` variant (a folder in [`VARIANTS`]) of an
 /// image_worker photo, or `None` if `src` is not one.
 pub fn variant_url(src: &str, size: &str) -> Option<String> {
-    SIZE_FOLDERS.iter().find_map(|folder| {
+    VARIANTS.iter().find_map(|(folder, _)| {
         let marker = format!("/optimized/{folder}/");
         src.rfind(&marker).map(|at| {
             format!(
@@ -37,45 +36,43 @@ pub fn has_variants(src: &str) -> bool {
     variant_url(src, "mobile").is_some()
 }
 
-/// A lazily loaded image, wrapped in `<picture>` with WebP sources when the
-/// image has resized variants.
+/// A `srcset` listing every variant of an image_worker photo with its width,
+/// so the browser can pick the one closest to the drawn size (`sizes`) times
+/// the screen's pixel density; `None` if `src` has no variants.
+pub fn variant_srcset(src: &str) -> Option<String> {
+    has_variants(src).then(|| {
+        VARIANTS
+            .iter()
+            .filter_map(|(size, width)| variant_url(src, size).map(|url| format!("{url} {width}w")))
+            .collect::<Vec<_>>()
+            .join(", ")
+    })
+}
+
+/// A lazily loaded image. Photos with resized variants get a `srcset` of all
+/// of them, so the browser loads the one nearest the size it is drawn at.
 #[component]
 pub async fn responsive_image(
     /// Image URL.
     src: String,
     /// Alternative text.
     alt: String,
-    /// Largest variant to load (a size in [`SOURCES`], e.g. `"mobile"`), for
-    /// images shown small on wide screens such as fixed-width cards.
+    /// How wide the image is drawn: an HTML `sizes` value such as
+    /// `"(min-width: 768px) 50vw, 100vw"`. Defaults to the full viewport, so
+    /// pass it wherever the image is drawn narrower than the screen.
     #[default]
-    widest: Option<String>,
+    sizes: Option<String>,
     /// Extra HTML attributes for the `<img>`; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
     let img_class = class!("size-full object-cover", attrs.remove("class"));
-    let start = widest
-        .and_then(|w| SOURCES.iter().position(|(size, _)| *size == w))
-        .unwrap_or(0);
-    // Dropping the wider sources leaves the next one matching wide viewports.
-    let sources: Vec<(String, Option<&str>)> = SOURCES[start..]
-        .iter()
-        .filter_map(|(size, media)| variant_url(&src, size).map(|url| (url, *media)))
-        .collect();
+    let sizes = sizes.unwrap_or_else(|| "100vw".to_string());
     Ok(view! {
-        if sources.is_empty() {
-            <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
+        if let Some(srcset) = variant_srcset(&src) {
+            <img src=(src) srcset=(srcset) sizes=(sizes) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
         } else {
-            <picture class="block size-full">
-                for (srcset, media) in sources {
-                    if let Some(media) = media {
-                        <source media=(media) srcset=(srcset) type="image/webp" />
-                    } else {
-                        <source srcset=(srcset) type="image/webp" />
-                    }
-                }
-                <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
-            </picture>
+            <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
         }
     })
 }

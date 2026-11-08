@@ -118,6 +118,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::booking_request::QuoteRequestBody,
                 common::booking_request::InboxItem,
                 common::booking_request::InboxResponse,
+                common::booking_request::UnreadThread,
+                common::booking_request::ThreadSubject,
                 common::booking_request::HostResponseMetrics,
                 common::booking_request::EnquiryResponse,
                 common::booking_request::EnquiryStatus,

@@ -552,6 +552,16 @@ async fn inbox_api_hosts_see_their_own_admins_all_and_guests_none() {
     let app = app!(pool);
     let mine = submit(&app, guest, villa, "2030-08-01", "2030-08-04").await;
     let theirs = submit(&app, guest, other_villa, "2030-08-01", "2030-08-04").await;
+    sqlx::query(
+        "INSERT INTO booking_message (id, conversation_id, request_id, sender_id, sender_role,
+             sender_name, message_text)
+         SELECT gen_random_uuid(), conversation_id, id, guest_id, 'guest', 'Guest', 'Any towels?'
+         FROM booking_request WHERE id = $1::uuid",
+    )
+    .bind(&mine)
+    .execute(&pool)
+    .await
+    .expect("guest message");
 
     let get = |who: Uuid, query: &str| {
         test::TestRequest::get()
@@ -574,6 +584,19 @@ async fn inbox_api_hosts_see_their_own_admins_all_and_guests_none() {
     assert!(inbox["items"][0]["time_left_secs"].as_i64().is_some());
     assert_eq!(inbox["host_metrics"].as_array().map(Vec::len), Some(1));
     assert_eq!(inbox["host_metrics"][0]["host_id"], host.to_string());
+    let threads = inbox["unread_threads"].as_array().expect("unread threads");
+    let thread = threads
+        .iter()
+        .find(|t| t["latest_text"] == "Any towels?")
+        .expect("the guest's unread message is listed");
+    assert_eq!(thread["subject"]["kind"], "request");
+    assert_eq!(thread["subject"]["id"], mine.as_str());
+    assert_eq!(thread["check_in"], "2030-08-01");
+    assert!(
+        thread["listing_name"]
+            .as_str()
+            .is_some_and(|n| !n.is_empty())
+    );
 
     let resp = test::call_service(&app, get(admin, "")).await;
     let all: serde_json::Value = test::read_body_json(resp).await;
