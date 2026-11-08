@@ -30,8 +30,48 @@ pub fn breakdown(quote: &StayQuoteResponse) -> PriceBreakdown {
     }
 }
 
-/// The price of a stay for anyone browsing a listing. `None` when the API can't
-/// quote it, such as below the minimum stay: no price is shown, never a guess.
+/// Why a stay has no price.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoQuote {
+    /// `booking_api` refused the stay as asked; the message tells the guest
+    /// why and what to change, e.g. "These dates need a stay of at least 5
+    /// nights."
+    Refused(String),
+    /// The quote failed for another reason, such as the API being down.
+    Failed,
+}
+
+impl NoQuote {
+    /// What the guest is told. Only a failure says to try again: retrying
+    /// never fixes a refusal.
+    pub fn message(&self) -> String {
+        match self {
+            Self::Refused(message) => message.clone(),
+            Self::Failed => {
+                "We couldn't price this stay right now. Please try again shortly.".to_string()
+            }
+        }
+    }
+
+    /// Sorts a failed quote by its error text, logging it: a refusal is the
+    /// guest's input, a failure is ours.
+    fn from_error(e: &anyhow::Error, listing_id: Uuid) -> Self {
+        let text = e.to_string();
+        match common::availability::stay_refusal_message_in_error(&text) {
+            Some(message) => {
+                tracing::info!(%listing_id, "stay not quoted: {text}");
+                Self::Refused(message)
+            }
+            None => {
+                tracing::warn!(%listing_id, "no stay quote: {text}");
+                Self::Failed
+            }
+        }
+    }
+}
+
+/// The price of a stay for anyone browsing a listing, or why there is none,
+/// such as below the minimum stay: no price is shown, never a guess.
 pub async fn public_quote(
     cx: &Cx,
     listing_id: Uuid,
@@ -39,38 +79,31 @@ pub async fn public_quote(
     check_out: NaiveDate,
     guests: u32,
     currency: Option<&str>,
-) -> Option<PriceBreakdown> {
+) -> Result<PriceBreakdown, NoQuote> {
     get_api_client(cx)
         .get_public_stay_quote(listing_id, check_in, check_out, guests, currency)
         .await
-        .map_err(|e| tracing::info!("no quote for {check_in}..{check_out}: {e}"))
-        .ok()
         .map(|quote| breakdown(&quote))
+        .map_err(|e| NoQuote::from_error(&e, listing_id))
 }
 
-/// A signed-in guest's stay price, with why any promo code was refused. `None`
-/// when the API can't quote it.
+/// A signed-in guest's stay price, with why any promo code was refused, or why
+/// the stay has no price.
 pub async fn signed_in_quote(
     cx: &Cx,
     token: &str,
     request: &StayQuoteRequest,
-) -> Option<(PriceBreakdown, Option<String>)> {
+) -> Result<(PriceBreakdown, Option<String>), NoQuote> {
     let quote = get_api_client(cx)
         .get_stay_quote(request, token)
         .await
-        .map_err(|e| {
-            tracing::warn!(
-                listing_id = %request.listing_id,
-                "no checkout quote: {e}"
-            )
-        })
-        .ok()?;
+        .map_err(|e| NoQuote::from_error(&e, request.listing_id))?;
     let refusal = quote.promo_refusal.as_ref().map(|refusal| {
         PromoRefusal::from_code(&refusal.code)
             .map(PromoRefusal::message)
             .unwrap_or_else(|| refusal.message.clone())
     });
-    Some((breakdown(&quote), refusal))
+    Ok((breakdown(&quote), refusal))
 }
 
 #[cfg(test)]
@@ -97,6 +130,25 @@ mod tests {
             damage_deposit: dec!(200),
             total_amount: dec!(1275.50),
         }
+    }
+
+    #[test]
+    fn a_refused_stay_says_why_and_only_a_failure_says_try_again() {
+        let id = Uuid::now_v7();
+        let short = anyhow::anyhow!(
+            r#"Failed to quote stay (400 Bad Request): {{"code":"MINIMUM_STAY_NOT_MET","message":"These dates need a stay of at least 5 nights.","required_nights":5}}"#
+        );
+        let refused = NoQuote::from_error(&short, id);
+        assert_eq!(
+            refused,
+            NoQuote::Refused("These dates need a stay of at least 5 nights.".to_string())
+        );
+        assert!(!refused.message().contains("try again"));
+
+        let down =
+            NoQuote::from_error(&anyhow::anyhow!("Failed to connect to booking service"), id);
+        assert_eq!(down, NoQuote::Failed);
+        assert!(down.message().contains("try again"));
     }
 
     #[test]
