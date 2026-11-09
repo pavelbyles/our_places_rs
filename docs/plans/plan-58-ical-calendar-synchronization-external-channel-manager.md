@@ -478,7 +478,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core calendar::export_tests && devenv shell -- cargo test -p listing_api calendar_tests::export`
   - **Dependencies:** T1, T4
 
-- [ ] **Task 20: Calendar client functions and the public guest-portal `.ics` route**
+- [x] **Task 20: Calendar client functions and the public guest-portal `.ics` route**
   - **Scope:** M
   - **Description:** Add `common/src/app_client/calendar.rs` and the `web_client` wrappers: the user JWT on every management call, and `get_calendar_ics` through `get_request` with the service identity only. In `web_ui_guest`, add `pages/calendar_export.rs` with `#[route(GET "/listings/{id}/calendar.ics")]` and the spec §1.6.4 cache (60 s TTL, 1,000 entries, 404s cached, errors not).
     - A bad UUID or an upstream 404 gives 404.

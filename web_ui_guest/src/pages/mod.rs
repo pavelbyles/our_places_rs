@@ -6,6 +6,10 @@ pub mod auth;
 pub mod booking_change;
 /// My bookings, cancellation and refund quotes.
 pub mod bookings;
+/// The public `.ics` export feed.
+pub mod calendar_export;
+#[cfg(test)]
+mod calendar_export_tests;
 /// Checkout and legacy per-currency checkout redirects.
 pub mod checkout;
 /// Choosing the display currency.

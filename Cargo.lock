@@ -6603,6 +6603,7 @@ name = "web_ui_guest"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "common",
  "dotenvy",
@@ -6619,6 +6620,7 @@ dependencies = [
  "uuid",
  "web_client",
  "web_ui_common",
+ "wiremock",
 ]
 
 [[package]]
