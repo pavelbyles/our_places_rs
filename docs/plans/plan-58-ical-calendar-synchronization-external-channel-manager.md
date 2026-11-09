@@ -156,7 +156,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p common calendar::ics_write_tests`
   - **Dependencies:** T3
 
-- [ ] **Task 5: Conflict rules and calendar DTOs**
+- [x] **Task 5: Conflict rules and calendar DTOs**
   - **Scope:** S
   - **Description:** Add `common::calendar::conflict::{ConflictKind::classify, StaleReason, stale_reason}`, and the spec §3.2 DTOs, each with `ToSchema`: `SyncOutcome` (`ok`/`warning`/`failed`/`skipped`/`deferred`), `Page<T>`, and `NewBlockedDateRequest` with validator rules.
   - **Files Touched:**
