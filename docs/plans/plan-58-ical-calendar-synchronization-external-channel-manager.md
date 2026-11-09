@@ -381,7 +381,7 @@ T27 docs + full gate                      ← T1–T26
 
 ## Phase D: Server-Side Listing Authorization
 
-- [ ] **Task 15: `require_listing_manager` and the existing write endpoints**
+- [x] **Task 15: `require_listing_manager` and the existing write endpoints**
   - **Scope:** M
   - **Description:** Add `listing_api::authz::require_listing_manager` (spec §1.8.1: 401 before the lookup, then 404, then 403). Apply it to `PATCH`/`DELETE /listings/{id}`, image presign and delete, and price-override `POST`/`PUT`/`DELETE`. `create_listing` requires the Admin or Host role. A host is always the owner. An admin-set `user_id` must belong to an active Host or Admin, otherwise 422. Public `GET`s are unchanged.
   - **Files Touched:**

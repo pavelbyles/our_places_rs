@@ -13,7 +13,33 @@ use std::path::Path;
 /// Env var holding the test database URL.
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 
+/// A fixed admin present in every test database that has a test user. The
+/// write tests here act as this admin; per-role checks live in `authz_tests`.
+pub(super) const TEST_ADMIN: Uuid = Uuid::from_u128(0xad41_0000_0000_0000_0000_0000_0000_0001);
+
+/// `Authorization` for [`TEST_ADMIN`].
+pub(super) fn admin_auth() -> (&'static str, String) {
+    (
+        "Authorization",
+        format!("Bearer {}", api_core::auth::generate_test_jwt(TEST_ADMIN)),
+    )
+}
+
+async fn ensure_test_admin(conn: &mut sqlx::PgConnection) {
+    sqlx::query(
+        r#"INSERT INTO "user" (id, email, password_hash, first_name, last_name, slug, roles, is_active)
+           VALUES ($1, 'test-admin@example.com', 'x', 'Test', 'Admin', 'test-admin',
+                   ARRAY['admin']::user_role[], TRUE)
+           ON CONFLICT (id) DO NOTHING"#,
+    )
+    .bind(TEST_ADMIN)
+    .execute(&mut *conn)
+    .await
+    .expect("test admin");
+}
+
 pub(super) async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
+    ensure_test_admin(&mut *conn).await;
     let id = Uuid::now_v7();
     let new_user = NewUser {
         id,
@@ -27,7 +53,7 @@ pub(super) async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
         verification_code: None,
         verification_code_expires_at: None,
         attributes: serde_json::json!({}),
-        roles: None,
+        roles: Some(vec![db_core::models::UserRole::Host]),
         default_currency: "USD".to_string(),
     };
     create_user(&mut *conn, &new_user)
@@ -49,7 +75,7 @@ pub(super) async fn create_test_user(conn: &mut sqlx::PgConnection) -> Uuid {
 
 /// Helper to get default test settings.
 /// Returns settings with hard deletes ENABLED by default.
-pub(super) fn get_test_settings() -> Settings {
+pub(crate) fn get_test_settings() -> Settings {
     Settings {
         server: Server {
             host: "localhost".to_string(),
@@ -229,6 +255,7 @@ async fn test_create_listing_validation_error() {
     };
 
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&invalid_listing)
         .to_request();
@@ -290,6 +317,7 @@ async fn test_delete_listing() {
 
     // 1. Soft Delete
     let req = test::TestRequest::delete()
+        .insert_header(admin_auth())
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -337,6 +365,7 @@ async fn test_delete_listing() {
         .unwrap();
 
     let req = test::TestRequest::delete()
+        .insert_header(admin_auth())
         .uri(&format!(
             "/api/v1/listings/{}?hard_delete=true",
             created_listing_2.id
@@ -409,6 +438,7 @@ async fn test_delete_listing_hard_forbidden() {
     .await;
 
     let req = test::TestRequest::delete()
+        .insert_header(admin_auth())
         .uri(&format!(
             "/api/v1/listings/{}?hard_delete=true",
             created_listing.id
@@ -532,6 +562,7 @@ async fn test_update_listing_multiple_times() {
         ..Default::default()
     };
     let req = test::TestRequest::patch()
+        .insert_header(admin_auth())
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .set_json(&update_req_1)
         .to_request();
@@ -553,6 +584,7 @@ async fn test_update_listing_multiple_times() {
         ..Default::default()
     };
     let req = test::TestRequest::patch()
+        .insert_header(admin_auth())
         .uri(&format!("/api/v1/listings/{}", created_listing.id))
         .set_json(&update_req_2)
         .to_request();
@@ -722,6 +754,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
     };
 
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&listing_with_fees)
         .to_request();
@@ -765,6 +798,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
     };
 
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&listing_no_fees)
         .to_request();
@@ -785,6 +819,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         ..Default::default()
     };
     let req = test::TestRequest::patch()
+        .insert_header(admin_auth())
         .uri(&format!("/api/v1/listings/{}", created.id))
         .set_json(&update_req)
         .to_request();
@@ -802,6 +837,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         ..listing_no_fees.clone()
     };
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&invalid_guests_included)
         .to_request();
@@ -814,6 +850,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         ..listing_no_fees.clone()
     };
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&invalid_neg)
         .to_request();
@@ -826,6 +863,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         ..listing_no_fees.clone()
     };
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&invalid_large)
         .to_request();
@@ -838,6 +876,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         ..listing_no_fees
     };
     let req = test::TestRequest::post()
+        .insert_header(admin_auth())
         .uri("/api/v1/listings")
         .set_json(&invalid_scale)
         .to_request();
@@ -1200,6 +1239,7 @@ mod currency_inactive_tests {
             let (status, created) = status_and_code(
                 &app,
                 test::TestRequest::post()
+                    .insert_header(admin_auth())
                     .uri("/api/v1/listings")
                     .insert_header(("Accept", "application/json"))
                     .set_json(body)
@@ -1218,6 +1258,7 @@ mod currency_inactive_tests {
         let (status, body) = status_and_code(
             &app,
             test::TestRequest::post()
+                .insert_header(admin_auth())
                 .uri("/api/v1/listings")
                 .set_json(new_listing_request(user, "CAD"))
                 .to_request(),
@@ -1234,6 +1275,7 @@ mod currency_inactive_tests {
         let (status, body) = status_and_code(
             &app,
             test::TestRequest::post()
+                .insert_header(admin_auth())
                 .uri("/api/v1/listings")
                 .set_json(new_listing_request(user, "QQQ"))
                 .to_request(),
@@ -1285,6 +1327,7 @@ mod currency_inactive_tests {
         let (status, body) = status_and_code(
             &app,
             test::TestRequest::patch()
+                .insert_header(admin_auth())
                 .uri(&format!("/api/v1/listings/{}", listing.id))
                 .set_json(UpdatedListingRequest {
                     base_currency: Some("CAD".to_string()),
@@ -1351,6 +1394,7 @@ mod currency_inactive_tests {
         let (status, _) = status_and_code(
             &app,
             test::TestRequest::patch()
+                .insert_header(admin_auth())
                 .uri(&format!("/api/v1/listings/{id}"))
                 .set_json(UpdatedListingRequest {
                     name: Some("Renamed".to_string()),
@@ -1422,6 +1466,7 @@ mod gap_limit_tests {
 
         let post = |body: common::models::NewListingRequest| {
             test::TestRequest::post()
+                .insert_header(admin_auth())
                 .uri("/api/v1/listings")
                 .set_json(body)
                 .to_request()
@@ -1449,6 +1494,7 @@ mod gap_limit_tests {
         // Update: the same limits.
         for (gap, expected) in [(0, 200), (365, 200), (-1, 400), (366, 400)] {
             let req = test::TestRequest::patch()
+                .insert_header(admin_auth())
                 .uri(&uri)
                 .set_json(UpdatedListingRequest {
                     days_between_bookings: Some(gap),
@@ -1465,6 +1511,7 @@ mod gap_limit_tests {
             (dec!(100.01), 400),
         ] {
             let req = test::TestRequest::patch()
+                .insert_header(admin_auth())
                 .uri(&uri)
                 .set_json(UpdatedListingRequest {
                     monthly_discount_percentage: Some(pct),
@@ -1744,6 +1791,7 @@ mod search_param_tests {
                 is_active: true,
             };
             let req = test::TestRequest::post()
+                .insert_header(admin_auth())
                 .uri("/api/v1/listings")
                 .set_json(&listing)
                 .to_request();
@@ -1848,6 +1896,7 @@ async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
     let resp = test::call_service(
         &app,
         test::TestRequest::patch()
+            .insert_header(admin_auth())
             .uri(&format!("/api/v1/listings/{}", created.id))
             .set_json(serde_json::json!({ "booking_mode": "both" }))
             .to_request(),
@@ -1873,6 +1922,7 @@ async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
     let resp = test::call_service(
         &app,
         test::TestRequest::patch()
+            .insert_header(admin_auth())
             .uri(&format!("/api/v1/listings/{}", created.id))
             .set_json(serde_json::json!({ "name": "Renamed" }))
             .to_request(),
@@ -1887,6 +1937,7 @@ async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
     let resp = test::call_service(
         &app,
         test::TestRequest::patch()
+            .insert_header(admin_auth())
             .uri(&format!("/api/v1/listings/{}", created.id))
             .set_json(serde_json::json!({ "booking_mode": "sometimes" }))
             .to_request(),

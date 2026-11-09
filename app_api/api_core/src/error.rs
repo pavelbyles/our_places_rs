@@ -51,6 +51,15 @@ pub enum ApiError {
     #[error("Payment settlement failed: {0}")]
     PaymentSettlementFailed(String),
 
+    /// The request is well-formed but refused, with a stable code (422).
+    #[error("Unprocessable: {code}: {message}")]
+    Unprocessable {
+        /// Stable error code, such as `VALIDATION_ERROR`.
+        code: &'static str,
+        /// Text for the caller.
+        message: String,
+    },
+
     /// A transient condition the client can resolve by retrying.
     #[error("Service temporarily unavailable: {0}")]
     ServiceUnavailable(String),
@@ -126,6 +135,7 @@ impl ResponseError for ApiError {
             ApiError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             ApiError::Forbidden(_) => StatusCode::FORBIDDEN,
+            ApiError::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 
@@ -162,6 +172,11 @@ impl ResponseError for ApiError {
                     "message": msg
                 })),
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
+            ApiError::Unprocessable { code, message } => {
+                tracing::warn!(code, %message, "request refused");
+                HttpResponse::UnprocessableEntity()
+                    .json(serde_json::json!({ "code": code, "message": message }))
+            }
             ApiError::StayPricing(refused) => {
                 tracing::warn!(code = refused.code(), %refused, "stay refused");
                 let required = match refused {
@@ -590,6 +605,19 @@ mod calendar_error_tests {
         assert_eq!(body["code"], "CALENDAR_SYNC_RATE_LIMITED");
         assert_eq!(body["retry_after_secs"], 42);
         assert_eq!(retry.as_deref(), Some("42"));
+    }
+
+    #[tokio::test]
+    async fn unprocessable_is_422_with_its_code() {
+        let api = ApiError::Unprocessable {
+            code: "CALENDAR_FEED_SELF",
+            message: "no".into(),
+        };
+        assert_eq!(api.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let resp = api.error_response();
+        let bytes = to_bytes(resp.into_body()).await.expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json["code"], "CALENDAR_FEED_SELF");
     }
 
     #[tokio::test]
