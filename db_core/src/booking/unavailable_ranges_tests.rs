@@ -192,3 +192,41 @@ async fn returns_only_active_overlapping_ranges_in_order() {
         ]
     );
 }
+
+#[tokio::test]
+async fn imported_blocks_are_widened_by_the_gap_and_manual_ones_are_not() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".into());
+    let test_db = TestPg::new(db_url, Path::new("migrations"));
+    let pool = test_db.get_pool().await;
+
+    let host = host(&pool).await;
+    let villa = listing(&pool, host).await;
+    sqlx::query("UPDATE listing SET days_between_bookings = 2 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+    insert_block(&pool, villa, BlockKind::Imported, day(3, 10), day(3, 12)).await;
+    insert_block(&pool, villa, BlockKind::Manual, day(3, 20), day(3, 22)).await;
+
+    let ranges = get_unavailable_ranges(&pool, villa, day(3, 1), day(4, 1))
+        .await
+        .unwrap();
+    let got: Vec<_> = ranges.iter().map(|r| (r.date_from, r.date_to)).collect();
+    assert_eq!(got, vec![(day(3, 8), day(3, 14)), (day(3, 20), day(3, 22))]);
+
+    // A gap change applies straight away (E13).
+    sqlx::query("UPDATE listing SET days_between_bookings = 0 WHERE id = $1")
+        .bind(villa)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let ranges = get_unavailable_ranges(&pool, villa, day(3, 1), day(4, 1))
+        .await
+        .unwrap();
+    assert_eq!(ranges[0].date_from, day(3, 10));
+    assert_eq!(ranges[0].date_to, day(3, 12));
+}

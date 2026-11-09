@@ -2,4 +2,6 @@
 //! and the export query.
 
 #[cfg(test)]
+pub(crate) mod fixtures;
+#[cfg(test)]
 mod migration_tests;

@@ -203,7 +203,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p api_core calendar::fetch_tests && cargo test -p api_core calendar::settings_tests`
   - **Dependencies:** T2
 
-- [ ] **Task 7: Blocks in `availability.rs`, the exclude-own-nights rule and parity**
+- [x] **Task 7: Blocks in `availability.rs`, the exclude-own-nights rule and parity**
   - **Scope:** M
   - **Description:** Add the `listing_blocked_dates` branch to `check_availability`, `check_availability_excluding` and `get_unavailable_ranges`, using the spec §1.2.4 rule with the gap for `ical_feed` only and **the bounding predicates**. In `check_availability_excluding`, test blocks only against nights the excluded booking doesn't already hold (spec §1.2.5). Update the module doc. Add `Kind::ImportedBlock` and `Kind::ManualBlock` rows, with gap cases, to `availability_parity_tests`.
   - **Files Touched:**
