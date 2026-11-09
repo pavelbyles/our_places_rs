@@ -118,7 +118,23 @@ pub fn configure_listing_routes(cfg: &mut web::ServiceConfig) {
             "/{id}/calendar/feeds/{feed_id}",
             web::delete().to(delete_feed),
         )
-        .route("/{id}/calendar/sync", web::post().to(sync_now));
+        .route("/{id}/calendar/sync", web::post().to(sync_now))
+        .route("/{id}/calendar/blocks", web::get().to(list_blocks))
+        .route("/{id}/calendar/blocks", web::post().to(create_block))
+        .route(
+            "/{id}/calendar/blocks/{block_id}",
+            web::delete().to(delete_block),
+        )
+        .route("/{id}/calendar/conflicts", web::get().to(list_conflicts))
+        .route(
+            "/{id}/calendar/conflicts/{conflict_id}/acknowledge",
+            web::post().to(acknowledge_conflict),
+        );
+}
+
+/// Registers `/api/v1/calendar/overview`.
+pub fn configure_routes(cfg: &mut web::ServiceConfig) {
+    cfg.route("/api/v1/calendar/overview", web::get().to(overview));
 }
 
 fn invalid_url(e: FeedUrlError) -> ApiError {
@@ -433,4 +449,206 @@ pub async fn sync_now(
         (false, false, Some(wait)) => Err(rate_limited(wait)),
         _ => Ok(HttpResponse::Ok().json(results)),
     }
+}
+
+/// Query of `GET …/calendar/blocks`.
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+pub struct BlocksQuery {
+    /// First night shown; defaults to today (Jamaica time).
+    pub from: Option<chrono::NaiveDate>,
+    /// End of the range; defaults to 12 months after `from`, at most 24.
+    pub to: Option<chrono::NaiveDate>,
+}
+
+/// Query of `GET …/calendar/conflicts`.
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+pub struct ConflictsQuery {
+    /// 1-based page of acknowledged history.
+    pub page: Option<i64>,
+}
+
+fn unprocessable(message: impl Into<String>) -> ApiError {
+    ApiError::Unprocessable {
+        code: "VALIDATION_ERROR",
+        message: message.into(),
+    }
+}
+
+/// A listing's blocked dates in a range, imported and manual.
+#[tracing::instrument(skip_all, fields(listing_id = %path))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/calendar/blocks",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Listing id"), BlocksQuery),
+    responses(
+        (status = 200, description = "Blocked dates", body = [common::calendar::dto::BlockedDateResponse]),
+        (status = 422, description = "VALIDATION_ERROR")
+    )
+)]
+pub async fn list_blocks(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    query: web::Query<BlocksQuery>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    authz::require_listing_manager(&pool, &claims, listing_id, "list_blocks").await?;
+    let from = query
+        .from
+        .unwrap_or_else(|| common::reference::listing_today(chrono::Utc::now()));
+    let to = match query.to {
+        Some(to) => to,
+        None => from
+            .checked_add_months(chrono::Months::new(12))
+            .ok_or_else(|| unprocessable("the range is out of bounds"))?,
+    };
+    let longest = from
+        .checked_add_months(chrono::Months::new(24))
+        .ok_or_else(|| unprocessable("the range is out of bounds"))?;
+    if to <= from || to > longest {
+        return Err(unprocessable(
+            "the range must be after its start and at most 24 months",
+        ));
+    }
+    let blocks = db_core::calendar::blocks::list_blocks(&pool, listing_id, from, to).await?;
+    Ok(HttpResponse::Ok().json(blocks))
+}
+
+/// Blocks nights by hand. Refused over a stay, hold or request (409
+/// `DATE_UNAVAILABLE`); an exact duplicate is 409 `CALENDAR_BLOCK_DUPLICATE`.
+#[tracing::instrument(skip_all, fields(listing_id = %path))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/listings/{id}/calendar/blocks",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Listing id")),
+    request_body = common::calendar::dto::NewBlockedDateRequest,
+    responses(
+        (status = 201, description = "Blocked", body = common::calendar::dto::BlockedDateResponse),
+        (status = 409, description = "DATE_UNAVAILABLE or CALENDAR_BLOCK_DUPLICATE"),
+        (status = 422, description = "VALIDATION_ERROR")
+    )
+)]
+pub async fn create_block(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    body: web::Json<common::calendar::dto::NewBlockedDateRequest>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    let (user, _) =
+        authz::require_listing_manager(&pool, &claims, listing_id, "create_block").await?;
+    let request = body.into_inner();
+    request
+        .validate_for(common::reference::listing_today(chrono::Utc::now()))
+        .map_err(|e| unprocessable(e.to_string()))?;
+    let block =
+        db_core::calendar::blocks::create_manual_block(&pool, listing_id, &request, Some(user.id))
+            .await?;
+    tracing::info!(block_id = %block.id, "manual block added");
+    Ok(HttpResponse::Created().json(block))
+}
+
+/// Removes a manual block. An imported one is 409 `CALENDAR_BLOCK_MANAGED_BY_FEED`.
+#[tracing::instrument(skip_all, fields(listing_id = %path.0, block_id = %path.1))]
+#[utoipa::path(
+    delete,
+    path = "/api/v1/listings/{id}/calendar/blocks/{block_id}",
+    tag = "calendar",
+    params(
+        ("id" = Uuid, Path, description = "Listing id"),
+        ("block_id" = Uuid, Path, description = "Block id")
+    ),
+    responses(
+        (status = 204, description = "Removed"),
+        (status = 404, description = "Block not found on this listing"),
+        (status = 409, description = "CALENDAR_BLOCK_MANAGED_BY_FEED")
+    )
+)]
+pub async fn delete_block(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, block_id) = path.into_inner();
+    authz::require_listing_manager(&pool, &claims, listing_id, "delete_block").await?;
+    match db_core::calendar::blocks::delete_manual_block(&pool, listing_id, block_id).await? {
+        true => Ok(HttpResponse::NoContent().finish()),
+        false => Err(not_found()),
+    }
+}
+
+/// A listing's conflicts: open ones first, then a page of history.
+#[tracing::instrument(skip_all, fields(listing_id = %path))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/calendar/conflicts",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Listing id"), ConflictsQuery),
+    responses(
+        (status = 200, description = "Conflicts", body = common::calendar::dto::CalendarConflictsResponse)
+    )
+)]
+pub async fn list_conflicts(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+    query: web::Query<ConflictsQuery>,
+) -> Result<impl Responder, ApiError> {
+    let listing_id = path.into_inner();
+    authz::require_listing_manager(&pool, &claims, listing_id, "list_conflicts").await?;
+    let page = query.page.unwrap_or(1).max(1);
+    let conflicts = db_core::calendar::conflicts::list_conflicts(&pool, listing_id, page).await?;
+    Ok(HttpResponse::Ok().json(conflicts))
+}
+
+/// Acknowledges a conflict. Repeating it is harmless.
+#[tracing::instrument(skip_all, fields(listing_id = %path.0, conflict_id = %path.1))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/listings/{id}/calendar/conflicts/{conflict_id}/acknowledge",
+    tag = "calendar",
+    params(
+        ("id" = Uuid, Path, description = "Listing id"),
+        ("conflict_id" = Uuid, Path, description = "Conflict id")
+    ),
+    responses(
+        (status = 200, description = "Acknowledged"),
+        (status = 404, description = "Conflict not found on this listing")
+    )
+)]
+pub async fn acknowledge_conflict(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, conflict_id) = path.into_inner();
+    let (user, _) =
+        authz::require_listing_manager(&pool, &claims, listing_id, "acknowledge_conflict").await?;
+    match db_core::calendar::conflicts::acknowledge(&pool, listing_id, conflict_id, user.id).await?
+    {
+        true => Ok(HttpResponse::Ok().json(serde_json::json!({ "acknowledged": true }))),
+        false => Err(not_found()),
+    }
+}
+
+/// Open conflicts and failing feeds across the caller's listings (every
+/// listing for the admin).
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    get,
+    path = "/api/v1/calendar/overview",
+    tag = "calendar",
+    responses(
+        (status = 200, description = "Overview", body = common::calendar::dto::CalendarOverview),
+        (status = 401, description = "Missing or invalid user token")
+    )
+)]
+pub async fn overview(claims: Claims, pool: web::Data<PgPool>) -> Result<impl Responder, ApiError> {
+    let user = authz::caller(&pool, &claims).await?;
+    let overview =
+        db_core::calendar::conflicts::overview_for_user(&pool, user.id, authz::is_admin(&user))
+            .await?;
+    Ok(HttpResponse::Ok().json(overview))
 }

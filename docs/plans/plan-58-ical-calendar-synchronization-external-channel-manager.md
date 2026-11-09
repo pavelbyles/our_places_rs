@@ -445,7 +445,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p listing_api calendar_tests::feeds`
   - **Dependencies:** T13, T15
 
-- [ ] **Task 18: Block, conflict and overview endpoints**
+- [x] **Task 18: Block, conflict and overview endpoints**
   - **Scope:** M
   - **Description:** `GET`/`POST /blocks`, `DELETE /blocks/{block_id}`, `GET /conflicts?page`, `POST /conflicts/{id}/acknowledge`, and `GET /api/v1/calendar/overview` (scoped to the caller).
   - **Files Touched:**

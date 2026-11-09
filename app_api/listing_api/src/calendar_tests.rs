@@ -577,3 +577,358 @@ mod feeds {
         assert_eq!(body["sync"]["outcome"], "deferred");
     }
 }
+
+/// Inserts a confirmed booking on `listing`.
+async fn booking(c: &Ctx, listing: Uuid, from: NaiveDate, to: NaiveDate) -> Uuid {
+    let guest = user_with(&c.pool, "ARRAY['booker']").await;
+    sqlx::query_scalar(
+        "INSERT INTO booking (confirmation_code, guest_id, listing_id, status, date_from, date_to,
+             currency, daily_rate, number_of_persons, total_days, sub_total_price, total_price,
+             cancellation_policy)
+         VALUES (upper(substr(md5(random()::text), 1, 10)), $1, $2, 'confirmed', $3, $4, 'USD',
+             100, 2, ($4 - $3), 200, 200, 'flexible')
+         RETURNING id",
+    )
+    .bind(guest)
+    .bind(listing)
+    .bind(from)
+    .bind(to)
+    .fetch_one(&c.pool)
+    .await
+    .expect("booking")
+}
+
+mod blocks {
+    use super::*;
+    use actix_web::http::Method;
+
+    fn uri(listing: Uuid) -> String {
+        format!("/api/v1/listings/{listing}/calendar/blocks")
+    }
+
+    fn block(from: NaiveDate, to: NaiveDate) -> serde_json::Value {
+        serde_json::json!({ "date_from": from, "date_to": to, "note": "owner stay" })
+    }
+
+    #[actix_web::test]
+    async fn manual_blocks_are_created_listed_and_removed() {
+        let c = ctx().await;
+        let (status, body, _) = c
+            .call(
+                Method::POST,
+                &uri(c.listing),
+                Some(c.owner),
+                Some(block(future(5), future(8))),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        assert_eq!(body["source"], "manual");
+        let id = body["id"].as_str().expect("id").to_string();
+
+        let (status, body, _) = c
+            .call(
+                Method::POST,
+                &uri(c.listing),
+                Some(c.owner),
+                Some(block(future(5), future(8))),
+            )
+            .await;
+        assert_eq!(
+            (status, body["code"].as_str()),
+            (StatusCode::CONFLICT, Some("CALENDAR_BLOCK_DUPLICATE"))
+        );
+
+        let (status, list, _) = c
+            .call(Method::GET, &uri(c.listing), Some(c.owner), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(list.as_array().map(Vec::len), Some(1));
+
+        let (status, _, _) = c
+            .call(
+                Method::DELETE,
+                &format!("{}/{id}", uri(c.other_listing)),
+                Some(c.other_host),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "another listing's block");
+        let (status, _, _) = c
+            .call(
+                Method::DELETE,
+                &format!("{}/{id}", uri(c.listing)),
+                Some(c.owner),
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+
+    #[actix_web::test]
+    async fn blocks_over_stays_and_invalid_ranges_are_refused() {
+        let c = ctx().await;
+        booking(&c, c.listing, future(10), future(15)).await;
+        let (status, body, _) = c
+            .call(
+                Method::POST,
+                &uri(c.listing),
+                Some(c.owner),
+                Some(block(future(12), future(13))),
+            )
+            .await;
+        assert_eq!(
+            (status, body["code"].as_str()),
+            (StatusCode::CONFLICT, Some("DATE_UNAVAILABLE"))
+        );
+        for (from, to) in [
+            (future(-1), future(2)),
+            (future(5), future(5)),
+            (future(1), future(400)),
+        ] {
+            let (status, body, _) = c
+                .call(
+                    Method::POST,
+                    &uri(c.listing),
+                    Some(c.owner),
+                    Some(block(from, to)),
+                )
+                .await;
+            assert_eq!(
+                (status, body["code"].as_str()),
+                (StatusCode::UNPROCESSABLE_ENTITY, Some("VALIDATION_ERROR")),
+                "{from}..{to}"
+            );
+        }
+        let (status, _, _) = c
+            .call(
+                Method::GET,
+                &format!("{}?from={}&to={}", uri(c.listing), future(0), future(900)),
+                Some(c.owner),
+                None,
+            )
+            .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "range over 24 months"
+        );
+    }
+
+    #[actix_web::test]
+    async fn imported_blocks_cannot_be_deleted_here() {
+        let c = ctx().await;
+        let feed = c.insert_feed(c.listing, "/ok.ics").await;
+        let id: Uuid = sqlx::query_scalar(
+            "INSERT INTO listing_blocked_dates (listing_id, source, feed_id, external_uid, date_from, date_to)
+             VALUES ($1, 'ical_feed', $2, 'x@airbnb.com', $3, $4) RETURNING id",
+        )
+        .bind(c.listing)
+        .bind(feed)
+        .bind(future(3))
+        .bind(future(4))
+        .fetch_one(&c.pool)
+        .await
+        .expect("block");
+        let (status, body, _) = c
+            .call(
+                Method::DELETE,
+                &format!("{}/{id}", uri(c.listing)),
+                Some(c.owner),
+                None,
+            )
+            .await;
+        assert_eq!(
+            (status, body["code"].as_str()),
+            (StatusCode::CONFLICT, Some("CALENDAR_BLOCK_MANAGED_BY_FEED"))
+        );
+    }
+
+    #[actix_web::test]
+    async fn callers_are_checked() {
+        let c = ctx().await;
+        let some = Uuid::now_v7();
+        for (method, path, body) in [
+            (Method::GET, uri(c.listing), None),
+            (
+                Method::POST,
+                uri(c.listing),
+                Some(block(future(5), future(8))),
+            ),
+            (Method::DELETE, format!("{}/{some}", uri(c.listing)), None),
+        ] {
+            let (status, _, _) = c.call(method.clone(), &path, None, body.clone()).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");
+            let (status, _, _) = c
+                .call(method.clone(), &path, Some(c.other_host), body)
+                .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
+        }
+    }
+}
+
+mod conflicts {
+    use super::*;
+    use actix_web::http::Method;
+
+    fn uri(listing: Uuid) -> String {
+        format!("/api/v1/listings/{listing}/calendar/conflicts")
+    }
+
+    async fn conflicted(c: &Ctx) {
+        booking(c, c.listing, future(11), future(13)).await;
+        let feeds = format!("/api/v1/listings/{}/calendar/feeds", c.listing);
+        let (status, body, _) = c
+            .call(
+                Method::POST,
+                &feeds,
+                Some(c.owner),
+                Some(serde_json::json!({ "name": "Airbnb", "url": c.feed_url("/ok.ics") })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(body["sync"]["conflicts_opened"], 1, "{body}");
+    }
+
+    #[actix_web::test]
+    async fn conflicts_are_listed_and_acknowledged_once() {
+        let c = ctx().await;
+        conflicted(&c).await;
+        let (status, body, _) = c
+            .call(Method::GET, &uri(c.listing), Some(c.owner), None)
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        let open = body["open"].as_array().expect("open");
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0]["kind"], "overlap");
+        assert!(open[0]["stale_reason"].is_null());
+        let id = open[0]["id"].as_str().expect("id").to_string();
+
+        let other = format!(
+            "/api/v1/listings/{}/calendar/conflicts/{id}/acknowledge",
+            c.other_listing
+        );
+        let (status, _, _) = c.call(Method::POST, &other, Some(c.other_host), None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "another listing's conflict");
+
+        let ack = format!("{}/{id}/acknowledge", uri(c.listing));
+        for _ in 0..2 {
+            let (status, _, _) = c.call(Method::POST, &ack, Some(c.owner), None).await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        let (_, body, _) = c
+            .call(
+                Method::GET,
+                &format!("{}?page=1", uri(c.listing)),
+                Some(c.owner),
+                None,
+            )
+            .await;
+        assert_eq!(body["open"].as_array().map(Vec::len), Some(0));
+        assert_eq!(body["history"]["total"], 1);
+        assert_eq!(body["history"]["per_page"], 20);
+        let (_, body, _) = c
+            .call(
+                Method::GET,
+                &format!("{}?page=2", uri(c.listing)),
+                Some(c.owner),
+                None,
+            )
+            .await;
+        assert_eq!(body["history"]["items"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[actix_web::test]
+    async fn callers_are_checked() {
+        let c = ctx().await;
+        let some = Uuid::now_v7();
+        for (method, path) in [
+            (Method::GET, uri(c.listing)),
+            (
+                Method::POST,
+                format!("{}/{some}/acknowledge", uri(c.listing)),
+            ),
+        ] {
+            let (status, _, _) = c.call(method.clone(), &path, None, None).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");
+            let (status, _, _) = c
+                .call(method.clone(), &path, Some(c.other_host), None)
+                .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}");
+        }
+    }
+}
+
+mod overview {
+    use super::*;
+    use actix_web::http::Method;
+
+    #[actix_web::test]
+    async fn the_overview_is_scoped_to_the_caller() {
+        let c = ctx().await;
+        booking(&c, c.listing, future(11), future(13)).await;
+        c.call(
+            Method::POST,
+            &format!("/api/v1/listings/{}/calendar/feeds", c.listing),
+            Some(c.owner),
+            Some(serde_json::json!({ "name": "Airbnb", "url": c.feed_url("/ok.ics") })),
+        )
+        .await;
+        let failing = c.insert_feed(c.other_listing, "/503.ics").await;
+        sqlx::query("UPDATE listing_calendar_feed SET consecutive_failures = 5 WHERE id = $1")
+            .bind(failing)
+            .execute(&c.pool)
+            .await
+            .expect("failing");
+
+        let (status, _, _) = c
+            .call(Method::GET, "/api/v1/calendar/overview", None, None)
+            .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (_, mine, _) = c
+            .call(
+                Method::GET,
+                "/api/v1/calendar/overview",
+                Some(c.owner),
+                None,
+            )
+            .await;
+        assert_eq!(
+            (
+                mine["open_conflicts"].as_i64(),
+                mine["failing_feeds"].as_i64()
+            ),
+            (Some(1), Some(0))
+        );
+        let (_, theirs, _) = c
+            .call(
+                Method::GET,
+                "/api/v1/calendar/overview",
+                Some(c.other_host),
+                None,
+            )
+            .await;
+        assert_eq!(
+            (
+                theirs["open_conflicts"].as_i64(),
+                theirs["failing_feeds"].as_i64()
+            ),
+            (Some(0), Some(1))
+        );
+        let (_, all, _) = c
+            .call(
+                Method::GET,
+                "/api/v1/calendar/overview",
+                Some(c.admin),
+                None,
+            )
+            .await;
+        assert_eq!(
+            (
+                all["open_conflicts"].as_i64(),
+                all["failing_feeds"].as_i64()
+            ),
+            (Some(1), Some(1))
+        );
+        assert_eq!(all["listings"].as_array().map(Vec::len), Some(2));
+    }
+}

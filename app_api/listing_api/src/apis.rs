@@ -906,6 +906,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             crate::calendar::update_feed,
             crate::calendar::delete_feed,
             crate::calendar::sync_now,
+            crate::calendar::list_blocks,
+            crate::calendar::create_block,
+            crate::calendar::delete_block,
+            crate::calendar::list_conflicts,
+            crate::calendar::acknowledge_conflict,
+            crate::calendar::overview,
         ),
         components(
             schemas(
@@ -929,7 +935,16 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::calendar::dto::UpdateCalendarFeedResponse,
                 common::calendar::dto::FeedSyncResult,
                 common::calendar::dto::SyncOutcome,
-                common::calendar::FeedStatus
+                common::calendar::FeedStatus,
+                common::calendar::BlockSource,
+                common::calendar::ConflictKind,
+                common::calendar::conflict::StaleReason,
+                common::calendar::dto::BlockedDateResponse,
+                common::calendar::dto::NewBlockedDateRequest,
+                common::calendar::dto::CalendarConflictResponse,
+                common::calendar::dto::CalendarConflictsResponse,
+                common::calendar::dto::CalendarOverview,
+                common::calendar::dto::CalendarOverviewListing
             )
         ),
         tags(
@@ -1024,6 +1039,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     );
 
     crate::reviews::configure_routes(cfg);
+    crate::calendar::configure_routes(cfg);
 }
 
 #[tracing::instrument(skip_all)]
