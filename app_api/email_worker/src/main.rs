@@ -5,6 +5,8 @@ use db_core::{connection::create_connection_pool, run_migrations};
 use std::net::TcpListener;
 
 mod apis;
+/// Calendar sync emails.
+mod calendar_emails;
 /// Worker configuration.
 pub mod config;
 /// Turns Pub/Sub events into sent emails.

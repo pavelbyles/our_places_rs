@@ -363,7 +363,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p api_core calendar::sync_tests`
   - **Dependencies:** T6, T10, T11
 
-- [ ] **Task 14: Email templates and `EmailTemplate` variants**
+- [x] **Task 14: Email templates and `EmailTemplate` variants**
   - **Scope:** S
   - **Description:** Add `EmailTemplate::{CalendarConflictHost, CalendarFeedFailingHost}` and their payload structs in `common/src/email.rs`. Add the templates `calendar_conflict_host.html` and `calendar_feed_failing_host.html` (spec §3.7 keys, including `reopened`), registered in `processor.rs`, with every value going through `escape_html`.
   - **Files Touched:**

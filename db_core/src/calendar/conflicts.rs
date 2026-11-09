@@ -146,16 +146,17 @@ async fn queue_conflict_email(
         ConflictKind::Overlap => "overlap",
         ConflictKind::Turnover => "turnover",
     };
-    let payload = serde_json::json!({
-        "listing_name": c.listing_name,
-        "feed_name": c.feed_name,
-        "date_from": c.block_date_from.to_string(),
-        "date_to": c.block_date_to.to_string(),
-        "confirmation_code": c.confirmation_code,
-        "kind": kind,
-        "reopened": reopened.to_string(),
-        "calendar_url": ctx.calendar_url(c.listing_id),
-    });
+    let payload = serde_json::to_value(common::email::CalendarConflictHostPayload {
+        listing_name: c.listing_name.clone(),
+        feed_name: c.feed_name,
+        date_from: c.block_date_from.to_string(),
+        date_to: c.block_date_to.to_string(),
+        confirmation_code: c.confirmation_code,
+        kind: kind.to_string(),
+        reopened: reopened.to_string(),
+        calendar_url: ctx.calendar_url(c.listing_id),
+    })
+    .map_err(|e| DbError::ValidationError(format!("conflict email payload: {e}")))?;
     let subject = format!("Calendar conflict at {}", c.listing_name);
     let outbox = crate::email_outbox::insert_email_outbox_tx(
         tx,

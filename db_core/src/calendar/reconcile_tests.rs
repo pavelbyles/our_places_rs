@@ -397,3 +397,16 @@ async fn normalised_uids_never_violate_a_constraint() {
         "{out:?}"
     );
 }
+
+#[test]
+fn template_ids_match_the_email_templates() {
+    use common::email::EmailTemplate;
+    assert_eq!(
+        FEED_FAILING_TEMPLATE,
+        EmailTemplate::CalendarFeedFailingHost.as_str()
+    );
+    assert_eq!(
+        super::conflicts::CONFLICT_TEMPLATE,
+        EmailTemplate::CalendarConflictHost.as_str()
+    );
+}

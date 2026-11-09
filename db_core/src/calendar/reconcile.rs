@@ -295,13 +295,14 @@ async fn fail(
         )
         .fetch_one(&mut *tx)
         .await?;
-        let payload = serde_json::json!({
-            "listing_name": owner.name,
-            "feed_name": feed.name,
-            "error_code": reason,
-            "failures": feed.consecutive_failures,
-            "calendar_url": ctx.calendar_url(claim.listing_id),
-        });
+        let payload = serde_json::to_value(common::email::CalendarFeedFailingHostPayload {
+            listing_name: owner.name.clone(),
+            feed_name: feed.name,
+            error_code: reason.to_string(),
+            failures: feed.consecutive_failures,
+            calendar_url: ctx.calendar_url(claim.listing_id),
+        })
+        .map_err(|e| DbError::ValidationError(format!("failing feed email payload: {e}")))?;
         let subject = format!("Calendar sync is failing for {}", owner.name);
         let outbox = crate::email_outbox::insert_email_outbox_tx(
             &mut tx,

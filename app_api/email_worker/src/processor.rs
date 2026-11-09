@@ -85,6 +85,12 @@ pub fn load_template(filename: &str) -> String {
         "request_notification.html" => {
             include_str!("../templates/request_notification.html").to_string()
         }
+        "calendar_conflict_host.html" => {
+            include_str!("../templates/calendar_conflict_host.html").to_string()
+        }
+        "calendar_feed_failing_host.html" => {
+            include_str!("../templates/calendar_feed_failing_host.html").to_string()
+        }
         _ => include_str!("../templates/default_notification.html").to_string(),
     }
 }
@@ -223,6 +229,7 @@ const RENDERERS: &[Renderer] = &[
 /// Renders transactional email HTML templates with dynamic variable interpolation.
 pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> String {
     crate::request_emails::render(template_id, payload)
+        .or_else(|| crate::calendar_emails::render(template_id, payload))
         .or_else(|| {
             RENDERERS
                 .iter()
