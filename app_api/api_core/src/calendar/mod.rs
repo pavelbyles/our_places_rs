@@ -38,5 +38,6 @@ mod fetch_tests;
 mod settings_tests;
 #[cfg(test)]
 mod sync_tests;
-#[cfg(test)]
-pub(crate) mod test_server;
+/// A local https feed server and fixed resolver, for tests.
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_server;

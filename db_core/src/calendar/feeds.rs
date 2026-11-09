@@ -459,3 +459,26 @@ pub async fn release_claim(pool: &PgPool, claim: &FeedClaim) -> Result<bool> {
     .await?;
     Ok(released.rows_affected() == 1)
 }
+
+/// Seconds until the listing's feeds may sync again, if any active feed was
+/// attempted within `min_interval`. Feed creation and URL changes use this,
+/// so they can't be used to fetch more often than "Sync now".
+#[tracing::instrument(skip(pool))]
+pub async fn listing_retry_after(
+    pool: &PgPool,
+    listing_id: Uuid,
+    min_interval: Duration,
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT GREATEST(1, CEIL(EXTRACT(EPOCH FROM
+                (MAX(last_attempt_at) + ($2::int8 * INTERVAL '1 second') - now()))))::int8
+        FROM listing_calendar_feed
+        WHERE listing_id = $1 AND is_active
+        HAVING MAX(last_attempt_at) > now() - ($2::int8 * INTERVAL '1 second')"#,
+        listing_id,
+        min_interval.num_seconds()
+    )
+    .fetch_optional(pool)
+    .await?
+    .flatten())
+}

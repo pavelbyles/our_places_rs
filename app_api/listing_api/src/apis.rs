@@ -901,6 +901,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
             crate::reviews::get_listing_reviews_handler,
+            crate::calendar::list_feeds,
+            crate::calendar::create_feed,
+            crate::calendar::update_feed,
+            crate::calendar::delete_feed,
+            crate::calendar::sync_now,
         ),
         components(
             schemas(
@@ -916,12 +921,21 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::ReviewTokenInfoResponse,
                 common::models::NewReviewRequest,
                 common::models::HostReplyRequest,
-                common::models::ReviewResponse
+                common::models::ReviewResponse,
+                common::calendar::dto::CalendarFeedResponse,
+                common::calendar::dto::NewCalendarFeedRequest,
+                common::calendar::dto::UpdateCalendarFeedRequest,
+                common::calendar::dto::CreateCalendarFeedResponse,
+                common::calendar::dto::UpdateCalendarFeedResponse,
+                common::calendar::dto::FeedSyncResult,
+                common::calendar::dto::SyncOutcome,
+                common::calendar::FeedStatus
             )
         ),
         tags(
             (name = "listings", description = "Listing management endpoints"),
-            (name = "reviews", description = "Review and rating endpoints")
+            (name = "reviews", description = "Review and rating endpoints"),
+            (name = "calendar", description = "iCal calendar sync: feeds, blocks, conflicts and export")
         ),
     )]
     struct ApiDoc;
@@ -1005,7 +1019,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::delete()
                     .to(delete_price_override)
                     .wrap(from_fn(content_negotiation_middleware)),
-            ),
+            )
+            .configure(crate::calendar::configure_listing_routes),
     );
 
     crate::reviews::configure_routes(cfg);

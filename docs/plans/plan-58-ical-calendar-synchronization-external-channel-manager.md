@@ -417,7 +417,7 @@ T27 docs + full gate                      ← T1–T26
 
 ## Phase E: API, Export and UI
 
-- [ ] **Task 17: Feed management and "Sync now" endpoints**
+- [x] **Task 17: Feed management and "Sync now" endpoints**
   - **Scope:** M
   - **Description:** `listing_api::calendar` routes, per spec §3.5:
     - `GET`/`POST /feeds`. `POST` validates, saves, then runs a first sync through `claim_for_listing(60 s)`, and returns 201 even when that sync fails.

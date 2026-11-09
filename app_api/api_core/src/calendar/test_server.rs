@@ -1,5 +1,6 @@
 //! A tiny local https server with an `rcgen` CA, and a fixed resolver, for
-//! feed fetch and sync tests. Never real DNS, never a real channel.
+//! feed fetch and sync tests. Never real DNS, never a real channel. Test
+//! support only: built under `cfg(test)` or the `test-support` feature.
 
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use std::collections::HashMap;
@@ -14,11 +15,11 @@ use tokio_rustls::rustls::crypto::aws_lc_rs;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
 /// Names the test certificate is valid for.
-pub(crate) const TEST_HOSTS: &[&str] = &["localhost", "feeds.test", "internal.test", "other.test"];
+pub const TEST_HOSTS: &[&str] = &["localhost", "feeds.test", "internal.test", "other.test"];
 
 /// What the server answers for a path.
 #[derive(Clone, Debug)]
-pub(crate) enum Reply {
+pub enum Reply {
     /// `200` with a body and `Content-Length`.
     Ok(Vec<u8>),
     /// A status with an empty body.
@@ -33,7 +34,7 @@ pub(crate) enum Reply {
 
 /// One request the server saw.
 #[derive(Clone, Debug)]
-pub(crate) struct Seen {
+pub struct Seen {
     /// Request path and query.
     pub path: String,
     /// Header lines, lower-cased names.
@@ -41,7 +42,7 @@ pub(crate) struct Seen {
 }
 
 /// A running server.
-pub(crate) struct TestServer {
+pub struct TestServer {
     /// Its port on 127.0.0.1.
     pub port: u16,
     /// PEM of the CA that signed its certificate.
@@ -68,10 +69,10 @@ impl TestServer {
 }
 
 /// The routing function: path (with query) to reply.
-pub(crate) type Router = Arc<dyn Fn(&str) -> Reply + Send + Sync>;
+pub type Router = Arc<dyn Fn(&str) -> Reply + Send + Sync>;
 
 /// Starts a server answering with `router`.
-pub(crate) async fn start(router: Router) -> TestServer {
+pub async fn start(router: Router) -> TestServer {
     let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).expect("ca params");
     ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
     let ca_key = rcgen::KeyPair::generate().expect("ca key");
@@ -184,7 +185,10 @@ async fn respond<S: AsyncWriteExt + Unpin>(stream: &mut S, reply: Reply) -> std:
 }
 
 /// Resolves names from a fixed map; anything else fails.
-pub(crate) struct FixedResolver(pub HashMap<String, IpAddr>);
+pub struct FixedResolver(
+    /// Name to address.
+    pub HashMap<String, IpAddr>,
+);
 
 impl FixedResolver {
     /// A resolver mapping each `(name, ip)`.

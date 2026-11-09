@@ -39,6 +39,28 @@ async fn main() -> anyhow::Result<()> {
     // User tokens cannot be verified without it, and there is no fallback.
     api_core::auth::jwt_secret().context("Refusing to start")?;
 
+    // Calendar sync settings come from the environment only. Local-only
+    // toggles stop the service on Cloud Run.
+    let calendar_settings = settings::CalendarSyncSettings::from_process_env()
+        .map_err(|e| {
+            tracing::error!(error = %e, "invalid calendar sync settings");
+            anyhow::Error::msg(e)
+        })
+        .context("Refusing to start")?;
+    settings::check_cloud_guard(&calendar_settings, |key| std::env::var(key).ok())
+        .map_err(|e| {
+            tracing::error!(error = %e, "calendar sync settings refused on Cloud Run");
+            anyhow::Error::msg(e)
+        })
+        .context("Refusing to start")?;
+    let admin_base_url = std::env::var(listing_api::calendar::ADMIN_BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3012".to_string());
+    let calendar = actix_web::web::Data::new(listing_api::calendar::CalendarRuntime::new(
+        calendar_settings,
+        std::sync::Arc::new(api_core::email_publisher::EmailPublisher::from_env()),
+        admin_base_url,
+    ));
+
     // Create database connection pool
     tracing::info!("Connecting to database");
     let db_connection_pool = create_connection_pool(&config.database.connection_string()).await;
@@ -61,7 +83,10 @@ async fn main() -> anyhow::Result<()> {
     let served = run(
         listener,
         db_connection_pool,
-        apis::configure_routes,
+        move |cfg: &mut actix_web::web::ServiceConfig| {
+            cfg.app_data(calendar.clone());
+            apis::configure_routes(cfg);
+        },
         config.clone(),
     )?
     .await

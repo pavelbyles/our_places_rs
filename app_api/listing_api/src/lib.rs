@@ -7,5 +7,9 @@ pub mod apis;
 pub mod authz;
 #[cfg(test)]
 mod authz_tests;
+/// Calendar sync routes.
+pub mod calendar;
+#[cfg(test)]
+mod calendar_tests;
 /// Review routes.
 pub mod reviews;
