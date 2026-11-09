@@ -550,6 +550,23 @@
   // Lazy photos can change card widths after first paint.
   window.addEventListener('load', updateCarousels);
 
+  // Copy buttons: <button data-copy-target="#input-id">. Strict CSP, so no
+  // inline handlers; the button text confirms the copy.
+  document.addEventListener('click', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    var button = target && target.closest('[data-copy-target]');
+    if (!button) return;
+    var source = document.querySelector(button.getAttribute('data-copy-target'));
+    if (!source || !navigator.clipboard) return;
+    var text = 'value' in source ? source.value : source.textContent;
+    navigator.clipboard.writeText(text).then(function () {
+      var label = button.getAttribute('data-copied-label') || 'Copied';
+      var original = button.textContent;
+      button.textContent = label;
+      window.setTimeout(function () { button.textContent = original; }, 2000);
+    });
+  });
+
   function init() {
     applyTheme(currentTheme());
     enhanceCalendars(document);

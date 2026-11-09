@@ -17,6 +17,10 @@ use web_ui_common::components::domain::price_breakdown::money;
 
 use crate::support::{scoped_listings, staff};
 
+/// Calendar sync: export link, imported calendars, blocks and conflicts.
+pub mod calendar;
+#[cfg(test)]
+mod calendar_tests;
 /// New listing, clone and create.
 pub mod create;
 /// Edit an existing listing.
@@ -144,6 +148,7 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
                                 <td class="p-3 text-right whitespace-nowrap">
                                     <a href=(format!("/admin/listings/{id}/edit")) class="mr-3">"Edit"</a>
                                     <a href=(format!("/admin/listings/{id}/pricing")) class="mr-3">"Pricing"</a>
+                                    <a href=(format!("/admin/listings/{id}/calendar")) class="mr-3">"Calendar"</a>
                                     <a href=(format!("/admin/listings/clone/{}", l.slug))>"Clone"</a>
                                 </td>
                             </tr>
@@ -219,6 +224,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 <div class="flex flex-wrap gap-2">
                     <a href=(format!("/admin/listings/{id}/edit")) class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground no-underline">"Edit"</a>
                     <a href=(format!("/admin/listings/{id}/pricing")) class=(action)>"Seasonal pricing"</a>
+                    <a href=(format!("/admin/listings/{id}/calendar")) class=(action)>"Calendar sync"</a>
                     <a href=(format!("/admin/listings/clone/{}", l.slug)) class=(action)>"Clone"</a>
                 </div>
             </div>

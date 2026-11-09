@@ -505,7 +505,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p web_ui_guest calendar_export && cargo test -p web_client --test calendar_client`
   - **Dependencies:** T16, T17, T18, T19
 
-- [ ] **Task 21: Admin calendar page, export and feeds sections**
+- [x] **Task 21: Admin calendar page, export and feeds sections**
   - **Scope:** M
   - **Description:** `web_ui_admin/src/pages/listings/calendar.rs`:
     - the `/admin/listings/{id}/calendar` page, guarded by `managed_listing` and linked next to "Pricing"
@@ -528,7 +528,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p web_ui_admin listings::calendar_tests`
   - **Dependencies:** T20
 
-- [ ] **Task 22: Admin calendar page, blocks and conflicts sections**
+- [x] **Task 22: Admin calendar page, blocks and conflicts sections**
   - **Scope:** M
   - **Description:**
     - **Blocks**: the manual block list and add/remove forms (`hx-disabled-elt`). Imported blocks listed read-only and grouped by feed, labelled "from a disabled calendar" when their feed is off.
