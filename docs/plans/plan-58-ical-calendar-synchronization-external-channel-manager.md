@@ -611,7 +611,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 && rg -U "Schedule Calendar Sync[\s\S]{0,200}if: github.ref == 'refs/heads/main'" .github/workflows/cicd_full_stack.yml`, then after the push: `gcloud run jobs execute calendar-sync-<suffix> --region <region> --wait && test "$(gcloud scheduler jobs list --location <region> --format='value(name)' | wc -l)" -le 2`
   - **Dependencies:** T24, T17, T21
 
-- [ ] **Task 26: Playwright E2E**
+- [x] **Task 26: Playwright E2E**
   - **Scope:** M
   - **Description:** Set up the HTTPS fixture:
     - **CA at a fixed path**: a devenv script `ical-fixture-ca` creates `$DEVENV_STATE/ical-fixture/{ca.pem,cert.pem,key.pem}` with openssl. It runs before `apis-start` and does nothing if the files already exist. devenv sets `EA__CALENDAR_SYNC__EXTRA_ROOT_CA_PATH=$DEVENV_STATE/ical-fixture/ca.pem` and `EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=true` (local env only, never config files). The fetcher's `OnceLock` reads the CA on its first fetch.
@@ -632,7 +632,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=admin-portal-chromium calendar-sync && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium calendar-export`
   - **Dependencies:** T20, T22, T23
 
-- [ ] **Task 27: Docs and full gate**
+- [x] **Task 27: Docs and full gate**
   - **Scope:** S
   - **Description:**
     - `ARCHITECTURE.md`: a new §4.x on calendar sync (flow, locks, generation and claim, SSRF guard); a known-limits note in §7 (about a 90-minute refresh interval at 1000×, with per-listing fan-out as a follow-up, and keeping an eye on `emails_republished`); the §2 and §3 crate tables (`calendar_sync_job`, and `api_core`'s calendar module), and §7 (the job, the main-only Scheduler, the manual trigger, `SA_CALENDAR_JOB`).
