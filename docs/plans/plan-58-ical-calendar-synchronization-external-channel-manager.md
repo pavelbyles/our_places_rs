@@ -93,7 +93,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core calendar::migration_tests && SQLX_OFFLINE=true cargo test -p api_core calendar_error_tests`
   - **Dependencies:** None
 
-- [ ] **Task 2: Jamaica "today", feed URL validation and the IP blocklist**
+- [x] **Task 2: Jamaica "today", feed URL validation and the IP blocklist**
   - **Scope:** S
   - **Description:** Add `common::reference::{LISTING_UTC_OFFSET_SECS, listing_today}`, and `common::calendar::feed_url::{validate_feed_url, ip_allowed, redact, FeedUrlError}` per spec §3.2. Check IP literals with `url::Host::Ipv4`/`Host::Ipv6`, never `host_str().parse()`. Use the full IPv4 and IPv6 blocklist, including mapped, compatible, NAT64 and 6to4 addresses, with the metadata IPs always blocked.
   - **Files Touched:**
