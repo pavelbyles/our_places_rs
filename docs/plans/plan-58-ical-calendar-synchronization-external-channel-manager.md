@@ -342,7 +342,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core calendar::block_tests`
   - **Dependencies:** T1, T2
 
-- [ ] **Task 13: Sync orchestration**
+- [x] **Task 13: Sync orchestration**
   - **Scope:** M
   - **Description:** `api_core::calendar::sync::sync_feeds(pool, publisher, fetcher, claims, trigger, concurrency, deadline)`, per spec §1.4.5–7:
     - Fetch in parallel.

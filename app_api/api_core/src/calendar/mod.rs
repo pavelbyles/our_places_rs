@@ -2,6 +2,8 @@
 
 /// The SSRF-guarded feed fetcher.
 pub mod fetch;
+/// Syncing claimed feeds.
+pub mod sync;
 
 pub use fetch::{FetchError, FetcherConfig, GuardedFetcher};
 
@@ -34,5 +36,7 @@ pub async fn fetcher_config(settings: &CalendarSyncSettings) -> Result<FetcherCo
 mod fetch_tests;
 #[cfg(test)]
 mod settings_tests;
+#[cfg(test)]
+mod sync_tests;
 #[cfg(test)]
 pub(crate) mod test_server;

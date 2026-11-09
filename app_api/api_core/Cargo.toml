@@ -39,9 +39,11 @@ reqwest.workspace = true
 base64 = { workspace = true }
 url = { workspace = true }
 futures-util = "0.3"
+async-trait = { workspace = true }
 
 [dev-dependencies]
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem", "crypto"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
-tracing-test = "0.2"
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+sqlx-db-tester = { version = "0.7.1", default-features = false, features = ["postgres"] }

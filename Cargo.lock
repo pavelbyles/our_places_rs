@@ -299,6 +299,7 @@ version = "0.1.0"
 dependencies = [
  "actix-cors",
  "actix-web",
+ "async-trait",
  "base64 0.23.1",
  "chrono",
  "common",
@@ -319,6 +320,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sqlx",
+ "sqlx-db-tester",
  "thiserror",
  "tokio",
  "tokio-rustls",
