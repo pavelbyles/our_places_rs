@@ -720,6 +720,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "calendar_sync_job"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "api_core",
+ "async-trait",
+ "chrono",
+ "common",
+ "db_core",
+ "dotenvy",
+ "sqlx",
+ "sqlx-db-tester",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cc"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

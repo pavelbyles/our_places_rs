@@ -556,7 +556,7 @@ T27 docs + full gate                      ← T1–T26
 
 ## Phase F: Job, Deploy and Verify
 
-- [ ] **Task 24: `calendar_sync_job` crate, stuck-email republish and Dockerfile**
+- [x] **Task 24: `calendar_sync_job` crate, stuck-email republish and Dockerfile**
   - **Scope:** M
   - **Description:** A new workspace member `app_api/calendar_sync_job`, per spec §1.4.8 and §3.7.
     - `run(config, deps) -> anyhow::Result<RunSummary>` does: the settings guard, `create_connection_pool_sized(concurrency + 2)` (new in `db_core/src/connection.rs`; no migrations), the publisher, and a loop of `claim_due(10 min, 32)` → `sync_feeds`.

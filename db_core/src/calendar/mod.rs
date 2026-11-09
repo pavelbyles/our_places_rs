@@ -9,6 +9,8 @@ pub mod conflicts;
 pub mod export;
 /// Imported feeds: storage, edits and claiming.
 pub mod feeds;
+/// Calendar emails stuck in the outbox.
+pub mod outbox;
 /// Applying a fetched feed, and recording failures.
 pub mod reconcile;
 
@@ -24,5 +26,7 @@ mod feeds_tests;
 pub(crate) mod fixtures;
 #[cfg(test)]
 mod migration_tests;
+#[cfg(test)]
+mod outbox_tests;
 #[cfg(test)]
 mod reconcile_tests;

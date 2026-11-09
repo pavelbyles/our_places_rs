@@ -1,0 +1,11 @@
+[server]
+host = "0.0.0.0"
+port = "8080"
+
+[log]
+level = "debug"
+
+env = "Development"
+
+[feature_flags]
+enable_hard_deletes = true

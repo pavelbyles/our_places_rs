@@ -1,0 +1,29 @@
+[package]
+name = "calendar_sync_job"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "calendar_sync_job"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+dotenvy = { workspace = true }
+async-trait = { workspace = true }
+
+api_core.workspace = true
+common.workspace = true
+db_core.workspace = true
+
+[dev-dependencies]
+api_core = { workspace = true, features = ["test-support"] }
+sqlx = { workspace = true }
+sqlx-db-tester = { version = "0.7.1", default-features = false, features = ["postgres"] }
