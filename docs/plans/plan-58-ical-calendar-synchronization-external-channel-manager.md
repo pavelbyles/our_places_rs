@@ -73,7 +73,7 @@ T27 docs + full gate                      ← T1–T26
 
 ## Phase A: Foundations
 
-- [ ] **Task 1: Calendar sync migration and error variants**
+- [x] **Task 1: Calendar sync migration and error variants**
   - **Scope:** S
   - **Description:** Run `sqlx migrate add calendar_sync` and fill it with spec §3.1: 3 enums and 3 tables, `sync_generation`, `reopened_at`, the composite FKs `(feed_id, listing_id)`, the tightened source CHECK, the partial unique index on manual blocks, and all indexes.
     - **PostgreSQL versions**: Cloud SQL runs 17 and devenv runs 18. Both support `ON DELETE SET NULL (feed_id)`. **Use no PG 18-only features**, such as `RETURNING old.*`. `migration_tests` logs `server_version`. Pinning devenv to `postgresql_17` is left to the user, because it affects every worktree.

@@ -8,6 +8,8 @@ pub mod auth;
 pub mod availability;
 /// Enquiries and requests to book: booking modes, the request lifecycle and response windows.
 pub mod booking_request;
+/// iCal calendar sync: feed parsing and writing, URL rules and conflicts.
+pub mod calendar;
 pub mod cancellation;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cloud_logging;

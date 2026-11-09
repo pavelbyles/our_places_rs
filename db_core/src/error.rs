@@ -84,6 +84,24 @@ pub enum DbError {
     /// An enquiry or request action was refused (#105).
     #[error("Request refused: {0}")]
     RequestRefused(common::booking_request::RequestRefusal),
+    /// The listing already has the maximum number of calendar feeds.
+    #[error("This listing already has the maximum number of calendars")]
+    CalendarFeedLimit,
+    /// The listing already imports this calendar URL.
+    #[error("This calendar is already imported for the listing")]
+    CalendarFeedDuplicate,
+    /// The block was imported from a feed, so it can only change through the feed.
+    #[error("This blocked date is managed by an imported calendar")]
+    CalendarBlockManagedByFeed,
+    /// A manual block with exactly these dates already exists.
+    #[error("These dates are already blocked")]
+    CalendarBlockDuplicate,
+    /// The listing's calendars were synced too recently.
+    #[error("Calendars were synced too recently; retry in {retry_after_secs}s")]
+    CalendarSyncRateLimited {
+        /// Seconds until a sync may run again.
+        retry_after_secs: u64,
+    },
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),
