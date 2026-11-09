@@ -37,4 +37,4 @@ mod retained_payout_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod unavailable_ranges_tests;
+pub(crate) mod unavailable_ranges_tests;

@@ -283,7 +283,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core calendar::feeds_tests`
   - **Dependencies:** T1, T5
 
-- [ ] **Task 10: Reconcile and failure recording**
+- [x] **Task 10: Reconcile and failure recording**
   - **Scope:** M
   - **Description:** `db_core::calendar::reconcile::{reconcile_feed, record_failure}`, per spec §1.4.2–3:
     - `SET LOCAL lock_timeout`, with `55P03` becoming `Deferred`.
@@ -306,7 +306,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core calendar::reconcile_tests`
   - **Dependencies:** T3, T9
 
-- [ ] **Task 11: Conflict upsert, listing and acknowledgement**
+- [x] **Task 11: Conflict upsert, listing and acknowledgement**
   - **Scope:** M
   - **Description:** `db_core::calendar::conflicts`:
     - `detect_for_feed(tx, feed_id, gap)`, using the spec §1.5.2 `ON CONFLICT (feed_id, external_uid, booking_id) DO UPDATE … WHERE IS DISTINCT FROM … RETURNING (xmax = 0), reopened`, with the reopen rules and `clock_timestamp()`. It's called from `reconcile_feed` and queues a `calendar_conflict_host` email only when a conflict opens or reopens.

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT LEAST(GREATEST(days_between_bookings, 0), 365) AS \"gap!\"\n        FROM listing WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "gap!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9fa08f1c4a2583a0624929d92b96200acef9db8015d257a362bc9d5d4fe5fe80"
+}

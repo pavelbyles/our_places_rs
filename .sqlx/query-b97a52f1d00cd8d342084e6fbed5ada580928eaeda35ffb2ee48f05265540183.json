@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH cand AS (\n            SELECT k.id AS block_id, k.listing_id, k.feed_id, f.name AS feed_name,\n                k.external_uid, k.date_from, k.date_to, b.id AS booking_id,\n                (CASE WHEN k.date_from < b.date_to AND k.date_to > b.date_from\n                    THEN 'overlap' ELSE 'turnover' END)::calendar_conflict_kind AS kind\n            FROM listing_blocked_dates k\n            JOIN listing_calendar_feed f ON f.id = k.feed_id\n            JOIN booking b ON b.listing_id = k.listing_id\n            WHERE k.feed_id = $1\n              AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > clock_timestamp()))\n              AND k.date_from - $2::int4 < b.date_to AND k.date_to + $2::int4 > b.date_from\n        )\n        INSERT INTO calendar_conflict AS cc (listing_id, feed_id, feed_name, external_uid, block_id,\n            booking_id, kind, block_date_from, block_date_to)\n        SELECT listing_id, feed_id, feed_name, external_uid, block_id, booking_id, kind,\n            date_from, date_to\n        FROM cand\n        ON CONFLICT (feed_id, external_uid, booking_id) DO UPDATE SET\n            block_id = EXCLUDED.block_id,\n            block_date_from = EXCLUDED.block_date_from,\n            block_date_to = EXCLUDED.block_date_to,\n            kind = EXCLUDED.kind,\n            acknowledged_at = CASE WHEN (\n                    cc.block_id IS NULL\n                    OR NOT (cc.block_date_from - $2::int4 < (SELECT date_to FROM booking WHERE id = EXCLUDED.booking_id)\n                        AND cc.block_date_to + $2::int4 > (SELECT date_from FROM booking WHERE id = EXCLUDED.booking_id))\n                    OR (cc.kind = 'turnover' AND EXCLUDED.kind = 'overlap')\n                    OR EXCLUDED.block_date_from < cc.block_date_from\n                    OR EXCLUDED.block_date_to > cc.block_date_to\n                ) THEN NULL ELSE cc.acknowledged_at END,\n            acknowledged_by = CASE WHEN (\n                    cc.block_id IS NULL\n                    OR NOT (cc.block_date_from - $2::int4 < (SELECT date_to FROM booking WHERE id = EXCLUDED.booking_id)\n                        AND cc.block_date_to + $2::int4 > (SELECT date_from FROM booking WHERE id = EXCLUDED.booking_id))\n                    OR (cc.kind = 'turnover' AND EXCLUDED.kind = 'overlap')\n                    OR EXCLUDED.block_date_from < cc.block_date_from\n                    OR EXCLUDED.block_date_to > cc.block_date_to\n                ) THEN NULL ELSE cc.acknowledged_by END,\n            reopened_at = CASE WHEN (\n                    cc.block_id IS NULL\n                    OR NOT (cc.block_date_from - $2::int4 < (SELECT date_to FROM booking WHERE id = EXCLUDED.booking_id)\n                        AND cc.block_date_to + $2::int4 > (SELECT date_from FROM booking WHERE id = EXCLUDED.booking_id))\n                    OR (cc.kind = 'turnover' AND EXCLUDED.kind = 'overlap')\n                    OR EXCLUDED.block_date_from < cc.block_date_from\n                    OR EXCLUDED.block_date_to > cc.block_date_to\n                ) THEN now() ELSE cc.reopened_at END\n        WHERE (cc.block_id, cc.block_date_from, cc.block_date_to, cc.kind)\n              IS DISTINCT FROM (EXCLUDED.block_id, EXCLUDED.block_date_from, EXCLUDED.block_date_to, EXCLUDED.kind)\n        RETURNING cc.id, (cc.xmax = 0) AS \"inserted!\",\n            (cc.reopened_at IS NOT DISTINCT FROM now()) AS \"reopened!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "inserted!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "reopened!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "b97a52f1d00cd8d342084e6fbed5ada580928eaeda35ffb2ee48f05265540183"
+}

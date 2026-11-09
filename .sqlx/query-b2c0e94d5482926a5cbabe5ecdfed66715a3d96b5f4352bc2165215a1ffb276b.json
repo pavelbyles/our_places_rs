@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE listing_calendar_feed SET\n            last_status = $2, last_success_at = now(), consecutive_failures = 0,\n            failure_alerted_at = NULL, event_count = $3, last_error = NULL,\n            last_warning = $4, updated_at = now()\n        WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        {
+          "Custom": {
+            "name": "calendar_feed_status",
+            "kind": {
+              "Enum": [
+                "never",
+                "ok",
+                "warning",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b2c0e94d5482926a5cbabe5ecdfed66715a3d96b5f4352bc2165215a1ffb276b"
+}

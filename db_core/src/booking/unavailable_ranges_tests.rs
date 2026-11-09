@@ -117,7 +117,7 @@ pub(super) async fn book_held(
 }
 
 /// A hold request, for tests that need the guest or the outcome.
-pub(super) fn new_booking(
+pub(crate) fn new_booking(
     guest_id: Uuid,
     listing_id: Uuid,
     from: NaiveDate,

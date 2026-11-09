@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE calendar_conflict c\n         SET block_date_from = k.date_from, block_date_to = k.date_to\n         FROM listing_blocked_dates k, booking b\n         WHERE c.feed_id = $1 AND k.id = c.block_id AND b.id = c.booking_id\n           AND (c.block_date_from, c.block_date_to) IS DISTINCT FROM (k.date_from, k.date_to)\n           AND NOT (\n               (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > clock_timestamp()))\n               AND k.date_from - $2::int4 < b.date_to AND k.date_to + $2::int4 > b.date_from\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0f9b0b080d9b71016594564d9f8ec66f197e5424e8fa2525fe1ad491e0920cd9"
+}

@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.listing_id, c.feed_name, c.block_date_from, c.block_date_to,\n            c.kind AS \"kind: ConflictKind\", b.confirmation_code, l.name AS listing_name,\n            u.email AS owner_email\n        FROM calendar_conflict c\n        JOIN booking b ON b.id = c.booking_id\n        JOIN listing l ON l.id = c.listing_id\n        JOIN \"user\" u ON u.id = l.user_id\n        WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "feed_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_date_from",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_date_to",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "kind: ConflictKind",
+        "type_info": {
+          "Custom": {
+            "name": "calendar_conflict_kind",
+            "kind": {
+              "Enum": [
+                "overlap",
+                "turnover"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "confirmation_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "owner_email",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b2323a1aefdbd3a1b11fa9a74d0be66df20b68055efe86ea1a278dff0a819579"
+}
