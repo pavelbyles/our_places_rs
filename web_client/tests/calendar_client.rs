@@ -135,3 +135,28 @@ async fn the_export_maps_304_and_404() -> Result<(), UserCallError> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn blocked_dates_are_listed_for_the_full_24_months() -> Result<(), UserCallError> {
+    let server = MockServer::start().await;
+    let listing = Uuid::now_v7();
+    let from = common::reference::listing_today(chrono::Utc::now());
+    let to = from
+        .checked_add_months(chrono::Months::new(24))
+        .expect("date");
+    Mock::given(method("GET"))
+        .and(path(format!("/api/v1/listings/{listing}/calendar/blocks")))
+        .and(wiremock::matchers::query_param("from", from.to_string()))
+        .and(wiremock::matchers::query_param("to", to.to_string()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    assert!(
+        client_for(&server)
+            .list_blocked_dates(listing, JWT)
+            .await?
+            .is_empty()
+    );
+    Ok(())
+}

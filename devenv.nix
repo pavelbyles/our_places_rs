@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 
 {
   # Automatically load .env (DATABASE_URL, JWT_SECRET, etc.)
@@ -14,6 +14,14 @@
   env.STORAGE_EMULATOR_HOST = "http://localhost:4443";
   env.GCS_RAW_BUCKET = "our-places-gcs-img-raw-local";
   env.GCS_PUBLIC_BUCKET = "our-places-gcs-img-public-local";
+
+  # Calendar sync (#58), local only: listing_api and calendar_sync_job may fetch
+  # feeds from the Playwright fixture server on localhost, trusting its CA
+  # (created by `ical-fixture-ca`). Never set these in config/*.toml or in
+  # the cloud; the services refuse to start with them on Cloud Run.
+  env.EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS = "true";
+  env.EA__CALENDAR_SYNC__EXTRA_ROOT_CA_PATH = "${config.devenv.state}/ical-fixture/ca.pem";
+  env.ICAL_FIXTURE_DIR = "${config.devenv.state}/ical-fixture";
 
   # Rust Toolchain pinned to match the Dockerfiles (rustc, cargo, clippy,
   # rustfmt, rust-analyzer). Topcoat 0.11 requires rustc 1.99.
@@ -80,6 +88,24 @@
 
   # Project workflow commands mirroring .agents/ workflows
   scripts = {
+    # A local CA and a localhost certificate for the Playwright iCal fixture
+    # server (#58). Idempotent: does nothing once the files exist.
+    ical-fixture-ca.exec = ''
+      DIR="$ICAL_FIXTURE_DIR"
+      if [ -f "$DIR/ca.pem" ] && [ -f "$DIR/cert.pem" ] && [ -f "$DIR/key.pem" ]; then
+        exit 0
+      fi
+      mkdir -p "$DIR"
+      openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Our Places iCal fixture CA" \
+        -keyout "$DIR/ca-key.pem" -out "$DIR/ca.pem" 2>/dev/null
+      openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" \
+        -keyout "$DIR/key.pem" -out "$DIR/cert.csr" 2>/dev/null
+      printf "subjectAltName=DNS:localhost\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n" > "$DIR/ext.cnf"
+      openssl x509 -req -in "$DIR/cert.csr" -CA "$DIR/ca.pem" -CAkey "$DIR/ca-key.pem" -CAcreateserial \
+        -days 3650 -extfile "$DIR/ext.cnf" -out "$DIR/cert.pem" 2>/dev/null
+      echo "✓ iCal fixture CA ready in $DIR"
+    '';
+
     # Database start, stop, migrations & metadata (devenv-managed PostgreSQL 18)
     db-start.exec = ''
       if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
@@ -291,6 +317,7 @@
 
     # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
+      ical-fixture-ca
       db-start
       pubsub-start
       gcs-start
@@ -300,6 +327,7 @@
 
     # Ensure database and API microservices are active in background (detached)
     apis-start.exec = ''
+      ical-fixture-ca
       db-start
       db-migrate
       pubsub-start

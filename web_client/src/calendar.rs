@@ -162,13 +162,18 @@ impl TopcoatApiClient {
         decode_api(res).await
     }
 
-    /// Blocked dates from today to a year ahead.
+    /// Blocked dates from today to 24 months ahead, the longest range the
+    /// API allows (so far-future manual blocks stay visible).
     pub async fn list_blocked_dates(
         &self,
         listing_id: Uuid,
         jwt: &str,
     ) -> Result<Vec<BlockedDateResponse>, UserCallError> {
-        let url = self.calendar_url(listing_id, "/blocks");
+        let from = common::reference::listing_today(chrono::Utc::now());
+        let to = from
+            .checked_add_months(chrono::Months::new(24))
+            .unwrap_or(from);
+        let url = self.calendar_url(listing_id, &format!("/blocks?from={from}&to={to}"));
         decode_api(
             self.calendar_call(Method::GET, &url, jwt, None::<&()>, None)
                 .await?,
