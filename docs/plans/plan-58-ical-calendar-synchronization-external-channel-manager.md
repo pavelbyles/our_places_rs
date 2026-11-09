@@ -461,7 +461,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p listing_api calendar_tests::blocks && devenv shell -- cargo test -p listing_api calendar_tests::conflicts && devenv shell -- cargo test -p listing_api calendar_tests::overview`
   - **Dependencies:** T11, T12, T15
 
-- [ ] **Task 19: Export query and the `listing_api` `.ics` endpoint**
+- [x] **Task 19: Export query and the `listing_api` `.ics` endpoint**
   - **Scope:** S
   - **Description:** `db_core::calendar::export::export_events`, with the spec §1.6.2 contents and exclusions and the raw dates. Add `GET /api/v1/listings/{id}/calendar.ics` with the §1.6.3 headers, the `ETag` and 304 handling, and no user JWT.
   - **Files Touched:**

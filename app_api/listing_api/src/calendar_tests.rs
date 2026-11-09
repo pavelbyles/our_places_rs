@@ -932,3 +932,135 @@ mod overview {
         assert_eq!(all["listings"].as_array().map(Vec::len), Some(2));
     }
 }
+
+mod export {
+    use super::*;
+    use actix_web::http::Method;
+
+    async fn get(
+        c: &Ctx,
+        uri: &str,
+        if_none_match: Option<&str>,
+    ) -> (StatusCode, String, actix_web::http::header::HeaderMap) {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(c.pool.clone()))
+                .app_data(web::Data::new(settings()))
+                .configure(crate::apis::configure_routes),
+        )
+        .await;
+        let mut req = test::TestRequest::get().uri(uri);
+        if let Some(tag) = if_none_match {
+            req = req.insert_header(("If-None-Match", tag));
+        }
+        let resp = test::call_service(&app, req.to_request()).await;
+        let status = resp.status();
+        let headers = resp.headers().clone();
+        let body = String::from_utf8(test::read_body(resp).await.to_vec()).expect("utf8");
+        (status, body, headers)
+    }
+
+    #[actix_web::test]
+    async fn the_export_is_busy_only_with_caching_headers() {
+        let c = ctx().await;
+        let guest: Uuid = sqlx::query_scalar(
+            r#"INSERT INTO "user" (email, password_hash, first_name, last_name, slug, phone_number)
+               VALUES ('secret.guest@example.com', 'x', 'Zelda', 'Guestname', 'zelda-' || gen_random_uuid(), '+18765550123')
+               RETURNING id"#,
+        )
+        .fetch_one(&c.pool)
+        .await
+        .expect("guest");
+        let code: String = sqlx::query_scalar(
+            "INSERT INTO booking (confirmation_code, guest_id, listing_id, status, date_from, date_to,
+                 currency, daily_rate, number_of_persons, total_days, sub_total_price, total_price,
+                 cancellation_policy, metadata)
+             VALUES ('EXPORT1234', $1, $2, 'confirmed', $3, $4, 'USD', 100, 2, 2, 200, 200,
+                 'flexible', '{\"num_adults\": 2, \"message_to_host\": \"secret note\"}'::jsonb)
+             RETURNING confirmation_code",
+        )
+        .bind(guest)
+        .bind(c.listing)
+        .bind(future(5))
+        .bind(future(7))
+        .fetch_one(&c.pool)
+        .await
+        .expect("booking");
+        let uri = format!("/api/v1/listings/{}/calendar.ics", c.listing);
+        let (status, body, headers) = get(&c, &uri, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers.get("content-type").and_then(|v| v.to_str().ok()),
+            Some("text/calendar; charset=utf-8")
+        );
+        assert_eq!(
+            headers.get("cache-control").and_then(|v| v.to_str().ok()),
+            Some("public, max-age=300")
+        );
+        assert!(
+            headers
+                .get("content-disposition")
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.contains(&format!("{}.ics", c.listing)))
+        );
+        assert!(body.contains(&format!("Reservation #: {code}")));
+        assert!(body.contains(&format!(
+            "DTSTART;VALUE=DATE:{}",
+            future(5).format("%Y%m%d")
+        )));
+        for pii in [
+            "Zelda",
+            "Guestname",
+            "secret.guest",
+            "5550123",
+            "secret note",
+        ] {
+            assert!(!body.contains(pii), "{pii} leaked");
+        }
+
+        let etag = headers
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .expect("etag")
+            .to_string();
+        let (status, body, _) = get(&c, &uri, Some(&etag)).await;
+        assert_eq!(status, StatusCode::NOT_MODIFIED);
+        assert!(body.is_empty());
+        let (status, _, _) = get(&c, &uri, Some("\"stale\"")).await;
+        assert_eq!(status, StatusCode::OK);
+        // No user token needed; another host's token changes nothing.
+        let (status, _, _) = c.call(Method::GET, &uri, Some(c.other_host), None).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[actix_web::test]
+    async fn deleted_unknown_and_malformed_ids_are_404_and_inactive_is_served() {
+        let c = ctx().await;
+        sqlx::query("UPDATE listing SET is_active = FALSE WHERE id = $1")
+            .bind(c.listing)
+            .execute(&c.pool)
+            .await
+            .expect("deactivate");
+        let (status, _, _) = get(
+            &c,
+            &format!("/api/v1/listings/{}/calendar.ics", c.listing),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        sqlx::query("UPDATE listing SET deleted_at = NOW() WHERE id = $1")
+            .bind(c.other_listing)
+            .execute(&c.pool)
+            .await
+            .expect("delete");
+        for uri in [
+            format!("/api/v1/listings/{}/calendar.ics", c.other_listing),
+            format!("/api/v1/listings/{}/calendar.ics", Uuid::now_v7()),
+            "/api/v1/listings/not-a-uuid/calendar.ics".to_string(),
+        ] {
+            let (status, body, _) = get(&c, &uri, None).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+            assert!(!body.contains("<html"), "plain 404");
+        }
+    }
+}

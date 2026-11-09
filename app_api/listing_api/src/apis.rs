@@ -912,6 +912,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             crate::calendar::list_conflicts,
             crate::calendar::acknowledge_conflict,
             crate::calendar::overview,
+            crate::calendar::export_calendar,
         ),
         components(
             schemas(

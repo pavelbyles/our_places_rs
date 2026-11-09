@@ -119,6 +119,7 @@ pub fn configure_listing_routes(cfg: &mut web::ServiceConfig) {
             web::delete().to(delete_feed),
         )
         .route("/{id}/calendar/sync", web::post().to(sync_now))
+        .route("/{id}/calendar.ics", web::get().to(export_calendar))
         .route("/{id}/calendar/blocks", web::get().to(list_blocks))
         .route("/{id}/calendar/blocks", web::post().to(create_block))
         .route(
@@ -651,4 +652,65 @@ pub async fn overview(claims: Claims, pool: web::Data<PgPool>) -> Result<impl Re
         db_core::calendar::conflicts::overview_for_user(&pool, user.id, authz::is_admin(&user))
             .await?;
     Ok(HttpResponse::Ok().json(overview))
+}
+
+/// The listing's public busy-only calendar (spec §1.6). Called by the guest
+/// portal with its service identity only; no user token. A strong `ETag`
+/// that ignores `DTSTAMP` lets channels poll cheaply with `If-None-Match`.
+#[tracing::instrument(skip_all, fields(listing_id = %path))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/calendar.ics",
+    tag = "calendar",
+    params(("id" = Uuid, Path, description = "Listing id")),
+    responses(
+        (status = 200, description = "RFC 5545 calendar", content_type = "text/calendar"),
+        (status = 304, description = "Unchanged since the given ETag"),
+        (status = 404, description = "Unknown or deleted listing")
+    )
+)]
+pub async fn export_calendar(
+    req: actix_web::HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let listing_id = path.into_inner();
+    let now = chrono::Utc::now();
+    let today = common::reference::listing_today(now);
+    let Some((name, events)) =
+        db_core::calendar::export::export_events(&pool, listing_id, today).await?
+    else {
+        return Ok(HttpResponse::NotFound()
+            .content_type("text/plain; charset=utf-8")
+            .body("Not found"));
+    };
+    let body = common::calendar::ics_write::write_feed(&name, &events, now);
+    let etag = common::calendar::ics_write::etag(&body);
+    let matches = req
+        .headers()
+        .get(actix_web::http::header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| {
+            v.split(',')
+                .any(|tag| tag.trim() == etag || tag.trim() == "*")
+        });
+    let mut resp = match matches {
+        true => HttpResponse::NotModified(),
+        false => HttpResponse::Ok(),
+    };
+    resp.insert_header((actix_web::http::header::ETAG, etag))
+        .insert_header((
+            actix_web::http::header::CACHE_CONTROL,
+            "public, max-age=300",
+        ));
+    if matches {
+        return Ok(resp.finish());
+    }
+    Ok(resp
+        .content_type("text/calendar; charset=utf-8")
+        .insert_header((
+            actix_web::http::header::CONTENT_DISPOSITION,
+            format!("inline; filename=\"{listing_id}.ics\""),
+        ))
+        .body(body))
 }
