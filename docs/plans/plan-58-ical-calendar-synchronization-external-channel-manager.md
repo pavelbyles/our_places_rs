@@ -136,7 +136,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p common calendar::ics_parse_tests`
   - **Dependencies:** None
 
-- [ ] **Task 4: ICS feed writer and ETag**
+- [x] **Task 4: ICS feed writer and ETag**
   - **Scope:** S
   - **Description:** `common::calendar::ics_write::{write_feed, etag}` (spec §1.6.2–3):
     - The headers, then events with `VALUE=DATE`, `STATUS:CONFIRMED` and `TRANSP:OPAQUE`.

@@ -5,11 +5,15 @@
 pub mod feed_url;
 /// The `.ics` feed parser.
 pub mod ics_parse;
+/// The busy-only `.ics` export writer and its ETag.
+pub mod ics_write;
 mod types;
 
 #[cfg(test)]
 mod feed_url_tests;
 #[cfg(test)]
 mod ics_parse_tests;
+#[cfg(test)]
+mod ics_write_tests;
 
 pub use types::{BlockSource, ConflictKind, FeedStatus};

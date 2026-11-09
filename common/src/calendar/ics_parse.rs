@@ -443,7 +443,7 @@ fn parse_duration(value: &str) -> Option<TimeDelta> {
     }
 }
 
-fn sha256_hex(parts: &[&[u8]]) -> String {
+pub(super) fn sha256_hex(parts: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
     for part in parts {
         hasher.update(part);
