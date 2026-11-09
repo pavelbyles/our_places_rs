@@ -110,7 +110,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p common calendar::feed_url_tests && cargo test -p common reference::tests::listing_today`
   - **Dependencies:** None
 
-- [ ] **Task 3: ICS feed parser**
+- [x] **Task 3: ICS feed parser**
   - **Scope:** M
   - **Description:** `common::calendar::ics_parse::parse_feed(&[u8], …)`, implementing every spec §1.3 rule:
     - UTF-8 required and the BOM stripped.
