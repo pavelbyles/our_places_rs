@@ -543,7 +543,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `cargo test -p web_ui_admin listings::calendar_tests`
   - **Dependencies:** T21
 
-- [ ] **Task 23: Admin dashboard calendar card**
+- [x] **Task 23: Admin dashboard calendar card**
   - **Scope:** S
   - **Description:** A `/admin` card showing open, non-stale conflicts and feeds with `consecutive_failures ≥ 4`. It's hidden when both are 0, and hidden with a `warn` log when the overview fails.
   - **Files Touched:**
