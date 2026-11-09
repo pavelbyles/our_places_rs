@@ -255,7 +255,7 @@ T27 docs + full gate                      ← T1–T26
 
 ## Phase C: Sync Core
 
-- [ ] **Task 9: Feed storage and claiming**
+- [x] **Task 9: Feed storage and claiming**
   - **Scope:** S
   - **Description:** `db_core::calendar::feeds`:
     - `create`, under the listing lock: checks the limit and duplicates, and maps `23505` to `CalendarFeedDuplicate` before anything can log.

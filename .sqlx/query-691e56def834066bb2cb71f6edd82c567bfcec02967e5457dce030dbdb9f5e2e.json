@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.id,\n            GREATEST(1, CEIL(EXTRACT(EPOCH FROM\n                (COALESCE(f.last_attempt_at, now()) + ($3::int8 * INTERVAL '1 second') - now()))))::int8\n                AS \"wait!\"\n        FROM listing_calendar_feed f JOIN listing l ON l.id = f.listing_id\n        WHERE f.listing_id = $1 AND f.is_active AND l.deleted_at IS NULL\n          AND NOT (f.id = ANY($2::uuid[]))\n        ORDER BY f.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "wait!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "691e56def834066bb2cb71f6edd82c567bfcec02967e5457dce030dbdb9f5e2e"
+}

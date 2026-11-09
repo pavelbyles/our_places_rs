@@ -1231,6 +1231,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-test",
+ "url",
  "utoipa",
  "uuid",
  "validator",

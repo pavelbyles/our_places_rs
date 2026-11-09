@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM listing_calendar_feed WHERE id = $1 AND listing_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "138995b33a9791b1e5f4cff43c9754b5b8a9715e8ffc3efb6ab3e86fa6d8def6"
+}
