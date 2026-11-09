@@ -29,6 +29,7 @@ Every variable the services read, where it comes from in each environment, and t
 | `INFRA_SA_LISTING_API_*`, `INFRA_SA_BOOKING_API_*`, `INFRA_SA_USER_API_*` | yes | Service account names (without `@project...`) for the APIs. |
 | `INFRA_SA_IMAGE_WORKER_*`, `INFRA_SA_EMAIL_WORKER_*` | yes | Service accounts for the workers (email falls back to the image worker's). |
 | `INFRA_SA_WEB_APP_*` | yes | Service account for both portals; granted `run.invoker` on the APIs. |
+| `INFRA_SA_CALENDAR_JOB_*` | **yes (new, #58)** | Dedicated service account for the calendar sync Cloud Run Job. Created once by hand (see "Calendar sync job" below); the deploy fails fast if it is missing. |
 | `DB_USER_*`, `DB_NAME_*`, `DB_INSTANCE_NAME_*` | yes | Cloud SQL user, database and instance. |
 | `SMTP_HOST_*`, `SMTP_USER_*`, `SMTP_FROM_*` | yes | SMTP relay for email_worker (port 587, STARTTLS). |
 | `TAJ_SUPPLIER_TRN_*`, `TAJ_SUPPLIER_NAME_*`, `TAJ_SUPPLIER_ADDRESS_*` | yes | Supplier block on tax documents. Commas are allowed (the workflow escapes them). |
@@ -55,6 +56,7 @@ No longer read by the workflow: `INFRA_GATEWAY_API_KEY_*`, `INFRA_*_API_URL_DEV`
 | `GATEWAY_API_KEY` | no | unset | unset (only sent if present) |
 | `RUST_LOG`, `LOG_FORMAT` | no | | `info`, `json` |
 | `TRACE_EXPORTER`, `TRACE_SAMPLE_RATIO`, `GOOGLE_CLOUD_PROJECT` | no | unset (no export) | `gcp`, `1.0`, the project (set by CI). See §4. |
+| `GUEST_PORTAL_URL` | admin | `http://localhost:3010` | Guest portal base for the calendar export link (`GUEST_PORTAL_URL_*`, else the guest service URL; set by CI after both portals deploy). |
 
 The portals call the APIs with two credentials: the service account's Google ID token in `Authorization` (Cloud Run IAM) and the signed-in user's JWT in `X-Forwarded-Authorization`. On Cloud Run the ID token comes from the metadata server; locally `gcloud auth print-identity-token` is tried and skipped if unavailable.
 
@@ -68,13 +70,13 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 | `EA__DATABASE__*` (`CLOUD`, `INSTANCE_NAME`, `USERNAME`, `PASSWORD`, `DATABASE_NAME`, `DATABASE_URL`) | all | cloud | `DATABASE_URL` sets `search_path` to the branch schema. |
 | `RUN_ENV` | all | no | Selects `config/<RUN_ENV>.toml`. |
 | `JWT_SECRET` | all | **yes in cloud** | Must match the portals. Falls back to `secret` if unset, which anyone could use to forge tokens. |
-| `EMAIL_PUBSUB_TOPIC_ID`, `GCP_PROJECT_ID` | booking, user | yes | `our-places-email-notifications-<branch>` and the project. |
+| `EMAIL_PUBSUB_TOPIC_ID`, `GCP_PROJECT_ID` | booking, user, listing | yes | `our-places-email-notifications-<branch>` and the project. listing_api publishes calendar conflict and failing-feed emails. |
 | `PUBSUB_EMULATOR_HOST` | booking, user | local only | `127.0.0.1:8085`. Unset in the cloud, where publishes use the metadata server's OAuth token. |
 | `DISABLE_PUBSUB_PUBLISH`, `PUBSUB_AUTH_TOKEN` | booking, user | no | Tests / manual overrides. Leave unset in the cloud. |
 | `GCS_RAW_BUCKET` | listing | yes | Bucket that signed upload URLs point at. |
 | `STORAGE_EMULATOR_HOST` | listing | local only | Fake GCS for signed URLs. |
 | `BASE_URL` | booking | yes in cloud | Guest portal URL for links in emails. Set by CI after the portals deploy. Local default `http://localhost:3010`. |
-| `ADMIN_BASE_URL` | booking | yes in cloud | Admin portal URL for host links in emails. Set by CI. Local default `http://localhost:3012`. |
+| `ADMIN_BASE_URL` | booking, listing, calendar job | yes in cloud | Admin portal URL for host links in emails. Set by CI. Local default `http://localhost:3012`. |
 | `SYSTEM_ADMIN_PASSWORD` | user | yes on first boot | Password for the bootstrap admin when the database has none; user_api refuses to start without it then. No fallback in the cloud. `run_local.sh` defaults it to the local seed password. |
 | `CRON_SECRET` | booking | yes | Required by the cron endpoints; no fallback. |
 | `EA__APPLICATION__PENDING_HOLD_MINUTES` | booking | no | Minutes a new `pending` booking holds its dates. Default `120` (`config/Default.toml`). Must be positive or booking_api will not start. Not set by CI. Change it with `gcloud run services update booking-api-<branch> --update-env-vars EA__APPLICATION__PENDING_HOLD_MINUTES=60`: that makes a new revision, not a rebuild, and later CI deploys keep it because `deploy-cloudrun` merges env vars. Existing holds keep their `expires_at`. |
@@ -84,6 +86,9 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 | `EA__APPLICATION__QUOTE_VALID_HOURS` | booking | no | Hours an accepted request or custom quote holds its dates for the guest to proceed to checkout. Default `48`, capped at check-in day. Must be 1-720 or booking_api will not start. |
 | `EA__APPLICATION__REQUEST_NEAR_EXPIRY_PCT` | booking | no | Last share of a response window, in percent, that counts as near expiry: the inbox badge and the host's one reminder email. Default `25`. Must be 1-99 or booking_api will not start. |
 | `TAJ_SUPPLIER_TRN`, `TAJ_SUPPLIER_NAME`, `TAJ_SUPPLIER_ADDRESS` | booking | yes | Tax document supplier block. |
+| `EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS` | listing, calendar job | no | **Local only.** Lets feed fetches reach private and loopback hosts (the Playwright fixture server). Metadata addresses stay blocked. Read from the environment only, never from `config/*.toml`. The services refuse to start if it is `true` on Cloud Run; CI sets it to `false`. |
+| `EA__CALENDAR_SYNC__EXTRA_ROOT_CA_PATH` | listing, calendar job | no | **Local only.** Extra trusted root CA (PEM) for the fixture server. Refused on Cloud Run like the toggle above. |
+| `EA__CALENDAR_SYNC__JOB_CONCURRENCY` | calendar job | no | Feeds fetched at once. Default `8`; the job's pool is this plus 2. |
 | `ACTUATOR_SECRET` (or `ADMIN_SECRET`) | all | recommended | `X-Actuator-Token` for `/loggers`. No fallback: unset or blank disables token access (admin JWTs still work). Not set by CI today. |
 
 ### Workers
@@ -102,12 +107,43 @@ Settings load from `config/Default.toml`, then `config/<RUN_ENV>.toml`, then `EA
 | `GCS_RAW_BUCKET`, `GCS_PUBLIC_BUCKET` | image | yes | Source and destination buckets. |
 | `STORAGE_EMULATOR_HOST` | image | local only | Fake GCS. |
 
+### Calendar sync job (`calendar_sync_job`, #58)
+
+A Cloud Run Job, `calendar-sync-<branch>`, deployed on every branch. Its environment has the `EA__DATABASE__*` settings, `EMAIL_PUBSUB_TOPIC_ID`, `GCP_PROJECT_ID`, `ADMIN_BASE_URL` and `EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false`, and **no** `JWT_SECRET`, `GCS_*` or SMTP settings. It exits non-zero only when it can't load its configuration or reach the database.
+
+Run it by hand on a non-prod branch (only `main` has a schedule):
+
+```bash
+gcloud run jobs execute calendar-sync-<branch> --region us-central1 --wait
+```
+
+Or use "Sync now" on a listing's calendar page in the admin portal.
+
+**Bootstrap, once per environment, by hand** (CI never creates service accounts):
+
+```bash
+ENV=dev   # or prod
+SA=calendar-sync-job-$ENV@$PROJECT_ID.iam.gserviceaccount.com
+gcloud iam service-accounts create calendar-sync-job-$ENV --display-name="Calendar sync job ($ENV)"
+gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SA --role=roles/cloudsql.client
+# Per email topic (our-places-email-notifications-<branch>); CI also grants this on each deploy.
+gcloud pubsub topics add-iam-policy-binding our-places-email-notifications-main --member=serviceAccount:$SA --role=roles/pubsub.publisher
+# Let the CI deployer attach the account to the job.
+gcloud iam service-accounts add-iam-policy-binding $SA --member=serviceAccount:<CI deployer SA> --role=roles/iam.serviceAccountUser
+# Let Cloud Scheduler mint OAuth tokens for it (main only uses a schedule).
+gcloud iam service-accounts add-iam-policy-binding $SA \
+  --member=serviceAccount:service-$PROJECT_NUMBER@gcp-sa-cloudscheduler.iam.gserviceaccount.com \
+  --role=roles/iam.serviceAccountTokenCreator
+# Then set the repository variable INFRA_SA_CALENDAR_JOB_DEV (or _PROD) to calendar-sync-job-$ENV.
+```
+
 ## 3. Cloud wiring the workflow creates per branch
 
 - **Image pipeline**: raw bucket → `OBJECT_FINALIZE` notification → topic `our-places-image-uploads-raw-<branch>` → push subscription (OIDC, `INFRA_SA_IMAGE_WORKER`) → image worker `/api/v1/internal/image/process_image` → public bucket.
 - **Browser uploads**: the admin job sets a CORS rule on the raw bucket that allows `PUT` from the admin portal's origin (and `ADMIN_PORTAL_URL_*` if set). Signed URLs are created by `INFRA_SA_LISTING_API`, which needs `roles/iam.serviceAccountTokenCreator` on itself and `roles/storage.objectCreator` on the raw bucket. The bucket-setup job grants both (the prod service account had neither).
 - **Email pipeline**: booking/user API write an outbox row → publish to `our-places-email-notifications-<branch>` (the API service accounts get `pubsub.publisher` on the topic) → push subscription (OIDC, `INFRA_SA_EMAIL_WORKER`) → email worker `/pubsub/email-events` → SMTP.
-- **Scheduled sweeps**: on `dev` and `main` only, the API job creates or updates one Cloud Scheduler job, `our-places-sweeps-<branch>`. It fires hourly at :05 and calls booking_api's `POST /api/v1/internal/cron/run-sweeps` with `x-cron-secret` and an OIDC token for `INFRA_SA_BOOKING_API` (granted `run.invoker` on booking_api). Each run sends the due pre-arrival guides, host arrival reminders and expiring-hold warnings, and completes stays from noon Jamaica time on their checkout day. That makes 2 jobs in total, within the free tier of 3 jobs per billing account; feature branches get none. The older `process-scheduled-notifications` and `complete-stays` endpoints still exist for manual runs.
+- **Scheduled sweeps**: on `dev` and `main` only, the API job creates or updates one Cloud Scheduler job, `our-places-sweeps-<branch>`. It fires hourly at :05 and calls booking_api's `POST /api/v1/internal/cron/run-sweeps` with `x-cron-secret` and an OIDC token for `INFRA_SA_BOOKING_API` (granted `run.invoker` on booking_api). Each run sends the due pre-arrival guides, host arrival reminders and expiring-hold warnings, and completes stays from noon Jamaica time on their checkout day. With the calendar sync below that makes 3 jobs in total (sweeps on dev and main, plus calendar sync on main), the free tier per billing account; feature branches get none. The older `process-scheduled-notifications` and `complete-stays` endpoints still exist for manual runs.
+- **Calendar sync** (#58): every branch gets the Cloud Run Job `calendar-sync-<branch>` (service account `INFRA_SA_CALENDAR_JOB`, granted `pubsub.publisher` on the email topic). On `main` only, a Cloud Scheduler job of the same name runs it every 15 minutes through the Run Admin API (`jobs/<name>:run`) with an OAuth token for that account, which gets `run.invoker` on its own job. `cleanup_feature.yml` deletes the job with the branch.
 
 ## 4. Distributed tracing
 
@@ -129,4 +165,3 @@ Every log line inside a request carries `logging.googleapis.com/trace` and `span
 | `GOOGLE_CLOUD_PROJECT` | — | Required for export and for log-to-trace links. |
 
 Requirements in the cloud: `telemetry.googleapis.com` enabled (it is), and `roles/telemetry.tracesWriter` on each runtime service account. Spans are sent in batches every few seconds from a background thread; with Cloud Run's request-based CPU, a batch can wait until the next request, and is flushed when the instance shuts down.
-

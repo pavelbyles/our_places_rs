@@ -582,7 +582,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p calendar_sync_job run_tests && devenv shell -- cargo test -p db_core calendar::outbox_tests`. Run `docker build -f Dockerfile.calendar_sync_job -t calendar-sync-job:local .` once, at the end of the task, not in the iteration loop.
   - **Dependencies:** T13, T14
 
-- [ ] **Task 25: CI deploy with a dedicated service account and a Scheduler on `main` only**
+- [x] **Task 25: CI deploy with a dedicated service account and a Scheduler on `main` only**
   - **Scope:** M
   - **Description:** Spec §3.7.
     - **Bootstrap, done once by hand by the user**: create `calendar-sync-job-{dev,prod}` with its IAM bindings, and set the repo vars `INFRA_SA_CALENDAR_JOB_{DEV,PROD}`. The task writes this up in `docs/ENVIRONMENT.md`.

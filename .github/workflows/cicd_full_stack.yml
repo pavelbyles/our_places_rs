@@ -166,6 +166,10 @@ jobs:
           SQLX_OFFLINE: true
           DATABASE_URL: postgres://postgres:password@localhost:5432/our_places
         run: cargo clippy --locked --workspace --exclude protoproj --all-features --manifest-path Cargo.toml -- -D warnings
+      # Workflow syntax, expressions and action inputs. Shellcheck stays off
+      # until the existing run scripts' findings are fixed (see #58 handoff).
+      - name: Lint GitHub Actions workflows
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 -shellcheck=
   # =========================================================
   # Test API's and Web App
   # =========================================================
@@ -657,6 +661,8 @@ jobs:
       SA_BOOKING_API: ${{ vars[format('INFRA_SA_BOOKING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_USER_API: ${{ vars[format('INFRA_SA_USER_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Calendar sync job (#58): a dedicated account, created once by hand (docs/ENVIRONMENT.md).
+      SA_CALENDAR_JOB: ${{ vars[format('INFRA_SA_CALENDAR_JOB_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_USER: ${{ vars[format('DB_USER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_PASS: ${{ secrets[format('DB_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       DB_NAME: ${{ vars[format('DB_NAME_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -720,6 +726,17 @@ jobs:
         run: |
           if [ -z "$JWT_SECRET" ]; then
             echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set. The APIs would fall back to a public default and the portals refuse to start without it."
+            exit 1
+          fi
+
+      # CI never creates service accounts; the calendar job's is bootstrapped once by hand.
+      - name: Require Calendar Sync Job Service Account
+        run: |
+          if [ -z "$SA_CALENDAR_JOB" ]; then
+            ENV_LOWER=$(echo "${{ env.ENV_SUFFIX }}" | tr '[:upper:]' '[:lower:]')
+            echo "::error::Repository variable INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }} is not set. Bootstrap it once (docs/ENVIRONMENT.md, 'Calendar sync job'):"
+            echo "  gcloud iam service-accounts create calendar-sync-job-$ENV_LOWER --display-name=\"Calendar sync job ($ENV_LOWER)\""
+            echo "  then grant roles/cloudsql.client, roles/pubsub.publisher on the email topic, and set INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }}=calendar-sync-job-$ENV_LOWER"
             exit 1
           fi
 
@@ -800,7 +817,7 @@ jobs:
           else
             echo "PubSub topic $TOPIC_NAME already exists."
           fi
-          for SA in "${{ env.SA_BOOKING_API }}" "${{ env.SA_USER_API }}"; do
+          for SA in "${{ env.SA_BOOKING_API }}" "${{ env.SA_USER_API }}" "${{ env.SA_LISTING_API }}" "${{ env.SA_CALENDAR_JOB }}"; do
             echo "Granting roles/pubsub.publisher to $SA on $TOPIC_NAME..."
             gcloud pubsub topics add-iam-policy-binding $TOPIC_NAME \
               --member="serviceAccount:$SA@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
@@ -887,10 +904,92 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             JWT_SECRET=${{ env.JWT_SECRET }}
+            EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false
           flags: "--no-allow-unauthenticated --service-account ${{ env.SA_LISTING_API }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --min-instances=0 --max-instances=4 --memory=256Mi --add-cloudsql-instances=${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }} --quiet"
 
-      # One hourly Cloud Scheduler job per long-lived environment (dev, main):
-      # 2 jobs in total, inside the free tier of 3 jobs per billing account.
+      # Calendar sync job (#58): built and deployed on every branch. Non-prod
+      # environments sync by hand (gcloud run jobs execute, or "Sync now").
+      - name: Build and Push Calendar Sync Job
+        run: |
+          docker buildx build \
+            --cache-from type=gha,scope=calendar-sync-job \
+            --cache-to type=gha,mode=max,scope=calendar-sync-job \
+            --build-arg "RELEASE_FLAG=$RELEASE_FLAG" \
+            --build-arg "BUILD_OUTPUT=$BUILD_OUTPUT" \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/calendar-sync-job:${{ github.sha }} \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/calendar-sync-job:${{ steps.branch_name.outputs.SERVICE_SUFFIX }} \
+            -f ../Dockerfile.calendar_sync_job \
+            --push ..
+
+      # The job gets the database and the email topic only: no user-token,
+      # storage or SMTP settings.
+      - name: Deploy Calendar Sync Job
+        env:
+          SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+          SCHEMA_NAME: ${{ steps.branch_name.outputs.SCHEMA_NAME }}
+        run: |
+          INSTANCE="${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}"
+          VARS=(
+            "LOG_FORMAT=json"
+            "RUST_LOG=info"
+            "GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}"
+            "TRACE_EXPORTER=gcp"
+            "EA__DATABASE__CLOUD=true"
+            "EA__DATABASE__INSTANCE_NAME=$INSTANCE"
+            "EA__DATABASE__USERNAME=${{ env.DB_USER }}"
+            "EA__DATABASE__PASSWORD=${{ env.DB_PASS }}"
+            "EA__DATABASE__DATABASE_NAME=${{ env.DB_NAME }}"
+            "EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME }}?host=/cloudsql/$INSTANCE&options=-c%20search_path%3D$SCHEMA_NAME"
+            "EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-$SUFFIX"
+            "GCP_PROJECT_ID=${{ env.PROJECT_ID }}"
+            "EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false"
+          )
+          # gcloud's ^##^ delimiter: the database URL contains commas and @.
+          ENV_ARG="^##^"
+          for V in "${VARS[@]}"; do ENV_ARG+="$V##"; done
+          ENV_ARG=${ENV_ARG%##}
+          gcloud run jobs deploy "calendar-sync-$SUFFIX" \
+            --image "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/calendar-sync-job:${{ github.sha }}" \
+            --region "${{ env.REGION }}" \
+            --service-account "${{ env.SA_CALENDAR_JOB }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --set-cloudsql-instances "$INSTANCE" \
+            --set-env-vars "$ENV_ARG" \
+            --task-timeout=600s --max-retries=0 --memory=256Mi --cpu=1 --quiet
+
+      # Cloud Scheduler free tier: sweeps (dev and main) plus calendar sync (main) = 3.
+      - name: Schedule Calendar Sync
+        if: github.ref == 'refs/heads/main'
+        env:
+          SUFFIX: ${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
+        run: |
+          JOB="calendar-sync-$SUFFIX"
+          SA_EMAIL="${{ env.SA_CALENDAR_JOB }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run jobs add-iam-policy-binding "$JOB" \
+            --region=${{ env.REGION }} \
+            --member="serviceAccount:$SA_EMAIL" \
+            --role="roles/run.invoker" \
+            --quiet
+          COMMON=(
+            --location=${{ env.REGION }}
+            --schedule="*/15 * * * *"
+            --time-zone="UTC"
+            --uri="https://run.googleapis.com/v2/projects/${{ env.PROJECT_ID }}/locations/${{ env.REGION }}/jobs/$JOB:run"
+            --http-method=POST
+            --oauth-service-account-email="$SA_EMAIL"
+            --attempt-deadline=60s
+            --max-retry-attempts=0
+          )
+          if gcloud scheduler jobs describe "$JOB" --location=${{ env.REGION }} >/dev/null 2>&1; then
+            gcloud scheduler jobs update http "$JOB" "${COMMON[@]}"
+          else
+            gcloud scheduler jobs create http "$JOB" "${COMMON[@]}"
+          fi
+
+      # One hourly Cloud Scheduler sweep job per long-lived environment (dev,
+      # main). With the calendar sync on main: sweeps (dev and main) plus
+      # calendar sync (main) = 3, the free tier per billing account.
       # Feature branches get none; trigger /run-sweeps by hand there if needed.
       - name: Schedule Hourly Booking Sweeps
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
@@ -1277,4 +1376,24 @@ jobs:
             echo "Updating booking-api-$SUFFIX: ${UPDATES[*]}"
             gcloud run services update booking-api-$SUFFIX --region ${{ env.REGION }} \
               --update-env-vars "$(IFS=,; echo "${UPDATES[*]}")" --quiet
+          fi
+
+      # Calendar sync (#58): conflict emails link to the admin portal, and the
+      # admin calendar page shows the guest portal's export link.
+      - name: Set Calendar Portal Links
+        run: |
+          lookup() {
+            gcloud run services describe "$1" --region "${{ env.REGION }}" --format 'value(status.url)' 2>/dev/null || true
+          }
+          GUEST_URL=${GUEST_URL:-$(lookup "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
+          ADMIN_URL=${ADMIN_URL:-$(lookup "${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX")}
+          if [ -n "$ADMIN_URL" ]; then
+            gcloud run services update "listing-api-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet
+            gcloud run jobs update "calendar-sync-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet || echo "Calendar sync job not deployed in this run."
+          fi
+          if [ -n "$GUEST_URL" ]; then
+            gcloud run services update "${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "GUEST_PORTAL_URL=$GUEST_URL" --quiet || echo "Admin portal not deployed for this branch."
           fi
