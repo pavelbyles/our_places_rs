@@ -178,6 +178,37 @@ impl Fixture {
     }
 }
 
+/// Collects every log line written while a future runs under [`LogCapture::dispatch`].
+#[derive(Clone, Default)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("log lock").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl LogCapture {
+    fn dispatch(&self) -> tracing::Dispatch {
+        let writer = self.clone();
+        tracing::Dispatch::new(
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::TRACE)
+                .with_ansi(false)
+                .with_writer(move || writer.clone())
+                .finish(),
+        )
+    }
+
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().expect("log lock")).into_owned()
+    }
+}
+
 fn ctx(trigger: SyncTrigger) -> SyncContext {
     SyncContext {
         trigger,
@@ -344,8 +375,7 @@ async fn emails_are_published_after_commit() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[tracing_test::traced_test]
-async fn a_publish_failure_is_logged_and_the_sync_still_succeeds() {
+async fn a_publish_failure_does_not_fail_the_sync() {
     let f = fixture(true).await;
     conflicted(&f).await;
     f.feed("/ok.ics").await;
@@ -358,24 +388,48 @@ async fn a_publish_failure_is_logged_and_the_sync_still_succeeds() {
     )
     .await;
     assert_eq!(results[0].outcome, SyncOutcome::Ok);
-    f.publisher.wait_for(1).await;
-    let started = std::time::Instant::now();
-    while !logs_contain("calendar email publish failed")
-        && started.elapsed() < Duration::from_secs(5)
-    {
-        tokio::task::yield_now().await;
-    }
-    assert!(logs_contain("calendar email publish failed"));
-    assert!(logs_contain("ERROR"));
+    assert_eq!(results[0].conflicts_opened, 1);
+    assert_eq!(
+        f.publisher.wait_for(1).await.len(),
+        1,
+        "publish was attempted"
+    );
+}
+
+#[tokio::test]
+async fn a_publish_failure_is_logged_at_error_and_the_rest_still_publish() {
+    use tracing::instrument::WithSubscriber;
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let publisher = CountingPublisher {
+        pool,
+        fail: true,
+        seen: Mutex::new(Vec::new()),
+    };
+    let ids = [Uuid::now_v7(), Uuid::now_v7()];
+    let logs = LogCapture::default();
+    super::sync::publish_all(&publisher, &ids)
+        .with_subscriber(logs.dispatch())
+        .await;
+    assert_eq!(publisher.seen.lock().expect("lock").len(), 2);
+    let text = logs.text();
+    assert_eq!(
+        text.lines()
+            .filter(|l| l.contains("ERROR") && l.contains("calendar email publish failed"))
+            .count(),
+        2,
+        "{text}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[tracing_test::traced_test]
 async fn logs_never_contain_the_feed_path_or_query() {
+    use tracing::instrument::WithSubscriber;
     let f = fixture(false).await;
     f.feed("/secret-path.ics?s=topsecret").await;
     f.feed("/503.ics?token=topsecret").await;
     f.feed("/html.ics?token=topsecret").await;
+    let logs = LogCapture::default();
     sync_feeds(
         &f.deps,
         f.claims().await,
@@ -383,9 +437,11 @@ async fn logs_never_contain_the_feed_path_or_query() {
         4,
         soon(5000),
     )
+    .with_subscriber(logs.dispatch())
     .await;
-    assert!(logs_contain("feeds.test"), "the host is logged");
-    assert!(!logs_contain("topsecret"));
-    assert!(!logs_contain("secret-path"));
-    assert!(!logs_contain("Jane Guest"), "event text is never logged");
+    let text = logs.text();
+    assert!(text.contains("feeds.test"), "the host is logged: {text}");
+    assert!(!text.contains("topsecret"), "{text}");
+    assert!(!text.contains("secret-path"), "{text}");
+    assert!(!text.contains("Jane Guest"), "event text is never logged");
 }

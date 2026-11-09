@@ -28,6 +28,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use tracing::Instrument;
+use tracing::instrument::WithSubscriber;
 use uuid::Uuid;
 
 /// Bodies larger than this are parsed on the blocking pool.
@@ -119,7 +120,8 @@ async fn sync_listing(
                 let fetched = fetch_and_parse(&fetcher, &claim, permits, deadline).await;
                 (claim, fetched)
             }
-            .instrument(span),
+            .instrument(span)
+            .with_current_subscriber(),
         );
     }
     // Reconcile each feed as its fetch finishes, one at a time.
@@ -287,19 +289,24 @@ async fn apply(
     }
 }
 
+/// Publishes committed outbox rows one by one. A failure is logged at
+/// `error` and doesn't stop the rest; the job republishes stuck rows later.
+pub async fn publish_all(publisher: &dyn OutboxPublisher, outbox_ids: &[Uuid]) {
+    for id in outbox_ids {
+        if publisher.publish(*id).await.is_err() {
+            tracing::error!(outbox_id = %id, "calendar email publish failed; the job republishes it");
+        }
+    }
+}
+
 /// Publishes committed outbox rows without holding up the caller.
 fn publish_detached(publisher: Arc<dyn OutboxPublisher>, outbox_ids: Vec<Uuid>) {
     if outbox_ids.is_empty() {
         return;
     }
     tokio::spawn(
-        async move {
-            for id in outbox_ids {
-                if publisher.publish(id).await.is_err() {
-                    tracing::error!(outbox_id = %id, "calendar email publish failed; the job republishes it");
-                }
-            }
-        }
-        .instrument(tracing::Span::current()),
+        async move { publish_all(publisher.as_ref(), &outbox_ids).await }
+            .instrument(tracing::Span::current())
+            .with_current_subscriber(),
     );
 }
