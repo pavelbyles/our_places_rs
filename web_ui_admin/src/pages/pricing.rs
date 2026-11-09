@@ -16,7 +16,7 @@ use topcoat::{
 use uuid::Uuid;
 
 use crate::pages::listings::managed_listing;
-use crate::support::staff;
+use crate::support::{service_token, staff};
 use web_ui_common::components::domain::price_breakdown::money;
 
 path_param!(id);
@@ -69,10 +69,16 @@ impl OverrideForm {
 }
 
 async fn load(cx: &Cx) -> Result<ListingResponse> {
+    load_as(cx).await.map(|(listing, _)| listing)
+}
+
+/// The managed listing, and the user's token for writes to it.
+async fn load_as(cx: &Cx) -> Result<(ListingResponse, String)> {
     let user = staff(cx).await?;
     let raw = path_param::<Id>(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
-    managed_listing(cx, &user, raw).await
+    let listing = managed_listing(cx, &user, raw).await?;
+    Ok((listing, service_token(cx, &user)?))
 }
 
 async fn overrides(listing: &ListingResponse) -> Vec<PriceOverride> {
@@ -168,11 +174,11 @@ pub async fn add_override(
     /// The add-override form.
     Form(form): Form<OverrideForm>,
 ) -> Result<impl View> {
-    let listing = load(cx).await?;
+    let (listing, jwt) = load_as(cx).await?;
     let error = match form.parse() {
         Err(message) => Some(message),
         Ok(request) => {
-            match common::app_client::create_price_override(listing.id, &request).await {
+            match common::app_client::create_price_override(listing.id, &request, &jwt).await {
                 Ok(_) => None,
                 Err(e) => {
                     tracing::info!("override rejected: {e}");
@@ -195,8 +201,8 @@ pub async fn remove_override(
     /// The remove form.
     Form(form): Form<RemoveForm>,
 ) -> Result<impl View> {
-    let listing = load(cx).await?;
-    let error = common::app_client::delete_price_override(listing.id, form.override_id)
+    let (listing, jwt) = load_as(cx).await?;
+    let error = common::app_client::delete_price_override(listing.id, form.override_id, &jwt)
         .await
         .err()
         .map(|e| {

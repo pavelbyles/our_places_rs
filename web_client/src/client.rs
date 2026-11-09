@@ -94,8 +94,9 @@ impl TopcoatApiClient {
     pub async fn create_listing(
         &self,
         req: &common::models::NewListingRequest,
+        user_jwt: &str,
     ) -> anyhow::Result<common::models::ListingResponse> {
-        common::app_client::create_listing(req).await
+        common::app_client::create_listing(req, user_jwt).await
     }
 
     /// Get listing details by slug or UUID
@@ -638,13 +639,20 @@ impl TopcoatApiClient {
         &self,
         listing_id: Uuid,
         req: &common::models::ImagePresignRequest,
+        user_jwt: &str,
     ) -> anyhow::Result<Vec<common::models::ImagePresignResponse>> {
         let url = format!(
             "{}/api/v1/listings/{listing_id}/images/presign",
             self.listing_api_url
         );
         let audience = common::app_client::listing_api_audience();
-        let res = self.client.post(&url, &audience, req).await?;
+        let res = self
+            .client
+            .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+            .await?
+            .json(req)
+            .send()
+            .await?;
         if !res.status().is_success() {
             anyhow::bail!("presign failed with status {}", res.status());
         }

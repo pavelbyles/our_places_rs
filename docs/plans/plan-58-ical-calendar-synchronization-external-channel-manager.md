@@ -398,7 +398,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p listing_api authz_tests && devenv shell -- cargo test -p listing_api apis::tests`
   - **Dependencies:** None
 
-- [ ] **Task 16: Clients and portal send the user JWT on listing writes**
+- [x] **Task 16: Clients and portal send the user JWT on listing writes**
   - **Scope:** M
   - **Description:** Add `user_jwt: &str` to the `common::app_client::listings` write functions and to `web_client` presign, sending it through `HttpClient::user_request`. Update the admin call sites to pass `service_token(cx, user)`. Update the Playwright API spec to send JWTs, with 401 and 403 cases.
   - **Files Touched:**

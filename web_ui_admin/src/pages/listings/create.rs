@@ -8,7 +8,7 @@ use web_client::{get_api_client, session::AdminRole};
 
 use super::form::{ListingFields, api_rejection_messages, listing_form};
 use super::{managed_listing, owner_options};
-use crate::support::staff;
+use crate::support::{service_token, staff};
 
 path_param!(slug);
 
@@ -59,7 +59,10 @@ pub async fn create_listing(
     let admin = user.role == AdminRole::Admin;
     let forced_owner = (!admin).then_some(user.user_id);
     let errors = match fields.validate(forced_owner, admin) {
-        Ok(valid) => match get_api_client(cx).create_listing(&valid.into_new()).await {
+        Ok(valid) => match get_api_client(cx)
+            .create_listing(&valid.into_new(), &service_token(cx, &user)?)
+            .await
+        {
             Ok(created) => {
                 tracing::info!(listing_id = %created.id, "listing created");
                 return Err(see_other(format!("/admin/listings/{}", created.id)).into());
