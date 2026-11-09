@@ -329,7 +329,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core calendar::conflict_tests`
   - **Dependencies:** T5, T10
 
-- [ ] **Task 12: Manual blocks (db)**
+- [x] **Task 12: Manual blocks (db)**
   - **Scope:** S
   - **Description:** `db_core::calendar::blocks::{create_manual_block, delete_manual_block, list_blocks}`. Create takes the listing lock with `lock_timeout`, checks the exact nights against confirmed stays, live holds and live requests with `clock_timestamp()`, and maps the partial-unique violation to `CalendarBlockDuplicate`. `list_blocks` returns `feed_name`, `feed_active` and `note`.
   - **Files Touched:**

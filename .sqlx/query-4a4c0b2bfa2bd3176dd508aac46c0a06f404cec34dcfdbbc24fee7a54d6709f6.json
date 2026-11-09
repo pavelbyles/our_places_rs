@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM listing_blocked_dates\n                 WHERE id = $1 AND listing_id = $2 AND source = 'manual'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a4c0b2bfa2bd3176dd508aac46c0a06f404cec34dcfdbbc24fee7a54d6709f6"
+}

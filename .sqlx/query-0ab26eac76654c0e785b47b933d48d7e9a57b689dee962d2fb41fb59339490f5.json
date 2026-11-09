@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT source AS \"source: common::calendar::BlockSource\"\n        FROM listing_blocked_dates WHERE id = $1 AND listing_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source: common::calendar::BlockSource",
+        "type_info": {
+          "Custom": {
+            "name": "calendar_block_source",
+            "kind": {
+              "Enum": [
+                "ical_feed",
+                "manual"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0ab26eac76654c0e785b47b933d48d7e9a57b689dee962d2fb41fb59339490f5"
+}

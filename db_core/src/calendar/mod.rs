@@ -11,6 +11,8 @@ pub mod feeds;
 pub mod reconcile;
 
 #[cfg(test)]
+mod block_tests;
+#[cfg(test)]
 mod conflict_tests;
 #[cfg(test)]
 mod feeds_tests;

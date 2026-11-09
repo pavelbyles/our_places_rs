@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (\n            EXISTS (\n                SELECT 1 FROM booking b\n                WHERE b.listing_id = $1\n                  AND (b.status = 'confirmed'\n                       OR (b.status = 'pending' AND b.expires_at > clock_timestamp()))\n                  AND b.date_from < $3 AND b.date_to > $2\n            )\n            OR EXISTS (\n                SELECT 1 FROM booking_request r\n                WHERE r.listing_id = $1\n                  AND r.status IN ('open', 'accepted', 'quoted')\n                  AND r.expires_at > clock_timestamp()\n                  AND r.date_from < $3 AND r.date_to > $2\n            )\n        ) AS \"taken!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "taken!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2b89d66dadb67b082b09ba6b323edcde6af166cae16b5014ad6e9afff9c37c91"
+}
