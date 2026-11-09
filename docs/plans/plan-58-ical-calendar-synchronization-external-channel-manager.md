@@ -172,7 +172,7 @@ T27 docs + full gate                      ← T1–T26
 
 ## Phase B: Highest-Risk Pieces First
 
-- [ ] **Task 6: SSRF-guarded feed fetcher and the cloud settings guard**
+- [x] **Task 6: SSRF-guarded feed fetcher and the cloud settings guard**
   - **Scope:** M
   - **Description:** Spec §3.4.
     - **The fetcher**: `api_core::calendar::fetch::GuardedFetcher::new(FetcherConfig)`, with injectable timeouts, root CA and `Resolve`.
