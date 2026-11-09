@@ -360,3 +360,26 @@ async fn request_convert_an_unpaid_hold_expires_normally_and_the_request_stays_c
             .expect("check")
     );
 }
+
+#[tokio::test]
+async fn request_convert_an_offer_over_a_new_block_creates_no_hold() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let offer = accepted(&pool, snapshot()).await;
+    insert_block(
+        &pool,
+        offer.villa,
+        BlockKind::Imported,
+        day(3, 1),
+        day(3, 2),
+    )
+    .await;
+    let result = convert_offer_to_hold(&pool, &checkout(offer.id, offer.guest, None)).await;
+    assert!(
+        matches!(result, Err(DbError::DateUnavailable)),
+        "{:?}",
+        result.err()
+    );
+    assert_eq!(bookings_on(&pool, offer.villa).await, 0);
+}

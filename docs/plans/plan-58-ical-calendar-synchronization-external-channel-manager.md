@@ -221,7 +221,7 @@ T27 docs + full gate                      ← T1–T26
   - **Verification Command:** `devenv shell -- cargo test -p db_core booking::availability_parity_tests && devenv shell -- cargo test -p db_core booking::unavailable_ranges_tests`
   - **Dependencies:** T1
 
-- [ ] **Task 8: Blocks in the hold, request, accept and search paths**
+- [x] **Task 8: Blocks in the hold, request, accept and search paths**
   - **Scope:** M
   - **Description:** Add the block rule to:
     - `booking/hold.rs`: a new statement after the `requested` check, under the listing lock

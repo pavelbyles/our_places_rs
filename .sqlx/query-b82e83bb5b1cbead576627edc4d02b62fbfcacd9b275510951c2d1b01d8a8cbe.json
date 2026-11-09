@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n            SELECT 1 FROM listing_blocked_dates k\n            WHERE k.listing_id = $1\n              AND k.date_from < $3::date + $4::int4\n              AND k.date_to > $2::date - $4::int4\n              AND k.date_from - (CASE WHEN k.source = 'ical_feed' THEN $4::int4 ELSE 0 END) < $3::date\n              AND k.date_to + (CASE WHEN k.source = 'ical_feed' THEN $4::int4 ELSE 0 END) > $2::date\n        ) AS \"blocked!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b82e83bb5b1cbead576627edc4d02b62fbfcacd9b275510951c2d1b01d8a8cbe"
+}

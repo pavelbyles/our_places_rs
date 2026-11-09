@@ -240,3 +240,20 @@ async fn request_respond_an_offer_is_capped_at_check_in() {
         common::availability::jamaica_midnight_utc(check_in)
     );
 }
+
+#[tokio::test]
+async fn request_respond_accepting_over_a_new_block_is_refused() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    for kind in [BlockKind::Imported, BlockKind::Manual] {
+        let (id, villa, host, _) = open_request(&pool).await;
+        insert_block(&pool, villa, kind, day(3, 2), day(3, 3)).await;
+        let result = accept_request(&pool, id, host_actor(host), OFFER_HOURS).await;
+        assert!(
+            matches!(result, Err(DbError::DateUnavailable)),
+            "{kind:?}: {result:?}"
+        );
+        assert_eq!(request_status(&pool, id).await, "open");
+    }
+}

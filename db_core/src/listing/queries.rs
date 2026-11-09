@@ -14,7 +14,8 @@ fn escape_like(text: &str) -> String {
 
 /// Limits a search to listings that can be booked for the whole stay: active,
 /// priced, long enough to meet the minimum stay (including overrides covering a
-/// night of it), and clear of bookings under the rule in `booking::availability`.
+/// night of it), and clear of bookings, requests and blocked dates under the
+/// rules in `booking::availability`.
 fn push_stay_conditions(
     query_builder: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
     check_in: chrono::NaiveDate,
@@ -54,6 +55,30 @@ fn push_stay_conditions(
     query_builder.push_bind(check_out);
     query_builder
         .push(" AND r.date_to + LEAST(GREATEST(listing.days_between_bookings, 0), 365) > ");
+    query_builder.push_bind(check_in);
+    // Blocked dates (#58): imported blocks widened by the gap, manual ones not.
+    // The first two predicates bound the scan on idx_blocked_dates_listing_range.
+    query_builder.push(
+        ") AND NOT EXISTS (SELECT 1 FROM listing_blocked_dates k
+            WHERE k.listing_id = listing.id
+              AND k.date_from < ",
+    );
+    query_builder.push_bind(check_out);
+    query_builder.push(
+        " + LEAST(GREATEST(listing.days_between_bookings, 0), 365)
+              AND k.date_to > ",
+    );
+    query_builder.push_bind(check_in);
+    query_builder.push(
+        " - LEAST(GREATEST(listing.days_between_bookings, 0), 365)
+              AND k.date_from - (CASE WHEN k.source = 'ical_feed'
+                  THEN LEAST(GREATEST(listing.days_between_bookings, 0), 365) ELSE 0 END) < ",
+    );
+    query_builder.push_bind(check_out);
+    query_builder.push(
+        " AND k.date_to + (CASE WHEN k.source = 'ical_feed'
+                  THEN LEAST(GREATEST(listing.days_between_bookings, 0), 365) ELSE 0 END) > ",
+    );
     query_builder.push_bind(check_in);
     query_builder.push(")");
 }

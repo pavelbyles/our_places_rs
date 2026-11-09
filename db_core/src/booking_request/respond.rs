@@ -106,6 +106,18 @@ pub async fn accept_request(
     }
     let expires_at = offer_window(locked.now, offer_hours, locked.request.date_from)
         .map_err(DbError::RequestRefused)?;
+    // Dates blocked since the request was made (#58) can't be accepted.
+    if crate::calendar::blocks::any_block_overlaps(
+        &mut tx,
+        locked.request.listing_id,
+        locked.request.date_from,
+        locked.request.date_to,
+        locked.gap,
+    )
+    .await?
+    {
+        return Err(DbError::DateUnavailable);
+    }
     let request = sqlx::query_as!(
         DbBookingRequest,
         r#"

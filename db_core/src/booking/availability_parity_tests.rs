@@ -28,6 +28,10 @@ fn test_db() -> TestPg {
 enum Kind {
     Booking,
     Request,
+    /// A block imported from a feed (#58): widened by the gap.
+    ImportedBlock,
+    /// A manual block (#58): never widened.
+    ManualBlock,
 }
 
 /// A booking's or request's state, and whether it blocks a stay.
@@ -42,7 +46,7 @@ struct State {
 const LIVE: &str = "NOW() + INTERVAL '1 hour'";
 const LAPSED: &str = "NOW() - INTERVAL '1 hour'";
 
-const STATES: [State; 14] = [
+const STATES: [State; 16] = [
     State {
         label: "confirmed",
         kind: Kind::Booking,
@@ -141,6 +145,20 @@ const STATES: [State; 14] = [
         expires_at: LIVE,
         blocks: false,
     },
+    State {
+        label: "imported block",
+        kind: Kind::ImportedBlock,
+        status: "",
+        expires_at: "NULL",
+        blocks: true,
+    },
+    State {
+        label: "manual block",
+        kind: Kind::ManualBlock,
+        status: "",
+        expires_at: "NULL",
+        blocks: true,
+    },
 ];
 
 /// The value stored on the listing, and the gap it should act as.
@@ -197,6 +215,26 @@ async fn seed(
     match state.kind {
         Kind::Booking => seed_booking(pool, guest, villa, from, to, state).await,
         Kind::Request => seed_request(pool, guest, villa, from, to, state).await,
+        Kind::ImportedBlock => {
+            crate::calendar::fixtures::insert_block(
+                pool,
+                villa,
+                crate::calendar::fixtures::BlockKind::Imported,
+                from,
+                to,
+            )
+            .await;
+        }
+        Kind::ManualBlock => {
+            crate::calendar::fixtures::insert_block(
+                pool,
+                villa,
+                crate::calendar::fixtures::BlockKind::Manual,
+                from,
+                to,
+            )
+            .await;
+        }
     }
 }
 
@@ -266,7 +304,13 @@ async fn every_path_agrees_on_which_stays_are_free() {
 
     for state in &STATES {
         for (stored, gap) in GAPS {
-            let gap_days = Duration::days(gap);
+            // Manual blocks ignore the turnover gap (#58, D2).
+            let widened = if state.kind == Kind::ManualBlock {
+                0
+            } else {
+                gap
+            };
+            let gap_days = Duration::days(widened);
             let nights = Duration::days(2);
             let check_in_after = booked_to + gap_days;
             let check_out_before = booked_from - gap_days;
