@@ -199,9 +199,9 @@ Parsing a body over 64 KB runs in `spawn_blocking`.
 
    | Source | `UID` | `SUMMARY` | `DESCRIPTION` |
    |---|---|---|---|
-   | Booking: `confirmed`, or `pending` with `expires_at > now()` | `booking-<uuid>@ourplaces` | `Reserved` | `Source: OurPlaces\nReservation #: <confirmation_code>` |
-   | Manual block | `block-<uuid>@ourplaces` | `Reserved` | `Source: OurPlaces` |
-   | Imported block | **original `UID`** (D1) | `Reserved` | `Source: OurPlaces (via <feed name>)` |
+   | Booking: `confirmed`, or `pending` with `expires_at > now()` | `booking-<uuid>@ourplaces` | `Reserved (Our Places)` | `Source: OurPlaces\nReservation #: <confirmation_code>` |
+   | Manual block | `block-<uuid>@ourplaces` | `Reserved (Manual)` | `Source: OurPlaces` |
+   | Imported block | **original `UID`** (D1) | `Reserved via <feed name>` | `Source: OurPlaces (via <feed name>)` |
 
    Every event has `DTSTART;VALUE=DATE` and `DTEND;VALUE=DATE` with raw dates and no gap (D2), `DTSTAMP` set to the generation time, `STATUS:CONFIRMED` and `TRANSP:OPAQUE`.
    - Pending holds also use `CONFIRMED`, because some channels ignore `TENTATIVE`.
@@ -211,7 +211,7 @@ Parsing a body over 64 KB runs in `spawn_blocking`.
    - No guest name, email, phone, note or message is ever included.
 3. **Response**: `200 text/calendar; charset=utf-8`, with:
    - `Cache-Control: public, max-age=300`
-   - `Content-Disposition: inline; filename="<listing-id>.ics"`
+   - `Content-Disposition: inline; filename="ourplaces-<listing-slug>-calendar.ics"`
    - `ETag`: a strong hash of the body with the `DTSTAMP` lines left out. `If-None-Match` gets **304**.
 
    An unknown or deleted listing, or an id that isn't a UUID, returns **404** as plain text with no layout. A deactivated listing still serves its feed.
@@ -482,11 +482,11 @@ Every route below is under `/api/v1/listings/{id}/calendar` and requires `requir
 - **Email templates** in `app_api/email_worker/templates/`: `calendar_conflict_host.html` and `calendar_feed_failing_host.html`, registered in `processor.rs`, each value going through `escape_html`. Payload keys: `listing_name`, `feed_name`, `date_from`, `date_to`, `confirmation_code`, `kind`, `reopened`, `calendar_url`, `error_code`.
 - **Service account, created once by hand** (documented in `docs/ENVIRONMENT.md`; CI never creates service accounts):
   ```bash
-  gcloud iam service-accounts create calendar-sync-job-<env> --display-name="Calendar sync job (<env>)"
-  gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:calendar-sync-job-<env>@… --role=roles/cloudsql.client
-  gcloud pubsub topics add-iam-policy-binding <email-topic> --member=serviceAccount:calendar-sync-job-<env>@… --role=roles/pubsub.publisher
-  gcloud iam service-accounts add-iam-policy-binding calendar-sync-job-<env>@… --member=serviceAccount:<CI deployer SA> --role=roles/iam.serviceAccountUser
-  gcloud iam service-accounts add-iam-policy-binding calendar-sync-job-<env>@… --member=serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-cloudscheduler.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator
+  gcloud iam service-accounts create sa-calendar-sync-job-<env> --display-name="Calendar sync job (<env>)"
+  gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:sa-calendar-sync-job-<env>@… --role=roles/cloudsql.client
+  gcloud pubsub topics add-iam-policy-binding <email-topic> --member=serviceAccount:sa-calendar-sync-job-<env>@… --role=roles/pubsub.publisher
+  gcloud iam service-accounts add-iam-policy-binding sa-calendar-sync-job-<env>@… --member=serviceAccount:<CI deployer SA> --role=roles/iam.serviceAccountUser
+  gcloud iam service-accounts add-iam-policy-binding sa-calendar-sync-job-<env>@… --member=serviceAccount:service-<PROJECT_NUMBER>@gcp-sa-cloudscheduler.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator
   # then set the repo variables INFRA_SA_CALENDAR_JOB_DEV / INFRA_SA_CALENDAR_JOB_PROD
   ```
 - **CI (`.github/workflows/cicd_full_stack.yml`)**:

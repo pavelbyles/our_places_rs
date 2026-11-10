@@ -735,8 +735,8 @@ jobs:
           if [ -z "$SA_CALENDAR_JOB" ]; then
             ENV_LOWER=$(echo "${{ env.ENV_SUFFIX }}" | tr '[:upper:]' '[:lower:]')
             echo "::error::Repository variable INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }} is not set. Bootstrap it once (docs/ENVIRONMENT.md, 'Calendar sync job'):"
-            echo "  gcloud iam service-accounts create calendar-sync-job-$ENV_LOWER --display-name=\"Calendar sync job ($ENV_LOWER)\""
-            echo "  then grant roles/cloudsql.client, roles/pubsub.publisher on the email topic, and set INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }}=calendar-sync-job-$ENV_LOWER"
+            echo "  gcloud iam service-accounts create sa-calendar-sync-job-$ENV_LOWER --display-name=\"Calendar sync job ($ENV_LOWER)\""
+            echo "  then grant roles/cloudsql.client, roles/pubsub.publisher on the email topic, and set INFRA_SA_CALENDAR_JOB_${{ env.ENV_SUFFIX }}=sa-calendar-sync-job-$ENV_LOWER"
             exit 1
           fi
 

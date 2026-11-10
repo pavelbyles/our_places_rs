@@ -585,7 +585,7 @@ T27 docs + full gate                      ← T1–T26
 - [x] **Task 25: CI deploy with a dedicated service account and a Scheduler on `main` only**
   - **Scope:** M
   - **Description:** Spec §3.7.
-    - **Bootstrap, done once by hand by the user**: create `calendar-sync-job-{dev,prod}` with its IAM bindings, and set the repo vars `INFRA_SA_CALENDAR_JOB_{DEV,PROD}`. The task writes this up in `docs/ENVIRONMENT.md`.
+    - **Bootstrap, done once by hand by the user**: create `sa-calendar-sync-job-{dev,prod}` with its IAM bindings, and set the repo vars `INFRA_SA_CALENDAR_JOB_{DEV,PROD}`. The task writes this up in `docs/ENVIRONMENT.md`.
     - **`cicd_full_stack.yml`**:
       - `SA_CALENDAR_JOB`, plus a guard step that fails when it's empty.
       - Build and push the image.
