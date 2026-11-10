@@ -100,7 +100,8 @@ async fn the_export_feed_sends_no_user_token() -> Result<(), UserCallError> {
         fetched,
         IcsFetch::Ok {
             body: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n".into(),
-            etag: Some("\"abc\"".into())
+            etag: Some("\"abc\"".into()),
+            slug: None,
         }
     );
     Ok(())

@@ -34,6 +34,7 @@ pub const CACHE_CONTROL: &str = "public, max-age=300";
 struct Cached {
     body: String,
     etag: Option<String>,
+    slug: Option<String>,
     at: Instant,
 }
 
@@ -109,6 +110,8 @@ pub enum ExportReply {
         etag: Option<String>,
         /// The listing, for the file name.
         listing_id: Uuid,
+        /// The listing slug, for the file name.
+        slug: Option<String>,
     },
     /// 304: the subscriber's copy is current.
     NotModified {
@@ -148,10 +151,11 @@ pub async fn export_reply(
         stale => {
             let ours = stale.as_ref().and_then(|c| c.etag.as_deref());
             match client.get_calendar_ics(listing_id, ours).await {
-                Ok(IcsFetch::Ok { body, etag }) => {
+                Ok(IcsFetch::Ok { body, etag, slug }) => {
                     let fresh = Cached {
                         body,
                         etag,
+                        slug,
                         at: Instant::now(),
                     };
                     cache.put(listing_id, fresh.clone());
@@ -161,6 +165,7 @@ pub async fn export_reply(
                     Some(old) => {
                         let fresh = Cached {
                             etag: etag.or(old.etag),
+                            slug: old.slug,
                             at: Instant::now(),
                             body: old.body,
                         };
@@ -189,6 +194,7 @@ pub async fn export_reply(
             body: entry.body,
             etag: entry.etag,
             listing_id,
+            slug: entry.slug,
         },
     }
 }
@@ -214,14 +220,17 @@ pub async fn calendar_ics(cx: &Cx) -> Result<Response> {
             body,
             etag,
             listing_id,
+            slug,
         } => {
+            let fallback = listing_id.to_string();
+            let file_slug = slug.as_deref().unwrap_or(&fallback);
             let mut builder = Response::builder()
                 .status(200)
                 .header("content-type", "text/calendar; charset=utf-8")
                 .header("cache-control", CACHE_CONTROL)
                 .header(
                     "content-disposition",
-                    format!("inline; filename=\"{listing_id}.ics\""),
+                    format!("inline; filename=\"ourplaces-{file_slug}-calendar.ics\""),
                 );
             if let Some(tag) = etag {
                 builder = builder.header("etag", tag);

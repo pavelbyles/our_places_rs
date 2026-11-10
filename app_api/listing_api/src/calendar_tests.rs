@@ -1001,7 +1001,8 @@ mod export {
             headers
                 .get("content-disposition")
                 .and_then(|v| v.to_str().ok())
-                .is_some_and(|v| v.contains(&format!("{}.ics", c.listing)))
+                .is_some_and(|v| v.starts_with("inline; filename=\"ourplaces-")
+                    && v.ends_with("-calendar.ics\""))
         );
         assert!(body.contains(&format!("Reservation #: {code}")));
         assert!(body.contains(&format!(

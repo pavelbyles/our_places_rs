@@ -67,7 +67,7 @@ async fn the_export_has_stays_holds_and_blocks_but_no_gap_or_lapsed_items() {
     .await
     .expect("request");
 
-    let (name, events) = export_events(&pool, v, today())
+    let (name, _slug, events) = export_events(&pool, v, today())
         .await
         .expect("export")
         .expect("listing");

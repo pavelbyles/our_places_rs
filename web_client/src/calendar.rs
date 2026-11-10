@@ -28,6 +28,8 @@ pub enum IcsFetch {
         body: String,
         /// The `ETag` header.
         etag: Option<String>,
+        /// The listing's slug.
+        slug: Option<String>,
     },
     /// Unchanged since the given ETag.
     NotModified {
@@ -281,10 +283,16 @@ impl TopcoatApiClient {
             .get(reqwest::header::ETAG)
             .and_then(|v| v.to_str().ok())
             .map(str::to_string);
+        let slug = res
+            .headers()
+            .get("x-listing-slug")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
         match res.status().as_u16() {
             200 => Ok(IcsFetch::Ok {
                 body: res.text().await.map_err(|e| map_send(e, None))?,
                 etag,
+                slug,
             }),
             304 => Ok(IcsFetch::NotModified { etag }),
             404 => Ok(IcsFetch::NotFound),

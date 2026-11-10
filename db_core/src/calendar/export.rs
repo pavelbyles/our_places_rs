@@ -8,7 +8,7 @@ use common::calendar::ics_write::{ExportEvent, ExportSource};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// The listing's name and export events touching `[today, today + 24
+/// The listing's name, slug and export events touching `[today, today + 24
 /// months]`, or `None` for an unknown or deleted listing. Inactive listings
 /// still export.
 #[tracing::instrument(skip(pool))]
@@ -16,9 +16,9 @@ pub async fn export_events(
     pool: &PgPool,
     listing_id: Uuid,
     today: NaiveDate,
-) -> Result<Option<(String, Vec<ExportEvent>)>> {
-    let Some(name) = sqlx::query_scalar!(
-        "SELECT name FROM listing WHERE id = $1 AND deleted_at IS NULL",
+) -> Result<Option<(String, String, Vec<ExportEvent>)>> {
+    let Some(listing) = sqlx::query!(
+        "SELECT name, slug FROM listing WHERE id = $1 AND deleted_at IS NULL",
         listing_id
     )
     .fetch_optional(pool)
@@ -77,5 +77,5 @@ pub async fn export_events(
             },
         })
         .collect();
-    Ok(Some((name, events)))
+    Ok(Some((listing.name, listing.slug, events)))
 }

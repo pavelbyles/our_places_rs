@@ -59,7 +59,8 @@ async fn calendar_export_serves_and_caches_the_calendar() {
         ExportReply::Calendar {
             body: ICS.into(),
             etag: Some("\"v1\"".into()),
-            listing_id: id
+            listing_id: id,
+            slug: None,
         }
     );
     // Inside the TTL: no upstream call, and the subscriber's ETag gives 304.

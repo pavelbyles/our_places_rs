@@ -677,7 +677,7 @@ pub async fn export_calendar(
     let listing_id = path.into_inner();
     let now = chrono::Utc::now();
     let today = common::reference::listing_today(now);
-    let Some((name, events)) =
+    let Some((name, slug, events)) =
         db_core::calendar::export::export_events(&pool, listing_id, today).await?
     else {
         return Ok(HttpResponse::NotFound()
@@ -702,7 +702,8 @@ pub async fn export_calendar(
         .insert_header((
             actix_web::http::header::CACHE_CONTROL,
             "public, max-age=300",
-        ));
+        ))
+        .insert_header(("x-listing-slug", slug.clone()));
     if matches {
         return Ok(resp.finish());
     }
@@ -710,7 +711,7 @@ pub async fn export_calendar(
         .content_type("text/calendar; charset=utf-8")
         .insert_header((
             actix_web::http::header::CONTENT_DISPOSITION,
-            format!("inline; filename=\"{listing_id}.ics\""),
+            format!("inline; filename=\"ourplaces-{slug}-calendar.ics\""),
         ))
         .body(body))
 }

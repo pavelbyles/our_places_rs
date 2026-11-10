@@ -1,5 +1,5 @@
-//! The busy-only `.ics` export feed (spec §1.6.2): every event is "Reserved"
-//! with raw dates, and no guest detail ever goes in.
+//! The busy-only `.ics` export feed (spec §1.6.2): events indicate their
+//! source in SUMMARY and DESCRIPTION with raw dates, and no guest detail ever goes in.
 
 use super::ics_parse::sha256_hex;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -40,6 +40,16 @@ pub struct ExportEvent {
 }
 
 impl ExportEvent {
+    fn summary(&self) -> String {
+        match &self.source {
+            ExportSource::Booking { .. } => "Reserved (Our Places)".to_string(),
+            ExportSource::Manual => "Reserved (Manual)".to_string(),
+            ExportSource::Imported { feed_name } => {
+                format!("Reserved via {}", strip_controls(feed_name))
+            }
+        }
+    }
+
     fn description(&self) -> String {
         match &self.source {
             ExportSource::Booking { confirmation_code } => {
@@ -79,7 +89,7 @@ pub fn write_feed(calendar_name: &str, events: &[ExportEvent], stamp: DateTime<U
             "DTEND;VALUE=DATE:{}",
             event.date_to.format("%Y%m%d")
         ));
-        line("SUMMARY:Reserved".into());
+        line(format!("SUMMARY:{}", escape_text(&event.summary())));
         line(format!("DESCRIPTION:{}", escape_text(&event.description())));
         line("STATUS:CONFIRMED".into());
         line("TRANSP:OPAQUE".into());
