@@ -153,8 +153,8 @@ pub async fn pricing_page(cx: &Cx) -> Result<impl View> {
             <div class="grid gap-6 lg:grid-cols-[320px_1fr]">
                 <form method="post" action=(add.clone()) hx-post=(add) hx-target="#price-overrides-container" hx-swap="outerHTML" class="space-y-3 rounded-xl border border-border p-5">
                     <h2 class="text-sm font-semibold">"Add seasonal override"</h2>
-                    <label class=(label)>"Start date"<input type="date" name="start_date" required=(true) class=(input) /></label>
-                    <label class=(label)>"End date"<input type="date" name="end_date" required=(true) class=(input) /></label>
+                    <label class=(label)>"Start date"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="start_date" required=(true) class=(input) /></label>
+                    <label class=(label)>"End date"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="end_date" required=(true) class=(input) /></label>
                     <label class=(label)>"Nightly rate"<input type="number" name="price" min="0.01" step="0.01" required=(true) class=(input) /></label>
                     <label class=(label)>"Minimum nights"<input type="number" name="min_nights" min="1" step="1" value="1" required=(true) class=(input) /></label>
                     <button type="submit" class="h-10 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground">"Add override"</button>

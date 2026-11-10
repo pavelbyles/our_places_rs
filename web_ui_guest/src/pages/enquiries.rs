@@ -205,8 +205,8 @@ async fn enquiry_form(
             }
             <form id="enquiry-form" method="post" action=(action) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
                 <div class="grid gap-3 sm:grid-cols-3">
-                    <label class=(label)>"Check in"<input id="enquiry-check-in" type="date" name="check_in" min=(today.clone()) required=(true) value=(check_in) class=(input) /></label>
-                    <label class=(label)>"Check out"<input id="enquiry-check-out" type="date" name="check_out" min=(today) required=(true) value=(check_out) class=(input) /></label>
+                    <label class=(label)>"Check in"<input id="enquiry-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) required=(true) value=(check_in) class=(input) /></label>
+                    <label class=(label)>"Check out"<input id="enquiry-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) required=(true) value=(check_out) class=(input) /></label>
                     <label class=(label)>"Guests"<input id="enquiry-guests" type="number" name="guests" min="1" max=(max_guests.to_string()) required=(true) value=(guests.to_string()) class=(input) /></label>
                 </div>
                 <label class=(label) for="enquiry-message">"Your question"

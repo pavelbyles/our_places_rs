@@ -42,8 +42,8 @@ async fn home_search_form(
                 <input type="hidden" name="currency" value=(currency) />
             }
             <label class=(field)>"Where"<input name="q" placeholder="Runaway Bay, Kingston…" class=(input) /></label>
-            <label class=(field)>"Check in"<input type="date" name="check_in" min=(today.clone()) class=(input) /></label>
-            <label class=(field)>"Check out"<input type="date" name="check_out" min=(today) class=(input) /></label>
+            <label class=(field)>"Check in"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) class=(input) /></label>
+            <label class=(field)>"Check out"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) class=(input) /></label>
             <label class=(field)>"Guests"<input type="number" name="guests" min="1" value=(DEFAULT_GUESTS.to_string()) class=(input) /></label>
             <div class="p-2"><button type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground">"Search villas"</button></div>
         </form>

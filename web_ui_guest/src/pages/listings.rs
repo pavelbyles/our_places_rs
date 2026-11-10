@@ -158,8 +158,8 @@ async fn listing_search_form(
                 <label for="listing-search" class=(label)>"Where"</label>
                 <input id="listing-search" name="q" type="search" value=(given(&query.q).unwrap_or_default()) placeholder="Search by name or place..." class=(format!("{input} w-full md:w-64")) />
             </div>
-            <label class=(label)>"Check in"<input id="search-check-in" type="date" name="check_in" min=(today.clone()) value=(given(&query.check_in).unwrap_or_default()) class=(input) /></label>
-            <label class=(label)>"Check out"<input id="search-check-out" type="date" name="check_out" min=(today) value=(given(&query.check_out).unwrap_or_default()) class=(input) /></label>
+            <label class=(label)>"Check in"<input id="search-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) value=(given(&query.check_in).unwrap_or_default()) class=(input) /></label>
+            <label class=(label)>"Check out"<input id="search-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) value=(given(&query.check_out).unwrap_or_default()) class=(input) /></label>
             <label class=(label)>"Guests"<input id="search-guests" type="number" name="guests" min="1" value=(given(&query.guests).unwrap_or_default()) class=(format!("{input} w-full md:w-24")) /></label>
             <button type="submit" class="h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground">"Search"</button>
         </form>

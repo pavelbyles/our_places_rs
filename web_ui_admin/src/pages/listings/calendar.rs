@@ -307,8 +307,8 @@ pub async fn blocks_section(
                 <div role="alert" class="alert alert-error text-sm">(error)</div>
             }
             <form method="post" action=(format!("{base}/blocks")) hx-post=(format!("{base}/blocks")) hx-target="#calendar-blocks" hx-swap="outerHTML" hx-disabled-elt="find button" class="grid gap-3 sm:grid-cols-[1fr_1fr_2fr_auto] sm:items-end">
-                <label class=(LABEL)>"First night"<input type="date" name="date_from" required=(true) class=(INPUT) /></label>
-                <label class=(LABEL)>"Check-out day"<input type="date" name="date_to" required=(true) class=(INPUT) /></label>
+                <label class=(LABEL)>"First night"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="date_from" required=(true) class=(INPUT) /></label>
+                <label class=(LABEL)>"Check-out day"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="date_to" required=(true) class=(INPUT) /></label>
                 <label class=(LABEL)>"Private note"<input type="text" name="note" maxlength="500" class=(INPUT) /></label>
                 <button type="submit" class=(BUTTON)>"Block dates"</button>
             </form>
