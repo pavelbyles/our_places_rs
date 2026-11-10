@@ -315,6 +315,24 @@
       echo "✓ Cloud Storage emulator stopped."
     '';
 
+    # Calendar sync (#58) background runner: periodically invokes calendar_sync_job
+    # to emulate Cloud Scheduler locally.
+    calsync-start.exec = ''
+      ical-fixture-ca
+      db-start
+      pubsub-start
+      echo "Starting calendar sync background worker (calsync)..."
+      devenv up -d calsync
+      echo "✓ Calendar sync worker started in background."
+    '';
+
+    calsync-stop.exec = ''
+      echo "Stopping calendar sync worker..."
+      devenv processes stop calsync 2>/dev/null || true
+      pkill -f "calendar_sync_job" 2>/dev/null || true
+      echo "✓ Calendar sync worker stopped."
+    '';
+
     # Launch all API microservices in foreground (DB is kept running continuously)
     apis.exec = ''
       ical-fixture-ca
@@ -344,6 +362,8 @@
       devenv processes stop user_api || true
       devenv processes stop email_worker || true
       devenv processes stop image_worker || true
+      devenv processes stop calsync || true
+      pkill -f "calendar_sync_job" 2>/dev/null || true
       gcs-stop
       pubsub-stop
     '';
@@ -456,6 +476,10 @@
       cd app_api/image_worker && ./run_local.sh
     '';
 
+    # Calendar Sync background worker (emulates Cloud Scheduler locally)
+    calsync.exec = ''
+      cd app_api/calendar_sync_job && ./run_loop.sh
+    '';
 
     # Guest Portal (Topcoat UI). It refuses to start without JWT_SECRET;
     # local backends fall back to "secret", so match that.
@@ -489,6 +513,8 @@
     echo "           - gcs_emulator:     :4443"
     echo "       • apis-start     (launch DB + Pub/Sub + APIs in background / detached)"
     echo "       • apis-stop      (stop background APIs & Pub/Sub)"
+    echo "       • calsync-start  (start background calendar sync loop)"
+    echo "       • calsync-stop   (stop background calendar sync loop)"
     echo "       • pubsub-start   (start Pub/Sub emulator + init topic & push subscription)"
     echo "       • pubsub-stop    (stop Pub/Sub emulator)"
     echo "       • gcs-start      (start Cloud Storage emulator + create photo buckets)"

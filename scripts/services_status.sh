@@ -380,6 +380,7 @@ run_check() {
     printf "  • Start Pub/Sub emulator:                  ${C_CYAN}pubsub-start${C_RESET}\n"
     printf "  • Start Cloud Storage emulator:            ${C_CYAN}gcs-start${C_RESET} (after pubsub-start)\n"
     printf "  • Start PostgreSQL database:               ${C_CYAN}db-start${C_RESET}\n"
+    printf "  • Start Calendar Sync worker:              ${C_CYAN}calsync-start${C_RESET}\n"
   fi
 
   if [[ "$STRICT_MODE" == true ]] && [[ $count_down -gt 0 || $count_degraded -gt 0 ]]; then
