@@ -956,7 +956,7 @@ jobs:
             --service-account "${{ env.SA_CALENDAR_JOB }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-cloudsql-instances "$INSTANCE" \
             --set-env-vars "$ENV_ARG" \
-            --task-timeout=600s --max-retries=0 --memory=256Mi --cpu=1 --quiet
+            --task-timeout=600s --max-retries=0 --memory=512Mi --cpu=1 --quiet
 
       # Cloud Scheduler free tier: sweeps (dev and main) plus calendar sync (main) = 3.
       - name: Schedule Calendar Sync

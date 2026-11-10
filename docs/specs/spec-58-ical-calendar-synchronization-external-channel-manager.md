@@ -497,7 +497,7 @@ Every route below is under `/api/v1/listings/{id}/calendar` and requires `requir
      gcloud run jobs deploy calendar-sync-$SUFFIX --image … --region $REGION \
        --service-account $SA_CALENDAR_JOB@… --set-cloudsql-instances … \
        --set-env-vars <EA__DATABASE__* as listing_api>,EMAIL_PUBSUB_TOPIC_ID=…,GCP_PROJECT_ID=…,EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false \
-       --task-timeout=600s --max-retries=0 --memory=256Mi --cpu=1 --quiet
+       --task-timeout=600s --max-retries=0 --memory=512Mi --cpu=1 --quiet
      ```
      **No `JWT_SECRET`, `GCS_*` or SMTP variables** go into the job's environment.
   4. On **`main` only** (`if: github.ref == 'refs/heads/main'`):
