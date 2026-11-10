@@ -8,4 +8,5 @@ ignore = [
     "RUSTSEC-2026-0367", # zip / utoipa-swagger-ui: ZipArchive::extract directory traversal (no fixed upstream utoipa-swagger-ui release yet)
     "RUSTSEC-2026-0368", # zip / utoipa-swagger-ui: ZipArchive::extract symlink escape (no fixed upstream utoipa-swagger-ui release yet)
     "RUSTSEC-2026-0369", # zip / utoipa-swagger-ui: ZipArchive::extract directory traversal (no fixed upstream utoipa-swagger-ui release yet)
+    "RUSTSEC-2026-0459", # libsqlite3-sys / sqlx-sqlite: C SQLite CVE (lockfile-only: sqlx 0.8 locks its optional sqlite driver but no crate enables it, `cargo tree -i libsqlite3-sys` is empty; sqlx 0.8.6 pins 0.30, fix needs sqlx 0.9)
 ]

@@ -288,7 +288,11 @@ async fn five_feeds_of_one_listing_use_one_connection_at_a_time() {
         results.iter().all(|r| r.outcome == SyncOutcome::Ok),
         "{results:?}"
     );
-    assert!(high <= in_use_before + 1, "high-water mark {high}");
+    // sqlx returns a dropped connection to the pool from a background task, so
+    // the previous feed's connection can still count as in use for a moment
+    // after the next feed acquires one. Serial use peaks at +2; five feeds in
+    // parallel would reach +5.
+    assert!(high <= in_use_before + 2, "high-water mark {high}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
