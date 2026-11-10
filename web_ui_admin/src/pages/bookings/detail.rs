@@ -204,9 +204,9 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
 
                         <form method="post" action=(format!("/admin/bookings/{id}/change-requests")) class="flex flex-wrap items-end gap-2">
 
-                            <label class="text-xs text-muted-foreground">"New check-in"<input type="date" name="check_in" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
+                            <label class="text-xs text-muted-foreground">"New check-in"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
 
-                            <label class="text-xs text-muted-foreground">"New check-out"<input type="date" name="check_out" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
+                            <label class="text-xs text-muted-foreground">"New check-out"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
 
                             <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Propose change to guest"</button>
 

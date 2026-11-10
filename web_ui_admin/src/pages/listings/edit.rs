@@ -14,7 +14,7 @@ use web_client::session::AdminRole;
 use super::form::{ListingFields, api_rejection_messages, listing_form};
 use super::images::{listing_photos, photo_grid};
 use super::managed_listing;
-use crate::support::staff;
+use crate::support::{service_token, staff};
 
 path_param!(id);
 
@@ -70,7 +70,9 @@ pub async fn update_listing(
             if !admin {
                 request.commission_pct = None;
             }
-            match common::app_client::update_listing(&listing.id.to_string(), &request).await {
+            let jwt = service_token(cx, &user)?;
+            match common::app_client::update_listing(&listing.id.to_string(), &request, &jwt).await
+            {
                 Ok(_) => {
                     tracing::info!(listing_id = %listing.id, "listing updated");
                     return Err(see_other(format!("/admin/listings/{}", listing.id)).into());

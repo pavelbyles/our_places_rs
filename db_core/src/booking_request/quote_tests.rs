@@ -242,3 +242,20 @@ async fn request_quote_tests_expired_or_accepted_requests_cannot_be_quoted() {
         RequestRefusal::RequestExpired
     );
 }
+
+#[tokio::test]
+async fn request_quote_tests_quoting_an_enquiry_over_a_block_is_refused() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    let test_db = migrated_db();
+    let pool = test_db.get_pool().await;
+    let (villa, owner) = listing_in_mode(&pool, "request", 0).await;
+    let guest = raw_user(&pool).await;
+    let id = enquiry(&pool, villa, guest).await;
+    insert_block(&pool, villa, BlockKind::Manual, day(3, 3), day(3, 6)).await;
+    let result = quote_enquiry(&pool, id, host(owner), &quoted(dec!(900))).await;
+    assert!(
+        matches!(result, Err(DbError::DateUnavailable)),
+        "{:?}",
+        result.err()
+    );
+}

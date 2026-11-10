@@ -94,8 +94,9 @@ impl TopcoatApiClient {
     pub async fn create_listing(
         &self,
         req: &common::models::NewListingRequest,
+        user_jwt: &str,
     ) -> anyhow::Result<common::models::ListingResponse> {
-        common::app_client::create_listing(req).await
+        common::app_client::create_listing(req, user_jwt).await
     }
 
     /// Get listing details by slug or UUID
@@ -497,9 +498,9 @@ pub struct ApiRejection {
     pub body: serde_json::Value,
 }
 
-/// Like [`decode`], but keeps structured 400/409/422/503 bodies as
+/// Like [`decode`], but keeps structured 400/409/422/429/503 bodies as
 /// [`UserCallError::Api`].
-async fn decode_api<T: serde::de::DeserializeOwned>(
+pub(crate) async fn decode_api<T: serde::de::DeserializeOwned>(
     response: reqwest::Response,
 ) -> Result<T, UserCallError> {
     let status = response.status().as_u16();
@@ -507,7 +508,7 @@ async fn decode_api<T: serde::de::DeserializeOwned>(
         200..=299 => Ok(response.json::<T>().await?),
         404 => Err(UserCallError::NotFound),
         401 | 403 => Err(UserCallError::Unauthorized),
-        400 | 409 | 422 | 503 => {
+        400 | 409 | 422 | 429 | 503 => {
             let body: serde_json::Value = response.json().await?;
             let field = |k: &str| body[k].as_str().map(str::to_string);
             Err(UserCallError::Api(ApiRejection {
@@ -638,13 +639,20 @@ impl TopcoatApiClient {
         &self,
         listing_id: Uuid,
         req: &common::models::ImagePresignRequest,
+        user_jwt: &str,
     ) -> anyhow::Result<Vec<common::models::ImagePresignResponse>> {
         let url = format!(
             "{}/api/v1/listings/{listing_id}/images/presign",
             self.listing_api_url
         );
         let audience = common::app_client::listing_api_audience();
-        let res = self.client.post(&url, &audience, req).await?;
+        let res = self
+            .client
+            .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+            .await?
+            .json(req)
+            .send()
+            .await?;
         if !res.status().is_success() {
             anyhow::bail!("presign failed with status {}", res.status());
         }
@@ -921,7 +929,7 @@ impl TopcoatApiClient {
 
 /// A request carrying the service identity token (Cloud Run IAM), the gateway
 /// API key if configured, and the user's JWT when given.
-async fn service_request(
+pub(crate) async fn service_request(
     client: &AuthenticatedClient,
     method: reqwest::Method,
     url: &str,

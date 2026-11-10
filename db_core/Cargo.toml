@@ -16,6 +16,7 @@ dotenvy = { workspace = true }
 validator = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+url = { workspace = true }
 
 strum = "0.28.0"
 strum_macros = "0.28.0"

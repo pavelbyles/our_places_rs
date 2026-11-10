@@ -221,8 +221,8 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
                     <form method="get" action=(action.clone()) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
                         <h2 class="font-serif text-2xl">"Choose your dates"</h2>
                         <div class="grid gap-3 sm:grid-cols-3">
-                            <label class=(label)>"Check in"<input id="checkout-check-in" type="date" name="check_in" min=(today.clone()) required=(true) class=(input) /></label>
-                            <label class=(label)>"Check out"<input id="checkout-check-out" type="date" name="check_out" min=(today) required=(true) class=(input) /></label>
+                            <label class=(label)>"Check in"<input id="checkout-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) required=(true) class=(input) /></label>
+                            <label class=(label)>"Check out"<input id="checkout-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) required=(true) class=(input) /></label>
                             <label class=(label)>"Guests"<input type="number" name="guests" min="1" max=(v.max_guests.to_string()) value=(v.guests.to_string()) class=(input) /></label>
                         </div>
                         if !v.currency.is_empty() {

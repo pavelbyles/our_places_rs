@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (\n            EXISTS (\n                SELECT 1 FROM booking b\n                JOIN listing l ON l.id = b.listing_id\n                WHERE b.listing_id = $1\n                  AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > NOW()))\n                  AND b.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3\n                  AND b.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2\n                  AND b.id != $4\n            )\n            OR EXISTS (\n                SELECT 1 FROM booking_request r\n                JOIN listing l ON l.id = r.listing_id\n                WHERE r.listing_id = $1\n                  AND r.status IN ('open', 'accepted', 'quoted') AND r.expires_at > NOW()\n                  AND r.date_from - LEAST(GREATEST(l.days_between_bookings, 0), 365) < $3\n                  AND r.date_to + LEAST(GREATEST(l.days_between_bookings, 0), 365) > $2\n            )\n            OR EXISTS (\n                SELECT 1 FROM listing_blocked_dates k\n                JOIN listing l ON l.id = k.listing_id\n                LEFT JOIN booking old ON old.id = $4 AND old.listing_id = k.listing_id\n                CROSS JOIN LATERAL (\n                    SELECT\n                        LEAST(GREATEST(l.days_between_bookings, 0), 365) AS g,\n                        CASE WHEN k.source = 'ical_feed'\n                            THEN LEAST(GREATEST(l.days_between_bookings, 0), 365) ELSE 0 END AS w,\n                        LEAST($3, COALESCE(old.date_from, $3)) AS head_out,\n                        GREATEST($2, COALESCE(old.date_to, $3)) AS tail_in\n                ) x\n                WHERE k.listing_id = $1\n                  AND k.date_from < $3 + x.g\n                  AND k.date_to > $2 - x.g\n                  AND (\n                      ($2 < x.head_out AND k.date_from - x.w < x.head_out AND k.date_to + x.w > $2)\n                      OR (x.tail_in < $3 AND k.date_from - x.w < $3 AND k.date_to + x.w > x.tail_in)\n                  )\n            )\n        ) AS \"blocked!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "141ebc6e64f2caa89a08c67647b93d301dd75e4303dbc7052a4299c7ee11e463"
+}

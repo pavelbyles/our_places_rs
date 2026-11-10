@@ -1,5 +1,14 @@
+use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+
+/// UTC offset of every MVP listing (Jamaica, UTC−5, no daylight saving).
+pub const LISTING_UTC_OFFSET_SECS: i32 = -5 * 3600;
+
+/// The calendar date at the listings right now (Jamaica time).
+pub fn listing_today(now: DateTime<Utc>) -> NaiveDate {
+    (now + TimeDelta::seconds(i64::from(LISTING_UTC_OFFSET_SECS))).date_naive()
+}
 
 /// Standard statutory fallback country code (Jamaica: 15% GCT).
 pub const DEFAULT_TAX_COUNTRY: &str = "JM";
@@ -74,6 +83,20 @@ impl SupportedCountry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn listing_today_follows_jamaica_midnight() {
+        let before = "2026-03-10T04:59:59Z".parse::<DateTime<Utc>>().expect("ts");
+        let at = "2026-03-10T05:00:00Z".parse::<DateTime<Utc>>().expect("ts");
+        assert_eq!(
+            listing_today(before),
+            NaiveDate::from_ymd_opt(2026, 3, 9).expect("d")
+        );
+        assert_eq!(
+            listing_today(at),
+            NaiveDate::from_ymd_opt(2026, 3, 10).expect("d")
+        );
+    }
 
     #[test]
     fn test_supported_country_tax_rate_resolution() {

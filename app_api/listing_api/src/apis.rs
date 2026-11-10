@@ -1,6 +1,8 @@
+use crate::authz;
 use actix_web::middleware::from_fn;
 use actix_web::{HttpRequest, HttpResponse, Responder, web};
 use api_core::api_common::content_negotiation_middleware;
+use api_core::auth::Claims;
 use api_core::models::{
     ListingsWrapper, map_listing_to_response, map_listing_with_owner_to_response,
 };
@@ -478,17 +480,23 @@ async fn get_listing_by_id(
     responses(
         (status = 201, description = "Listing created", body = ListingResponse),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn create_listing(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     new_listing: web::Json<common::models::NewListingRequest>,
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
-    let req_data = new_listing.into_inner();
+    let creator = authz::require_host_or_admin(pool.get_ref(), &claims, "create_listing").await?;
+    let mut req_data = new_listing.into_inner();
     req_data.validate()?;
+    // A host always owns what they create; an admin may name an owner.
+    req_data.user_id = authz::listing_owner_for(pool.get_ref(), &creator, req_data.user_id).await?;
 
     if req_data.guests_included > req_data.max_guests {
         let mut errors = validator::ValidationErrors::new();
@@ -600,16 +608,20 @@ async fn create_listing(
     responses(
         (status = 200, description = "Listing updated", body = ListingResponse),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn update_listing(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     updated_listing_req: web::Json<UpdatedListingRequest>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "update_listing").await?;
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
 
@@ -702,6 +714,7 @@ pub struct DeleteListingParams {
     )
 )]
 async fn delete_listing(
+    claims: Claims,
     _req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
@@ -709,6 +722,7 @@ async fn delete_listing(
     settings: web::Data<Settings>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "delete_listing").await?;
     let hard_delete = query.hard_delete.unwrap_or(false);
 
     // Guard: Prevent hard delete if the feature flag is off
@@ -733,16 +747,20 @@ async fn delete_listing(
     responses(
         (status = 200, description = "Presigned URLs generated", body = [common::models::ImagePresignResponse]),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn presign_batch(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     img_metadata_list_json: web::Json<common::models::ImagePresignRequest>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "presign_images").await?;
     let img_metadata_req = img_metadata_list_json.into_inner();
 
     // Verify the listing exists first
@@ -832,7 +850,7 @@ async fn presign_batch(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(claims, pool))]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}/images/{image_id}",
@@ -848,10 +866,12 @@ async fn presign_batch(
     )
 )]
 async fn delete_listing_image(
+    claims: Claims,
     pool: web::Data<PgPool>,
     path: web::Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, ApiError> {
     let (listing_id, image_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "delete_image").await?;
     let mut tx = pool
         .begin()
         .await
@@ -881,6 +901,18 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
             crate::reviews::get_listing_reviews_handler,
+            crate::calendar::list_feeds,
+            crate::calendar::create_feed,
+            crate::calendar::update_feed,
+            crate::calendar::delete_feed,
+            crate::calendar::sync_now,
+            crate::calendar::list_blocks,
+            crate::calendar::create_block,
+            crate::calendar::delete_block,
+            crate::calendar::list_conflicts,
+            crate::calendar::acknowledge_conflict,
+            crate::calendar::overview,
+            crate::calendar::export_calendar,
         ),
         components(
             schemas(
@@ -896,12 +928,30 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::models::ReviewTokenInfoResponse,
                 common::models::NewReviewRequest,
                 common::models::HostReplyRequest,
-                common::models::ReviewResponse
+                common::models::ReviewResponse,
+                common::calendar::dto::CalendarFeedResponse,
+                common::calendar::dto::NewCalendarFeedRequest,
+                common::calendar::dto::UpdateCalendarFeedRequest,
+                common::calendar::dto::CreateCalendarFeedResponse,
+                common::calendar::dto::UpdateCalendarFeedResponse,
+                common::calendar::dto::FeedSyncResult,
+                common::calendar::dto::SyncOutcome,
+                common::calendar::FeedStatus,
+                common::calendar::BlockSource,
+                common::calendar::ConflictKind,
+                common::calendar::conflict::StaleReason,
+                common::calendar::dto::BlockedDateResponse,
+                common::calendar::dto::NewBlockedDateRequest,
+                common::calendar::dto::CalendarConflictResponse,
+                common::calendar::dto::CalendarConflictsResponse,
+                common::calendar::dto::CalendarOverview,
+                common::calendar::dto::CalendarOverviewListing
             )
         ),
         tags(
             (name = "listings", description = "Listing management endpoints"),
-            (name = "reviews", description = "Review and rating endpoints")
+            (name = "reviews", description = "Review and rating endpoints"),
+            (name = "calendar", description = "iCal calendar sync: feeds, blocks, conflicts and export")
         ),
     )]
     struct ApiDoc;
@@ -985,10 +1035,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::delete()
                     .to(delete_price_override)
                     .wrap(from_fn(content_negotiation_middleware)),
-            ),
+            )
+            .configure(crate::calendar::configure_listing_routes),
     );
 
     crate::reviews::configure_routes(cfg);
+    crate::calendar::configure_routes(cfg);
 }
 
 #[tracing::instrument(skip_all)]
@@ -1003,16 +1055,21 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     responses(
         (status = 201, description = "Price override created", body = common::models::PriceOverride),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn create_price_override(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     req_body: web::Json<common::models::CreatePriceOverrideRequest>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "create_price_override")
+        .await?;
     let override_req = req_body.into_inner();
 
     if override_req.end_date <= override_req.start_date {
@@ -1094,16 +1151,21 @@ async fn get_price_overrides(
     responses(
         (status = 200, description = "Price override updated", body = common::models::PriceOverride),
         (status = 400, description = "Validation error"),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
         (status = 500, description = "Internal server error")
     )
 )]
 async fn update_price_override(
+    claims: Claims,
     req: HttpRequest,
     pool: web::Data<PgPool>,
     path: web::Path<(Uuid, Uuid)>,
     req_body: web::Json<common::models::UpdatePriceOverrideRequest>,
 ) -> Result<impl Responder, ApiError> {
     let (listing_id, override_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "update_price_override")
+        .await?;
     let override_req = req_body.into_inner();
 
     if let (Some(start), Some(end)) = (override_req.start_date, override_req.end_date)
@@ -1147,7 +1209,7 @@ async fn update_price_override(
     ))
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(claims, pool))]
 #[utoipa::path(
     delete,
     path = "/api/v1/listings/{id}/price-overrides/{override_id}",
@@ -1163,10 +1225,13 @@ async fn update_price_override(
     )
 )]
 async fn delete_price_override(
+    claims: Claims,
     pool: web::Data<PgPool>,
     path: web::Path<(Uuid, Uuid)>,
 ) -> Result<impl Responder, ApiError> {
     let (listing_id, override_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "delete_price_override")
+        .await?;
     db_listing::delete_price_override(pool.get_ref(), override_id, listing_id)
         .await
         .map_err(ApiError::Database)?;
@@ -1176,7 +1241,7 @@ async fn delete_price_override(
 
 #[cfg(test)]
 #[path = "apis_test.rs"]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "stay_total_tests.rs"]

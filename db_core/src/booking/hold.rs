@@ -87,6 +87,19 @@ pub async fn create_booking_superseding(
         return Err(crate::error::DbError::DateUnavailable);
     }
 
+    // Blocked dates (#58): imported blocks widened by the gap, manual ones not.
+    if crate::calendar::blocks::any_block_overlaps(
+        &mut tx,
+        new_booking.listing_id,
+        new_booking.date_from,
+        new_booking.date_to,
+        listing.gap,
+    )
+    .await?
+    {
+        return Err(crate::error::DbError::DateUnavailable);
+    }
+
     // Lock order: listing, then request rows, then currency. The guest's own
     // request on the listing gives way to this hold.
     let superseded = crate::booking_request::supersede_for_instant_hold(

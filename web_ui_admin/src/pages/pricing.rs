@@ -16,7 +16,7 @@ use topcoat::{
 use uuid::Uuid;
 
 use crate::pages::listings::managed_listing;
-use crate::support::staff;
+use crate::support::{service_token, staff};
 use web_ui_common::components::domain::price_breakdown::money;
 
 path_param!(id);
@@ -69,10 +69,16 @@ impl OverrideForm {
 }
 
 async fn load(cx: &Cx) -> Result<ListingResponse> {
+    load_as(cx).await.map(|(listing, _)| listing)
+}
+
+/// The managed listing, and the user's token for writes to it.
+async fn load_as(cx: &Cx) -> Result<(ListingResponse, String)> {
     let user = staff(cx).await?;
     let raw = path_param::<Id>(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
-    managed_listing(cx, &user, raw).await
+    let listing = managed_listing(cx, &user, raw).await?;
+    Ok((listing, service_token(cx, &user)?))
 }
 
 async fn overrides(listing: &ListingResponse) -> Vec<PriceOverride> {
@@ -147,8 +153,8 @@ pub async fn pricing_page(cx: &Cx) -> Result<impl View> {
             <div class="grid gap-6 lg:grid-cols-[320px_1fr]">
                 <form method="post" action=(add.clone()) hx-post=(add) hx-target="#price-overrides-container" hx-swap="outerHTML" class="space-y-3 rounded-xl border border-border p-5">
                     <h2 class="text-sm font-semibold">"Add seasonal override"</h2>
-                    <label class=(label)>"Start date"<input type="date" name="start_date" required=(true) class=(input) /></label>
-                    <label class=(label)>"End date"<input type="date" name="end_date" required=(true) class=(input) /></label>
+                    <label class=(label)>"Start date"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="start_date" required=(true) class=(input) /></label>
+                    <label class=(label)>"End date"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="end_date" required=(true) class=(input) /></label>
                     <label class=(label)>"Nightly rate"<input type="number" name="price" min="0.01" step="0.01" required=(true) class=(input) /></label>
                     <label class=(label)>"Minimum nights"<input type="number" name="min_nights" min="1" step="1" value="1" required=(true) class=(input) /></label>
                     <button type="submit" class="h-10 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground">"Add override"</button>
@@ -168,11 +174,11 @@ pub async fn add_override(
     /// The add-override form.
     Form(form): Form<OverrideForm>,
 ) -> Result<impl View> {
-    let listing = load(cx).await?;
+    let (listing, jwt) = load_as(cx).await?;
     let error = match form.parse() {
         Err(message) => Some(message),
         Ok(request) => {
-            match common::app_client::create_price_override(listing.id, &request).await {
+            match common::app_client::create_price_override(listing.id, &request, &jwt).await {
                 Ok(_) => None,
                 Err(e) => {
                     tracing::info!("override rejected: {e}");
@@ -195,8 +201,8 @@ pub async fn remove_override(
     /// The remove form.
     Form(form): Form<RemoveForm>,
 ) -> Result<impl View> {
-    let listing = load(cx).await?;
-    let error = common::app_client::delete_price_override(listing.id, form.override_id)
+    let (listing, jwt) = load_as(cx).await?;
+    let error = common::app_client::delete_price_override(listing.id, form.override_id, &jwt)
         .await
         .err()
         .map(|e| {

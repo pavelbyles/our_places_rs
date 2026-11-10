@@ -7,6 +7,8 @@ pub mod actuator;
 pub mod api_common;
 /// Token checks and request authentication.
 pub mod auth;
+/// Calendar sync: the guarded feed fetcher and sync orchestration.
+pub mod calendar;
 /// Publishes queued emails to Pub/Sub.
 pub mod email_publisher;
 /// The error type handlers return, and how it becomes a response.

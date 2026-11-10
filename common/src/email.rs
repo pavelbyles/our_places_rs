@@ -139,6 +139,10 @@ pub enum EmailTemplate {
     RequestWithdrawnHost,
     /// Reminds the host once that an unanswered request is about to expire.
     RequestHostReminder,
+    /// Tells the host an imported calendar event collides with a stay (#58).
+    CalendarConflictHost,
+    /// Tells the host an imported calendar keeps failing to sync (#58).
+    CalendarFeedFailingHost,
 }
 
 impl EmailTemplate {
@@ -178,6 +182,42 @@ impl fmt::Display for EmailTemplate {
 // ============================================================================
 // Strongly-Typed Transactional Email Payloads (Zero-Float Guarantee)
 // ============================================================================
+
+/// Payload of [`EmailTemplate::CalendarConflictHost`]. Holds no feed URL.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CalendarConflictHostPayload {
+    /// The listing's name.
+    pub listing_name: String,
+    /// The imported calendar's name.
+    pub feed_name: String,
+    /// The imported block's first night.
+    pub date_from: String,
+    /// The night after the imported block's last night.
+    pub date_to: String,
+    /// The booking's reservation number.
+    pub confirmation_code: String,
+    /// `overlap` or `turnover`.
+    pub kind: String,
+    /// `"true"` when the conflict reopened.
+    pub reopened: String,
+    /// The listing's calendar page in the admin portal.
+    pub calendar_url: String,
+}
+
+/// Payload of [`EmailTemplate::CalendarFeedFailingHost`]. Holds no feed URL.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CalendarFeedFailingHostPayload {
+    /// The listing's name.
+    pub listing_name: String,
+    /// The imported calendar's name.
+    pub feed_name: String,
+    /// The last failure's sanitised reason.
+    pub error_code: String,
+    /// Scheduled syncs that failed in a row.
+    pub failures: i32,
+    /// The listing's calendar page in the admin portal.
+    pub calendar_url: String,
+}
 
 /// Strongly-typed email payload for guest booking confirmation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

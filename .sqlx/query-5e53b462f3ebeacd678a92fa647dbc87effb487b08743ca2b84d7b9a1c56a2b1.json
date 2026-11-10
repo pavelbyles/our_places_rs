@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 'booking' AS \"kind!\", b.id AS \"id!\", NULL::text AS uid,\n                b.date_from AS \"date_from!\", b.date_to AS \"date_to!\",\n                b.confirmation_code AS label\n            FROM booking b\n            WHERE b.listing_id = $1\n              AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.expires_at > now()))\n              AND b.date_to > $2 AND b.date_from <= $3\n        UNION ALL\n        SELECT CASE WHEN k.source = 'manual' THEN 'manual' ELSE 'imported' END, k.id,\n                k.external_uid, k.date_from, k.date_to, f.name::text\n            FROM listing_blocked_dates k\n            LEFT JOIN listing_calendar_feed f ON f.id = k.feed_id\n            WHERE k.listing_id = $1 AND k.date_to > $2 AND k.date_from <= $3\n        ORDER BY 4, 5, 2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "uid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "date_from!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "date_to!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "label",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "5e53b462f3ebeacd678a92fa647dbc87effb487b08743ca2b84d7b9a1c56a2b1"
+}

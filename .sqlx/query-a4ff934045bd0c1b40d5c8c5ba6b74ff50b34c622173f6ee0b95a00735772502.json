@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH due AS (\n            SELECT f.id, f.last_attempt_at AS previous\n            FROM listing_calendar_feed f JOIN listing l ON l.id = f.listing_id\n            WHERE f.is_active AND l.deleted_at IS NULL\n              AND (f.last_attempt_at IS NULL\n                   OR f.last_attempt_at < now() - ($1::int8 * INTERVAL '1 second'))\n            ORDER BY f.last_attempt_at NULLS FIRST, f.id\n            LIMIT $2\n            FOR UPDATE OF f SKIP LOCKED\n        )\n        UPDATE listing_calendar_feed f SET last_attempt_at = now()\n        FROM due WHERE f.id = due.id\n        RETURNING f.id, f.listing_id, f.url, f.sync_generation,\n            due.previous AS previous_attempt_at, f.last_attempt_at AS \"claimed_at!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "sync_generation",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "previous_attempt_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "claimed_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a4ff934045bd0c1b40d5c8c5ba6b74ff50b34c622173f6ee0b95a00735772502"
+}

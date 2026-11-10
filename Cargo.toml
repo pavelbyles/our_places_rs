@@ -6,6 +6,7 @@ members = [
     "app_api/user_api",
     "app_api/image_worker",
     "app_api/email_worker",
+    "app_api/calendar_sync_job",
     "common",
     "db_core",
     "protoproj",
@@ -52,6 +53,7 @@ bcrypt = "0.19.0"
 base64 = "0.23.1"
 subtle = "2.6.1"
 sha2 = "0.11.1"
+url = "2.5"
 
 [workspace.dependencies.chrono]
 version = "0.4.44"

@@ -78,8 +78,8 @@ async fn change_page(
             }
             <form id="date-change-form" method="post" action=(format!("/bookings/{id}/change-requests")) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <label class=(label) for="new-check-in">"New check-in"<input id="new-check-in" type="date" name="check_in" value=(check_in) required=(true) class=(input) /></label>
-                    <label class=(label) for="new-check-out">"New check-out"<input id="new-check-out" type="date" name="check_out" value=(check_out) required=(true) class=(input) /></label>
+                    <label class=(label) for="new-check-in">"New check-in"<input id="new-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" value=(check_in) required=(true) class=(input) /></label>
+                    <label class=(label) for="new-check-out">"New check-out"<input id="new-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" value=(check_out) required=(true) class=(input) /></label>
                 </div>
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
                     <label class=(label) for="new-adults">"Adults"<input id="new-adults" type="number" name="adults" min="1" value=(adults) class=(input) /></label>

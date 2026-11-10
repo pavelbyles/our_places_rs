@@ -8,72 +8,179 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-ring: var(--ring);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-divider: var(--divider);
-  --color-chip: var(--chip);
-  --color-photo-placeholder: var(--photo-placeholder);
-  --color-link: var(--link);
-  --shadow-xs: var(--shadow-xs);
-  --shadow-sm: var(--shadow-sm);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-border: var(--border);
+    --color-ring: var(--ring);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-divider: var(--divider);
+    --color-chip: var(--chip);
+    --color-photo-placeholder: var(--photo-placeholder);
+    --color-link: var(--link);
+    --shadow-xs: var(--shadow-xs);
+    --shadow-sm: var(--shadow-sm);
 }
 
 @layer base {
-  body {
-    @apply bg-background font-sans text-foreground;
-  }
-  a {
-    color: var(--link);
-  }
-  :focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
-  }
+    body {
+        @apply bg-background font-sans text-foreground;
+    }
+    a {
+        color: var(--link);
+    }
+    :focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+    }
 }
 
 /* Printing tax documents: hide page chrome, flatten the document card. */
 @media print {
-  .no-print {
-    display: none !important;
-  }
-  .tax-document-container {
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-  }
-  @page {
-    size: A4;
-    margin: 15mm;
-  }
+    .no-print {
+        display: none !important;
+    }
+    .tax-document-container {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+    @page {
+        size: A4;
+        margin: 15mm;
+    }
 }
 
 /* Booking calendar: the grid needs ui.js (which sets data-enhanced); the
    date inputs stay visible either way. */
 [data-calendar]:not([data-enhanced]) [data-calendar-grid] {
-  display: none;
+    display: none;
 }
 
 /* A photo that failed to load (marked by ui.js): show the placeholder tile
    behind it, not the broken-image icon and alt text. */
 img[data-broken] {
-  visibility: hidden;
+    visibility: hidden;
+}
+
+/* Calendar date picker icon and popup */
+input[data-date-picker] {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='4' rx='2' ry='2'/%3E%3Cline x1='16' x2='16' y1='2' y2='6'/%3E%3Cline x1='8' x2='8' y1='2' y2='6'/%3E%3Cline x1='3' x2='21' y1='10' y2='10'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1.125rem 1.125rem;
+    padding-right: 2.25rem;
+}
+
+.op-datepicker-popup {
+    position: absolute;
+    z-index: 1000;
+    display: none;
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    box-shadow:
+        0 10px 25px -5px rgba(0, 0, 0, 0.25),
+        0 8px 10px -6px rgba(0, 0, 0, 0.25);
+    padding: 0.75rem;
+    width: 17.5rem;
+    font-family: inherit;
+    user-select: none;
+}
+
+.op-datepicker-popup.op-open {
+    display: block;
+}
+
+.op-dp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.op-dp-title {
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.op-dp-nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--foreground);
+    cursor: pointer;
+    font-size: 1.125rem;
+    line-height: 1;
+}
+
+.op-dp-nav:hover {
+    background-color: var(--chip);
+}
+
+.op-dp-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    text-align: center;
+}
+
+.op-dp-dayhead {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    padding: 0.25rem 0;
+}
+
+.op-dp-day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border-radius: 9999px;
+    border: none;
+    background: transparent;
+    color: var(--foreground);
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.op-dp-day:hover:not(:disabled) {
+    background-color: var(--chip);
+}
+
+.op-dp-day.op-dp-selected {
+    background-color: var(--primary) !important;
+    color: var(--primary-foreground) !important;
+}
+
+.op-dp-day.op-dp-today {
+    font-weight: 700;
+}
+
+.op-dp-day:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    text-decoration: line-through;
 }

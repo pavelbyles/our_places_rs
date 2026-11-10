@@ -3,5 +3,13 @@
 
 /// Listing, search, image and price override routes.
 pub mod apis;
+/// Who may change a listing.
+pub mod authz;
+#[cfg(test)]
+mod authz_tests;
+/// Calendar sync routes.
+pub mod calendar;
+#[cfg(test)]
+mod calendar_tests;
 /// Review routes.
 pub mod reviews;

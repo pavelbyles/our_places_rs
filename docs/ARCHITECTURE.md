@@ -36,6 +36,7 @@ flowchart TB
     subgraph workers["Workers (internal ingress)"]
         IW["image_worker"]
         EW["email_worker"]
+        CJ["calendar_sync_job<br/>(Cloud Run Job)"]
     end
     subgraph shared["Shared crates"]
         COM["common"]
@@ -47,9 +48,10 @@ flowchart TB
         GCSP[("GCS public bucket")]
         PSI["Pub/Sub: image uploads"]
         PSE["Pub/Sub: email notifications"]
-        SCH["Cloud Scheduler<br/>hourly run-sweeps"]
+        SCH["Cloud Scheduler<br/>hourly run-sweeps<br/>15-min calendar sync (main)"]
     end
     SMTP["SMTP provider"]
+    CH["Airbnb / VRBO .ics feeds"]
 
     WG --> WUC --> WC
     WA --> WUC
@@ -61,6 +63,10 @@ flowchart TB
     WA -- "direct upload" --> GCSR --> PSI --> IW --> GCSP
     BA & UA -- "1. insert email_outbox<br/>2. publish id" --> PSE --> EW --> SMTP
     SCH -- "OIDC + x-cron-secret" --> BA
+    SCH -- "OAuth, jobs:run" --> CJ
+    LA & CJ -- "guarded https fetch" --> CH
+    CJ --> DBC
+    CH -- "subscribe to calendar.ics" --> WG
 ```
 
 Dependency rules:
@@ -76,8 +82,9 @@ Dependency rules:
 | :--- | :--- | :--- | :--- |
 | **`common/`** | lib | Domain DTOs, `rust_decimal` pricing and cancellation math, availability rules, tax documents, reference data (`reference.rs`), exchange-rate and GCS/geocode helpers, a typed HTTP client (`app_client/`, one module per API area) used by `web_client`. | — |
 | **`db_core/`** | lib + bins | SQLx entities and compile-time checked queries, migrations (`db_core/migrations/`), seeds, connection pool. | `common` |
-| **`app_api/api_core/`** | lib | Shared Actix pieces: `ApiError`, JWT extractors (HS256), server startup, `/actuator` health and Prometheus metrics, tracing, the email outbox publisher, settings loader. | `common`, `db_core` |
-| **`app_api/listing_api/`** | bin | Listings, search, price overrides, Nominatim geocoding, V4 signed upload URLs, images. | `api_core`, `common`, `db_core` |
+| **`app_api/api_core/`** | lib | Shared Actix pieces: `ApiError`, JWT extractors (HS256), server startup, `/actuator` health and Prometheus metrics, tracing, the email outbox publisher, settings loader. `calendar/`: the SSRF-guarded feed fetcher and the sync orchestration shared by listing_api and the calendar job. | `common`, `db_core` |
+| **`app_api/listing_api/`** | bin | Listings, search, price overrides, Nominatim geocoding, V4 signed upload URLs, images. Server-side listing ownership checks (`authz`). Calendar sync routes: feeds, "Sync now", blocks, conflicts, overview and the `.ics` export. | `api_core`, `common`, `db_core` |
+| **`app_api/calendar_sync_job/`** | bin | Cloud Run Job: syncs every due imported calendar, releases unstarted claims at its 9-minute deadline, republishes stuck calendar emails. | `api_core`, `common`, `db_core` |
 | **`app_api/booking_api/`** | bin | Holds and bookings, availability, change requests, cancellation quotes, messaging, host ledger and payouts, tax documents, internal cron sweeps. | `api_core`, `common`, `db_core` |
 | **`app_api/user_api/`** | bin | Registration, login, email verification, profiles, user slugs, admin user management. | `api_core`, `common`, `db_core` |
 | **`app_api/image_worker/`** | bin | Pub/Sub push handler: resizes uploads into 640/1024/1920 px WebP and records them in `listing_image`. | `db_core`, `common` |
@@ -287,6 +294,17 @@ Image bytes never pass through an API. The portals render `<picture>`/`srcset` f
 3. **Send.** email_worker receives the push, claims the row with `FOR UPDATE SKIP LOCKED`, renders the template from `app_api/email_worker/templates/`, and sends it over SMTP. Delivery status is recorded on the row.
 4. **Deduplicate scheduled emails.** Scheduled notifications (48-hour pre-arrival, hold expiry reminder) are claimed in `booking_notification_log` first, so a re-run of a sweep never sends duplicates.
 
+### 4.4.1. iCal Calendar Sync (#58)
+
+Hosts import Airbnb/VRBO `.ics` feeds; their events become **blocked dates**. Hosts also block nights by hand. Every listing exports one public busy-only feed from the guest portal (`/listings/{id}/calendar.ics`), so Our Places is the hub. Spec: [`spec-58`](specs/spec-58-ical-calendar-synchronization-external-channel-manager.md).
+
+- **Availability**: `listing_blocked_dates` is checked by all seven paths (check, check-excluding, calendar, hold, request create/quote/convert, accept, search). Imported blocks are widened by the turnover gap; manual ones aren't. A changed booking is only checked on nights it doesn't already hold, so a conflicted stay can be shortened. `availability_parity_tests` keeps the copies in step.
+- **Claim → fetch → reconcile**: a run claims feeds atomically (`FOR UPDATE SKIP LOCKED`, stamping `last_attempt_at`), fetches with no transaction open, then reconciles one transaction per feed: `lock_timeout 5s`, locks **listing → feed**, checks `sync_generation` (a URL change, delete or disable mid-fetch makes the result stale), upserts events with `UNNEST`, deletes the ones gone, detects conflicts, updates the feed. A lock timeout is `deferred`, not a failure. Feeds of one listing reconcile one at a time (one pool connection); listings run in parallel.
+- **Failures** lock the feed only and never touch blocks. Four scheduled failures in a row email the host once; a success re-arms it.
+- **Conflicts**: an imported block reaching a confirmed stay or live hold is upserted on `(feed_id, external_uid, booking_id)`; it reopens (with one email) when it was stale and is live again or got worse. Staleness and the current kind are worked out on read. Bookings are never changed automatically.
+- **SSRF guard** (`api_core::calendar::fetch`): https only; IP literals checked against the blocklist (hyper skips the resolver for them); hostnames filtered at connect time by a custom resolver (closes DNS rebinding); every redirect re-checked, at most 3; no proxy; 2 MB / 10 s caps; metadata IPs always blocked. Feed URLs are secrets: `.without_url()` on every reqwest error, redacted `Debug`, host-only spans. Local-only toggles (`EA__CALENDAR_SYNC__*`) come from env only and are refused on Cloud Run.
+- **Triggers**: "Sync now" runs inline in listing_api (60 s rate limit per listing, 20 s deadline); the scheduled `calendar_sync_job` runs every 15 minutes on `main`.
+
 ### 4.5. Verified Reviews
 
 ```mermaid
@@ -319,6 +337,8 @@ One trace follows a request from the browser through the portal, the APIs and th
 
 - **User auth**: the portals mint short-lived HS256 JWTs (`web_client::jwt`) after login, and `api_core::auth` verifies them. Both sides share `JWT_SECRET`.
 - **Service auth**: the APIs deploy with `--no-allow-unauthenticated`. The portals call them with their service account's Google ID token and pass the user's JWT in `X-Forwarded-Authorization`.
+- **Listing writes**: every `listing_api` write checks the JWT (401), the listing (404) and ownership or the admin role (403) on the server (`listing_api::authz`); the portals pass the user's JWT.
+- **Calendar feeds**: see §4.4.1 for the SSRF guard. The export feed is public by design (busy dates and reservation numbers only, no guest details).
 - **Cron auth**: Cloud Scheduler calls booking_api's `/api/v1/internal/cron/*` with an OIDC token *and* the `x-cron-secret` header. The secret is compared in constant time.
 - **Passwords**: hashed with `bcrypt` at `DEFAULT_COST`, inside `spawn_blocking`.
 - **Portals**: strict security headers and CSP (`web_ui_common::security_headers`). No inline JS.
@@ -350,6 +370,8 @@ Secrets and per-environment variables are listed in [ENVIRONMENT.md](ENVIRONMENT
 - **Release profile**: tuned for request speed and startup rather than size: `opt-level = 3`, fat LTO, one codegen unit, stripped symbols.
 - **Deploy**: [`cicd_full_stack.yml`](../.github/workflows/cicd_full_stack.yml) builds and deploys every service with `gcloud run deploy`. It also creates the Pub/Sub topics and subscriptions, the IAM bindings and the Cloud Scheduler job. Branch `main` deploys to prod; other branches get suffixed dev services.
 - **Scaling**: every service runs with `--min-instances=0`. Each is capped at `--max-instances=4`. The services are stateless (sessions are in PostgreSQL, holds are row-locked), so the cap is a deploy flag, not a code change. The limit after that is database connections: each instance's pool is capped at 5 (`db_core::connection`), so the five database-backed services (3 APIs, 2 workers) can open up to 5 × 4 × 5 = 100 connections at full scale. The Cloud SQL tier's `max_connections` must stay above that.
+- **Calendar sync job**: `calendar-sync-<branch>` is a Cloud Run Job deployed on every branch with the dedicated `SA_CALENDAR_JOB` account (Cloud SQL client, Pub/Sub publisher on the email topic, `run.invoker` on its own job). Only `main` has a Cloud Scheduler trigger (every 15 minutes); elsewhere run `gcloud run jobs execute calendar-sync-<branch> --wait` or use "Sync now". Scheduler jobs total 3: sweeps on dev and main, plus calendar sync on main.
+- **Known limit (calendar sync)**: a run claims pages of 32 and stops starting feeds at 9 minutes. At MVP scale (≤ 25 feeds) a run takes seconds; at 1000× (25k feeds) 8 workers with ~1 s fetches cover about 4k feeds per run, so the refresh interval grows to ~90 minutes and the "4 failures" alert to ~6 hours. Raise `EA__CALENDAR_SYNC__JOB_CONCURRENCY` first; per-listing fan-out is the follow-up. Watch `emails_republished` in the run summary: a steady non-zero value means post-commit publishes are failing.
 - **Terraform**: `infra/` holds network, Cloud SQL, accounts and a placeholder Cloud Run module. The workflow, not Terraform, is the source of truth for Cloud Run services today.
 
 ---

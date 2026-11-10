@@ -28,6 +28,10 @@ fn test_db() -> TestPg {
 enum Kind {
     Booking,
     Request,
+    /// A block imported from a feed (#58): widened by the gap.
+    ImportedBlock,
+    /// A manual block (#58): never widened.
+    ManualBlock,
 }
 
 /// A booking's or request's state, and whether it blocks a stay.
@@ -42,7 +46,7 @@ struct State {
 const LIVE: &str = "NOW() + INTERVAL '1 hour'";
 const LAPSED: &str = "NOW() - INTERVAL '1 hour'";
 
-const STATES: [State; 14] = [
+const STATES: [State; 16] = [
     State {
         label: "confirmed",
         kind: Kind::Booking,
@@ -141,6 +145,20 @@ const STATES: [State; 14] = [
         expires_at: LIVE,
         blocks: false,
     },
+    State {
+        label: "imported block",
+        kind: Kind::ImportedBlock,
+        status: "",
+        expires_at: "NULL",
+        blocks: true,
+    },
+    State {
+        label: "manual block",
+        kind: Kind::ManualBlock,
+        status: "",
+        expires_at: "NULL",
+        blocks: true,
+    },
 ];
 
 /// The value stored on the listing, and the gap it should act as.
@@ -197,6 +215,26 @@ async fn seed(
     match state.kind {
         Kind::Booking => seed_booking(pool, guest, villa, from, to, state).await,
         Kind::Request => seed_request(pool, guest, villa, from, to, state).await,
+        Kind::ImportedBlock => {
+            crate::calendar::fixtures::insert_block(
+                pool,
+                villa,
+                crate::calendar::fixtures::BlockKind::Imported,
+                from,
+                to,
+            )
+            .await;
+        }
+        Kind::ManualBlock => {
+            crate::calendar::fixtures::insert_block(
+                pool,
+                villa,
+                crate::calendar::fixtures::BlockKind::Manual,
+                from,
+                to,
+            )
+            .await;
+        }
     }
 }
 
@@ -266,7 +304,13 @@ async fn every_path_agrees_on_which_stays_are_free() {
 
     for state in &STATES {
         for (stored, gap) in GAPS {
-            let gap_days = Duration::days(gap);
+            // Manual blocks ignore the turnover gap (#58, D2).
+            let widened = if state.kind == Kind::ManualBlock {
+                0
+            } else {
+                gap
+            };
+            let gap_days = Duration::days(widened);
             let nights = Duration::days(2);
             let check_in_after = booked_to + gap_days;
             let check_out_before = booked_from - gap_days;
@@ -377,4 +421,173 @@ async fn every_path_agrees_on_which_stays_are_free() {
         }
     }
     assert_eq!(checked, STATES.len() * GAPS.len() * 5);
+}
+
+/// Blocks across the paths in `availability.rs` (spec §1.2.4). The hold,
+/// request and search paths are covered by
+/// [`every_path_agrees_on_which_stays_are_free`].
+#[tokio::test]
+async fn availability_paths_agree_on_blocks() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let host = host(&pool).await;
+    let (blocked_from, blocked_to) = (day(8, 10), day(8, 15));
+    let mut checked = 0;
+
+    for kind in [BlockKind::Imported, BlockKind::Manual] {
+        for (stored, gap) in GAPS {
+            let gap_days = Duration::days(if kind == BlockKind::Imported { gap } else { 0 });
+            let nights = Duration::days(2);
+            let one_day = Duration::days(1);
+            let after = blocked_to + gap_days;
+            let before = blocked_from - gap_days;
+            let stays = [
+                ("overlap", day(8, 12), day(8, 14), false),
+                ("just free after", after, after + nights, true),
+                ("just free before", before - nights, before, true),
+                (
+                    "one day short after",
+                    after - one_day,
+                    after - one_day + nights,
+                    false,
+                ),
+                (
+                    "one day short before",
+                    before + one_day - nights,
+                    before + one_day,
+                    false,
+                ),
+            ];
+            let villa = both_listing(&pool, host, stored).await;
+            insert_block(&pool, villa, kind, blocked_from, blocked_to).await;
+            for (position, from, to, free) in stays {
+                let case = format!("{kind:?} block, stored gap {stored}, stay {position}");
+                let check = check_availability(&pool, villa, from, to).await.unwrap();
+                assert_eq!(check, free, "check_availability: {case}");
+                let excluding = check_availability_excluding(&pool, villa, from, to, Uuid::nil())
+                    .await
+                    .unwrap();
+                assert_eq!(excluding, free, "check_availability_excluding: {case}");
+                let calendar = get_unavailable_ranges(&pool, villa, from, to)
+                    .await
+                    .unwrap();
+                assert_eq!(calendar.is_empty(), free, "calendar: {case}");
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 2 * GAPS.len() * 5);
+}
+
+/// A booking that sits on a block can be shortened or moved off it, but not
+/// extended further into it (spec §1.2.5).
+#[tokio::test]
+async fn a_changed_booking_is_only_checked_on_nights_it_does_not_hold() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let host = host(&pool).await;
+    let owner = user(&pool, UserRole::Booker).await;
+    let confirmed = &STATES[0];
+
+    for (kind, stored) in [
+        (BlockKind::Imported, 0),
+        (BlockKind::Imported, 2),
+        (BlockKind::Manual, 0),
+        (BlockKind::Manual, 2),
+    ] {
+        let villa = both_listing(&pool, host, stored).await;
+        // The stay is Aug 10–20; a block covers Aug 12–15, inside it.
+        seed(&pool, owner, villa, day(8, 10), day(8, 20), confirmed).await;
+        let booking: Uuid = sqlx::query_scalar("SELECT id FROM booking WHERE listing_id = $1")
+            .bind(villa)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        insert_block(&pool, villa, kind, day(8, 12), day(8, 15)).await;
+        let cases = [
+            ("unchanged", day(8, 10), day(8, 20), true),
+            ("shortened at the start", day(8, 11), day(8, 20), true),
+            ("shortened at the end", day(8, 10), day(8, 19), true),
+            (
+                "shortened to inside the block",
+                day(8, 13),
+                day(8, 14),
+                true,
+            ),
+            ("moved off the block", day(8, 16), day(8, 20), true),
+            ("extended earlier", day(8, 8), day(8, 20), true),
+            ("extended later", day(8, 10), day(8, 22), true),
+        ];
+        for (label, from, to, free) in cases {
+            let case = format!("{kind:?}, gap {stored}: {label}");
+            let ok = check_availability_excluding(&pool, villa, from, to, booking)
+                .await
+                .unwrap();
+            assert_eq!(ok, free, "{case}");
+        }
+        // A second block right before the stay: extending into it is refused,
+        // for imported blocks also when only the gap is breached.
+        insert_block(&pool, villa, kind, day(8, 5), day(8, 7)).await;
+        let into = check_availability_excluding(&pool, villa, day(8, 6), day(8, 20), booking)
+            .await
+            .unwrap();
+        assert!(!into, "{kind:?}, gap {stored}: extended into a block");
+        let near = check_availability_excluding(&pool, villa, day(8, 8), day(8, 20), booking)
+            .await
+            .unwrap();
+        let gap_breached = kind == BlockKind::Imported && stored > 0;
+        assert_eq!(
+            near, !gap_breached,
+            "{kind:?}, gap {stored}: extended near a block"
+        );
+    }
+}
+
+// EXPLAIN for the check_availability block branch, on a listing with many
+// blocks, shows an index scan:
+//   Index Only Scan using idx_blocked_dates_listing_range on listing_blocked_dates k
+//     Index Cond: ((listing_id = $1) AND (date_from < ...))
+#[tokio::test]
+async fn the_block_branch_uses_the_range_index() {
+    use crate::calendar::fixtures::{BlockKind, insert_block};
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+    let host = host(&pool).await;
+    let villa = both_listing(&pool, host, 1).await;
+    for i in 0..40 {
+        let from = day(1, 1) + Duration::days(i * 3);
+        insert_block(
+            &pool,
+            villa,
+            BlockKind::Manual,
+            from,
+            from + Duration::days(1),
+        )
+        .await;
+    }
+    sqlx::query("ANALYZE listing_blocked_dates")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL enable_seqscan = off")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let plan: Vec<String> = sqlx::query_scalar(
+        "EXPLAIN SELECT 1 FROM listing_blocked_dates k JOIN listing l ON l.id = k.listing_id
+         WHERE k.listing_id = $1
+           AND k.date_from < $3::date + LEAST(GREATEST(l.days_between_bookings, 0), 365)
+           AND k.date_to > $2::date - LEAST(GREATEST(l.days_between_bookings, 0), 365)",
+    )
+    .bind(villa)
+    .bind(day(3, 1))
+    .bind(day(3, 5))
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let plan = plan.join("\n");
+    assert!(plan.contains("idx_blocked_dates_listing"), "{plan}");
 }

@@ -211,6 +211,9 @@ pub(super) async fn check_dates_free(
     )
     .fetch_one(&mut *conn)
     .await?;
+    let blocked = blocked
+        || crate::calendar::blocks::any_block_overlaps(conn, listing_id, date_from, date_to, gap)
+            .await?;
     if blocked {
         Err(DbError::DateUnavailable)
     } else {

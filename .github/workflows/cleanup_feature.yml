@@ -85,6 +85,13 @@ jobs:
             gcloud run services delete "$SERVICE" --region "$REGION" --quiet || echo "Service $SERVICE not found or already deleted."
           done
 
+      - name: Delete Calendar Sync Job
+        env:
+          SERVICE_SUFFIX: ${{ steps.target.outputs.SERVICE_SUFFIX }}
+          REGION: ${{ env.REGION }}
+        run: |
+          gcloud run jobs delete "calendar-sync-$SERVICE_SUFFIX" --region "$REGION" --quiet || echo "Job calendar-sync-$SERVICE_SUFFIX not found or already deleted."
+
       - name: Delete GCS Buckets
         env:
           SERVICE_SUFFIX: ${{ steps.target.outputs.SERVICE_SUFFIX }}

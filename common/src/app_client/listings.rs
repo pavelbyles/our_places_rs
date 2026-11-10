@@ -187,13 +187,19 @@ pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<Listi
 }
 
 /// Creates a listing.
-pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<ListingResponse> {
+pub async fn create_listing(
+    req: &crate::models::NewListingRequest,
+    user_jwt: &str,
+) -> Result<ListingResponse> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!("{}/api/v1/listings", api_url);
 
     let res = get_client()
-        .post(&url, &audience, req)
+        .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
         .await
         .context("Failed to connect to listing service")?;
 
@@ -212,13 +218,17 @@ pub async fn create_listing(req: &crate::models::NewListingRequest) -> Result<Li
 pub async fn update_listing(
     id: &str,
     req: &crate::models::UpdatedListingRequest,
+    user_jwt: &str,
 ) -> Result<ListingResponse> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!("{}/api/v1/listings/{}", api_url, id);
 
     let res = get_client()
-        .patch(&url, &audience, req)
+        .user_request(reqwest::Method::PATCH, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
         .await
         .context("Failed to connect to listing service")?;
 
@@ -234,13 +244,15 @@ pub async fn update_listing(
 }
 
 /// Deletes a listing.
-pub async fn delete_listing(id: &str) -> Result<()> {
+pub async fn delete_listing(id: &str, user_jwt: &str) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!("{}/api/v1/listings/{}", api_url, id);
 
     let res = get_client()
-        .delete(&url, &audience)
+        .user_request(reqwest::Method::DELETE, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
         .await
         .context("Failed to connect to listing service")?;
 
@@ -277,13 +289,17 @@ pub async fn get_price_overrides(listing_id: Uuid) -> Result<Vec<PriceOverride>>
 pub async fn create_price_override(
     listing_id: Uuid,
     req: &crate::models::CreatePriceOverrideRequest,
+    user_jwt: &str,
 ) -> Result<PriceOverride> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!("{}/api/v1/listings/{}/price-overrides", api_url, listing_id);
 
     let res = get_client()
-        .post(&url, &audience, req)
+        .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
         .await
         .context("Failed to connect to listing service")?;
 
@@ -299,7 +315,7 @@ pub async fn create_price_override(
 }
 
 /// Deletes a listing photo and its resized variants. Missing photos count as deleted.
-pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid) -> Result<()> {
+pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid, user_jwt: &str) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!(
@@ -308,7 +324,9 @@ pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid) -> Result<()
     );
 
     let res = get_client()
-        .delete(&url, &audience)
+        .user_request(reqwest::Method::DELETE, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
         .await
         .context("Failed to connect to listing service")?;
 
@@ -322,7 +340,11 @@ pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid) -> Result<()
 }
 
 /// Removes a price override from a listing.
-pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Result<()> {
+pub async fn delete_price_override(
+    listing_id: Uuid,
+    override_id: Uuid,
+    user_jwt: &str,
+) -> Result<()> {
     let api_url = listing_api_url();
     let audience = listing_api_audience();
     let url = format!(
@@ -331,7 +353,9 @@ pub async fn delete_price_override(listing_id: Uuid, override_id: Uuid) -> Resul
     );
 
     let res = get_client()
-        .delete(&url, &audience)
+        .user_request(reqwest::Method::DELETE, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
         .await
         .context("Failed to connect to listing service")?;
 

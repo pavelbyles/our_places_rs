@@ -163,11 +163,11 @@ pub async fn date_range_calendar(
             <div data-calendar-fallback="" class="grid grid-cols-2 gap-3">
                 <label class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     "Check in"
-                    <input type="date" name="check_in" id=(check_in_id) min=(min.clone()) value=(check_in_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
+                    <input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" id=(check_in_id) min=(min.clone()) value=(check_in_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
                 </label>
                 <label class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                     "Check out"
-                    <input type="date" name="check_out" id=(check_out_id) min=(min) value=(check_out_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
+                    <input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" id=(check_out_id) min=(min) value=(check_out_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
                 </label>
             </div>
             <div data-calendar-grid="" class="@container space-y-3">

@@ -308,10 +308,10 @@ pub async fn promo_code_form(
                         <option value="stay_and_cleaning" selected=(form.scope == "stay_and_cleaning")>"The stay and cleaning fee"</option>
                     </select>
                 </label>
-                <label class=(label)>"First valid day"<input id="promo-valid-from" type="date" name="valid_from" required=(true) value=(form.valid_from.clone()) class=(field) /></label>
-                <label class=(label)>"Last valid day"<input id="promo-valid-to" type="date" name="valid_to" required=(true) value=(form.valid_to.clone()) class=(field) /></label>
-                <label class=(label)>"First eligible night (optional)"<input type="date" name="stay_from" value=(form.stay_from.clone()) class=(field) /></label>
-                <label class=(label)>"Last eligible night (optional)"<input type="date" name="stay_to" value=(form.stay_to.clone()) class=(field) /></label>
+                <label class=(label)>"First valid day"<input id="promo-valid-from" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="valid_from" required=(true) value=(form.valid_from.clone()) class=(field) /></label>
+                <label class=(label)>"Last valid day"<input id="promo-valid-to" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="valid_to" required=(true) value=(form.valid_to.clone()) class=(field) /></label>
+                <label class=(label)>"First eligible night (optional)"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="stay_from" value=(form.stay_from.clone()) class=(field) /></label>
+                <label class=(label)>"Last eligible night (optional)"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="stay_to" value=(form.stay_to.clone()) class=(field) /></label>
                 <label class=(label)>"Minimum nights (optional)"<input type="number" min="1" name="min_nights" value=(form.min_nights.clone()) class=(field) /></label>
                 <label class=(label)>"Minimum booking value (optional)"<input name="min_booking_value" inputmode="decimal" value=(form.min_booking_value.clone()) class=(field) /></label>
                 <label class=(label)>"Total usage limit (optional)"<input id="promo-total-limit" type="number" min="1" name="total_usage_limit" value=(form.total_usage_limit.clone()) class=(field) /></label>

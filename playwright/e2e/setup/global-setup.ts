@@ -3,6 +3,7 @@ import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { seedTestData } from './db-seed.js';
+import { startIcalFixtureServer } from './ical-fixture-server.js';
 
 /**
  * Checks whether a TCP port is accepting connections.
@@ -164,7 +165,7 @@ function ensureBrowserDependenciesMarker(): void {
 /**
  * Playwright Global Setup Hook
  */
-export default async function globalSetup(): Promise<void> {
+export default async function globalSetup(): Promise<() => Promise<void>> {
   console.log('\n=== [Playwright Global Setup] Checking Environment & Infrastructure ===');
 
   // 0. Ensure browser validation markers exist for Nix environment
@@ -185,5 +186,9 @@ export default async function globalSetup(): Promise<void> {
     fs.mkdirSync(authDir, { recursive: true });
   }
 
+  // 5. Serve imported calendar fixtures over https for the whole run (#58).
+  const stopIcalFixtureServer = await startIcalFixtureServer();
+
   console.log('=== [Playwright Global Setup] Completed ===\n');
+  return stopIcalFixtureServer;
 }

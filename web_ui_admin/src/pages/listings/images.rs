@@ -22,7 +22,7 @@ use web_client::get_api_client;
 use web_ui_common::components::domain::responsive_image::responsive_image;
 
 use super::managed_listing;
-use crate::support::staff;
+use crate::support::{service_token, staff};
 
 path_param!(id);
 
@@ -88,7 +88,11 @@ pub async fn presign_images(
         })
         .collect();
     let signed = get_api_client(cx)
-        .presign_listing_images(listing.id, &ImagePresignRequest { images })
+        .presign_listing_images(
+            listing.id,
+            &ImagePresignRequest { images },
+            &service_token(cx, &user)?,
+        )
         .await
         .map_err(web_client::app_error)?;
     tracing::info!(listing_id = %listing.id, count = signed.len(), "photo upload URLs issued");
@@ -161,7 +165,13 @@ pub async fn remove_image(
     let raw = path_param::<Id>(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
-    let error = match common::app_client::delete_listing_image(listing.id, form.image_id).await {
+    let error = match common::app_client::delete_listing_image(
+        listing.id,
+        form.image_id,
+        &service_token(cx, &user)?,
+    )
+    .await
+    {
         Ok(()) => {
             tracing::info!(listing_id = %listing.id, image_id = %form.image_id, "photo removed");
             None

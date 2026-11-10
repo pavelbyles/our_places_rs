@@ -6,6 +6,8 @@
 pub mod api_client;
 /// Authenticated user model and session lookup for guest and admin portals.
 pub mod auth;
+/// Calendar sync calls: feeds, blocks, conflicts and the export feed.
+pub mod calendar;
 /// HTTP client for the backend services, registered in Topcoat's app context.
 pub mod client;
 /// In-process cache of the active currency list.

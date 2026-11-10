@@ -173,6 +173,8 @@ pub struct UpdatedUser {
 
 pub use common::models::UserRole;
 
+pub use common::calendar::{BlockSource, ConflictKind, FeedStatus};
+
 /// Whether a user account is active.
 #[derive(Debug, Serialize, Deserialize, sqlx::Type, ToSchema, Clone, Copy, PartialEq)]
 #[sqlx(type_name = "user_status", rename_all = "lowercase")]

@@ -7,6 +7,8 @@ pub mod booking;
 pub mod booking_message;
 /// Enquiries and requests to book: creation, responses, conversion and expiry.
 pub mod booking_request;
+/// iCal calendar sync: feeds, blocked dates, conflicts and export.
+pub mod calendar;
 /// Database connection pool initialization and health checks.
 pub mod connection;
 /// Guest × listing conversations and their messages.

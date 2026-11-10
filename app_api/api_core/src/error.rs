@@ -51,6 +51,15 @@ pub enum ApiError {
     #[error("Payment settlement failed: {0}")]
     PaymentSettlementFailed(String),
 
+    /// The request is well-formed but refused, with a stable code (422).
+    #[error("Unprocessable: {code}: {message}")]
+    Unprocessable {
+        /// Stable error code, such as `VALIDATION_ERROR`.
+        code: &'static str,
+        /// Text for the caller.
+        message: String,
+    },
+
     /// A transient condition the client can resolve by retrying.
     #[error("Service temporarily unavailable: {0}")]
     ServiceUnavailable(String),
@@ -109,6 +118,15 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::PromoCodeExists | DbError::PromoAlreadyDeactivated) => {
                 StatusCode::CONFLICT
             }
+            ApiError::Database(
+                DbError::CalendarFeedLimit
+                | DbError::CalendarFeedDuplicate
+                | DbError::CalendarBlockManagedByFeed
+                | DbError::CalendarBlockDuplicate,
+            ) => StatusCode::CONFLICT,
+            ApiError::Database(DbError::CalendarSyncRateLimited { .. }) => {
+                StatusCode::TOO_MANY_REQUESTS
+            }
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -117,6 +135,7 @@ impl ResponseError for ApiError {
             ApiError::FeatureDisabled(_) => StatusCode::FORBIDDEN,
             ApiError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             ApiError::Forbidden(_) => StatusCode::FORBIDDEN,
+            ApiError::Unprocessable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 
@@ -127,6 +146,9 @@ impl ResponseError for ApiError {
             tracing::error!(status = %self.status_code(), error = ?self, "request failed");
         }
         if let Some(response) = self.currency_error_response() {
+            return response;
+        }
+        if let Some(response) = self.calendar_error_response() {
             return response;
         }
         match self {
@@ -150,6 +172,11 @@ impl ResponseError for ApiError {
                     "message": msg
                 })),
             ApiError::ValidationError(e) => HttpResponse::BadRequest().json(e),
+            ApiError::Unprocessable { code, message } => {
+                tracing::warn!(code, %message, "request refused");
+                HttpResponse::UnprocessableEntity()
+                    .json(serde_json::json!({ "code": code, "message": message }))
+            }
             ApiError::StayPricing(refused) => {
                 tracing::warn!(code = refused.code(), %refused, "stay refused");
                 let required = match refused {
@@ -248,6 +275,51 @@ impl ResponseError for ApiError {
 }
 
 impl ApiError {
+    /// Structured bodies for calendar sync refusals, logged at `warn`; `None`
+    /// for every other error.
+    fn calendar_error_response(&self) -> Option<HttpResponse> {
+        let ApiError::Database(db) = self else {
+            return None;
+        };
+        let (code, message) = match db {
+            DbError::CalendarFeedLimit => (
+                "CALENDAR_FEED_LIMIT",
+                "A listing can import at most 5 calendars.".to_string(),
+            ),
+            DbError::CalendarFeedDuplicate => (
+                "CALENDAR_FEED_DUPLICATE",
+                "This calendar is already imported for the listing.".to_string(),
+            ),
+            DbError::CalendarBlockManagedByFeed => (
+                "CALENDAR_BLOCK_MANAGED_BY_FEED",
+                "These dates come from an imported calendar. Change them in that calendar."
+                    .to_string(),
+            ),
+            DbError::CalendarBlockDuplicate => (
+                "CALENDAR_BLOCK_DUPLICATE",
+                "These dates are already blocked.".to_string(),
+            ),
+            DbError::CalendarSyncRateLimited { retry_after_secs } => {
+                tracing::warn!(retry_after_secs, "calendar sync rate limited");
+                return Some(
+                    HttpResponse::TooManyRequests()
+                        .insert_header(("Retry-After", retry_after_secs.max(&1).to_string()))
+                        .json(serde_json::json!({
+                            "code": "CALENDAR_SYNC_RATE_LIMITED",
+                            "message": "Calendars were synced less than a minute ago.",
+                            "retry_after_secs": retry_after_secs,
+                        })),
+                );
+            }
+            _ => return None,
+        };
+        tracing::warn!(code, "calendar request refused");
+        Some(
+            HttpResponse::build(self.status_code())
+                .json(serde_json::json!({ "code": code, "message": message })),
+        )
+    }
+
     /// Structured bodies for currency and exchange-rate administration errors.
     /// Business rejections are logged at `warn`; `None` for every other error.
     fn currency_error_response(&self) -> Option<HttpResponse> {
@@ -477,6 +549,84 @@ mod promo_error_tests {
         let (status, body) = render(DbError::PromoAlreadyDeactivated).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["code"], "PROMO_ALREADY_DEACTIVATED");
+    }
+}
+
+#[cfg(test)]
+mod calendar_error_tests {
+    use super::*;
+    use actix_web::body::to_bytes;
+
+    async fn render(err: DbError) -> (StatusCode, serde_json::Value, Option<String>) {
+        let api = ApiError::Database(err);
+        let status = api.status_code();
+        let resp = api.error_response();
+        assert_eq!(
+            resp.status(),
+            status,
+            "status_code and error_response agree"
+        );
+        let retry_after = resp
+            .headers()
+            .get("Retry-After")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = to_bytes(resp.into_body()).await.expect("body bytes");
+        let json = serde_json::from_slice(&bytes).expect("json body");
+        (status, json, retry_after)
+    }
+
+    #[tokio::test]
+    async fn conflict_variants_are_409_with_their_codes() {
+        for (err, code) in [
+            (DbError::CalendarFeedLimit, "CALENDAR_FEED_LIMIT"),
+            (DbError::CalendarFeedDuplicate, "CALENDAR_FEED_DUPLICATE"),
+            (
+                DbError::CalendarBlockManagedByFeed,
+                "CALENDAR_BLOCK_MANAGED_BY_FEED",
+            ),
+            (DbError::CalendarBlockDuplicate, "CALENDAR_BLOCK_DUPLICATE"),
+        ] {
+            let (status, body, retry) = render(err).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{code}");
+            assert_eq!(body["code"], code);
+            assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
+            assert_eq!(retry, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn rate_limit_is_429_with_retry_after() {
+        let (status, body, retry) = render(DbError::CalendarSyncRateLimited {
+            retry_after_secs: 42,
+        })
+        .await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(body["code"], "CALENDAR_SYNC_RATE_LIMITED");
+        assert_eq!(body["retry_after_secs"], 42);
+        assert_eq!(retry.as_deref(), Some("42"));
+    }
+
+    #[tokio::test]
+    async fn unprocessable_is_422_with_its_code() {
+        let api = ApiError::Unprocessable {
+            code: "CALENDAR_FEED_SELF",
+            message: "no".into(),
+        };
+        assert_eq!(api.status_code(), StatusCode::UNPROCESSABLE_ENTITY);
+        let resp = api.error_response();
+        let bytes = to_bytes(resp.into_body()).await.expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json["code"], "CALENDAR_FEED_SELF");
+    }
+
+    #[tokio::test]
+    async fn rate_limit_retry_after_is_at_least_one_second() {
+        let (_, _, retry) = render(DbError::CalendarSyncRateLimited {
+            retry_after_secs: 0,
+        })
+        .await;
+        assert_eq!(retry.as_deref(), Some("1"));
     }
 }
 

@@ -408,3 +408,116 @@ mod request_settings_tests {
         }
     }
 }
+
+/// Env var: let feed fetches reach private and loopback hosts (local only).
+pub const CALENDAR_ALLOW_PRIVATE_HOSTS_ENV: &str = "EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS";
+/// Env var: feeds the calendar sync job fetches at once.
+pub const CALENDAR_JOB_CONCURRENCY_ENV: &str = "EA__CALENDAR_SYNC__JOB_CONCURRENCY";
+/// Env var: an extra trusted root CA (PEM) for local fixture servers.
+pub const CALENDAR_EXTRA_ROOT_CA_PATH_ENV: &str = "EA__CALENDAR_SYNC__EXTRA_ROOT_CA_PATH";
+/// Set by Cloud Run on services.
+pub const K_SERVICE_ENV: &str = "K_SERVICE";
+/// Set by Cloud Run on jobs.
+pub const CLOUD_RUN_JOB_ENV: &str = "CLOUD_RUN_JOB";
+/// Feeds fetched at once by the job when no setting is given.
+pub const DEFAULT_CALENDAR_JOB_CONCURRENCY: u16 = 8;
+
+/// Calendar sync settings. Read from the environment only, never from
+/// `config/*.toml`: cloud services may load `Development.toml`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CalendarSyncSettings {
+    /// Lets feed fetches reach private and loopback hosts. Local only.
+    pub allow_private_hosts: bool,
+    /// Feeds the job fetches at once.
+    pub job_concurrency: u16,
+    /// An extra trusted root CA (PEM file). Local only.
+    pub extra_root_ca_path: Option<std::path::PathBuf>,
+}
+
+impl Default for CalendarSyncSettings {
+    fn default() -> Self {
+        CalendarSyncSettings {
+            allow_private_hosts: false,
+            job_concurrency: DEFAULT_CALENDAR_JOB_CONCURRENCY,
+            extra_root_ca_path: None,
+        }
+    }
+}
+
+/// Why the calendar sync settings were refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CalendarSettingsError {
+    /// A variable couldn't be parsed.
+    #[error("{0} is not valid")]
+    Invalid(&'static str),
+    /// A local-only toggle is set on Cloud Run.
+    #[error("{0} must not be set on Cloud Run")]
+    LocalOnlyOnCloud(&'static str),
+}
+
+impl CalendarSyncSettings {
+    /// Reads the settings through `env`, such as `|k| std::env::var(k).ok()`.
+    pub fn from_env(
+        env: impl Fn(&str) -> Option<String>,
+    ) -> Result<CalendarSyncSettings, CalendarSettingsError> {
+        let non_empty = |key: &str| {
+            env(key)
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
+        let allow_private_hosts = non_empty(CALENDAR_ALLOW_PRIVATE_HOSTS_ENV)
+            .map(|v| match v.to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" => Ok(true),
+                "false" | "0" | "no" => Ok(false),
+                _ => Err(CalendarSettingsError::Invalid(
+                    CALENDAR_ALLOW_PRIVATE_HOSTS_ENV,
+                )),
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let job_concurrency = non_empty(CALENDAR_JOB_CONCURRENCY_ENV)
+            .map(|v| {
+                v.parse::<u16>()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or(CalendarSettingsError::Invalid(CALENDAR_JOB_CONCURRENCY_ENV))
+            })
+            .transpose()?
+            .unwrap_or(DEFAULT_CALENDAR_JOB_CONCURRENCY);
+        let extra_root_ca_path = non_empty(CALENDAR_EXTRA_ROOT_CA_PATH_ENV).map(Into::into);
+        Ok(CalendarSyncSettings {
+            allow_private_hosts,
+            job_concurrency,
+            extra_root_ca_path,
+        })
+    }
+
+    /// Reads the settings from the process environment.
+    pub fn from_process_env() -> Result<CalendarSyncSettings, CalendarSettingsError> {
+        Self::from_env(|key| std::env::var(key).ok())
+    }
+}
+
+/// Refuses the local-only toggles when `env` shows a Cloud Run service or job.
+/// Callers log the error at `error` and exit non-zero.
+pub fn check_cloud_guard(
+    settings: &CalendarSyncSettings,
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<(), CalendarSettingsError> {
+    let on_cloud = [K_SERVICE_ENV, CLOUD_RUN_JOB_ENV]
+        .iter()
+        .any(|key| env(key).is_some_and(|v| !v.is_empty()));
+    match (
+        on_cloud,
+        settings.allow_private_hosts,
+        &settings.extra_root_ca_path,
+    ) {
+        (true, true, _) => Err(CalendarSettingsError::LocalOnlyOnCloud(
+            CALENDAR_ALLOW_PRIVATE_HOSTS_ENV,
+        )),
+        (true, _, Some(_)) => Err(CalendarSettingsError::LocalOnlyOnCloud(
+            CALENDAR_EXTRA_ROOT_CA_PATH_ENV,
+        )),
+        _ => Ok(()),
+    }
+}
