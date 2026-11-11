@@ -261,7 +261,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
     - Run the same `diff` for the admin files.
   - **Dependencies:** Task 14
 
-- [ ] **Task 16: End-to-end, dev loop and Docker smoke test**
+- [x] **Task 16: End-to-end, dev loop and Docker smoke test**
   - **Scope:** S
   - **Description:**
     - Run `devenv up` with the 0.12 `topcoat` CLI and check that `topcoat dev` hot-reloads both portals.
@@ -271,6 +271,12 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Acceptance Criteria:**
     - [ ] Playwright passes.
     - [ ] Both Docker images build, and the containers serve `/` with assets loaded.
+  - **Result (devenv, 2026-11-11):**
+    - `topcoat dev` 0.12.1 builds and serves both portals.
+    - Playwright (guest and admin, Chromium): 175 passed, 1 failed, 1 did not run.
+    - The failing test is `admin-portal/currencies.spec.ts:110`, "guests can choose the new currency". It looks for `a[href="?currency=XCD"]`, but since #114 (`146c4a63`, already in base `35b60fa0`) the selector renders `/currency/XCD?next=…`. The test is stale on base too and is not caused by this upgrade, so it is left for a separate fix.
+    - Both Docker images build, including the bundler step.
+    - The containers serve `/` (guest 200, admin 308 → `/admin`) and `/login` (200), and every asset I checked loads (200).
   - **Verification Command:** `npx playwright test && docker build -f Dockerfile.web_ui_guest . && docker build -f Dockerfile.web_ui_admin .`
   - **Dependencies:** Task 15
 
