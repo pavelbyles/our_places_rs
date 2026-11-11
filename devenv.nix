@@ -24,7 +24,7 @@
   env.ICAL_FIXTURE_DIR = "${config.devenv.state}/ical-fixture";
 
   # Rust Toolchain pinned to match the Dockerfiles (rustc, cargo, clippy,
-  # rustfmt, rust-analyzer). Topcoat 0.11 requires rustc 1.99.
+  # rustfmt, rust-analyzer). Topcoat 0.12 requires rustc 1.99 (rust-version of topcoat-* 0.12.1).
   languages.rust = {
     enable = true;
     channel = "stable";

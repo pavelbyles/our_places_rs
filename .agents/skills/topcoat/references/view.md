@@ -1,12 +1,15 @@
-This module provides Topcoat's HTML templating primitives:
+Build HTML with [`view!`] and define reusable components with [`#[component]`][`component`]. The [`view!`] guide introduces markup, Rust expressions, and rendering.
 
-- [`view!`]: the HTML-like templating macro.
-- [`#[component]`][`component`]: turns an async function into a reusable component with typed props and child content.
-- [`attributes!`]: builds a reusable runtime [`Attributes`] value from the same attribute syntax used inside [`view!`].
-- [`class!`]: space-separated class lists from static and conditional entries.
+Use [`class!`] to combine base classes with variants, conditional classes, or classes supplied by a caller. Keep fixed class lists as ordinary `class="..."` attributes. Use [`attributes!`] to build and forward collections of attributes.
+
+For content that loads slowly, [`suspense`] can show a fallback while the page streams. Use [`error_boundary`] to show a fallback when content fails to render.
 
 [`view!`]: macro.view.html
 [`component`]: attr.component.html
 [`attributes!`]: macro.attributes.html
 [`Attributes`]: struct.Attributes.html
 [`class!`]: macro.class.html
+[`live!`]: macro.live.html
+[`emit!`]: macro.emit.html
+[`suspense`]: struct.suspense.html
+[`error_boundary`]: struct.error_boundary.html
