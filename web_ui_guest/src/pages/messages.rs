@@ -47,7 +47,7 @@ fn bubble_parts(m: &BookingMessageResponse) -> (String, String, String, bool) {
 }
 
 #[component]
-async fn message_bubble(message: BookingMessageResponse) -> Result<impl View> {
+async fn message_bubble(cx: &Cx, message: BookingMessageResponse) -> Result<impl View> {
     let (sender, sent_at, text, mine) = bubble_parts(&message);
     Ok(
         view! { chat_bubble(sender: sender, sent_at: sent_at, text: text, mine: mine, attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) }) },
@@ -58,7 +58,7 @@ async fn message_bubble(message: BookingMessageResponse) -> Result<impl View> {
 #[page("/bookings/{code}/messages")]
 pub async fn messages_page(cx: &Cx) -> Result<impl View> {
     let guest = guest(cx).await?;
-    let booking = own_booking_by_code(cx, &guest, path_param::<Code>(cx)).await?;
+    let booking = own_booking_by_code(cx, &guest, code(cx)).await?;
     let token = service_token(cx, &guest)?;
     let api = get_api_client(cx);
     let thread = api
@@ -110,7 +110,7 @@ pub async fn send_message(
     Form(form): Form<MessageForm>,
 ) -> Result<impl View> {
     let guest = guest(cx).await?;
-    let booking = own_booking_by_code(cx, &guest, path_param::<Code>(cx)).await?;
+    let booking = own_booking_by_code(cx, &guest, code(cx)).await?;
     let token = service_token(cx, &guest)?;
     let text = form.message_text.trim().to_string();
     let sent = if text.is_empty() {

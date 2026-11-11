@@ -100,7 +100,11 @@ fn current_price(r: &BookingRequestResponse) -> &PriceBreakdown {
 }
 
 #[component]
-async fn request_card(request: BookingRequestResponse, listing_name: String) -> Result<impl View> {
+async fn request_card(
+    cx: &Cx,
+    request: BookingRequestResponse,
+    listing_name: String,
+) -> Result<impl View> {
     let price = current_price(&request);
     let total =
         web_ui_common::components::domain::price_breakdown::money(&price.currency, price.total);
@@ -124,7 +128,11 @@ async fn request_card(request: BookingRequestResponse, listing_name: String) -> 
 }
 
 #[component]
-async fn enquiry_card(enquiry: EnquiryResponse, listing_name: String) -> Result<impl View> {
+async fn enquiry_card(
+    cx: &Cx,
+    enquiry: EnquiryResponse,
+    listing_name: String,
+) -> Result<impl View> {
     let open = enquiry.status == EnquiryStatus::Open;
     Ok(view! {
         <article id=(format!("enquiry-{}", enquiry.id)) class="space-y-2 rounded-[var(--radius-surface,16px)] border border-border bg-card p-5">
@@ -165,6 +173,7 @@ async fn listing_names(
 
 #[component]
 async fn requests_list(
+    cx: &Cx,
     list: BookingRequestList,
     names: std::collections::HashMap<Uuid, String>,
 ) -> Result<impl View> {
@@ -240,7 +249,7 @@ pub async fn requests_list_fragment(cx: &Cx) -> Result<impl View> {
 }
 
 async fn own_request(cx: &Cx, guest: &GuestSession) -> Result<(BookingRequestResponse, String)> {
-    let id: Uuid = path_param::<Id>(cx).parse().map_err(|_| not_found())?;
+    let id: Uuid = id(cx).parse().map_err(|_| not_found())?;
     let token = service_token(cx, guest)?;
     let request = get_booking_request(id, &token)
         .await

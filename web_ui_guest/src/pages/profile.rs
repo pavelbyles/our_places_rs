@@ -35,7 +35,12 @@ struct ProfileQuery {
 }
 
 #[component]
-async fn profile_view(user: UserResponse, saved: bool, error: Option<String>) -> Result<impl View> {
+async fn profile_view(
+    cx: &Cx,
+    user: UserResponse,
+    saved: bool,
+    error: Option<String>,
+) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case tracking-normal font-normal";
     let currency = user.default_currency.clone();

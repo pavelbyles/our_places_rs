@@ -177,7 +177,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_guest 'web_ui_guest/src/pages/(auth|booking_change|bookings|checkout|enquiries|home|listing_detail)\.rs'` → `0`
   - **Dependencies:** Task 9
 
-- [ ] **Task 10b: Guest components batch B (13 components), tests, and the crate gate**
+- [x] **Task 10b: Guest components batch B (13 components), tests, and the crate gate**
   - **Scope:** S
   - **Description:** Put `cx` first on the remaining components. Change `__cx` to `cx` in the test modules in `home.rs` and `listings.rs`.
   - **Files Touched:** `web_ui_guest/src/pages/{listings,messages,profile,register,requests,reviews,verify,home}.rs`

@@ -136,6 +136,7 @@ fn classify(
 /// The search form, filled in from the URL.
 #[component]
 async fn listing_search_form(
+    cx: &Cx,
     /// The search so far.
     query: SearchQuery,
     /// Today, the earliest date to offer.
@@ -169,6 +170,7 @@ async fn listing_search_form(
 /// What's below the form: cards, an empty state, or why there are none.
 #[component]
 async fn listings_results(
+    cx: &Cx,
     /// What the search came to.
     outcome: SearchOutcome,
     /// What to say when nothing matched.
@@ -317,7 +319,7 @@ mod listings_page_tests {
     }
 
     async fn results(outcome: SearchOutcome, empty: &str) -> String {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let empty = empty.to_string();
         html(view! { listings_results(outcome: outcome, empty: empty) }).await
     }
@@ -501,7 +503,7 @@ mod listings_page_tests {
 
     #[tokio::test]
     async fn the_form_is_filled_in_from_the_url() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let query =
             parse("q=Runaway&check_in=2030-08-01&check_out=2030-08-04&guests=2&host=Sea-Grape");
         let out = html(view! {

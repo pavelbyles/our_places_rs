@@ -71,6 +71,7 @@ async fn token_info(token: &str) -> Result<ReviewTokenInfoResponse> {
 
 #[component]
 async fn review_form(
+    cx: &Cx,
     info: ReviewTokenInfoResponse,
     token: String,
     error: Option<String>,

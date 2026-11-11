@@ -35,7 +35,12 @@ pub struct ResendForm {
 }
 
 #[component]
-async fn verify_form(email: String, info: String, error: Option<String>) -> Result<impl View> {
+async fn verify_form(
+    cx: &Cx,
+    email: String,
+    info: String,
+    error: Option<String>,
+) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     Ok(view! {
