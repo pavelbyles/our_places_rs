@@ -189,7 +189,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 ### Phase 4: `web_ui_admin` (can run in parallel with Phase 3)
 
-- [ ] **Task 11: Admin router and session wiring**
+- [x] **Task 11: Admin router and session wiring**
   - **Scope:** S (high risk: R1, R3)
   - **Description:** Make the same router changes as Task 8, keeping the admin session cookie name from the baseline (Task 2). In `support.rs:64`, change `try_app_context` to `try_context`.
   - **Files Touched:** `web_ui_admin/src/main.rs`, `web_ui_admin/src/support.rs`
