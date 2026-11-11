@@ -1,0 +1,125 @@
+# guest portal response headers (http://localhost:3010) — baseline capture, topcoat 0.12.1
+# captured 2026-11-11T04:37:39Z; cookie values redacted; Date/ETag/request-id/Content-Length dropped
+
+### GET / (anonymous)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /login (anonymous)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /bookings (anonymous)
+HTTP/1.1 303 See Other
+location: /login?redirect=%2Fbookings
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### POST /login
+HTTP/1.1 303 See Other
+location: /bookings
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+set-cookie: __Host-op_guest_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+set-cookie: op_currency=<redacted>; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000
+
+
+### GET /bookings (authenticated)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+set-cookie: __Host-op_guest_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /bookings (authenticated, HX-Request partial)
+HTTP/1.1 200 OK
+content-type: text/html; charset=utf-8
+vary: Accept
+vary: Cookie
+vary: accept-encoding
+set-cookie: __Host-op_guest_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+cache-control: private, no-cache
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+
+### GET /currency/EUR (currency cookie)
+HTTP/1.1 303 See Other
+location: /
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+set-cookie: op_currency=<redacted>; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000
+set-cookie: __Host-op_guest_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=2592000
+
+
+### POST /logout
+HTTP/1.1 303 See Other
+location: /login
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+set-cookie: __Host-op_guest_session=<redacted>; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=0; Expires=<date>
+
+
+### GET /bookings (after logout)
+HTTP/1.1 303 See Other
+location: /login?redirect=%2Fbookings
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https://storage.googleapis.com http://localhost:4443 data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+cross-origin-opener-policy: same-origin
+
+

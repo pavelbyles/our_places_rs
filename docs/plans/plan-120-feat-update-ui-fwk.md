@@ -242,10 +242,15 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `cargo fmt --all --check && SQLX_OFFLINE=true cargo check --workspace --all-targets`
   - **Dependencies:** Tasks 10b, 13b
 
-- [ ] **Task 15: Workspace lint and tests, plus checks against the baseline**
+- [x] **Task 15: Workspace lint and tests, plus checks against the baseline**
   - **Scope:** S
   - **Description:** Run clippy and the full test suite once. Rerun `devenv shell -- tasks/baseline-120/capture.sh <guest|admin> tasks/baseline-120/<kind>-headers.after.txt` on 0.12 and diff it against the baseline. Ignore only the first 2 comment lines. Run the acceptance grep from spec §4.
   - **Files Touched:** `tasks/baseline-120/*-headers.after.txt` (new)
+  - **Result:**
+    - Clippy with `-D warnings` is clean, and `cargo test --workspace` passes 1124 tests with 0 failures.
+    - The admin headers are byte-identical to the baseline.
+    - The guest headers are identical per response, except that two `Set-Cookie` lines (`op_currency` and the session cookie) are emitted in a different order on login and on `/currency/{code}`. Every attribute is unchanged, and `Set-Cookie` order carries no meaning.
+    - The leftover-API grep finds 0 hits, and no `.unwrap()` or `.expect()` calls were added.
   - **Acceptance Criteria:**
     - [ ] Clippy reports no warnings.
     - [ ] `cargo test --workspace` passes.
