@@ -74,10 +74,11 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `cargo tree -i topcoat@0.12.1 >/dev/null && ! cargo tree -i topcoat@0.10.0 2>/dev/null && ! cargo tree -i topcoat@0.11.0 2>/dev/null`
   - **Dependencies:** Task 1
 
-- [ ] **Task 4: Move `web_client` to the single context API**
+- [x] **Task 4: Move `web_client` to the single context API**
   - **Scope:** XS
   - **Description:** Change `try_app_context` to `try_context` (`client.rs:453`). **Delete** the `try_request_context::<SessionState>` guard (`session.rs:112`), because `SessionState` is crate-private in 0.12 (spec §2a Q3). Update the doc comments that mention `app_context`. `#[memoize]` already takes `cx` first, so it needs no change.
   - **Files Touched:** `web_client/src/client.rs`, `web_client/src/session.rs`
+  - **Result:** Deleting the guard on its own would let a bare `Cx` panic inside `topcoat_cookie::cookies`. I replaced it with `topcoat::cookie::try_cookies(cx).ok_or(Unauthenticated)?` and added the regression test `tests/session.rs::guards_without_cookie_layer_are_unauthenticated`, which was red (it panicked) and is now green.
   - **Acceptance Criteria:**
     - [ ] `app_context` and `request_context` no longer appear in `web_client/`.
     - [ ] The session guard tests pass. If `SessionState` behaves differently (Task 1, Q3), this task includes the fix.

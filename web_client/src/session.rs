@@ -1,5 +1,5 @@
 use common::models::SessionResponse;
-use topcoat::context::{Cx, memoize, try_request_context};
+use topcoat::context::{Cx, memoize};
 use uuid::Uuid;
 
 use crate::auth::token_hash_to_hex;
@@ -109,7 +109,9 @@ fn valid_user(session: &SessionResponse, namespace: &str) -> Result<Uuid, GuardE
 
 /// Looks up the current request's session in `namespace`, refreshing its TTL.
 async fn current_session(cx: &Cx, namespace: &str) -> Result<SessionResponse, GuardError> {
-    try_request_context::<topcoat::session::SessionState>(cx).ok_or(GuardError::Unauthenticated)?;
+    // Topcoat's session store panics without the router's `CookieLayer`
+    // (e.g. a bare `Cx` in tests); treat that as "no session".
+    topcoat::cookie::try_cookies(cx).ok_or(GuardError::Unauthenticated)?;
     let token_hash = topcoat::session::token_hash(cx)
         .await
         .map_err(|_| GuardError::Service)?

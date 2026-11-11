@@ -10,10 +10,10 @@ pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
 use std::sync::Arc;
-use topcoat::context::{Cx, try_app_context};
+use topcoat::context::{Cx, try_context};
 use uuid::Uuid;
 
-/// Strongly-typed HTTP Client & API Gateway Service registered in Topcoat's `app_context`.
+/// Strongly-typed HTTP Client & API Gateway Service registered in the Topcoat router context.
 #[derive(Clone)]
 pub struct TopcoatApiClient {
     /// Shared authenticated HTTP client used for every backend call.
@@ -447,10 +447,10 @@ impl TopcoatApiClient {
 
 static DEFAULT_CLIENT: std::sync::OnceLock<TopcoatApiClient> = std::sync::OnceLock::new();
 
-/// Extracts the registered `TopcoatApiClient` from Topcoat's `Cx` app_context.
+/// Extracts the `TopcoatApiClient` registered on the router (`.with(..)`) from `Cx`.
 /// Falls back to environment-configured default instance if not registered in context (useful for isolated unit tests).
 pub fn get_api_client(cx: &Cx) -> &TopcoatApiClient {
-    if let Some(client) = try_app_context::<TopcoatApiClient>(cx) {
+    if let Some(client) = try_context::<TopcoatApiClient>(cx) {
         client
     } else {
         DEFAULT_CLIENT.get_or_init(TopcoatApiClient::from_env)
