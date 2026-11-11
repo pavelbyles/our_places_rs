@@ -22,10 +22,10 @@ async fn html(v: impl topcoat::view::View, cx: &Cx) -> String {
 
 #[tokio::test]
 async fn toast_is_a_status_with_escaped_text() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let html = html(
         view! {  toast(message: "<b>Saved</b>".to_string(), variant: ToastVariant::Success)  },
-        __cx,
+        cx,
     )
     .await;
     assert!(html.contains(r#"role="status""#), "{html}");
@@ -36,8 +36,8 @@ async fn toast_is_a_status_with_escaped_text() {
 
 #[tokio::test]
 async fn toast_region_is_a_polite_live_region() {
-    let __cx = &Cx::default();
-    let html = html(view! {  toast_region()  }, __cx).await;
+    let cx = &Cx::default();
+    let html = html(view! {  toast_region()  }, cx).await;
     assert!(
         html.contains(r#"id="toast-region""#) && html.contains(r#"aria-live="polite""#),
         "{html}"
@@ -46,12 +46,12 @@ async fn toast_region_is_a_polite_live_region() {
 
 #[tokio::test]
 async fn steps_mark_only_the_current_step() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let html = html(
         view! {
            steps(labels: vec!["Dates".into(), "Details".into(), "Confirm".into()], current: 1)
         },
-        __cx,
+        cx,
     )
     .await;
     assert_eq!(html.matches(r#"aria-current="step""#).count(), 1, "{html}");
@@ -67,12 +67,12 @@ async fn steps_mark_only_the_current_step() {
 
 #[tokio::test]
 async fn stat_tile_renders_optional_hint() {
-    let __cx = &Cx::default();
-    let with = html(view! {  stat_tile(label: "Active Holds".into(), value: "3".into(), hint: Some("last 24h".into()))  }, __cx).await;
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
+    let with = html(view! {  stat_tile(label: "Active Holds".into(), value: "3".into(), hint: Some("last 24h".into()))  }, cx).await;
+    let cx = &Cx::default();
     let without = html(
         view! {  stat_tile(label: "Active Holds".into(), value: "3".into())  },
-        __cx,
+        cx,
     )
     .await;
     assert!(
@@ -84,10 +84,10 @@ async fn stat_tile_renders_optional_hint() {
 
 #[tokio::test]
 async fn framed_image_requires_alt_and_lazy_loads() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let html = html(view! {
         framed_image(src: "https://storage.googleapis.com/x.jpg".into(), alt: "Pool at dusk".into(), aspect: FrameAspect::Square)
-     }, __cx).await;
+     }, cx).await;
     assert!(
         html.contains(r#"alt="Pool at dusk""#) && html.contains(r#"loading="lazy""#),
         "{html}"
@@ -97,7 +97,7 @@ async fn framed_image_requires_alt_and_lazy_loads() {
 
 #[tokio::test]
 async fn hero_renders_headline_as_h1_and_overlays_children() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let html = html(
         view! {
            hero(
@@ -108,7 +108,7 @@ async fn hero_renders_headline_as_h1_and_overlays_children() {
                <form id="hero-search"></form>
            )
         },
-        __cx,
+        cx,
     )
     .await;
     assert!(
@@ -120,10 +120,10 @@ async fn hero_renders_headline_as_h1_and_overlays_children() {
 
 #[tokio::test]
 async fn star_rating_labels_the_average_or_says_new() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let rated = html(
         view! { star_rating(rating: Some(4.66), review_count: Some(12)) },
-        __cx,
+        cx,
     )
     .await;
     assert!(
@@ -131,7 +131,7 @@ async fn star_rating_labels_the_average_or_says_new() {
         "{rated}"
     );
     assert!(rated.contains("(12 reviews)"), "{rated}");
-    let unrated = html(view! { star_rating(rating: None) }, __cx).await;
+    let unrated = html(view! { star_rating(rating: None) }, cx).await;
     assert!(
         unrated.contains("New") && !unrated.contains("Rated"),
         "{unrated}"
@@ -140,10 +140,10 @@ async fn star_rating_labels_the_average_or_says_new() {
 
 #[tokio::test]
 async fn star_rating_input_has_five_labelled_required_radios() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let out = html(
         view! { star_rating_input(name: "value_rating".into(), label: "Value".into(), value: Some(4)) },
-        __cx,
+        cx,
     )
     .await;
     assert_eq!(out.matches(r#"type="radio""#).count(), 5, "{out}");
@@ -161,14 +161,14 @@ async fn star_rating_input_has_five_labelled_required_radios() {
 
 #[tokio::test]
 async fn chat_thread_is_a_log_and_bubbles_escape_text() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let out = html(
         view! {
             chat_thread(attrs: topcoat::view::attributes! { id="messages-list" },
                 chat_bubble(sender: "Host".into(), sent_at: "Jan 02, 14:00".into(), text: "<script>x</script>".into(), mine: false)
             )
         },
-        __cx,
+        cx,
     )
     .await;
     assert!(

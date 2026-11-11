@@ -165,7 +165,7 @@ fn symbol(currency: &str) -> &'static str {
 
 #[tokio::test]
 async fn tax_document_matches_legacy_figures_and_ids() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let cases = [
         (
             doc(
@@ -197,7 +197,7 @@ async fn tax_document_matches_legacy_figures_and_ids() {
     ];
     for (d, legacy, legacy_phrases) in cases {
         let r = d.clone();
-        let redesigned = html(view! { tax_document_view(doc: r) }, __cx).await;
+        let redesigned = html(view! { tax_document_view(doc: r) }, cx).await;
         for (id, expected) in DOC_IDS.into_iter().zip(&legacy) {
             assert_eq!(
                 text_of(&redesigned, id).as_deref(),
@@ -239,7 +239,7 @@ async fn tax_document_matches_legacy_figures_and_ids() {
 /// drawn size.
 #[tokio::test]
 async fn responsive_image_srcset_points_at_image_worker_variants() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let gcs = "https://storage.googleapis.com/b/optimized";
     let emulator = "http://localhost:4443/b/optimized";
     let all = |base: &str| {
@@ -260,7 +260,7 @@ async fn responsive_image_srcset_points_at_image_worker_variants() {
     ];
     for (src, expected) in cases {
         let r = src.clone();
-        let redesigned = html(view! { responsive_image(src: r, alt: "Pool".into()) }, __cx).await;
+        let redesigned = html(view! { responsive_image(src: r, alt: "Pool".into()) }, cx).await;
         let srcsets = redesigned
             .match_indices("srcset=\"")
             .map(|(i, _)| redesigned[i..].split('"').nth(1).unwrap_or("").to_string())
@@ -282,7 +282,7 @@ async fn responsive_image_srcset_points_at_image_worker_variants() {
     let src = format!("{emulator}/thumbnail/l_i.webp");
     let narrow = html(
         view! { responsive_image(src: src, alt: "Pool".into(), sizes: Some("280px".into())) },
-        __cx,
+        cx,
     )
     .await;
     assert!(narrow.contains(r#"sizes="280px""#), "{narrow}");
@@ -290,7 +290,7 @@ async fn responsive_image_srcset_points_at_image_worker_variants() {
 
 #[tokio::test]
 async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let listing = ListingSummary {
         slug: "the-courtyard-studio-new-kingston".into(),
         name: "The Courtyard Studio".into(),
@@ -310,7 +310,7 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
         stay_searched: false,
         search_query: None,
     };
-    let out = html(view! { listing_card(listing: listing) }, __cx).await;
+    let out = html(view! { listing_card(listing: listing) }, cx).await;
     for text in [
         "USD $650",
         "New Kingston, Jamaica",
@@ -329,7 +329,7 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
 
 #[tokio::test]
 async fn tax_document_shows_the_promo_discount_only_when_there_is_one() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let plain = doc(
         TaxDocumentType::PaymentReceipt,
         TaxDocumentStatus::Issued,
@@ -340,9 +340,9 @@ async fn tax_document_shows_the_promo_discount_only_when_there_is_one() {
         promo_discount: dec!(100.00),
         ..plain.clone()
     };
-    let without = html(view! { tax_document_view(doc: plain) }, __cx).await;
+    let without = html(view! { tax_document_view(doc: plain) }, cx).await;
     assert!(!without.contains("tot-promo"), "{without}");
-    let with = html(view! { tax_document_view(doc: promo) }, __cx).await;
+    let with = html(view! { tax_document_view(doc: promo) }, cx).await;
     assert!(with.contains("Includes promo discount (SUMMER):"), "{with}");
     assert!(with.contains("-$100.00"), "{with}");
 }

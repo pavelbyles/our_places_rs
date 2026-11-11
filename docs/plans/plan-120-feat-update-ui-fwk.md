@@ -128,7 +128,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_common 'web_ui_common/src/components/'` → `0`
   - **Dependencies:** Tasks 6a, 6b, 6c (the domain components call the primitives)
 
-- [ ] **Task 7: Migrate the `web_ui_common` tests and pass the crate gate**
+- [x] **Task 7: Migrate the `web_ui_common` tests and pass the crate gate**
   - **Scope:** S
   - **Description:** Change `let __cx = &Cx::default()` to `let cx = …` (or to whatever Task 1 Q5 says to use) in the test files and in the in-file `mod tests` of `currency_selector`, `listing_card` and `villa_card`.
   - **Files Touched:** `web_ui_common/tests/{components,date_range_calendar,domain_parity,money_parity,shells}.rs`, `web_ui_common/src/components/domain/{currency_selector,listing_card,villa_card}.rs`

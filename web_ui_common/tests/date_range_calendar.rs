@@ -82,7 +82,7 @@ fn fragment_url_keeps_the_selection() {
 
 #[tokio::test]
 async fn renders_two_months_with_booked_nights_disabled() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let props = CalendarProps {
         listing_slug: "villa-a".into(),
         month: d(2027, 1, 1),
@@ -97,7 +97,7 @@ async fn renders_two_months_with_booked_nights_disabled() {
         check_in_id: "reserve-check-in".into(),
         check_out_id: "reserve-check-out".into(),
     };
-    let out = html(view! { date_range_calendar(props: props) }, __cx).await;
+    let out = html(view! { date_range_calendar(props: props) }, cx).await;
     assert_eq!(out.matches(r#"role="grid""#).count(), 2, "two months");
     assert_eq!(out.matches("data-date=").count(), 31 + 28, "{out}");
     // 4 past (1-4 Jan) + 4 booked (10-13 Jan) nights are disabled.
@@ -133,7 +133,7 @@ async fn renders_two_months_with_booked_nights_disabled() {
 /// Regenerate with `UPDATE_FIXTURES=1 cargo test -p web_ui_common --test date_range_calendar`.
 #[tokio::test]
 async fn ui_js_fixture_matches_the_component() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let props = CalendarProps {
         listing_slug: "villa-a".into(),
         month: d(2027, 1, 1),
@@ -148,7 +148,7 @@ async fn ui_js_fixture_matches_the_component() {
         check_in_id: "reserve-check-in".into(),
         check_out_id: "reserve-check-out".into(),
     };
-    let rendered = html(view! { date_range_calendar(props: props) }, __cx).await;
+    let rendered = html(view! { date_range_calendar(props: props) }, cx).await;
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../playwright/e2e/ui-js/fixtures/calendar.html"

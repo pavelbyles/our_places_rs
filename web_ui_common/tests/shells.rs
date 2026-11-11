@@ -27,10 +27,10 @@ fn guest(user: Option<NavUser>) -> GuestShell {
 
 #[tokio::test]
 async fn signed_out_guest_gets_no_account_menu() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let out = html(
         view! { guest_chrome(shell: guest(None), <p>"page"</p>) },
-        __cx,
+        cx,
     )
     .await;
     assert!(!out.contains("nav-user-dropdown"), "{out}");
@@ -50,12 +50,12 @@ async fn signed_out_guest_gets_no_account_menu() {
 
 #[tokio::test]
 async fn signed_in_guest_gets_account_menu_and_post_logout() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let user = NavUser {
         name: "Casey <E2E>".into(),
         email: "casey@example.com".into(),
     };
-    let out = html(view! { guest_chrome(shell: guest(Some(user))) }, __cx).await;
+    let out = html(view! { guest_chrome(shell: guest(Some(user))) }, cx).await;
     assert!(
         out.contains(r#"id="nav-user-dropdown""#) && out.contains("Casey &lt;E2E&gt;"),
         "{out}"
@@ -66,8 +66,8 @@ async fn signed_in_guest_gets_account_menu_and_post_logout() {
 
 #[tokio::test]
 async fn theme_toggle_names_the_next_theme() {
-    let __cx = &Cx::default();
-    let out = html(view! { guest_chrome(shell: guest(None)) }, __cx).await;
+    let cx = &Cx::default();
+    let out = html(view! { guest_chrome(shell: guest(None)) }, cx).await;
     assert!(
         out.contains(r#"aria-label="Switch to dark theme""#),
         "dim -> dark: {out}"
@@ -100,9 +100,9 @@ fn unread_badge_label_hides_at_zero_and_caps_at_99() {
 
 #[tokio::test]
 async fn admin_nav_shows_unread_guest_messages_on_inbox() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let quiet_shell = admin(Some(AdminRole::Host));
-    let quiet = html(view! { admin_chrome(shell: quiet_shell) }, __cx).await;
+    let quiet = html(view! { admin_chrome(shell: quiet_shell) }, cx).await;
     assert!(
         !quiet.contains("admin-nav-unread"),
         "no badge at 0: {quiet}"
@@ -112,7 +112,7 @@ async fn admin_nav_shows_unread_guest_messages_on_inbox() {
     if let Some(user) = shell.user.as_mut() {
         user.unread_messages = 3;
     }
-    let out = html(view! { admin_chrome(shell: shell) }, __cx).await;
+    let out = html(view! { admin_chrome(shell: shell) }, cx).await;
     assert!(out.contains(r#"id="admin-nav-unread""#), "{out}");
     assert!(out.contains(r#"id="admin-mobile-nav-unread""#), "{out}");
     assert!(out.contains(r#"aria-label="3 unread messages""#), "{out}");
@@ -121,10 +121,10 @@ async fn admin_nav_shows_unread_guest_messages_on_inbox() {
 
 #[tokio::test]
 async fn hosts_do_not_see_user_management() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let host = html(
         view! { admin_chrome(shell: admin(Some(AdminRole::Host))) },
-        __cx,
+        cx,
     )
     .await;
     assert!(!host.contains("/admin/users"), "{host}");
@@ -134,7 +134,7 @@ async fn hosts_do_not_see_user_management() {
     );
     let full = html(
         view! { admin_chrome(shell: admin(Some(AdminRole::Admin))) },
-        __cx,
+        cx,
     )
     .await;
     assert!(
@@ -145,10 +145,10 @@ async fn hosts_do_not_see_user_management() {
 
 #[tokio::test]
 async fn signed_out_admin_pages_have_no_console_navigation() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let out = html(
         view! { admin_chrome(shell: admin(None), <form id="login"></form>) },
-        __cx,
+        cx,
     )
     .await;
     assert!(
