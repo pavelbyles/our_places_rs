@@ -47,6 +47,7 @@ pub struct GuestShell {
 /// document head so it can be rendered without the asset bundle.
 #[component]
 pub async fn guest_chrome(
+    cx: &Cx,
     /// Shell data.
     shell: GuestShell,
     /// Page content.
@@ -134,6 +135,7 @@ pub async fn guest_chrome(
 /// stylesheet, fonts, htmx and `ui.js` (no inline scripts), then the chrome.
 #[component]
 pub async fn guest_document(
+    cx: &Cx,
     /// Shell data.
     shell: GuestShell,
     /// The bin's compiled Tailwind stylesheet (`topcoat::tailwind::stylesheet!()`).
@@ -168,20 +170,20 @@ pub async fn guest_document(
 /// Renders a guest page: just `slot` for an HTMX partial request, otherwise
 /// the full document. `user` must come from the server session.
 pub async fn guest_shell<'a>(
-    __cx: &'a Cx,
+    cx: &'a Cx,
     stylesheet: Asset,
     title: impl Into<String>,
     user: Option<NavUser>,
     currency: Option<String>,
     slot: Child<'a>,
 ) -> Result<impl View + 'a> {
-    let partial = topcoat::htmx::hx_request(__cx) && !topcoat::htmx::hx_boosted(__cx);
+    let partial = topcoat::htmx::hx_request(cx) && !topcoat::htmx::hx_boosted(cx);
     let shell = GuestShell {
         title: title.into(),
         user,
-        theme: theme_for_request(__cx),
+        theme: theme_for_request(cx),
         currency,
-        return_to: return_to(uri(__cx).path(), uri(__cx).query().unwrap_or_default()),
+        return_to: return_to(uri(cx).path(), uri(cx).query().unwrap_or_default()),
     };
     Ok(view! {
         if partial {

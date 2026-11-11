@@ -57,6 +57,7 @@ const NAV_LINK: &str = "flex h-10 items-center rounded-lg px-3 text-sm text-side
 /// signed-out pages). Rendered without the asset bundle, so it is testable.
 #[component]
 pub async fn admin_chrome(
+    cx: &Cx,
     /// Shell data.
     shell: AdminShell,
     /// Page content.
@@ -145,6 +146,7 @@ pub async fn admin_chrome(
 /// stylesheet, Inter, htmx and `ui.js` (no inline scripts), then the chrome.
 #[component]
 pub async fn admin_document(
+    cx: &Cx,
     /// Shell data.
     shell: AdminShell,
     /// The bin's compiled Tailwind stylesheet (`topcoat::tailwind::stylesheet!()`).
@@ -178,17 +180,17 @@ pub async fn admin_document(
 /// Renders an admin page: just `slot` for an HTMX partial request,
 /// otherwise the full document. `user` must come from the server session.
 pub async fn admin_shell<'a>(
-    __cx: &'a Cx,
+    cx: &'a Cx,
     stylesheet: Asset,
     title: impl Into<String>,
     user: Option<AdminNavUser>,
     slot: Child<'a>,
 ) -> Result<impl View + 'a> {
-    let partial = topcoat::htmx::hx_request(__cx) && !topcoat::htmx::hx_boosted(__cx);
+    let partial = topcoat::htmx::hx_request(cx) && !topcoat::htmx::hx_boosted(cx);
     let shell = AdminShell {
         title: title.into(),
         user,
-        theme: theme_for_request(__cx),
+        theme: theme_for_request(cx),
     };
     Ok(view! {
         if partial {

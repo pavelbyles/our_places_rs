@@ -87,7 +87,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 ### Phase 2: `web_ui_common`
 
-- [ ] **Task 5: Common infrastructure (shells, layers, bundler)**
+- [x] **Task 5: Common infrastructure (shells, layers, bundler)**
   - **Scope:** S
   - **Description:** Rename the `__cx` parameter to `cx` in `admin_shell` and `guest_shell`, and add `cx` first to the 2 shell components in each file. Fix the `Layer` impls and `topcoat_bundler` if Task 1 found changes. Update the `theme.rs:123` doc comment from `.cookies()` to `CookieLayer`.
   - **Files Touched:** `web_ui_common/src/shell_guest.rs`, `web_ui_common/src/shell_admin.rs`, `web_ui_common/src/security_headers.rs`, `web_ui_common/src/request_tracing.rs`, `web_ui_common/src/bin/topcoat_bundler.rs`, `web_ui_common/src/theme.rs`

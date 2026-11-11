@@ -120,7 +120,7 @@ fn theme_for_hour(hour: u32) -> ThemeChoice {
 }
 
 /// Resolves the theme for the current request from its cookies. Requires
-/// the router's cookie layer (`.cookies()`).
+/// the router's cookie layer (`.layer(CookieLayer::new())`).
 pub fn theme_for_request(cx: &Cx) -> ThemeChoice {
     let jar = cookies(cx);
     let theme = jar.get(THEME_COOKIE);
