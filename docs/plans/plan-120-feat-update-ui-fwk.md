@@ -140,7 +140,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 ### Phase 3: `web_ui_guest` (can run in parallel with Phase 4)
 
-- [ ] **Task 8: Guest router and session wiring**
+- [x] **Task 8: Guest router and session wiring**
   - **Scope:** S (high risk: R1, R3)
   - **Description:** Make these router changes, keeping the relative order of `SecurityHeaders` and `RequestTracing` (Task 1 Q9):
 

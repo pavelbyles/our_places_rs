@@ -1,6 +1,6 @@
 use common::models::{CreateSessionRequest, UpdateUserRequest, UserResponse};
 use serde::Deserialize;
-use topcoat::context::{Cx, try_app_context};
+use topcoat::context::{Cx, try_context};
 use topcoat::cookie::{Cookie, Cookies, SameSite, cookies, time::Duration};
 use topcoat::router::parse_query_params;
 use topcoat::router::request::{headers, uri};
@@ -128,7 +128,7 @@ pub async fn guest(cx: &Cx) -> topcoat::Result<GuestSession> {
 
 /// A short-lived token for calling the backend as `guest`.
 pub fn service_token(cx: &Cx, guest: &GuestSession) -> topcoat::Result<String> {
-    let jwt = try_app_context::<ServiceJwt>(cx)
+    let jwt = try_context::<ServiceJwt>(cx)
         .ok_or_else(|| web_client::app_error("service JWT is not configured"))?;
     jwt.mint(guest.user_id)
         .map_err(|e| web_client::app_error(e).into())
