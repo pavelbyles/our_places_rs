@@ -44,7 +44,7 @@ struct BookingCard {
 }
 
 #[component]
-async fn booking_card(card: BookingCard) -> Result<impl View> {
+async fn booking_card(cx: &Cx, card: BookingCard) -> Result<impl View> {
     let b = card.booking;
     let id = b.id.to_string();
     let status = status_of(&b);
@@ -256,7 +256,7 @@ async fn refund_quote(cx: &Cx, id: Uuid) -> Result<RefundQuote> {
 }
 
 #[component]
-async fn quote_details(quote: RefundQuote, currency: String) -> Result<impl View> {
+async fn quote_details(cx: &Cx, quote: RefundQuote, currency: String) -> Result<impl View> {
     let pct = (quote.policy_pct * rust_decimal::Decimal::ONE_HUNDRED).round();
     Ok(view! {
         <dl id="cancel-modal-quote-details" class="space-y-1 rounded-lg border border-border p-4 text-sm">
@@ -271,7 +271,7 @@ async fn quote_details(quote: RefundQuote, currency: String) -> Result<impl View
 /// anyone else's).
 #[page("/bookings/{id}/cancellation-quote")]
 pub async fn cancellation_quote(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     let booking = owned_booking(cx, &guest, id).await?;
     let quote = refund_quote(cx, id).await?;
@@ -283,7 +283,7 @@ pub async fn cancellation_quote(cx: &Cx) -> Result<impl View> {
 /// `ui.js` (`data-auto-open`).
 #[page("/bookings/{id}/cancel")]
 pub async fn cancel_dialog(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     let booking = owned_booking(cx, &guest, id).await?;
     let quote = refund_quote(cx, id).await.ok();
@@ -311,7 +311,7 @@ pub async fn cancel_dialog(cx: &Cx) -> Result<impl View> {
 /// Cancels one of the guest's bookings.
 #[page(POST "/bookings/{id}/cancel")]
 pub async fn cancel_booking(cx: &Cx) -> Result<()> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     owned_booking(cx, &guest, id).await?;
     let token = service_token(cx, &guest)?;

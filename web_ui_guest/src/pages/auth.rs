@@ -46,6 +46,7 @@ impl LoginError {
 
 #[component]
 async fn login_form(
+    cx: &Cx,
     email: String,
     redirect: String,
     error: Option<LoginError>,

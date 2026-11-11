@@ -195,7 +195,7 @@ struct CheckoutView {
 }
 
 #[component]
-async fn checkout_view(v: CheckoutView) -> Result<impl View> {
+async fn checkout_view(cx: &Cx, v: CheckoutView) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case tracking-normal font-normal";
     let today = jamaica_today().to_string();
@@ -383,7 +383,7 @@ async fn build_view(
 /// Checkout. Signed-in guests only; without dates it asks for them first.
 #[page("/checkout/{slug}")]
 pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let offered = active_currency_codes(cx).await;
     if let Some((base, currency)) = split_currency_suffix(slug, &offered) {
         return Err(redirect_permanent(format!("/checkout/{base}?currency={currency}")).into());
@@ -422,7 +422,7 @@ pub async fn checkout_submit(
     /// The submitted checkout form.
     Form(form): Form<CheckoutForm>,
 ) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let guest = match require_guest(cx).await {
         Ok(guest) => guest,
         Err(GuardError::Unauthenticated) => {
@@ -665,7 +665,7 @@ macro_rules! legacy_currency_checkout {
         /// Legacy per-currency checkout URL; redirects permanently.
         #[page($path)]
         pub async fn $name(cx: &Cx) -> Result<()> {
-            let id: &str = path_param::<Id>(cx);
+            let id: &str = id(cx);
             Err(redirect_permanent(format!("/checkout/{id}?currency={}", $currency)).into())
         }
     };

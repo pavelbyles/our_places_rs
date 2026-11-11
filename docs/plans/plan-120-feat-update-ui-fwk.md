@@ -170,7 +170,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
     - The second part is a manual review: no remaining errors should be about params.
   - **Dependencies:** Task 8
 
-- [ ] **Task 10a: Guest components batch A (`cx` first on 9 components)**
+- [x] **Task 10a: Guest components batch A (`cx` first on 9 components)**
   - **Scope:** S (mechanical)
   - **Files Touched:** `web_ui_guest/src/pages/{auth,booking_change,bookings,checkout,enquiries,home,listing_detail}.rs`
   - **Acceptance Criteria:** `cx: &Cx` is first on every component in these files.

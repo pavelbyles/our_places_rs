@@ -50,6 +50,7 @@ pub fn friendly_error(err: &anyhow::Error) -> String {
 /// The guest's view of one message.
 #[component]
 pub async fn thread_message(
+    cx: &Cx,
     /// The message.
     message: BookingMessageResponse,
 ) -> Result<impl View> {
@@ -63,6 +64,7 @@ pub async fn thread_message(
 /// A conversation with its reply form. `action` is where replies post.
 #[component]
 pub async fn conversation_panel(
+    cx: &Cx,
     /// The thread, oldest first.
     messages: Vec<BookingMessageResponse>,
     /// Where replies post.
@@ -139,6 +141,7 @@ pub async fn post_reply(
 /// The new bubble to append, or why the message wasn't sent.
 #[component]
 pub async fn reply_result(
+    cx: &Cx,
     /// The posted message, or why it wasn't sent.
     sent: std::result::Result<BookingMessageResponse, String>,
 ) -> Result<impl View> {
@@ -181,6 +184,7 @@ async fn active_listing(cx: &Cx, slug: &str) -> Result<ListingDetails> {
 
 #[component]
 async fn enquiry_form(
+    cx: &Cx,
     details: ListingDetails,
     check_in: String,
     check_out: String,
@@ -222,7 +226,7 @@ async fn enquiry_form(
 #[page("/listings/{slug}/enquire")]
 pub async fn enquire_page(cx: &Cx) -> Result<impl View> {
     guest(cx).await?;
-    let details = active_listing(cx, path_param::<Slug>(cx)).await?;
+    let details = active_listing(cx, slug(cx)).await?;
     let q = parse_query_params::<EnquireQuery>(cx).unwrap_or_default();
     Ok(view! {
         enquiry_form(
@@ -244,7 +248,7 @@ pub async fn enquire_submit(
     Form(form): Form<EnquiryForm>,
 ) -> Result<impl View> {
     let guest = guest(cx).await?;
-    let details = active_listing(cx, path_param::<Slug>(cx)).await?;
+    let details = active_listing(cx, slug(cx)).await?;
     let token = service_token(cx, &guest)?;
     let currency = display_currency(cx)
         .await
@@ -293,7 +297,7 @@ async fn own_enquiry(
     cx: &Cx,
     guest: &GuestSession,
 ) -> Result<(common::booking_request::EnquiryResponse, String)> {
-    let id: Uuid = path_param::<Id>(cx).parse().map_err(|_| not_found())?;
+    let id: Uuid = id(cx).parse().map_err(|_| not_found())?;
     let token = service_token(cx, guest)?;
     let enquiry = get_enquiry(id, &token).await.map_err(|_| not_found())?;
     if enquiry.guest_id != guest.user_id {

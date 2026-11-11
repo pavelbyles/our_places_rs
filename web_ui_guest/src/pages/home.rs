@@ -29,6 +29,7 @@ const PERKS: [(&str, &str); 3] = [
 /// The hero's search form, which leads to `/listings`.
 #[component]
 async fn home_search_form(
+    cx: &Cx,
     /// Today, the earliest date to offer.
     today: String,
     /// Display currency, kept across the search.
@@ -103,14 +104,14 @@ mod default_guests_tests {
     use topcoat::view::ViewExt;
 
     async fn form(currency: Option<&str>) -> String {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let currency = currency.map(str::to_string);
         let rendered =
             view! { home_search_form(today: "2030-06-15".to_string(), currency: currency) }
                 .first()
                 .await;
         match rendered {
-            Ok(handle) => handle.render(__cx),
+            Ok(handle) => handle.render(cx),
             Err(e) => panic!("render failed: {e}"),
         }
     }

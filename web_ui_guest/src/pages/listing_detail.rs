@@ -134,6 +134,7 @@ type StayQuote =
 /// the booking button and the "Ask a question" link.
 #[component]
 async fn quote_panel(
+    cx: &Cx,
     slug: String,
     quote: StayQuote,
     href: String,
@@ -247,7 +248,7 @@ fn gallery_layout(count: usize) -> (&'static str, Vec<(&'static str, &'static st
 /// Listing detail: gallery, facts, reviews and the booking card.
 #[page("/listings/{slug}")]
 pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let Loaded {
         details,
         currency,
@@ -447,7 +448,7 @@ async fn initial_breakdown(
 /// Quote fragment for the booking card (`hx-get` on date/guest change).
 #[page("/listings/{slug}/quote")]
 pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let Loaded {
         details, currency, ..
     } = load(cx, slug).await?;
@@ -465,7 +466,7 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
 /// Calendar fragment for prev/next month navigation.
 #[page("/listings/{slug}/calendar")]
 pub async fn listing_calendar(cx: &Cx) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let details = load(cx, slug).await?.details;
     let q = stay_query(cx);
     let month = q

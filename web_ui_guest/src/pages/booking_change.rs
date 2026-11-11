@@ -55,6 +55,7 @@ impl ChangeForm {
 
 #[component]
 async fn change_page(
+    cx: &Cx,
     booking: BookingResponse,
     form: ChangeForm,
     error: Option<String>,
@@ -103,7 +104,7 @@ async fn change_page(
 /// The change-dates page for one of the guest's bookings.
 #[page("/bookings/{id}/change-dates")]
 pub async fn change_dates_page(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     let booking = owned_booking(cx, &guest, id).await?;
     Ok(view! { change_page(booking: booking, form: ChangeForm::default(), error: None) })
@@ -111,6 +112,7 @@ pub async fn change_dates_page(cx: &Cx) -> Result<impl View> {
 
 #[component]
 async fn quote_preview(
+    cx: &Cx,
     quote: Option<ReservationChangeQuoteResponse>,
     error: Option<String>,
 ) -> Result<impl View> {
@@ -137,7 +139,7 @@ pub async fn change_quote(
     /// The current change-dates form.
     Form(form): Form<ChangeForm>,
 ) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     owned_booking(cx, &guest, id).await?;
     let (quote, error) = match form.dates() {
@@ -180,7 +182,7 @@ pub async fn create_change_request(
     /// The change-dates form.
     Form(form): Form<ChangeForm>,
 ) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     let booking = owned_booking(cx, &guest, id).await?;
     let error = match form.dates() {
@@ -221,8 +223,8 @@ enum Response {
 }
 
 async fn respond(cx: &Cx, action: Response) -> Result<()> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
-    let request_id = parse_booking_id(path_param::<RequestId>(cx))?;
+    let id = parse_booking_id(id(cx))?;
+    let request_id = parse_booking_id(request_id(cx))?;
     let guest = guest(cx).await?;
     owned_booking(cx, &guest, id).await?;
     let token = service_token(cx, &guest)?;
