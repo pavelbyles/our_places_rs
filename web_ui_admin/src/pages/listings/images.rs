@@ -72,7 +72,7 @@ pub async fn presign_images(
     Json(request): Json<UploadRequest>,
 ) -> Result<Json<Vec<ImagePresignResponse>>> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     check_files(&request.files).map_err(web_client::app_error)?;
@@ -119,6 +119,7 @@ pub async fn listing_photos(cx: &Cx, listing_id: Uuid) -> Vec<ListingImageRespon
 /// after a removal, and ui.js re-reads it from the page after an upload.
 #[component]
 pub async fn photo_grid(
+    cx: &Cx,
     /// The listing the photos belong to.
     listing_id: Uuid,
     /// Listing name, used as alt text.
@@ -162,7 +163,7 @@ pub async fn remove_image(
     Form(form): Form<RemoveForm>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let error = match common::app_client::delete_listing_image(

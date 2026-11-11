@@ -219,6 +219,7 @@ fn listings_text(code: &PromoCodeResponse) -> String {
 /// Every code the user manages, with its usage and a deactivate action.
 #[component]
 pub async fn promo_codes_card(
+    cx: &Cx,
     /// The codes to list.
     codes: Vec<PromoCodeResponse>,
     /// Errors to show above the list.
@@ -276,6 +277,7 @@ pub async fn promo_codes_card(
 /// The form for creating a code.
 #[component]
 pub async fn promo_code_form(
+    cx: &Cx,
     /// Listings the user may select.
     listings: Vec<ListingResponse>,
     /// The form as typed.
@@ -348,6 +350,7 @@ async fn load_codes(cx: &Cx, token: &str) -> (Vec<PromoCodeResponse>, Vec<String
 /// The whole page.
 #[component]
 async fn promo_codes_view(
+    cx: &Cx,
     /// The codes to list.
     codes: Vec<PromoCodeResponse>,
     /// Errors loading the list.
@@ -419,7 +422,7 @@ pub async fn create_promo_code(
 pub async fn deactivate_promo_code(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
     let token = service_token(cx, &user)?;
-    let error = match Uuid::parse_str(path_param::<Id>(cx)) {
+    let error = match Uuid::parse_str(id(cx)) {
         Err(_) => Some("Unknown promo code.".to_string()),
         Ok(id) => match get_api_client(cx)
             .deactivate_promo_code_as(&token, id)
@@ -556,10 +559,10 @@ mod tests {
 
     #[tokio::test]
     async fn promo_codes_list_shows_usage_and_deactivate_stops_double_submits() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let out = html(
             view! { promo_codes_card(codes: vec![code(false)], errors: Vec::new()) },
-            __cx,
+            cx,
         )
         .await;
         assert!(out.contains(r#"data-promo-code="SUMMER""#), "{out}");
@@ -571,10 +574,10 @@ mod tests {
 
     #[tokio::test]
     async fn promo_codes_deactivated_code_has_no_action() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let out = html(
             view! { promo_codes_card(codes: vec![code(true)], errors: Vec::new()) },
-            __cx,
+            cx,
         )
         .await;
         assert!(out.contains("Deactivated"), "{out}");
@@ -583,10 +586,10 @@ mod tests {
 
     #[tokio::test]
     async fn promo_codes_errors_are_escaped() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let out = html(
             view! { promo_codes_card(codes: Vec::new(), errors: vec!["<script>x</script>".to_string()]) },
-            __cx,
+            cx,
         )
         .await;
         assert!(!out.contains("<script>x"), "{out}");

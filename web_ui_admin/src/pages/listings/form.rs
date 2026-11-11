@@ -6,6 +6,7 @@ use common::booking_request::BookingMode;
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{View, component, view},
@@ -507,6 +508,7 @@ pub type OwnerOption = (String, String);
 /// The studio form. `owners` is empty for hosts (they own what they make).
 #[component]
 pub async fn listing_form(
+    cx: &Cx,
     /// Where the form posts.
     action: String,
     /// Submit button text.

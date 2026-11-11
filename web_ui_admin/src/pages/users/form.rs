@@ -25,6 +25,7 @@ path_param!(id);
 /// Validation or service errors above a form.
 #[component]
 async fn form_errors(
+    cx: &Cx,
     /// Messages to list.
     errors: Vec<String>,
 ) -> Result<impl View> {
@@ -41,6 +42,7 @@ async fn form_errors(
 /// element IDs unique (`new-user` or `edit-user`).
 #[component]
 async fn user_fields(
+    cx: &Cx,
     /// Current values.
     form: UserForm,
     /// ID prefix for inputs.
@@ -145,6 +147,7 @@ async fn user_fields(
 /// The create-account page body.
 #[component]
 async fn create_form(
+    cx: &Cx,
     /// Current values.
     form: UserForm,
     /// Messages to show.
@@ -233,6 +236,7 @@ pub async fn create_user(
 /// The edit dialog fragment (swapped into `#user-dialog-slot`).
 #[component]
 async fn edit_dialog(
+    cx: &Cx,
     /// The account being edited.
     user_id: Uuid,
     /// Current values.
@@ -261,7 +265,7 @@ async fn edit_dialog(
 }
 
 fn parse_id(cx: &Cx) -> Result<Uuid> {
-    Uuid::from_str(path_param::<Id>(cx)).map_err(|_| not_found().into())
+    Uuid::from_str(id(cx)).map_err(|_| not_found().into())
 }
 
 /// Opens the edit dialog for an account.

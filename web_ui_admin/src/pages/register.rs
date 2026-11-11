@@ -66,7 +66,7 @@ const INPUT: &str =
     "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
 
 #[component]
-async fn host_form(form: HostForm, error: Option<String>) -> Result<impl View> {
+async fn host_form(cx: &Cx, form: HostForm, error: Option<String>) -> Result<impl View> {
     Ok(view! {
         <div class="w-full max-w-lg space-y-6 rounded-xl border border-border bg-card p-8 text-card-foreground">
             <div class="space-y-1">
@@ -157,7 +157,12 @@ pub async fn register_submit(
 }
 
 #[component]
-async fn verify_form(email: String, info: String, error: Option<String>) -> Result<impl View> {
+async fn verify_form(
+    cx: &Cx,
+    email: String,
+    info: String,
+    error: Option<String>,
+) -> Result<impl View> {
     Ok(view! {
         <div class="w-full max-w-md space-y-6 rounded-xl border border-border bg-card p-8 text-card-foreground">
             <h1 class="text-2xl font-semibold">"Verify your email"</h1>

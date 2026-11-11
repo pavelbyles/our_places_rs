@@ -122,7 +122,7 @@ fn notice(cx: &Cx) -> Option<String> {
 // ---------------------------------------------------------------- inbox
 
 #[component]
-async fn metrics_card(metrics: Vec<HostResponseMetrics>) -> Result<impl View> {
+async fn metrics_card(cx: &Cx, metrics: Vec<HostResponseMetrics>) -> Result<impl View> {
     Ok(view! {
         <section id="inbox-metrics" aria-label="Response times" class="grid gap-3 sm:grid-cols-3">
             for m in metrics {
@@ -181,6 +181,7 @@ pub fn preview(text: &str, max: usize) -> String {
 
 #[component]
 async fn unread_thread_row(
+    cx: &Cx,
     thread: UnreadThread,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<impl View> {
@@ -219,7 +220,7 @@ async fn unread_thread_row(
 }
 
 #[component]
-async fn inbox_row(item: InboxItem) -> Result<impl View> {
+async fn inbox_row(cx: &Cx, item: InboxItem) -> Result<impl View> {
     let href = if item.kind == "request" {
         format!("/admin/requests/{}", item.id)
     } else {
@@ -320,7 +321,7 @@ pub async fn inbox_page(cx: &Cx) -> Result<impl View> {
 // --------------------------------------------------------------- thread
 
 #[component]
-async fn host_bubble(message: BookingMessageResponse) -> Result<impl View> {
+async fn host_bubble(cx: &Cx, message: BookingMessageResponse) -> Result<impl View> {
     let mine = message.sender_role != MessageSenderRole::Guest;
     let sent_at = message.created_at.format("%b %d, %H:%M").to_string();
     Ok(view! {
@@ -329,7 +330,11 @@ async fn host_bubble(message: BookingMessageResponse) -> Result<impl View> {
 }
 
 #[component]
-async fn host_thread(messages: Vec<BookingMessageResponse>, action: String) -> Result<impl View> {
+async fn host_thread(
+    cx: &Cx,
+    messages: Vec<BookingMessageResponse>,
+    action: String,
+) -> Result<impl View> {
     Ok(view! {
         <section aria-label="Messages" class="space-y-3">
             <h2 class="text-lg font-semibold">"Messages"</h2>
@@ -376,6 +381,7 @@ pub struct ReplyForm {
 
 #[component]
 async fn reply_result(
+    cx: &Cx,
     sent: std::result::Result<BookingMessageResponse, String>,
 ) -> Result<impl View> {
     Ok(view! {
@@ -410,7 +416,7 @@ async fn send_reply(
 // -------------------------------------------------------------- request
 
 async fn managed_request(cx: &Cx, user: &AdminSession) -> Result<(BookingRequestResponse, String)> {
-    let id: Uuid = path_param::<Id>(cx).parse().map_err(|_| not_found())?;
+    let id: Uuid = id(cx).parse().map_err(|_| not_found())?;
     let token = service_token(cx, user)?;
     let request = get_booking_request(id, &token)
         .await
@@ -425,6 +431,7 @@ async fn managed_request(cx: &Cx, user: &AdminSession) -> Result<(BookingRequest
 /// where the HTMX preview posts, if there is one.
 #[component]
 async fn quote_form(
+    cx: &Cx,
     action: String,
     preview: Option<String>,
     base_currency: String,
@@ -623,7 +630,10 @@ pub async fn quote_submit(
 }
 
 #[component]
-async fn preview_result(outcome: std::result::Result<PriceBreakdown, String>) -> Result<impl View> {
+async fn preview_result(
+    cx: &Cx,
+    outcome: std::result::Result<PriceBreakdown, String>,
+) -> Result<impl View> {
     Ok(view! {
         match outcome {
             Ok(price) => { <div id="quote-preview-breakdown">price_breakdown(quote: price)</div> }
@@ -678,7 +688,7 @@ async fn managed_enquiry(
     cx: &Cx,
     user: &AdminSession,
 ) -> Result<(common::booking_request::EnquiryResponse, String)> {
-    let id: Uuid = path_param::<Id>(cx).parse().map_err(|_| not_found())?;
+    let id: Uuid = id(cx).parse().map_err(|_| not_found())?;
     let token = service_token(cx, user)?;
     let enquiry = get_enquiry(id, &token).await.map_err(|_| not_found())?;
     if enquiry.guest_id == user.user_id {
@@ -709,6 +719,7 @@ pub fn earnings_rows(e: &HostEarningsEstimate) -> Vec<(String, String)> {
 /// What the host could earn from the enquiry, or why there is no figure.
 #[component]
 async fn earnings_card(
+    cx: &Cx,
     /// The estimate, if the stay could be priced.
     estimate: Option<HostEarningsEstimate>,
 ) -> Result<impl View> {

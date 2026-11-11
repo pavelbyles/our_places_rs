@@ -15,7 +15,7 @@ async fn html(v: impl topcoat::view::View, cx: &Cx) -> String {
 
 #[tokio::test]
 async fn the_card_shows_counts_and_links() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let listing = Uuid::now_v7();
     let overview = CalendarOverview {
         open_conflicts: 2,
@@ -27,7 +27,7 @@ async fn the_card_shows_counts_and_links() {
             failing_feeds: 1,
         }],
     };
-    let out = html(view! { calendar_card(overview: Some(overview)) }, __cx).await;
+    let out = html(view! { calendar_card(overview: Some(overview)) }, cx).await;
     assert!(
         out.contains("2 open conflict(s)") && out.contains("1 failing calendar(s)"),
         "{out}"
@@ -37,10 +37,10 @@ async fn the_card_shows_counts_and_links() {
 
 #[tokio::test]
 async fn the_card_is_hidden_with_nothing_to_report() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let out = html(
         view! { calendar_card(overview: Some(CalendarOverview::default())) },
-        __cx,
+        cx,
     )
     .await;
     assert!(!out.contains("calendar-card"), "{out}");
@@ -48,7 +48,7 @@ async fn the_card_is_hidden_with_nothing_to_report() {
 
 #[tokio::test]
 async fn the_card_is_hidden_when_the_overview_failed() {
-    let __cx = &Cx::default();
-    let out = html(view! { calendar_card(overview: None) }, __cx).await;
+    let cx = &Cx::default();
+    let out = html(view! { calendar_card(overview: None) }, cx).await;
     assert!(!out.contains("calendar-card"), "{out}");
 }

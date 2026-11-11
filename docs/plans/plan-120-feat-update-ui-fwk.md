@@ -219,7 +219,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_admin 'web_ui_admin/src/pages/(auth|currencies|dashboard|exchange_rate_history|exchange_rates|bookings/|listings/calendar)'` → `0`
   - **Dependencies:** Task 12b
 
-- [ ] **Task 13b: Admin components batch B (19 components), tests, and the crate gate**
+- [x] **Task 13b: Admin components batch B (19 components), tests, and the crate gate**
   - **Scope:** S
   - **Description:** Put `cx` first on the remaining components. Change `__cx` to `cx` in `dashboard_tests.rs`, `listings/calendar_tests.rs`, and the test modules in `currencies.rs`, `exchange_rates.rs`, `exchange_rate_history.rs` and `promo_codes.rs`.
   - **Files Touched:** `web_ui_admin/src/pages/{pricing,promo_codes,register,requests,dashboard_tests,currencies,exchange_rates,exchange_rate_history}.rs`, `web_ui_admin/src/pages/listings/{form,images,calendar_tests}.rs`, `web_ui_admin/src/pages/users/form.rs`

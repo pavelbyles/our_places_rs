@@ -75,7 +75,7 @@ async fn load(cx: &Cx) -> Result<ListingResponse> {
 /// The managed listing, and the user's token for writes to it.
 async fn load_as(cx: &Cx) -> Result<(ListingResponse, String)> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     Ok((listing, service_token(cx, &user)?))
@@ -92,6 +92,7 @@ async fn overrides(listing: &ListingResponse) -> Vec<PriceOverride> {
 /// The overrides table; HTMX swaps it (outerHTML) after add/remove.
 #[component]
 async fn overrides_table(
+    cx: &Cx,
     listing: ListingResponse,
     rows: Vec<PriceOverride>,
     error: Option<String>,
