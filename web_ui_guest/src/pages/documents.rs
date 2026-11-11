@@ -17,8 +17,8 @@ path_param!(number);
 /// document exists.
 #[page("/bookings/{id}/documents/{number}")]
 pub async fn document_page(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
-    let number = path_param::<Number>(cx).to_string();
+    let id = parse_booking_id(id(cx))?;
+    let number = number(cx).to_string();
     let guest = require_guest(cx).await.map_err(|_| not_found())?;
     owned_booking(cx, &guest, id).await?;
     let token = service_token(cx, &guest)?;

@@ -159,7 +159,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_guest 'web_ui_guest/src/(main|support)\.rs'` → `0`
   - **Dependencies:** Task 7
 
-- [ ] **Task 9: Guest path-parameter accessors**
+- [x] **Task 9: Guest path-parameter accessors**
   - **Scope:** S (mechanical, 10 files)
   - **Description:** Change `path_param::<Slug|Id|Code|…>(cx)` to `slug(cx)`, `id(cx)`, `code(cx)` and so on. Where a local binding hides a later accessor call (R5), rename the local (e.g. `let listing_id = id(cx)`). Keep the current `&str` handling; typed params are out of scope.
   - **Files Touched:** `web_ui_guest/src/pages/{booking_change,bookings,calendar_export,checkout,currency,documents,enquiries,listing_detail,messages,requests}.rs`
