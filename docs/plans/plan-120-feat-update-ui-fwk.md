@@ -63,14 +63,15 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 ### Phase 1: Foundation
 
-- [ ] **Task 3: Bump Topcoat to 0.12 and remove the 0.10 build-dependency pins**
+- [x] **Task 3: Bump Topcoat to 0.12 and remove the 0.10 build-dependency pins**
   - **Scope:** S
   - **Description:** In the workspace, set `topcoat` and `topcoat-asset` to `0.12.0`. Change the `[build-dependencies]` in all three UI crates from `0.10.0` to `{ workspace = true, default-features = false, features = [...] }`. Apply any feature renames found in Task 1. Run `cargo update -p topcoat -p topcoat-asset`. Install the matching CLI with `cargo install topcoat-cli@0.12 --locked`, after confirming with the user because it is a global install (the current CLI is 0.10.0).
   - **Files Touched:** `Cargo.toml`, `Cargo.lock`, `web_ui_common/Cargo.toml`, `web_ui_guest/Cargo.toml`, `web_ui_admin/Cargo.toml`
   - **Acceptance Criteria:**
     - [ ] Only one Topcoat version resolves.
     - [ ] Non-UI crates still build: `cargo check -p common -p db_core -p api_core`.
-  - **Verification Command:** `cargo tree -i topcoat@0.12.0 >/dev/null && ! cargo tree -i topcoat@0.10.0 2>/dev/null && ! cargo tree -i topcoat@0.11.0 2>/dev/null`
+  - **Result:** Resolved to 0.12.1, the latest patch, which has no breaking changes. The build-deps use an explicit `version = "0.12.1", default-features = false` instead of `workspace = true`, because with `workspace = true` the workspace features would be added to the build scripts. The CLI is 0.12.1 in `~/.cargo/bin`, replacing 0.10.0. devenv puts its own `cargo-install/bin` after `~/.cargo/bin` on PATH.
+  - **Verification Command:** `cargo tree -i topcoat@0.12.1 >/dev/null && ! cargo tree -i topcoat@0.10.0 2>/dev/null && ! cargo tree -i topcoat@0.11.0 2>/dev/null`
   - **Dependencies:** Task 1
 
 - [ ] **Task 4: Move `web_client` to the single context API**

@@ -23,7 +23,7 @@ topcoat-asset = { workspace = true }
 form_urlencoded = "1"
 
 [build-dependencies]
-topcoat = { version = "0.10.0", default-features = false, features = [
+topcoat = { version = "0.12.1", default-features = false, features = [
     "icon-iconify",
 ] }
 
