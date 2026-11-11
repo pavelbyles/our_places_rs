@@ -28,7 +28,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 ### Phase 0: Risk first
 
-- [ ] **Task 1: Spike to verify the 0.12 APIs the release notes don't cover**
+- [x] **Task 1: Spike to verify the 0.12 APIs the release notes don't cover**
   - **Scope:** XS (no production code)
   - **Description:** Build a scratch crate in `/tmp` against `topcoat = "0.12.0"` and answer the spec's open items. Record the answers in a new spec section `## 2a. API verification (Q1–Q9)`, one `Q<n>:` line each, and update R1 and R6.
     1. Does `RouterBuilder::assets(AssetBundle)` still exist?
@@ -75,7 +75,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 - [ ] **Task 4: Move `web_client` to the single context API**
   - **Scope:** XS
-  - **Description:** Change `try_app_context` to `try_context` (`client.rs:453`) and `try_request_context` to `try_context` (`session.rs:112`). Update the doc comments that mention `app_context`. `#[memoize]` already takes `cx` first, so it needs no change.
+  - **Description:** Change `try_app_context` to `try_context` (`client.rs:453`). **Delete** the `try_request_context::<SessionState>` guard (`session.rs:112`), because `SessionState` is crate-private in 0.12 (spec §2a Q3). Update the doc comments that mention `app_context`. `#[memoize]` already takes `cx` first, so it needs no change.
   - **Files Touched:** `web_client/src/client.rs`, `web_client/src/session.rs`
   - **Acceptance Criteria:**
     - [ ] `app_context` and `request_context` no longer appear in `web_client/`.

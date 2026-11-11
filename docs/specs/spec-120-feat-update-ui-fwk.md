@@ -43,6 +43,25 @@
 | R7 | The `topcoat` CLI (`topcoat dev` in `devenv.nix:487,492`, `topcoat fmt`) must match the library version. | Install CLI 0.12 and confirm `devenv up` and the frontends still hot-reload. |
 | R8 | CSP: we stay without the runtime (`unsafe-eval`). `RuntimeLayer` must **not** be added. | The `security_headers` tests stay green. |
 
+**Updates after the T1 spike:**
+- **R1** is a real change. In 0.12, `SessionState` is `pub(crate)` and created on demand, so it can no longer be looked up. Drop the `SessionState` check in `current_session`. It was only a "sessions configured?" guard, and `token_hash(cx)` already returns `None` (Unauthenticated) when there is no cookie.
+- **R6** needs no change: 0.12.1's MSRV is rustc 1.99, the same as now.
+
+## 2a. API verification (Q1–Q9)
+
+Checked against the `topcoat 0.12.1` sources (the latest 0.12, whose notes only add `openapi` and route listing, with no breaking changes) and a scratch crate built in devenv on 2026-11-10.
+
+- **Q1:** `RouterBuilderAssetExt::assets(impl Into<AssetConfig>)` still exists and accepts an `AssetBundle` (`From<AssetBundle> for AssetConfig`). No change needed.
+- **Q2:** The `Layer` trait still uses `handle(&self, cx, body, next) -> LayerFuture` and `path()`. It gains a `context() -> ContextMap` method with a default implementation, so `SecurityHeaders` and `RequestTracing` compile unchanged.
+- **Q3:** `SessionState` is now `pub(crate)` and memoized lazily. Remove the `try_request_context::<SessionState>` guard (see R1). `token_hash(cx)` and `refresh(cx)` keep the signature `async fn(&Cx) -> Result<Option<_>>`.
+- **Q4:** `topcoat::session::cookie::CookieTokenStore::new().name(..)` still exists. Pass it through `.with(SessionTokenStore::new(store))`. The cookie overrides (`__Host-` prefix, `Secure`, `Path=/`, `HttpOnly`, `SameSite=Lax`) are identical to 0.11. `SessionLifetime::DEFAULT` is 30 days, the same as the baseline `Max-Age=2592000`.
+- **Q5:** `Cx` derives `Default`, and `Cx::new()` returns the same thing. `Cx::default()` in tests keeps working.
+- **Q6:** `topcoat_asset::{BundlerConfig::new().cache_dir(..), Bundler::new(&cfg).bundle(bytes, out)}` is unchanged.
+- **Q7:** The MSRV (`rust-version`) is 1.99 for all `topcoat-*` 0.12.1 crates. `devenv.nix` stays on 1.99.1.
+- **Q8:** All the features we use resolve in 0.12.1: `htmx`, `tailwind`, `session`, `ui`, `icon-iconify`, `font-fontsource`, `asset`, and `topcoat-asset/bundler`.
+- **Q9:** In 0.11, `.cookies()` was literally `self.layer(CookieLayer::new())`, and the layer-ordering docs are identical in 0.12. `CookieLayer` sits at path `/`, inside our pathless `SecurityHeaders` and `RequestTracing`, exactly as before. Keep the same call order.
+- **Extra:** An untyped `path_param!(id)` generates `fn id(cx: &Cx) -> &str`, a drop-in replacement for `path_param::<Id>(cx)`. `RouterBuilderDiscoverExt::discover()` still exists. `RouterBuilderCookieExt` and `RouterBuilderSessionExt` are gone, so remove those imports.
+
 ---
 
 ## 3. Tasks
