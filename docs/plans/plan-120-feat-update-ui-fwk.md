@@ -113,7 +113,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_common 'web_ui_common/src/components/ui/(dropdown_menu|field|input|label|pagination|progress|radio_group|separator|sheet)\.rs'` → `0`
   - **Dependencies:** Task 5
 
-- [ ] **Task 6c: UI primitives batch C (`cx` first on 43 components; sidebar has 23)**
+- [x] **Task 6c: UI primitives batch C (`cx` first on 43 components; sidebar has 23)**
   - **Scope:** S (mechanical)
   - **Files Touched:** `web_ui_common/src/components/ui/{sidebar,skeleton,spinner,switch,table,tabs,textarea,toggle,tooltip}.rs`
   - **Acceptance Criteria:** Same as Task 6a.
