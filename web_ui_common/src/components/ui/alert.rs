@@ -1,5 +1,6 @@
 //! Topcoat UI `alert` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, StaticClass, View, class, component, view},
@@ -52,6 +53,7 @@ const BASE: StaticClass = class!(
 /// ```
 #[component]
 pub async fn alert(
+    cx: &Cx,
     /// The visual style of the notice.
     #[default]
     variant: AlertVariant,
@@ -76,6 +78,7 @@ pub async fn alert(
 /// The heading of an alert.
 #[component]
 pub async fn alert_title(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -99,6 +102,7 @@ pub async fn alert_title(
 /// Text that explains the alert and any action the reader should take.
 #[component]
 pub async fn alert_description(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

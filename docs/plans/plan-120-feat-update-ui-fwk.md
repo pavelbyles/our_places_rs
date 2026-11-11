@@ -97,7 +97,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_common 'web_ui_common/src/(shell_|security_headers|request_tracing|bin/|theme)'` → `0`
   - **Dependencies:** Task 4
 
-- [ ] **Task 6a: UI primitives batch A (`cx` first on 33 components)**
+- [x] **Task 6a: UI primitives batch A (`cx` first on 33 components)**
   - **Scope:** S (mechanical)
   - **Files Touched:** `web_ui_common/src/components/ui/{accordion,alert,alert_dialog,avatar,badge,breadcrumb,button,card,checkbox,dialog}.rs`
   - **Acceptance Criteria:**

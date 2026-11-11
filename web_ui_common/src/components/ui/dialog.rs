@@ -1,5 +1,6 @@
 //! Topcoat UI `dialog` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     runtime::Expr,
@@ -61,6 +62,7 @@ const FADE: StaticClass = class!(
 /// ```
 #[component]
 pub async fn dialog(
+    cx: &Cx,
     /// Whether the dialog shows.
     #[into]
     open: Expr<bool>,
@@ -102,6 +104,7 @@ const MOTION: StaticClass = class!(
 /// specific class such as `[&]:max-w-xl` in `attrs`, or edit the component's classes.
 #[component]
 pub async fn dialog_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -120,6 +123,7 @@ pub async fn dialog_content(
 /// and an optional [`dialog_description`].
 #[component]
 pub async fn dialog_header(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -137,6 +141,7 @@ pub async fn dialog_header(
 /// The heading of a [`dialog`], rendered as an `<h2>`.
 #[component]
 pub async fn dialog_title(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -157,6 +162,7 @@ pub async fn dialog_title(
 /// Text that explains the dialog's purpose or requested action.
 #[component]
 pub async fn dialog_description(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -178,6 +184,7 @@ pub async fn dialog_description(
 /// fit.
 #[component]
 pub async fn dialog_footer(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

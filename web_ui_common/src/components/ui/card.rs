@@ -1,5 +1,6 @@
 //! Topcoat UI `card` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, StaticClass, View, class, component, view},
@@ -34,6 +35,7 @@ const CARD: StaticClass = class!(
 /// ```
 #[component]
 pub async fn card(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -48,6 +50,7 @@ pub async fn card(
 /// optional [`card_description`].
 #[component]
 pub async fn card_header(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -68,6 +71,7 @@ pub async fn card_header(
 /// The heading of a [`card`], rendered as an `<h3>`.
 #[component]
 pub async fn card_title(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -88,6 +92,7 @@ pub async fn card_title(
 /// The supporting text under a [`card_title`].
 #[component]
 pub async fn card_description(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -108,6 +113,7 @@ pub async fn card_description(
 /// The main body of a [`card`].
 #[component]
 pub async fn card_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -121,6 +127,7 @@ pub async fn card_content(
 /// The closing section of a [`card`], a horizontal row for actions.
 #[component]
 pub async fn card_footer(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

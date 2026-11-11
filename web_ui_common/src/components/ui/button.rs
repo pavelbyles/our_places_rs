@@ -1,5 +1,6 @@
 //! Topcoat UI `button` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, Class, StaticClass, View, class, component, view},
@@ -127,6 +128,7 @@ pub fn button_variants(
 /// ```
 #[component]
 pub async fn button(
+    cx: &Cx,
     /// Visual variant.
     #[default]
     variant: ButtonVariant,

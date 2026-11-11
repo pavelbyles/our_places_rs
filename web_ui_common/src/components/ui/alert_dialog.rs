@@ -7,6 +7,7 @@ use topcoat::{
 };
 
 use super::dialog::dialog;
+use topcoat::context::Cx;
 
 /// A dialog that asks the user to respond to an important message.
 ///
@@ -39,6 +40,7 @@ use super::dialog::dialog;
 /// ```
 #[component]
 pub async fn alert_dialog(
+    cx: &Cx,
     /// Whether the alert dialog shows.
     #[into]
     open: Expr<bool>,
