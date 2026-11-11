@@ -40,6 +40,7 @@ fn badge(state: RateState) -> (&'static str, &'static str) {
 /// The history fragment (swapped in place by its own actions).
 #[component]
 pub async fn pair_history_view(
+    cx: &Cx,
     /// The pair and its versions.
     history: PairHistoryResponse,
     /// Errors and blocking listings from the last action.
@@ -99,8 +100,8 @@ pub async fn pair_history_view(
 
 /// The pair from the URL (404 when malformed).
 fn pair_from_path(cx: &Cx) -> Result<(CurrencyCode, CurrencyCode)> {
-    let base = CurrencyCode::try_from(path_param::<Base>(cx)).map_err(|_| not_found())?;
-    let target = CurrencyCode::try_from(path_param::<Target>(cx)).map_err(|_| not_found())?;
+    let base = CurrencyCode::try_from(base(cx)).map_err(|_| not_found())?;
+    let target = CurrencyCode::try_from(target(cx)).map_err(|_| not_found())?;
     Ok((base, target))
 }
 
@@ -162,7 +163,7 @@ pub async fn delete_scheduled_rate(
 ) -> Result<impl View> {
     let admin = admin_only(cx).await?;
     let token = service_token(cx, &admin)?;
-    let id = Uuid::parse_str(path_param::<Id>(cx)).map_err(|_| not_found())?;
+    let id = Uuid::parse_str(id(cx)).map_err(|_| not_found())?;
     let base = CurrencyCode::try_from(form.base.as_str()).map_err(|_| not_found())?;
     let target = CurrencyCode::try_from(form.target.as_str()).map_err(|_| not_found())?;
     let state = match get_api_client(cx)
@@ -243,11 +244,11 @@ mod history_page_tests {
 
     #[tokio::test]
     async fn badges_and_delete_only_on_scheduled_rows() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let h = history(false);
         let out = html(
             view! { pair_history_view(history: h, state: CardState::default()) },
-            __cx,
+            cx,
         )
         .await;
         assert!(
@@ -265,11 +266,11 @@ mod history_page_tests {
 
     #[tokio::test]
     async fn retired_pair_shows_banner_and_no_retire_button() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let h = history(true);
         let out = html(
             view! { pair_history_view(history: h, state: CardState::default()) },
-            __cx,
+            cx,
         )
         .await;
         assert!(out.contains("Publish a new rate to reinstate it"), "{out}");
@@ -278,7 +279,7 @@ mod history_page_tests {
 
     #[tokio::test]
     async fn blocked_retire_lists_listings() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let state = CardState {
             errors: vec!["Listings are still priced in this currency.".into()],
             blocked: vec![ListingRef {
@@ -288,7 +289,7 @@ mod history_page_tests {
             }],
         };
         let h = history(false);
-        let out = html(view! { pair_history_view(history: h, state: state) }, __cx).await;
+        let out = html(view! { pair_history_view(history: h, state: state) }, cx).await;
         assert!(out.contains("currency-blocked-dialog"), "{out}");
         assert!(out.contains("Villa Azul"), "{out}");
     }

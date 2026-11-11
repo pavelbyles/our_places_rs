@@ -58,6 +58,7 @@ pub fn rows(rates: Vec<ExchangeRate>) -> Vec<RateRow> {
 /// The current-rate table. `show_admin_actions` adds history links.
 #[component]
 pub async fn rates_table(
+    cx: &Cx,
     /// Rows to show.
     rows: Vec<RateRow>,
     /// Whether to show admin-only actions.
@@ -98,6 +99,7 @@ pub async fn rates_table(
 /// Combinations live listings cannot be quoted in (admins only).
 #[component]
 pub async fn coverage_alert(
+    cx: &Cx,
     /// The gaps.
     gaps: Vec<RateCoverageGap>,
 ) -> Result<impl View> {
@@ -159,6 +161,7 @@ pub enum FormAlert {
 /// The publish form (swapped in place by HTMX).
 #[component]
 pub async fn publish_rate_form(
+    cx: &Cx,
     /// Active currency codes for the selects.
     codes: Vec<String>,
     /// Current values.
@@ -377,12 +380,12 @@ mod exchange_rates_page_tests {
 
     #[tokio::test]
     async fn admin_table_links_history_but_host_table_does_not() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let admin_rows = rows(vec![rate("USD", "JMD", 160)]);
         let host_rows = admin_rows.clone();
         let admin = html(
             view! { rates_table(rows: admin_rows, show_admin_actions: true) },
-            __cx,
+            cx,
         )
         .await;
         assert!(
@@ -391,7 +394,7 @@ mod exchange_rates_page_tests {
         );
         let host = html(
             view! { rates_table(rows: host_rows, show_admin_actions: false) },
-            __cx,
+            cx,
         )
         .await;
         assert!(!host.contains("History"), "{host}");
@@ -400,7 +403,7 @@ mod exchange_rates_page_tests {
 
     #[tokio::test]
     async fn confirm_prompt_resubmits_with_confirmation() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let codes = vec!["JMD".to_string(), "USD".to_string()];
         let form = PublishForm {
             base: "USD".into(),
@@ -415,7 +418,7 @@ mod exchange_rates_page_tests {
         };
         let out = html(
             view! { publish_rate_form(codes: codes, form: form, alert: alert) },
-            __cx,
+            cx,
         )
         .await;
         assert!(out.contains("rate-confirm-alert"), "{out}");
@@ -427,14 +430,14 @@ mod exchange_rates_page_tests {
 
     #[tokio::test]
     async fn coverage_alert_lists_gaps_and_hides_when_none() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let gaps = vec![RateCoverageGap {
             listing_base_currency: CurrencyCode::try_from("USD").expect("code"),
             target_currency: CurrencyCode::try_from("CAD").expect("code"),
         }];
-        let shown = html(view! { coverage_alert(gaps: gaps) }, __cx).await;
+        let shown = html(view! { coverage_alert(gaps: gaps) }, cx).await;
         assert!(shown.contains("USD → CAD: no rate"), "{shown}");
-        let none = html(view! { coverage_alert(gaps: Vec::new()) }, __cx).await;
+        let none = html(view! { coverage_alert(gaps: Vec::new()) }, cx).await;
         assert!(!none.contains("rate-coverage-alert"), "{none}");
     }
 

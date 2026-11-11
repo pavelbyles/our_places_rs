@@ -65,6 +65,7 @@ pub fn describe(err: &UserCallError) -> CardState {
 /// The card: every currency (inactive included), forms, and the blocked dialog.
 #[component]
 pub async fn currencies_card(
+    cx: &Cx,
     /// All currencies, sorted by code.
     currencies: Vec<Currency>,
     /// Errors and blocking listings to show.
@@ -126,6 +127,7 @@ pub async fn currencies_card(
 /// render; nothing when empty).
 #[component]
 pub async fn blocked_listings_dialog(
+    cx: &Cx,
     /// The blocking listings.
     listings: Vec<ListingRef>,
 ) -> Result<impl View> {
@@ -246,7 +248,7 @@ pub async fn change_currency(
 ) -> Result<impl View> {
     let admin = admin_only(cx).await?;
     let token = service_token(cx, &admin)?;
-    let outcome = match CurrencyCode::try_from(path_param::<Code>(cx)) {
+    let outcome = match CurrencyCode::try_from(code(cx)) {
         Err(_) => CardState {
             errors: vec!["Unknown currency.".to_string()],
             blocked: Vec::new(),
@@ -296,11 +298,11 @@ mod currencies_card_tests {
 
     #[tokio::test]
     async fn lists_currencies_with_status_and_toggle() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let list = vec![currency("CAD", false), currency("USD", true)];
         let out = html(
             view! { currencies_card(currencies: list, state: CardState::default()) },
-            __cx,
+            cx,
         )
         .await;
         assert!(out.contains(r#"data-currency="CAD""#), "{out}");
@@ -315,7 +317,7 @@ mod currencies_card_tests {
 
     #[tokio::test]
     async fn blocked_dialog_lists_listings_with_edit_links() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let state = CardState {
             errors: vec!["Listings are still priced in this currency.".into()],
             blocked: vec![ListingRef {
@@ -327,7 +329,7 @@ mod currencies_card_tests {
         let list = vec![currency("USD", true)];
         let out = html(
             view! { currencies_card(currencies: list, state: state) },
-            __cx,
+            cx,
         )
         .await;
         assert!(out.contains("currency-blocked-dialog"), "{out}");
@@ -343,7 +345,7 @@ mod currencies_card_tests {
 
     #[tokio::test]
     async fn listing_titles_are_escaped() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let state = CardState {
             errors: Vec::new(),
             blocked: vec![ListingRef {
@@ -354,7 +356,7 @@ mod currencies_card_tests {
         };
         let out = html(
             view! { currencies_card(currencies: Vec::new(), state: state) },
-            __cx,
+            cx,
         )
         .await;
         assert!(!out.contains("<script>alert(1)</script>"), "{out}");

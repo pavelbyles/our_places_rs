@@ -38,7 +38,7 @@ async fn managed_by_code(cx: &Cx, user: &AdminSession, code: &str) -> Result<Boo
 }
 
 #[component]
-async fn message_bubble(message: BookingMessageResponse) -> Result<impl View> {
+async fn message_bubble(cx: &Cx, message: BookingMessageResponse) -> Result<impl View> {
     let mine = message.sender_role != MessageSenderRole::Guest;
     let sent_at = message.created_at.format("%b %d, %H:%M").to_string();
     Ok(view! {
@@ -50,7 +50,7 @@ async fn message_bubble(message: BookingMessageResponse) -> Result<impl View> {
 #[page("/admin/bookings/{code}/messages")]
 pub async fn admin_messages_page(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_by_code(cx, &user, path_param::<Code>(cx)).await?;
+    let booking = managed_by_code(cx, &user, code(cx)).await?;
     let token = service_token(cx, &user)?;
     let api = get_api_client(cx);
     let thread = api
@@ -94,7 +94,7 @@ pub async fn admin_send_message(
     Form(form): Form<MessageForm>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_by_code(cx, &user, path_param::<Code>(cx)).await?;
+    let booking = managed_by_code(cx, &user, code(cx)).await?;
     let token = service_token(cx, &user)?;
     let text = form.message_text.trim().to_string();
     let sent = if text.is_empty() {

@@ -18,6 +18,7 @@ use crate::support::{scoped_bookings, scoped_listings, service_token, staff};
 /// there's nothing to report or the overview couldn't be loaded.
 #[component]
 pub async fn calendar_card(
+    cx: &Cx,
     /// The overview, or `None` when it failed.
     overview: Option<CalendarOverview>,
 ) -> Result<impl View> {

@@ -77,7 +77,7 @@ struct ConflictPageQuery {
 /// What the page needs per request: the listing and the user's token.
 async fn load(cx: &Cx) -> Result<(ListingResponse, String)> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     Ok((listing, service_token(cx, &user)?))
@@ -160,6 +160,7 @@ const BUTTON: &str = "h-10 rounded-lg bg-primary px-4 text-sm font-medium text-p
 /// The export link with a copy button.
 #[component]
 pub async fn export_section(
+    cx: &Cx,
     /// The export URL.
     url: String,
 ) -> Result<impl View> {
@@ -178,6 +179,7 @@ pub async fn export_section(
 /// The imported calendars table, add form and "Sync now".
 #[component]
 pub async fn feeds_section(
+    cx: &Cx,
     /// The listing.
     listing_id: Uuid,
     /// Its feeds.
@@ -272,6 +274,7 @@ pub async fn feeds_section(
 /// Manual blocks with their add form, and imported blocks grouped by feed.
 #[component]
 pub async fn blocks_section(
+    cx: &Cx,
     /// The listing.
     listing_id: Uuid,
     /// Blocks from today to a year ahead.
@@ -347,6 +350,7 @@ pub async fn blocks_section(
 /// Open conflicts (live, then stale), then acknowledged history.
 #[component]
 pub async fn conflicts_section(
+    cx: &Cx,
     /// The listing.
     listing_id: Uuid,
     /// Open conflicts and one history page.
@@ -541,7 +545,7 @@ pub async fn edit_feed(
     Form(form): Form<FeedForm>,
 ) -> Result<impl View> {
     let (listing, jwt) = load(cx).await?;
-    let feed_id = child_id(path_param::<Fid>(cx))?;
+    let feed_id = child_id(fid(cx))?;
     let req = UpdateCalendarFeedRequest {
         name: Some(form.name),
         url: Some(form.url),
@@ -566,7 +570,7 @@ pub async fn edit_feed(
 #[page(POST "/admin/listings/{id}/calendar/feeds/{fid}/toggle")]
 pub async fn toggle_feed(cx: &Cx) -> Result<impl View> {
     let (listing, jwt) = load(cx).await?;
-    let feed_id = child_id(path_param::<Fid>(cx))?;
+    let feed_id = child_id(fid(cx))?;
     let client = get_api_client(cx);
     let current = client
         .list_calendar_feeds(listing.id, &jwt)
@@ -599,7 +603,7 @@ pub async fn toggle_feed(cx: &Cx) -> Result<impl View> {
 #[page(POST "/admin/listings/{id}/calendar/feeds/{fid}/remove")]
 pub async fn remove_feed(cx: &Cx) -> Result<impl View> {
     let (listing, jwt) = load(cx).await?;
-    let feed_id = child_id(path_param::<Fid>(cx))?;
+    let feed_id = child_id(fid(cx))?;
     let error = get_api_client(cx)
         .delete_calendar_feed(listing.id, feed_id, &jwt)
         .await
@@ -668,7 +672,7 @@ pub async fn add_block(
 #[page(POST "/admin/listings/{id}/calendar/blocks/{bid}/remove")]
 pub async fn remove_block(cx: &Cx) -> Result<impl View> {
     let (listing, jwt) = load(cx).await?;
-    let block_id = child_id(path_param::<Bid>(cx))?;
+    let block_id = child_id(bid(cx))?;
     let error = get_api_client(cx)
         .delete_blocked_dates(listing.id, block_id, &jwt)
         .await
@@ -684,7 +688,7 @@ pub async fn remove_block(cx: &Cx) -> Result<impl View> {
 #[page(POST "/admin/listings/{id}/calendar/conflicts/{cid}/ack")]
 pub async fn acknowledge(cx: &Cx) -> Result<impl View> {
     let (listing, jwt) = load(cx).await?;
-    let conflict_id = child_id(path_param::<Cid>(cx))?;
+    let conflict_id = child_id(cid(cx))?;
     let error = get_api_client(cx)
         .acknowledge_calendar_conflict(listing.id, conflict_id, &jwt)
         .await

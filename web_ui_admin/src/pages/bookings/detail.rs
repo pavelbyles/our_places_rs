@@ -46,6 +46,7 @@ pub struct StatusForm {
 /// the door-code action swaps a fresh copy in out-of-band.
 #[component]
 pub async fn details_button(
+    cx: &Cx,
     /// The booking.
     booking_id: Uuid,
     /// Saved door code (empty if none).
@@ -71,6 +72,7 @@ pub async fn details_button(
 /// The door-code panel inside the dialog.
 #[component]
 async fn door_code_panel(
+    cx: &Cx,
     booking_id: Uuid,
     code: String,
     message: Option<String>,
@@ -124,7 +126,7 @@ fn status_options(role: AdminRole, current: &str) -> Vec<&'static str> {
 }
 
 #[component]
-async fn dialog_view(data: DialogData) -> Result<impl View> {
+async fn dialog_view(cx: &Cx, data: DialogData) -> Result<impl View> {
     let b = data.booking;
     let id = b.id;
     let cur = b.currency.clone();
@@ -256,7 +258,7 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
 #[page("/admin/bookings/{id}")]
 pub async fn booking_dialog(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let documents = get_api_client(cx)
         .list_booking_documents(booking.id, Some(&token))
@@ -287,7 +289,7 @@ pub async fn save_door_code(
     Form(form): Form<DoorCodeForm>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let code: String = form.door_access_code.trim().chars().take(32).collect();
     let request = UpdatedBookingRequest {
@@ -327,7 +329,7 @@ pub async fn update_status(
     Form(form): Form<StatusForm>,
 ) -> Result<()> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     if !STATUSES.contains(&form.status.as_str()) {
         return Err(web_client::app_error("unknown status").into());
     }
@@ -348,7 +350,7 @@ pub async fn update_status(
 #[page("/admin/bookings/{id}/cancellation-quote")]
 pub async fn admin_cancellation_quote(cx: &Cx) -> Result<impl View> {
     let user = admin_only(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let quote = get_api_client(cx)
         .get_cancellation_quote_as(booking.id, &token)
@@ -369,9 +371,9 @@ pub async fn admin_cancellation_quote(cx: &Cx) -> Result<impl View> {
 #[page("/admin/bookings/{id}/documents/{number}")]
 pub async fn admin_document(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
-    let number = path_param::<Number>(cx).to_string();
+    let number = number(cx).to_string();
     let doc = get_api_client(cx)
         .get_booking_document_by_number(booking.id, &number, Some(&token))
         .await
@@ -406,7 +408,7 @@ pub async fn propose_change(
     Form(form): Form<ProposeForm>,
 ) -> Result<()> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     if form.check_out <= form.check_in {
         return Err(web_client::app_error("check-out must be after check-in").into());
     }
@@ -437,8 +439,8 @@ enum ChangeAction {
 
 async fn respond(cx: &Cx, action: ChangeAction) -> Result<()> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
-    let request_id = Uuid::parse_str(path_param::<RequestId>(cx)).map_err(|_| not_found())?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
+    let request_id = Uuid::parse_str(request_id(cx)).map_err(|_| not_found())?;
     let token = service_token(cx, &user)?;
     let api = get_api_client(cx);
     let note = RespondReservationChangeRequest::default();

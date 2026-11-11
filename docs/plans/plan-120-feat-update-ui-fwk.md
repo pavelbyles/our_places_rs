@@ -212,7 +212,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `! grep -rn 'path_param::<' web_ui_admin`
   - **Dependencies:** Task 12a
 
-- [ ] **Task 13a: Admin components batch A (`cx` first on 18 components)**
+- [x] **Task 13a: Admin components batch A (`cx` first on 18 components)**
   - **Scope:** S (mechanical)
   - **Files Touched:** `web_ui_admin/src/pages/{auth,currencies,dashboard,exchange_rate_history,exchange_rates}.rs`, `web_ui_admin/src/pages/bookings/{detail,messages}.rs`, `web_ui_admin/src/pages/listings/calendar.rs`
   - **Acceptance Criteria:** `cx: &Cx` is first on every component in these files.
