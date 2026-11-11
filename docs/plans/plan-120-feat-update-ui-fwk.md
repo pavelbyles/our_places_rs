@@ -106,7 +106,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_common 'web_ui_common/src/components/ui/(accordion|alert|alert_dialog|avatar|badge|breadcrumb|button|card|checkbox|dialog)\.rs'` → `0`
   - **Dependencies:** Task 5
 
-- [ ] **Task 6b: UI primitives batch B (`cx` first on 39 components)**
+- [x] **Task 6b: UI primitives batch B (`cx` first on 39 components)**
   - **Scope:** S (mechanical)
   - **Files Touched:** `web_ui_common/src/components/ui/{dropdown_menu,field,input,label,pagination,progress,radio_group,separator,sheet}.rs`
   - **Acceptance Criteria:** Same as Task 6a.

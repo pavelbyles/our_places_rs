@@ -7,6 +7,7 @@ use topcoat::{
 };
 
 use crate::components::svg_icon::svg_icon;
+use topcoat::context::Cx;
 
 /// A floating action menu controlled by a trigger.
 ///
@@ -34,6 +35,7 @@ use crate::components::svg_icon::svg_icon;
 /// ```
 #[component]
 pub async fn dropdown_menu(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -77,6 +79,7 @@ const TRIGGER: StaticClass = class!("cursor-pointer list-none [&::-webkit-detail
 /// ```
 #[component]
 pub async fn dropdown_menu_trigger(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -102,6 +105,7 @@ const PANEL: StaticClass = class!(
 /// The panel drops directly below the trigger, aligned to its left edge.
 #[component]
 pub async fn dropdown_menu_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -129,6 +133,7 @@ const ITEM: StaticClass = class!(
 /// One action in a [`dropdown_menu_content`], rendered as a `<button>`.
 #[component]
 pub async fn dropdown_menu_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -166,6 +171,7 @@ pub async fn dropdown_menu_item(
 /// ```
 #[component]
 pub async fn dropdown_menu_sub(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -187,6 +193,7 @@ pub async fn dropdown_menu_sub(
 /// classes added to its classes.
 #[component]
 pub async fn dropdown_menu_sub_trigger(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -215,6 +222,7 @@ pub async fn dropdown_menu_sub_trigger(
 /// The submenu panel, positioned to the right of its trigger row.
 #[component]
 pub async fn dropdown_menu_sub_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -235,6 +243,7 @@ pub async fn dropdown_menu_sub_content(
 /// A non-interactive heading grouping the items after it.
 #[component]
 pub async fn dropdown_menu_label(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -258,6 +267,7 @@ pub async fn dropdown_menu_label(
 /// A hairline rule separating groups of items.
 #[component]
 pub async fn dropdown_menu_separator(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

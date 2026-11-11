@@ -1,5 +1,6 @@
 //! Topcoat UI `radio_group` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, StaticClass, View, class, component, view},
@@ -28,6 +29,7 @@ use topcoat::{
 /// ```
 #[component]
 pub async fn radio_group(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -66,6 +68,7 @@ const DOT: StaticClass = class!(
 /// attributes go on the `<input>`.
 #[component]
 pub async fn radio_group_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

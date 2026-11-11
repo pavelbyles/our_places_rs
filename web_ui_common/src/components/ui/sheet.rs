@@ -1,5 +1,6 @@
 //! Topcoat UI `sheet` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     runtime::Expr,
@@ -46,6 +47,7 @@ const FADE: StaticClass = class!(
 /// ```
 #[component]
 pub async fn sheet(
+    cx: &Cx,
     /// Whether the sheet shows.
     #[into]
     open: Expr<bool>,
@@ -130,6 +132,7 @@ const CONTENT: StaticClass = class!(
 /// dimensions.
 #[component]
 pub async fn sheet_content(
+    cx: &Cx,
     /// The edge the panel lies against.
     #[default]
     side: SheetSide,

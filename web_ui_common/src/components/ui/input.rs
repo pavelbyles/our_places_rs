@@ -1,5 +1,6 @@
 //! Topcoat UI `input` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, StaticClass, View, class, component, view},
@@ -29,6 +30,7 @@ const INPUT: StaticClass = class!(
 /// ```
 #[component]
 pub async fn input(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

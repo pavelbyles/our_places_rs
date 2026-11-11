@@ -6,6 +6,7 @@ use topcoat::{
 };
 
 use super::label::label;
+use topcoat::context::Cx;
 
 /// The layout of a [`field`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -61,6 +62,7 @@ impl FieldLegendVariant {
 /// as with the other field components.
 #[component]
 pub async fn field_set(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -81,6 +83,7 @@ pub async fn field_set(
 /// The accessible heading of a [`field_set`]. Place it first in the set.
 #[component]
 pub async fn field_legend(
+    cx: &Cx,
     /// Visual variant.
     #[default]
     variant: FieldLegendVariant,
@@ -104,6 +107,7 @@ pub async fn field_legend(
 /// A stack of fields, with a container for responsive field layouts.
 #[component]
 pub async fn field_group(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -135,6 +139,7 @@ pub async fn field_group(
 /// Attributes are forwarded to the wrapper and classes are appended.
 #[component]
 pub async fn field(
+    cx: &Cx,
     /// Layout orientation.
     #[default]
     orientation: FieldOrientation,
@@ -164,6 +169,7 @@ pub async fn field(
 /// A flexible column grouping a field's label, control, or supporting text.
 #[component]
 pub async fn field_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -186,6 +192,7 @@ pub async fn field_content(
 /// Pass `for` to associate the label with a control's `id`.
 #[component]
 pub async fn field_label(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -213,6 +220,7 @@ pub async fn field_label(
 /// Label-sized text that does not label a control. Use [`field_label`] for that.
 #[component]
 pub async fn field_title(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -233,6 +241,7 @@ pub async fn field_title(
 /// Supporting text. Give it an `id` referenced by the control's `aria-describedby`.
 #[component]
 pub async fn field_description(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -256,6 +265,7 @@ pub async fn field_description(
 /// A decorative divider with optional text between sections of a form.
 #[component]
 pub async fn field_separator(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -283,6 +293,7 @@ pub async fn field_separator(
 /// Child content can be a message or a list of messages.
 #[component]
 pub async fn field_error(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

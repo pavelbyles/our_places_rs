@@ -9,6 +9,7 @@ use topcoat::{
 use crate::components::svg_icon::svg_icon;
 
 use super::button::{ButtonSize, ButtonVariant, button_variants};
+use topcoat::context::Cx;
 
 /// Navigation links for a list split across pages.
 ///
@@ -35,6 +36,7 @@ use super::button::{ButtonSize, ButtonVariant, button_variants};
 /// ```
 #[component]
 pub async fn pagination(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -62,6 +64,7 @@ pub async fn pagination(
 /// are listed than the container has room for.
 #[component]
 pub async fn pagination_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -85,6 +88,7 @@ pub async fn pagination_content(
 /// One step of a [`pagination_content`], holding a link or an ellipsis.
 #[component]
 pub async fn pagination_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -101,6 +105,7 @@ pub async fn pagination_item(
 /// apply selected styling and `aria-current="page"`.
 #[component]
 pub async fn pagination_link(
+    cx: &Cx,
     /// Whether this link points at the page being read.
     #[default]
     active: bool,
@@ -138,6 +143,7 @@ const LABEL: StaticClass = class!("sr-only @xs:not-sr-only");
 /// The link to the page before the one being read.
 #[component]
 pub async fn pagination_previous(
+    cx: &Cx,
     /// The link's label.
     #[into]
     #[default(String::from("Previous"))]
@@ -163,6 +169,7 @@ pub async fn pagination_previous(
 /// The link to the page after the one being read.
 #[component]
 pub async fn pagination_next(
+    cx: &Cx,
     /// The link's label.
     #[into]
     #[default(String::from("Next"))]
@@ -188,6 +195,7 @@ pub async fn pagination_next(
 /// An ellipsis representing omitted page links, with an accessible text label.
 #[component]
 pub async fn pagination_ellipsis(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
