@@ -2,6 +2,7 @@
 //! `optimized/<size>/<listing>_<image>.webp` in each size folder, so any one
 //! variant's URL gives the others; other URLs render as a plain `<img>`.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -53,6 +54,7 @@ pub fn variant_srcset(src: &str) -> Option<String> {
 /// of them, so the browser loads the one nearest the size it is drawn at.
 #[component]
 pub async fn responsive_image(
+    cx: &Cx,
     /// Image URL.
     src: String,
     /// Alternative text.

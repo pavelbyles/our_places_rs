@@ -1,5 +1,6 @@
 //! A labelled metric for dashboards.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -8,6 +9,7 @@ use topcoat::{
 /// A metric tile: label, prominent value and an optional hint.
 #[component]
 pub async fn stat_tile(
+    cx: &Cx,
     /// What the number measures.
     label: String,
     /// The formatted value.

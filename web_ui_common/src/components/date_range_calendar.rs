@@ -7,6 +7,7 @@
 
 use chrono::{Datelike, Months, NaiveDate, Weekday};
 use common::availability::UnavailableRange;
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{View, component, view},
@@ -126,6 +127,7 @@ const WEEKDAYS: [Weekday; 7] = [
 /// fragment listens to (`hx-trigger="change from:#booking-dates"`).
 #[component]
 pub async fn date_range_calendar(
+    cx: &Cx,
     /// What to render.
     props: CalendarProps,
 ) -> Result<impl View> {

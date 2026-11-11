@@ -120,7 +120,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_common 'web_ui_common/src/components/ui/(sidebar|skeleton|spinner|switch|table|tabs|textarea|toggle|tooltip)\.rs'` → `0`
   - **Dependencies:** Task 5
 
-- [ ] **Task 6d: Domain and app components (`cx` first on 21 components)**
+- [x] **Task 6d: Domain and app components (`cx` first on 21 components)**
   - **Scope:** S (mechanical)
   - **Description:** In `currency_selector.rs:52,193`, `cx` is currently a documented prop. Move it to the first parameter and remove its `///` prop doc.
   - **Files Touched:** `web_ui_common/src/components/{chat,date_range_calendar,framed_image,hero,navbar,star_rating,stat_tile,steps,svg_icon,toast}.rs`, `web_ui_common/src/components/domain/{currency_selector,listing_card,price_breakdown,responsive_image,tax_document_view,villa_card}.rs`

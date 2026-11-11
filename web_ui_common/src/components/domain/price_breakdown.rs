@@ -4,6 +4,7 @@
 //! are kept.
 
 use rust_decimal::Decimal;
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -74,6 +75,7 @@ fn positive(amount: Option<Decimal>) -> Option<Decimal> {
 /// The price breakdown panel for checkout and the listing quote.
 #[component]
 pub async fn price_breakdown(
+    cx: &Cx,
     /// The figures to show.
     quote: PriceBreakdown,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.

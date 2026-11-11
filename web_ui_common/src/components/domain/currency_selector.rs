@@ -3,6 +3,7 @@
 //! which remembers it in the [`CURRENCY_COOKIE`] and returns to the page, so
 //! every later page shows prices in it too.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -74,6 +75,7 @@ pub async fn currency_selector(
 /// offered (e.g. deactivated) prompts the guest to choose.
 #[component]
 pub async fn currency_menu(
+    cx: &Cx,
     /// Codes to offer, in menu order.
     codes: Vec<String>,
     /// Active currency, if one was chosen.
@@ -319,14 +321,14 @@ mod currency_menu_search_tests {
 
     #[tokio::test]
     async fn the_menu_links_return_to_the_page_and_its_search() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let back = return_to("/listings", "q=x&check_in=2030-08-01&check_out=2030-08-04");
         let codes = vec!["JMD".to_string()];
         let out = match view! { currency_menu(codes: codes, return_to: back) }
             .first()
             .await
         {
-            Ok(handle) => handle.render(__cx),
+            Ok(handle) => handle.render(cx),
             Err(e) => panic!("render failed: {e}"),
         };
         assert!(

@@ -7,11 +7,13 @@ use topcoat::{
 };
 
 use crate::components::svg_icon::svg_icon;
+use topcoat::context::Cx;
 
 /// An average rating such as "★ 4.7 (12 reviews)", or "New" when there is
 /// none yet.
 #[component]
 pub async fn star_rating(
+    cx: &Cx,
     /// Average rating out of 5, if any reviews exist.
     rating: Option<f64>,
     /// Number of reviews behind the average.
@@ -47,6 +49,7 @@ pub async fn star_rating(
 /// A labelled 1–5 star choice. Submits `name` with the chosen value.
 #[component]
 pub async fn star_rating_input(
+    cx: &Cx,
     /// Form field name, e.g. `cleanliness_rating`.
     name: String,
     /// Visible label, e.g. "Cleanliness".

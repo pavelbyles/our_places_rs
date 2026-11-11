@@ -13,6 +13,7 @@ use topcoat::{
 };
 
 use super::price_breakdown::{item_amount, money};
+use topcoat::context::Cx;
 
 fn percent(rate: Decimal, places: usize) -> String {
     format!("{:.*}%", places, rate * Decimal::ONE_HUNDRED)
@@ -42,6 +43,7 @@ struct LineRow {
 /// `.no-print`.
 #[component]
 pub async fn tax_document_view(
+    cx: &Cx,
     /// The document to show.
     doc: TaxDocumentResponse,
 ) -> Result<impl View> {

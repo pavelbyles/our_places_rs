@@ -1,5 +1,6 @@
 //! A numbered progress indicator for multi-step flows such as checkout.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -10,6 +11,7 @@ use topcoat::{
 /// `current` is zero-based; steps before it render as complete.
 #[component]
 pub async fn steps(
+    cx: &Cx,
     /// Step labels, in order.
     labels: Vec<String>,
     /// Zero-based index of the current step.

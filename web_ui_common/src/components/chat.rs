@@ -1,5 +1,6 @@
 //! Guest–host message threads.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, View, class, component, view},
@@ -9,6 +10,7 @@ use topcoat::{
 /// into (`#messages-list` / `#admin-messages-list`).
 #[component]
 pub async fn chat_thread(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -29,6 +31,7 @@ pub async fn chat_thread(
 /// One message. `mine` aligns it to the end and uses the primary fill.
 #[component]
 pub async fn chat_bubble(
+    cx: &Cx,
     /// Sender display name.
     sender: String,
     /// Formatted send time.

@@ -1,6 +1,7 @@
 //! Toast notifications: a polite live region that `ui.js` fills from
 //! `HX-Trigger: {"toast": …}` events, and a server-rendered toast.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, StaticClass, View, class, component, view},
@@ -38,6 +39,7 @@ const TOAST: StaticClass = class!(
 /// The fixed live region toasts are appended to. Render it once per page.
 #[component]
 pub async fn toast_region(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -55,6 +57,7 @@ pub async fn toast_region(
 /// A single server-rendered toast, e.g. after a full-page form post.
 #[component]
 pub async fn toast(
+    cx: &Cx,
     /// The message, rendered as text.
     message: String,
     /// Tone of the toast.

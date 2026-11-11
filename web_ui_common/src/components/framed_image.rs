@@ -1,5 +1,6 @@
 //! A rounded photo frame with a placeholder fill while the image loads.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -31,6 +32,7 @@ impl FrameAspect {
 /// an empty string only for decorative images.
 #[component]
 pub async fn framed_image(
+    cx: &Cx,
     /// Image URL.
     src: String,
     /// Alternative text.

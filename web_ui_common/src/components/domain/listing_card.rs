@@ -11,6 +11,7 @@ use topcoat::{
 use super::price_breakdown::money;
 use super::responsive_image::responsive_image;
 use crate::components::star_rating::star_rating;
+use topcoat::context::Cx;
 
 /// A listing's host, for "Hosted by" links to `/listings?host={slug}`.
 #[derive(Debug, Clone, PartialEq)]
@@ -205,6 +206,7 @@ impl ListingSummary {
 /// it shows no invented rating or amenities.
 #[component]
 pub async fn listing_card(
+    cx: &Cx,
     /// The listing to show.
     listing: ListingSummary,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
@@ -343,11 +345,11 @@ mod stay_card_tests {
     }
 
     async fn both_cards(listing: ListingSummary) -> [String; 2] {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let other = listing.clone();
         [
-            html(view! { listing_card(listing: listing) }, __cx).await,
-            html(view! { villa_card(listing: other) }, __cx).await,
+            html(view! { listing_card(listing: listing) }, cx).await,
+            html(view! { villa_card(listing: other) }, cx).await,
         ]
     }
 

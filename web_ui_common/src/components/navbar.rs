@@ -9,11 +9,13 @@ use topcoat::{
 use crate::components::svg_icon::svg_icon;
 
 use crate::theme::ThemeChoice;
+use topcoat::context::Cx;
 
 /// The 44px pill that cycles light → dim → dark (`ui.js`). Its label names
 /// the theme it switches to.
 #[component]
 pub async fn theme_toggle(
+    cx: &Cx,
     /// The theme the page was rendered with.
     theme: ThemeChoice,
     /// Extra HTML attributes for the button; `class` is merged with the defaults.

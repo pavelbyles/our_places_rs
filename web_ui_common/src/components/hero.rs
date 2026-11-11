@@ -1,6 +1,7 @@
 //! The guest home hero: serif headline and lead, then a wide photo with the
 //! search bar laid over it (docs/design/guest-theme.md §4).
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, View, class, component, view},
@@ -10,6 +11,7 @@ use topcoat::{
 /// bottom of the photo.
 #[component]
 pub async fn hero(
+    cx: &Cx,
     /// Display headline (the page's `h1`).
     headline: String,
     /// Lead paragraph.

@@ -13,6 +13,7 @@ use topcoat::{
 
 use super::listing_card::{ListingSummary, StayTotalLines};
 use super::responsive_image::responsive_image;
+use topcoat::context::Cx;
 
 /// `"1 Bedroom"` / `"3 Bedrooms"`.
 fn count(n: i32, singular: &str) -> String {
@@ -37,6 +38,7 @@ pub fn villa_specs(listing: &ListingSummary) -> [String; 3] {
 /// "from {price} / night". The photo and name link to the listing.
 #[component]
 pub async fn villa_card(
+    cx: &Cx,
     /// The listing to show.
     listing: ListingSummary,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
@@ -120,6 +122,7 @@ fn chevron(left: bool) -> &'static str {
 /// buttons. Each card is wrapped in `#listing-card-{slug}`.
 #[component]
 pub async fn villa_carousel(
+    cx: &Cx,
     /// The listings to show, in order.
     listings: Vec<ListingSummary>,
     /// `id` of the scrolling track (the arrows' `aria-controls`).
@@ -226,9 +229,9 @@ mod villa_card_price_tests {
 
     #[tokio::test]
     async fn unavailable_price_shows_the_currency_and_no_amount() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let listing = summary(Some("CAD"));
-        let out = html(view! { villa_card(listing: listing) }, __cx).await;
+        let out = html(view! { villa_card(listing: listing) }, cx).await;
         assert!(out.contains("Price unavailable in CAD"), "{out}");
         assert!(!out.contains("650"), "no amount is shown: {out}");
         assert!(!out.contains("/ night"), "{out}");
@@ -236,9 +239,9 @@ mod villa_card_price_tests {
 
     #[tokio::test]
     async fn normal_price_is_unchanged() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let listing = summary(None);
-        let out = html(view! { villa_card(listing: listing) }, __cx).await;
+        let out = html(view! { villa_card(listing: listing) }, cx).await;
         assert!(out.contains("TTD 650"), "{out}");
         assert!(!out.contains("Price unavailable"), "{out}");
     }
