@@ -183,7 +183,7 @@ pub async fn override_status(
     Form(form): Form<StatusForm>,
 ) -> Result<()> {
     let user = admin_only(cx).await?;
-    let id = Uuid::from_str(path_param::<Id>(cx)).map_err(|_| not_found())?;
+    let id = Uuid::from_str(id(cx)).map_err(|_| not_found())?;
     let status =
         parse_status(&form.status).ok_or_else(|| web_client::app_error("unknown payout status"))?;
     let reason = form.reason.trim().to_string();

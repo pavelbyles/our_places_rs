@@ -197,7 +197,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `errs web_ui_admin 'web_ui_admin/src/(main|support)\.rs'` → `0`
   - **Dependencies:** Task 7
 
-- [ ] **Task 12a: Admin path-parameter accessors, batch A**
+- [x] **Task 12a: Admin path-parameter accessors, batch A**
   - **Scope:** S (mechanical)
   - **Description:** Same change as Task 9. `listings/calendar.rs` declares `id`, `fid` and `bid` in one module, so check it for clashes with local names.
   - **Files Touched:** `web_ui_admin/src/pages/{aliases,currencies,exchange_rate_history}.rs`, `web_ui_admin/src/pages/bookings/{detail,messages}.rs`, `web_ui_admin/src/pages/listings/{calendar,create,edit}.rs`
@@ -205,7 +205,7 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
   - **Verification Command:** `! grep -n 'path_param::<' web_ui_admin/src/pages/{aliases,currencies,exchange_rate_history}.rs web_ui_admin/src/pages/bookings/{detail,messages}.rs web_ui_admin/src/pages/listings/{calendar,create,edit}.rs`
   - **Dependencies:** Task 11
 
-- [ ] **Task 12b: Admin path-parameter accessors, batch B**
+- [x] **Task 12b: Admin path-parameter accessors, batch B**
   - **Scope:** S (mechanical)
   - **Files Touched:** `web_ui_admin/src/pages/{payouts,pricing,promo_codes,requests}.rs`, `web_ui_admin/src/pages/listings/{images,mod}.rs`, `web_ui_admin/src/pages/users/{actions,form}.rs`
   - **Acceptance Criteria:** `path_param::<` no longer appears in `web_ui_admin/`.

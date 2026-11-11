@@ -23,28 +23,25 @@ pub async fn listings_alias(cx: &Cx) -> Result<()> {
 /// `/listings/{id}` → `/admin/listings/{id}`.
 #[page("/listings/{id}")]
 pub async fn listing_alias(cx: &Cx) -> Result<()> {
-    to(format!("/admin/listings/{}", path_param::<Id>(cx)))
+    to(format!("/admin/listings/{}", id(cx)))
 }
 
 /// `/listings/{id}/edit` → `/admin/listings/{id}/edit`.
 #[page("/listings/{id}/edit")]
 pub async fn listing_edit_alias(cx: &Cx) -> Result<()> {
-    to(format!("/admin/listings/{}/edit", path_param::<Id>(cx)))
+    to(format!("/admin/listings/{}/edit", id(cx)))
 }
 
 /// `/listings/{id}/pricing` → `/admin/listings/{id}/pricing`.
 #[page("/listings/{id}/pricing")]
 pub async fn pricing_alias(cx: &Cx) -> Result<()> {
-    to(format!("/admin/listings/{}/pricing", path_param::<Id>(cx)))
+    to(format!("/admin/listings/{}/pricing", id(cx)))
 }
 
 /// `POST /listings/{id}/pricing/add` → `/admin/listings/{id}/pricing/add`.
 #[page(POST "/listings/{id}/pricing/add")]
 pub async fn pricing_add_alias(cx: &Cx) -> Result<()> {
-    to(format!(
-        "/admin/listings/{}/pricing/add",
-        path_param::<Id>(cx)
-    ))
+    to(format!("/admin/listings/{}/pricing/add", id(cx)))
 }
 
 /// `/bookings` → `/admin/bookings`.

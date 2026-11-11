@@ -22,7 +22,7 @@ path_param!(id);
 #[page("/admin/listings/{id}/edit")]
 pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let admin = user.role == AdminRole::Admin;
@@ -60,7 +60,7 @@ pub async fn update_listing(
     Form(fields): Form<ListingFields>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let admin = user.role == AdminRole::Admin;

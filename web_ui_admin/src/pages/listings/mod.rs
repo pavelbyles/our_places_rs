@@ -164,7 +164,7 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
 #[page("/admin/listings/{id}")]
 pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let l = managed_listing(cx, &user, raw).await?;
     let id = l.id;

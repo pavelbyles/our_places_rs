@@ -31,7 +31,7 @@ pub async fn new_listing_page(cx: &Cx) -> Result<impl View> {
 #[page("/admin/listings/clone/{slug}")]
 pub async fn clone_listing_page(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let source = managed_listing(cx, &user, path_param::<Slug>(cx)).await?;
+    let source = managed_listing(cx, &user, slug(cx)).await?;
     let owners = owner_options(cx, &user).await;
     let admin = user.role == AdminRole::Admin;
     let mut fields = ListingFields::from_listing(&source);
