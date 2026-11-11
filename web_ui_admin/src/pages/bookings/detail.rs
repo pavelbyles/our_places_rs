@@ -46,6 +46,7 @@ pub struct StatusForm {
 /// the door-code action swaps a fresh copy in out-of-band.
 #[component]
 pub async fn details_button(
+    cx: &Cx,
     /// The booking.
     booking_id: Uuid,
     /// Saved door code (empty if none).
@@ -64,13 +65,16 @@ pub async fn details_button(
             hx-swap="innerHTML"
             hx-swap-oob=(oob.then_some("true"))
             class="font-medium"
-        >"Details"</button>
+        >
+            "Details"
+        </button>
     })
 }
 
 /// The door-code panel inside the dialog.
 #[component]
 async fn door_code_panel(
+    cx: &Cx,
     booking_id: Uuid,
     code: String,
     message: Option<String>,
@@ -78,17 +82,50 @@ async fn door_code_panel(
     let configured = !code.is_empty();
     let action = format!("/admin/bookings/{booking_id}/door-code");
     Ok(view! {
-        <section id="door-code-panel" class="space-y-2 rounded-lg border border-border p-4">
+        <section
+            id="door-code-panel"
+            class="space-y-2 rounded-lg border border-border p-4"
+        >
             <div class="flex items-center justify-between">
                 <h4 class="text-sm font-semibold">"Door Access Code"</h4>
-                <span id="detail-door-code-badge" data-state=(if configured { "configured" } else { "unset" }) class="rounded-full border border-border px-2 py-0.5 text-xs">
-                    (if configured { format!("Configured ({code})") } else { "Not set".to_string() })
+                <span
+                    id="detail-door-code-badge"
+                    data-state=(if configured { "configured" } else { "unset" })
+                    class="rounded-full border border-border px-2 py-0.5 text-xs"
+                >
+                    (if configured {
+                        format!("Configured ({code})")
+                    } else {
+                        "Not set".to_string()
+                    })
                 </span>
             </div>
-            <form method="post" action=(action.clone()) hx-post=(action) hx-target="#door-code-panel" hx-swap="outerHTML" class="flex gap-2">
-                <label for="detail-door-code-input" class="sr-only">"Door access code"</label>
-                <input id="detail-door-code-input" name="door_access_code" value=(code.clone()) maxlength="32" autocomplete="off" class="h-10 flex-1 rounded-lg border border-border bg-card px-3 font-mono text-sm" />
-                <button id="btn-save-door-code" type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Save code"</button>
+            <form
+                method="post"
+                action=(action.clone())
+                hx-post=(action)
+                hx-target="#door-code-panel"
+                hx-swap="outerHTML"
+                class="flex gap-2"
+            >
+                <label for="detail-door-code-input" class="sr-only">
+                    "Door access code"
+                </label>
+                <input
+                    id="detail-door-code-input"
+                    name="door_access_code"
+                    value=(code.clone())
+                    maxlength="32"
+                    autocomplete="off"
+                    class="h-10 flex-1 rounded-lg border border-border bg-card px-3 font-mono text-sm"
+                />
+                <button
+                    id="btn-save-door-code"
+                    type="submit"
+                    class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                >
+                    "Save code"
+                </button>
             </form>
             if let Some(message) = message {
                 <p id="door-code-status-msg" role="status" class="text-sm">(message)</p>
@@ -124,7 +161,7 @@ fn status_options(role: AdminRole, current: &str) -> Vec<&'static str> {
 }
 
 #[component]
-async fn dialog_view(data: DialogData) -> Result<impl View> {
+async fn dialog_view(cx: &Cx, data: DialogData) -> Result<impl View> {
     let b = data.booking;
     let id = b.id;
     let cur = b.currency.clone();
@@ -137,113 +174,293 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
     let code = b.door_access_code.clone().unwrap_or_default();
     let doc_count = data.documents.len();
     Ok(view! {
-        <dialog id="admin-booking-details-dialog" data-auto-open="" aria-labelledby="booking-dialog-title" class="m-auto max-h-[90vh] w-[min(760px,95vw)] overflow-y-auto rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50">
+        <dialog
+            id="admin-booking-details-dialog"
+            data-auto-open=""
+            aria-labelledby="booking-dialog-title"
+            class="m-auto max-h-[90vh] w-[min(760px,95vw)] overflow-y-auto rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50"
+        >
             <div class="space-y-5">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h2 id="booking-dialog-title" class="text-xl font-semibold">(format!("Reservation {}", b.confirmation_code))</h2>
-                        <p class="text-sm text-muted-foreground">(format!("{} → {} · {} guest(s) · {}", b.date_from, b.date_to, b.number_of_persons, current))</p>
+                        <h2 id="booking-dialog-title" class="text-xl font-semibold">
+                            (format!("Reservation {}", b.confirmation_code))
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            (format!(
+                                "{} → {} · {} guest(s) · {}",
+                                b.date_from,
+                                b.date_to,
+                                b.number_of_persons,
+                                current,
+                            ))
+                        </p>
                     </div>
-                    <button type="button" data-dialog-close="" class="h-10 rounded-lg border border-border px-4 text-sm">"Close Audit View"</button>
+                    <button
+                        type="button"
+                        data-dialog-close=""
+                        class="h-10 rounded-lg border border-border px-4 text-sm"
+                    >
+                        "Close Audit View"
+                    </button>
                 </div>
 
                 <section class="space-y-2 rounded-lg border border-border p-4">
-                    <h3 class="text-sm font-semibold">"Statutory Tri-Currency Financial Audit"</h3>
+                    <h3 class="text-sm font-semibold">
+                        "Statutory Tri-Currency Financial Audit"
+                    </h3>
                     <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                        <dt>"Subtotal"</dt><dd id="detail-subtotal" class="text-right tabular-nums">(item_amount(&cur, b.sub_total_price))</dd>
-                        <dt>"Discount"</dt><dd class="text-right tabular-nums">(b.discount_value.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
+                        <dt>"Subtotal"</dt>
+                        <dd id="detail-subtotal" class="text-right tabular-nums">
+                            (item_amount(&cur, b.sub_total_price))
+                        </dd>
+                        <dt>"Discount"</dt>
+                        <dd class="text-right tabular-nums">
+                            (b
+                                .discount_value
+                                .map(|d| item_amount(&cur, d))
+                                .unwrap_or_else(|| "—".into()))
+                        </dd>
                         if let Some(code) = b.promo_code.clone() {
-                            <dt>(format!("Promo code {code}"))</dt><dd id="detail-promo" class="text-right tabular-nums">(format!("-{}", item_amount(&cur, b.promo_discount)))</dd>
+                            <dt>(format!("Promo code {code}"))</dt>
+                            <dd id="detail-promo" class="text-right tabular-nums">
+                                (format!("-{}", item_amount(&cur, b.promo_discount)))
+                            </dd>
                         }
-                        <dt>"Cleaning fee"</dt><dd class="text-right tabular-nums">(b.cleaning_fee.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
-                        <dt>"Jamaican GCT"</dt><dd id="detail-tax" class="text-right tabular-nums">(b.tax_value.map(|d| item_amount(&cur, d)).unwrap_or_else(|| item_amount(&cur, rust_decimal::Decimal::ZERO)))</dd>
-                        <dt>"Platform fee"</dt><dd class="text-right tabular-nums">(b.platform_fee.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
-                        <dt>"Damage deposit"</dt><dd class="text-right tabular-nums">(b.damage_deposit.map(|d| item_amount(&cur, d)).unwrap_or_else(|| "—".into()))</dd>
-                        <dt class="font-semibold">"Total"</dt><dd id="detail-total" class="text-right font-semibold tabular-nums">(money(&cur, b.total_price))</dd>
-                        <dt class="text-muted-foreground">"Exchange rate at booking"</dt><dd class="text-right text-muted-foreground">(rate)</dd>
+                        <dt>"Cleaning fee"</dt>
+                        <dd class="text-right tabular-nums">
+                            (b
+                                .cleaning_fee
+                                .map(|d| item_amount(&cur, d))
+                                .unwrap_or_else(|| "—".into()))
+                        </dd>
+                        <dt>"Jamaican GCT"</dt>
+                        <dd id="detail-tax" class="text-right tabular-nums">
+                            (b
+                                .tax_value
+                                .map(|d| item_amount(&cur, d))
+                                .unwrap_or_else(
+                                    || item_amount(&cur, rust_decimal::Decimal::ZERO),
+                                ))
+                        </dd>
+                        <dt>"Platform fee"</dt>
+                        <dd class="text-right tabular-nums">
+                            (b
+                                .platform_fee
+                                .map(|d| item_amount(&cur, d))
+                                .unwrap_or_else(|| "—".into()))
+                        </dd>
+                        <dt>"Damage deposit"</dt>
+                        <dd class="text-right tabular-nums">
+                            (b
+                                .damage_deposit
+                                .map(|d| item_amount(&cur, d))
+                                .unwrap_or_else(|| "—".into()))
+                        </dd>
+                        <dt class="font-semibold">"Total"</dt>
+                        <dd
+                            id="detail-total"
+                            class="text-right font-semibold tabular-nums"
+                        >
+                            (money(&cur, b.total_price))
+                        </dd>
+                        <dt class="text-muted-foreground">
+                            "Exchange rate at booking"
+                        </dt>
+                        <dd class="text-right text-muted-foreground">(rate)</dd>
                     </dl>
                 </section>
 
                 door_code_panel(booking_id: id, code: code, message: None)
 
-
-                <section id="admin-change-requests" class="space-y-2 rounded-lg border border-border p-4">
-
+                <section
+                    id="admin-change-requests"
+                    class="space-y-2 rounded-lg border border-border p-4"
+                >
                     <h4 class="text-sm font-semibold">"Reservation changes"</h4>
 
                     if let Some(change) = data.pending_change.clone() {
-
                         let rid = change.id;
 
-                        let from_guest = change.initiated_by_role == ChangeInitiatorRole::Guest;
+                        let from_guest = change.initiated_by_role
+                            == ChangeInitiatorRole::Guest;
 
-                        <p class="text-sm">(format!("{} → {}, {} guest(s) · new total {}", change.proposed_date_from, change.proposed_date_to, change.proposed_number_of_persons, money(&change.currency, change.proposed_total_price)))</p>
-                        if let Some(reason) = change.pricing_snapshot.promo_lost_reason.clone() {
-                            <p role="alert" class="text-sm text-destructive">(format!("This change removes the promo discount. {reason}"))</p>
+                        <p class="text-sm">
+                            (format!(
+                                "{} → {}, {} guest(s) · new total {}",
+                                change.proposed_date_from,
+                                change.proposed_date_to,
+                                change.proposed_number_of_persons,
+                                money(&change.currency, change.proposed_total_price),
+                            ))
+                        </p>
+                        if let Some(reason) = change.pricing_snapshot.promo_lost_reason.clone(
+
+                        ) {
+                            <p role="alert" class="text-sm text-destructive">
+                                (format!("This change removes the promo discount. {reason}"))
+                            </p>
                         }
 
                         if from_guest {
-
                             <div class="flex gap-2">
+                                <form
+                                    method="post"
+                                    action=(format!(
+                                        "/admin/bookings/{id}/change-requests/{rid}/approve",
+                                    ))
+                                >
+                                    <button
+                                        type="submit"
+                                        class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                                    >
+                                        "Approve change"
+                                    </button>
+                                </form>
 
-                                <form method="post" action=(format!("/admin/bookings/{id}/change-requests/{rid}/approve"))><button type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Approve change"</button></form>
-
-                                <form method="post" action=(format!("/admin/bookings/{id}/change-requests/{rid}/decline"))><button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Decline change"</button></form>
-
+                                <form
+                                    method="post"
+                                    action=(format!(
+                                        "/admin/bookings/{id}/change-requests/{rid}/decline",
+                                    ))
+                                >
+                                    <button
+                                        type="submit"
+                                        class="h-10 rounded-lg border border-border px-4 text-sm"
+                                    >
+                                        "Decline change"
+                                    </button>
+                                </form>
                             </div>
-
                         } else {
+                            <p class="text-sm text-muted-foreground">
+                                "Waiting for the guest to respond."
+                            </p>
 
-                            <p class="text-sm text-muted-foreground">"Waiting for the guest to respond."</p>
-
-                            <form method="post" action=(format!("/admin/bookings/{id}/change-requests/{rid}/cancel"))><button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Withdraw proposal"</button></form>
-
+                            <form
+                                method="post"
+                                action=(format!(
+                                    "/admin/bookings/{id}/change-requests/{rid}/cancel",
+                                ))
+                            >
+                                <button
+                                    type="submit"
+                                    class="h-10 rounded-lg border border-border px-4 text-sm"
+                                >
+                                    "Withdraw proposal"
+                                </button>
+                            </form>
                         }
-
                     } else {
+                        <form
+                            method="post"
+                            action=(format!("/admin/bookings/{id}/change-requests"))
+                            class="flex flex-wrap items-end gap-2"
+                        >
+                            <label class="text-xs text-muted-foreground">
+                                "New check-in"
+                                <input
+                                    type="text"
+                                    data-date-picker=""
+                                    placeholder="yyyy-mm-dd"
+                                    pattern="\\d{4}-\\d{2}-\\d{2}"
+                                    name="check_in"
+                                    required=(true)
+                                    class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm"
+                                />
+                            </label>
 
-                        <form method="post" action=(format!("/admin/bookings/{id}/change-requests")) class="flex flex-wrap items-end gap-2">
+                            <label class="text-xs text-muted-foreground">
+                                "New check-out"
+                                <input
+                                    type="text"
+                                    data-date-picker=""
+                                    placeholder="yyyy-mm-dd"
+                                    pattern="\\d{4}-\\d{2}-\\d{2}"
+                                    name="check_out"
+                                    required=(true)
+                                    class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm"
+                                />
+                            </label>
 
-                            <label class="text-xs text-muted-foreground">"New check-in"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
-
-                            <label class="text-xs text-muted-foreground">"New check-out"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" required=(true) class="mt-1 block h-10 rounded-lg border border-border bg-card px-3 text-sm" /></label>
-
-                            <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Propose change to guest"</button>
-
+                            <button
+                                type="submit"
+                                class="h-10 rounded-lg border border-border px-4 text-sm"
+                            >
+                                "Propose change to guest"
+                            </button>
                         </form>
-
                     }
-
                 </section>
 
                 <section class="space-y-2 rounded-lg border border-border p-4">
                     <h4 class="text-sm font-semibold">"Status"</h4>
                     <form method="post" action=(status_action) class="flex gap-2">
-                        <label for="detail-status" class="sr-only">"Booking status"</label>
-                        <select id="detail-status" name="status" class="h-10 rounded-lg border border-border bg-card px-3 text-sm">
+                        <label for="detail-status" class="sr-only">
+                            "Booking status"
+                        </label>
+                        <select
+                            id="detail-status"
+                            name="status"
+                            class="h-10 rounded-lg border border-border bg-card px-3 text-sm"
+                        >
                             for s in data.status_options.iter() {
                                 <option value=(s) selected=(current == *s)>(s)</option>
                             }
                         </select>
-                        <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Update status"</button>
+                        <button
+                            type="submit"
+                            class="h-10 rounded-lg border border-border px-4 text-sm"
+                        >
+                            "Update status"
+                        </button>
                     </form>
                     if data.show_quote {
-                        <button type="button" hx-get=(format!("/admin/bookings/{id}/cancellation-quote")) hx-target="#admin-quote-slot" hx-swap="innerHTML" class="text-sm font-medium">"Show refund quote"</button>
+                        <button
+                            type="button"
+                            hx-get=(format!("/admin/bookings/{id}/cancellation-quote"))
+                            hx-target="#admin-quote-slot"
+                            hx-swap="innerHTML"
+                            class="text-sm font-medium"
+                        >
+                            "Show refund quote"
+                        </button>
                         <div id="admin-quote-slot"></div>
                     }
                 </section>
 
-                <section id="admin-booking-documents-section" class="space-y-2 rounded-lg border border-border p-4">
+                <section
+                    id="admin-booking-documents-section"
+                    class="space-y-2 rounded-lg border border-border p-4"
+                >
                     <div class="flex items-center justify-between">
                         <h4 class="text-sm font-semibold">"Statutory tax documents"</h4>
-                        <span id="detail-docs-count-badge" class="rounded-full border border-border px-2 py-0.5 text-xs">(format!("{doc_count} document(s)"))</span>
+                        <span
+                            id="detail-docs-count-badge"
+                            class="rounded-full border border-border px-2 py-0.5 text-xs"
+                        >
+                            (format!("{doc_count} document(s)"))
+                        </span>
                     </div>
                     <ul id="admin-booking-documents-list" class="space-y-1 text-sm">
                         if data.documents.is_empty() {
-                            <li class="text-muted-foreground">"No documents issued yet."</li>
+                            <li class="text-muted-foreground">
+                                "No documents issued yet."
+                            </li>
                         }
                         for d in data.documents {
-                            <li><a href=(format!("/admin/bookings/{id}/documents/{}", d.document_number))>(d.document_number.clone())</a> " · " (format!("{:?}", d.status))</li>
+                            <li>
+                                <a
+                                    href=(format!(
+                                        "/admin/bookings/{id}/documents/{}",
+                                        d.document_number,
+                                    ))
+                                >
+                                    (d.document_number.clone())
+                                </a>
+                                " · "
+                                (format!("{:?}", d.status))
+                            </li>
                         }
                     </ul>
                 </section>
@@ -256,7 +473,7 @@ async fn dialog_view(data: DialogData) -> Result<impl View> {
 #[page("/admin/bookings/{id}")]
 pub async fn booking_dialog(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let documents = get_api_client(cx)
         .list_booking_documents(booking.id, Some(&token))
@@ -287,7 +504,7 @@ pub async fn save_door_code(
     Form(form): Form<DoorCodeForm>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let code: String = form.door_access_code.trim().chars().take(32).collect();
     let request = UpdatedBookingRequest {
@@ -327,7 +544,7 @@ pub async fn update_status(
     Form(form): Form<StatusForm>,
 ) -> Result<()> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     if !STATUSES.contains(&form.status.as_str()) {
         return Err(web_client::app_error("unknown status").into());
     }
@@ -348,7 +565,7 @@ pub async fn update_status(
 #[page("/admin/bookings/{id}/cancellation-quote")]
 pub async fn admin_cancellation_quote(cx: &Cx) -> Result<impl View> {
     let user = admin_only(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let quote = get_api_client(cx)
         .get_cancellation_quote_as(booking.id, &token)
@@ -358,9 +575,18 @@ pub async fn admin_cancellation_quote(cx: &Cx) -> Result<impl View> {
     let pct = (quote.policy_pct * rust_decimal::Decimal::ONE_HUNDRED).round();
     Ok(view! {
         <dl id="admin-cancellation-quote" class="mt-2 space-y-1 text-sm">
-            <div class="flex justify-between"><dt>"Refund schedule"</dt><dd>(format!("{pct}% of accommodation"))</dd></div>
-            <div class="flex justify-between font-medium"><dt>"Refund total"</dt><dd>(money(&cur, quote.refund_total))</dd></div>
-            <div class="flex justify-between text-muted-foreground"><dt>"Retained"</dt><dd>(money(&cur, quote.retained_total))</dd></div>
+            <div class="flex justify-between">
+                <dt>"Refund schedule"</dt>
+                <dd>(format!("{pct}% of accommodation"))</dd>
+            </div>
+            <div class="flex justify-between font-medium">
+                <dt>"Refund total"</dt>
+                <dd>(money(&cur, quote.refund_total))</dd>
+            </div>
+            <div class="flex justify-between text-muted-foreground">
+                <dt>"Retained"</dt>
+                <dd>(money(&cur, quote.retained_total))</dd>
+            </div>
         </dl>
     })
 }
@@ -369,9 +595,9 @@ pub async fn admin_cancellation_quote(cx: &Cx) -> Result<impl View> {
 #[page("/admin/bookings/{id}/documents/{number}")]
 pub async fn admin_document(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
-    let number = path_param::<Number>(cx).to_string();
+    let number = number(cx).to_string();
     let doc = get_api_client(cx)
         .get_booking_document_by_number(booking.id, &number, Some(&token))
         .await
@@ -380,7 +606,13 @@ pub async fn admin_document(cx: &Cx) -> Result<impl View> {
         <div class="mx-auto max-w-4xl space-y-4">
             <div class="no-print flex justify-between">
                 <a href="/admin/bookings" class="text-sm">"← Bookings"</a>
-                <button type="button" data-print="" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Print / Download PDF"</button>
+                <button
+                    type="button"
+                    data-print=""
+                    class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                >
+                    "Print / Download PDF"
+                </button>
             </div>
             tax_document_view(doc: doc)
         </div>
@@ -406,7 +638,7 @@ pub async fn propose_change(
     Form(form): Form<ProposeForm>,
 ) -> Result<()> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
     if form.check_out <= form.check_in {
         return Err(web_client::app_error("check-out must be after check-in").into());
     }
@@ -437,8 +669,8 @@ enum ChangeAction {
 
 async fn respond(cx: &Cx, action: ChangeAction) -> Result<()> {
     let user = staff(cx).await?;
-    let booking = managed_booking(cx, &user, path_param::<Id>(cx)).await?;
-    let request_id = Uuid::parse_str(path_param::<RequestId>(cx)).map_err(|_| not_found())?;
+    let booking = managed_booking(cx, &user, id(cx)).await?;
+    let request_id = Uuid::parse_str(request_id(cx)).map_err(|_| not_found())?;
     let token = service_token(cx, &user)?;
     let api = get_api_client(cx);
     let note = RespondReservationChangeRequest::default();

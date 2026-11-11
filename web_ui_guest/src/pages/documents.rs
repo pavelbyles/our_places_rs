@@ -17,8 +17,8 @@ path_param!(number);
 /// document exists.
 #[page("/bookings/{id}/documents/{number}")]
 pub async fn document_page(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
-    let number = path_param::<Number>(cx).to_string();
+    let id = parse_booking_id(id(cx))?;
+    let number = number(cx).to_string();
     let guest = require_guest(cx).await.map_err(|_| not_found())?;
     owned_booking(cx, &guest, id).await?;
     let token = service_token(cx, &guest)?;
@@ -30,7 +30,13 @@ pub async fn document_page(cx: &Cx) -> Result<impl View> {
         <div class="mx-auto max-w-4xl space-y-6">
             <div class="no-print flex items-center justify-between">
                 <a href="/bookings" class="text-sm">"← My bookings"</a>
-                <button type="button" data-print="" class="h-10 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground">"Print / Download PDF"</button>
+                <button
+                    type="button"
+                    data-print=""
+                    class="h-10 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground"
+                >
+                    "Print / Download PDF"
+                </button>
             </div>
             tax_document_view(doc: doc)
         </div>

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use common::models::{BookingResponse, CreateSessionRequest, ListingResponse, UserResponse};
-use topcoat::context::{Cx, try_app_context};
+use topcoat::context::{Cx, try_context};
 use uuid::Uuid;
 use web_client::{
     auth::token_hash_to_hex,
@@ -61,7 +61,7 @@ async fn unread_guest_messages(cx: &Cx, session: &AdminSession) -> i64 {
 
 /// A short-lived token for calling the backend as `user`.
 pub fn service_token(cx: &Cx, user: &AdminSession) -> topcoat::Result<String> {
-    let jwt = try_app_context::<ServiceJwt>(cx)
+    let jwt = try_context::<ServiceJwt>(cx)
         .ok_or_else(|| web_client::app_error("service JWT is not configured"))?;
     jwt.mint(user.user_id)
         .map_err(|e| web_client::app_error(e).into())

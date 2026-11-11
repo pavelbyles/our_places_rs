@@ -1,23 +1,26 @@
 Turning handler errors into HTTP responses.
 
-Every page, layout, layer, and route handler returns a `Result`. An `Err` becomes the response: the router maps each of its own error types onto an HTTP status code and turns anything else into a 500.
+Handlers return a `Result`. An unhandled router error selects an HTTP error or redirect response. Other errors produce `500 Internal Server Error`.
 
 # Constructors
 
-Every error type in this module has a constructor function named after its response. For example, [`not_found()`](not_found) responds 404 with [`NotFoundError`], [`redirect(uri)`](redirect) responds 307 with [`RedirectError`], and [`bad_request(description)`](bad_request) responds 400 with [`BadRequestError`] and a client-safe description. [`too_many_requests(secs)`](too_many_requests) and [`service_unavailable(secs)`](service_unavailable) respond 429 and 503, each carrying a `Retry-After` header.
+Construct an error with the function named for the response you want. For example, [`not_found()`](not_found) returns a [`NotFoundError`] for a 404 response. [`bad_request(description)`](bad_request) returns a 400 response and exposes the description to the client, so use a client-safe message. See each constructor for its status code and headers.
 
 A constructor returns a concrete error type that converts into the handler's error, so bubble it up with `?` or return it directly:
 
 ```rust
-use topcoat::{Result, context::Cx, router::{error::not_found, page}, view::view};
+// src/app/posts/id.rs
+use topcoat::{Result, context::Cx, router::{module_param, error::not_found, page}, view::{View, view}};
 # struct Post;
 # async fn find_post(_cx: &Cx) -> Option<Post> { None }
-#[page("/posts/{id}")]
-async fn post(cx: &Cx) -> Result {
+module_param!(id);
+
+#[page]
+async fn post(cx: &Cx) -> Result<impl View> {
     let Some(_post) = find_post(cx).await else {
         return Err(not_found().into());
     };
-    view! { <h1>"Post"</h1> }
+    Ok(view! { <h1>"Post"</h1> })
 }
 ```
 
@@ -25,51 +28,63 @@ The router raises some of these itself: a request that matches no route gets a [
 
 # From an `Option` or `Result`
 
-Usually the failing value is the condition. [`RouterErrorExt`] adds `ok_or_*` methods to [`Option`] and [`core::result::Result`] that replace `None` (or any `Err`) with a router error, ready for `?`:
+[`RouterErrorExt`] adds `ok_or_*` methods to [`Option`] and [`core::result::Result`]. They replace `None` or `Err` with a router error that you can propagate with `?`:
 
 ```rust
-# use topcoat::{Result, context::Cx, router::{error::RouterErrorExt, page}, view::view};
+// src/app/dashboard.rs
+# use topcoat::{Result, context::Cx, router::{error::RouterErrorExt, page}, view::{View, view}};
 # struct User;
 # async fn current_session(_cx: &Cx) -> Option<User> { None }
-#[page("/dashboard")]
-async fn dashboard(cx: &Cx) -> Result {
+#[page]
+async fn dashboard(cx: &Cx) -> Result<impl View> {
     let _user = current_session(cx).await.ok_or_unauthorized()?;
-    view! { <h1>"Dashboard"</h1> }
+    Ok(view! { <h1>"Dashboard"</h1> })
 }
 ```
 
-The methods mirror the constructors: [`ok_or_not_found`](RouterErrorExt::ok_or_not_found) for [`not_found`], [`ok_or_redirect`](RouterErrorExt::ok_or_redirect) for [`redirect`], and so on. A failed `path_param::<T>(cx)` or `query_params::<T>(cx)` parse feeds the same constructors through the declaration's `error = ...` option.
+The methods mirror the constructors: [`ok_or_not_found`](RouterErrorExt::ok_or_not_found) for [`not_found`], [`ok_or_redirect`](RouterErrorExt::ok_or_redirect) for [`redirect`], and so on. A path parameter declared with an `else` clause, or a query struct declared with `error = ...`, uses the same constructors when parsing fails.
 
 # Catching an error
 
-An error keeps its type on the way out, so an outer handler can pick it up with `downcast_ref` and respond with a view instead. For example, a layout can replace a [`ForbiddenError`] bubbling out of any page below it with a branded access-denied page:
+Wrap content in an [`error_boundary`](https://docs.rs/topcoat/latest/topcoat/view/struct.error_boundary.html) to render a fallback when it fails. The fallback receives the error and can inspect its type with `downcast_ref`. For example, a layout can catch a [`ForbiddenError`] from its page and render an access-denied view:
 
 ```rust
+// src/app.rs
 use topcoat::{
     Result,
-    router::{StatusCode, error::ForbiddenError, layout},
-    view::view,
+    context::Cx,
+    router::{Slot, StatusCode, error::ForbiddenError, layout},
+    view::{View, error_boundary, view},
 };
 
-#[layout("/")]
-async fn root_layout(slot: Result) -> Result {
-    let content = match slot {
-        Err(error) if error.downcast_ref::<ForbiddenError>().is_some() => view! {
-            (StatusCode::FORBIDDEN)
-            <h1>"Access denied"</h1>
-        },
-        content => content,
-    }?;
-
-    view! {
+#[layout]
+async fn root_layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
+    Ok(view! {
         <html>
-            <body>(content)</body>
+            <body>
+                error_boundary(
+                    fallback: |error| {
+                        if error.downcast_ref::<ForbiddenError>().is_none() {
+                            // Any other error type is rethrown.
+                            return Err(error);
+                        }
+
+                        Ok(view! {
+                            (StatusCode::FORBIDDEN)
+                            <h1>"Access denied"</h1>
+                        })
+                    },
+                    (slot)
+                )
+            </body>
         </html>
-    }
+    })
 }
 ```
 
-The [`StatusCode`](crate::StatusCode) in the view keeps the response a 403; without it the replacement page would be served as a 200.
+The [`StatusCode`](crate::StatusCode) keeps the response at 403. Without it, the fallback view would produce a 200 response. Return an error from the fallback to let an outer boundary or the router handle it.
+
+You may also use [`live!`](../view/macro.live.html) regions to handle errors instead of using the simpler `error_boundary` component.
 
 # Not-found pages
 
@@ -77,32 +92,71 @@ A [`NotFoundError`] returned by a handler is caught the same way. The 404 for a 
 
 ```rust
 # use topcoat::router::not_found;
-not_found!("/");
+not_found!();
 ```
 
 This registers a page resolving every otherwise unmatched URL under its path to a [`NotFoundError`], which then bubbles through the layouts like any other handler error. See the [`not_found!` reference](../macro.not_found.html) for the module-derived form and how the catch-all segment is appended.
 
 # Rewrites
 
-A rewrite dispatches the request again at a different path, running the whole route stack as if that path had been requested in the first place. Unlike a redirect it is invisible to the client: the browser URL stays what was requested, and no extra round trip happens. Build one with [`rewrite(path, body)`](rewrite) and return it like any other router error:
+Use a rewrite to handle the request at another path on the server. The router runs that path's layers and handler. The browser URL stays the same, and the client does not send another request. Return [`rewrite(path, body)`](rewrite) as an error:
 
 ```rust
-use topcoat::{Result, context::Cx, router::{Body, error::rewrite, page}, view::view};
+// src/app/dashboard.rs
+use topcoat::{Result, context::Cx, router::{Body, error::rewrite, page}, view::{View, view}};
 # async fn beta_tester(_cx: &Cx) -> bool { false }
-#[page("/dashboard")]
-async fn dashboard(cx: &Cx) -> Result {
+#[page]
+async fn dashboard(cx: &Cx) -> Result<impl View> {
     if beta_tester(cx).await {
         return Err(rewrite("/dashboard-beta", Body::empty()).into());
     }
-    view! { <h1>"Dashboard"</h1> }
+    Ok(view! { <h1>"Dashboard"</h1> })
 }
 ```
 
-The rewritten dispatch keeps the request's method and headers and reads `body` as its request body; the path may carry a query string. Everything else starts over: the response built so far is discarded along with the request context, so per-request state like memoized values or response cookies staged by the abandoned dispatch does not leak into the new one. Layers run again too, including pathless ones.
+By default, the rewritten request keeps its method and headers. It uses the body you supply, and its target can include a different query string. The router creates a fresh context and memoization cache, drops pending changes to the previous response, and runs all matching layers again. Layers without a path run again too.
 
-A handler reached through a rewrite sees the rewritten URI in [`uri`](crate::request::uri). To read the URL the client actually requested, for example as a form's post-back target, use [`original_uri`](crate::request::original_uri).
+Set [`method`](RewriteError::method) to change the HTTP method, or [`headers`](RewriteError::headers) to replace the headers. If you only need to edit a few headers, copy the current [`headers`](crate::request::headers) first. For example, when replacing the body with an empty one, you can remove headers describing the old body.
 
-The router refuses a rewrite to a path the request was already dispatched under and stops any chain after 8 rewrites; both respond 500 without leaking the chain to the client.
+Pass a value to [`with`](RewriteError::with) to keep it in the rewritten request and any rewrites that follow. The handler reads it with [`context`](topcoat_core::context::context). Passing the same type again replaces its value without removing the others. In this example, a form handler rewrites to its page with method `GET` and a `Saved` value so the page can show a confirmation:
+
+```rust
+use topcoat::{Result, context::{Cx, try_context}, router::{Body, Method, error::rewrite, href, page, route}, view::{View, view}};
+
+struct Saved;
+
+mod settings {
+    use super::*;
+
+    mod save {
+        use super::*;
+    
+        #[route(POST)]
+        pub(super) async fn save_settings(cx: &Cx) -> Result<()> {
+            Err(rewrite(href!(super::settings).resolve(cx), Body::empty())
+                .method(Method::GET)
+                .with(Saved)
+                .into())
+        }
+    }
+    
+    #[page]
+    async fn settings(cx: &Cx) -> Result<impl View> {
+        let saved = try_context::<Saved>(cx).is_some();
+        Ok(view! {
+            if saved {
+                <p>"Settings saved."</p>
+            }
+            <form method="post" action=(href!(save::save_settings))></form>
+        })
+    }
+}
+# fn main() {}
+```
+
+After a rewrite, [`parts`](crate::request::parts) and the other request helpers read the rewritten request. To read what the client sent, use [`original_parts`](crate::request::original_parts), [`original_uri`](crate::request::original_uri), or [`original_method`](crate::request::original_method). The original URI is useful when a form should submit back to the URL the client opened.
+
+The router stops a rewrite chain if it reaches the same method, path, and query twice. Rewriting from `POST` to `GET` at the same URL is allowed because the method differs. A repeated request or more than 8 rewrites produces a 500 response. The response does not reveal the rewrite history.
 
 # Unexpected errors
 

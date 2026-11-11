@@ -115,7 +115,8 @@ pub async fn select(
             style=(checkmark_style(cx))
         >
             <select class=(class!(SELECT, PICKER)) (attrs)>(child)</select>
-            svg_icon(data: iconify_icon!("lucide:chevron-down"),
+            svg_icon(
+                data: iconify_icon!("lucide:chevron-down"),
                 attrs: attributes! {
                     class="pointer-events-none absolute top-1/2 right-3 size-4 \
                         -translate-y-1/2 text-muted-foreground transition-transform"

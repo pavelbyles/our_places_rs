@@ -71,6 +71,7 @@ async fn token_info(token: &str) -> Result<ReviewTokenInfoResponse> {
 
 #[component]
 async fn review_form(
+    cx: &Cx,
     info: ReviewTokenInfoResponse,
     token: String,
     error: Option<String>,
@@ -81,25 +82,63 @@ async fn review_form(
         <div class="mx-auto max-w-2xl space-y-6">
             <div class="space-y-1">
                 <h1 class="font-serif text-[clamp(28px,4vw,40px)]">"Rate your stay"</h1>
-                <p class="text-sm text-muted-foreground">(format!("{}, {} → {}", info.listing_name, info.check_in.format("%-d %b %Y"), info.check_out.format("%-d %b %Y")))</p>
+                <p class="text-sm text-muted-foreground">
+                    (format!(
+                        "{}, {} → {}",
+                        info.listing_name,
+                        info.check_in.format("%-d %b %Y"),
+                        info.check_out.format("%-d %b %Y"),
+                    ))
+                </p>
             </div>
             if let Some(error) = error {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(error)</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (error)
+                </p>
             }
-            <form method="post" action="/reviews/submit" class="space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
+            <form
+                method="post"
+                action="/reviews/submit"
+                class="space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+            >
                 <input type="hidden" name="token" value=(token) />
                 <div class="grid gap-6 sm:grid-cols-2">
                     for (field, title) in CATEGORIES {
-                        star_rating_input(name: format!("{field}_rating"), label: title.to_string())
+                        star_rating_input(
+                            name: format!("{field}_rating"),
+                            label: title.to_string()
+                        )
                     }
                 </div>
-                <label class=(label) for="public-review">"Your review (shown publicly)"
-                    <textarea id="public-review" name="public_review_text" rows="4" maxlength="2000" class=(input)></textarea>
+                <label class=(label) for="public-review">
+                    "Your review (shown publicly)"
+                    <textarea
+                        id="public-review"
+                        name="public_review_text"
+                        rows="4"
+                        maxlength="2000"
+                        class=(input)
+                    ></textarea>
                 </label>
-                <label class=(label) for="private-feedback">"Private note to your host (optional)"
-                    <textarea id="private-feedback" name="private_host_feedback" rows="2" maxlength="1000" class=(input)></textarea>
+                <label class=(label) for="private-feedback">
+                    "Private note to your host (optional)"
+                    <textarea
+                        id="private-feedback"
+                        name="private_host_feedback"
+                        rows="2"
+                        maxlength="1000"
+                        class=(input)
+                    ></textarea>
                 </label>
-                <button type="submit" class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground">"Submit review"</button>
+                <button
+                    type="submit"
+                    class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground"
+                >
+                    "Submit review"
+                </button>
             </form>
         </div>
     })
@@ -163,11 +202,25 @@ pub async fn review_success(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! {
         <div class="mx-auto max-w-xl space-y-4 py-10 text-center">
-            <h1 class="font-serif text-[clamp(28px,4vw,40px)]">"Thank you for your review"</h1>
-            <p class="text-muted-foreground">"Your verified review helps future guests choose their stay."</p>
+            <h1 class="font-serif text-[clamp(28px,4vw,40px)]">
+                "Thank you for your review"
+            </h1>
+            <p class="text-muted-foreground">
+                "Your verified review helps future guests choose their stay."
+            </p>
             <div class="flex justify-center gap-3">
-                <a href="/listings" class="inline-flex h-11 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground no-underline">"Explore more listings"</a>
-                <a href="/bookings" class="inline-flex h-11 items-center rounded-full border border-border px-6 text-sm font-medium no-underline">"My bookings"</a>
+                <a
+                    href="/listings"
+                    class="inline-flex h-11 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground no-underline"
+                >
+                    "Explore more listings"
+                </a>
+                <a
+                    href="/bookings"
+                    class="inline-flex h-11 items-center rounded-full border border-border px-6 text-sm font-medium no-underline"
+                >
+                    "My bookings"
+                </a>
             </div>
         </div>
     })

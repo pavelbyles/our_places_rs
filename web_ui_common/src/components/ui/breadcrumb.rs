@@ -7,6 +7,7 @@ use topcoat::{
 };
 
 use crate::components::svg_icon::svg_icon;
+use topcoat::context::Cx;
 
 /// Navigation links showing the path to the current page.
 ///
@@ -28,6 +29,7 @@ use crate::components::svg_icon::svg_icon;
 /// ```
 #[component]
 pub async fn breadcrumb(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -46,6 +48,7 @@ pub async fn breadcrumb(
 /// outgrows its container.
 #[component]
 pub async fn breadcrumb_list(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -70,6 +73,7 @@ pub async fn breadcrumb_list(
 /// [`breadcrumb_page`].
 #[component]
 pub async fn breadcrumb_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -90,6 +94,7 @@ pub async fn breadcrumb_item(
 /// A link to an ancestor page. Pass its destination as `href` in `attrs`.
 #[component]
 pub async fn breadcrumb_link(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -115,6 +120,7 @@ pub async fn breadcrumb_link(
 /// Renders with `aria-current="page"` and does not navigate.
 #[component]
 pub async fn breadcrumb_page(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -136,13 +142,15 @@ pub async fn breadcrumb_page(
 /// A decorative chevron between breadcrumb items, hidden from assistive technology.
 #[component]
 pub async fn breadcrumb_separator(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
         <li aria-hidden="true" class=(attrs.remove("class")) (attrs)>
-            svg_icon(data: iconify_icon!("lucide:chevron-right"),
+            svg_icon(
+                data: iconify_icon!("lucide:chevron-right"),
                 attrs: attributes! { class="size-3.5" }
             )
         </li>
@@ -152,13 +160,15 @@ pub async fn breadcrumb_separator(
 /// An ellipsis representing omitted breadcrumb items, with an accessible text label.
 #[component]
 pub async fn breadcrumb_ellipsis(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
         <span class=(class!("flex items-center", attrs.remove("class"))) (attrs)>
-            svg_icon(data: iconify_icon!("lucide:ellipsis"),
+            svg_icon(
+                data: iconify_icon!("lucide:ellipsis"),
                 attrs: attributes! { class="size-4" }
             )
             <span class="sr-only">"More"</span>

@@ -72,7 +72,7 @@ pub async fn presign_images(
     Json(request): Json<UploadRequest>,
 ) -> Result<Json<Vec<ImagePresignResponse>>> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     check_files(&request.files).map_err(web_client::app_error)?;
@@ -119,6 +119,7 @@ pub async fn listing_photos(cx: &Cx, listing_id: Uuid) -> Vec<ListingImageRespon
 /// after a removal, and ui.js re-reads it from the page after an upload.
 #[component]
 pub async fn photo_grid(
+    cx: &Cx,
     /// The listing the photos belong to.
     listing_id: Uuid,
     /// Listing name, used as alt text.
@@ -130,9 +131,18 @@ pub async fn photo_grid(
 ) -> Result<impl View> {
     let remove = format!("/admin/listings/{listing_id}/images/remove");
     Ok(view! {
-        <div id="listing-photos-slot" data-photo-count=(photos.len().to_string()) class="space-y-3">
+        <div
+            id="listing-photos-slot"
+            data-photo-count=(photos.len().to_string())
+            class="space-y-3"
+        >
             if let Some(error) = error {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(error)</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (error)
+                </p>
             }
             if photos.is_empty() {
                 <p class="text-sm text-muted-foreground">"No processed photos yet."</p>
@@ -140,10 +150,33 @@ pub async fn photo_grid(
                 <ul id="listing-photos" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     for (i, photo) in photos.into_iter().enumerate() {
                         <li class="relative">
-                            responsive_image(src: photo.url, alt: name.clone(), sizes: Some("(min-width: 640px) 25vw, 50vw".to_string()), attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" })
-                            <form method="post" action=(remove.clone()) hx-post=(remove.clone()) hx-target="#listing-photos-slot" hx-swap="outerHTML" hx-confirm="Delete this photo? This cannot be undone." class="absolute top-2 right-2">
-                                <input type="hidden" name="image_id" value=(photo.id.to_string()) />
-                                <button type="submit" aria-label=(format!("Remove photo {}", i + 1)) class="rounded-md bg-card/90 px-2 py-1 text-xs font-medium text-destructive shadow-xs">"Remove"</button>
+                            responsive_image(
+                                src: photo.url,
+                                alt: name.clone(),
+                                sizes: Some("(min-width: 640px) 25vw, 50vw".to_string()),
+                                attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" }
+                            )
+                            <form
+                                method="post"
+                                action=(remove.clone())
+                                hx-post=(remove.clone())
+                                hx-target="#listing-photos-slot"
+                                hx-swap="outerHTML"
+                                hx-confirm="Delete this photo? This cannot be undone."
+                                class="absolute top-2 right-2"
+                            >
+                                <input
+                                    type="hidden"
+                                    name="image_id"
+                                    value=(photo.id.to_string())
+                                />
+                                <button
+                                    type="submit"
+                                    aria-label=(format!("Remove photo {}", i + 1))
+                                    class="rounded-md bg-card/90 px-2 py-1 text-xs font-medium text-destructive shadow-xs"
+                                >
+                                    "Remove"
+                                </button>
                             </form>
                         </li>
                     }
@@ -162,7 +195,7 @@ pub async fn remove_image(
     Form(form): Form<RemoveForm>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let error = match common::app_client::delete_listing_image(
@@ -182,9 +215,14 @@ pub async fn remove_image(
         }
     };
     let photos = listing_photos(cx, listing.id).await;
-    Ok(
-        view! { photo_grid(listing_id: listing.id, name: listing.name, photos: photos, error: error) },
-    )
+    Ok(view! {
+        photo_grid(
+            listing_id: listing.id,
+            name: listing.name,
+            photos: photos,
+            error: error
+        )
+    })
 }
 
 #[cfg(test)]

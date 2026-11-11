@@ -2,6 +2,7 @@
 //! inline `style="vertical-align: -0.125em"` that `style-src 'self'` blocks.
 //! Same markup, with the alignment as a Tailwind class.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     icon::IconData,
@@ -12,6 +13,7 @@ use topcoat::{
 /// hidden from assistive technology unless `label` is set.
 #[component]
 pub async fn svg_icon(
+    cx: &Cx,
     /// The icon to render.
     data: IconData,
     /// Rendered width and height.

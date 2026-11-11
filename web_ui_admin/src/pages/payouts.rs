@@ -115,10 +115,22 @@ pub async fn payouts_page(cx: &Cx) -> Result<impl View> {
         <div class="space-y-6">
             <div class="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">"Financial Engine · Tri-Currency Ledger"</p>
-                    <h1 class="text-2xl font-semibold">"Host Earnings & Payout Ledger"</h1>
+                    <p
+                        class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                    >
+                        "Financial Engine · Tri-Currency Ledger"
+                    </p>
+                    <h1 class="text-2xl font-semibold">
+                        "Host Earnings & Payout Ledger"
+                    </h1>
                 </div>
-                <a href="/admin/payouts/export.csv" download="host_payout_ledger.csv" class="inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm no-underline text-foreground">"Export CSV"</a>
+                <a
+                    href="/admin/payouts/export.csv"
+                    download="host_payout_ledger.csv"
+                    class="inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm no-underline text-foreground"
+                >
+                    "Export CSV"
+                </a>
             </div>
             <div class="grid gap-4 sm:grid-cols-3">
                 stat_tile(label: "Gross Volume".into(), value: money(&cur, gross))
@@ -127,41 +139,97 @@ pub async fn payouts_page(cx: &Cx) -> Result<impl View> {
             </div>
             <div class="overflow-x-auto rounded-xl border border-border">
                 <table id="payouts-ledger-table" class="w-full text-sm">
-                    <thead class="bg-card text-left text-xs text-muted-foreground uppercase">
+                    <thead
+                        class="bg-card text-left text-xs text-muted-foreground uppercase"
+                    >
                         <tr>
-                            <th scope="col" class="p-3">"Reservation"</th><th scope="col" class="p-3">"Listing"</th><th scope="col" class="p-3">"Host"</th>
-                            <th scope="col" class="p-3 text-right">"Gross"</th><th scope="col" class="p-3 text-right">"Cleaning fee"</th><th scope="col" class="p-3">"Promo"</th><th scope="col" class="p-3 text-right">"Net"</th><th scope="col" class="p-3">"Status"</th>
-                            if is_admin { <th scope="col" class="p-3">"Override"</th> }
+                            <th scope="col" class="p-3">"Reservation"</th>
+                            <th scope="col" class="p-3">"Listing"</th>
+                            <th scope="col" class="p-3">"Host"</th>
+                            <th scope="col" class="p-3 text-right">"Gross"</th>
+                            <th scope="col" class="p-3 text-right">"Cleaning fee"</th>
+                            <th scope="col" class="p-3">"Promo"</th>
+                            <th scope="col" class="p-3 text-right">"Net"</th>
+                            <th scope="col" class="p-3">"Status"</th>
+                            if is_admin {
+                                <th scope="col" class="p-3">"Override"</th>
+                            }
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-border">
                         if entries.is_empty() {
-                            <tr><td colspan="9" class="p-6 text-center text-muted-foreground">"No payouts yet."</td></tr>
+                            <tr>
+                                <td
+                                    colspan="9"
+                                    class="p-6 text-center text-muted-foreground"
+                                >
+                                    "No payouts yet."
+                                </td>
+                            </tr>
                         }
                         for e in entries {
                             let status = e.status.to_string();
                             <tr id=(format!("payout-{}", e.id))>
-                                <td class="p-3 font-mono">(e.booking_confirmation_code.clone().unwrap_or_default())</td>
-                                <td class="p-3">(e.listing_name.clone().unwrap_or_default())</td>
-                                <td class="p-3">(e.host_name.clone().unwrap_or_default())</td>
-                                <td class="p-3 text-right tabular-nums">(money(&e.currency, e.gross_amount))</td>
-                                <td class="p-3 text-right tabular-nums">(money(&e.currency, e.cleaning_fee_amount))</td>
-                                <td class="p-3" data-payout-promo="">(e.promo_code.clone().map(|code| format!("{code}: -{}", money(&e.currency, e.promo_discount_amount))).unwrap_or_default())</td>
-                                <td class="p-3 text-right tabular-nums">(money(&e.currency, e.net_payout_amount))</td>
+                                <td class="p-3 font-mono">
+                                    (e.booking_confirmation_code.clone().unwrap_or_default())
+                                </td>
+                                <td class="p-3">
+                                    (e.listing_name.clone().unwrap_or_default())
+                                </td>
+                                <td class="p-3">
+                                    (e.host_name.clone().unwrap_or_default())
+                                </td>
+                                <td class="p-3 text-right tabular-nums">
+                                    (money(&e.currency, e.gross_amount))
+                                </td>
+                                <td class="p-3 text-right tabular-nums">
+                                    (money(&e.currency, e.cleaning_fee_amount))
+                                </td>
+                                <td class="p-3" data-payout-promo="">
+                                    (e
+                                        .promo_code
+                                        .clone()
+                                        .map(
+                                            |code| format!(
+                                                    "{code}: -{}",
+                                                    money(&e.currency, e.promo_discount_amount),
+                                                ),
+                                        )
+                                        .unwrap_or_default())
+                                </td>
+                                <td class="p-3 text-right tabular-nums">
+                                    (money(&e.currency, e.net_payout_amount))
+                                </td>
                                 <td class="p-3 capitalize">(status.clone())</td>
                                 if is_admin {
                                     <td class="p-3">
-                                        <form method="post" action=(format!("/admin/payouts/{}/status", e.id)) class="flex flex-wrap items-end gap-2">
-                                            <label class=(label)>"Status"
+                                        <form
+                                            method="post"
+                                            action=(format!("/admin/payouts/{}/status", e.id))
+                                            class="flex flex-wrap items-end gap-2"
+                                        >
+                                            <label class=(label)>
+                                                "Status"
                                                 <select name="status" class=(input)>
                                                     for s in PAYOUT_STATUSES {
                                                         <option value=(s) selected=(status == s)>(s)</option>
                                                     }
                                                 </select>
                                             </label>
-                                            <label class=(label)>"Gateway ref"<input name="gateway_reference" class=(input) /></label>
-                                            <label class=(label)>"Reason"<input name="reason" required=(true) class=(input) /></label>
-                                            <button type="submit" class="h-9 rounded-lg border border-border px-3 text-sm">"Override"</button>
+                                            <label class=(label)>
+                                                "Gateway ref"
+                                                <input name="gateway_reference" class=(input) />
+                                            </label>
+                                            <label class=(label)>
+                                                "Reason"
+                                                <input name="reason" required=(true) class=(input) />
+                                            </label>
+                                            <button
+                                                type="submit"
+                                                class="h-9 rounded-lg border border-border px-3 text-sm"
+                                            >
+                                                "Override"
+                                            </button>
                                         </form>
                                     </td>
                                 }
@@ -183,7 +251,7 @@ pub async fn override_status(
     Form(form): Form<StatusForm>,
 ) -> Result<()> {
     let user = admin_only(cx).await?;
-    let id = Uuid::from_str(path_param::<Id>(cx)).map_err(|_| not_found())?;
+    let id = Uuid::from_str(id(cx)).map_err(|_| not_found())?;
     let status =
         parse_status(&form.status).ok_or_else(|| web_client::app_error("unknown payout status"))?;
     let reason = form.reason.trim().to_string();

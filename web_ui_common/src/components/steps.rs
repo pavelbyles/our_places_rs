@@ -1,5 +1,6 @@
 //! A numbered progress indicator for multi-step flows such as checkout.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -10,6 +11,7 @@ use topcoat::{
 /// `current` is zero-based; steps before it render as complete.
 #[component]
 pub async fn steps(
+    cx: &Cx,
     /// Step labels, in order.
     labels: Vec<String>,
     /// Zero-based index of the current step.
@@ -19,9 +21,21 @@ pub async fn steps(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
-        <ol class=(class!("flex flex-wrap items-center gap-3 text-sm", attrs.remove("class"))) (attrs)>
+        <ol
+            class=(class!(
+                "flex flex-wrap items-center gap-3 text-sm",
+                attrs.remove("class"),
+            ))
+            (attrs)
+        >
             for (i, label) in labels.into_iter().enumerate() {
-                let state = if i < current { "complete" } else if i == current { "current" } else { "upcoming" };
+                let state = if i < current {
+                    "complete"
+                } else if i == current {
+                    "current"
+                } else {
+                    "upcoming"
+                };
                 <li
                     data-state=(state)
                     aria-current=((i == current).then_some("step"))
@@ -30,7 +44,9 @@ pub async fn steps(
                     <span
                         aria-hidden="true"
                         class="inline-flex size-6 items-center justify-center rounded-full border border-border text-xs"
-                    >(i + 1)</span>
+                    >
+                        (i + 1)
+                    </span>
                     <span>(label)</span>
                 </li>
             }

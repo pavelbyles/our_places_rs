@@ -1,18 +1,18 @@
-Web fonts are typically loaded through CSS. A set of [`@font-face`] rules declares a font family and tells the browser where to download the font files. With Topcoat, you can create these font faces in Rust and host them on your router.
+Declare web fonts in Rust and serve their CSS through the router. Each [`@font-face`] rule tells the browser which font file to load and when to use it.
 
 # Declaring fonts
 
-[`font!`] declares a font from [`@font-face`] blocks you write yourself. The family name comes first and is injected into every block. Declare the font you want to use as a constant, register it on the router, and load it in the page's `<head>`:
+[`font!`] declares a font family and its [`@font-face`] rules. Write the family name once, followed by the rules. Register the font on the router and add its stylesheet to the page's `<head>`:
 
 ```rust,no_run
 use topcoat::{
     Result,
+    context::Cx,
     font::{Font, font},
-    router::{Router, RouterBuilderDiscoverExt, page},
-    view::view,
+    router::{RouterBuilderDiscoverExt, module_router, page},
+    view::{View, view},
 };
 
-// Declare the "Orbitron" font.
 const ORBITRON: Font = font! {
     "Orbitron",
     @font-face {
@@ -26,14 +26,14 @@ const ORBITRON: Font = font! {
 
 #[tokio::main]
 async fn main() {
-    // `.discover()` will automatically find the font. You can also register it manually using `.font(ORBITRON)`.
-    let router = Router::builder().discover().build();
+    // Discover the font and page.
+    let router = module_router!().discover().build();
     topcoat::start(router).await.unwrap();
 }
 
-#[page("/")]
-async fn home() -> Result {
-    view! {
+#[page]
+async fn home(cx: &Cx) -> Result<impl View> {
+    Ok(view! {
         <!DOCTYPE html>
         <html>
             <head>
@@ -43,17 +43,17 @@ async fn home() -> Result {
                 <h1 style="font-family: 'Orbitron'">"Hello!"</h1>
             </body>
         </html>
-    }
+    })
 }
 ```
 
-The [`link`] component renders the stylesheet `<link>` that carries the font's `@font-face` rules.
+The [`link`] component loads the font's stylesheet. To register a font manually, call [`font`](RouterBuilderFontExt::font) on the router builder.
 
-Using the font is then ordinary CSS: any rule on the page can refer to the family by name, like the `style` attribute in the example does. Rather than repeating the name as a string, you can also get it from [`ORBITRON.family()`].
+Use the family name in CSS to apply the font. [`ORBITRON.family()`] returns that name when you need it in Rust.
 
 ## Serving the files as assets
 
-`url(...)` accepts expressions that evaluate to URL strings, but also Topcoat [`Asset`]s. This downloads the file at build time and serves it from your own origin:
+Pass an [`Asset`] to `url(...)` to bundle the font file and serve it from your application:
 
 ```rust
 use topcoat::{asset::asset, font::{Font, font}};
@@ -69,19 +69,19 @@ const INTER: Font = font! {
 };
 ```
 
-Local files work similarly with the asset system: `url(asset!("./fonts/inter-400.woff2"))`. This needs the `asset` feature and the asset bundle loaded on the router. See the [asset guide] for how bundling works.
+Use `url(asset!("./fonts/inter-400.woff2"))` for a local file. Enable the `asset` feature and load the bundle on the router as described in the [asset guide].
 
 # Fontsource
 
-[Fontsource] is an open-source catalog of web fonts. It includes every Google Font, plus other openly licensed families. [`fontsource_font!`] declares a font straight from the catalog, and checks the family and every requested weight, style, and subset against it at compile time.
+[Fontsource] is a catalog of open-source web fonts. [`fontsource_font!`] declares a font from this catalog and checks the requested family, weights, styles, and character subsets at compile time.
 
 Fontsource support lives behind the `font-fontsource` feature:
 
 ```toml
-topcoat = { version = "0.6.2", features = ["font-fontsource"] }
+topcoat = { version = "0.12.1", features = ["font-fontsource"] }
 ```
 
-Then specify which font from the [`families`] module you would like to use. By default, this will include every weight and style the font ships, only in its default character subset, loaded by the browser from the [jsDelivr] CDN:
+Choose a font from [`families`]. By default, the declaration includes all its weights and styles in its default character subset. The browser loads the files from [jsDelivr]:
 
 ```rust
 # #[cfg(feature = "font-fontsource")]
@@ -94,7 +94,7 @@ The resulting [`Font`] can be registered, served, and loaded exactly like a cust
 
 ## Picking weights, styles, and subsets
 
-Every combination of weight, style, and subset is a separate font file, so only include what you use. The `weight`, `style`, and `subset` arguments narrow the font down; each takes a single value or a bracketed list:
+Each combination of weight, style, and subset needs a separate font file. Include only the combinations you use. Each argument accepts one value or a bracketed list:
 
 ```rust
 # #[cfg(feature = "font-fontsource")]
@@ -112,7 +112,7 @@ See [`fontsource_font!`] for the details of each argument.
 
 ## Self-hosting Fontsource fonts
 
-By default the font files are loaded from the [jsDelivr] CDN by the user's browser. Pass `host: Asset` to download them at build time instead and serve them from your own origin as content-hashed Topcoat [assets]:
+Pass `host: Asset` to bundle the font files as Topcoat [assets] and serve them from your application:
 
 ```rust,no_run
 # #[cfg(feature = "font-fontsource")]
@@ -120,12 +120,12 @@ By default the font files are loaded from the [jsDelivr] CDN by the user's brows
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
     font::{Font, fontsource::fontsource_font},
-    router::{Router, RouterBuilderDiscoverExt},
+    router::{RouterBuilderDiscoverExt, module_router},
 };
 
 const ROBOTO: Font = fontsource_font!(ROBOTO, host: Asset);
 
-let router = Router::builder()
+let router = module_router!()
     .assets(AssetBundle::load().unwrap())
     .discover()
     .build();

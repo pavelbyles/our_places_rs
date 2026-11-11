@@ -1,5 +1,6 @@
 //! Topcoat UI `badge` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, Class, StaticClass, View, class, component, view},
@@ -69,6 +70,7 @@ pub fn badge_variants(variant: BadgeVariant) -> Class<(StaticClass, StaticClass)
 /// ```
 #[component]
 pub async fn badge(
+    cx: &Cx,
     /// Visual variant.
     #[default]
     variant: BadgeVariant,

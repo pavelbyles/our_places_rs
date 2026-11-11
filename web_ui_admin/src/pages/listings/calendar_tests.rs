@@ -48,7 +48,7 @@ fn feed(status: FeedStatus, active: bool) -> CalendarFeedResponse {
 
 #[tokio::test]
 async fn the_export_section_has_the_link_and_a_copy_button() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let listing = Uuid::now_v7();
     let url = export_url("https://guest.example", listing);
     assert_eq!(
@@ -56,7 +56,7 @@ async fn the_export_section_has_the_link_and_a_copy_button() {
         format!("https://guest.example/listings/{listing}/calendar.ics")
     );
     let shown = url.clone();
-    let out = html(view! { export_section(url: shown) }, __cx).await;
+    let out = html(view! { export_section(url: shown) }, cx).await;
     assert!(
         out.contains(&url) && out.contains(r##"data-copy-target="#calendar-export-url""##),
         "{out}"
@@ -66,7 +66,7 @@ async fn the_export_section_has_the_link_and_a_copy_button() {
 
 #[tokio::test]
 async fn every_feed_status_has_its_badge() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     for (status, class) in [
         (FeedStatus::Never, "badge-ghost"),
         (FeedStatus::Ok, "badge-success"),
@@ -75,16 +75,30 @@ async fn every_feed_status_has_its_badge() {
     ] {
         assert!(status_badge(status).1.contains(class));
         let out = html(
-            view! { feeds_section(listing_id: Uuid::nil(), feeds: vec![feed(status, true)], results: Vec::new(), error: None) },
-            __cx,
+            view! {
+                feeds_section(
+                    listing_id: Uuid::nil(),
+                    feeds: vec![feed(status, true)],
+                    results: Vec::new(),
+                    error: None
+                )
+            },
+            cx,
         )
         .await;
         assert!(out.contains(class), "{status:?}: {out}");
         assert!(out.contains("Airbnb &lt;main&gt;"), "names are escaped");
     }
     let out = html(
-        view! { feeds_section(listing_id: Uuid::nil(), feeds: vec![feed(FeedStatus::Failed, false)], results: Vec::new(), error: None) },
-        __cx,
+        view! {
+            feeds_section(
+                listing_id: Uuid::nil(),
+                feeds: vec![feed(FeedStatus::Failed, false)],
+                results: Vec::new(),
+                error: None
+            )
+        },
+        cx,
     )
     .await;
     assert!(
@@ -95,7 +109,7 @@ async fn every_feed_status_has_its_badge() {
 
 #[tokio::test]
 async fn every_sync_outcome_is_shown() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let f = feed(FeedStatus::Ok, true);
     let results: Vec<FeedSyncResult> = [
         SyncOutcome::Ok,
@@ -114,8 +128,15 @@ async fn every_sync_outcome_is_shown() {
     })
     .collect();
     let out = html(
-        view! { feeds_section(listing_id: Uuid::nil(), feeds: vec![f], results: results, error: None) },
-        __cx,
+        view! {
+            feeds_section(
+                listing_id: Uuid::nil(),
+                feeds: vec![f],
+                results: results,
+                error: None
+            )
+        },
+        cx,
     )
     .await;
     for outcome in [
@@ -133,7 +154,7 @@ async fn every_sync_outcome_is_shown() {
 
 #[tokio::test]
 async fn api_errors_show_inline_and_429_reads_naturally() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let rejection = |status: u16, code: &str, message: &str| {
         UserCallError::Api(ApiRejection {
             status,
@@ -152,8 +173,14 @@ async fn api_errors_show_inline_and_429_reads_naturally() {
         "The requested dates are no longer available.",
     ));
     let out = html(
-        view! { blocks_section(listing_id: Uuid::nil(), blocks: Vec::new(), error: Some(msg)) },
-        __cx,
+        view! {
+            blocks_section(
+                listing_id: Uuid::nil(),
+                blocks: Vec::new(),
+                error: Some(msg)
+            )
+        },
+        cx,
     )
     .await;
     assert!(
@@ -183,7 +210,7 @@ fn block(
 
 #[tokio::test]
 async fn blocks_are_grouped_and_disabled_feeds_are_labelled() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let blocks = vec![
         block(BlockSource::Manual, None, None),
         block(BlockSource::IcalFeed, Some("Airbnb"), Some(true)),
@@ -191,7 +218,7 @@ async fn blocks_are_grouped_and_disabled_feeds_are_labelled() {
     ];
     let out = html(
         view! { blocks_section(listing_id: Uuid::nil(), blocks: blocks, error: None) },
-        __cx,
+        cx,
     )
     .await;
     assert!(
@@ -237,7 +264,7 @@ fn conflict(
 
 #[tokio::test]
 async fn conflicts_show_order_stale_labels_and_the_reopened_badge() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let live = conflict(None, true, true, false);
     let removed = conflict(Some(StaleReason::EventRemoved), false, false, false);
     let released = conflict(Some(StaleReason::BookingReleased), false, true, false);
@@ -251,8 +278,14 @@ async fn conflicts_show_order_stale_labels_and_the_reopened_badge() {
         },
     };
     let out = html(
-        view! { conflicts_section(listing_id: Uuid::nil(), conflicts: conflicts, error: None) },
-        __cx,
+        view! {
+            conflicts_section(
+                listing_id: Uuid::nil(),
+                conflicts: conflicts,
+                error: None
+            )
+        },
+        cx,
     )
     .await;
     let pos = |id: Uuid| out.find(&format!("conflict-{id}")).expect("rendered");

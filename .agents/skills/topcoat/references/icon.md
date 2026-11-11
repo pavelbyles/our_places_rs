@@ -1,15 +1,16 @@
-Icons on the web are small vector graphics that flow with the text around them: the trash can on a delete button, the magnifier in a search field. Topcoat renders icons as inline `<svg>` elements, so they need no extra network requests, scale with the surrounding font, and follow the text color.
+Topcoat renders icons as inline `<svg>` elements. Icons scale with the surrounding text and need no separate network request.
 
 # Declaring icons
 
-[`IconData`] is the renderable data of an icon: a view box plus the SVG body markup. Declare an icon as a constant and render it with the [`icon`] component:
+[`IconData`] holds an icon's view box and SVG body. Declare it as a constant, then render it with the [`icon`] component:
 
 ```rust,no_run
 use topcoat::{
     Result,
+    context::Cx,
     icon::{IconData, icon},
-    router::{Router, RouterBuilderDiscoverExt, page},
-    view::{svg::ViewBox, view},
+    router::{module_router, page},
+    view::{View, svg::ViewBox, view},
 };
 
 // An icon is a view box plus a raw SVG body:
@@ -20,52 +21,54 @@ const TRASH: IconData = IconData::unescaped_unchecked(
 
 #[tokio::main]
 async fn main() {
-    topcoat::start(Router::builder().discover().build())
+    topcoat::start(module_router!().build())
         .await
         .unwrap();
 }
 
-#[page("/")]
-async fn home() -> Result {
-    view! {
+#[page]
+async fn home(cx: &Cx) -> Result<impl View> {
+    Ok(view! {
         <!DOCTYPE html>
         <html>
             <body>
                 <p>"Move to " icon(data: TRASH, label: "trash")</p>
             </body>
         </html>
-    }
+    })
 }
 ```
 
-The rendered `<svg>` is `1em` square by default, so the icon matches the font size of the surrounding text, and it inherits the text color wherever its body uses `currentColor`. Without a `label` the icon is hidden from assistive technology; with one, the label becomes its accessible name. Pass `size` to fix the dimensions instead of following the font, and `attrs` to forward extra attributes to the `<svg>` element:
+Icons are `1em` square by default. Their SVG bodies can use `currentColor` to inherit the text color. Pass `size` to set the dimensions and `attrs` to add attributes to the `<svg>` element.
+
+An icon without a `label` is hidden from assistive technology. Provide a label when the icon conveys information that the surrounding text does not:
 
 ```rust
-# use topcoat::{Result, icon::{IconData, icon}, view::*};
+# use topcoat::{Result, context::Cx, icon::{IconData, icon}, view::*};
 # const TRASH: IconData = IconData::unescaped_unchecked(svg::ViewBox::new(0.0, 0.0, 24.0, 24.0), "<g/>");
 # #[component]
-# async fn example() -> Result {
-view! {
+# async fn example(cx: &Cx) -> Result<impl View> {
+Ok(view! {
     icon(data: TRASH, size: 48, label: "Delete")
-}
+})
 # }
 ```
 
 # Iconify
 
-[Iconify] is an open catalog of icons: over 150 open source icon sets published in one uniform JSON format. Topcoat can pull icons straight from it, checking every icon reference at compile time.
+[Iconify] publishes open-source icon sets in a shared format. Topcoat can download these sets and check icon references at compile time.
 
 Iconify support lives behind the `icon-iconify` feature, for both your runtime dependency and your build dependency:
 
 ```toml
 [dependencies]
-topcoat = { version = "0.6.2", features = ["icon-iconify"] }
+topcoat = { version = "0.12.1", features = ["icon-iconify"] }
 
 [build-dependencies]
-topcoat = { version = "0.6.2", default-features = false, features = ["icon-iconify"] }
+topcoat = { version = "0.12.1", default-features = false, features = ["icon-iconify"] }
 ```
 
-Icon sets are staged by a build script. Add a `build.rs` next to `Cargo.toml` naming the sets you use; each set downloads on the first build and is cached, so subsequent builds stay offline:
+Add a `build.rs` next to `Cargo.toml` to stage the sets you use. Each set is downloaded when it is missing from the cache:
 
 ```rust,no_run
 # #[cfg(feature = "icon-iconify")]
@@ -80,7 +83,7 @@ fn main() {
 # fn main() {}
 ```
 
-[`include!`] then expands a staged set to `IconData` consts, named after the icons in `SCREAMING_SNAKE_CASE`, and ready to render like any other icon:
+[`include!`] creates `IconData` constants from a staged set. The constants use the icons' names in `SCREAMING_SNAKE_CASE`:
 
 ```rust,ignore
 use topcoat::icon::{icon, iconify};
@@ -94,7 +97,7 @@ view! {
 
 ## Single icons
 
-[`iconify_icon!`] is the expression form: it expands one `"set:icon"` reference to a const-evaluable [`IconData`] expression, inline in a view or behind a name of your choosing:
+Use [`iconify_icon!`] to refer to one icon as an expression. You can pass it directly to a view or assign it to a constant:
 
 ```rust,ignore
 const TRASH: IconData = iconify::iconify_icon!("feather:trash-2");

@@ -1,13 +1,17 @@
-The `module_router!` macro derives a handler's path from its enclosing Rust module. A handler without a path string uses the module path. When registered, a handler with a path string uses that explicit path.
+Module routing is the recommended default for Topcoat applications. The `module_router!` macro derives a handler's path from its enclosing Rust module. Use `#[page]`, `#[layout]`, `#[layer]`, and `#[route(GET)]` without path strings, and organize routes in modules.
+
+A handler whose path string starts with `./` is served below the module path. Absolute path strings are ignored by the module router entirely. Use them when a handler's URL needs to be independent of the module tree, and register that handler separately as described under "Explicit absolute paths".
 
 # Setup
 
 Call `module_router!()` from the root module of the route tree. That module maps to `/`. The macro returns a `RouterBuilder`, so add everything else your application needs on that builder before calling `.build()`.
 
-```rust
+```rust,standalone_crate
 // src/app.rs
-pub fn router() -> topcoat::router::Router {
-    topcoat::router::module_router!().build()
+use topcoat::router::{Router, module_router};
+
+pub fn router() -> Router {
+    module_router!().build()
 }
 ```
 
@@ -28,15 +32,15 @@ Every module-derived `#[page]`, `#[layout]`, `#[layer]`, and `#[route]` under th
 
 # Registering everything else
 
-Module-derived handlers are all that `module_router!()` registers. Handlers with an explicit path string, fonts, procedures, shards, the asset bundle, and application context are registered on the builder it returns, the same way they are registered on a builder from `Router::builder()`.
+`module_router!()` registers module-derived handlers. Register other handlers and application services on the returned builder, just as you would with `Router::builder()`.
 
-With the `discover` feature, `RouterBuilderDiscoverExt::discover` adds everything Topcoat collects at link time. That covers explicit-path handlers and the annotated items of other features, such as fonts. Registration is additive, so it composes with `module_router!()`:
+Call `RouterBuilderDiscoverExt::discover` to add explicit-path handlers and other items collected through discovery:
 
-```rust
-use topcoat::router::{Router, RouterBuilderDiscoverExt};
+```rust,standalone_crate
+use topcoat::router::{Router, RouterBuilderDiscoverExt, module_router};
 
 pub fn router() -> Router {
-    topcoat::router::module_router!().discover().build()
+    module_router!().discover().build()
 }
 ```
 
@@ -45,18 +49,18 @@ Anything that is registered as a value is passed in by hand. The asset bundle is
 ```rust,no_run
 use topcoat::{
     asset::{AssetBundle, RouterBuilderAssetExt},
-    router::{Router, RouterBuilderDiscoverExt},
+    router::{Router, RouterBuilderDiscoverExt, module_router},
 };
 
 pub fn router() -> Router {
-    topcoat::router::module_router!()
+    module_router!()
         .discover()
         .assets(AssetBundle::load().unwrap())
         .build()
 }
 ```
 
-A missing registration is not a compile error. It surfaces on the first request that renders the item, as a panic about a type that is not registered for the application context. The type named in that panic tells you which registration the router is missing.
+Some integrations require registered application values. A missing value may cause a panic when a request first uses it. Follow the integration's setup guide when adding it to the router.
 
 # How modules map to routes
 
@@ -71,42 +75,44 @@ Each module below the root contributes one path segment. Static module names are
 
 The function name does not affect the path. Two module-derived handlers in the same module receive the same path.
 
+Use [`href!`](macro.href.html) to link to a handler by its Rust name, such as `href!(settings::profile::page)`, so the URL follows its registered path.
+
 # Pages, layouts, layers, and API routes
 
 A `#[page]` serves `GET` unless the attribute declares other methods, such as `#[page(POST)]`. A `#[layout]` wraps pages in its module and descendant modules.
 
 ```rust
-# use topcoat::{Result, router::{layout, page}, view::view};
+# use topcoat::{Result, context::Cx, router::{Slot, layout, page}, view::{View, view}};
 // src/app.rs: both handlers use "/"
 #[layout]
-async fn root_layout(slot: Result) -> Result {
-    view! {
-        <html><body>(slot?)</body></html>
-    }
+async fn root_layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
+    Ok(view! {
+        <html><body>(slot)</body></html>
+    })
 }
 
 #[page]
-async fn home() -> Result {
-    view! { <h1>"Home"</h1> }
+async fn home(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"Home"</h1> })
 }
 ```
 
 ```rust
-# use topcoat::{Result, router::page, view::view};
+# use topcoat::{Result, context::Cx, router::page, view::{View, view}};
 // src/app/about.rs: GET /about
 #[page]
-async fn about() -> Result {
-    view! { <h1>"About"</h1> }
+async fn about(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"About"</h1> })
 }
 ```
 
 An API route declares one method, a method list, or every method:
 
 ```rust
-# use topcoat::{Result, router::route};
+# use topcoat::{Result, context::Cx, router::route};
 // src/app/api/health.rs: GET /api/health
 #[route(GET)]
-async fn health() -> Result<&'static str> {
+async fn health(cx: &Cx) -> Result<&'static str> {
     Ok("ok")
 }
 ```
@@ -129,9 +135,49 @@ async fn api_log(cx: &Cx, body: Body, next: Next<'_>) -> Result<Response> {
 }
 ```
 
+# Relative paths
+
+A relative path string starting with `./` is joined onto the module path. This places a handler below its module without adding a module for it.
+
+```rust
+# use topcoat::{Result, context::Cx, router::page, view::{View, view}};
+// src/app/settings.rs: GET /settings
+#[page]
+async fn settings(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"Settings"</h1> })
+}
+
+// src/app/settings.rs: POST /settings/export
+#[page(POST "./export")]
+async fn export(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <p>"Export started"</p> })
+}
+```
+
+This can also be used to add a trailing slash to the end of your module path. A bare `./` serves the module path itself with a trailing slash, and a relative path ending in a slash keeps it.
+
+```rust
+# use topcoat::{Result, context::Cx, router::page, view::{View, view}};
+// src/app/settings.rs: GET /settings/
+#[page("./")]
+async fn settings(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"Settings"</h1> })
+}
+
+// src/app/settings.rs: GET /settings/export/
+#[page("./export/")]
+async fn export(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"Export"</h1> })
+}
+```
+
+The same form works for `#[layout]`, `#[layer]`, and `#[route]`.
+
 # Dynamic path parameters
 
-Call `path_param!` inside the module that should become dynamic. The declaration names the URL parameter and may name the type used to parse each captured segment. The macro changes that module's segment to the parameter and generates the Pascal-cased type used to read it.
+[`path_param!`](macro.path_param.html) declares a path parameter. For module routing, use [`module_param!`](macro.module_param.html), which makes the same declaration and also uses the parameter as the module's URL segment. Both accept the same options, and both generate a function with the parameter's name that reads its value.
+
+For example, `module_param!(post_id: u64)` gives the module a `{post_id}` segment and a `post_id(cx)` function to read it.
 
 ```text
 src/
@@ -147,39 +193,39 @@ src/
 use topcoat::{
     Result,
     context::Cx,
-    router::{page, path_param},
-    view::view,
+    router::{module_param, page},
+    view::{View, view},
 };
 
-path_param!(post_id: u64, error = bad_request);
+module_param!(post_id: u64 else bad_request);
 
 #[page]
-async fn post(cx: &Cx) -> Result {
-    let post_id = path_param::<PostId>(cx)?;
-    view! { <h1>"Post " (post_id)</h1> }
+async fn post(cx: &Cx) -> Result<impl View> {
+    let post_id = post_id(cx)?;
+    Ok(view! { <h1>"Post " (post_id)</h1> })
 }
 ```
 
-This page serves `/posts/{post_id}`. A request for `/posts/42` parses `42` with `u64::from_str`. A failed parse returns `400 Bad Request` because the declaration uses `error = bad_request`.
+This page serves `/posts/{post_id}`. A request for `/posts/42` parses `42` with `u64::from_str`. A failed parse returns `400 Bad Request` because the declaration uses `else bad_request`.
 
 The parameter name comes from `post_id` in the declaration, not from the filename. The file could be named `id.rs` and would still contribute `{post_id}`.
 
-`path_param::<T>(cx)` returns a request-scoped value:
+What the function returns depends on the declaration.
 
-- After `path_param!(slug)`, `path_param::<Slug>(cx)` returns the percent-decoded segment as `&str` and cannot fail.
-- After `path_param!(post_id: u64)`, `path_param::<PostId>(cx)` parses with `FromStr`. Without `error = ...`, the function returns `Result<&u64, &<u64 as FromStr>::Err>`.
-- `error = bad_request`, `not_found`, `unauthorized`, `forbidden`, `redirect(...)`, or `redirect_permanent(...)` maps a parse failure to that router error.
+- With `module_param!(slug)`, `slug(cx)` returns the decoded segment as `&str`. It does not parse the value, so there is no parse error to handle.
+- With `module_param!(post_id: u64)`, `post_id(cx)` parses the value using `FromStr` and returns `Result<&u64, &<u64 as FromStr>::Err>`.
+- An `else` clause after the type, such as `else bad_request`, maps a parse failure to a router error. See the [`path_param!` reference](https://docs.rs/topcoat/latest/topcoat/router/macro.path_param.html) for the supported forms.
 
 Parsing occurs once per request. Later calls return the memoized result.
 
-A module contributes one segment, so it can declare one `path_param!`. Use nested modules for multiple parameters:
+A module adds one URL segment and can contain one `module_param!`. To put several parameters in a route, declare them in nested modules:
 
 | Module | Route path |
 |---|---|
 | `app::organizations::organization_id` | `/organizations/{organization_id}` |
 | `app::organizations::organization_id::users::user_id` | `/organizations/{organization_id}/users/{user_id}` |
 
-Handlers and layouts in descendant modules can read parameters declared by ancestor modules if the Rust types are visible there.
+Handlers and layouts in descendant modules can read parameters declared by ancestor modules if the generated functions are visible there.
 
 # Catch-all parameters
 
@@ -187,17 +233,17 @@ Prefix a parameter name with `*` when its module should capture the remaining pa
 
 ```rust
 // src/app/docs/path.rs contributes /docs/{*path}.
-# use topcoat::router::path_param;
-path_param!(*path);
+# use topcoat::router::module_param;
+module_param!(*path);
 ```
 
 The declaration emits a `CatchAll` segment override. The module must be the last served segment, and the catch-all matches at least one segment.
 
 Handlers read an unparsed catch-all as [`CatchAllSegments`](crate::CatchAllSegments) or add a segment type to read a parsed slice.
 
-See the [`path_param!` macro reference](https://docs.rs/topcoat/latest/topcoat/router/macro.path_param.html) for value shapes, construction, parsing, and errors.
+See the [`path_param!` macro reference](https://docs.rs/topcoat/latest/topcoat/router/macro.path_param.html) for return types, parsing, errors, and linking.
 
-A manual `segment!(kind = CatchAll)` capture remains available through [`raw_path_params`](crate::raw_path_params). Its value carries the encoded tail, with `/` separators intact, next to its separately decoded segments.
+A manual `segment!(kind: CatchAll)` capture remains available through [`raw_path_params`](crate::raw_path_params). Its value carries the encoded tail, with `/` separators intact, next to its separately decoded segments.
 
 # Query parameters
 
@@ -208,7 +254,7 @@ Query parameters do not affect module-derived paths. Declare a named-field struc
 #     Result,
 #     context::Cx,
 #     router::{page, query_params},
-#     view::view,
+#     view::{View, view},
 # };
 #[query_params(error = bad_request)]
 struct PostsQuery {
@@ -219,12 +265,12 @@ struct PostsQuery {
 // In src/app/posts.rs, this serves /posts and accepts
 // requests such as /posts?page=2&q=rust.
 #[page]
-async fn posts(cx: &Cx) -> Result {
+async fn posts(cx: &Cx) -> Result<impl View> {
     let query = query_params::<PostsQuery>(cx)?;
-    view! {
+    Ok(view! {
         <p>"page: " (query.page.unwrap_or(1))</p>
         <p>"search: " (query.q.as_deref().unwrap_or(""))</p>
-    }
+    })
 }
 ```
 
@@ -237,14 +283,14 @@ async fn posts(cx: &Cx) -> Result {
 | Declaration | Result |
 |---|---|
 | none in `blog_posts` | `/blog-posts` |
-| `segment!(rename = "articles")` | `/articles` |
-| `segment!(kind = Group)` | no served URL segment |
-| `segment!(kind = Param, rename = "id")` | `/{id}` |
-| `segment!(kind = CatchAll, rename = "path")` | `/{*path}` |
+| `segment!(rename: "articles")` | `/articles` |
+| `segment!(kind: Group)` | no served URL segment |
+| `segment!(kind: Param, rename: "id")` | `/{id}` |
+| `segment!(kind: CatchAll, rename: "path")` | `/{*path}` |
 
 `Static` is the default kind for regular modules. `Group` is the default for modules whose names start with `_`. A rename is used as written; Topcoat does not kebab-case it.
 
-`path_param!` emits a `Param` or `CatchAll` segment override, so do not combine it with `segment!` in the same module. A manual override creates the route capture but does not define a typed accessor.
+`module_param!` already sets the module's segment to `Param` or `CatchAll`. Use either `module_param!` or `segment!` in a module, not both. Using `segment!` alone captures the parameter but does not generate a function for reading it.
 
 # Groups
 
@@ -267,32 +313,35 @@ The two groups can apply different layouts to top-level URLs.
 Use an explicit kind when the module name should not select the default:
 
 ```rust
+use topcoat::router::segment;
 // src/app/marketing.rs: hide `marketing` from served URLs.
-topcoat::router::segment!(kind = Group);
+segment!(kind: Group);
 ```
 
 ```rust
+use topcoat::router::segment;
 // src/app/_internal.rs: serve the module at /internal.
-topcoat::router::segment!(kind = Static);
+segment!(kind: Static);
 ```
 
 Group names remain part of Topcoat's logical paths. A layout or layer in `_marketing` applies only to descendants of `_marketing`, even though the group name is absent from request URLs.
 
-# Explicit paths
+# Explicit absolute paths
 
-Adding a path string to `#[page]`, `#[layout]`, `#[layer]`, or `#[route]` disables module path derivation for that item. `segment!` declarations do not alter explicit paths.
+Adding an absolute path string to `#[page]`, `#[layout]`, `#[layer]`, or `#[route]` disables module path derivation for that item. `segment!` declarations do not affect explicit absolute paths.
 
-`module_router!()` discovers module-derived handlers. Register an explicit-path handler by name:
+`module_router!()` discovers module-derived handlers. Register an absolute-path handler by name:
 
-```rust
-# use topcoat::{Result, router::page, view::view};
+```rust,standalone_crate
+use topcoat::{context::Cx, router::module_router};
+# use topcoat::{Result, router::page, view::{View, view}};
 #[page("/legacy")]
-async fn legacy() -> Result {
-    view! { <h1>"Legacy"</h1> }
+async fn legacy(cx: &Cx) -> Result<impl View> {
+    Ok(view! { <h1>"Legacy"</h1> })
 }
 
 pub fn router() -> topcoat::router::Router {
-    topcoat::router::module_router!()
+    module_router!()
         .page(legacy)
         .build()
 }

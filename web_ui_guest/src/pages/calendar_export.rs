@@ -210,7 +210,7 @@ fn plain(status: u16, text: &'static str) -> Result<Response> {
 /// The listing's public calendar.
 #[route(GET "/listings/{slug}/calendar.ics")]
 pub async fn calendar_ics(cx: &Cx) -> Result<Response> {
-    let raw: &str = path_param::<Slug>(cx);
+    let raw: &str = slug(cx);
     let if_none_match = headers(cx)
         .get("if-none-match")
         .and_then(|v| v.to_str().ok());

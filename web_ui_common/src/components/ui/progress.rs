@@ -1,5 +1,6 @@
 //! Topcoat UI `progress` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, StaticClass, View, class, component, view},
@@ -31,6 +32,7 @@ const PROGRESS: StaticClass = class!(
 /// ```
 #[component]
 pub async fn progress(
+    cx: &Cx,
     /// The completed amount, out of `max`.
     #[into]
     #[default]

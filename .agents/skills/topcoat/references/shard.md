@@ -1,65 +1,96 @@
-A shard is a special type of component that can re-run whenever its arguments change in the browser. Arguments are runtime [expressions](macro.expr.html): the browser tracks the signals they read, and when one changes it requests a fresh render from the server and swaps the result into the DOM. Shards are exposed as API endpoints from your server; arguments **must not be trusted**.
+A shard is a component that re-renders on the server when its inputs change in the browser. Pass fixed values or runtime [expressions](macro.expr.html) as arguments. Changes to signals read by those expressions, or by the shard body, trigger a render. Each shard has an HTTP endpoint, so **validate its inputs and authorize access inside the shard**.
 
 ```rust
-use topcoat::{Result, context::Cx, runtime::shard, view::view};
+use topcoat::{Result, context::Cx, runtime::shard, view::{View, view}};
 
 #[shard]
-async fn search_results(cx: &Cx, query: String) -> Result {
+async fn search_results(cx: &Cx, query: String) -> Result<impl View> {
     let products = search_products(cx, &query).await?;
-    view! {
+    Ok(view! {
         for product in products {
             <div>(product)</div>
         }
-    }
+    })
 }
 # async fn search_products(_cx: &Cx, _query: &str) -> Result<Vec<String>> { Ok(vec![]) }
 ```
 
 # Calling Shards
 
-Inside a [`view!`] body, call a shard like a component, passing a runtime expression for each parameter:
+Inside a [`view!`] body, call a shard like a component. Omit `cx` from the call; Topcoat supplies the server request context automatically. Each remaining parameter accepts its declared type `T` or an `Expr<T>`, with conversion handled automatically:
 
 ```rust
-# use topcoat::{Result, view::*, runtime::{shard, Event}};
+# use topcoat::{Result, context::Cx, view::*, runtime::{shard, signal, Event}};
 # #[shard]
-# async fn search_results(query: String) -> Result { view! { (query) } }
+# async fn search_results(cx: &Cx, query: String) -> Result<impl View> { Ok(view! { (query) }) }
 # #[component]
-# async fn example() -> Result {
-view! {
-    signal query = String::new();
+# async fn example(cx: &Cx) -> Result<impl View> {
+let query = signal(cx, String::new);
 
+Ok(view! {
     <input :value=$(query.get()) @input=$(|e: Event| query.set(e.target.value))>
 
     search_results(query: $(query.get()))
-}
+    search_results(query: "shoes".to_owned())
+})
 # }
 ```
 
-During the page render the shard runs inline like any component: the server evaluates each argument expression once and embeds the resulting view in the page. No extra request happens.
+The initial page render includes the shard's content. It does not need a separate request. Live content inside a shard, such as a [`live!`] region, streams its updates with the page on that render and with the shard's own response on a re-render.
 
-When the `query` signal changes, the current argument values are sent to the server, the shard function runs again, and the returned HTML replaces the shard's previous content in place; the rest of the page is untouched. Several signal changes in the same tick coalesce into one request, and starting a request aborts any earlier one still in flight, so the latest arguments win.
+When `query` changes, the browser sends the current arguments to the server and updates the shard with the returned HTML. Existing elements are updated in place to preserve focus and input state. The rest of the page is unchanged.
+
+Elements are matched by position and tag, or by `id` when present. Give items in a reorderable list stable IDs so each element follows its item. Signal changes in the same tick share one request. A new request aborts any earlier pending request, so the latest arguments win.
 
 # Shard State
 
-A shard's content is a full view: it can declare signals, attach event handlers, and contain nested shards. A re-render replaces that content wholesale, though, so state declared inside the shard -- like a `signal` in its `view!` -- resets each time. State that must survive re-renders lives outside the shard and flows in through its arguments.
+A shard supports the same content as a component. Signals created in its body keep their values across re-renders. The browser sends those values with each request, and [`signal`] restores them. **Treat restored values as user input**, just like shard arguments.
+
+Reading one of those signals on the server with `.get()` or `.read()` makes the shard depend on it, so a change in the browser re-renders only that shard, not the entire page:
+
+```rust
+use topcoat::{Result, context::Cx, runtime::{shard, signal}, view::{View, view}};
+
+#[shard]
+async fn paginated(cx: &Cx) -> Result<impl View> {
+    let page = signal(cx, || 1usize);
+    let items = load_page(cx, page.get()).await?;
+
+    Ok(view! {
+        for item in items {
+            <div>(item)</div>
+        }
+
+        <button @click=$(|_e| {
+            if page.get() > 1 {
+                page.decrement()
+            }
+        })>"previous"</button>
+        <button @click=$(|_e| page.increment())>"next"</button>
+    })
+}
+# async fn load_page(_cx: &Cx, _page: usize) -> Result<Vec<String>> { Ok(vec![]) }
+```
+
+See [Reading signals on the server](../runtime/index.html#reading-signals-on-the-server) for tracking rules.
 
 # Guards
 
-A shard has its own endpoint, and a request to it runs the shard function alone. Guards applied by the page or its layouts never run, so a shard that renders private content resolves authorization itself. The caller picks the argument values, so that check covers them too: confirm the current user may see the data the arguments select.
+A request to a shard's endpoint runs the shard without its page or layouts. Their guards do not protect it. Check authorization inside the shard, including whether the user may access the data selected by its arguments.
 
 ```rust
-use topcoat::{Result, context::Cx, runtime::shard, view::view};
+use topcoat::{Result, context::Cx, runtime::shard, view::{View, view}};
 
 #[shard]
-async fn ledger_rows(cx: &Cx, account: String) -> Result {
+async fn ledger_rows(cx: &Cx, account: String) -> Result<impl View> {
     let user = require_auth(cx).await?;
     let rows = fetch_rows(cx, &user, &account).await?;
 
-    view! {
+    Ok(view! {
         for row in rows {
             <div>(row)</div>
         }
-    }
+    })
 }
 # struct User;
 # async fn require_auth(_cx: &Cx) -> Result<User> { Ok(User) }
@@ -70,24 +101,74 @@ The [`context`] module covers writing guards as functions on [`Cx`].
 
 # Arguments And Return Type
 
-Argument types must belong to the shared vocabulary of [`expr!`], since their values cross between Rust and JavaScript. The return type is [`Result`], whose `Ok` value is the rendered view.
+The function must be `async` and take `cx: &Cx` as its first parameter, even when unused. Additional parameter types must belong to the shared vocabulary of [`expr!`], since their values cross between Rust and JavaScript. The function must return a [`Result`] containing a [`View`], like a component.
 
-A parameter named `cx` borrowing [`Cx`] is special: just like in a component, it is filled from the request context on the server and does not take an argument at the call site.
+A parameter typed [`Signal<T>`] accepts a signal handle. Passing the handle alone does not make the shard depend on its value. A tracked read in the shard body creates that dependency. Use an untracked read to use the value without triggering renders when it changes:
+
+```rust
+# use topcoat::{Result, context::Cx, view::*, runtime::{shard, signal, Signal}};
+# async fn search_products(_cx: &Cx, _query: &str, _limit: usize) -> Result<Vec<String>> { Ok(vec![]) }
+#[shard]
+async fn search_results(cx: &Cx, query: String, limit: Signal<usize>) -> Result<impl View> {
+    // A new limit takes effect on the next re-render, but does not cause one.
+    let products = search_products(cx, &query, limit.get_untracked()).await?;
+
+    Ok(view! {
+        for product in products {
+            <div>(product)</div>
+        }
+    })
+}
+
+# #[component]
+# async fn example(cx: &Cx) -> Result<impl View> {
+# let query = signal(cx, String::new);
+# let limit = signal(cx, || 10usize);
+# Ok(view! {
+search_results(query: $(query.get()), limit: limit)
+# })
+# }
+```
 
 # Registration
 
-Each shard is served by a route on the [`Router`]. `.discover()` registers every shard linked into the binary; alternatively, mount shards individually:
+Register a shard on the [`Router`] so the browser can request new content. It implements [`Route`], so pass its name to `.route()`:
+
+```rust,standalone_crate
+use topcoat::{context::Cx, router::module_router};
+# use topcoat::{Result, router::Router, runtime::shard, view::{View, view}};
+# #[shard]
+# async fn search_results(cx: &Cx, query: String) -> Result<impl View> { Ok(view! { (query) }) }
+let router = module_router!().route(search_results).build();
+```
+
+With the `discover` feature enabled, `.discover()` registers all shards linked into the application.
+
+# Path
+
+Topcoat generates an internal path for each shard from its name and source location. This path changes when the shard is renamed or moved. To choose a stable endpoint, pass an absolute path to `#[shard]`:
 
 ```rust
-# use topcoat::{Result, router::Router, runtime::{shard, RouterBuilderShardExt}, view::view};
-# #[shard]
-# async fn search_results(query: String) -> Result { view! { (query) } }
-let router = Router::builder().shard(search_results).build();
+use topcoat::{Result, context::Cx, runtime::shard, view::{View, view}};
+
+#[shard("/search/results")]
+async fn search_results(cx: &Cx, query: String) -> Result<impl View> {
+    Ok(view! { <p>"Results for " (query)</p> })
+}
 ```
+
+The browser re-renders this shard with a `POST` request to `/search/results`. Arguments and signal values are sent in the request body, so the path cannot contain dynamic or catch-all parameters.
+
+The path follows the router's [path syntax](../router/index.html#paths). Groups affect layer matching but are omitted from the URL. For example, `#[shard("/(api)/search/results")]` serves re-render requests at `/search/results`.
 
 [`context`]: ../context/index.html
 [`Cx`]: ../context/struct.Cx.html
 [`Result`]: ../type.Result.html
+[`Route`]: ../router/trait.Route.html
 [`Router`]: ../router/struct.Router.html
+[`signal`]: fn.signal.html
+[`Signal<T>`]: struct.Signal.html
 [`expr!`]: macro.expr.html
+[`live!`]: ../view/macro.live.html
 [`view!`]: ../view/macro.view.html
+[`View`]: ../view/trait.View.html

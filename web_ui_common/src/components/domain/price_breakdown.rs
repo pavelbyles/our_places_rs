@@ -4,6 +4,7 @@
 //! are kept.
 
 use rust_decimal::Decimal;
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -74,6 +75,7 @@ fn positive(amount: Option<Decimal>) -> Option<Decimal> {
 /// The price breakdown panel for checkout and the listing quote.
 #[component]
 pub async fn price_breakdown(
+    cx: &Cx,
     /// The figures to show.
     quote: PriceBreakdown,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
@@ -103,53 +105,102 @@ pub async fn price_breakdown(
     Ok(view! {
         <section
             aria-labelledby="price-breakdown-heading"
-            class=(class!("space-y-3 rounded-[var(--radius-surface,16px)] border border-border bg-card p-4 text-card-foreground", attrs.remove("class")))
+            class=(class!(
+                "space-y-3 rounded-[var(--radius-surface,16px)] border border-border bg-card p-4 text-card-foreground",
+                attrs.remove("class"),
+            ))
             (attrs)
         >
-            <h3 id="price-breakdown-heading" class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">"Price Breakdown"</h3>
+            <h3
+                id="price-breakdown-heading"
+                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+            >
+                "Price Breakdown"
+            </h3>
             <dl class="space-y-1.5 text-sm">
                 <div class=(row)>
                     <dt id="breakdown-nights-label">(nights_label)</dt>
-                    <dd id="breakdown-subtotal" class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(subtotal)</dd>
+                    <dd
+                        id="breakdown-subtotal"
+                        class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                    >
+                        (subtotal)
+                    </dd>
                 </div>
                 if let Some(discount) = discount {
                     <div class=(row)>
                         <dt>"Discount applied"</dt>
-                        <dd class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(discount)</dd>
+                        <dd
+                            class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                        >
+                            (discount)
+                        </dd>
                     </div>
                 }
                 if let Some((label, amount)) = promo {
                     <div class=(row)>
                         <dt>(label)</dt>
-                        <dd id="breakdown-promo" class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(amount)</dd>
+                        <dd
+                            id="breakdown-promo"
+                            class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                        >
+                            (amount)
+                        </dd>
                     </div>
                 }
                 if let Some(cleaning) = cleaning {
                     <div class=(row)>
                         <dt>"Cleaning Fee"</dt>
-                        <dd id="breakdown-cleaning-fee" class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(cleaning)</dd>
+                        <dd
+                            id="breakdown-cleaning-fee"
+                            class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                        >
+                            (cleaning)
+                        </dd>
                     </div>
                 }
                 <div class=(row)>
                     <dt>"Jamaican GCT (15%)"</dt>
-                    <dd id="breakdown-tax" class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(tax)</dd>
+                    <dd
+                        id="breakdown-tax"
+                        class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                    >
+                        (tax)
+                    </dd>
                 </div>
                 if let Some(platform_fee) = platform_fee {
                     <div class=(row)>
                         <dt>"Platform Fee"</dt>
-                        <dd id="breakdown-platform-fee" class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(platform_fee)</dd>
+                        <dd
+                            id="breakdown-platform-fee"
+                            class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                        >
+                            (platform_fee)
+                        </dd>
                     </div>
                 }
                 if let Some(deposit) = deposit {
                     <div class=(row)>
                         <dt>"Refundable Damage Deposit"</dt>
-                        <dd id="breakdown-damage-deposit" class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums">(deposit)</dd>
+                        <dd
+                            id="breakdown-damage-deposit"
+                            class="shrink-0 text-right font-medium whitespace-nowrap tabular-nums"
+                        >
+                            (deposit)
+                        </dd>
                     </div>
                 }
             </dl>
-            <div class="flex items-baseline justify-between gap-4 border-t border-border pt-3 font-semibold">
+            <div
+                class="flex items-baseline justify-between gap-4 border-t border-border pt-3 font-semibold"
+            >
                 <span>"Total Due"</span>
-                <span id="breakdown-total" class="shrink-0 text-right text-lg whitespace-nowrap tabular-nums">(total)</span>
+                <span
+                    id="breakdown-total"
+                    class="shrink-0 text-right text-lg whitespace-nowrap tabular-nums"
+                >
+                    (total)
+                </span>
             </div>
         </section>
     })

@@ -44,7 +44,7 @@ struct BookingCard {
 }
 
 #[component]
-async fn booking_card(card: BookingCard) -> Result<impl View> {
+async fn booking_card(cx: &Cx, card: BookingCard) -> Result<impl View> {
     let b = card.booking;
     let id = b.id.to_string();
     let status = status_of(&b);
@@ -79,47 +79,142 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
     });
     let action = "inline-flex h-10 items-center rounded-full border border-border px-4 text-sm font-medium no-underline text-foreground";
     Ok(view! {
-        <article id=(format!("booking-{id}")) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground">
+        <article
+            id=(format!("booking-{id}"))
+            class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground"
+        >
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div class="space-y-1">
                     <h2 class="font-serif text-2xl">(card.listing_name)</h2>
-                    <p class="text-sm text-muted-foreground">(card.location) " · Reservation " <span class="font-mono">(b.confirmation_code.clone())</span></p>
-                    <p class="text-sm">(format!("{} → {} · {} guest(s)", b.date_from.format("%a %-d %b %Y"), b.date_to.format("%a %-d %b %Y"), b.number_of_persons))</p>
-                    <p class="text-sm font-medium">(money(&b.currency, b.total_price))</p>
+                    <p class="text-sm text-muted-foreground">
+                        (card.location)
+                        " · Reservation "
+                        <span class="font-mono">(b.confirmation_code.clone())</span>
+                    </p>
+                    <p class="text-sm">
+                        (format!(
+                            "{} → {} · {} guest(s)",
+                            b.date_from.format("%a %-d %b %Y"),
+                            b.date_to.format("%a %-d %b %Y"),
+                            b.number_of_persons,
+                        ))
+                    </p>
+                    <p class="text-sm font-medium">
+                        (money(&b.currency, b.total_price))
+                    </p>
                     if let Some(code) = b.promo_code.clone() {
-                        <p id=(format!("booking-promo-{id}")) class="text-sm text-muted-foreground">(format!("Includes promo discount ({code}): -{}", money(&b.currency, b.promo_discount)))</p>
+                        <p
+                            id=(format!("booking-promo-{id}"))
+                            class="text-sm text-muted-foreground"
+                        >
+                            (format!(
+                                "Includes promo discount ({code}): -{}",
+                                money(&b.currency, b.promo_discount),
+                            ))
+                        </p>
                     }
                 </div>
-                <span id=(format!("status-badge-{id}")) class="rounded-full border border-border px-3 py-1 text-xs font-medium capitalize">(status.clone())</span>
+                <span
+                    id=(format!("status-badge-{id}"))
+                    class="rounded-full border border-border px-3 py-1 text-xs font-medium capitalize"
+                >
+                    (status.clone())
+                </span>
             </div>
             if is_pending {
-                <p class="text-sm text-muted-foreground">(format!("Your dates are held until {held_until} while payment is arranged."))</p>
+                <p class="text-sm text-muted-foreground">
+                    (format!(
+                        "Your dates are held until {held_until} while payment is arranged.",
+                    ))
+                </p>
             }
             if is_cancelled {
                 if let Some(href) = book_again.clone() {
-                    <p class="text-sm">"This reservation is cancelled. " <a href=(href)>"Book again"</a></p>
+                    <p class="text-sm">
+                        "This reservation is cancelled. "
+                        <a href=(href)>"Book again"</a>
+                    </p>
                 }
             }
             if let Some(change) = card.pending_change.clone() {
                 let rid = change.id;
                 let by_guest = change.initiated_by_role == ChangeInitiatorRole::Guest;
-                <section id=(format!("pending-change-banner-{id}")) aria-label="Pending reservation change" class="space-y-2 rounded-lg border border-border p-4 text-sm">
-                    <p class="font-medium">(if by_guest { "Change request pending host approval" } else { "Your host proposed a change" })</p>
-                    <p>(format!("{} → {}, {} guest(s) · new total {}", change.proposed_date_from.format("%a %-d %b %Y"), change.proposed_date_to.format("%a %-d %b %Y"), change.proposed_number_of_persons, money(&change.currency, change.proposed_total_price)))</p>
-                    if let Some(reason) = change.pricing_snapshot.promo_lost_reason.clone() {
-                        <p id=(format!("pending-change-promo-lost-{id}")) role="alert" class="text-destructive">(format!("This change removes your promo discount. {reason}"))</p>
+                <section
+                    id=(format!("pending-change-banner-{id}"))
+                    aria-label="Pending reservation change"
+                    class="space-y-2 rounded-lg border border-border p-4 text-sm"
+                >
+                    <p class="font-medium">
+                        (if by_guest {
+                            "Change request pending host approval"
+                        } else {
+                            "Your host proposed a change"
+                        })
+                    </p>
+                    <p>
+                        (format!(
+                            "{} → {}, {} guest(s) · new total {}",
+                            change.proposed_date_from.format("%a %-d %b %Y"),
+                            change.proposed_date_to.format("%a %-d %b %Y"),
+                            change.proposed_number_of_persons,
+                            money(&change.currency, change.proposed_total_price),
+                        ))
+                    </p>
+                    if let Some(reason) = change.pricing_snapshot.promo_lost_reason.clone(
+
+                    ) {
+                        <p
+                            id=(format!("pending-change-promo-lost-{id}"))
+                            role="alert"
+                            class="text-destructive"
+                        >
+                            (format!("This change removes your promo discount. {reason}"))
+                        </p>
                     }
                     <div class="flex flex-wrap gap-2">
                         if by_guest {
-                            <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/cancel"))>
-                                <button id=(format!("btn-cancel-change-{rid}")) type="submit" class="h-10 rounded-full border border-border px-4">"Withdraw request"</button>
+                            <form
+                                method="post"
+                                action=(format!(
+                                    "/bookings/{id}/change-requests/{rid}/cancel",
+                                ))
+                            >
+                                <button
+                                    id=(format!("btn-cancel-change-{rid}"))
+                                    type="submit"
+                                    class="h-10 rounded-full border border-border px-4"
+                                >
+                                    "Withdraw request"
+                                </button>
                             </form>
                         } else {
-                            <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/approve"))>
-                                <button id=(format!("btn-approve-change-{rid}")) type="submit" class="h-10 rounded-full bg-primary px-4 text-primary-foreground">"Accept change"</button>
+                            <form
+                                method="post"
+                                action=(format!(
+                                    "/bookings/{id}/change-requests/{rid}/approve",
+                                ))
+                            >
+                                <button
+                                    id=(format!("btn-approve-change-{rid}"))
+                                    type="submit"
+                                    class="h-10 rounded-full bg-primary px-4 text-primary-foreground"
+                                >
+                                    "Accept change"
+                                </button>
                             </form>
-                            <form method="post" action=(format!("/bookings/{id}/change-requests/{rid}/decline"))>
-                                <button id=(format!("btn-decline-change-{rid}")) type="submit" class="h-10 rounded-full border border-border px-4">"Decline"</button>
+                            <form
+                                method="post"
+                                action=(format!(
+                                    "/bookings/{id}/change-requests/{rid}/decline",
+                                ))
+                            >
+                                <button
+                                    id=(format!("btn-decline-change-{rid}"))
+                                    type="submit"
+                                    class="h-10 rounded-full border border-border px-4"
+                                >
+                                    "Decline"
+                                </button>
                             </form>
                         }
                     </div>
@@ -127,14 +222,33 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
             }
             <div id=(format!("booking-actions-{id}")) class="flex flex-wrap gap-2">
                 if let Some(slug) = card.listing_slug.clone() {
-                    <a href=(format!("/listings/{slug}")) class=(action)>"View Listing"</a>
+                    <a href=(format!("/listings/{slug}")) class=(action)>
+                        "View Listing"
+                    </a>
                 }
-                <a href=(format!("/bookings/{}/messages", b.confirmation_code)) class=(action)>"Message host"</a>
+                <a
+                    href=(format!("/bookings/{}/messages", b.confirmation_code))
+                    class=(action)
+                >
+                    "Message host"
+                </a>
                 if is_confirmed {
-                    <a id=(format!("btn-change-dates-{id}")) href=(format!("/bookings/{id}/change-dates")) class=(action)>"Modify stay"</a>
+                    <a
+                        id=(format!("btn-change-dates-{id}"))
+                        href=(format!("/bookings/{id}/change-dates"))
+                        class=(action)
+                    >
+                        "Modify stay"
+                    </a>
                 }
                 if has_receipt {
-                    <a id=(format!("btn-receipt-{id}")) href=(receipt_href) class=(action)>"Tax receipt"</a>
+                    <a
+                        id=(format!("btn-receipt-{id}"))
+                        href=(receipt_href)
+                        class=(action)
+                    >
+                        "Tax receipt"
+                    </a>
                 }
                 if let Some(href) = review_href {
                     <a href=(href) class=(action)>"Write a review"</a>
@@ -147,7 +261,9 @@ async fn booking_card(card: BookingCard) -> Result<impl View> {
                         hx-target="#cancel-dialog-slot"
                         hx-swap="innerHTML"
                         class="inline-flex h-10 items-center rounded-full border border-destructive px-4 text-sm font-medium text-destructive"
-                    >"Cancel reservation"</button>
+                    >
+                        "Cancel reservation"
+                    </button>
                 }
             </div>
         </article>
@@ -220,7 +336,11 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-8">
             if just_booked {
-                <div id="booking-success-toast" role="status" class="rounded-lg border border-border bg-card p-4 text-sm">
+                <div
+                    id="booking-success-toast"
+                    role="status"
+                    class="rounded-lg border border-border bg-card p-4 text-sm"
+                >
                     "Your dates are held. We'll confirm your reservation once payment is arranged."
                 </div>
             }
@@ -230,9 +350,14 @@ pub async fn bookings_page(cx: &Cx) -> Result<impl View> {
             </div>
             <div id="upcoming-bookings-container" class="space-y-6">
                 if cards.is_empty() {
-                    <div id="no-bookings-card" class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-10 text-center">
+                    <div
+                        id="no-bookings-card"
+                        class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-10 text-center"
+                    >
                         <p class="font-serif text-xl">"No bookings yet"</p>
-                        <p class="mt-2 text-sm text-muted-foreground"><a href="/listings">"Explore our villas"</a></p>
+                        <p class="mt-2 text-sm text-muted-foreground">
+                            <a href="/listings">"Explore our villas"</a>
+                        </p>
                     </div>
                 } else {
                     for card in cards {
@@ -256,13 +381,25 @@ async fn refund_quote(cx: &Cx, id: Uuid) -> Result<RefundQuote> {
 }
 
 #[component]
-async fn quote_details(quote: RefundQuote, currency: String) -> Result<impl View> {
+async fn quote_details(cx: &Cx, quote: RefundQuote, currency: String) -> Result<impl View> {
     let pct = (quote.policy_pct * rust_decimal::Decimal::ONE_HUNDRED).round();
     Ok(view! {
-        <dl id="cancel-modal-quote-details" class="space-y-1 rounded-lg border border-border p-4 text-sm">
-            <div class="flex justify-between"><dt>"Refund schedule"</dt><dd>(format!("{pct}% of accommodation"))</dd></div>
-            <div class="flex justify-between font-medium"><dt>"Refund Total"</dt><dd>(money(&currency, quote.refund_total))</dd></div>
-            <div class="flex justify-between text-muted-foreground"><dt>"Retained / fees"</dt><dd>(money(&currency, quote.retained_total))</dd></div>
+        <dl
+            id="cancel-modal-quote-details"
+            class="space-y-1 rounded-lg border border-border p-4 text-sm"
+        >
+            <div class="flex justify-between">
+                <dt>"Refund schedule"</dt>
+                <dd>(format!("{pct}% of accommodation"))</dd>
+            </div>
+            <div class="flex justify-between font-medium">
+                <dt>"Refund Total"</dt>
+                <dd>(money(&currency, quote.refund_total))</dd>
+            </div>
+            <div class="flex justify-between text-muted-foreground">
+                <dt>"Retained / fees"</dt>
+                <dd>(money(&currency, quote.retained_total))</dd>
+            </div>
         </dl>
     })
 }
@@ -271,7 +408,7 @@ async fn quote_details(quote: RefundQuote, currency: String) -> Result<impl View
 /// anyone else's).
 #[page("/bookings/{id}/cancellation-quote")]
 pub async fn cancellation_quote(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     let booking = owned_booking(cx, &guest, id).await?;
     let quote = refund_quote(cx, id).await?;
@@ -283,25 +420,51 @@ pub async fn cancellation_quote(cx: &Cx) -> Result<impl View> {
 /// `ui.js` (`data-auto-open`).
 #[page("/bookings/{id}/cancel")]
 pub async fn cancel_dialog(cx: &Cx) -> Result<impl View> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     let booking = owned_booking(cx, &guest, id).await?;
     let quote = refund_quote(cx, id).await.ok();
     let currency = booking.currency.clone();
     let action = format!("/bookings/{id}/cancel");
     Ok(view! {
-        <dialog id="cancel-booking-modal" data-auto-open="" aria-labelledby="cancel-title" class="m-auto w-[min(480px,92vw)] rounded-[var(--radius-surface,16px)] bg-card p-6 text-card-foreground backdrop:bg-black/50">
+        <dialog
+            id="cancel-booking-modal"
+            data-auto-open=""
+            aria-labelledby="cancel-title"
+            class="m-auto w-[min(480px,92vw)] rounded-[var(--radius-surface,16px)] bg-card p-6 text-card-foreground backdrop:bg-black/50"
+        >
             <div class="space-y-4">
-                <h2 id="cancel-title" class="font-serif text-2xl">"Cancel reservation?"</h2>
-                <p class="text-sm">"Reservation " <span class="font-mono">(booking.confirmation_code.clone())</span></p>
+                <h2 id="cancel-title" class="font-serif text-2xl">
+                    "Cancel reservation?"
+                </h2>
+                <p class="text-sm">
+                    "Reservation "
+                    <span class="font-mono">(booking.confirmation_code.clone())</span>
+                </p>
                 if let Some(quote) = quote {
                     quote_details(quote: quote, currency: currency)
                 } else {
-                    <p id="cancel-modal-quote-details" class="text-sm text-muted-foreground">"Your refund will follow the property's cancellation schedule."</p>
+                    <p
+                        id="cancel-modal-quote-details"
+                        class="text-sm text-muted-foreground"
+                    >
+                        "Your refund will follow the property's cancellation schedule."
+                    </p>
                 }
                 <form method="post" action=(action) class="flex justify-end gap-2">
-                    <button type="button" data-dialog-close="" class="h-10 rounded-full border border-border px-4 text-sm">"Keep Reservation"</button>
-                    <button type="submit" class="h-10 rounded-full bg-destructive px-4 text-sm font-medium text-destructive-foreground">"Yes, Cancel Booking"</button>
+                    <button
+                        type="button"
+                        data-dialog-close=""
+                        class="h-10 rounded-full border border-border px-4 text-sm"
+                    >
+                        "Keep Reservation"
+                    </button>
+                    <button
+                        type="submit"
+                        class="h-10 rounded-full bg-destructive px-4 text-sm font-medium text-destructive-foreground"
+                    >
+                        "Yes, Cancel Booking"
+                    </button>
                 </form>
             </div>
         </dialog>
@@ -311,7 +474,7 @@ pub async fn cancel_dialog(cx: &Cx) -> Result<impl View> {
 /// Cancels one of the guest's bookings.
 #[page(POST "/bookings/{id}/cancel")]
 pub async fn cancel_booking(cx: &Cx) -> Result<()> {
-    let id = parse_booking_id(path_param::<Id>(cx))?;
+    let id = parse_booking_id(id(cx))?;
     let guest = guest(cx).await?;
     owned_booking(cx, &guest, id).await?;
     let token = service_token(cx, &guest)?;

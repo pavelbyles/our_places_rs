@@ -7,6 +7,7 @@ use topcoat::{
 };
 
 use crate::components::svg_icon::svg_icon;
+use topcoat::context::Cx;
 
 /// A group of collapsible sections.
 ///
@@ -33,6 +34,7 @@ use crate::components::svg_icon::svg_icon;
 /// ```
 #[component]
 pub async fn accordion(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -64,6 +66,7 @@ const ANIMATION: StaticClass = class!(
 /// open.
 #[component]
 pub async fn accordion_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -90,6 +93,7 @@ pub async fn accordion_item(
 /// Pass the heading as child content. A chevron shows whether the section is open.
 #[component]
 pub async fn accordion_trigger(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -110,7 +114,8 @@ pub async fn accordion_trigger(
             (attrs)
         >
             (child)
-            svg_icon(data: iconify_icon!("lucide:chevron-down"),
+            svg_icon(
+                data: iconify_icon!("lucide:chevron-down"),
                 attrs: attributes! {
                     class="size-4 shrink-0 text-muted-foreground transition-transform \
                         duration-200 ease-out group-open:rotate-180"
@@ -123,6 +128,7 @@ pub async fn accordion_trigger(
 /// The content shown when an accordion section is open.
 #[component]
 pub async fn accordion_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

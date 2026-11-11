@@ -16,6 +16,7 @@ use super::{
     sheet::{SheetSide, sheet, sheet_content},
     skeleton::skeleton,
 };
+use topcoat::context::Cx;
 
 /// The edge of the page occupied by a sidebar.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -97,6 +98,7 @@ impl SidebarCollapsible {
 /// [`sidebar`] and event handlers to [`sidebar_trigger`] and [`sidebar_rail`].
 #[component]
 pub async fn sidebar_provider(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -146,6 +148,7 @@ const PANEL_THEME: StaticClass = class!(
 /// visual overlay; focus trapping requires additional application scripting.
 #[component]
 pub async fn sidebar(
+    cx: &Cx,
     /// Whether it renders open. Server-rendered only; `ui.js` handles toggling (no Topcoat runtime).
     #[into]
     #[default(true.into())]
@@ -238,6 +241,7 @@ pub async fn sidebar(
 /// desktop and mobile expressions and handlers.
 #[component]
 pub async fn sidebar_trigger(
+    cx: &Cx,
     /// Whether it renders open. Server-rendered only; `ui.js` handles toggling (no Topcoat runtime).
     #[into]
     #[default(true.into())]
@@ -267,6 +271,7 @@ pub async fn sidebar_trigger(
 /// Pass its signal update as an `@click` attribute.
 #[component]
 pub async fn sidebar_rail(
+    cx: &Cx,
     /// Whether it renders open. Server-rendered only; `ui.js` handles toggling (no Topcoat runtime).
     #[into]
     #[default(true.into())]
@@ -297,6 +302,7 @@ pub async fn sidebar_rail(
 /// and bottom border match the sidebar header without extra classes.
 #[component]
 pub async fn sidebar_inset(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -324,6 +330,7 @@ pub async fn sidebar_inset(
 /// Inside [`sidebar_inset`], it lays out its children as a sticky toolbar.
 #[component]
 pub async fn sidebar_header(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -348,6 +355,7 @@ pub async fn sidebar_header(
 /// The fixed footer below the sidebar's scrolling content.
 #[component]
 pub async fn sidebar_footer(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -369,6 +377,7 @@ pub async fn sidebar_footer(
 /// The scrollable region between the header and footer.
 #[component]
 pub async fn sidebar_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -393,6 +402,7 @@ pub async fn sidebar_content(
 /// A section containing a label, an optional action and related menu items.
 #[component]
 pub async fn sidebar_group(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -417,6 +427,7 @@ pub async fn sidebar_group(
 /// A group's caption, hidden when the desktop sidebar collapses to icons.
 #[component]
 pub async fn sidebar_group_label(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -446,6 +457,7 @@ const ACTION: StaticClass = class!(
 /// An icon button beside the group label. Give it an accessible label.
 #[component]
 pub async fn sidebar_group_action(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -468,6 +480,7 @@ pub async fn sidebar_group_action(
 /// The body of a sidebar group.
 #[component]
 pub async fn sidebar_group_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -489,6 +502,7 @@ pub async fn sidebar_group_content(
 /// A list of sidebar menu items.
 #[component]
 pub async fn sidebar_menu(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -510,6 +524,7 @@ pub async fn sidebar_menu(
 /// One menu row containing a button or link and optional actions or submenus.
 #[component]
 pub async fn sidebar_menu_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -531,6 +546,7 @@ pub async fn sidebar_menu_item(
 /// A text input styled for a sidebar header or group.
 #[component]
 pub async fn sidebar_input(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -552,6 +568,7 @@ pub async fn sidebar_input(
 /// A rule between sidebar sections.
 #[component]
 pub async fn sidebar_separator(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     attrs: Attributes,
@@ -623,6 +640,7 @@ pub fn sidebar_menu_button_variants(
 /// runtime expression. Event handlers and other attributes are forwarded.
 #[component]
 pub async fn sidebar_menu_button(
+    cx: &Cx,
     /// Visual variant.
     #[default]
     variant: SidebarMenuButtonVariant,
@@ -670,6 +688,7 @@ pub async fn sidebar_menu_button(
 /// An independent action beside a menu button. Give it an accessible label.
 #[component]
 pub async fn sidebar_menu_action(
+    cx: &Cx,
     /// Only show the action while the item is hovered.
     #[default]
     show_on_hover: bool,
@@ -700,6 +719,7 @@ pub async fn sidebar_menu_action(
 /// A count or status beside a menu button.
 #[component]
 pub async fn sidebar_menu_badge(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -724,6 +744,7 @@ pub async fn sidebar_menu_badge(
 /// A placeholder matching a menu row, optionally including an icon.
 #[component]
 pub async fn sidebar_menu_skeleton(
+    cx: &Cx,
     /// Whether to render the icon.
     #[default]
     show_icon: bool,
@@ -756,6 +777,7 @@ pub async fn sidebar_menu_skeleton(
 /// A nested menu, hidden when the sidebar collapses to icons.
 #[component]
 pub async fn sidebar_menu_sub(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -780,6 +802,7 @@ pub async fn sidebar_menu_sub(
 /// One row of a nested sidebar menu.
 #[component]
 pub async fn sidebar_menu_sub_item(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -801,6 +824,7 @@ pub async fn sidebar_menu_sub_item(
 /// A nested menu link. Pass its destination through the `href` attribute.
 #[component]
 pub async fn sidebar_menu_sub_button(
+    cx: &Cx,
     /// Whether this item is the current page or selection.
     #[into]
     #[default(false.into())]

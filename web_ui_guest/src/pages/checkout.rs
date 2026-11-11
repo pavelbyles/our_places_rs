@@ -195,7 +195,7 @@ struct CheckoutView {
 }
 
 #[component]
-async fn checkout_view(v: CheckoutView) -> Result<impl View> {
+async fn checkout_view(cx: &Cx, v: CheckoutView) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case tracking-normal font-normal";
     let today = jamaica_today().to_string();
@@ -208,85 +208,297 @@ async fn checkout_view(v: CheckoutView) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-8">
             <div class="space-y-3">
-                <h1 class="font-serif text-[clamp(32px,4vw,48px)]">"Confirm and book"</h1>
-                steps(labels: vec!["Dates".into(), "Your details".into(), "Confirm".into()], current: current_step)
+                <h1 class="font-serif text-[clamp(32px,4vw,48px)]">
+                    "Confirm and book"
+                </h1>
+                steps(
+                    labels: vec!["Dates".into(), "Your details".into(), "Confirm".into()],
+                    current: current_step
+                )
             </div>
             if let Some(error) = v.error.clone() {
-                <div id="checkout-error-banner" role="alert" class="rounded-lg border border-destructive p-4 text-sm text-destructive">
+                <div
+                    id="checkout-error-banner"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-4 text-sm text-destructive"
+                >
                     <span id="checkout-error-text">(error)</span>
                 </div>
             }
             <div class="grid gap-10 lg:grid-cols-[1fr_380px]">
                 if v.stay.is_none() {
-                    <form method="get" action=(action.clone()) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
+                    <form
+                        method="get"
+                        action=(action.clone())
+                        class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+                    >
                         <h2 class="font-serif text-2xl">"Choose your dates"</h2>
                         <div class="grid gap-3 sm:grid-cols-3">
-                            <label class=(label)>"Check in"<input id="checkout-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) required=(true) class=(input) /></label>
-                            <label class=(label)>"Check out"<input id="checkout-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) required=(true) class=(input) /></label>
-                            <label class=(label)>"Guests"<input type="number" name="guests" min="1" max=(v.max_guests.to_string()) value=(v.guests.to_string()) class=(input) /></label>
+                            <label class=(label)>
+                                "Check in"
+                                <input
+                                    id="checkout-check-in"
+                                    type="text"
+                                    data-date-picker=""
+                                    placeholder="yyyy-mm-dd"
+                                    pattern="\\d{4}-\\d{2}-\\d{2}"
+                                    name="check_in"
+                                    min=(today.clone())
+                                    required=(true)
+                                    class=(input)
+                                />
+                            </label>
+                            <label class=(label)>
+                                "Check out"
+                                <input
+                                    id="checkout-check-out"
+                                    type="text"
+                                    data-date-picker=""
+                                    placeholder="yyyy-mm-dd"
+                                    pattern="\\d{4}-\\d{2}-\\d{2}"
+                                    name="check_out"
+                                    min=(today)
+                                    required=(true)
+                                    class=(input)
+                                />
+                            </label>
+                            <label class=(label)>
+                                "Guests"
+                                <input
+                                    type="number"
+                                    name="guests"
+                                    min="1"
+                                    max=(v.max_guests.to_string())
+                                    value=(v.guests.to_string())
+                                    class=(input)
+                                />
+                            </label>
                         </div>
                         if !v.currency.is_empty() {
-                            <input type="hidden" name="currency" value=(v.currency.clone()) />
+                            <input
+                                type="hidden"
+                                name="currency"
+                                value=(v.currency.clone())
+                            />
                         }
-                        <button type="submit" class="h-11 rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground">"See price"</button>
+                        <button
+                            type="submit"
+                            class="h-11 rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground"
+                        >
+                            "See price"
+                        </button>
                     </form>
                 } else {
-                    <form id="checkout-form" method="post" action=(action) class="space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
+                    <form
+                        id="checkout-form"
+                        method="post"
+                        action=(action)
+                        class="space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+                    >
                         <input type="hidden" name="check_in" value=(check_in.clone()) />
-                        <input type="hidden" name="check_out" value=(check_out.clone()) />
-                        <input type="hidden" name="guests" value=(v.guests.to_string()) />
-                        <input type="hidden" name="currency" value=(v.currency.clone()) />
+                        <input
+                            type="hidden"
+                            name="check_out"
+                            value=(check_out.clone())
+                        />
+                        <input
+                            type="hidden"
+                            name="guests"
+                            value=(v.guests.to_string())
+                        />
+                        <input
+                            type="hidden"
+                            name="currency"
+                            value=(v.currency.clone())
+                        />
                         if let Some(enquiry) = v.enquiry_id {
-                            <input type="hidden" name="enquiry_id" value=(enquiry.to_string()) />
+                            <input
+                                type="hidden"
+                                name="enquiry_id"
+                                value=(enquiry.to_string())
+                            />
                         }
                         <h2 class="font-serif text-2xl">"Your details"</h2>
                         <div class="grid gap-4 sm:grid-cols-2">
-                            <label class=(label) for="guest-first-name">"First name"<input id="guest-first-name" name="first_name" required=(true) autocomplete="given-name" value=(v.first_name.clone()) class=(input) /></label>
-                            <label class=(label) for="guest-last-name">"Last name"<input id="guest-last-name" name="last_name" required=(true) autocomplete="family-name" value=(v.last_name.clone()) class=(input) /></label>
-                            <label class=(label) for="guest-email">"Email"<input id="guest-email" name="email" type="email" required=(true) autocomplete="email" value=(v.email.clone()) class=(input) /></label>
-                            <label class=(label) for="guest-phone">"Phone"<input id="guest-phone" name="phone" type="tel" autocomplete="tel" value=(v.phone.clone()) class=(input) /></label>
+                            <label class=(label) for="guest-first-name">
+                                "First name"
+                                <input
+                                    id="guest-first-name"
+                                    name="first_name"
+                                    required=(true)
+                                    autocomplete="given-name"
+                                    value=(v.first_name.clone())
+                                    class=(input)
+                                />
+                            </label>
+                            <label class=(label) for="guest-last-name">
+                                "Last name"
+                                <input
+                                    id="guest-last-name"
+                                    name="last_name"
+                                    required=(true)
+                                    autocomplete="family-name"
+                                    value=(v.last_name.clone())
+                                    class=(input)
+                                />
+                            </label>
+                            <label class=(label) for="guest-email">
+                                "Email"
+                                <input
+                                    id="guest-email"
+                                    name="email"
+                                    type="email"
+                                    required=(true)
+                                    autocomplete="email"
+                                    value=(v.email.clone())
+                                    class=(input)
+                                />
+                            </label>
+                            <label class=(label) for="guest-phone">
+                                "Phone"
+                                <input
+                                    id="guest-phone"
+                                    name="phone"
+                                    type="tel"
+                                    autocomplete="tel"
+                                    value=(v.phone.clone())
+                                    class=(input)
+                                />
+                            </label>
                         </div>
-                        <label class=(label) for="guest-arrival-time">"Estimated arrival"
-                            <select id="guest-arrival-time" name="arrival_time" class=(input)>
+                        <label class=(label) for="guest-arrival-time">
+                            "Estimated arrival"
+                            <select
+                                id="guest-arrival-time"
+                                name="arrival_time"
+                                class=(input)
+                            >
                                 for t in ARRIVAL_TIMES {
-                                    <option value=(t) selected=(v.arrival_time == t)>(t)</option>
+                                    <option value=(t) selected=(v.arrival_time == t)>
+                                        (t)
+                                    </option>
                                 }
                             </select>
                         </label>
                         <div class="space-y-2">
-                            <label class=(label) for="checkout-promo-code">"Promo code"</label>
+                            <label class=(label) for="checkout-promo-code">
+                                "Promo code"
+                            </label>
                             <div class="flex gap-2">
-                                <input id="checkout-promo-code" name="promo_code" maxlength="64" autocomplete="off" value=(v.promo_code.clone()) class=(format!("{input} mt-0 uppercase")) />
-                                <button id="checkout-promo-apply" type="submit" name="intent" value="apply_promo" formnovalidate=(true) class="h-11 shrink-0 rounded-[var(--radius-control,10px)] border border-border px-4 text-sm font-medium">"Apply"</button>
+                                <input
+                                    id="checkout-promo-code"
+                                    name="promo_code"
+                                    maxlength="64"
+                                    autocomplete="off"
+                                    value=(v.promo_code.clone())
+                                    class=(format!("{input} mt-0 uppercase"))
+                                />
+                                <button
+                                    id="checkout-promo-apply"
+                                    type="submit"
+                                    name="intent"
+                                    value="apply_promo"
+                                    formnovalidate=(true)
+                                    class="h-11 shrink-0 rounded-[var(--radius-control,10px)] border border-border px-4 text-sm font-medium"
+                                >
+                                    "Apply"
+                                </button>
                                 if !v.promo_code.is_empty() {
-                                    <button id="checkout-promo-remove" type="submit" name="intent" value="remove_promo" formnovalidate=(true) class="h-11 shrink-0 rounded-[var(--radius-control,10px)] border border-border px-4 text-sm font-medium">"Remove"</button>
+                                    <button
+                                        id="checkout-promo-remove"
+                                        type="submit"
+                                        name="intent"
+                                        value="remove_promo"
+                                        formnovalidate=(true)
+                                        class="h-11 shrink-0 rounded-[var(--radius-control,10px)] border border-border px-4 text-sm font-medium"
+                                    >
+                                        "Remove"
+                                    </button>
                                 }
                             </div>
                             if let Some(refusal) = v.promo_refusal.clone() {
-                                <p id="checkout-promo-refusal" role="alert" class="text-sm text-destructive">(refusal)</p>
+                                <p
+                                    id="checkout-promo-refusal"
+                                    role="alert"
+                                    class="text-sm text-destructive"
+                                >
+                                    (refusal)
+                                </p>
                             }
                         </div>
-                        <label class=(label) for="guest-message">"Message to your host (optional)"
-                            <textarea id="guest-message" name="message_to_host" rows="3" maxlength="2000" class=(format!("{input} h-auto py-2"))>(v.message.clone())</textarea>
+                        <label class=(label) for="guest-message">
+                            "Message to your host (optional)"
+                            <textarea
+                                id="guest-message"
+                                name="message_to_host"
+                                rows="3"
+                                maxlength="2000"
+                                class=(format!("{input} h-auto py-2"))
+                            >
+                                (v.message.clone())
+                            </textarea>
                         </label>
-                        <p id="checkout-mode-note" class="text-sm text-muted-foreground">(checkout_note(v.mode))</p>
+                        <p
+                            id="checkout-mode-note"
+                            class="text-sm text-muted-foreground"
+                        >
+                            (checkout_note(v.mode))
+                        </p>
                         if let Some(why) = v.no_quote.clone() {
-                            <p id="checkout-no-quote" role="alert" class="text-sm text-destructive">(why)</p>
+                            <p
+                                id="checkout-no-quote"
+                                role="alert"
+                                class="text-sm text-destructive"
+                            >
+                                (why)
+                            </p>
                         }
-                        for (i, (intent, button_label)) in checkout_actions(v.mode).into_iter().enumerate() {
+                        for (i, (intent, button_label)) in checkout_actions(v.mode)
+                            .into_iter()
+                            .enumerate() {
                             if intent.is_empty() {
-                                <button id="checkout-submit-btn" type="submit" disabled=(v.breakdown.is_none()) class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50">(button_label)</button>
+                                <button
+                                    id="checkout-submit-btn"
+                                    type="submit"
+                                    disabled=(v.breakdown.is_none())
+                                    class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50"
+                                >
+                                    (button_label)
+                                </button>
                             } else {
-                                <button id="checkout-request-btn" type="submit" name="intent" value=(intent) disabled=(v.breakdown.is_none()) class=(if i == 0 { "h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50" } else { "h-11 w-full rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium disabled:opacity-50" })>(button_label)</button>
+                                <button
+                                    id="checkout-request-btn"
+                                    type="submit"
+                                    name="intent"
+                                    value=(intent)
+                                    disabled=(v.breakdown.is_none())
+                                    class=(if i == 0 {
+                                        "h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground disabled:opacity-50"
+                                    } else {
+                                        "h-11 w-full rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium disabled:opacity-50"
+                                    })
+                                >
+                                    (button_label)
+                                </button>
                             }
                         }
                     </form>
                 }
-                <aside aria-label="Your stay" class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
+                <aside
+                    aria-label="Your stay"
+                    class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+                >
                     <p class="font-serif text-xl">(v.summary.name.clone())</p>
                     <p class="text-sm text-muted-foreground">(v.summary.location())</p>
                     if let Some((a, b)) = v.stay {
-                        <p class="text-sm">(format!("{} → {} · {} guest(s)", a.format("%a %-d %b %Y"), b.format("%a %-d %b %Y"), v.guests))</p>
+                        <p class="text-sm">
+                            (format!(
+                                "{} → {} · {} guest(s)",
+                                a.format("%a %-d %b %Y"),
+                                b.format("%a %-d %b %Y"),
+                                v.guests,
+                            ))
+                        </p>
                     }
                     if let Some(b) = v.breakdown.clone() {
                         price_breakdown(quote: b)
@@ -383,7 +595,7 @@ async fn build_view(
 /// Checkout. Signed-in guests only; without dates it asks for them first.
 #[page("/checkout/{slug}")]
 pub async fn checkout_page(cx: &Cx) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let offered = active_currency_codes(cx).await;
     if let Some((base, currency)) = split_currency_suffix(slug, &offered) {
         return Err(redirect_permanent(format!("/checkout/{base}?currency={currency}")).into());
@@ -422,7 +634,7 @@ pub async fn checkout_submit(
     /// The submitted checkout form.
     Form(form): Form<CheckoutForm>,
 ) -> Result<impl View> {
-    let slug: &str = path_param::<Slug>(cx);
+    let slug: &str = slug(cx);
     let guest = match require_guest(cx).await {
         Ok(guest) => guest,
         Err(GuardError::Unauthenticated) => {
@@ -665,7 +877,7 @@ macro_rules! legacy_currency_checkout {
         /// Legacy per-currency checkout URL; redirects permanently.
         #[page($path)]
         pub async fn $name(cx: &Cx) -> Result<()> {
-            let id: &str = path_param::<Id>(cx);
+            let id: &str = id(cx);
             Err(redirect_permanent(format!("/checkout/{id}?currency={}", $currency)).into())
         }
     };

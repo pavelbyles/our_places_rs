@@ -26,38 +26,90 @@ pub struct RegisterForm {
 const MIN_PASSWORD_LEN: usize = 8;
 
 #[component]
-async fn register_form(form: RegisterForm, error: Option<String>) -> Result<impl View> {
+async fn register_form(cx: &Cx, form: RegisterForm, error: Option<String>) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     Ok(view! {
-        <div class="mx-auto w-full max-w-md space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-8 text-card-foreground">
+        <div
+            class="mx-auto w-full max-w-md space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-8 text-card-foreground"
+        >
             <div class="space-y-1 text-center">
                 <h1 class="sr-only">"Register"</h1>
                 <h2 class="font-serif text-3xl">"Create Account"</h2>
-                <p class="text-sm text-muted-foreground">"Book villas and keep every stay in one place."</p>
+                <p class="text-sm text-muted-foreground">
+                    "Book villas and keep every stay in one place."
+                </p>
             </div>
             if let Some(error) = error {
-                <div id="reg-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(error)</div>
+                <div
+                    id="reg-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (error)
+                </div>
             }
             <form method="post" action="/register" class="space-y-4">
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class=(label) for="reg-first-name">"First name"</label>
-                        <input id="reg-first-name" name="first_name" required=(true) autocomplete="given-name" value=(form.first_name) class=(input) />
+                        <input
+                            id="reg-first-name"
+                            name="first_name"
+                            required=(true)
+                            autocomplete="given-name"
+                            value=(form.first_name)
+                            class=(input)
+                        />
                     </div>
                     <div>
                         <label class=(label) for="reg-last-name">"Last name"</label>
-                        <input id="reg-last-name" name="last_name" required=(true) autocomplete="family-name" value=(form.last_name) class=(input) />
+                        <input
+                            id="reg-last-name"
+                            name="last_name"
+                            required=(true)
+                            autocomplete="family-name"
+                            value=(form.last_name)
+                            class=(input)
+                        />
                     </div>
                 </div>
                 <label class=(label) for="reg-email">"Email address"</label>
-                <input id="reg-email" name="email" type="email" required=(true) autocomplete="email" value=(form.email) class=(input) />
+                <input
+                    id="reg-email"
+                    name="email"
+                    type="email"
+                    required=(true)
+                    autocomplete="email"
+                    value=(form.email)
+                    class=(input)
+                />
                 <label class=(label) for="reg-password">"Password"</label>
-                <input id="reg-password" name="password" type="password" required=(true) minlength="8" autocomplete="new-password" aria-describedby="reg-password-hint" class=(input) />
-                <p id="reg-password-hint" class="text-xs text-muted-foreground">"At least 8 characters."</p>
-                <button id="btn-guest-reg" type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground">"Create account"</button>
+                <input
+                    id="reg-password"
+                    name="password"
+                    type="password"
+                    required=(true)
+                    minlength="8"
+                    autocomplete="new-password"
+                    aria-describedby="reg-password-hint"
+                    class=(input)
+                />
+                <p id="reg-password-hint" class="text-xs text-muted-foreground">
+                    "At least 8 characters."
+                </p>
+                <button
+                    id="btn-guest-reg"
+                    type="submit"
+                    class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground"
+                >
+                    "Create account"
+                </button>
             </form>
-            <p class="text-center text-sm text-muted-foreground">"Already have an account? " <a href="/login">"Sign in"</a></p>
+            <p class="text-center text-sm text-muted-foreground">
+                "Already have an account? "
+                <a href="/login">"Sign in"</a>
+            </p>
         </div>
     })
 }

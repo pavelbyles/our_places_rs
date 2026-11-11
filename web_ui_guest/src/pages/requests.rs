@@ -100,7 +100,11 @@ fn current_price(r: &BookingRequestResponse) -> &PriceBreakdown {
 }
 
 #[component]
-async fn request_card(request: BookingRequestResponse, listing_name: String) -> Result<impl View> {
+async fn request_card(
+    cx: &Cx,
+    request: BookingRequestResponse,
+    listing_name: String,
+) -> Result<impl View> {
     let price = current_price(&request);
     let total =
         web_ui_common::components::domain::price_breakdown::money(&price.currency, price.total);
@@ -109,31 +113,78 @@ async fn request_card(request: BookingRequestResponse, listing_name: String) -> 
         .is_live()
         .then(|| time_left(request.expires_at, Utc::now()));
     Ok(view! {
-        <article id=(format!("request-{}", request.id)) class="space-y-2 rounded-[var(--radius-surface,16px)] border border-border bg-card p-5">
+        <article
+            id=(format!("request-{}", request.id))
+            class="space-y-2 rounded-[var(--radius-surface,16px)] border border-border bg-card p-5"
+        >
             <div class="flex items-center justify-between gap-3">
                 <h2 class="font-serif text-xl">(listing_name)</h2>
-                <span data-request-status=(request.status.as_str()) class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">(request.status.label())</span>
+                <span
+                    data-request-status=(request.status.as_str())
+                    class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
+                >
+                    (request.status.label())
+                </span>
             </div>
-            <p class="text-sm text-muted-foreground">(format!("{} → {} · {} guest(s) · {}", request.check_in.format("%a %-d %b %Y"), request.check_out.format("%a %-d %b %Y"), request.guests, total))</p>
+            <p class="text-sm text-muted-foreground">
+                (format!(
+                    "{} → {} · {} guest(s) · {}",
+                    request.check_in.format("%a %-d %b %Y"),
+                    request.check_out.format("%a %-d %b %Y"),
+                    request.guests,
+                    total,
+                ))
+            </p>
             if let Some(expires) = expires {
-                <p class="text-sm">"Expires " (expires)</p>
+                <p class="text-sm">
+                    "Expires "
+                    (expires)
+                </p>
             }
-            <a href=(format!("/requests/{}", request.id)) class="text-sm font-medium">"View request"</a>
+            <a href=(format!("/requests/{}", request.id)) class="text-sm font-medium">
+                "View request"
+            </a>
         </article>
     })
 }
 
 #[component]
-async fn enquiry_card(enquiry: EnquiryResponse, listing_name: String) -> Result<impl View> {
+async fn enquiry_card(
+    cx: &Cx,
+    enquiry: EnquiryResponse,
+    listing_name: String,
+) -> Result<impl View> {
     let open = enquiry.status == EnquiryStatus::Open;
     Ok(view! {
-        <article id=(format!("enquiry-{}", enquiry.id)) class="space-y-2 rounded-[var(--radius-surface,16px)] border border-border bg-card p-5">
+        <article
+            id=(format!("enquiry-{}", enquiry.id))
+            class="space-y-2 rounded-[var(--radius-surface,16px)] border border-border bg-card p-5"
+        >
             <div class="flex items-center justify-between gap-3">
-                <h2 class="font-serif text-xl">"Question: " (listing_name)</h2>
-                <span class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">(if open { "Open" } else { "Closed" })</span>
+                <h2 class="font-serif text-xl">
+                    "Question: "
+                    (listing_name)
+                </h2>
+                <span
+                    class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
+                >
+                    (if open { "Open" } else { "Closed" })
+                </span>
             </div>
-            <p class="text-sm text-muted-foreground">(format!("{} → {} · {} guest(s)", enquiry.check_in.format("%a %-d %b %Y"), enquiry.check_out.format("%a %-d %b %Y"), enquiry.guests))</p>
-            <a href=(format!("/requests/enquiries/{}", enquiry.id)) class="text-sm font-medium">"View conversation"</a>
+            <p class="text-sm text-muted-foreground">
+                (format!(
+                    "{} → {} · {} guest(s)",
+                    enquiry.check_in.format("%a %-d %b %Y"),
+                    enquiry.check_out.format("%a %-d %b %Y"),
+                    enquiry.guests,
+                ))
+            </p>
+            <a
+                href=(format!("/requests/enquiries/{}", enquiry.id))
+                class="text-sm font-medium"
+            >
+                "View conversation"
+            </a>
         </article>
     })
 }
@@ -165,6 +216,7 @@ async fn listing_names(
 
 #[component]
 async fn requests_list(
+    cx: &Cx,
     list: BookingRequestList,
     names: std::collections::HashMap<Uuid, String>,
 ) -> Result<impl View> {
@@ -192,9 +244,17 @@ async fn requests_list(
         })
         .collect();
     Ok(view! {
-        <div id="requests-list" hx-get="/requests/list" hx-trigger="every 60s" hx-swap="outerHTML" class="space-y-4">
+        <div
+            id="requests-list"
+            hx-get="/requests/list"
+            hx-trigger="every 60s"
+            hx-swap="outerHTML"
+            class="space-y-4"
+        >
             if empty {
-                <p class="text-sm text-muted-foreground">"You haven't sent any requests or questions yet."</p>
+                <p class="text-sm text-muted-foreground">
+                    "You haven't sent any requests or questions yet."
+                </p>
             }
             for (request, listing_name) in requests {
                 request_card(listing_name: listing_name, request: request)
@@ -240,7 +300,7 @@ pub async fn requests_list_fragment(cx: &Cx) -> Result<impl View> {
 }
 
 async fn own_request(cx: &Cx, guest: &GuestSession) -> Result<(BookingRequestResponse, String)> {
-    let id: Uuid = path_param::<Id>(cx).parse().map_err(|_| not_found())?;
+    let id: Uuid = id(cx).parse().map_err(|_| not_found())?;
     let token = service_token(cx, guest)?;
     let request = get_booking_request(id, &token)
         .await
@@ -295,56 +355,139 @@ pub async fn request_page(cx: &Cx) -> Result<impl View> {
             <div class="space-y-1">
                 <a href="/requests" class="text-sm">"← My requests"</a>
                 <h1 class="font-serif text-[clamp(28px,4vw,40px)]">(listing_name)</h1>
-                <p class="text-sm text-muted-foreground">(format!("{} → {} · {} guest(s)", request.check_in.format("%a %-d %b %Y"), request.check_out.format("%a %-d %b %Y"), request.guests))</p>
-                <span id="request-status" data-request-status=(request.status.as_str()) class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">(request.status.label())</span>
+                <p class="text-sm text-muted-foreground">
+                    (format!(
+                        "{} → {} · {} guest(s)",
+                        request.check_in.format("%a %-d %b %Y"),
+                        request.check_out.format("%a %-d %b %Y"),
+                        request.guests,
+                    ))
+                </p>
+                <span
+                    id="request-status"
+                    data-request-status=(request.status.as_str())
+                    class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
+                >
+                    (request.status.label())
+                </span>
             </div>
             if let Some(notice) = notice {
-                <div id="request-notice" role="alert" class="rounded-lg border border-border p-4 text-sm">(notice)</div>
+                <div
+                    id="request-notice"
+                    role="alert"
+                    class="rounded-lg border border-border p-4 text-sm"
+                >
+                    (notice)
+                </div>
             }
             if let Some((at, left)) = expires {
-                <p id="request-expiry" class="text-sm">(match request.status { RequestStatus::Open => "The host has until ", _ => "This offer is held for you until " }) (at) " (" (left) ")."</p>
+                <p id="request-expiry" class="text-sm">
+                    (match request.status {
+                        RequestStatus::Open => "The host has until ",
+                        _ => "This offer is held for you until ",
+                    })
+                    (at)
+                    " ("
+                    (left)
+                    ")."
+                </p>
             }
             if let Some(reason) = request.decline_reason {
-                <div id="request-decline" class="space-y-1 rounded-lg border border-border p-4 text-sm">
-                    <p class="font-medium">"The host declined: " (reason.label())</p>
+                <div
+                    id="request-decline"
+                    class="space-y-1 rounded-lg border border-border p-4 text-sm"
+                >
+                    <p class="font-medium">
+                        "The host declined: "
+                        (reason.label())
+                    </p>
                     if let Some(note) = request.decline_note.clone() {
                         <p>(note)</p>
                     }
                 </div>
             }
             if let Some(quote) = request.quote.clone() {
-                <section id="request-quote" class="space-y-2 rounded-lg border border-border p-4">
+                <section
+                    id="request-quote"
+                    class="space-y-2 rounded-lg border border-border p-4"
+                >
                     <h2 class="font-serif text-xl">"The host's quote"</h2>
                     if !quote.terms.is_empty() {
-                        <p id="request-quote-terms" class="whitespace-pre-line text-sm">(quote.terms.clone())</p>
+                        <p id="request-quote-terms" class="whitespace-pre-line text-sm">
+                            (quote.terms.clone())
+                        </p>
                     }
                     if promo_dropped {
-                        <p id="request-promo-dropped" class="text-sm text-muted-foreground">"Your promo code doesn't apply to a custom quote. The quoted price is final."</p>
+                        <p
+                            id="request-promo-dropped"
+                            class="text-sm text-muted-foreground"
+                        >
+                            "Your promo code doesn't apply to a custom quote. The quoted price is final."
+                        </p>
                     }
                 </section>
             }
-            <div class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
+            <div
+                class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+            >
                 price_breakdown(quote: price)
             </div>
             <div class="flex flex-wrap gap-3">
                 for action in actions {
                     match action {
                         GuestAction::ProceedToCheckout => {
-                            <form method="post" action=(format!("/requests/{id}/checkout"))>
-                                <button id="request-checkout" type="submit" class="h-11 rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground">"Proceed to checkout"</button>
+                            <form
+                                method="post"
+                                action=(format!("/requests/{id}/checkout"))
+                            >
+                                <button
+                                    id="request-checkout"
+                                    type="submit"
+                                    class="h-11 rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground"
+                                >
+                                    "Proceed to checkout"
+                                </button>
                             </form>
                         }
                         GuestAction::AcceptQuote => {
-                            <form method="post" action=(format!("/requests/{id}/checkout"))>
-                                <input type="hidden" name="quote_id" value=(quote_id.clone()) />
-                                <button id="request-accept-quote" type="submit" class="h-11 rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground">"Accept quote and pay"</button>
+                            <form
+                                method="post"
+                                action=(format!("/requests/{id}/checkout"))
+                            >
+                                <input
+                                    type="hidden"
+                                    name="quote_id"
+                                    value=(quote_id.clone())
+                                />
+                                <button
+                                    id="request-accept-quote"
+                                    type="submit"
+                                    class="h-11 rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground"
+                                >
+                                    "Accept quote and pay"
+                                </button>
                             </form>
                         }
                         GuestAction::Withdraw => {
-                            <button id="request-withdraw" type="button" hx-get=(format!("/requests/{id}/withdraw")) hx-target="#withdraw-dialog-slot" hx-swap="innerHTML" class="h-11 rounded-[var(--radius-control,10px)] border border-destructive px-6 text-[15px] font-medium text-destructive">"Withdraw request"</button>
+                            <button
+                                id="request-withdraw"
+                                type="button"
+                                hx-get=(format!("/requests/{id}/withdraw"))
+                                hx-target="#withdraw-dialog-slot"
+                                hx-swap="innerHTML"
+                                class="h-11 rounded-[var(--radius-control,10px)] border border-destructive px-6 text-[15px] font-medium text-destructive"
+                            >
+                                "Withdraw request"
+                            </button>
                         }
                         GuestAction::ViewBookings => {
-                            <a id="request-view-booking" href="/bookings" class="inline-flex h-11 items-center rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground no-underline">"View your booking"</a>
+                            <a
+                                id="request-view-booking"
+                                href="/bookings"
+                                class="inline-flex h-11 items-center rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground no-underline"
+                            >
+                                "View your booking"
+                            </a>
                         }
                     }
                 }
@@ -362,13 +505,34 @@ pub async fn withdraw_dialog(cx: &Cx) -> Result<impl View> {
     let (request, _) = own_request(cx, &guest).await?;
     let action = format!("/requests/{}/withdraw", request.id);
     Ok(view! {
-        <dialog id="withdraw-request-modal" data-auto-open="" aria-labelledby="withdraw-title" class="m-auto w-[min(480px,92vw)] rounded-[var(--radius-surface,16px)] bg-card p-6 text-card-foreground backdrop:bg-black/50">
+        <dialog
+            id="withdraw-request-modal"
+            data-auto-open=""
+            aria-labelledby="withdraw-title"
+            class="m-auto w-[min(480px,92vw)] rounded-[var(--radius-surface,16px)] bg-card p-6 text-card-foreground backdrop:bg-black/50"
+        >
             <div class="space-y-4">
-                <h2 id="withdraw-title" class="font-serif text-2xl">"Withdraw this request?"</h2>
-                <p class="text-sm">"The dates are released straight away, and the host is told."</p>
+                <h2 id="withdraw-title" class="font-serif text-2xl">
+                    "Withdraw this request?"
+                </h2>
+                <p class="text-sm">
+                    "The dates are released straight away, and the host is told."
+                </p>
                 <form method="post" action=(action) class="flex justify-end gap-2">
-                    <button type="button" data-dialog-close="" class="h-10 rounded-full border border-border px-4 text-sm">"Keep request"</button>
-                    <button id="request-withdraw-confirm" type="submit" class="h-10 rounded-full bg-destructive px-4 text-sm font-medium text-destructive-foreground">"Yes, withdraw"</button>
+                    <button
+                        type="button"
+                        data-dialog-close=""
+                        class="h-10 rounded-full border border-border px-4 text-sm"
+                    >
+                        "Keep request"
+                    </button>
+                    <button
+                        id="request-withdraw-confirm"
+                        type="submit"
+                        class="h-10 rounded-full bg-destructive px-4 text-sm font-medium text-destructive-foreground"
+                    >
+                        "Yes, withdraw"
+                    </button>
                 </form>
             </div>
         </dialog>

@@ -27,7 +27,7 @@ rust_decimal = { workspace = true }
 uuid = { workspace = true }
 
 [build-dependencies]
-topcoat = { version = "0.10.0", default-features = false, features = [
+topcoat = { version = "0.12.1", default-features = false, features = [
     "tailwind",
 ] }
 

@@ -25,13 +25,20 @@ path_param!(id);
 /// Validation or service errors above a form.
 #[component]
 async fn form_errors(
+    cx: &Cx,
     /// Messages to list.
     errors: Vec<String>,
 ) -> Result<impl View> {
     Ok(view! {
         if !errors.is_empty() {
-            <ul id="user-form-errors" role="alert" class="list-disc space-y-1 rounded-lg border border-destructive p-3 pl-6 text-sm text-destructive">
-                for e in errors { <li>(e)</li> }
+            <ul
+                id="user-form-errors"
+                role="alert"
+                class="list-disc space-y-1 rounded-lg border border-destructive p-3 pl-6 text-sm text-destructive"
+            >
+                for e in errors {
+                    <li>(e)</li>
+                }
             </ul>
         }
     })
@@ -41,6 +48,7 @@ async fn form_errors(
 /// element IDs unique (`new-user` or `edit-user`).
 #[component]
 async fn user_fields(
+    cx: &Cx,
     /// Current values.
     form: UserForm,
     /// ID prefix for inputs.
@@ -86,56 +94,147 @@ async fn user_fields(
     Ok(view! {
         <fieldset class="grid gap-4 sm:grid-cols-2">
             <legend class="mb-2 text-sm font-semibold">"Identity and contact"</legend>
-            <div><label class=(LABEL) for=(id("first-name"))>"First name"</label>
-                <input id=(id("first-name")) name="first_name" required=(true) value=(form.first_name.clone()) class=(INPUT) /></div>
-            <div><label class=(LABEL) for=(id("last-name"))>"Last name"</label>
-                <input id=(id("last-name")) name="last_name" required=(true) value=(form.last_name.clone()) class=(INPUT) /></div>
-            <div><label class=(LABEL) for=(id("email"))>"Email"</label>
-                <input id=(id("email")) name="email" type="email" required=(true) autocomplete="off" value=(form.email.clone()) class=(INPUT) /></div>
-            <div><label class=(LABEL) for=(id("phone"))>"Phone (optional)"</label>
-                <input id=(id("phone")) name="phone_number" type="tel" value=(form.phone_number.clone()) class=(INPUT) /></div>
-            <div><label class=(LABEL) for=(id("password"))>(password_hint)</label>
-                <input id=(id("password")) name="password" type="password" minlength="8" required=(creating) autocomplete="new-password" class=(INPUT) /></div>
+            <div>
+                <label class=(LABEL) for=(id("first-name"))>"First name"</label>
+                <input
+                    id=(id("first-name"))
+                    name="first_name"
+                    required=(true)
+                    value=(form.first_name.clone())
+                    class=(INPUT)
+                />
+            </div>
+            <div>
+                <label class=(LABEL) for=(id("last-name"))>"Last name"</label>
+                <input
+                    id=(id("last-name"))
+                    name="last_name"
+                    required=(true)
+                    value=(form.last_name.clone())
+                    class=(INPUT)
+                />
+            </div>
+            <div>
+                <label class=(LABEL) for=(id("email"))>"Email"</label>
+                <input
+                    id=(id("email"))
+                    name="email"
+                    type="email"
+                    required=(true)
+                    autocomplete="off"
+                    value=(form.email.clone())
+                    class=(INPUT)
+                />
+            </div>
+            <div>
+                <label class=(LABEL) for=(id("phone"))>"Phone (optional)"</label>
+                <input
+                    id=(id("phone"))
+                    name="phone_number"
+                    type="tel"
+                    value=(form.phone_number.clone())
+                    class=(INPUT)
+                />
+            </div>
+            <div>
+                <label class=(LABEL) for=(id("password"))>(password_hint)</label>
+                <input
+                    id=(id("password"))
+                    name="password"
+                    type="password"
+                    minlength="8"
+                    required=(creating)
+                    autocomplete="new-password"
+                    class=(INPUT)
+                />
+            </div>
             if !creating {
-                <div class="sm:col-span-2"><label class=(LABEL) for=(id("slug"))>"Profile URL"</label>
-                    <div class="mt-1 flex items-center overflow-hidden rounded-lg border border-border bg-card text-sm focus-within:ring-2 focus-within:ring-primary">
-                        <span class="shrink-0 pl-3 text-muted-foreground">"/listings?host="</span>
-                        <input id=(id("slug")) name="slug" required=(true) maxlength=(common::slug::MAX_SLUG_CHARS.to_string()) autocapitalize="none" spellcheck="false" value=(form.slug.clone()) class="h-10 min-w-0 flex-1 bg-transparent pr-3 text-foreground outline-none" />
-                    </div></div>
+                <div class="sm:col-span-2">
+                    <label class=(LABEL) for=(id("slug"))>"Profile URL"</label>
+                    <div
+                        class="mt-1 flex items-center overflow-hidden rounded-lg border border-border bg-card text-sm focus-within:ring-2 focus-within:ring-primary"
+                    >
+                        <span class="shrink-0 pl-3 text-muted-foreground">
+                            "/listings?host="
+                        </span>
+                        <input
+                            id=(id("slug"))
+                            name="slug"
+                            required=(true)
+                            maxlength=(common::slug::MAX_SLUG_CHARS.to_string())
+                            autocapitalize="none"
+                            spellcheck="false"
+                            value=(form.slug.clone())
+                            class="h-10 min-w-0 flex-1 bg-transparent pr-3 text-foreground outline-none"
+                        />
+                    </div>
+                </div>
             }
-            <div><label class=(LABEL) for=(id("currency"))>"Display currency"</label>
+            <div>
+                <label class=(LABEL) for=(id("currency"))>"Display currency"</label>
                 <select id=(id("currency")) name="default_currency" class=(INPUT)>
                     currency_option_list(current: form.default_currency.clone())
-                </select></div>
+                </select>
+            </div>
         </fieldset>
         <fieldset class="space-y-2">
             <legend class="mb-2 text-sm font-semibold">"Roles"</legend>
             <div class="flex flex-wrap gap-4">
                 for (name, label, checked) in roles {
                     <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" id=(format!("{role_prefix}-{name}")) name=(format!("role_{name}")) checked=(checked) class="size-4" />(label)
+                        <input
+                            type="checkbox"
+                            id=(format!("{role_prefix}-{name}"))
+                            name=(format!("role_{name}"))
+                            checked=(checked)
+                            class="size-4"
+                        />
+                        (label)
                     </label>
                 }
             </div>
         </fieldset>
         <fieldset class="space-y-2">
             <legend class="mb-2 text-sm font-semibold">"Capabilities"</legend>
-            <p class="text-xs text-muted-foreground">"Guests hold none; hosts may manage only listings and bookings."</p>
+            <p class="text-xs text-muted-foreground">
+                "Guests hold none; hosts may manage only listings and bookings."
+            </p>
             <div class="grid gap-2 sm:grid-cols-2">
                 for (name, label, checked) in caps {
                     <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" id=(id(&name.replace('_', "-"))) name=(name) checked=(checked) class="size-4" />(label)
+                        <input
+                            type="checkbox"
+                            id=(id(&name.replace('_', "-")))
+                            name=(name)
+                            checked=(checked)
+                            class="size-4"
+                        />
+                        (label)
                     </label>
                 }
             </div>
         </fieldset>
         <div class="flex flex-wrap gap-6">
             <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" id=(id("active")) name="is_active" checked=(form.is_active.is_some()) class="size-4" />"Active"
+                <input
+                    type="checkbox"
+                    id=(id("active"))
+                    name="is_active"
+                    checked=(form.is_active.is_some())
+                    class="size-4"
+                />
+                "Active"
             </label>
             if !creating {
                 <label class="flex items-center gap-2 text-sm">
-                    <input type="checkbox" id=(id("verified")) name="is_verified" checked=(form.is_verified.is_some()) class="size-4" />"Email verified"
+                    <input
+                        type="checkbox"
+                        id=(id("verified"))
+                        name="is_verified"
+                        checked=(form.is_verified.is_some())
+                        class="size-4"
+                    />
+                    "Email verified"
                 </label>
             }
         </div>
@@ -145,6 +244,7 @@ async fn user_fields(
 /// The create-account page body.
 #[component]
 async fn create_form(
+    cx: &Cx,
     /// Current values.
     form: UserForm,
     /// Messages to show.
@@ -154,15 +254,35 @@ async fn create_form(
         <div class="mx-auto max-w-3xl space-y-6">
             <div class="flex items-end justify-between gap-4">
                 <div>
-                    <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">"Access control and accounts"</p>
+                    <p
+                        class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                    >
+                        "Access control and accounts"
+                    </p>
                     <h1 class="text-2xl font-semibold">"New user"</h1>
                 </div>
                 <a href="/admin/users" class="text-sm">"Back to users"</a>
             </div>
             form_errors(errors: errors)
-            <form id="admin-create-user-form" method="post" action="/admin/users" class="space-y-6 rounded-xl border border-border bg-card p-6">
-                user_fields(form: form, prefix: "new-user".into(), role_prefix: "role".into(), creating: true)
-                <button id="btn-create-user" type="submit" class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">"Create user account"</button>
+            <form
+                id="admin-create-user-form"
+                method="post"
+                action="/admin/users"
+                class="space-y-6 rounded-xl border border-border bg-card p-6"
+            >
+                user_fields(
+                    form: form,
+                    prefix: "new-user".into(),
+                    role_prefix: "role".into(),
+                    creating: true
+                )
+                <button
+                    id="btn-create-user"
+                    type="submit"
+                    class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground"
+                >
+                    "Create user account"
+                </button>
             </form>
         </div>
     })
@@ -233,6 +353,7 @@ pub async fn create_user(
 /// The edit dialog fragment (swapped into `#user-dialog-slot`).
 #[component]
 async fn edit_dialog(
+    cx: &Cx,
     /// The account being edited.
     user_id: Uuid,
     /// Current values.
@@ -243,25 +364,59 @@ async fn edit_dialog(
     let action = format!("/admin/users/{user_id}");
     let title = format!("Edit {} {}", form.first_name, form.last_name);
     Ok(view! {
-        <dialog id="admin-user-edit-dialog" data-auto-open="" aria-labelledby="edit-user-title" class="m-auto max-h-[90vh] w-[min(720px,95vw)] overflow-y-auto rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50">
-            <form id="edit-user-form" method="post" action=(action.clone()) hx-post=(action) hx-target="#user-dialog-slot" hx-swap="innerHTML" class="space-y-6">
+        <dialog
+            id="admin-user-edit-dialog"
+            data-auto-open=""
+            aria-labelledby="edit-user-title"
+            class="m-auto max-h-[90vh] w-[min(720px,95vw)] overflow-y-auto rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50"
+        >
+            <form
+                id="edit-user-form"
+                method="post"
+                action=(action.clone())
+                hx-post=(action)
+                hx-target="#user-dialog-slot"
+                hx-swap="innerHTML"
+                class="space-y-6"
+            >
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h2 id="edit-user-title" class="text-xl font-semibold">(title)</h2>
-                        <p class="font-mono text-xs text-muted-foreground">(user_id.to_string())</p>
+                        <h2 id="edit-user-title" class="text-xl font-semibold">
+                            (title)
+                        </h2>
+                        <p class="font-mono text-xs text-muted-foreground">
+                            (user_id.to_string())
+                        </p>
                     </div>
-                    <button type="button" data-dialog-close="" class="h-9 rounded-lg border border-border px-3 text-sm">"Close"</button>
+                    <button
+                        type="button"
+                        data-dialog-close=""
+                        class="h-9 rounded-lg border border-border px-3 text-sm"
+                    >
+                        "Close"
+                    </button>
                 </div>
                 form_errors(errors: errors)
-                user_fields(form: form, prefix: "edit-user".into(), role_prefix: "edit-role".into(), creating: false)
-                <button id="edit-user-save-btn" type="submit" class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">"Save changes"</button>
+                user_fields(
+                    form: form,
+                    prefix: "edit-user".into(),
+                    role_prefix: "edit-role".into(),
+                    creating: false
+                )
+                <button
+                    id="edit-user-save-btn"
+                    type="submit"
+                    class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground"
+                >
+                    "Save changes"
+                </button>
             </form>
         </dialog>
     })
 }
 
 fn parse_id(cx: &Cx) -> Result<Uuid> {
-    Uuid::from_str(path_param::<Id>(cx)).map_err(|_| not_found().into())
+    Uuid::from_str(id(cx)).map_err(|_| not_found().into())
 }
 
 /// Opens the edit dialog for an account.
@@ -273,7 +428,9 @@ pub async fn edit_user_dialog(cx: &Cx) -> Result<impl View> {
         .get_user_profile(id)
         .await
         .map_err(|_| not_found())?;
-    Ok(view! { edit_dialog(user_id: id, form: UserForm::from_user(&user), errors: Vec::new()) })
+    Ok(view! {
+        edit_dialog(user_id: id, form: UserForm::from_user(&user), errors: Vec::new())
+    })
 }
 
 /// Saves an account. Capability flags are merged into the stored

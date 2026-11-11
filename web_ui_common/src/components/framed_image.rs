@@ -1,5 +1,6 @@
 //! A rounded photo frame with a placeholder fill while the image loads.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, View, class, component, view},
@@ -31,6 +32,7 @@ impl FrameAspect {
 /// an empty string only for decorative images.
 #[component]
 pub async fn framed_image(
+    cx: &Cx,
     /// Image URL.
     src: String,
     /// Alternative text.
@@ -43,7 +45,12 @@ pub async fn framed_image(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
-        <div class=(class!("overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder", aspect.class()))>
+        <div
+            class=(class!(
+                "overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder",
+                aspect.class(),
+            ))
+        >
             <img
                 src=(src)
                 alt=(alt)

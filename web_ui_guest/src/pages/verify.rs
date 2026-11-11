@@ -35,32 +35,76 @@ pub struct ResendForm {
 }
 
 #[component]
-async fn verify_form(email: String, info: String, error: Option<String>) -> Result<impl View> {
+async fn verify_form(
+    cx: &Cx,
+    email: String,
+    info: String,
+    error: Option<String>,
+) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     Ok(view! {
-        <div class="mx-auto w-full max-w-md space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-8 text-card-foreground">
+        <div
+            class="mx-auto w-full max-w-md space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-8 text-card-foreground"
+        >
             <div class="space-y-1 text-center">
                 <h1 class="font-serif text-3xl">"Verify your email"</h1>
             </div>
-            <div id="verify-info" role="status" class="rounded-lg border border-border p-3 text-sm">
+            <div
+                id="verify-info"
+                role="status"
+                class="rounded-lg border border-border p-3 text-sm"
+            >
                 <span id="verify-info-text">(info)</span>
             </div>
             if let Some(error) = error {
-                <div id="verify-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">
+                <div
+                    id="verify-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
                     <span id="verify-error-text">(error)</span>
                 </div>
             }
             <form method="post" action="/verify" class="space-y-4">
                 <label class=(label) for="verify-email">"Email address"</label>
-                <input id="verify-email" name="email" type="email" required=(true) autocomplete="email" value=(email.clone()) class=(input) />
+                <input
+                    id="verify-email"
+                    name="email"
+                    type="email"
+                    required=(true)
+                    autocomplete="email"
+                    value=(email.clone())
+                    class=(input)
+                />
                 <label class=(label) for="verify-code">"Verification code"</label>
-                <input id="verify-code" name="code" required=(true) minlength="6" maxlength="6" autocomplete="one-time-code" autocapitalize="characters" class=(format!("{input} font-mono tracking-[0.3em] uppercase")) />
-                <button id="btn-verify" type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground">"Verify and sign in"</button>
+                <input
+                    id="verify-code"
+                    name="code"
+                    required=(true)
+                    minlength="6"
+                    maxlength="6"
+                    autocomplete="one-time-code"
+                    autocapitalize="characters"
+                    class=(format!("{input} font-mono tracking-[0.3em] uppercase"))
+                />
+                <button
+                    id="btn-verify"
+                    type="submit"
+                    class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground"
+                >
+                    "Verify and sign in"
+                </button>
             </form>
             <form method="post" action="/verify/resend" class="text-center">
                 <input type="hidden" name="email" value=(email) />
-                <button id="btn-resend-code" type="submit" class="text-sm font-medium text-link underline">"Send a new code"</button>
+                <button
+                    id="btn-resend-code"
+                    type="submit"
+                    class="text-sm font-medium text-link underline"
+                >
+                    "Send a new code"
+                </button>
             </form>
         </div>
     })

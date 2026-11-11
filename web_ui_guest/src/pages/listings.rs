@@ -136,6 +136,7 @@ fn classify(
 /// The search form, filled in from the URL.
 #[component]
 async fn listing_search_form(
+    cx: &Cx,
     /// The search so far.
     query: SearchQuery,
     /// Today, the earliest date to offer.
@@ -147,7 +148,13 @@ async fn listing_search_form(
         "flex flex-col gap-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "h-11 rounded-full border border-border bg-card px-4 text-sm font-normal tracking-normal text-foreground normal-case";
     Ok(view! {
-        <form id="listing-search-form" method="get" action="/listings" role="search" class="grid grid-cols-2 items-end gap-3 md:flex md:flex-wrap md:justify-end">
+        <form
+            id="listing-search-form"
+            method="get"
+            action="/listings"
+            role="search"
+            class="grid grid-cols-2 items-end gap-3 md:flex md:flex-wrap md:justify-end"
+        >
             if let Some(host) = query.host() {
                 <input type="hidden" name="host" value=(host) />
             }
@@ -156,12 +163,60 @@ async fn listing_search_form(
             }
             <div class="col-span-2 flex flex-col gap-1">
                 <label for="listing-search" class=(label)>"Where"</label>
-                <input id="listing-search" name="q" type="search" value=(given(&query.q).unwrap_or_default()) placeholder="Search by name or place..." class=(format!("{input} w-full md:w-64")) />
+                <input
+                    id="listing-search"
+                    name="q"
+                    type="search"
+                    value=(given(&query.q).unwrap_or_default())
+                    placeholder="Search by name or place..."
+                    class=(format!("{input} w-full md:w-64"))
+                />
             </div>
-            <label class=(label)>"Check in"<input id="search-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) value=(given(&query.check_in).unwrap_or_default()) class=(input) /></label>
-            <label class=(label)>"Check out"<input id="search-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) value=(given(&query.check_out).unwrap_or_default()) class=(input) /></label>
-            <label class=(label)>"Guests"<input id="search-guests" type="number" name="guests" min="1" value=(given(&query.guests).unwrap_or_default()) class=(format!("{input} w-full md:w-24")) /></label>
-            <button type="submit" class="h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground">"Search"</button>
+            <label class=(label)>
+                "Check in"
+                <input
+                    id="search-check-in"
+                    type="text"
+                    data-date-picker=""
+                    placeholder="yyyy-mm-dd"
+                    pattern="\\d{4}-\\d{2}-\\d{2}"
+                    name="check_in"
+                    min=(today.clone())
+                    value=(given(&query.check_in).unwrap_or_default())
+                    class=(input)
+                />
+            </label>
+            <label class=(label)>
+                "Check out"
+                <input
+                    id="search-check-out"
+                    type="text"
+                    data-date-picker=""
+                    placeholder="yyyy-mm-dd"
+                    pattern="\\d{4}-\\d{2}-\\d{2}"
+                    name="check_out"
+                    min=(today)
+                    value=(given(&query.check_out).unwrap_or_default())
+                    class=(input)
+                />
+            </label>
+            <label class=(label)>
+                "Guests"
+                <input
+                    id="search-guests"
+                    type="number"
+                    name="guests"
+                    min="1"
+                    value=(given(&query.guests).unwrap_or_default())
+                    class=(format!("{input} w-full md:w-24"))
+                />
+            </label>
+            <button
+                type="submit"
+                class="h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground"
+            >
+                "Search"
+            </button>
         </form>
     })
 }
@@ -169,6 +224,7 @@ async fn listing_search_form(
 /// What's below the form: cards, an empty state, or why there are none.
 #[component]
 async fn listings_results(
+    cx: &Cx,
     /// What the search came to.
     outcome: SearchOutcome,
     /// What to say when nothing matched.
@@ -180,14 +236,30 @@ async fn listings_results(
                 if listings.is_empty() {
                     <p class="py-10 text-center text-muted-foreground">(empty)</p>
                 } else {
-                    villa_carousel(listings: listings, track_id: "listings-grid".to_string(), label: "Available villas".to_string())
+                    villa_carousel(
+                        listings: listings,
+                        track_id: "listings-grid".to_string(),
+                        label: "Available villas".to_string()
+                    )
                 }
             }
             SearchOutcome::Refused(message) => {
-                <p id="search-refused" role="alert" class="py-10 text-center text-foreground">(message)</p>
+                <p
+                    id="search-refused"
+                    role="alert"
+                    class="py-10 text-center text-foreground"
+                >
+                    (message)
+                </p>
             }
             SearchOutcome::Failed => {
-                <p id="search-failed" role="alert" class="py-10 text-center text-foreground">(SEARCH_FAILED)</p>
+                <p
+                    id="search-failed"
+                    role="alert"
+                    class="py-10 text-center text-foreground"
+                >
+                    (SEARCH_FAILED)
+                </p>
             }
         }
     })
@@ -244,15 +316,26 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
     let today = jamaica_today().to_string();
     Ok(view! {
         <div class="space-y-10">
-            <div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div
+                class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between"
+            >
                 <div class="space-y-2">
-                    <h1 class="font-serif text-[clamp(36px,5vw,56px)] leading-tight">(heading)</h1>
+                    <h1 class="font-serif text-[clamp(36px,5vw,56px)] leading-tight">
+                        (heading)
+                    </h1>
                     <p class="text-muted-foreground">
                         if let Some(summary) = summary {
                             (summary)
                         }
                         if host.is_some() {
-                            " · "<a id="clear-host-filter" href=(all_listings) class="font-medium text-foreground hover:underline underline-offset-4">"Show all listings"</a>
+                            " · "
+                            <a
+                                id="clear-host-filter"
+                                href=(all_listings)
+                                class="font-medium text-foreground hover:underline underline-offset-4"
+                            >
+                                "Show all listings"
+                            </a>
                         }
                     </p>
                 </div>
@@ -317,7 +400,7 @@ mod listings_page_tests {
     }
 
     async fn results(outcome: SearchOutcome, empty: &str) -> String {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let empty = empty.to_string();
         html(view! { listings_results(outcome: outcome, empty: empty) }).await
     }
@@ -501,11 +584,15 @@ mod listings_page_tests {
 
     #[tokio::test]
     async fn the_form_is_filled_in_from_the_url() {
-        let __cx = &Cx::default();
+        let cx = &Cx::default();
         let query =
             parse("q=Runaway&check_in=2030-08-01&check_out=2030-08-04&guests=2&host=Sea-Grape");
         let out = html(view! {
-            listing_search_form(query: query, today: "2030-06-15".to_string(), currency: Some("JMD".to_string()))
+            listing_search_form(
+                query: query,
+                today: "2030-06-15".to_string(),
+                currency: Some("JMD".to_string())
+            )
         })
         .await;
         for expected in [

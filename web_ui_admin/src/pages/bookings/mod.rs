@@ -92,49 +92,114 @@ pub async fn schedule_page(cx: &Cx) -> Result<impl View> {
             <div class="flex flex-wrap items-end justify-between gap-4">
                 <div>
                     <h1 class="text-2xl font-semibold">"Master Booking Schedule"</h1>
-                    <p class="text-sm text-muted-foreground">(format!("{} bookings", bookings.len()))</p>
+                    <p class="text-sm text-muted-foreground">
+                        (format!("{} bookings", bookings.len()))
+                    </p>
                 </div>
                 <form method="get" action="/admin/bookings/export.csv">
-                    if let Some(code) = q.q.clone() { <input type="hidden" name="q" value=(code) /> }
-                    if !status.is_empty() { <input type="hidden" name="status" value=(status.clone()) /> }
-                    <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Export CSV"</button>
+                    if let Some(code) = q.q.clone() {
+                        <input type="hidden" name="q" value=(code) />
+                    }
+                    if !status.is_empty() {
+                        <input type="hidden" name="status" value=(status.clone()) />
+                    }
+                    <button
+                        type="submit"
+                        class="h-10 rounded-lg border border-border px-4 text-sm"
+                    >
+                        "Export CSV"
+                    </button>
                 </form>
             </div>
-            <form method="get" action="/admin/bookings" role="search" class="flex flex-wrap gap-2">
-                <label for="booking-search" class="sr-only">"Search by reservation code"</label>
-                <input id="booking-search" type="search" name="q" value=(q.q.clone().unwrap_or_default()) placeholder="Search reservation code" class=(format!("{input} w-64")) />
+            <form
+                method="get"
+                action="/admin/bookings"
+                role="search"
+                class="flex flex-wrap gap-2"
+            >
+                <label for="booking-search" class="sr-only">
+                    "Search by reservation code"
+                </label>
+                <input
+                    id="booking-search"
+                    type="search"
+                    name="q"
+                    value=(q.q.clone().unwrap_or_default())
+                    placeholder="Search reservation code"
+                    class=(format!("{input} w-64"))
+                />
                 <label for="booking-status" class="sr-only">"Status"</label>
                 <select id="booking-status" name="status" class=(input)>
-                    <option value="" selected=(status.is_empty())>"All statuses"</option>
+                    <option value="" selected=(status.is_empty())>
+                        "All statuses"
+                    </option>
                     for s in STATUSES {
                         <option value=(s) selected=(status == s)>(s)</option>
                     }
                 </select>
-                <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Filter"</button>
+                <button
+                    type="submit"
+                    class="h-10 rounded-lg border border-border px-4 text-sm"
+                >
+                    "Filter"
+                </button>
             </form>
             <div class="overflow-x-auto rounded-xl border border-border">
                 <table id="admin-bookings-table" class="w-full text-sm">
-                    <thead class="bg-card text-left text-xs text-muted-foreground uppercase">
+                    <thead
+                        class="bg-card text-left text-xs text-muted-foreground uppercase"
+                    >
                         <tr>
-                            <th scope="col" class="p-3">"Reservation"</th><th scope="col" class="p-3">"Listing"</th><th scope="col" class="p-3">"Stay"</th>
-                            <th scope="col" class="p-3">"Status"</th><th scope="col" class="p-3 text-right">"Total"</th><th scope="col" class="p-3 text-right">"Actions"</th>
+                            <th scope="col" class="p-3">"Reservation"</th>
+                            <th scope="col" class="p-3">"Listing"</th>
+                            <th scope="col" class="p-3">"Stay"</th>
+                            <th scope="col" class="p-3">"Status"</th>
+                            <th scope="col" class="p-3 text-right">"Total"</th>
+                            <th scope="col" class="p-3 text-right">"Actions"</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-border">
                         if bookings.is_empty() {
-                            <tr><td colspan="6" class="p-6 text-center text-muted-foreground">"No bookings match."</td></tr>
+                            <tr>
+                                <td
+                                    colspan="6"
+                                    class="p-6 text-center text-muted-foreground"
+                                >
+                                    "No bookings match."
+                                </td>
+                            </tr>
                         }
                         for b in bookings {
-                            let listing = listings.get(&b.listing_id).map(|l| l.name.clone()).unwrap_or_default();
+                            let listing = listings
+                                .get(&b.listing_id)
+                                .map(|l| l.name.clone())
+                                .unwrap_or_default();
                             <tr id=(format!("booking-row-{}", b.id))>
-                                <td class="p-3 font-mono">(b.confirmation_code.clone())</td>
+                                <td class="p-3 font-mono">
+                                    (b.confirmation_code.clone())
+                                </td>
                                 <td class="p-3">(listing)</td>
-                                <td class="p-3 whitespace-nowrap">(format!("{} → {}", b.date_from, b.date_to))</td>
+                                <td class="p-3 whitespace-nowrap">
+                                    (format!("{} → {}", b.date_from, b.date_to))
+                                </td>
                                 <td class="p-3 capitalize">(b.status.to_lowercase())</td>
-                                <td class="p-3 text-right tabular-nums">(money(&b.currency, b.total_price))</td>
+                                <td class="p-3 text-right tabular-nums">
+                                    (money(&b.currency, b.total_price))
+                                </td>
                                 <td class="p-3 text-right whitespace-nowrap">
-                                    detail::details_button(booking_id: b.id, door_code: b.door_access_code.clone().unwrap_or_default())
-                                    <a href=(format!("/admin/bookings/{}/messages", b.confirmation_code)) class="ml-3">"Messages"</a>
+                                    detail::details_button(
+                                        booking_id: b.id,
+                                        door_code: b.door_access_code.clone().unwrap_or_default()
+                                    )
+                                    <a
+                                        href=(format!(
+                                            "/admin/bookings/{}/messages",
+                                            b.confirmation_code,
+                                        ))
+                                        class="ml-3"
+                                    >
+                                        "Messages"
+                                    </a>
                                 </td>
                             </tr>
                         }

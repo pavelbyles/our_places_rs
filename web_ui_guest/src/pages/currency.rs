@@ -44,7 +44,7 @@ pub fn chosen_code(code: &str, offered: &[String]) -> Option<String> {
 /// profile), then returns to `?next=`.
 #[page("/currency/{code}")]
 pub async fn choose_currency(cx: &Cx) -> Result<()> {
-    let requested: &str = path_param::<Code>(cx);
+    let requested: &str = code(cx);
     let next = parse_query_params::<Next>(cx).unwrap_or_default().next;
     let offered = active_currency_codes(cx).await;
     match chosen_code(requested, &offered) {

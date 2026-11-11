@@ -12,25 +12,26 @@ struct PageQuery {
 
 # Reading the value
 
-[`query_params::<T>(cx)`](fn.query_params.html) parses the current request's query string with [`serde_urlencoded`](https://docs.rs/serde_urlencoded/latest/serde_urlencoded/) and returns `Result<&T, &QueryParamsError>`: a reference to the parsed struct, or to the [`QueryParamsError`](type.QueryParamsError.html) naming the key that failed. Unlike a path parameter, the struct is not tied to a route: any handler can read it. Parsing runs at most once per request; the result is then memoized.
+Read the struct with [`query_params::<T>(cx)`](fn.query_params.html). It returns `Result<&T, &QueryParamsError>` and caches the result for the request. A [`QueryParamsError`](type.QueryParamsError.html) identifies the field that failed to parse. The struct is independent of the route, so any handler can read it.
 
 # Failing with an error response
 
-A query string that fails to parse is usually answered with a user-facing error response. Declare that response once on the struct with `error = ...`, and the `Err` side of the `Result` becomes the corresponding router error, ready to be bubbled up with `?`:
+Set `error = ...` to convert parse failures into a router error. Callers can then propagate the error with `?`:
 
 ```rust
-# use topcoat::{context::Cx, Result, router::{page, query_params}, view::view};
+// src/app/posts.rs
+# use topcoat::{context::Cx, Result, router::{page, query_params}, view::{View, view}};
 #[query_params(error = bad_request)]
 struct PageQuery {
     page: Option<u32>,
 }
 
-#[page("/posts")]
-async fn posts(cx: &Cx) -> Result {
+#[page]
+async fn posts(cx: &Cx) -> Result<impl View> {
     // Responds with a 400 naming the failing key when the query string
     // does not match.
     let query = query_params::<PageQuery>(cx)?;
-    view! { "currently on page: " (query.page) }
+    Ok(view! { "currently on page: " (query.page) })
 }
 ```
 
@@ -46,7 +47,7 @@ Without `error = ...`, the same conversions are available per call site through 
 
 ## Clearing the query string with `redirect("?")`
 
-Redirect targets are URI references that the client resolves against the current URL, so relative targets work too. In particular, `"?"` is the current page with an empty query string: instead of failing the request, a query that does not parse reloads the page without one, and the error disappears.
+The client resolves a redirect target against the current URL. The target `"?"` reloads the current page with an empty query string:
 
 ```rust
 # use topcoat::router::query_params;
@@ -56,9 +57,9 @@ struct PageQuery {
 }
 ```
 
-This relies on every field being optional; a required key would still be missing after the redirect and loop.
+Use this only when an empty query string is valid. Otherwise the redirected request fails again and creates a redirect loop.
 
 # Requirements
 
-- Use `Option<T>` for optional keys. `serde_urlencoded` does not apply `#[serde(default)]`, so a missing key on a non-`Option` field is a parse error.
+- Use `Option<T>` for optional keys. A missing key and an empty value (`?page=`, as a browser sends for a blank input) both read as `None`. `#[serde(default)]` is not applied, so a missing key on a non-`Option` field is a parse error.
 - The struct must be `Send + Sync + 'static`, since it is memoized for the request.

@@ -1,5 +1,6 @@
 //! Topcoat UI `separator` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, PromotedStr, StaticClass, View, class, component, view},
@@ -61,6 +62,7 @@ const SEPARATOR: StaticClass = class!("shrink-0 border-0 bg-border");
 /// ```
 #[component]
 pub async fn separator(
+    cx: &Cx,
     /// The direction the rule runs in.
     #[default]
     orientation: SeparatorOrientation,

@@ -1,5 +1,6 @@
 //! Topcoat UI `skeleton` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, StaticClass, View, class, component, view},
@@ -24,6 +25,7 @@ const SKELETON: StaticClass = class!("animate-pulse rounded-md bg-foreground/10"
 /// ```
 #[component]
 pub async fn skeleton(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

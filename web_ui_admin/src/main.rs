@@ -4,9 +4,9 @@ use std::env;
 
 use tokio::net::TcpListener;
 use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
-use topcoat::cookie::RouterBuilderCookieExt;
+use topcoat::cookie::CookieLayer;
 use topcoat::router::{Router, RouterBuilderDiscoverExt};
-use topcoat::session::{RouterBuilderSessionExt, SessionConfig, cookie::CookieTokenStore};
+use topcoat::session::{SessionTokenStore, cookie::CookieTokenStore};
 use web_client::{TopcoatApiClient, jwt::ServiceJwt};
 use web_ui_common::security_headers::SecurityHeaders;
 
@@ -37,17 +37,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let hsts = env::var(HSTS_ENV).is_ok_and(|v| v == "1" || v == "true");
 
-    let sessions = SessionConfig::builder()
-        .token_store(CookieTokenStore::new().name("op_admin_session"))
-        .build();
+    let sessions = SessionTokenStore::new(CookieTokenStore::new().name("op_admin_session"));
 
-    // No `.runtime()`: it needs 'unsafe-eval' (spec, Phase 0 spike results).
+    // No `RuntimeLayer`: it needs 'unsafe-eval' (spec, Phase 0 spike results).
     let router = Router::builder()
         .discover()
-        .cookies()
-        .sessions(sessions)
-        .app_context(TopcoatApiClient::from_env())
-        .app_context(service_jwt)
+        .layer(CookieLayer::new())
+        .with(sessions)
+        .with(TopcoatApiClient::from_env())
+        .with(service_jwt)
         .assets(assets)
         .layer(
             SecurityHeaders::admin()

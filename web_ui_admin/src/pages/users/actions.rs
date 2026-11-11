@@ -40,7 +40,7 @@ pub async fn delete_user(
     Form(form): Form<DeleteForm>,
 ) -> Result<()> {
     let admin = admin_only(cx).await?;
-    let id = Uuid::from_str(path_param::<Id>(cx)).map_err(|_| not_found())?;
+    let id = Uuid::from_str(id(cx)).map_err(|_| not_found())?;
     if id == admin.user_id {
         return Err(back("self"));
     }
@@ -72,7 +72,7 @@ pub async fn delete_user(
 #[page(POST "/admin/users/{id}/restore")]
 pub async fn restore_user(cx: &Cx) -> Result<()> {
     let admin = admin_only(cx).await?;
-    let id = Uuid::from_str(path_param::<Id>(cx)).map_err(|_| not_found())?;
+    let id = Uuid::from_str(id(cx)).map_err(|_| not_found())?;
     let notice = match get_api_client(cx).restore_user(id).await {
         Ok(_) => "restored",
         Err(e) => {

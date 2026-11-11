@@ -1,5 +1,6 @@
 //! Guest–host message threads.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{Attributes, Child, View, class, component, view},
@@ -9,6 +10,7 @@ use topcoat::{
 /// into (`#messages-list` / `#admin-messages-list`).
 #[component]
 pub async fn chat_thread(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -20,15 +22,21 @@ pub async fn chat_thread(
         <div
             role="log"
             aria-live="polite"
-            class=(class!("flex max-h-[60vh] flex-col gap-4 overflow-y-auto", attrs.remove("class")))
+            class=(class!(
+                "flex max-h-[60vh] flex-col gap-4 overflow-y-auto",
+                attrs.remove("class"),
+            ))
             (attrs)
-        >(child)</div>
+        >
+            (child)
+        </div>
     })
 }
 
 /// One message. `mine` aligns it to the end and uses the primary fill.
 #[component]
 pub async fn chat_bubble(
+    cx: &Cx,
     /// Sender display name.
     sender: String,
     /// Formatted send time.
@@ -49,9 +57,23 @@ pub async fn chat_bubble(
         "bg-card text-card-foreground border border-border"
     };
     Ok(view! {
-        <div class=(class!("flex flex-col gap-1", align, attrs.remove("class"))) (attrs)>
-            <p class="text-xs text-muted-foreground">(sender) " · " (sent_at)</p>
-            <p class=(class!("max-w-[75%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap", fill))>(text)</p>
+        <div
+            class=(class!("flex flex-col gap-1", align, attrs.remove("class")))
+            (attrs)
+        >
+            <p class="text-xs text-muted-foreground">
+                (sender)
+                " · "
+                (sent_at)
+            </p>
+            <p
+                class=(class!(
+                    "max-w-[75%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap",
+                    fill,
+                ))
+            >
+                (text)
+            </p>
         </div>
     })
 }

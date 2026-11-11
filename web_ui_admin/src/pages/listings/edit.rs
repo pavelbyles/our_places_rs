@@ -22,7 +22,7 @@ path_param!(id);
 #[page("/admin/listings/{id}/edit")]
 pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let admin = user.role == AdminRole::Admin;
@@ -33,18 +33,60 @@ pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-6">
             <div>
-                <a href=(format!("/admin/listings/{}", listing.id)) class="text-sm">"← Listing"</a>
-                <h1 class="text-2xl font-semibold">(format!("Edit {}", listing.name))</h1>
+                <a href=(format!("/admin/listings/{}", listing.id)) class="text-sm">
+                    "← Listing"
+                </a>
+                <h1 class="text-2xl font-semibold">
+                    (format!("Edit {}", listing.name))
+                </h1>
             </div>
-            listing_form(action: action, submit_label: "Save changes".into(), fields: fields, owners: Vec::new(), can_set_commission: admin, errors: Vec::new())
-            <section aria-labelledby="photos-heading" class="space-y-4 rounded-xl border border-border p-6">
+            listing_form(
+                action: action,
+                submit_label: "Save changes".into(),
+                fields: fields,
+                owners: Vec::new(),
+                can_set_commission: admin,
+                errors: Vec::new()
+            )
+            <section
+                aria-labelledby="photos-heading"
+                class="space-y-4 rounded-xl border border-border p-6"
+            >
                 <h2 id="photos-heading" class="text-sm font-semibold">"Photos"</h2>
-                photo_grid(listing_id: listing.id, name: listing.name.clone(), photos: photos, error: None)
-                <form id="image-upload-form" data-upload=(presign) class="flex flex-wrap items-center gap-3">
-                    <label for="image-upload-input" class="text-sm">"Add photos (JPEG, PNG or WebP, up to 15 MB each)"</label>
-                    <input id="image-upload-input" type="file" name="photos" multiple=(true) accept="image/jpeg,image/png,image/webp" class="text-sm" />
-                    <button id="btn-upload-images" type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Upload"</button>
-                    <p data-upload-status="" role="status" class="w-full text-sm text-muted-foreground"></p>
+                photo_grid(
+                    listing_id: listing.id,
+                    name: listing.name.clone(),
+                    photos: photos,
+                    error: None
+                )
+                <form
+                    id="image-upload-form"
+                    data-upload=(presign)
+                    class="flex flex-wrap items-center gap-3"
+                >
+                    <label for="image-upload-input" class="text-sm">
+                        "Add photos (JPEG, PNG or WebP, up to 15 MB each)"
+                    </label>
+                    <input
+                        id="image-upload-input"
+                        type="file"
+                        name="photos"
+                        multiple=(true)
+                        accept="image/jpeg,image/png,image/webp"
+                        class="text-sm"
+                    />
+                    <button
+                        id="btn-upload-images"
+                        type="submit"
+                        class="h-10 rounded-lg border border-border px-4 text-sm"
+                    >
+                        "Upload"
+                    </button>
+                    <p
+                        data-upload-status=""
+                        role="status"
+                        class="w-full text-sm text-muted-foreground"
+                    ></p>
                 </form>
             </section>
         </div>
@@ -60,7 +102,7 @@ pub async fn update_listing(
     Form(fields): Form<ListingFields>,
 ) -> Result<impl View> {
     let user = staff(cx).await?;
-    let raw = path_param::<Id>(cx);
+    let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let admin = user.role == AdminRole::Admin;
@@ -94,7 +136,14 @@ pub async fn update_listing(
     Ok(view! {
         <div class="space-y-6">
             <h1 class="text-2xl font-semibold">(format!("Edit {}", listing.name))</h1>
-            listing_form(action: action, submit_label: "Save changes".into(), fields: fields, owners: Vec::new(), can_set_commission: admin, errors: errors)
+            listing_form(
+                action: action,
+                submit_label: "Save changes".into(),
+                fields: fields,
+                owners: Vec::new(),
+                can_set_commission: admin,
+                errors: errors
+            )
         </div>
     })
 }

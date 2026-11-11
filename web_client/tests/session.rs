@@ -74,3 +74,18 @@ fn login_redirect_encodes_next_path() {
         "/login?redirect=%2Fcheckout%2Fvilla-a%3Fcheck_in%3D2027-01-02%26adults%3D2"
     );
 }
+
+/// Without the router's cookie layer (e.g. a bare `Cx` in tests), the guards
+/// must refuse the request instead of panicking inside Topcoat's cookie jar.
+#[tokio::test]
+async fn guards_without_cookie_layer_are_unauthenticated() {
+    let cx = topcoat::context::Cx::default();
+    assert_eq!(
+        web_client::session::require_guest(&cx).await.err(),
+        Some(GuardError::Unauthenticated)
+    );
+    assert_eq!(
+        web_client::session::require_admin(&cx).await.err(),
+        Some(GuardError::Unauthenticated)
+    );
+}

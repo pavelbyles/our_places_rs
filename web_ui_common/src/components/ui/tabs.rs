@@ -1,5 +1,6 @@
 //! Topcoat UI `tabs` component, vendored from the Topcoat UI registry and owned in-repo.
 
+use topcoat::context::Cx;
 use topcoat::{
     Result,
     runtime::Expr,
@@ -33,6 +34,7 @@ use topcoat::{
 /// ```
 #[component]
 pub async fn tabs(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -50,6 +52,7 @@ pub async fn tabs(
 /// A row of controls for selecting a panel.
 #[component]
 pub async fn tabs_list(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -89,6 +92,7 @@ const TRIGGER: StaticClass = class!(
 /// signal.
 #[component]
 pub async fn tabs_trigger(
+    cx: &Cx,
     /// Whether this trigger selects the visible panel.
     #[into]
     #[default(false.into())]
@@ -117,6 +121,7 @@ pub async fn tabs_trigger(
 /// bindings to switch between them in the browser.
 #[component]
 pub async fn tabs_content(
+    cx: &Cx,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,

@@ -7,6 +7,7 @@ use topcoat::{
 };
 
 use crate::components::svg_icon::svg_icon;
+use topcoat::context::Cx;
 
 /// An animated icon for work in progress.
 ///
@@ -25,6 +26,7 @@ use crate::components::svg_icon::svg_icon;
 /// ```
 #[component]
 pub async fn spinner(
+    cx: &Cx,
     /// The rendered width and height.
     #[into]
     #[default(Length::em(1.0))]
@@ -38,7 +40,8 @@ pub async fn spinner(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
-        svg_icon(data: iconify_icon!("lucide:loader-circle"),
+        svg_icon(
+            data: iconify_icon!("lucide:loader-circle"),
             size: size,
             label: label,
             attrs: attributes! {

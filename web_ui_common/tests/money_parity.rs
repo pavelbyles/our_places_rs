@@ -36,9 +36,9 @@ const IDS: [&str; 6] = [
 ];
 
 async fn compare(q: PriceBreakdown, legacy: [Option<&str>; 6], legacy_discount: bool) {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let r = q.clone();
-    let redesigned = html(view! { price_breakdown(quote: r) }, __cx).await;
+    let redesigned = html(view! { price_breakdown(quote: r) }, cx).await;
     for (id, expected) in IDS.into_iter().zip(legacy) {
         assert_eq!(
             text_of(&redesigned, id).as_deref(),
@@ -177,12 +177,12 @@ fn grouped_inserts_thousands_separators() {
 
 #[tokio::test]
 async fn one_night_is_singular() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let q = PriceBreakdown {
         nights: 1,
         ..quote("USD", dec!(1))
     };
-    let out = html(view! { price_breakdown(quote: q) }, __cx).await;
+    let out = html(view! { price_breakdown(quote: q) }, cx).await;
     assert_eq!(
         text_of(&out, "breakdown-nights-label").as_deref(),
         Some("$650.00 × 1 night")
@@ -191,7 +191,7 @@ async fn one_night_is_singular() {
 
 #[tokio::test]
 async fn currency_selector_links_every_currency_and_marks_the_active_one() {
-    let __cx = &Cx::default();
+    let cx = &Cx::default();
     let codes: Vec<String> = ["CAD", "EUR", "GBP", "JMD", "USD"]
         .iter()
         .map(|c| c.to_string())
@@ -199,7 +199,7 @@ async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     let menu_codes = codes.clone();
     let out = html(
         view! { currency_menu(codes: menu_codes, current_currency: Some("jmd".into())) },
-        __cx,
+        cx,
     )
     .await;
     for c in &codes {
@@ -215,8 +215,10 @@ async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     // instead of pretending to be USD.
     let unknown_codes = codes.clone();
     let unknown = html(
-        view! { currency_menu(codes: unknown_codes, current_currency: Some("XYZ".into())) },
-        __cx,
+        view! {
+            currency_menu(codes: unknown_codes, current_currency: Some("XYZ".into()))
+        },
+        cx,
     )
     .await;
     assert!(unknown.contains("Choose a currency"), "{unknown}");
@@ -229,7 +231,7 @@ async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     // No list (backend unreachable): the menu is hidden.
     let hidden = html(
         view! { currency_menu(codes: Vec::new(), current_currency: None) },
-        __cx,
+        cx,
     )
     .await;
     assert!(!hidden.contains("<details"), "{hidden}");
