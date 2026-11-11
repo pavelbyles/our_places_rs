@@ -72,9 +72,25 @@ pub async fn responsive_image(
     let sizes = sizes.unwrap_or_else(|| "100vw".to_string());
     Ok(view! {
         if let Some(srcset) = variant_srcset(&src) {
-            <img src=(src) srcset=(srcset) sizes=(sizes) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
+            <img
+                src=(src)
+                srcset=(srcset)
+                sizes=(sizes)
+                alt=(alt)
+                loading="lazy"
+                decoding="async"
+                class=(img_class)
+                (attrs)
+            />
         } else {
-            <img src=(src) alt=(alt) loading="lazy" decoding="async" class=(img_class) (attrs) />
+            <img
+                src=(src)
+                alt=(alt)
+                loading="lazy"
+                decoding="async"
+                class=(img_class)
+                (attrs)
+            />
         }
     })
 }

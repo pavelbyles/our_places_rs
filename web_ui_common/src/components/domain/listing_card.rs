@@ -228,25 +228,53 @@ pub async fn listing_card(
     let alt = name.clone();
     Ok(view! {
         <article class=(class!("flex flex-col gap-3", attrs.remove("class"))) (attrs)>
-            <a href=(href.clone()) tabindex="-1" aria-hidden="true" class="block overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/5]">
+            <a
+                href=(href.clone())
+                tabindex="-1"
+                aria-hidden="true"
+                class="block overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/5]"
+            >
                 if let Some(src) = image_url {
-                    responsive_image(src: src, alt: alt, sizes: Some("(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw".to_string()))
+                    responsive_image(
+                        src: src,
+                        alt: alt,
+                        sizes: Some(
+                            "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw".to_string(
+
+                            ),
+                        )
+                    )
                 }
             </a>
             <div class="flex items-start justify-between gap-3">
                 <h3 class="font-serif text-[22px] leading-tight">
-                    <a href=(href.clone()) class="text-foreground hover:underline">(name)</a>
+                    <a href=(href.clone()) class="text-foreground hover:underline">
+                        (name)
+                    </a>
                 </h3>
                 star_rating(rating: rating, review_count: review_count)
             </div>
-            <p class="text-sm text-muted-foreground">(location) " · " (specs)</p>
+            <p class="text-sm text-muted-foreground">
+                (location)
+                " · "
+                (specs)
+            </p>
             <div class="flex items-center justify-between">
                 match price {
                     Ok(price) => {
-                        <p class="text-sm"><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" per night"</span></p>
+                        <p class="text-sm">
+                            <span class="text-muted-foreground">"from "</span>
+                            <span class="font-medium">(price)</span>
+                            <span class="text-muted-foreground">" per night"</span>
+                        </p>
                     }
                     Err(unavailable) => {
-                        <p class="text-sm text-muted-foreground" data-price-unavailable="">(unavailable)</p>
+                        <p
+                            class="text-sm text-muted-foreground"
+                            data-price-unavailable=""
+                        >
+                            (unavailable)
+                        </p>
                     }
                 }
                 <a href=(href) class="text-sm font-medium">"View Listing"</a>
@@ -259,9 +287,16 @@ pub async fn listing_card(
                     </div>
                 }
                 Some(StayTotalLines::Unavailable) => {
-                    <p class="text-sm text-muted-foreground" data-stay-total-unavailable="">"Total unavailable for these dates"</p>
+                    <p
+                        class="text-sm text-muted-foreground"
+                        data-stay-total-unavailable=""
+                    >
+                        "Total unavailable for these dates"
+                    </p>
                 }
-                None => {}
+                None => {
+
+                }
             }
         </article>
     })

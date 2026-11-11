@@ -40,26 +40,58 @@ async fn login_form(
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     Ok(view! {
-        <div class="w-full max-w-md space-y-6 rounded-xl border border-border bg-card p-8 text-card-foreground">
+        <div
+            class="w-full max-w-md space-y-6 rounded-xl border border-border bg-card p-8 text-card-foreground"
+        >
             <div class="space-y-1">
                 <h1 class="sr-only">"Console sign in"</h1>
                 <h2 class="text-2xl font-semibold">"Sign in to Our Places"</h2>
-                <p class="text-sm text-muted-foreground">"For hosts and administrators."</p>
+                <p class="text-sm text-muted-foreground">
+                    "For hosts and administrators."
+                </p>
             </div>
             if let Some(error) = error {
-                <div id="admin-auth-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">
+                <div
+                    id="admin-auth-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
                     <span id="admin-auth-error-text">(error)</span>
                 </div>
             }
             <form method="post" action="/login" class="space-y-4">
                 <input type="hidden" name="redirect" value=(redirect) />
                 <label class=(label) for="admin-login-email">"Email address"</label>
-                <input id="admin-login-email" name="email" type="email" required=(true) autocomplete="email" value=(email) class=(input) />
+                <input
+                    id="admin-login-email"
+                    name="email"
+                    type="email"
+                    required=(true)
+                    autocomplete="email"
+                    value=(email)
+                    class=(input)
+                />
                 <label class=(label) for="admin-login-password">"Password"</label>
-                <input id="admin-login-password" name="password" type="password" required=(true) autocomplete="current-password" class=(input) />
-                <button id="btn-admin-login" type="submit" class="h-11 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground">"Sign in"</button>
+                <input
+                    id="admin-login-password"
+                    name="password"
+                    type="password"
+                    required=(true)
+                    autocomplete="current-password"
+                    class=(input)
+                />
+                <button
+                    id="btn-admin-login"
+                    type="submit"
+                    class="h-11 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground"
+                >
+                    "Sign in"
+                </button>
             </form>
-            <p class="text-center text-sm text-muted-foreground">"New host? " <a href="/register">"Create a host account"</a></p>
+            <p class="text-center text-sm text-muted-foreground">
+                "New host? "
+                <a href="/register">"Create a host account"</a>
+            </p>
         </div>
     })
 }

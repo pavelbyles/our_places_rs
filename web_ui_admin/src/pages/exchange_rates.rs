@@ -67,25 +67,42 @@ pub async fn rates_table(
     Ok(view! {
         <div class="overflow-x-auto rounded-xl border border-border">
             <table id="exchange-rates-table" class="w-full text-sm">
-                <thead class="bg-card text-left text-xs text-muted-foreground uppercase">
+                <thead
+                    class="bg-card text-left text-xs text-muted-foreground uppercase"
+                >
                     <tr>
                         <th scope="col" class="p-3">"Currency pair"</th>
                         <th scope="col" class="p-3 text-right">"Rate"</th>
                         <th scope="col" class="p-3">"Effective"</th>
                         if show_admin_actions {
-                            <th scope="col" class="p-3"><span class="sr-only">"Actions"</span></th>
+                            <th scope="col" class="p-3">
+                                <span class="sr-only">"Actions"</span>
+                            </th>
                         }
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
                     for row in rows {
                         <tr>
-                            <td class="p-3 font-medium">(format!("{} / {}", row.base, row.target))</td>
-                            <td class="p-3 text-right font-mono tabular-nums">(format!("{:.6}", row.rate))</td>
+                            <td class="p-3 font-medium">
+                                (format!("{} / {}", row.base, row.target))
+                            </td>
+                            <td class="p-3 text-right font-mono tabular-nums">
+                                (format!("{:.6}", row.rate))
+                            </td>
                             <td class="p-3 text-muted-foreground">(row.effective)</td>
                             if show_admin_actions {
                                 <td class="p-3 text-right">
-                                    <a href=(format!("/admin/exchange-rates/{}/{}", row.base, row.target)) class="text-sm underline">"History"</a>
+                                    <a
+                                        href=(format!(
+                                            "/admin/exchange-rates/{}/{}",
+                                            row.base,
+                                            row.target,
+                                        ))
+                                        class="text-sm underline"
+                                    >
+                                        "History"
+                                    </a>
                                 </td>
                             }
                         </tr>
@@ -105,12 +122,24 @@ pub async fn coverage_alert(
 ) -> Result<impl View> {
     Ok(view! {
         if !gaps.is_empty() {
-            <div id="rate-coverage-alert" role="status" class="alert alert-warning text-sm">
+            <div
+                id="rate-coverage-alert"
+                role="status"
+                class="alert alert-warning text-sm"
+            >
                 <div>
-                    <p class="font-medium">"Some listings cannot be priced in every currency"</p>
+                    <p class="font-medium">
+                        "Some listings cannot be priced in every currency"
+                    </p>
                     <ul class="mt-1 list-disc pl-5">
                         for g in gaps {
-                            <li>(format!("{} → {}: no rate", g.listing_base_currency, g.target_currency))</li>
+                            <li>
+                                (format!(
+                                    "{} → {}: no rate",
+                                    g.listing_base_currency,
+                                    g.target_currency,
+                                ))
+                            </li>
                         }
                     </ul>
                 </div>
@@ -174,45 +203,94 @@ pub async fn publish_rate_form(
     let confirm = matches!(alert, FormAlert::Confirm { .. });
     let base_codes = codes.clone();
     Ok(view! {
-        <form id="publish-rate-form" method="post" action="/admin/exchange-rates" hx-post="/admin/exchange-rates" hx-target="this" hx-swap="outerHTML" hx-disabled-elt="find button" class="space-y-4 rounded-xl border border-border p-6">
+        <form
+            id="publish-rate-form"
+            method="post"
+            action="/admin/exchange-rates"
+            hx-post="/admin/exchange-rates"
+            hx-target="this"
+            hx-swap="outerHTML"
+            hx-disabled-elt="find button"
+            class="space-y-4 rounded-xl border border-border p-6"
+        >
             <h2 class="text-lg font-semibold">"Publish a rate"</h2>
             match alert.clone() {
-                FormAlert::None => {}
+                FormAlert::None => {
+
+                }
                 FormAlert::Error(message) => {
-                    <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(message)</p>
+                    <p
+                        role="alert"
+                        class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                    >
+                        (message)
+                    </p>
                 }
                 FormAlert::Confirm { baseline, proposed, deviation } => {
-                    <div id="rate-confirm-alert" role="alert" class="alert alert-warning text-sm">
-                        <p>(format!("{baseline} → {proposed} is a {deviation}% change. Check the rate, then confirm to save it."))</p>
+                    <div
+                        id="rate-confirm-alert"
+                        role="alert"
+                        class="alert alert-warning text-sm"
+                    >
+                        <p>
+                            (format!(
+                                "{baseline} → {proposed} is a {deviation}% change. Check the rate, then confirm to save it.",
+                            ))
+                        </p>
                     </div>
                 }
             }
             <div class="grid gap-4 sm:grid-cols-4">
-                <label class=(label)>"From"
+                <label class=(label)>
+                    "From"
                     <select name="base" required=(true) class=(field)>
                         for c in base_codes {
-                            <option value=(c.clone()) selected=(form.base == c)>(c.clone())</option>
+                            <option value=(c.clone()) selected=(form.base == c)>
+                                (c.clone())
+                            </option>
                         }
                     </select>
                 </label>
-                <label class=(label)>"To"
+                <label class=(label)>
+                    "To"
                     <select name="target" required=(true) class=(field)>
                         for c in codes {
-                            <option value=(c.clone()) selected=(form.target == c)>(c.clone())</option>
+                            <option value=(c.clone()) selected=(form.target == c)>
+                                (c.clone())
+                            </option>
                         }
                     </select>
                 </label>
-                <label class=(label)>"Rate"
-                    <input name="rate" required=(true) inputmode="decimal" pattern="[0-9]+(\\.[0-9]+)?" value=(form.rate.clone()) class=(field) />
+                <label class=(label)>
+                    "Rate"
+                    <input
+                        name="rate"
+                        required=(true)
+                        inputmode="decimal"
+                        pattern="[0-9]+(\\.[0-9]+)?"
+                        value=(form.rate.clone())
+                        class=(field)
+                    />
                 </label>
-                <label class=(label)>"Effective from (UTC, blank = now)"
-                    <input name="effective_at" type="datetime-local" value=(form.effective_at.clone()) class=(field) />
+                <label class=(label)>
+                    "Effective from (UTC, blank = now)"
+                    <input
+                        name="effective_at"
+                        type="datetime-local"
+                        value=(form.effective_at.clone())
+                        class=(field)
+                    />
                 </label>
             </div>
             if confirm {
                 <input type="hidden" name="confirm" value="true" />
             }
-            <button type="submit" class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">(if confirm { "Confirm and publish" } else { "Publish rate" })</button>
+            <button
+                type="submit"
+                class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground"
+            >
+                (if confirm { "Confirm and publish" } else { "Publish rate" })
+            </button>
         </form>
     })
 }
@@ -243,19 +321,34 @@ pub async fn exchange_rates_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-6">
             <div>
-                <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">"Tri-Currency Financial Engine"</p>
+                <p
+                    class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                >
+                    "Tri-Currency Financial Engine"
+                </p>
                 <h1 class="text-2xl font-semibold">"Exchange Rates"</h1>
-                <p class="text-sm text-muted-foreground">"The rate in effect now for each pair; pricing converts with these."</p>
+                <p class="text-sm text-muted-foreground">
+                    "The rate in effect now for each pair; pricing converts with these."
+                </p>
             </div>
             if let Some(message) = error {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(message)</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (message)
+                </p>
             }
             if is_admin {
                 coverage_alert(gaps: gaps)
             }
             rates_table(rows: table, show_admin_actions: is_admin)
             if is_admin {
-                publish_rate_form(codes: codes, form: PublishForm::default(), alert: FormAlert::None)
+                publish_rate_form(
+                    codes: codes,
+                    form: PublishForm::default(),
+                    alert: FormAlert::None
+                )
                 super::currencies::currencies_section(token: token.clone())
             }
         </div>

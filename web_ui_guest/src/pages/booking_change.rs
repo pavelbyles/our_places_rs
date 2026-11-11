@@ -70,31 +70,144 @@ async fn change_page(
     Ok(view! {
         <div class="mx-auto max-w-2xl space-y-6">
             <div class="space-y-1">
-                <p class="text-sm text-muted-foreground">(format!("Reservation #{}", booking.confirmation_code))</p>
-                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">"Modify Reservation (Dates & Guests)"</h1>
-                <p class="text-sm text-muted-foreground">(format!("Currently {} → {}, {} guest(s). Your host approves changes.", booking.date_from.format("%a %-d %b %Y"), booking.date_to.format("%a %-d %b %Y"), booking.number_of_persons))</p>
+                <p class="text-sm text-muted-foreground">
+                    (format!("Reservation #{}", booking.confirmation_code))
+                </p>
+                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">
+                    "Modify Reservation (Dates & Guests)"
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    (format!(
+                        "Currently {} → {}, {} guest(s). Your host approves changes.",
+                        booking.date_from.format("%a %-d %b %Y"),
+                        booking.date_to.format("%a %-d %b %Y"),
+                        booking.number_of_persons,
+                    ))
+                </p>
             </div>
             if let Some(error) = error {
-                <div id="date-change-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(error)</div>
+                <div
+                    id="date-change-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (error)
+                </div>
             }
-            <form id="date-change-form" method="post" action=(format!("/bookings/{id}/change-requests")) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
+            <form
+                id="date-change-form"
+                method="post"
+                action=(format!("/bookings/{id}/change-requests"))
+                class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+            >
                 <div class="grid gap-4 sm:grid-cols-2">
-                    <label class=(label) for="new-check-in">"New check-in"<input id="new-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" value=(check_in) required=(true) class=(input) /></label>
-                    <label class=(label) for="new-check-out">"New check-out"<input id="new-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" value=(check_out) required=(true) class=(input) /></label>
+                    <label class=(label) for="new-check-in">
+                        "New check-in"
+                        <input
+                            id="new-check-in"
+                            type="text"
+                            data-date-picker=""
+                            placeholder="yyyy-mm-dd"
+                            pattern="\\d{4}-\\d{2}-\\d{2}"
+                            name="check_in"
+                            value=(check_in)
+                            required=(true)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label) for="new-check-out">
+                        "New check-out"
+                        <input
+                            id="new-check-out"
+                            type="text"
+                            data-date-picker=""
+                            placeholder="yyyy-mm-dd"
+                            pattern="\\d{4}-\\d{2}-\\d{2}"
+                            name="check_out"
+                            value=(check_out)
+                            required=(true)
+                            class=(input)
+                        />
+                    </label>
                 </div>
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                    <label class=(label) for="new-adults">"Adults"<input id="new-adults" type="number" name="adults" min="1" value=(adults) class=(input) /></label>
-                    <label class=(label) for="new-children">"Children"<input id="new-children" type="number" name="children" min="0" value=(count(form.children)) class=(input) /></label>
-                    <label class=(label) for="new-infants">"Infants"<input id="new-infants" type="number" name="infants" min="0" value=(count(form.infants)) class=(input) /></label>
-                    <label class=(label) for="new-pets">"Pets"<input id="new-pets" type="number" name="pets" min="0" value=(count(form.pets)) class=(input) /></label>
+                    <label class=(label) for="new-adults">
+                        "Adults"
+                        <input
+                            id="new-adults"
+                            type="number"
+                            name="adults"
+                            min="1"
+                            value=(adults)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label) for="new-children">
+                        "Children"
+                        <input
+                            id="new-children"
+                            type="number"
+                            name="children"
+                            min="0"
+                            value=(count(form.children))
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label) for="new-infants">
+                        "Infants"
+                        <input
+                            id="new-infants"
+                            type="number"
+                            name="infants"
+                            min="0"
+                            value=(count(form.infants))
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label) for="new-pets">
+                        "Pets"
+                        <input
+                            id="new-pets"
+                            type="number"
+                            name="pets"
+                            min="0"
+                            value=(count(form.pets))
+                            class=(input)
+                        />
+                    </label>
                 </div>
-                <label class=(label) for="change-reason">"Note for your host (optional)"
-                    <textarea id="change-reason" name="reason" rows="2" maxlength="1000" class=(format!("{input} h-auto py-2"))>(form.reason.clone())</textarea>
+                <label class=(label) for="change-reason">
+                    "Note for your host (optional)"
+                    <textarea
+                        id="change-reason"
+                        name="reason"
+                        rows="2"
+                        maxlength="1000"
+                        class=(format!("{input} h-auto py-2"))
+                    >
+                        (form.reason.clone())
+                    </textarea>
                 </label>
                 <div id="change-quote-preview" hidden=(true)></div>
                 <div class="flex flex-wrap gap-2">
-                    <button id="btn-preview-change-quote" type="button" hx-post=(format!("/bookings/{id}/change-quote")) hx-include="#date-change-form" hx-target="#change-quote-preview" hx-swap="outerHTML" class="h-11 rounded-full border border-border px-5 text-sm font-medium">"Preview new price"</button>
-                    <button id="btn-submit-date-change" type="submit" class="h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground">"Request reservation change"</button>
+                    <button
+                        id="btn-preview-change-quote"
+                        type="button"
+                        hx-post=(format!("/bookings/{id}/change-quote"))
+                        hx-include="#date-change-form"
+                        hx-target="#change-quote-preview"
+                        hx-swap="outerHTML"
+                        class="h-11 rounded-full border border-border px-5 text-sm font-medium"
+                    >
+                        "Preview new price"
+                    </button>
+                    <button
+                        id="btn-submit-date-change"
+                        type="submit"
+                        class="h-11 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground"
+                    >
+                        "Request reservation change"
+                    </button>
                 </div>
             </form>
         </div>
@@ -117,13 +230,32 @@ async fn quote_preview(
     error: Option<String>,
 ) -> Result<impl View> {
     Ok(view! {
-        <div id="change-quote-preview" aria-live="polite" class="space-y-1 rounded-lg border border-border p-4 text-sm">
+        <div
+            id="change-quote-preview"
+            aria-live="polite"
+            class="space-y-1 rounded-lg border border-border p-4 text-sm"
+        >
             if let Some(q) = quote {
-                <p class="font-medium">(format!("{} → {}, {} guest(s)", q.proposed_date_from.format("%a %-d %b %Y"), q.proposed_date_to.format("%a %-d %b %Y"), q.proposed_number_of_persons))</p>
-                <p>"New total: " (money(&q.currency, q.proposed_total_price))</p>
-                <p class="text-muted-foreground">"Balance due: " (money(&q.currency, q.balance_due))</p>
+                <p class="font-medium">
+                    (format!(
+                        "{} → {}, {} guest(s)",
+                        q.proposed_date_from.format("%a %-d %b %Y"),
+                        q.proposed_date_to.format("%a %-d %b %Y"),
+                        q.proposed_number_of_persons,
+                    ))
+                </p>
+                <p>
+                    "New total: "
+                    (money(&q.currency, q.proposed_total_price))
+                </p>
+                <p class="text-muted-foreground">
+                    "Balance due: "
+                    (money(&q.currency, q.balance_due))
+                </p>
                 if let Some(reason) = q.promo_outcome.lost_reason() {
-                    <p id="change-promo-lost" role="alert" class="text-destructive">(format!("This change removes your promo discount. {reason}"))</p>
+                    <p id="change-promo-lost" role="alert" class="text-destructive">
+                        (format!("This change removes your promo discount. {reason}"))
+                    </p>
                 }
             } else if let Some(error) = error {
                 <p role="alert" class="text-destructive">(error)</p>

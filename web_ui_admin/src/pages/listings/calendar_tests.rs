@@ -75,7 +75,14 @@ async fn every_feed_status_has_its_badge() {
     ] {
         assert!(status_badge(status).1.contains(class));
         let out = html(
-            view! { feeds_section(listing_id: Uuid::nil(), feeds: vec![feed(status, true)], results: Vec::new(), error: None) },
+            view! {
+                feeds_section(
+                    listing_id: Uuid::nil(),
+                    feeds: vec![feed(status, true)],
+                    results: Vec::new(),
+                    error: None
+                )
+            },
             cx,
         )
         .await;
@@ -83,7 +90,14 @@ async fn every_feed_status_has_its_badge() {
         assert!(out.contains("Airbnb &lt;main&gt;"), "names are escaped");
     }
     let out = html(
-        view! { feeds_section(listing_id: Uuid::nil(), feeds: vec![feed(FeedStatus::Failed, false)], results: Vec::new(), error: None) },
+        view! {
+            feeds_section(
+                listing_id: Uuid::nil(),
+                feeds: vec![feed(FeedStatus::Failed, false)],
+                results: Vec::new(),
+                error: None
+            )
+        },
         cx,
     )
     .await;
@@ -114,7 +128,14 @@ async fn every_sync_outcome_is_shown() {
     })
     .collect();
     let out = html(
-        view! { feeds_section(listing_id: Uuid::nil(), feeds: vec![f], results: results, error: None) },
+        view! {
+            feeds_section(
+                listing_id: Uuid::nil(),
+                feeds: vec![f],
+                results: results,
+                error: None
+            )
+        },
         cx,
     )
     .await;
@@ -152,7 +173,13 @@ async fn api_errors_show_inline_and_429_reads_naturally() {
         "The requested dates are no longer available.",
     ));
     let out = html(
-        view! { blocks_section(listing_id: Uuid::nil(), blocks: Vec::new(), error: Some(msg)) },
+        view! {
+            blocks_section(
+                listing_id: Uuid::nil(),
+                blocks: Vec::new(),
+                error: Some(msg)
+            )
+        },
         cx,
     )
     .await;
@@ -251,7 +278,13 @@ async fn conflicts_show_order_stale_labels_and_the_reopened_badge() {
         },
     };
     let out = html(
-        view! { conflicts_section(listing_id: Uuid::nil(), conflicts: conflicts, error: None) },
+        view! {
+            conflicts_section(
+                listing_id: Uuid::nil(),
+                conflicts: conflicts,
+                error: None
+            )
+        },
         cx,
     )
     .await;

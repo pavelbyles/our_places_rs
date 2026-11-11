@@ -215,7 +215,9 @@ async fn currency_selector_links_every_currency_and_marks_the_active_one() {
     // instead of pretending to be USD.
     let unknown_codes = codes.clone();
     let unknown = html(
-        view! { currency_menu(codes: unknown_codes, current_currency: Some("XYZ".into())) },
+        view! {
+            currency_menu(codes: unknown_codes, current_currency: Some("XYZ".into()))
+        },
         cx,
     )
     .await;

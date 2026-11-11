@@ -22,7 +22,14 @@ pub async fn new_listing_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-6">
             <h1 class="text-2xl font-semibold">"New listing"</h1>
-            listing_form(action: "/admin/listings".into(), submit_label: "Create listing".into(), fields: fields, owners: owners, can_set_commission: admin, errors: Vec::new())
+            listing_form(
+                action: "/admin/listings".into(),
+                submit_label: "Create listing".into(),
+                fields: fields,
+                owners: owners,
+                can_set_commission: admin,
+                errors: Vec::new()
+            )
         </div>
     })
 }
@@ -42,7 +49,14 @@ pub async fn clone_listing_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-6">
             <h1 class="text-2xl font-semibold">(format!("Clone {}", source.name))</h1>
-            listing_form(action: "/admin/listings".into(), submit_label: "Create listing".into(), fields: fields, owners: owners, can_set_commission: admin, errors: Vec::new())
+            listing_form(
+                action: "/admin/listings".into(),
+                submit_label: "Create listing".into(),
+                fields: fields,
+                owners: owners,
+                can_set_commission: admin,
+                errors: Vec::new()
+            )
         </div>
     })
 }
@@ -87,7 +101,14 @@ pub async fn create_listing(
     Ok(view! {
         <div class="space-y-6">
             <h1 class="text-2xl font-semibold">"New listing"</h1>
-            listing_form(action: "/admin/listings".into(), submit_label: "Create listing".into(), fields: fields, owners: owners, can_set_commission: admin, errors: errors)
+            listing_form(
+                action: "/admin/listings".into(),
+                submit_label: "Create listing".into(),
+                fields: fields,
+                owners: owners,
+                can_set_commission: admin,
+                errors: errors
+            )
         </div>
     })
 }

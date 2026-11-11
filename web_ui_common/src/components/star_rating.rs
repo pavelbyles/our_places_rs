@@ -30,17 +30,33 @@ pub async fn star_rating(
     Ok(view! {
         if let Some(r) = rating {
             <span class=(root) (attrs)>
-                <span role="img" aria-label=(format!("Rated {r:.1} out of 5")) class="inline-flex items-center gap-1 font-medium">
-                    svg_icon(data: iconify_icon!("lucide:star"), attrs: attributes! { class="size-4 fill-current text-primary" aria-hidden="true" })
+                <span
+                    role="img"
+                    aria-label=(format!("Rated {r:.1} out of 5"))
+                    class="inline-flex items-center gap-1 font-medium"
+                >
+                    svg_icon(
+                        data: iconify_icon!("lucide:star"),
+                        attrs: attributes! {
+                            class="size-4 fill-current text-primary"
+                            aria-hidden="true"
+                        }
+                    )
                     (format!("{r:.1}"))
                 </span>
                 if let Some(count) = review_count {
-                    <span class="text-muted-foreground">(format!("({count} reviews)"))</span>
+                    <span class="text-muted-foreground">
+                        (format!("({count} reviews)"))
+                    </span>
                 }
             </span>
         } else {
             <span class=(root) (attrs)>
-                <span class="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">"New"</span>
+                <span
+                    class="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+                >
+                    "New"
+                </span>
             </span>
         }
     })
@@ -63,7 +79,11 @@ pub async fn star_rating_input(
 ) -> Result<impl View> {
     Ok(view! {
         <fieldset class=(class!("space-y-2", attrs.remove("class"))) (attrs)>
-            <legend class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">(label.clone())</legend>
+            <legend
+                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+            >
+                (label.clone())
+            </legend>
             <div class="flex gap-1">
                 for n in 1u8..=5 {
                     let id = format!("{name}-{n}");

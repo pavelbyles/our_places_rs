@@ -281,7 +281,9 @@ async fn responsive_image_srcset_points_at_image_worker_variants() {
     // `sizes` tells the browser how wide the image is drawn.
     let src = format!("{emulator}/thumbnail/l_i.webp");
     let narrow = html(
-        view! { responsive_image(src: src, alt: "Pool".into(), sizes: Some("280px".into())) },
+        view! {
+            responsive_image(src: src, alt: "Pool".into(), sizes: Some("280px".into()))
+        },
         cx,
     )
     .await;

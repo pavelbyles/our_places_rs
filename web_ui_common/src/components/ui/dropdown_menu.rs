@@ -212,7 +212,8 @@ pub async fn dropdown_menu_sub_trigger(
             (attrs)
         >
             (child)
-            svg_icon(data: iconify_icon!("lucide:chevron-right"),
+            svg_icon(
+                data: iconify_icon!("lucide:chevron-right"),
                 attrs: attributes! { class="ml-auto size-4" }
             )
         </summary>

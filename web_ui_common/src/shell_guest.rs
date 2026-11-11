@@ -63,11 +63,26 @@ pub async fn guest_chrome(
     } = shell;
     let pill = "inline-flex h-11 items-center whitespace-nowrap rounded-full px-3 text-sm font-medium sm:px-5";
     Ok(view! {
-        <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-full focus:bg-card focus:px-4 focus:py-2">"Skip to content"</a>
+        <a
+            href="#main"
+            class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-full focus:bg-card focus:px-4 focus:py-2"
+        >
+            "Skip to content"
+        </a>
         <header class="border-b border-border">
-            <div class="mx-auto flex max-w-[1540px] items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6">
-                <a href="/" class="shrink-0 whitespace-nowrap font-serif text-[20px] text-foreground no-underline sm:text-[26px]">"Our Places"</a>
-                <nav aria-label="Main" class="hidden items-center gap-6 text-[15px] font-medium md:flex">
+            <div
+                class="mx-auto flex max-w-[1540px] items-center justify-between gap-2 px-3 py-4 sm:gap-4 sm:px-6"
+            >
+                <a
+                    href="/"
+                    class="shrink-0 whitespace-nowrap font-serif text-[20px] text-foreground no-underline sm:text-[26px]"
+                >
+                    "Our Places"
+                </a>
+                <nav
+                    aria-label="Main"
+                    class="hidden items-center gap-6 text-[15px] font-medium md:flex"
+                >
                     <a href="/listings" class="text-foreground">"Listings"</a>
                     <a href="/about" class="text-foreground">"About"</a>
                 </nav>
@@ -78,39 +93,107 @@ pub async fn guest_chrome(
                         theme_toggle(theme: theme)
                     </span>
                     if let Some(user) = user.clone() {
-                        <details id="nav-user-dropdown" data-dismiss-outside="" class="relative">
-                            <summary aria-label="Account menu" class="flex h-11 cursor-pointer list-none items-center gap-2 rounded-full border border-border px-4 text-sm">
-                                <span id="nav-user-name" class="max-w-[7rem] truncate sm:max-w-none">(user.name)</span>
+                        <details
+                            id="nav-user-dropdown"
+                            data-dismiss-outside=""
+                            class="relative"
+                        >
+                            <summary
+                                aria-label="Account menu"
+                                class="flex h-11 cursor-pointer list-none items-center gap-2 rounded-full border border-border px-4 text-sm"
+                            >
+                                <span
+                                    id="nav-user-name"
+                                    class="max-w-[7rem] truncate sm:max-w-none"
+                                >
+                                    (user.name)
+                                </span>
                             </summary>
-                            <div class="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-sm">
-                                <p id="nav-user-email" class="px-3 py-2 text-xs text-muted-foreground">(user.email)</p>
-                                <a href="/bookings" class="block rounded-lg px-3 py-2 text-sm">"My bookings"</a>
-                                <a href="/requests" class="block rounded-lg px-3 py-2 text-sm">"My requests"</a>
-                                <a href="/profile" class="block rounded-lg px-3 py-2 text-sm">"Profile"</a>
+                            <div
+                                class="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-sm"
+                            >
+                                <p
+                                    id="nav-user-email"
+                                    class="px-3 py-2 text-xs text-muted-foreground"
+                                >
+                                    (user.email)
+                                </p>
+                                <a
+                                    href="/bookings"
+                                    class="block rounded-lg px-3 py-2 text-sm"
+                                >
+                                    "My bookings"
+                                </a>
+                                <a
+                                    href="/requests"
+                                    class="block rounded-lg px-3 py-2 text-sm"
+                                >
+                                    "My requests"
+                                </a>
+                                <a
+                                    href="/profile"
+                                    class="block rounded-lg px-3 py-2 text-sm"
+                                >
+                                    "Profile"
+                                </a>
                                 <form method="post" action="/logout">
-                                    <button type="submit" class="w-full rounded-lg px-3 py-2 text-left text-sm">"Sign out"</button>
+                                    <button
+                                        type="submit"
+                                        class="w-full rounded-lg px-3 py-2 text-left text-sm"
+                                    >
+                                        "Sign out"
+                                    </button>
                                 </form>
                             </div>
                         </details>
                     } else {
                         <div id="nav-guest-actions" class="flex items-center gap-2">
-                            <a href="/login" class=(format!("{pill} bg-primary text-primary-foreground"))>"Sign in"</a>
+                            <a
+                                href="/login"
+                                class=(format!("{pill} bg-primary text-primary-foreground"))
+                            >
+                                "Sign in"
+                            </a>
                         </div>
                     }
-                    <details id="mobile-nav" data-dismiss-outside="" class="relative md:hidden">
-                        <summary aria-label="Menu" class="flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border">"☰"</summary>
-                        <nav aria-label="Mobile" class="absolute right-0 z-50 mt-2 flex w-56 flex-col rounded-xl border border-border bg-popover p-2 shadow-sm">
-                            <a href="/listings" class="rounded-lg px-3 py-2 text-sm">"Listings"</a>
-                            <a href="/about" class="rounded-lg px-3 py-2 text-sm">"About"</a>
-                            <div class="flex items-center justify-between px-3 py-1 text-sm min-[380px]:hidden">
+                    <details
+                        id="mobile-nav"
+                        data-dismiss-outside=""
+                        class="relative md:hidden"
+                    >
+                        <summary
+                            aria-label="Menu"
+                            class="flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-border"
+                        >
+                            "☰"
+                        </summary>
+                        <nav
+                            aria-label="Mobile"
+                            class="absolute right-0 z-50 mt-2 flex w-56 flex-col rounded-xl border border-border bg-popover p-2 shadow-sm"
+                        >
+                            <a href="/listings" class="rounded-lg px-3 py-2 text-sm">
+                                "Listings"
+                            </a>
+                            <a href="/about" class="rounded-lg px-3 py-2 text-sm">
+                                "About"
+                            </a>
+                            <div
+                                class="flex items-center justify-between px-3 py-1 text-sm min-[380px]:hidden"
+                            >
                                 <span>"Theme"</span>
                                 theme_toggle(theme: theme)
                             </div>
                             if user.is_some() {
-                                <a href="/bookings" class="rounded-lg px-3 py-2 text-sm">"My bookings"</a>
-                                <a href="/requests" class="rounded-lg px-3 py-2 text-sm">"My requests"</a>
+                                <a href="/bookings" class="rounded-lg px-3 py-2 text-sm">
+                                    "My bookings"
+                                </a>
+                                <a href="/requests" class="rounded-lg px-3 py-2 text-sm">
+                                    "My requests"
+                                </a>
                             } else {
-                                <a href="/register" class="rounded-lg px-3 py-2 text-sm">"Create account"</a>
+                                <a href="/register" class="rounded-lg px-3 py-2 text-sm">
+                                    "Create account"
+                                </a>
                             }
                         </nav>
                     </details>
@@ -119,7 +202,9 @@ pub async fn guest_chrome(
         </header>
         <main id="main" class="mx-auto w-full max-w-[1540px] px-6 py-12">(child)</main>
         <footer class="mt-32 border-t border-border">
-            <div class="mx-auto flex max-w-[1540px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between">
+            <div
+                class="mx-auto flex max-w-[1540px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between"
+            >
                 <p class="font-serif text-xl text-foreground">"Our Places"</p>
                 <nav aria-label="Footer" class="flex flex-wrap gap-6">
                     <a href="/register">"List your property"</a>
@@ -160,9 +245,7 @@ pub async fn guest_document(
                 <script src=(HTMX_JS) defer=(true)></script>
                 <script src=(UI_JS) defer=(true)></script>
             </head>
-            <body>
-                guest_chrome(shell: shell, (child))
-            </body>
+            <body>guest_chrome(shell: shell, (child))</body>
         </html>
     })
 }

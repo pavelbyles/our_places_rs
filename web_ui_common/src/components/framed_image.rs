@@ -45,7 +45,12 @@ pub async fn framed_image(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
-        <div class=(class!("overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder", aspect.class()))>
+        <div
+            class=(class!(
+                "overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder",
+                aspect.class(),
+            ))
+        >
             <img
                 src=(src)
                 alt=(alt)

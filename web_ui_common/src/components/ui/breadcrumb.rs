@@ -149,7 +149,8 @@ pub async fn breadcrumb_separator(
 ) -> Result<impl View> {
     Ok(view! {
         <li aria-hidden="true" class=(attrs.remove("class")) (attrs)>
-            svg_icon(data: iconify_icon!("lucide:chevron-right"),
+            svg_icon(
+                data: iconify_icon!("lucide:chevron-right"),
                 attrs: attributes! { class="size-3.5" }
             )
         </li>
@@ -166,7 +167,8 @@ pub async fn breadcrumb_ellipsis(
 ) -> Result<impl View> {
     Ok(view! {
         <span class=(class!("flex items-center", attrs.remove("class"))) (attrs)>
-            svg_icon(data: iconify_icon!("lucide:ellipsis"),
+            svg_icon(
+                data: iconify_icon!("lucide:ellipsis"),
                 attrs: attributes! { class="size-4" }
             )
             <span class="sr-only">"More"</span>

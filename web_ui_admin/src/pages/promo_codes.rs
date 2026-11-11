@@ -228,23 +228,45 @@ pub async fn promo_codes_card(
     let button = "h-9 rounded-lg border border-border px-3 text-sm font-medium";
     let now = Utc::now();
     Ok(view! {
-        <section id="promo-codes-card" class="space-y-4 rounded-xl border border-border p-6">
+        <section
+            id="promo-codes-card"
+            class="space-y-4 rounded-xl border border-border p-6"
+        >
             for message in errors {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(message)</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (message)
+                </p>
             }
             <div class="overflow-x-auto">
                 <table id="promo-codes-table" class="w-full text-sm">
                     <thead class="text-left text-xs text-muted-foreground uppercase">
                         <tr>
-                            <th scope="col" class="py-2">"Code"</th><th scope="col" class="py-2">"Discount"</th><th scope="col" class="py-2">"Valid"</th>
-                            <th scope="col" class="py-2">"Listings"</th><th scope="col" class="py-2">"Status"</th>
-                            <th scope="col" class="py-2 text-right">"Active holds"</th><th scope="col" class="py-2 text-right">"Confirmed"</th><th scope="col" class="py-2 text-right">"Remaining"</th>
-                            <th scope="col" class="py-2"><span class="sr-only">"Actions"</span></th>
+                            <th scope="col" class="py-2">"Code"</th>
+                            <th scope="col" class="py-2">"Discount"</th>
+                            <th scope="col" class="py-2">"Valid"</th>
+                            <th scope="col" class="py-2">"Listings"</th>
+                            <th scope="col" class="py-2">"Status"</th>
+                            <th scope="col" class="py-2 text-right">"Active holds"</th>
+                            <th scope="col" class="py-2 text-right">"Confirmed"</th>
+                            <th scope="col" class="py-2 text-right">"Remaining"</th>
+                            <th scope="col" class="py-2">
+                                <span class="sr-only">"Actions"</span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-border">
                         if codes.is_empty() {
-                            <tr><td colspan="9" class="py-6 text-center text-muted-foreground">"No promo codes yet."</td></tr>
+                            <tr>
+                                <td
+                                    colspan="9"
+                                    class="py-6 text-center text-muted-foreground"
+                                >
+                                    "No promo codes yet."
+                                </td>
+                            </tr>
                         }
                         for code in codes {
                             let status = status_text(&code, now);
@@ -252,15 +274,37 @@ pub async fn promo_codes_card(
                             <tr data-promo-code=(code.code.clone())>
                                 <td class="py-2 font-mono">(code.code.clone())</td>
                                 <td class="py-2">(discount_text(&code))</td>
-                                <td class="py-2">(format!("{} to {}", code.valid_from.format("%-d %b %Y"), code.valid_to.format("%-d %b %Y")))</td>
+                                <td class="py-2">
+                                    (format!(
+                                        "{} to {}",
+                                        code.valid_from.format("%-d %b %Y"),
+                                        code.valid_to.format("%-d %b %Y"),
+                                    ))
+                                </td>
                                 <td class="py-2">(listings_text(&code))</td>
                                 <td class="py-2" data-promo-status="">(status)</td>
-                                <td class="py-2 text-right tabular-nums">(code.active_holds.to_string())</td>
-                                <td class="py-2 text-right tabular-nums">(code.confirmed_uses.to_string())</td>
-                                <td class="py-2 text-right tabular-nums">(code.remaining_uses.map_or_else(|| "No limit".to_string(), |n| n.to_string()))</td>
+                                <td class="py-2 text-right tabular-nums">
+                                    (code.active_holds.to_string())
+                                </td>
+                                <td class="py-2 text-right tabular-nums">
+                                    (code.confirmed_uses.to_string())
+                                </td>
+                                <td class="py-2 text-right tabular-nums">
+                                    (code.remaining_uses.map_or_else(
+                                        || "No limit".to_string(),
+                                        |n| n.to_string(),
+                                    ))
+                                </td>
                                 <td class="py-2 text-right">
                                     if code.deactivated_at.is_none() {
-                                        <form method="post" action=(action.clone()) hx-post=(action) hx-target="#promo-codes-card" hx-swap="outerHTML" hx-disabled-elt="find button">
+                                        <form
+                                            method="post"
+                                            action=(action.clone())
+                                            hx-post=(action)
+                                            hx-target="#promo-codes-card"
+                                            hx-swap="outerHTML"
+                                            hx-disabled-elt="find button"
+                                        >
                                             <button type="submit" class=(button)>"Deactivate"</button>
                                         </form>
                                     }
@@ -288,48 +332,225 @@ pub async fn promo_code_form(
     let label = "text-xs text-muted-foreground";
     let field = "mt-1 block h-9 w-full rounded-lg border border-border bg-card px-2 text-sm text-foreground";
     Ok(view! {
-        <form id="promo-code-form" method="post" action=(PAGE) class="space-y-4 rounded-xl border border-border p-6">
+        <form
+            id="promo-code-form"
+            method="post"
+            action=(PAGE)
+            class="space-y-4 rounded-xl border border-border p-6"
+        >
             <h2 class="text-lg font-semibold">"Create a promo code"</h2>
-            <p class="text-sm text-muted-foreground">"The host funds the discount. It can't be changed after creation: deactivate the code and create a new one."</p>
+            <p class="text-sm text-muted-foreground">
+                "The host funds the discount. It can't be changed after creation: deactivate the code and create a new one."
+            </p>
             if let Some(message) = error {
-                <p id="promo-code-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(message)</p>
+                <p
+                    id="promo-code-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (message)
+                </p>
             }
             <div class="grid gap-3 sm:grid-cols-3">
-                <label class=(label)>"Code"<input id="promo-code" name="code" required=(true) maxlength="32" value=(form.code.clone()) class=(format!("{field} font-mono uppercase")) /></label>
-                <label class=(label)>"Discount type"
+                <label class=(label)>
+                    "Code"
+                    <input
+                        id="promo-code"
+                        name="code"
+                        required=(true)
+                        maxlength="32"
+                        value=(form.code.clone())
+                        class=(format!("{field} font-mono uppercase"))
+                    />
+                </label>
+                <label class=(label)>
+                    "Discount type"
                     <select id="promo-discount-type" name="discount_type" class=(field)>
-                        <option value="percentage" selected=(form.discount_type != "fixed")>"Percentage"</option>
-                        <option value="fixed" selected=(form.discount_type == "fixed")>"Fixed amount"</option>
+                        <option
+                            value="percentage"
+                            selected=(form.discount_type != "fixed")
+                        >
+                            "Percentage"
+                        </option>
+                        <option value="fixed" selected=(form.discount_type == "fixed")>
+                            "Fixed amount"
+                        </option>
                     </select>
                 </label>
-                <label class=(label)>"Discount"<input id="promo-discount-value" name="discount_value" required=(true) inputmode="decimal" value=(form.discount_value.clone()) class=(field) /></label>
-                <label class=(label)>"Currency (fixed amount or minimum value)"<input id="promo-currency" name="currency" maxlength="3" value=(form.currency.clone()) class=(format!("{field} uppercase")) /></label>
-                <label class=(label)>"Applies to"
+                <label class=(label)>
+                    "Discount"
+                    <input
+                        id="promo-discount-value"
+                        name="discount_value"
+                        required=(true)
+                        inputmode="decimal"
+                        value=(form.discount_value.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Currency (fixed amount or minimum value)"
+                    <input
+                        id="promo-currency"
+                        name="currency"
+                        maxlength="3"
+                        value=(form.currency.clone())
+                        class=(format!("{field} uppercase"))
+                    />
+                </label>
+                <label class=(label)>
+                    "Applies to"
                     <select id="promo-scope" name="scope" class=(field)>
-                        <option value="stay" selected=(form.scope != "stay_and_cleaning")>"The stay"</option>
-                        <option value="stay_and_cleaning" selected=(form.scope == "stay_and_cleaning")>"The stay and cleaning fee"</option>
+                        <option
+                            value="stay"
+                            selected=(form.scope != "stay_and_cleaning")
+                        >
+                            "The stay"
+                        </option>
+                        <option
+                            value="stay_and_cleaning"
+                            selected=(form.scope == "stay_and_cleaning")
+                        >
+                            "The stay and cleaning fee"
+                        </option>
                     </select>
                 </label>
-                <label class=(label)>"First valid day"<input id="promo-valid-from" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="valid_from" required=(true) value=(form.valid_from.clone()) class=(field) /></label>
-                <label class=(label)>"Last valid day"<input id="promo-valid-to" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="valid_to" required=(true) value=(form.valid_to.clone()) class=(field) /></label>
-                <label class=(label)>"First eligible night (optional)"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="stay_from" value=(form.stay_from.clone()) class=(field) /></label>
-                <label class=(label)>"Last eligible night (optional)"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="stay_to" value=(form.stay_to.clone()) class=(field) /></label>
-                <label class=(label)>"Minimum nights (optional)"<input type="number" min="1" name="min_nights" value=(form.min_nights.clone()) class=(field) /></label>
-                <label class=(label)>"Minimum booking value (optional)"<input name="min_booking_value" inputmode="decimal" value=(form.min_booking_value.clone()) class=(field) /></label>
-                <label class=(label)>"Total usage limit (optional)"<input id="promo-total-limit" type="number" min="1" name="total_usage_limit" value=(form.total_usage_limit.clone()) class=(field) /></label>
-                <label class=(label)>"Per-guest limit (optional)"<input type="number" min="1" name="per_guest_limit" value=(form.per_guest_limit.clone()) class=(field) /></label>
+                <label class=(label)>
+                    "First valid day"
+                    <input
+                        id="promo-valid-from"
+                        type="text"
+                        data-date-picker=""
+                        placeholder="yyyy-mm-dd"
+                        pattern="\\d{4}-\\d{2}-\\d{2}"
+                        name="valid_from"
+                        required=(true)
+                        value=(form.valid_from.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Last valid day"
+                    <input
+                        id="promo-valid-to"
+                        type="text"
+                        data-date-picker=""
+                        placeholder="yyyy-mm-dd"
+                        pattern="\\d{4}-\\d{2}-\\d{2}"
+                        name="valid_to"
+                        required=(true)
+                        value=(form.valid_to.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "First eligible night (optional)"
+                    <input
+                        type="text"
+                        data-date-picker=""
+                        placeholder="yyyy-mm-dd"
+                        pattern="\\d{4}-\\d{2}-\\d{2}"
+                        name="stay_from"
+                        value=(form.stay_from.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Last eligible night (optional)"
+                    <input
+                        type="text"
+                        data-date-picker=""
+                        placeholder="yyyy-mm-dd"
+                        pattern="\\d{4}-\\d{2}-\\d{2}"
+                        name="stay_to"
+                        value=(form.stay_to.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Minimum nights (optional)"
+                    <input
+                        type="number"
+                        min="1"
+                        name="min_nights"
+                        value=(form.min_nights.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Minimum booking value (optional)"
+                    <input
+                        name="min_booking_value"
+                        inputmode="decimal"
+                        value=(form.min_booking_value.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Total usage limit (optional)"
+                    <input
+                        id="promo-total-limit"
+                        type="number"
+                        min="1"
+                        name="total_usage_limit"
+                        value=(form.total_usage_limit.clone())
+                        class=(field)
+                    />
+                </label>
+                <label class=(label)>
+                    "Per-guest limit (optional)"
+                    <input
+                        type="number"
+                        min="1"
+                        name="per_guest_limit"
+                        value=(form.per_guest_limit.clone())
+                        class=(field)
+                    />
+                </label>
             </div>
             <fieldset class="space-y-2">
                 <legend class=(label)>"Listings"</legend>
-                <label class="flex items-center gap-2 text-sm"><input id="promo-applies-all" type="radio" name="applies_to" value="all" checked=(form.applies_to != "selected") />"All, including listings added later"</label>
-                <label class="flex items-center gap-2 text-sm"><input id="promo-applies-selected" type="radio" name="applies_to" value="selected" checked=(form.applies_to == "selected") />"Selected listings"</label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input
+                        id="promo-applies-all"
+                        type="radio"
+                        name="applies_to"
+                        value="all"
+                        checked=(form.applies_to != "selected")
+                    />
+                    "All, including listings added later"
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input
+                        id="promo-applies-selected"
+                        type="radio"
+                        name="applies_to"
+                        value="selected"
+                        checked=(form.applies_to == "selected")
+                    />
+                    "Selected listings"
+                </label>
                 <div id="promo-listing-picker" class="grid gap-1 sm:grid-cols-2">
                     for listing in listings {
-                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name=(format!("{LISTING_FIELD}{}", listing.id)) value="on" checked=(form.is_selected(listing.id)) />(listing.name.clone())</label>
+                        <label class="flex items-center gap-2 text-sm">
+                            <input
+                                type="checkbox"
+                                name=(format!("{LISTING_FIELD}{}", listing.id))
+                                value="on"
+                                checked=(form.is_selected(listing.id))
+                            />
+                            (listing.name.clone())
+                        </label>
                     }
                 </div>
             </fieldset>
-            <button id="promo-code-submit" type="submit" class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Create promo code"</button>
+            <button
+                id="promo-code-submit"
+                type="submit"
+                class="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+            >
+                "Create promo code"
+            </button>
         </form>
     })
 }
@@ -366,7 +587,9 @@ async fn promo_codes_view(
         <div class="space-y-6">
             <div>
                 <h1 class="text-2xl font-semibold">"Promo codes"</h1>
-                <p class="text-sm text-muted-foreground">"Codes guests enter at checkout. Deactivating one never changes bookings already made."</p>
+                <p class="text-sm text-muted-foreground">
+                    "Codes guests enter at checkout. Deactivating one never changes bookings already made."
+                </p>
             </div>
             promo_codes_card(codes: codes, errors: errors)
             promo_code_form(listings: listings, form: form, error: error)
@@ -382,9 +605,15 @@ pub async fn promo_codes_page(cx: &Cx) -> Result<impl View> {
     let (codes, errors) = load_codes(cx, &token).await;
     let listings = scoped_listings(cx, &user).await;
     let form = PromoCodeForm::default();
-    Ok(
-        view! { promo_codes_view(codes: codes, errors: errors, listings: listings, form: form, error: None) },
-    )
+    Ok(view! {
+        promo_codes_view(
+            codes: codes,
+            errors: errors,
+            listings: listings,
+            form: form,
+            error: None
+        )
+    })
 }
 
 /// Creates a code. An error shows the form again, as typed.
@@ -412,9 +641,15 @@ pub async fn create_promo_code(
     let error = outcome.err();
     let (codes, errors) = load_codes(cx, &token).await;
     let listings = scoped_listings(cx, &user).await;
-    Ok(
-        view! { promo_codes_view(codes: codes, errors: errors, listings: listings, form: form, error: error) },
-    )
+    Ok(view! {
+        promo_codes_view(
+            codes: codes,
+            errors: errors,
+            listings: listings,
+            form: form,
+            error: error
+        )
+    })
 }
 
 /// Deactivates a code. Swaps the card, or returns to the page without HTMX.
@@ -588,7 +823,12 @@ mod tests {
     async fn promo_codes_errors_are_escaped() {
         let cx = &Cx::default();
         let out = html(
-            view! { promo_codes_card(codes: Vec::new(), errors: vec!["<script>x</script>".to_string()]) },
+            view! {
+                promo_codes_card(
+                    codes: Vec::new(),
+                    errors: vec!["<script>x</script>".to_string()]
+                )
+            },
             cx,
         )
         .await;

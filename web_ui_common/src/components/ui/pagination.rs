@@ -208,7 +208,8 @@ pub async fn pagination_ellipsis(
             ))
             (attrs)
         >
-            svg_icon(data: iconify_icon!("lucide:ellipsis"),
+            svg_icon(
+                data: iconify_icon!("lucide:ellipsis"),
                 attrs: attributes! { class="size-4" }
             )
             <span class="sr-only">"More pages"</span>

@@ -104,66 +104,169 @@ pub async fn users_page(cx: &Cx) -> Result<impl View> {
         <div class="space-y-6">
             <div class="flex flex-wrap items-end justify-between gap-4">
                 <div>
-                    <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">"Access control and accounts"</p>
+                    <p
+                        class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                    >
+                        "Access control and accounts"
+                    </p>
                     <h1 class="text-2xl font-semibold">"Users"</h1>
                 </div>
-                <a href="/admin/users/new" class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground no-underline">"New user"</a>
+                <a
+                    href="/admin/users/new"
+                    class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground no-underline"
+                >
+                    "New user"
+                </a>
             </div>
             if let Some((message, failed)) = notice {
-                <p id="users-notice" role=(if failed { "alert" } else { "status" }) class=(if failed { "rounded-lg border border-destructive p-3 text-sm text-destructive" } else { "rounded-lg border border-border p-3 text-sm" })>(message)</p>
+                <p
+                    id="users-notice"
+                    role=(if failed { "alert" } else { "status" })
+                    class=(if failed {
+                        "rounded-lg border border-destructive p-3 text-sm text-destructive"
+                    } else {
+                        "rounded-lg border border-border p-3 text-sm"
+                    })
+                >
+                    (message)
+                </p>
             }
             if load_failed {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">"The user directory could not be loaded. Please try again shortly."</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    "The user directory could not be loaded. Please try again shortly."
+                </p>
             }
-            <form method="get" action="/admin/users" role="search" class="flex flex-wrap items-end gap-3">
-                <div class="min-w-64 flex-1"><label class=(LABEL) for="user-search-input">"Search name or email"</label>
-                    <input id="user-search-input" name="q" type="search" value=(search) class=(INPUT) /></div>
-                <div><label class=(LABEL) for="user-role-filter">"Role"</label>
+            <form
+                method="get"
+                action="/admin/users"
+                role="search"
+                class="flex flex-wrap items-end gap-3"
+            >
+                <div class="min-w-64 flex-1">
+                    <label class=(LABEL) for="user-search-input">
+                        "Search name or email"
+                    </label>
+                    <input
+                        id="user-search-input"
+                        name="q"
+                        type="search"
+                        value=(search)
+                        class=(INPUT)
+                    />
+                </div>
+                <div>
+                    <label class=(LABEL) for="user-role-filter">"Role"</label>
                     <select id="user-role-filter" name="role" class=(INPUT)>
-                        for (value, label) in roles { <option value=(value) selected=(role == value)>(label)</option> }
-                    </select></div>
-                <div><label class=(LABEL) for="user-status-filter">"Status"</label>
+                        for (value, label) in roles {
+                            <option value=(value) selected=(role == value)>
+                                (label)
+                            </option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class=(LABEL) for="user-status-filter">"Status"</label>
                     <select id="user-status-filter" name="status" class=(INPUT)>
-                        for (value, label) in statuses { <option value=(value) selected=(status == value)>(label)</option> }
-                    </select></div>
-                <button type="submit" class="h-10 rounded-lg border border-border px-4 text-sm">"Filter"</button>
+                        for (value, label) in statuses {
+                            <option value=(value) selected=(status == value)>
+                                (label)
+                            </option>
+                        }
+                    </select>
+                </div>
+                <button
+                    type="submit"
+                    class="h-10 rounded-lg border border-border px-4 text-sm"
+                >
+                    "Filter"
+                </button>
             </form>
-            <p class="text-xs text-muted-foreground">(format!("{} account(s) shown", users.len()))</p>
+            <p class="text-xs text-muted-foreground">
+                (format!("{} account(s) shown", users.len()))
+            </p>
             <div class="overflow-x-auto rounded-xl border border-border">
                 <table id="users-table" class="w-full text-sm">
-                    <thead class="bg-card text-left text-xs text-muted-foreground uppercase">
+                    <thead
+                        class="bg-card text-left text-xs text-muted-foreground uppercase"
+                    >
                         <tr>
-                            <th scope="col" class="p-3">"Name"</th><th scope="col" class="p-3">"Email"</th>
-                            <th scope="col" class="p-3">"Roles"</th><th scope="col" class="p-3">"Status"</th>
-                            <th scope="col" class="p-3"><span class="sr-only">"Actions"</span></th>
+                            <th scope="col" class="p-3">"Name"</th>
+                            <th scope="col" class="p-3">"Email"</th>
+                            <th scope="col" class="p-3">"Roles"</th>
+                            <th scope="col" class="p-3">"Status"</th>
+                            <th scope="col" class="p-3">
+                                <span class="sr-only">"Actions"</span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-border">
                         if users.is_empty() {
-                            <tr><td colspan="5" class="p-6 text-center text-muted-foreground">"No accounts match."</td></tr>
+                            <tr>
+                                <td
+                                    colspan="5"
+                                    class="p-6 text-center text-muted-foreground"
+                                >
+                                    "No accounts match."
+                                </td>
+                            </tr>
                         }
                         for u in users {
                             let archived = u.deleted_at.is_some();
-                            let protected = is_admin_account(&u) || u.id == admin.user_id;
-                            let state = if archived { "Archived" } else if u.is_active { "Active" } else { "Inactive" };
+                            let protected = is_admin_account(&u)
+                                || u.id == admin.user_id;
+                            let state = if archived {
+                                "Archived"
+                            } else if u.is_active {
+                                "Active"
+                            } else {
+                                "Inactive"
+                            };
                             <tr id=(format!("user-{}", u.id))>
-                                <td class="p-3 font-medium">(format!("{} {}", u.first_name, u.last_name))</td>
+                                <td class="p-3 font-medium">
+                                    (format!("{} {}", u.first_name, u.last_name))
+                                </td>
                                 <td class="p-3">(u.email.clone())</td>
                                 <td class="p-3 capitalize">(u.roles.join(", "))</td>
                                 <td class="p-3">(state)</td>
                                 <td class="p-3">
                                     <div class="flex flex-wrap justify-end gap-2">
-                                        <button type="button" hx-get=(format!("/admin/users/{}/edit", u.id)) hx-target="#user-dialog-slot" hx-swap="innerHTML" class=(button)>"Edit"</button>
+                                        <button
+                                            type="button"
+                                            hx-get=(format!("/admin/users/{}/edit", u.id))
+                                            hx-target="#user-dialog-slot"
+                                            hx-swap="innerHTML"
+                                            class=(button)
+                                        >
+                                            "Edit"
+                                        </button>
                                         if archived {
-                                            <form method="post" action=(format!("/admin/users/{}/restore", u.id))>
+                                            <form
+                                                method="post"
+                                                action=(format!("/admin/users/{}/restore", u.id))
+                                            >
                                                 <button type="submit" class=(button)>"Restore"</button>
                                             </form>
                                         }
                                         if !protected {
                                             if !archived {
-                                                <button type="button" data-dialog-open=(format!("archive-user-{}", u.id)) class=(button)>"Archive"</button>
+                                                <button
+                                                    type="button"
+                                                    data-dialog-open=(format!("archive-user-{}", u.id))
+                                                    class=(button)
+                                                >
+                                                    "Archive"
+                                                </button>
                                             }
-                                            <button type="button" data-dialog-open=(format!("purge-user-{}", u.id)) class=(format!("{button} text-destructive"))>"Delete permanently"</button>
+                                            <button
+                                                type="button"
+                                                data-dialog-open=(format!("purge-user-{}", u.id))
+                                                class=(format!("{button} text-destructive"))
+                                            >
+                                                "Delete permanently"
+                                            </button>
                                         }
                                     </div>
                                 </td>
@@ -175,18 +278,55 @@ pub async fn users_page(cx: &Cx) -> Result<impl View> {
             for u in confirmations {
                 let name = format!("{} {} ({})", u.first_name, u.last_name, u.email);
                 for (kind, purge, title, body, confirm) in [
-                    ("archive", "false", "Archive this account?", "They will be signed out and unable to sign in until restored.", "Archive account"),
-                    ("purge", "true", "Delete this account permanently?", "This cannot be undone. Accounts with bookings, listings or financial records can only be archived.", "Delete permanently"),
+                    (
+                        "archive",
+                        "false",
+                        "Archive this account?",
+                        "They will be signed out and unable to sign in until restored.",
+                        "Archive account",
+                    ),
+                    (
+                        "purge",
+                        "true",
+                        "Delete this account permanently?",
+                        "This cannot be undone. Accounts with bookings, listings or financial records can only be archived.",
+                        "Delete permanently",
+                    ),
                 ] {
-                    <dialog id=(format!("{kind}-user-{}", u.id)) role="alertdialog" aria-labelledby=(format!("{kind}-user-{}-title", u.id)) class="m-auto w-[min(480px,92vw)] rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50">
-                        <form method="post" action=(format!("/admin/users/{}/delete", u.id)) class="space-y-4">
+                    <dialog
+                        id=(format!("{kind}-user-{}", u.id))
+                        role="alertdialog"
+                        aria-labelledby=(format!("{kind}-user-{}-title", u.id))
+                        class="m-auto w-[min(480px,92vw)] rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50"
+                    >
+                        <form
+                            method="post"
+                            action=(format!("/admin/users/{}/delete", u.id))
+                            class="space-y-4"
+                        >
                             <input type="hidden" name="purge" value=(purge) />
-                            <h2 id=(format!("{kind}-user-{}-title", u.id)) class="text-lg font-semibold">(title)</h2>
+                            <h2
+                                id=(format!("{kind}-user-{}-title", u.id))
+                                class="text-lg font-semibold"
+                            >
+                                (title)
+                            </h2>
                             <p class="text-sm">(name.clone())</p>
                             <p class="text-sm text-muted-foreground">(body)</p>
                             <div class="flex justify-end gap-2">
-                                <button type="button" data-dialog-close="" class="h-10 rounded-lg border border-border px-4 text-sm">"Cancel"</button>
-                                <button type="submit" class="h-10 rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground">(confirm)</button>
+                                <button
+                                    type="button"
+                                    data-dialog-close=""
+                                    class="h-10 rounded-lg border border-border px-4 text-sm"
+                                >
+                                    "Cancel"
+                                </button>
+                                <button
+                                    type="submit"
+                                    class="h-10 rounded-lg bg-destructive px-4 text-sm font-medium text-destructive-foreground"
+                                >
+                                    (confirm)
+                                </button>
                             </div>
                         </form>
                     </dialog>

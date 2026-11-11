@@ -114,7 +114,8 @@ pub async fn accordion_trigger(
             (attrs)
         >
             (child)
-            svg_icon(data: iconify_icon!("lucide:chevron-down"),
+            svg_icon(
+                data: iconify_icon!("lucide:chevron-down"),
                 attrs: attributes! {
                     class="size-4 shrink-0 text-muted-foreground transition-transform \
                         duration-200 ease-out group-open:rotate-180"

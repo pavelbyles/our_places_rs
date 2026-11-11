@@ -42,7 +42,13 @@ async fn message_bubble(cx: &Cx, message: BookingMessageResponse) -> Result<impl
     let mine = message.sender_role != MessageSenderRole::Guest;
     let sent_at = message.created_at.format("%b %d, %H:%M").to_string();
     Ok(view! {
-        chat_bubble(sender: message.sender_name.clone(), sent_at: sent_at, text: message.message_text.clone(), mine: mine, attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) })
+        chat_bubble(
+            sender: message.sender_name.clone(),
+            sent_at: sent_at,
+            text: message.message_text.clone(),
+            mine: mine,
+            attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) }
+        )
     })
 }
 
@@ -67,9 +73,15 @@ pub async fn admin_messages_page(cx: &Cx) -> Result<impl View> {
         <div class="mx-auto max-w-3xl space-y-6">
             <div>
                 <a href="/admin/bookings" class="text-sm">"← Bookings"</a>
-                <h1 class="text-2xl font-semibold">(format!("Messages · {}", booking.confirmation_code))</h1>
+                <h1 class="text-2xl font-semibold">
+                    (format!("Messages · {}", booking.confirmation_code))
+                </h1>
             </div>
-            chat_thread(attrs: topcoat::view::attributes! { id="admin-messages-list" class="rounded-xl border border-border p-4" },
+            chat_thread(
+                attrs: topcoat::view::attributes! {
+                    id="admin-messages-list"
+                    class="rounded-xl border border-border p-4"
+                },
                 if thread.messages.is_empty() {
                     <p class="text-sm text-muted-foreground">"No messages yet."</p>
                 }
@@ -77,10 +89,31 @@ pub async fn admin_messages_page(cx: &Cx) -> Result<impl View> {
                     message_bubble(message: message)
                 }
             )
-            <form method="post" action=(action.clone()) hx-post=(action) hx-target="#admin-messages-list" hx-swap="beforeend" data-reset-on-success="" class="flex gap-2">
+            <form
+                method="post"
+                action=(action.clone())
+                hx-post=(action)
+                hx-target="#admin-messages-list"
+                hx-swap="beforeend"
+                data-reset-on-success=""
+                class="flex gap-2"
+            >
                 <label for="admin-message-text" class="sr-only">"Message"</label>
-                <input id="admin-message-text" name="message_text" required=(true) maxlength="2000" autocomplete="off" placeholder="Reply to the guest…" class="h-10 flex-1 rounded-lg border border-border bg-card px-3 text-sm" />
-                <button type="submit" class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground">"Send"</button>
+                <input
+                    id="admin-message-text"
+                    name="message_text"
+                    required=(true)
+                    maxlength="2000"
+                    autocomplete="off"
+                    placeholder="Reply to the guest…"
+                    class="h-10 flex-1 rounded-lg border border-border bg-card px-3 text-sm"
+                />
+                <button
+                    type="submit"
+                    class="h-10 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground"
+                >
+                    "Send"
+                </button>
             </form>
         </div>
     })
@@ -117,8 +150,12 @@ pub async fn admin_send_message(
     }
     Ok(view! {
         match sent {
-            Ok(message) => { message_bubble(message: message) }
-            Err(error) => { <p role="alert" class="text-sm text-destructive">(error)</p> }
+            Ok(message) => {
+                message_bubble(message: message)
+            }
+            Err(error) => {
+                <p role="alert" class="text-sm text-destructive">(error)</p>
+            }
         }
     })
 }

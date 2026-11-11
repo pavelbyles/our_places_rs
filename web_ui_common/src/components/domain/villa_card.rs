@@ -58,25 +58,63 @@ pub async fn villa_card(
     } = listing;
     let alt = name.clone();
     Ok(view! {
-        <article class=(class!("group flex w-[240px] shrink-0 snap-start flex-col sm:w-[280px]", attrs.remove("class"))) (attrs)>
-            <a href=(href.clone()) tabindex="-1" aria-hidden="true" class="block aspect-[4/5] overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
+        <article
+            class=(class!(
+                "group flex w-[240px] shrink-0 snap-start flex-col sm:w-[280px]",
+                attrs.remove("class"),
+            ))
+            (attrs)
+        >
+            <a
+                href=(href.clone())
+                tabindex="-1"
+                aria-hidden="true"
+                class="block aspect-[4/5] overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder"
+            >
                 if let Some(src) = image_url {
-                    responsive_image(src: src, alt: alt, sizes: Some("(min-width: 640px) 280px, 240px".to_string()), attrs: attributes! { class="transition-transform duration-700 ease-out group-hover:scale-[1.04] motion-reduce:transition-none" })
+                    responsive_image(
+                        src: src,
+                        alt: alt,
+                        sizes: Some("(min-width: 640px) 280px, 240px".to_string()),
+                        attrs: attributes! {
+                            class="transition-transform duration-700 ease-out group-hover:scale-[1.04] motion-reduce:transition-none"
+                        }
+                    )
                 }
             </a>
             <div class="flex flex-col items-center gap-1.5 px-2 pt-5 text-center">
                 <h3 class="text-sm font-semibold tracking-[0.16em] uppercase">
-                    <a href=(href.clone()) class="text-foreground hover:underline underline-offset-4">(name)</a>
+                    <a
+                        href=(href.clone())
+                        class="text-foreground hover:underline underline-offset-4"
+                    >
+                        (name)
+                    </a>
                 </h3>
                 <p class="text-xs text-muted-foreground">(location)</p>
                 if let Some(host) = host {
-                    <p class="text-xs text-muted-foreground">"Hosted by "<a href=(host.href()) data-host-link="" class="font-medium text-foreground hover:underline underline-offset-4">(host.name)</a></p>
+                    <p class="text-xs text-muted-foreground">
+                        "Hosted by "
+                        <a
+                            href=(host.href())
+                            data-host-link=""
+                            class="font-medium text-foreground hover:underline underline-offset-4"
+                        >
+                            (host.name)
+                        </a>
+                    </p>
                 }
-                <ul class="flex flex-wrap justify-center gap-x-2 text-xs text-link" aria-label="Villa size">
+                <ul
+                    class="flex flex-wrap justify-center gap-x-2 text-xs text-link"
+                    aria-label="Villa size"
+                >
                     for (i, spec) in specs.into_iter().enumerate() {
                         <li class="flex items-center gap-2">
                             if i > 0 {
-                                <span aria-hidden="true" class="size-1 rounded-full bg-muted-foreground/60"></span>
+                                <span
+                                    aria-hidden="true"
+                                    class="size-1 rounded-full bg-muted-foreground/60"
+                                ></span>
                             }
                             (spec)
                         </li>
@@ -85,10 +123,19 @@ pub async fn villa_card(
                 <p class="mt-2 flex items-center gap-3 text-xs">
                     match price {
                         Ok(price) => {
-                            <span><span class="text-muted-foreground">"from "</span><span class="font-medium">(price)</span><span class="text-muted-foreground">" / night"</span></span>
+                            <span>
+                                <span class="text-muted-foreground">"from "</span>
+                                <span class="font-medium">(price)</span>
+                                <span class="text-muted-foreground">" / night"</span>
+                            </span>
                         }
                         Err(unavailable) => {
-                            <span class="text-muted-foreground" data-price-unavailable="">(unavailable)</span>
+                            <span
+                                class="text-muted-foreground"
+                                data-price-unavailable=""
+                            >
+                                (unavailable)
+                            </span>
                         }
                     }
                 </p>
@@ -100,9 +147,16 @@ pub async fn villa_card(
                         </div>
                     }
                     Some(StayTotalLines::Unavailable) => {
-                        <p class="text-xs text-muted-foreground" data-stay-total-unavailable="">"Total unavailable for these dates"</p>
+                        <p
+                            class="text-xs text-muted-foreground"
+                            data-stay-total-unavailable=""
+                        >
+                            "Total unavailable for these dates"
+                        </p>
                     }
-                    None => {}
+                    None => {
+
+                    }
                 }
             </div>
         </article>
@@ -135,16 +189,45 @@ pub async fn villa_carousel(
     let arrow = "absolute top-[150px] z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full border border-border bg-card/85 text-foreground shadow-sm backdrop-blur transition hover:scale-105 hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:pointer-events-none disabled:opacity-0 sm:top-[175px]";
     Ok(view! {
         <div class="relative" data-carousel="">
-            for (step, aria, side) in [("-1", "Previous villas", "left-2"), ("1", "Next villas", "right-2")] {
-                <button type="button" hidden="" data-carousel-step=(step) aria-label=(aria) aria-controls=(track_id.clone()) class=(class!(arrow, side))>
-                    <svg viewBox="0 0 24 24" class="size-5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            for (step, aria, side) in [
+                ("-1", "Previous villas", "left-2"),
+                ("1", "Next villas", "right-2"),
+            ] {
+                <button
+                    type="button"
+                    hidden=""
+                    data-carousel-step=(step)
+                    aria-label=(aria)
+                    aria-controls=(track_id.clone())
+                    class=(class!(arrow, side))
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        class="size-5"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
                         <path d=(chevron(step == "-1")) />
                     </svg>
                 </button>
             }
-            <div id=(track_id.clone()) data-carousel-track="" role="region" aria-label=(label) tabindex="0" class="flex snap-x snap-mandatory scroll-px-1 gap-6 overflow-x-auto px-1 pb-4 outline-none motion-safe:scroll-smooth [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-scrollbar]:hidden">
+            <div
+                id=(track_id.clone())
+                data-carousel-track=""
+                role="region"
+                aria-label=(label)
+                tabindex="0"
+                class="flex snap-x snap-mandatory scroll-px-1 gap-6 overflow-x-auto px-1 pb-4 outline-none motion-safe:scroll-smooth [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-scrollbar]:hidden"
+            >
                 for listing in listings {
-                    <div id=(format!("listing-card-{}", listing.slug)) class="shrink-0 snap-start">
+                    <div
+                        id=(format!("listing-card-{}", listing.slug))
+                        class="shrink-0 snap-start"
+                    >
                         villa_card(listing: listing)
                     </div>
                 }

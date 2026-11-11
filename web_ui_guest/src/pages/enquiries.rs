@@ -57,7 +57,13 @@ pub async fn thread_message(
     let mine = message.sender_role == MessageSenderRole::Guest;
     let sent_at = message.created_at.format("%b %d, %H:%M").to_string();
     Ok(view! {
-        chat_bubble(sender: message.sender_name.clone(), sent_at: sent_at, text: message.message_text.clone(), mine: mine, attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) })
+        chat_bubble(
+            sender: message.sender_name.clone(),
+            sent_at: sent_at,
+            text: message.message_text.clone(),
+            mine: mine,
+            attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) }
+        )
     })
 }
 
@@ -73,7 +79,11 @@ pub async fn conversation_panel(
     Ok(view! {
         <section aria-label="Messages with your host" class="space-y-3">
             <h2 class="font-serif text-2xl">"Messages"</h2>
-            chat_thread(attrs: topcoat::view::attributes! { id="messages-list" class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-4" },
+            chat_thread(
+                attrs: topcoat::view::attributes! {
+                    id="messages-list"
+                    class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-4"
+                },
                 if messages.is_empty() {
                     <p class="text-sm text-muted-foreground">"No messages yet."</p>
                 }
@@ -81,10 +91,31 @@ pub async fn conversation_panel(
                     thread_message(message: message)
                 }
             )
-            <form method="post" action=(action.clone()) hx-post=(action) hx-target="#messages-list" hx-swap="beforeend" data-reset-on-success="" class="flex gap-2">
+            <form
+                method="post"
+                action=(action.clone())
+                hx-post=(action)
+                hx-target="#messages-list"
+                hx-swap="beforeend"
+                data-reset-on-success=""
+                class="flex gap-2"
+            >
                 <label for="message-text" class="sr-only">"Message"</label>
-                <input id="message-text" name="message_text" required=(true) maxlength="2000" autocomplete="off" placeholder="Write to your host…" class="h-11 flex-1 rounded-full border border-border bg-card px-4 text-sm" />
-                <button type="submit" class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground">"Send"</button>
+                <input
+                    id="message-text"
+                    name="message_text"
+                    required=(true)
+                    maxlength="2000"
+                    autocomplete="off"
+                    placeholder="Write to your host…"
+                    class="h-11 flex-1 rounded-full border border-border bg-card px-4 text-sm"
+                />
+                <button
+                    type="submit"
+                    class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground"
+                >
+                    "Send"
+                </button>
             </form>
         </section>
     })
@@ -147,8 +178,12 @@ pub async fn reply_result(
 ) -> Result<impl View> {
     Ok(view! {
         match sent {
-            Ok(message) => { thread_message(message: message) }
-            Err(error) => { <p role="alert" class="text-sm text-destructive">(error)</p> }
+            Ok(message) => {
+                thread_message(message: message)
+            }
+            Err(error) => {
+                <p role="alert" class="text-sm text-destructive">(error)</p>
+            }
         }
     })
 }
@@ -200,23 +235,97 @@ async fn enquiry_form(
     Ok(view! {
         <div class="mx-auto max-w-2xl space-y-6">
             <div class="space-y-1">
-                <a href=(format!("/listings/{}", details.listing.slug)) class="text-sm">"← Back to the listing"</a>
-                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">"Ask the host a question"</h1>
-                <p class="text-sm text-muted-foreground">(details.listing.name.clone()) ". Asking doesn't hold any dates or charge you."</p>
+                <a href=(format!("/listings/{}", details.listing.slug)) class="text-sm">
+                    "← Back to the listing"
+                </a>
+                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">
+                    "Ask the host a question"
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    (details.listing.name.clone())
+                    ". Asking doesn't hold any dates or charge you."
+                </p>
             </div>
             if let Some(error) = error {
-                <div id="enquiry-error" role="alert" class="rounded-lg border border-destructive p-4 text-sm text-destructive">(error)</div>
-            }
-            <form id="enquiry-form" method="post" action=(action) class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6">
-                <div class="grid gap-3 sm:grid-cols-3">
-                    <label class=(label)>"Check in"<input id="enquiry-check-in" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" min=(today.clone()) required=(true) value=(check_in) class=(input) /></label>
-                    <label class=(label)>"Check out"<input id="enquiry-check-out" type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" min=(today) required=(true) value=(check_out) class=(input) /></label>
-                    <label class=(label)>"Guests"<input id="enquiry-guests" type="number" name="guests" min="1" max=(max_guests.to_string()) required=(true) value=(guests.to_string()) class=(input) /></label>
+                <div
+                    id="enquiry-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-4 text-sm text-destructive"
+                >
+                    (error)
                 </div>
-                <label class=(label) for="enquiry-message">"Your question"
-                    <textarea id="enquiry-message" name="message" rows="5" required=(true) maxlength="2000" class=(format!("{input} h-auto py-2"))>(message)</textarea>
+            }
+            <form
+                id="enquiry-form"
+                method="post"
+                action=(action)
+                class="space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6"
+            >
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <label class=(label)>
+                        "Check in"
+                        <input
+                            id="enquiry-check-in"
+                            type="text"
+                            data-date-picker=""
+                            placeholder="yyyy-mm-dd"
+                            pattern="\\d{4}-\\d{2}-\\d{2}"
+                            name="check_in"
+                            min=(today.clone())
+                            required=(true)
+                            value=(check_in)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label)>
+                        "Check out"
+                        <input
+                            id="enquiry-check-out"
+                            type="text"
+                            data-date-picker=""
+                            placeholder="yyyy-mm-dd"
+                            pattern="\\d{4}-\\d{2}-\\d{2}"
+                            name="check_out"
+                            min=(today)
+                            required=(true)
+                            value=(check_out)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label)>
+                        "Guests"
+                        <input
+                            id="enquiry-guests"
+                            type="number"
+                            name="guests"
+                            min="1"
+                            max=(max_guests.to_string())
+                            required=(true)
+                            value=(guests.to_string())
+                            class=(input)
+                        />
+                    </label>
+                </div>
+                <label class=(label) for="enquiry-message">
+                    "Your question"
+                    <textarea
+                        id="enquiry-message"
+                        name="message"
+                        rows="5"
+                        required=(true)
+                        maxlength="2000"
+                        class=(format!("{input} h-auto py-2"))
+                    >
+                        (message)
+                    </textarea>
                 </label>
-                <button id="enquiry-submit" type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground">"Send question"</button>
+                <button
+                    id="enquiry-submit"
+                    type="submit"
+                    class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground"
+                >
+                    "Send question"
+                </button>
             </form>
         </div>
     })
@@ -235,7 +344,7 @@ pub async fn enquire_page(cx: &Cx) -> Result<impl View> {
             check_out: q.check_out.map(|d| d.to_string()).unwrap_or_default(),
             guests: guests_or_default(q.guests),
             message: String::new(),
-            error: None,
+            error: None
         )
     })
 }
@@ -275,7 +384,7 @@ pub async fn enquire_submit(
                     check_out: form.check_out.to_string(),
                     guests: form.guests,
                     message: form.message.clone(),
-                    error: Some(friendly_error(&e)),
+                    error: Some(friendly_error(&e))
                 )
             })
         }
@@ -323,12 +432,33 @@ pub async fn enquiry_page(cx: &Cx) -> Result<impl View> {
         <div class="mx-auto max-w-3xl space-y-6">
             <div class="space-y-1">
                 <a href="/requests" class="text-sm">"← My requests"</a>
-                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">"Your question about " (details.listing.name.clone())</h1>
-                <p class="text-sm text-muted-foreground">(format!("{} → {} · {} guest(s)", enquiry.check_in.format("%a %-d %b %Y"), enquiry.check_out.format("%a %-d %b %Y"), enquiry.guests))</p>
-                <span id="enquiry-status" class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">(if open { "Open" } else { "Closed" })</span>
+                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">
+                    "Your question about "
+                    (details.listing.name.clone())
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    (format!(
+                        "{} → {} · {} guest(s)",
+                        enquiry.check_in.format("%a %-d %b %Y"),
+                        enquiry.check_out.format("%a %-d %b %Y"),
+                        enquiry.guests,
+                    ))
+                </p>
+                <span
+                    id="enquiry-status"
+                    class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
+                >
+                    (if open { "Open" } else { "Closed" })
+                </span>
             </div>
             if open && details.listing.booking_mode.allows_request() {
-                <a id="enquiry-request-cta" href=(request_href) class="inline-flex h-11 items-center rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground no-underline">"Submit a request to book"</a>
+                <a
+                    id="enquiry-request-cta"
+                    href=(request_href)
+                    class="inline-flex h-11 items-center rounded-[var(--radius-control,10px)] bg-primary px-6 text-[15px] font-medium text-primary-foreground no-underline"
+                >
+                    "Submit a request to book"
+                </a>
             }
             conversation_panel(messages: messages, action: action)
         </div>

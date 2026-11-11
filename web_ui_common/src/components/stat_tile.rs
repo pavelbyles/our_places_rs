@@ -23,10 +23,17 @@ pub async fn stat_tile(
 ) -> Result<impl View> {
     Ok(view! {
         <div
-            class=(class!("rounded-xl border border-border bg-card p-4 text-card-foreground", attrs.remove("class")))
+            class=(class!(
+                "rounded-xl border border-border bg-card p-4 text-card-foreground",
+                attrs.remove("class"),
+            ))
             (attrs)
         >
-            <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">(label)</p>
+            <p
+                class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+            >
+                (label)
+            </p>
             <p class="mt-1 text-2xl font-semibold tabular-nums">(value)</p>
             if let Some(hint) = hint {
                 <p class="mt-1 text-xs text-muted-foreground">(hint)</p>

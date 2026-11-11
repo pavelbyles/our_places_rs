@@ -24,7 +24,9 @@ async fn html(v: impl topcoat::view::View, cx: &Cx) -> String {
 async fn toast_is_a_status_with_escaped_text() {
     let cx = &Cx::default();
     let html = html(
-        view! {  toast(message: "<b>Saved</b>".to_string(), variant: ToastVariant::Success)  },
+        view! {
+            toast(message: "<b>Saved</b>".to_string(), variant: ToastVariant::Success)
+        },
         cx,
     )
     .await;
@@ -37,7 +39,7 @@ async fn toast_is_a_status_with_escaped_text() {
 #[tokio::test]
 async fn toast_region_is_a_polite_live_region() {
     let cx = &Cx::default();
-    let html = html(view! {  toast_region()  }, cx).await;
+    let html = html(view! { toast_region() }, cx).await;
     assert!(
         html.contains(r#"id="toast-region""#) && html.contains(r#"aria-live="polite""#),
         "{html}"
@@ -49,7 +51,10 @@ async fn steps_mark_only_the_current_step() {
     let cx = &Cx::default();
     let html = html(
         view! {
-           steps(labels: vec!["Dates".into(), "Details".into(), "Confirm".into()], current: 1)
+            steps(
+                labels: vec!["Dates".into(), "Details".into(), "Confirm".into()],
+                current: 1
+            )
         },
         cx,
     )
@@ -68,10 +73,20 @@ async fn steps_mark_only_the_current_step() {
 #[tokio::test]
 async fn stat_tile_renders_optional_hint() {
     let cx = &Cx::default();
-    let with = html(view! {  stat_tile(label: "Active Holds".into(), value: "3".into(), hint: Some("last 24h".into()))  }, cx).await;
+    let with = html(
+        view! {
+            stat_tile(
+                label: "Active Holds".into(),
+                value: "3".into(),
+                hint: Some("last 24h".into())
+            )
+        },
+        cx,
+    )
+    .await;
     let cx = &Cx::default();
     let without = html(
-        view! {  stat_tile(label: "Active Holds".into(), value: "3".into())  },
+        view! { stat_tile(label: "Active Holds".into(), value: "3".into()) },
         cx,
     )
     .await;
@@ -85,9 +100,17 @@ async fn stat_tile_renders_optional_hint() {
 #[tokio::test]
 async fn framed_image_requires_alt_and_lazy_loads() {
     let cx = &Cx::default();
-    let html = html(view! {
-        framed_image(src: "https://storage.googleapis.com/x.jpg".into(), alt: "Pool at dusk".into(), aspect: FrameAspect::Square)
-     }, cx).await;
+    let html = html(
+        view! {
+            framed_image(
+                src: "https://storage.googleapis.com/x.jpg".into(),
+                alt: "Pool at dusk".into(),
+                aspect: FrameAspect::Square
+            )
+        },
+        cx,
+    )
+    .await;
     assert!(
         html.contains(r#"alt="Pool at dusk""#) && html.contains(r#"loading="lazy""#),
         "{html}"
@@ -100,13 +123,13 @@ async fn hero_renders_headline_as_h1_and_overlays_children() {
     let cx = &Cx::default();
     let html = html(
         view! {
-           hero(
-               headline: "Wake up to the sea".into(),
-               lead: "Villas across Jamaica".into(),
-               image_src: "/hero.jpg".into(),
-               image_alt: "Coastline".into(),
-               <form id="hero-search"></form>
-           )
+            hero(
+                headline: "Wake up to the sea".into(),
+                lead: "Villas across Jamaica".into(),
+                image_src: "/hero.jpg".into(),
+                image_alt: "Coastline".into(),
+                <form id="hero-search"></form>
+            )
         },
         cx,
     )
@@ -142,7 +165,13 @@ async fn star_rating_labels_the_average_or_says_new() {
 async fn star_rating_input_has_five_labelled_required_radios() {
     let cx = &Cx::default();
     let out = html(
-        view! { star_rating_input(name: "value_rating".into(), label: "Value".into(), value: Some(4)) },
+        view! {
+            star_rating_input(
+                name: "value_rating".into(),
+                label: "Value".into(),
+                value: Some(4)
+            )
+        },
         cx,
     )
     .await;
@@ -164,8 +193,14 @@ async fn chat_thread_is_a_log_and_bubbles_escape_text() {
     let cx = &Cx::default();
     let out = html(
         view! {
-            chat_thread(attrs: topcoat::view::attributes! { id="messages-list" },
-                chat_bubble(sender: "Host".into(), sent_at: "Jan 02, 14:00".into(), text: "<script>x</script>".into(), mine: false)
+            chat_thread(
+                attrs: topcoat::view::attributes! { id="messages-list" },
+                chat_bubble(
+                    sender: "Host".into(),
+                    sent_at: "Jan 02, 14:00".into(),
+                    text: "<script>x</script>".into(),
+                    mine: false
+                )
             )
         },
         cx,

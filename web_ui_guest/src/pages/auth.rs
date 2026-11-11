@@ -55,33 +55,66 @@ async fn login_form(
     let field = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
     let input = "mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
     Ok(view! {
-        <div class="mx-auto w-full max-w-md space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-8 text-card-foreground">
+        <div
+            class="mx-auto w-full max-w-md space-y-6 rounded-[var(--radius-surface,16px)] border border-border bg-card p-8 text-card-foreground"
+        >
             <div class="space-y-1 text-center">
                 <h1 class="sr-only">"Sign in"</h1>
                 <h2 class="font-serif text-3xl">"Welcome Back"</h2>
-                <p class="text-sm text-muted-foreground">"Sign in to manage your bookings and stays."</p>
+                <p class="text-sm text-muted-foreground">
+                    "Sign in to manage your bookings and stays."
+                </p>
             </div>
             if verified {
-                <p role="status" class="rounded-lg border border-border p-3 text-sm">"Your email is verified. Sign in to continue."</p>
+                <p role="status" class="rounded-lg border border-border p-3 text-sm">
+                    "Your email is verified. Sign in to continue."
+                </p>
             }
             if let Some(err) = error {
-                <div id="guest-login-error" role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">
+                <div
+                    id="guest-login-error"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
                     <span id="guest-login-error-text">(err.message())</span>
                 </div>
             }
             <form id="guest-login-form" method="post" action="/login" class="space-y-4">
                 <input type="hidden" name="redirect" value=(redirect) />
                 <label class=(field) for="guest-email">"Email address"</label>
-                <input id="guest-email" name="email" type="email" required=(true) autocomplete="email" value=(email) class=(input) />
+                <input
+                    id="guest-email"
+                    name="email"
+                    type="email"
+                    required=(true)
+                    autocomplete="email"
+                    value=(email)
+                    class=(input)
+                />
                 <label class=(field) for="guest-password">"Password"</label>
-                <input id="guest-password" name="password" type="password" required=(true) autocomplete="current-password" class=(input) />
-                <button id="btn-guest-login" type="submit" class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground">"Sign in"</button>
+                <input
+                    id="guest-password"
+                    name="password"
+                    type="password"
+                    required=(true)
+                    autocomplete="current-password"
+                    class=(input)
+                />
+                <button
+                    id="btn-guest-login"
+                    type="submit"
+                    class="h-11 w-full rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground"
+                >
+                    "Sign in"
+                </button>
             </form>
             <p class="text-center text-sm text-muted-foreground">
-                "Have a verification code? " <a href="/verify">"Verify your email"</a>
+                "Have a verification code? "
+                <a href="/verify">"Verify your email"</a>
             </p>
             <p class="text-center text-sm text-muted-foreground">
-                "New to Our Places? " <a href="/register">"Create an account"</a>
+                "New to Our Places? "
+                <a href="/register">"Create an account"</a>
             </p>
         </div>
     })
@@ -93,9 +126,14 @@ pub async fn login_page(cx: &Cx) -> Result<impl View> {
     let q = parse_query_params::<LoginQuery>(cx).unwrap_or_default();
     let redirect = q.redirect.unwrap_or_default();
     let verified = q.verified.is_some();
-    Ok(
-        view! { login_form(email: String::new(), redirect: redirect, error: None, verified: verified) },
-    )
+    Ok(view! {
+        login_form(
+            email: String::new(),
+            redirect: redirect,
+            error: None,
+            verified: verified
+        )
+    })
 }
 
 /// Signs a guest in: verifies the credentials with `user_api`, replaces any
@@ -131,7 +169,9 @@ pub async fn login_submit(
         },
     };
     let (email, redirect) = (form.email, form.redirect);
-    Ok(view! { login_form(email: email, redirect: redirect, error: error, verified: false) })
+    Ok(view! {
+        login_form(email: email, redirect: redirect, error: error, verified: false)
+    })
 }
 
 async fn end_session(cx: &Cx) -> Result<()> {

@@ -231,13 +231,14 @@ T1 ─► T17 tooling/docs (parallel) ──────────────
 
 ### Phase 5: Integration and verification
 
-- [ ] **Task 14: Run `topcoat fmt` and `cargo fmt` (format-only commit)**
+- [x] **Task 14: Run `topcoat fmt` and `cargo fmt` (format-only commit)**
   - **Scope:** XS (large diff, no logic)
   - **Description:** Run `topcoat fmt` in each UI crate using the 0.12 CLI, then run `cargo fmt --all`. Commit with the message "style: topcoat fmt (0.12)" and nothing else in the commit.
   - **Files Touched:** UI crates (formatting only)
   - **Acceptance Criteria:**
     - [ ] `cargo fmt --check` is clean.
     - [ ] `git diff --stat` touches only `*.rs` in the `web_*` crates.
+  - **Result:** `topcoat fmt --rustfmt` fails per file because rustfmt runs without the 2024 edition. The working order is `topcoat fmt` (macros only) → `cargo fmt --all` → `topcoat fmt` again, which settles `hero.rs` where the two disagree. Both `--check` modes are clean, and the 231 tests in the UI crates pass. The diff is large (about +5.7k lines) because every `view!` body is reflowed into canonical multi-line markup. Rendered output is unchanged, since whitespace between view tokens is not emitted.
   - **Verification Command:** `cargo fmt --all --check && SQLX_OFFLINE=true cargo check --workspace --all-targets`
   - **Dependencies:** Tasks 10b, 13b
 

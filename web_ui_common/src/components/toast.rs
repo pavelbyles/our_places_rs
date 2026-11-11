@@ -48,7 +48,10 @@ pub async fn toast_region(
         <div
             id="toast-region"
             aria-live="polite"
-            class=(class!("fixed right-4 bottom-4 z-50 flex flex-col gap-2", attrs.remove("class")))
+            class=(class!(
+                "fixed right-4 bottom-4 z-50 flex flex-col gap-2",
+                attrs.remove("class"),
+            ))
             (attrs)
         ></div>
     })
@@ -73,6 +76,8 @@ pub async fn toast(
             data-variant=(variant.as_str())
             class=(class!(TOAST, attrs.remove("class")))
             (attrs)
-        >(message)</div>
+        >
+            (message)
+        </div>
     })
 }

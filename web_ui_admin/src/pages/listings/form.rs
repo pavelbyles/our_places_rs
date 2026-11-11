@@ -634,7 +634,11 @@ pub async fn listing_form(
     Ok(view! {
         <form id="listing-form" method="post" action=(action) class="space-y-8">
             if !errors.is_empty() {
-                <div id="listing-form-errors" role="alert" class="rounded-lg border border-destructive p-4 text-sm text-destructive">
+                <div
+                    id="listing-form-errors"
+                    role="alert"
+                    class="rounded-lg border border-destructive p-4 text-sm text-destructive"
+                >
                     <ul class="list-disc pl-5">
                         for e in errors {
                             <li>(e)</li>
@@ -642,72 +646,266 @@ pub async fn listing_form(
                     </ul>
                 </div>
             }
-            <p id="listing-required-note" class="flex items-center gap-1.5 text-xs text-muted-foreground"><span aria-hidden="true" class="inline-block size-1.5 rounded-full bg-primary"></span>"Required"</p>
-            <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-2">
+            <p
+                id="listing-required-note"
+                class="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+                <span
+                    aria-hidden="true"
+                    class="inline-block size-1.5 rounded-full bg-primary"
+                ></span>
+                "Required"
+            </p>
+            <fieldset
+                class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-2"
+            >
                 <legend class="px-1 text-sm font-semibold">"Basics"</legend>
-                <label class=(label)>"Name"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span><input id="listing-name" name="name" required=(true) value=(f.name.clone()) class=(input) /></label>
-                <label class=(label)>"Structure"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
+                <label class=(label)>
+                    "Name"
+                    <span
+                        aria-hidden="true"
+                        data-required-dot=""
+                        class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                    ></span>
+                    <input
+                        id="listing-name"
+                        name="name"
+                        required=(true)
+                        value=(f.name.clone())
+                        class=(input)
+                    />
+                </label>
+                <label class=(label)>
+                    "Structure"
+                    <span
+                        aria-hidden="true"
+                        data-required-dot=""
+                        class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                    ></span>
                     <select name="listing_structure" required=(true) class=(input)>
                         for s in STRUCTURES {
-                            <option value=(s) selected=(f.listing_structure == s)>(s)</option>
+                            <option value=(s) selected=(f.listing_structure == s)>
+                                (s)
+                            </option>
                         }
                     </select>
                 </label>
                 <div class="sm:col-span-2">
-                    <label class=(label)>"Description"<textarea id="listing-description" name="description" rows="4" maxlength=(MAX_DESCRIPTION_CHARS.to_string()) aria-describedby="listing-description-count" class=(format!("{input} h-auto py-2"))>(f.description.clone())</textarea></label>
-                    <p id="listing-description-count" data-char-count="listing-description" aria-live="polite" class="mt-1 text-right text-xs text-muted-foreground">(format!("{} / {}", f.description.replace("\r\n", "\n").chars().count(), MAX_DESCRIPTION_CHARS))</p>
+                    <label class=(label)>
+                        "Description"
+                        <textarea
+                            id="listing-description"
+                            name="description"
+                            rows="4"
+                            maxlength=(MAX_DESCRIPTION_CHARS.to_string())
+                            aria-describedby="listing-description-count"
+                            class=(format!("{input} h-auto py-2"))
+                        >
+                            (f.description.clone())
+                        </textarea>
+                    </label>
+                    <p
+                        id="listing-description-count"
+                        data-char-count="listing-description"
+                        aria-live="polite"
+                        class="mt-1 text-right text-xs text-muted-foreground"
+                    >
+                        (format!(
+                            "{} / {}",
+                            f.description.replace("\r\n", "\n").chars().count(),
+                            MAX_DESCRIPTION_CHARS,
+                        ))
+                    </p>
                 </div>
-                <label class=(label)>"Country"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span><input name="country" required=(true) value=(f.country.clone()) class=(input) /></label>
-                <label class=(label)>"City"<input name="city" value=(f.city.clone()) class=(input) /></label>
-                <label class=(label)>"Latitude"<input name="latitude" inputmode="decimal" value=(f.latitude.clone()) class=(input) /></label>
-                <label class=(label)>"Longitude"<input name="longitude" inputmode="decimal" value=(f.longitude.clone()) class=(input) /></label>
+                <label class=(label)>
+                    "Country"
+                    <span
+                        aria-hidden="true"
+                        data-required-dot=""
+                        class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                    ></span>
+                    <input
+                        name="country"
+                        required=(true)
+                        value=(f.country.clone())
+                        class=(input)
+                    />
+                </label>
+                <label class=(label)>
+                    "City"
+                    <input name="city" value=(f.city.clone()) class=(input) />
+                </label>
+                <label class=(label)>
+                    "Latitude"
+                    <input
+                        name="latitude"
+                        inputmode="decimal"
+                        value=(f.latitude.clone())
+                        class=(input)
+                    />
+                </label>
+                <label class=(label)>
+                    "Longitude"
+                    <input
+                        name="longitude"
+                        inputmode="decimal"
+                        value=(f.longitude.clone())
+                        class=(input)
+                    />
+                </label>
                 if !owners.is_empty() {
-                    <label class=(label)>"Owner"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
+                    <label class=(label)>
+                        "Owner"
+                        <span
+                            aria-hidden="true"
+                            data-required-dot=""
+                            class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                        ></span>
                         <select name="owner_id" required=(true) class=(input)>
                             for (id, owner_label) in owners {
-                                <option value=(id.clone()) selected=(f.owner_id == id)>(owner_label)</option>
+                                <option value=(id.clone()) selected=(f.owner_id == id)>
+                                    (owner_label)
+                                </option>
                             }
                         </select>
                     </label>
                 }
                 if editing {
-                    <label class=(label)>"Booking mode"
-                        <select id="listing-booking-mode" name="booking_mode" aria-describedby="listing-booking-mode-help" class=(input)>
+                    <label class=(label)>
+                        "Booking mode"
+                        <select
+                            id="listing-booking-mode"
+                            name="booking_mode"
+                            aria-describedby="listing-booking-mode-help"
+                            class=(input)
+                        >
                             for mode in BookingMode::ALL {
-                                <option value=(mode.as_str()) selected=(f.booking_mode == mode.as_str())>(mode.label())</option>
+                                <option
+                                    value=(mode.as_str())
+                                    selected=(f.booking_mode == mode.as_str())
+                                >
+                                    (mode.label())
+                                </option>
                             }
                         </select>
-                        <span id="listing-booking-mode-help" class="mt-1 block text-xs text-muted-foreground">"Request to book lets you approve each stay first. Open requests and offers carry on if you change this."</span>
+                        <span
+                            id="listing-booking-mode-help"
+                            class="mt-1 block text-xs text-muted-foreground"
+                        >
+                            "Request to book lets you approve each stay first. Open requests and offers carry on if you change this."
+                        </span>
                     </label>
                 }
-                <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" checked=(f.is_active == "on") class="size-4" />"Bookable (active)"</label>
+                <label class="flex items-center gap-2 text-sm">
+                    <input
+                        type="checkbox"
+                        name="is_active"
+                        checked=(f.is_active == "on")
+                        class="size-4"
+                    />
+                    "Bookable (active)"
+                </label>
             </fieldset>
-            <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
+            <fieldset
+                class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3"
+            >
                 <legend class="px-1 text-sm font-semibold">"Pricing & fees"</legend>
-                <label class=(label)>"Base currency"<span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span>
+                <label class=(label)>
+                    "Base currency"
+                    <span
+                        aria-hidden="true"
+                        data-required-dot=""
+                        class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                    ></span>
                     <select name="base_currency" required=(true) class=(input)>
                         currency_option_list(current: f.base_currency.clone())
                     </select>
                 </label>
                 for (name, title, value, step, required) in money_fields {
-                    <label class=(label)>(title) if required { <span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
+                    <label class=(label)>
+                        (title)
+                        if required {
+                            <span
+                                aria-hidden="true"
+                                data-required-dot=""
+                                class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                            ></span>
+                        }
+                        <input
+                            name=(name)
+                            type="number"
+                            min="0"
+                            step=(step)
+                            required=(required)
+                            value=(value)
+                            class=(input)
+                        />
+                    </label>
                 }
                 if can_set_commission {
-                    <label class=(label)>"Commission (0–1)"<input name="commission_pct" type="number" min="0" max="1" step="0.0001" value=(f.commission_pct.clone()) class=(input) /></label>
+                    <label class=(label)>
+                        "Commission (0–1)"
+                        <input
+                            name="commission_pct"
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.0001"
+                            value=(f.commission_pct.clone())
+                            class=(input)
+                        />
+                    </label>
                 }
             </fieldset>
-            <fieldset class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3">
-                <legend class="px-1 text-sm font-semibold">"Capacity & stay rules"</legend>
+            <fieldset
+                class="grid gap-4 rounded-xl border border-border p-6 sm:grid-cols-3"
+            >
+                <legend class="px-1 text-sm font-semibold">
+                    "Capacity & stay rules"
+                </legend>
                 for (name, title, value, step, required) in count_fields {
-                    <label class=(label)>(title) if required { <span aria-hidden="true" data-required-dot="" class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"></span> }<input name=(name) type="number" min="0" step=(step) required=(required) value=(value) class=(input) /></label>
+                    <label class=(label)>
+                        (title)
+                        if required {
+                            <span
+                                aria-hidden="true"
+                                data-required-dot=""
+                                class="ml-1.5 inline-block size-1.5 rounded-full bg-primary align-middle"
+                            ></span>
+                        }
+                        <input
+                            name=(name)
+                            type="number"
+                            min="0"
+                            step=(step)
+                            required=(required)
+                            value=(value)
+                            class=(input)
+                        />
+                    </label>
                 }
             </fieldset>
             <fieldset class="grid gap-2 rounded-xl border border-border p-6">
                 <legend class="px-1 text-sm font-semibold">"Amenities"</legend>
-                <label for="listing-amenities" class=(label)>"One per line, e.g. Private pool, Wi-Fi, Air conditioning. Guests see them under “What this place offers”."</label>
-                <textarea id="listing-amenities" name="amenities" rows="6" class=(format!("{input} h-auto py-2"))>(f.amenities.clone())</textarea>
+                <label for="listing-amenities" class=(label)>
+                    "One per line, e.g. Private pool, Wi-Fi, Air conditioning. Guests see them under “What this place offers”."
+                </label>
+                <textarea
+                    id="listing-amenities"
+                    name="amenities"
+                    rows="6"
+                    class=(format!("{input} h-auto py-2"))
+                >
+                    (f.amenities.clone())
+                </textarea>
             </fieldset>
-            <button id="btn-save-listing" type="submit" class="h-10 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground">(submit_label)</button>
+            <button
+                id="btn-save-listing"
+                type="submit"
+                class="h-10 rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground"
+            >
+                (submit_label)
+            </button>
         </form>
     })
 }

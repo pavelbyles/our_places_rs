@@ -74,25 +74,57 @@ pub async fn currencies_card(
     let field = "h-9 rounded-lg border border-border bg-card px-2 text-sm text-foreground";
     let button = "h-9 rounded-lg border border-border px-3 text-sm font-medium";
     Ok(view! {
-        <section id="currencies-card" class="space-y-4 rounded-xl border border-border p-6">
+        <section
+            id="currencies-card"
+            class="space-y-4 rounded-xl border border-border p-6"
+        >
             <div>
                 <h2 class="text-lg font-semibold">"Currencies"</h2>
-                <p class="text-sm text-muted-foreground">"Currencies are never deleted. Deactivate one to stop offering it; existing bookings keep it."</p>
+                <p class="text-sm text-muted-foreground">
+                    "Currencies are never deleted. Deactivate one to stop offering it; existing bookings keep it."
+                </p>
             </div>
             for message in state.errors {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(message)</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (message)
+                </p>
             }
             <table id="currencies-table" class="w-full text-sm">
                 <thead class="text-left text-xs text-muted-foreground uppercase">
-                    <tr><th scope="col" class="py-2">"Code"</th><th scope="col" class="py-2">"Name"</th><th scope="col" class="py-2">"Status"</th><th scope="col" class="py-2"><span class="sr-only">"Actions"</span></th></tr>
+                    <tr>
+                        <th scope="col" class="py-2">"Code"</th>
+                        <th scope="col" class="py-2">"Name"</th>
+                        <th scope="col" class="py-2">"Status"</th>
+                        <th scope="col" class="py-2">
+                            <span class="sr-only">"Actions"</span>
+                        </th>
+                    </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
                     for c in currencies {
                         <tr data-currency=(c.code.to_string())>
                             <td class="py-2 font-mono">(c.code.to_string())</td>
                             <td class="py-2">
-                                <form method="post" action=(format!("/admin/currencies/{}", c.code)) hx-post=(format!("/admin/currencies/{}", c.code)) hx-target="#currencies-card" hx-swap="outerHTML" hx-disabled-elt="find button" class="flex gap-2">
-                                    <input name="name" required=(true) maxlength="64" value=(c.name.clone()) aria-label=(format!("Name of {}", c.code)) class=(field) />
+                                <form
+                                    method="post"
+                                    action=(format!("/admin/currencies/{}", c.code))
+                                    hx-post=(format!("/admin/currencies/{}", c.code))
+                                    hx-target="#currencies-card"
+                                    hx-swap="outerHTML"
+                                    hx-disabled-elt="find button"
+                                    class="flex gap-2"
+                                >
+                                    <input
+                                        name="name"
+                                        required=(true)
+                                        maxlength="64"
+                                        value=(c.name.clone())
+                                        aria-label=(format!("Name of {}", c.code))
+                                        class=(field)
+                                    />
                                     <button type="submit" class=(button)>"Rename"</button>
                                 </form>
                             </td>
@@ -104,19 +136,65 @@ pub async fn currencies_card(
                                 }
                             </td>
                             <td class="py-2 text-right">
-                                <form method="post" action=(format!("/admin/currencies/{}", c.code)) hx-post=(format!("/admin/currencies/{}", c.code)) hx-target="#currencies-card" hx-swap="outerHTML" hx-disabled-elt="find button">
-                                    <input type="hidden" name="active" value=(if c.active { "false" } else { "true" }) />
-                                    <button type="submit" class=(button)>(if c.active { "Deactivate" } else { "Activate" })</button>
+                                <form
+                                    method="post"
+                                    action=(format!("/admin/currencies/{}", c.code))
+                                    hx-post=(format!("/admin/currencies/{}", c.code))
+                                    hx-target="#currencies-card"
+                                    hx-swap="outerHTML"
+                                    hx-disabled-elt="find button"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="active"
+                                        value=(if c.active { "false" } else { "true" })
+                                    />
+                                    <button type="submit" class=(button)>
+                                        (if c.active { "Deactivate" } else { "Activate" })
+                                    </button>
                                 </form>
                             </td>
                         </tr>
                     }
                 </tbody>
             </table>
-            <form id="add-currency-form" method="post" action="/admin/currencies" hx-post="/admin/currencies" hx-target="#currencies-card" hx-swap="outerHTML" hx-disabled-elt="find button" class="flex flex-wrap items-end gap-2">
-                <label class="text-xs text-muted-foreground">"Code"<input name="code" required=(true) pattern="[A-Z]{3}" maxlength="3" placeholder="TTD" class=(format!("{field} mt-1 block w-24 font-mono uppercase")) /></label>
-                <label class="text-xs text-muted-foreground">"Name"<input name="name" required=(true) maxlength="64" placeholder="Trinidad and Tobago Dollar" class=(format!("{field} mt-1 block")) /></label>
-                <button type="submit" class="h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">"Add currency"</button>
+            <form
+                id="add-currency-form"
+                method="post"
+                action="/admin/currencies"
+                hx-post="/admin/currencies"
+                hx-target="#currencies-card"
+                hx-swap="outerHTML"
+                hx-disabled-elt="find button"
+                class="flex flex-wrap items-end gap-2"
+            >
+                <label class="text-xs text-muted-foreground">
+                    "Code"
+                    <input
+                        name="code"
+                        required=(true)
+                        pattern="[A-Z]{3}"
+                        maxlength="3"
+                        placeholder="TTD"
+                        class=(format!("{field} mt-1 block w-24 font-mono uppercase"))
+                    />
+                </label>
+                <label class="text-xs text-muted-foreground">
+                    "Name"
+                    <input
+                        name="name"
+                        required=(true)
+                        maxlength="64"
+                        placeholder="Trinidad and Tobago Dollar"
+                        class=(format!("{field} mt-1 block"))
+                    />
+                </label>
+                <button
+                    type="submit"
+                    class="h-9 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                >
+                    "Add currency"
+                </button>
             </form>
             blocked_listings_dialog(listings: state.blocked)
         </section>
@@ -133,15 +211,37 @@ pub async fn blocked_listings_dialog(
 ) -> Result<impl View> {
     Ok(view! {
         if !listings.is_empty() {
-            <dialog id="currency-blocked-dialog" data-auto-open="" aria-labelledby="currency-blocked-title" class="m-auto w-[min(560px,95vw)] rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50">
-                <h3 id="currency-blocked-title" class="text-lg font-semibold">"Still in use"</h3>
-                <p class="mt-1 text-sm text-muted-foreground">"These listings depend on this currency or pair. Change their base currency first."</p>
+            <dialog
+                id="currency-blocked-dialog"
+                data-auto-open=""
+                aria-labelledby="currency-blocked-title"
+                class="m-auto w-[min(560px,95vw)] rounded-xl bg-card p-6 text-card-foreground backdrop:bg-black/50"
+            >
+                <h3 id="currency-blocked-title" class="text-lg font-semibold">
+                    "Still in use"
+                </h3>
+                <p class="mt-1 text-sm text-muted-foreground">
+                    "These listings depend on this currency or pair. Change their base currency first."
+                </p>
                 <ul class="mt-4 space-y-2">
                     for l in listings {
-                        <li><a href=(format!("/admin/listings/{}/edit", l.id)) class="underline">(l.title)</a></li>
+                        <li>
+                            <a
+                                href=(format!("/admin/listings/{}/edit", l.id))
+                                class="underline"
+                            >
+                                (l.title)
+                            </a>
+                        </li>
                     }
                 </ul>
-                <button type="button" data-dialog-close="" class="mt-4 h-9 rounded-lg border border-border px-3 text-sm font-medium">"Close"</button>
+                <button
+                    type="button"
+                    data-dialog-close=""
+                    class="mt-4 h-9 rounded-lg border border-border px-3 text-sm font-medium"
+                >
+                    "Close"
+                </button>
             </dialog>
         }
     })

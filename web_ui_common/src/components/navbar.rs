@@ -28,10 +28,16 @@ pub async fn theme_toggle(
             data-theme-cycle=""
             data-theme-current=(theme.cookie_value())
             aria-label=(theme.next().toggle_label())
-            class=(class!("inline-flex size-11 items-center justify-center rounded-full border border-border text-foreground", attrs.remove("class")))
+            class=(class!(
+                "inline-flex size-11 items-center justify-center rounded-full border border-border text-foreground",
+                attrs.remove("class"),
+            ))
             (attrs)
         >
-            svg_icon(data: iconify_icon!("lucide:moon"), attrs: attributes! { class="size-5" aria-hidden="true" })
+            svg_icon(
+                data: iconify_icon!("lucide:moon"),
+                attrs: attributes! { class="size-5" aria-hidden="true" }
+            )
         </button>
     })
 }

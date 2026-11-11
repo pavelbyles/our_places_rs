@@ -25,16 +25,32 @@ pub async fn calendar_card(
     let overview = overview.filter(|o| o.open_conflicts > 0 || o.failing_feeds > 0);
     Ok(view! {
         if let Some(o) = overview {
-            <section id="calendar-card" class="space-y-3 rounded-xl border border-border p-5">
+            <section
+                id="calendar-card"
+                class="space-y-3 rounded-xl border border-border p-5"
+            >
                 <h2 class="text-sm font-semibold">"Calendar sync"</h2>
                 <p class="text-sm">
-                    (format!("{} open conflict(s)", o.open_conflicts)) " · " (format!("{} failing calendar(s)", o.failing_feeds))
+                    (format!("{} open conflict(s)", o.open_conflicts))
+                    " · "
+                    (format!("{} failing calendar(s)", o.failing_feeds))
                 </p>
                 <ul class="text-sm">
                     for l in o.listings {
                         <li>
-                            <a href=(format!("/admin/listings/{}/calendar", l.listing_id))>(l.listing_name)</a>
-                            " " <span class="text-muted-foreground">(format!("{} conflict(s), {} failing", l.open_conflicts, l.failing_feeds))</span>
+                            <a
+                                href=(format!("/admin/listings/{}/calendar", l.listing_id))
+                            >
+                                (l.listing_name)
+                            </a>
+                            " "
+                            <span class="text-muted-foreground">
+                                (format!(
+                                    "{} conflict(s), {} failing",
+                                    l.open_conflicts,
+                                    l.failing_feeds,
+                                ))
+                            </span>
                         </li>
                     }
                 </ul>
@@ -103,15 +119,32 @@ pub async fn dashboard_page(cx: &Cx) -> Result<impl View> {
                     <p class="text-sm text-muted-foreground">(scope)</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
-                    <a href="/admin/listings/new" class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground no-underline">"New listing"</a>
+                    <a
+                        href="/admin/listings/new"
+                        class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground no-underline"
+                    >
+                        "New listing"
+                    </a>
                     <a href="/admin/bookings" class=(action)>"Booking schedule"</a>
                     <a href="/admin/payouts" class=(action)>"Payouts"</a>
                 </div>
             </div>
             <div class="grid gap-4 sm:grid-cols-3">
-                stat_tile(label: "Active Listings".into(), value: active.to_string(), hint: Some(format!("{} total", listings.len())))
-                stat_tile(label: "Active Holds".into(), value: holds.to_string(), hint: Some("Pending payment".into()))
-                stat_tile(label: "Bookings Revenue".into(), value: revenue_text, hint: Some("Confirmed and completed".into()))
+                stat_tile(
+                    label: "Active Listings".into(),
+                    value: active.to_string(),
+                    hint: Some(format!("{} total", listings.len()))
+                )
+                stat_tile(
+                    label: "Active Holds".into(),
+                    value: holds.to_string(),
+                    hint: Some("Pending payment".into())
+                )
+                stat_tile(
+                    label: "Bookings Revenue".into(),
+                    value: revenue_text,
+                    hint: Some("Confirmed and completed".into())
+                )
             </div>
             calendar_card(overview: calendar)
         </div>

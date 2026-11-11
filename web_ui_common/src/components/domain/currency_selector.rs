@@ -65,9 +65,14 @@ pub async fn currency_selector(
     attrs: Attributes,
 ) -> Result<impl View> {
     let codes = active_currency_codes(cx).await;
-    Ok(
-        view! { currency_menu(codes: codes, current_currency: current_currency, return_to: return_to, attrs: attrs) },
-    )
+    Ok(view! {
+        currency_menu(
+            codes: codes,
+            current_currency: current_currency,
+            return_to: return_to,
+            attrs: attrs
+        )
+    })
 }
 
 /// The menu itself, rendered from a list of codes (no I/O; used by tests).
@@ -108,19 +113,31 @@ pub async fn currency_menu(
     };
     Ok(view! {
         if !hidden {
-            <details data-dismiss-outside="" class=(class!("relative", attrs.remove("class"))) (attrs)>
+            <details
+                data-dismiss-outside=""
+                class=(class!("relative", attrs.remove("class")))
+                (attrs)
+            >
                 <summary
                     aria-label=(label)
                     class="flex h-11 cursor-pointer list-none items-center rounded-full border border-border px-3 text-sm font-medium sm:px-4"
-                >(summary)</summary>
-                <ul class="absolute right-0 z-50 mt-2 w-28 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-sm">
+                >
+                    (summary)
+                </summary>
+                <ul
+                    class="absolute right-0 z-50 mt-2 w-28 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-sm"
+                >
                     for curr in codes {
                         <li>
                             <a
                                 href=(currency_href(&curr, &return_to))
-                                aria-current=((Some(&curr) == active.as_ref()).then_some("true"))
+                                aria-current=((Some(&curr) == active.as_ref()).then_some(
+                                    "true",
+                                ))
                                 class="block rounded-lg px-3 py-2 text-sm aria-[current=true]:font-semibold"
-                            >(curr.clone())</a>
+                            >
+                                (curr.clone())
+                            </a>
                         </li>
                     }
                 </ul>

@@ -101,25 +101,61 @@ async fn overrides_table(
     Ok(view! {
         <div id="price-overrides-container" class="space-y-3">
             if let Some(error) = error {
-                <p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">(error)</p>
+                <p
+                    role="alert"
+                    class="rounded-lg border border-destructive p-3 text-sm text-destructive"
+                >
+                    (error)
+                </p>
             }
             <table class="w-full text-sm">
                 <thead class="text-left text-xs text-muted-foreground uppercase">
-                    <tr><th scope="col" class="py-2">"Dates"</th><th scope="col" class="py-2 text-right">"Nightly rate"</th><th scope="col" class="py-2 text-right">"Min stay"</th><th scope="col" class="py-2 text-right">"Action"</th></tr>
+                    <tr>
+                        <th scope="col" class="py-2">"Dates"</th>
+                        <th scope="col" class="py-2 text-right">"Nightly rate"</th>
+                        <th scope="col" class="py-2 text-right">"Min stay"</th>
+                        <th scope="col" class="py-2 text-right">"Action"</th>
+                    </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
                     if rows.is_empty() {
-                        <tr><td colspan="4" class="py-4 text-muted-foreground">"No seasonal overrides. The base nightly price applies."</td></tr>
+                        <tr>
+                            <td colspan="4" class="py-4 text-muted-foreground">
+                                "No seasonal overrides. The base nightly price applies."
+                            </td>
+                        </tr>
                     }
                     for o in rows {
                         <tr id=(format!("override-{}", o.id))>
-                            <td class="py-2">(format!("{} – {}", o.start_date.format("%b %d, %Y"), o.end_date.format("%b %d, %Y")))</td>
-                            <td class="py-2 text-right tabular-nums">(money(&listing.base_currency, o.nightly_rate))</td>
-                            <td class="py-2 text-right">(format!("{} night(s)", o.min_nights))</td>
+                            <td class="py-2">
+                                (format!(
+                                    "{} – {}",
+                                    o.start_date.format("%b %d, %Y"),
+                                    o.end_date.format("%b %d, %Y"),
+                                ))
+                            </td>
+                            <td class="py-2 text-right tabular-nums">
+                                (money(&listing.base_currency, o.nightly_rate))
+                            </td>
                             <td class="py-2 text-right">
-                                <form method="post" action=(remove.clone()) hx-post=(remove.clone()) hx-target="#price-overrides-container" hx-swap="outerHTML">
-                                    <input type="hidden" name="override_id" value=(o.id.to_string()) />
-                                    <button type="submit" class="text-destructive">"Remove"</button>
+                                (format!("{} night(s)", o.min_nights))
+                            </td>
+                            <td class="py-2 text-right">
+                                <form
+                                    method="post"
+                                    action=(remove.clone())
+                                    hx-post=(remove.clone())
+                                    hx-target="#price-overrides-container"
+                                    hx-swap="outerHTML"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="override_id"
+                                        value=(o.id.to_string())
+                                    />
+                                    <button type="submit" class="text-destructive">
+                                        "Remove"
+                                    </button>
                                 </form>
                             </td>
                         </tr>
@@ -147,18 +183,80 @@ pub async fn pricing_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="space-y-6">
             <div>
-                <a href=(format!("/admin/listings/{id}")) class="text-sm">"← Listing"</a>
-                <h1 class="text-2xl font-semibold">(format!("Seasonal pricing: {name}"))</h1>
-                <p class="text-sm text-muted-foreground">"Base nightly price " (base)</p>
+                <a href=(format!("/admin/listings/{id}")) class="text-sm">
+                    "← Listing"
+                </a>
+                <h1 class="text-2xl font-semibold">
+                    (format!("Seasonal pricing: {name}"))
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    "Base nightly price "
+                    (base)
+                </p>
             </div>
             <div class="grid gap-6 lg:grid-cols-[320px_1fr]">
-                <form method="post" action=(add.clone()) hx-post=(add) hx-target="#price-overrides-container" hx-swap="outerHTML" class="space-y-3 rounded-xl border border-border p-5">
+                <form
+                    method="post"
+                    action=(add.clone())
+                    hx-post=(add)
+                    hx-target="#price-overrides-container"
+                    hx-swap="outerHTML"
+                    class="space-y-3 rounded-xl border border-border p-5"
+                >
                     <h2 class="text-sm font-semibold">"Add seasonal override"</h2>
-                    <label class=(label)>"Start date"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="start_date" required=(true) class=(input) /></label>
-                    <label class=(label)>"End date"<input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="end_date" required=(true) class=(input) /></label>
-                    <label class=(label)>"Nightly rate"<input type="number" name="price" min="0.01" step="0.01" required=(true) class=(input) /></label>
-                    <label class=(label)>"Minimum nights"<input type="number" name="min_nights" min="1" step="1" value="1" required=(true) class=(input) /></label>
-                    <button type="submit" class="h-10 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground">"Add override"</button>
+                    <label class=(label)>
+                        "Start date"
+                        <input
+                            type="text"
+                            data-date-picker=""
+                            placeholder="yyyy-mm-dd"
+                            pattern="\\d{4}-\\d{2}-\\d{2}"
+                            name="start_date"
+                            required=(true)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label)>
+                        "End date"
+                        <input
+                            type="text"
+                            data-date-picker=""
+                            placeholder="yyyy-mm-dd"
+                            pattern="\\d{4}-\\d{2}-\\d{2}"
+                            name="end_date"
+                            required=(true)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label)>
+                        "Nightly rate"
+                        <input
+                            type="number"
+                            name="price"
+                            min="0.01"
+                            step="0.01"
+                            required=(true)
+                            class=(input)
+                        />
+                    </label>
+                    <label class=(label)>
+                        "Minimum nights"
+                        <input
+                            type="number"
+                            name="min_nights"
+                            min="1"
+                            step="1"
+                            value="1"
+                            required=(true)
+                            class=(input)
+                        />
+                    </label>
+                    <button
+                        type="submit"
+                        class="h-10 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground"
+                    >
+                        "Add override"
+                    </button>
                 </form>
                 <div class="rounded-xl border border-border p-5">
                     overrides_table(listing: listing, rows: rows, error: None)

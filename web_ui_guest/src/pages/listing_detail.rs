@@ -151,13 +151,31 @@ async fn quote_panel(
         if let Some(b) = breakdown {
             <div id="quote-breakdown">price_breakdown(quote: b)</div>
         } else if let Some(why) = no_quote {
-            <p id="quote-refusal" role="alert" class="text-sm text-destructive">(why)</p>
+            <p id="quote-refusal" role="alert" class="text-sm text-destructive">
+                (why)
+            </p>
         } else {
-            <p class="text-sm text-muted-foreground">"Choose check-in and check-out dates to see the total."</p>
+            <p class="text-sm text-muted-foreground">
+                "Choose check-in and check-out dates to see the total."
+            </p>
         }
-        <a id="listing-book-cta" href=(href) data-listing=(slug) data-booking-mode=(mode.as_str()) class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground no-underline">(label)</a>
+        <a
+            id="listing-book-cta"
+            href=(href)
+            data-listing=(slug)
+            data-booking-mode=(mode.as_str())
+            class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground no-underline"
+        >
+            (label)
+        </a>
         <p class="text-center text-xs text-muted-foreground">(note)</p>
-        <a id="listing-enquire-cta" href=(enquire) class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium no-underline">"Ask a question"</a>
+        <a
+            id="listing-enquire-cta"
+            href=(enquire)
+            class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium no-underline"
+        >
+            "Ask a question"
+        </a>
     })
 }
 
@@ -305,48 +323,152 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <article class="space-y-10">
             <header class="space-y-2">
-                <h1 class="font-serif text-[clamp(36px,5vw,56px)] leading-tight">(listing.name.clone())</h1>
+                <h1 class="font-serif text-[clamp(36px,5vw,56px)] leading-tight">
+                    (listing.name.clone())
+                </h1>
                 <p class="flex flex-wrap items-center gap-3 text-muted-foreground">
                     <span>(summary.location())</span>
                     star_rating(rating: rating, review_count: review_count)
                 </p>
                 if let Some(code) = no_rate_for {
-                    <p id="currency-notice" role="status" class="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-                        (format!("Prices in {code} aren't available right now, so they're shown in {}.", listing.base_currency))
+                    <p
+                        id="currency-notice"
+                        role="status"
+                        class="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
+                    >
+                        (format!(
+                            "Prices in {code} aren't available right now, so they're shown in {}.",
+                            listing.base_currency,
+                        ))
                     </p>
                 }
             </header>
 
             if !images.is_empty() {
                 <section aria-label="Photos" class=(gallery.0)>
-                    for (i, ((src, alt), (span, sizes))) in images.iter().cloned().zip(gallery.1.iter().copied()).enumerate() {
-                        <button type="button" data-dialog-open="gallery-dialog" aria-label=(format!("Open photo {} of {}", i + 1, images.len())) class=(format!("overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/3] md:aspect-auto {span}"))>
-                            responsive_image(src: src, alt: alt, sizes: Some(sizes.to_string()))
+                    for (i, ((src, alt), (span, sizes))) in images
+                        .iter()
+                        .cloned()
+                        .zip(gallery.1.iter().copied())
+                        .enumerate() {
+                        <button
+                            type="button"
+                            data-dialog-open="gallery-dialog"
+                            aria-label=(format!(
+                                "Open photo {} of {}",
+                                i + 1,
+                                images.len(),
+                            ))
+                            class=(format!(
+                                "overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/3] md:aspect-auto {span}",
+                            ))
+                        >
+                            responsive_image(
+                                src: src,
+                                alt: alt,
+                                sizes: Some(sizes.to_string())
+                            )
                         </button>
                     }
                 </section>
-                <dialog id="gallery-dialog" aria-label="Photo gallery" class="m-auto h-[94dvh] max-h-none w-[96vw] max-w-none overflow-y-auto rounded-[var(--radius-surface,16px)] bg-card p-4 text-card-foreground backdrop:bg-black/70 sm:p-6">
+                <dialog
+                    id="gallery-dialog"
+                    aria-label="Photo gallery"
+                    class="m-auto h-[94dvh] max-h-none w-[96vw] max-w-none overflow-y-auto rounded-[var(--radius-surface,16px)] bg-card p-4 text-card-foreground backdrop:bg-black/70 sm:p-6"
+                >
                     <div class="flex items-center justify-between gap-4">
-                        <p class="text-sm text-muted-foreground">(format!("{} photos · select one to view it full size", images.len()))</p>
-                        <button type="button" data-dialog-close="" class="h-11 rounded-full border border-border px-4 text-sm">"Close"</button>
+                        <p class="text-sm text-muted-foreground">
+                            (format!(
+                                "{} photos · select one to view it full size",
+                                images.len(),
+                            ))
+                        </p>
+                        <button
+                            type="button"
+                            data-dialog-close=""
+                            class="h-11 rounded-full border border-border px-4 text-sm"
+                        >
+                            "Close"
+                        </button>
                     </div>
-                    <div id="gallery-grid" data-lightbox-group="photo-viewer" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4">
+                    <div
+                        id="gallery-grid"
+                        data-lightbox-group="photo-viewer"
+                        class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4"
+                    >
                         for (i, (src, alt)) in images.iter().cloned().enumerate() {
-                            <button type="button" data-lightbox-index=(i.to_string()) data-full-src=(variant_url(&src, "highres").unwrap_or_else(|| src.clone())) data-full-srcset=(variant_srcset(&src).unwrap_or_default()) data-alt=(alt.clone()) aria-label=(format!("View photo {} of {} full size", i + 1, images.len())) class="block aspect-[4/3] cursor-zoom-in overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder">
-                                responsive_image(src: src, alt: alt, sizes: Some("(min-width: 768px) 48vw, 96vw".to_string()))
+                            <button
+                                type="button"
+                                data-lightbox-index=(i.to_string())
+                                data-full-src=(variant_url(&src, "highres").unwrap_or_else(
+                                    || src.clone(),
+                                ))
+                                data-full-srcset=(variant_srcset(&src).unwrap_or_default())
+                                data-alt=(alt.clone())
+                                aria-label=(format!(
+                                    "View photo {} of {} full size",
+                                    i + 1,
+                                    images.len(),
+                                ))
+                                class="block aspect-[4/3] cursor-zoom-in overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder"
+                            >
+                                responsive_image(
+                                    src: src,
+                                    alt: alt,
+                                    sizes: Some("(min-width: 768px) 48vw, 96vw".to_string())
+                                )
                             </button>
                         }
                     </div>
                 </dialog>
-                <dialog id="photo-viewer" data-lightbox="" aria-label="Photo viewer" class="m-0 h-dvh max-h-none w-screen max-w-none bg-black/95 p-0 text-white backdrop:bg-black/80">
-                    <div class="relative flex h-full w-full items-center justify-center">
-                        <img id="photo-viewer-img" data-lightbox-img="" sizes="92vw" alt="" class="max-h-[88dvh] max-w-[92vw] object-contain" />
+                <dialog
+                    id="photo-viewer"
+                    data-lightbox=""
+                    aria-label="Photo viewer"
+                    class="m-0 h-dvh max-h-none w-screen max-w-none bg-black/95 p-0 text-white backdrop:bg-black/80"
+                >
+                    <div
+                        class="relative flex h-full w-full items-center justify-center"
+                    >
+                        <img
+                            id="photo-viewer-img"
+                            data-lightbox-img=""
+                            sizes="92vw"
+                            alt=""
+                            class="max-h-[88dvh] max-w-[92vw] object-contain"
+                        />
                         if images.len() > 1 {
-                            <button type="button" data-lightbox-step="-1" aria-label="Previous photo" class="absolute top-1/2 left-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25">"‹"</button>
-                            <button type="button" data-lightbox-step="1" aria-label="Next photo" class="absolute top-1/2 right-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25">"›"</button>
+                            <button
+                                type="button"
+                                data-lightbox-step="-1"
+                                aria-label="Previous photo"
+                                class="absolute top-1/2 left-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25"
+                            >
+                                "‹"
+                            </button>
+                            <button
+                                type="button"
+                                data-lightbox-step="1"
+                                aria-label="Next photo"
+                                class="absolute top-1/2 right-3 size-12 -translate-y-1/2 rounded-full bg-white/15 text-3xl leading-none hover:bg-white/25"
+                            >
+                                "›"
+                            </button>
                         }
-                        <p id="photo-viewer-counter" data-lightbox-counter="" aria-live="polite" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm"></p>
-                        <button type="button" data-dialog-close="" aria-label="Close photo viewer" class="absolute top-3 right-3 h-11 rounded-full bg-white/15 px-4 text-sm hover:bg-white/25">"Close"</button>
+                        <p
+                            id="photo-viewer-counter"
+                            data-lightbox-counter=""
+                            aria-live="polite"
+                            class="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm"
+                        ></p>
+                        <button
+                            type="button"
+                            data-dialog-close=""
+                            aria-label="Close photo viewer"
+                            class="absolute top-3 right-3 h-11 rounded-full bg-white/15 px-4 text-sm hover:bg-white/25"
+                        >
+                            "Close"
+                        </button>
                     </div>
                 </dialog>
             }
@@ -358,30 +480,53 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         <p class="text-lg leading-relaxed">(description)</p>
                     }
                     if let Some(host) = details.host_name.clone() {
-                        <p class="text-sm text-muted-foreground">"Hosted by " (host)</p>
+                        <p class="text-sm text-muted-foreground">
+                            "Hosted by "
+                            (host)
+                        </p>
                     }
-                    <section aria-labelledby="offers-heading" class="space-y-4 border-t border-border pt-8">
-                        <h2 id="offers-heading" class="font-serif text-2xl">"What this place offers"</h2>
+                    <section
+                        aria-labelledby="offers-heading"
+                        class="space-y-4 border-t border-border pt-8"
+                    >
+                        <h2 id="offers-heading" class="font-serif text-2xl">
+                            "What this place offers"
+                        </h2>
                         <ul class="grid gap-2 sm:grid-cols-2">
                             for fact in facts {
                                 <li class="text-sm">(fact)</li>
                             }
                         </ul>
                     </section>
-                    <section aria-labelledby="reviews-heading" class="space-y-4 border-t border-border pt-8">
-                        <h2 id="reviews-heading" class="font-serif text-2xl">"Verified Guest Reviews"</h2>
+                    <section
+                        aria-labelledby="reviews-heading"
+                        class="space-y-4 border-t border-border pt-8"
+                    >
+                        <h2 id="reviews-heading" class="font-serif text-2xl">
+                            "Verified Guest Reviews"
+                        </h2>
                         if reviews.is_empty() {
-                            <p class="text-sm text-muted-foreground">"No reviews yet. Reviews come only from guests who stayed."</p>
+                            <p class="text-sm text-muted-foreground">
+                                "No reviews yet. Reviews come only from guests who stayed."
+                            </p>
                         } else {
                             <ul class="space-y-6">
                                 for review in reviews {
                                     <li class="space-y-1">
-                                        <p class="flex items-center gap-2 text-sm font-medium">(review.guest_first_name.clone()) star_rating(rating: Some(review.overall_rating))</p>
+                                        <p class="flex items-center gap-2 text-sm font-medium">
+                                            (review.guest_first_name.clone())
+                                            star_rating(rating: Some(review.overall_rating))
+                                        </p>
                                         if let Some(text) = review.public_review_text.clone() {
                                             <p class="text-sm">(text)</p>
                                         }
                                         if let Some(reply) = review.host_reply_text.clone() {
-                                            <p class="border-l-2 border-border pl-3 text-sm text-muted-foreground">"Host reply: " (reply)</p>
+                                            <p
+                                                class="border-l-2 border-border pl-3 text-sm text-muted-foreground"
+                                            >
+                                                "Host reply: "
+                                                (reply)
+                                            </p>
                                         }
                                     </li>
                                 }
@@ -390,30 +535,69 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     </section>
                 </div>
 
-                <aside aria-label="Book this stay" class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground lg:sticky lg:top-6">
-                    <p><span class="text-2xl font-medium">(price)</span><span class="text-muted-foreground">" per night"</span></p>
+                <aside
+                    aria-label="Book this stay"
+                    class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground lg:sticky lg:top-6"
+                >
+                    <p>
+                        <span class="text-2xl font-medium">(price)</span>
+                        <span class="text-muted-foreground">" per night"</span>
+                    </p>
                     if listing.booking_mode == BookingMode::Request {
-                        <span id="listing-approval-badge" class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium">"Host approval required"</span>
+                        <span
+                            id="listing-approval-badge"
+                            class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
+                        >
+                            "Host approval required"
+                        </span>
                     }
                     // novalidate: htmx validates forms even for GET, and a check-in
                     // without a check-out yet must still refresh the quote (which
                     // clears the breakdown for the previous dates).
-                    <form id="reserve-form" novalidate=(true) hx-get=(quote_url) hx-trigger="change" hx-target="#quote" hx-swap="innerHTML" class="space-y-4">
+                    <form
+                        id="reserve-form"
+                        novalidate=(true)
+                        hx-get=(quote_url)
+                        hx-trigger="change"
+                        hx-target="#quote"
+                        hx-swap="innerHTML"
+                        class="space-y-4"
+                    >
                         if let Some(c) = currency.clone() {
                             <input type="hidden" name="currency" value=(c) />
                         }
                         date_range_calendar(props: calendar)
-                        <label class="block text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                        <label
+                            class="block text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
                             "Guests"
-                            <select name="guests" class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case">
+                            <select
+                                name="guests"
+                                class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case"
+                            >
                                 for n in 1..=max_guests {
-                                    <option value=(n.to_string()) selected=(n == default_guests)>(if n == 1 { "1 Guest".to_string() } else { format!("{n} Guests") })</option>
+                                    <option
+                                        value=(n.to_string())
+                                        selected=(n == default_guests)
+                                    >
+                                        (if n == 1 {
+                                            "1 Guest".to_string()
+                                        } else {
+                                            format!("{n} Guests")
+                                        })
+                                    </option>
                                 }
                             </select>
                         </label>
                     </form>
                     <div id="quote" aria-live="polite" class="space-y-3">
-                        quote_panel(slug: listing.slug.clone(), quote: breakdown, href: href, mode: listing.booking_mode, enquire: enquire)
+                        quote_panel(
+                            slug: listing.slug.clone(),
+                            quote: breakdown,
+                            href: href,
+                            mode: listing.booking_mode,
+                            enquire: enquire
+                        )
                     </div>
                 </aside>
             </div>
@@ -458,9 +642,15 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let slug = details.listing.slug.clone();
     let mode = details.listing.booking_mode;
     let enquire = enquire_href(&slug, &q);
-    Ok(
-        view! { quote_panel(slug: slug, quote: breakdown, href: href, mode: mode, enquire: enquire) },
-    )
+    Ok(view! {
+        quote_panel(
+            slug: slug,
+            quote: breakdown,
+            href: href,
+            mode: mode,
+            enquire: enquire
+        )
+    })
 }
 
 /// Calendar fragment for prev/next month navigation.

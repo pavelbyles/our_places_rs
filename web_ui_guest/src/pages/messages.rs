@@ -49,9 +49,15 @@ fn bubble_parts(m: &BookingMessageResponse) -> (String, String, String, bool) {
 #[component]
 async fn message_bubble(cx: &Cx, message: BookingMessageResponse) -> Result<impl View> {
     let (sender, sent_at, text, mine) = bubble_parts(&message);
-    Ok(
-        view! { chat_bubble(sender: sender, sent_at: sent_at, text: text, mine: mine, attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) }) },
-    )
+    Ok(view! {
+        chat_bubble(
+            sender: sender,
+            sent_at: sent_at,
+            text: text,
+            mine: mine,
+            attrs: topcoat::view::attributes! { id=(format!("msg-{}", message.id)) }
+        )
+    })
 }
 
 /// The guest–host thread for one of the guest's bookings.
@@ -77,10 +83,19 @@ pub async fn messages_page(cx: &Cx) -> Result<impl View> {
         <div class="mx-auto max-w-3xl space-y-6">
             <div class="space-y-1">
                 <a href="/bookings" class="text-sm">"← My bookings"</a>
-                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">"Messages with your host"</h1>
-                <p class="text-sm text-muted-foreground">"Reservation " <span class="font-mono">(booking.confirmation_code.clone())</span></p>
+                <h1 class="font-serif text-[clamp(28px,4vw,40px)]">
+                    "Messages with your host"
+                </h1>
+                <p class="text-sm text-muted-foreground">
+                    "Reservation "
+                    <span class="font-mono">(booking.confirmation_code.clone())</span>
+                </p>
             </div>
-            chat_thread(attrs: topcoat::view::attributes! { id="messages-list" class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-4" },
+            chat_thread(
+                attrs: topcoat::view::attributes! {
+                    id="messages-list"
+                    class="rounded-[var(--radius-surface,16px)] border border-border bg-card p-4"
+                },
                 if thread.messages.is_empty() {
                     <p class="text-sm text-muted-foreground">"No messages yet."</p>
                 }
@@ -89,12 +104,35 @@ pub async fn messages_page(cx: &Cx) -> Result<impl View> {
                 }
             )
             if closed {
-                <p role="note" class="text-sm text-muted-foreground">"This booking is cancelled, so messaging is closed."</p>
+                <p role="note" class="text-sm text-muted-foreground">
+                    "This booking is cancelled, so messaging is closed."
+                </p>
             } else {
-                <form method="post" action=(action.clone()) hx-post=(action) hx-target="#messages-list" hx-swap="beforeend" data-reset-on-success="" class="flex gap-2">
+                <form
+                    method="post"
+                    action=(action.clone())
+                    hx-post=(action)
+                    hx-target="#messages-list"
+                    hx-swap="beforeend"
+                    data-reset-on-success=""
+                    class="flex gap-2"
+                >
                     <label for="message-text" class="sr-only">"Message"</label>
-                    <input id="message-text" name="message_text" required=(true) maxlength="2000" autocomplete="off" placeholder="Type your message…" class="h-11 flex-1 rounded-full border border-border bg-card px-4 text-sm" />
-                    <button type="submit" class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground">"Send"</button>
+                    <input
+                        id="message-text"
+                        name="message_text"
+                        required=(true)
+                        maxlength="2000"
+                        autocomplete="off"
+                        placeholder="Type your message…"
+                        class="h-11 flex-1 rounded-full border border-border bg-card px-4 text-sm"
+                    />
+                    <button
+                        type="submit"
+                        class="h-11 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground"
+                    >
+                        "Send"
+                    </button>
                 </form>
             }
         </div>
@@ -130,8 +168,12 @@ pub async fn send_message(
     }
     Ok(view! {
         match sent {
-            Ok(message) => { message_bubble(message: message) }
-            Err(error) => { <p role="alert" class="text-sm text-destructive">(error)</p> }
+            Ok(message) => {
+                message_bubble(message: message)
+            }
+            Err(error) => {
+                <p role="alert" class="text-sm text-destructive">(error)</p>
+            }
         }
     })
 }

@@ -163,13 +163,39 @@ pub async fn date_range_calendar(
             class="space-y-4"
         >
             <div data-calendar-fallback="" class="grid grid-cols-2 gap-3">
-                <label class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                <label
+                    class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                >
                     "Check in"
-                    <input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_in" id=(check_in_id) min=(min.clone()) value=(check_in_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
+                    <input
+                        type="text"
+                        data-date-picker=""
+                        placeholder="yyyy-mm-dd"
+                        pattern="\\d{4}-\\d{2}-\\d{2}"
+                        name="check_in"
+                        id=(check_in_id)
+                        min=(min.clone())
+                        value=(check_in_value)
+                        required=(true)
+                        class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+                    />
                 </label>
-                <label class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                <label
+                    class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                >
                     "Check out"
-                    <input type="text" data-date-picker="" placeholder="yyyy-mm-dd" pattern="\\d{4}-\\d{2}-\\d{2}" name="check_out" id=(check_out_id) min=(min) value=(check_out_value) required=(true) class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground" />
+                    <input
+                        type="text"
+                        data-date-picker=""
+                        placeholder="yyyy-mm-dd"
+                        pattern="\\d{4}-\\d{2}-\\d{2}"
+                        name="check_out"
+                        id=(check_out_id)
+                        min=(min)
+                        value=(check_out_value)
+                        required=(true)
+                        class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+                    />
                 </label>
             </div>
             <div data-calendar-grid="" class="@container space-y-3">
@@ -183,8 +209,14 @@ pub async fn date_range_calendar(
                         hx-target="#booking-dates"
                         hx-swap="outerHTML"
                         class="size-11 rounded-full border border-border disabled:opacity-40"
-                    >"‹"</button>
-                    <p aria-live="polite" data-calendar-status="" class="text-sm text-muted-foreground"></p>
+                    >
+                        "‹"
+                    </button>
+                    <p
+                        aria-live="polite"
+                        data-calendar-status=""
+                        class="text-sm text-muted-foreground"
+                    ></p>
                     <button
                         type="button"
                         data-calendar-nav=""
@@ -193,18 +225,37 @@ pub async fn date_range_calendar(
                         hx-target="#booking-dates"
                         hx-swap="outerHTML"
                         class="size-11 rounded-full border border-border"
-                    >"›"</button>
+                    >
+                        "›"
+                    </button>
                 </div>
                 <div class="grid gap-6 @2xl:grid-cols-2">
                     for (index, first) in shown.into_iter().enumerate() {
                         let caption = first.format("%B %Y").to_string();
-                        let weeks: Vec<Vec<Option<NaiveDate>>> = month_grid(first).chunks(7).map(<[_]>::to_vec).collect();
-                        <table role="grid" aria-label=(caption.clone()) class=(if index > 0 { "hidden w-full table-fixed @2xl:table" } else { "w-full table-fixed" })>
+                        let weeks: Vec<Vec<Option<NaiveDate>>> = month_grid(first)
+                            .chunks(7)
+                            .map(<[_]>::to_vec)
+                            .collect();
+                        <table
+                            role="grid"
+                            aria-label=(caption.clone())
+                            class=(if index > 0 {
+                                "hidden w-full table-fixed @2xl:table"
+                            } else {
+                                "w-full table-fixed"
+                            })
+                        >
                             <caption class="pb-2 font-serif text-lg">(caption)</caption>
                             <thead>
                                 <tr>
                                     for wd in WEEKDAYS {
-                                        <th scope="col" abbr=(format!("{wd:?}")) class="pb-1 text-xs font-medium text-muted-foreground">(format!("{wd:?}").chars().take(2).collect::<String>())</th>
+                                        <th
+                                            scope="col"
+                                            abbr=(format!("{wd:?}"))
+                                            class="pb-1 text-xs font-medium text-muted-foreground"
+                                        >
+                                            (format!("{wd:?}").chars().take(2).collect::<String>())
+                                        </th>
                                     }
                                 </tr>
                             </thead>
@@ -215,13 +266,18 @@ pub async fn date_range_calendar(
                                             if let Some(day) = cell {
                                                 let state = day_state(day, today, &ranges);
                                                 let disabled = state != DayState::Available;
-                                                let selected = Some(day) == check_in || Some(day) == check_out;
+                                                let selected = Some(day) == check_in
+                                                    || Some(day) == check_out;
                                                 let state_attr = match state {
                                                     DayState::Available => "available",
                                                     DayState::Booked => "booked",
                                                     DayState::Past => "past",
                                                 };
-                                                <td role="gridcell" aria-selected=(if selected { "true" } else { "false" }) class="p-0.5 text-center">
+                                                <td
+                                                    role="gridcell"
+                                                    aria-selected=(if selected { "true" } else { "false" })
+                                                    class="p-0.5 text-center"
+                                                >
                                                     <button
                                                         type="button"
                                                         data-date=(day.to_string())
@@ -230,7 +286,9 @@ pub async fn date_range_calendar(
                                                         aria-disabled=(disabled.then_some("true"))
                                                         tabindex="-1"
                                                         class="mx-auto block aspect-square w-full max-w-11 rounded-full text-sm tabular-nums aria-disabled:cursor-not-allowed aria-disabled:text-muted-foreground aria-disabled:line-through data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[in-range]:bg-chip"
-                                                    >(day.day())</button>
+                                                    >
+                                                        (day.day())
+                                                    </button>
                                                 </td>
                                             } else {
                                                 <td role="gridcell"></td>

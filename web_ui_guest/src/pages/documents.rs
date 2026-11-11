@@ -30,7 +30,13 @@ pub async fn document_page(cx: &Cx) -> Result<impl View> {
         <div class="mx-auto max-w-4xl space-y-6">
             <div class="no-print flex items-center justify-between">
                 <a href="/bookings" class="text-sm">"← My bookings"</a>
-                <button type="button" data-print="" class="h-10 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground">"Print / Download PDF"</button>
+                <button
+                    type="button"
+                    data-print=""
+                    class="h-10 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground"
+                >
+                    "Print / Download PDF"
+                </button>
             </div>
             tax_document_view(doc: doc)
         </div>

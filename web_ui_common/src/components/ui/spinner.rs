@@ -40,7 +40,8 @@ pub async fn spinner(
     mut attrs: Attributes,
 ) -> Result<impl View> {
     Ok(view! {
-        svg_icon(data: iconify_icon!("lucide:loader-circle"),
+        svg_icon(
+            data: iconify_icon!("lucide:loader-circle"),
             size: size,
             label: label,
             attrs: attributes! {
