@@ -58,6 +58,79 @@ pub struct SuiteItem {
     pub image_id: Option<Uuid>,
 }
 
+/// Most suites a listing can describe.
+pub const MAX_SUITES: usize = 8;
+/// Longest suite name, in characters.
+pub const MAX_SUITE_NAME_CHARS: usize = 48;
+/// Longest bed configuration, in characters.
+pub const MAX_SUITE_BEDS_CHARS: usize = 40;
+/// Most guests one suite can sleep.
+pub const MAX_SUITE_GUESTS: i32 = 20;
+/// Most feature chips per suite.
+pub const MAX_SUITE_FEATURES: usize = 6;
+/// Longest feature chip, in characters.
+pub const MAX_SUITE_FEATURE_CHARS: usize = 32;
+/// Longest en-suite description, in characters.
+pub const MAX_SUITE_BATH_CHARS: usize = 60;
+
+/// Why suites can't be saved. Suite numbers count from 1.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum SuiteError {
+    /// More than 8 suites.
+    #[error("Describe at most 8 suites, got {0}.")]
+    Count(usize),
+    /// A suite has no name or no bed configuration.
+    #[error("Suite {0} needs a name and a bed setup.")]
+    Incomplete(usize),
+    /// A suite's name or bed configuration is too long.
+    #[error("Suite {0}'s name or bed setup is too long.")]
+    TooLong(usize),
+    /// Guests outside 1–20.
+    #[error("Suite {0} must sleep between 1 and 20 guests.")]
+    Guests(usize),
+    /// More than 6 features, or one over 32 characters.
+    #[error("Suite {0} can have at most 6 features of up to 32 characters.")]
+    Features(usize),
+    /// The en-suite description is over 60 characters.
+    #[error("Suite {0}'s bathroom description is longer than 60 characters.")]
+    Bath(usize),
+}
+
+/// Checks suites as saved.
+pub fn validate_suites(suites: &[SuiteItem]) -> Result<(), SuiteError> {
+    if suites.len() > MAX_SUITES {
+        return Err(SuiteError::Count(suites.len()));
+    }
+    let chars = |s: &str| s.trim().chars().count();
+    suites.iter().enumerate().try_for_each(|(i, suite)| {
+        let n = i + 1;
+        if chars(&suite.name) == 0 || chars(&suite.bed_configuration) == 0 {
+            Err(SuiteError::Incomplete(n))
+        } else if chars(&suite.name) > MAX_SUITE_NAME_CHARS
+            || chars(&suite.bed_configuration) > MAX_SUITE_BEDS_CHARS
+        {
+            Err(SuiteError::TooLong(n))
+        } else if !(1..=MAX_SUITE_GUESTS).contains(&suite.max_guests) {
+            Err(SuiteError::Guests(n))
+        } else if suite.features.len() > MAX_SUITE_FEATURES
+            || suite
+                .features
+                .iter()
+                .any(|f| chars(f) > MAX_SUITE_FEATURE_CHARS)
+        {
+            Err(SuiteError::Features(n))
+        } else if suite
+            .en_suite
+            .as_deref()
+            .is_some_and(|b| chars(b) > MAX_SUITE_BATH_CHARS)
+        {
+            Err(SuiteError::Bath(n))
+        } else {
+            Ok(())
+        }
+    })
+}
+
 /// An optional paid service listed under "Concierge add-ons".
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceAddon {
@@ -285,10 +358,32 @@ fn validate_amenity_groups_section(details: &Value) -> Result<(), validator::Val
         })
 }
 
+/// The suites section, if present, must pass [`validate_suites`].
+fn validate_suites_section(details: &Value) -> Result<(), validator::ValidationError> {
+    details
+        .get(SUITES_KEY)
+        .filter(|v| !v.is_null())
+        .map_or(Ok(()), |v| {
+            serde_json::from_value::<Vec<SuiteItem>>(v.clone())
+                .map_err(|_| {
+                    invalid(
+                        "INVALID_SUITES",
+                        "Each suite needs a name, a bed setup and a guest count.".to_string(),
+                    )
+                })
+                .and_then(|suites| {
+                    validate_suites(&suites).map_err(|e| invalid("INVALID_SUITES", e.to_string()))
+                })
+        })
+}
+
 /// Validates the host-edited sections of `listing_details` on create and
-/// update. Error codes: `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`.
+/// update. Error codes: `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`,
+/// `INVALID_SUITES`.
 pub fn validate_listing_details(details: &Value) -> Result<(), validator::ValidationError> {
-    validate_ribbon_section(details).and_then(|()| validate_amenity_groups_section(details))
+    validate_ribbon_section(details)
+        .and_then(|()| validate_amenity_groups_section(details))
+        .and_then(|()| validate_suites_section(details))
 }
 
 #[cfg(test)]
@@ -330,6 +425,59 @@ mod tests {
             json!({ "amenity_groups": [{ "title": "Villa", "icon": "home", "items": ["Pool"] }] });
         assert!(validate_listing_details(&valid).is_ok());
         assert!(validate_listing_details(&json!({ "amenity_groups": [] })).is_ok());
+    }
+
+    fn suite(name: &str, beds: &str, guests: i32) -> SuiteItem {
+        SuiteItem {
+            name: name.into(),
+            bed_configuration: beds.into(),
+            max_guests: guests,
+            features: vec![],
+            en_suite: None,
+            image_id: None,
+        }
+    }
+
+    #[test]
+    fn suites_need_a_name_beds_and_sensible_guests() {
+        assert_eq!(validate_suites(&[suite("Master", "1 king", 2)]), Ok(()));
+        assert_eq!(
+            validate_suites(&[suite("Master", "1 king", 2), suite(" ", "1 queen", 2)]),
+            Err(SuiteError::Incomplete(2))
+        );
+        assert_eq!(
+            validate_suites(&[suite("Master", "1 king", 0)]),
+            Err(SuiteError::Guests(1))
+        );
+        assert_eq!(
+            validate_suites(&[suite("Master", "1 king", 21)]),
+            Err(SuiteError::Guests(1))
+        );
+        assert_eq!(
+            validate_suites(&[suite(&"x".repeat(49), "1 king", 2)]),
+            Err(SuiteError::TooLong(1))
+        );
+        let nine: Vec<_> = (0..9).map(|_| suite("S", "1 king", 2)).collect();
+        assert_eq!(validate_suites(&nine), Err(SuiteError::Count(9)));
+        let mut featured = suite("Master", "1 king", 2);
+        featured.features = (0..7).map(|i| format!("F{i}")).collect();
+        assert_eq!(validate_suites(&[featured]), Err(SuiteError::Features(1)));
+        let mut bath = suite("Master", "1 king", 2);
+        bath.en_suite = Some("x".repeat(61));
+        assert_eq!(validate_suites(&[bath]), Err(SuiteError::Bath(1)));
+    }
+
+    #[test]
+    fn invalid_suites_are_refused_by_the_api_rules() {
+        let bad =
+            json!({ "suites": [{ "name": "", "bed_configuration": "1 king", "max_guests": 2 }] });
+        let e = validate_listing_details(&bad).err();
+        assert_eq!(
+            e.as_ref().map(|e| e.code.to_string()),
+            Some("INVALID_SUITES".into())
+        );
+        let ok = json!({ "suites": [{ "name": "Master", "bed_configuration": "1 king", "max_guests": 2 }] });
+        assert!(validate_listing_details(&ok).is_ok());
     }
 
     #[test]

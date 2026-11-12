@@ -15,7 +15,7 @@ use topcoat::{
 use uuid::Uuid;
 
 use common::listing_details::{
-    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, RIBBON_KEY, RibbonItem,
+    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, RIBBON_KEY, RibbonItem, SUITES_KEY, SuiteItem,
 };
 use web_ui_common::components::domain::currency_selector::currency_option_list;
 
@@ -23,6 +23,7 @@ use super::amenity_field::{
     amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
 };
 use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
+use super::suite_field::{SuitePhoto, parse_suites, suite_fields, suite_fieldset};
 
 /// Listing structures known to `listing_api`.
 pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "Studio"];
@@ -135,6 +136,7 @@ impl ListingFields {
             slots: ribbon_fields(l.listing_details.as_ref())
                 .into_iter()
                 .chain(amenity_fields(l.listing_details.as_ref()))
+                .chain(suite_fields(l.listing_details.as_ref()))
                 .collect(),
         }
     }
@@ -193,6 +195,7 @@ pub struct ValidListing {
     is_active: bool,
     amenity_groups: Vec<AmenityGroup>,
     ribbon: Option<Vec<RibbonItem>>,
+    suites: Vec<SuiteItem>,
     booking_mode: BookingMode,
 }
 
@@ -383,6 +386,10 @@ impl ListingFields {
                 p.errors.extend(errors);
                 None
             }),
+            suites: parse_suites(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                Vec::new()
+            }),
             booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
         if valid.guests_included > valid.max_guests {
@@ -433,6 +440,11 @@ impl ValidListing {
             None => {
                 details.remove(RIBBON_KEY);
             }
+        }
+        if self.suites.is_empty() {
+            details.remove(SUITES_KEY);
+        } else {
+            details.insert(SUITES_KEY.to_string(), serde_json::json!(self.suites));
         }
         details
     }
@@ -535,6 +547,9 @@ pub async fn listing_form(
     can_set_commission: bool,
     /// Validation or API errors to show.
     errors: Vec<String>,
+    /// The listing's photos, for each suite's photo picker (none when new).
+    #[default]
+    suite_photos: Vec<SuitePhoto>,
 ) -> Result<impl View> {
     let label = "block text-xs font-medium text-muted-foreground";
     let input = "mt-1 block h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
@@ -906,6 +921,12 @@ pub async fn listing_form(
             )
             amenity_fieldset(
                 fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            suite_fieldset(
+                fields: f.slots.clone(),
+                photos: suite_photos,
                 label_class: label,
                 input_class: input
             )

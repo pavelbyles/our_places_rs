@@ -241,7 +241,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_common --test components suite`
   - **Dependencies:** Tasks 3, 12
 
-- [ ] **Task 15: Admin suites fieldset**
+- [x] **Task 15: Admin suites fieldset**
   - **Scope:** M
   - **Description:** Fixed suite slots (name, bed configuration, max guests, en-suite text, features one per line, image picker from listing images). Validation in `common` (lengths, max 12 suites).
   - **Files Touched:**
