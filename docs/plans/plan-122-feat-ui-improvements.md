@@ -55,7 +55,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_common --test components && cargo test -p web_ui_guest`
   - **Dependencies:** None
 
-- [ ] **Task 2: Guest shell content grid with `.full-bleed` track (D10)**
+- [x] **Task 2: Guest shell content grid with `.full-bleed` track (D10)**
   - **Scope:** S
   - **Description:** Add `.page-grid` / `.full-bleed` utilities to `guest.css`; change `guest_chrome`'s `<main>` from `mx-auto max-w-[1540px] px-6 py-12` to `page-grid`. No page opts in yet, so every page must look identical.
   - **Files Touched:**

@@ -157,3 +157,31 @@ async fn signed_out_admin_pages_have_no_console_navigation() {
     );
     assert!(out.contains(r#"id="login""#), "{out}");
 }
+
+#[tokio::test]
+async fn guest_main_is_a_content_grid_with_a_full_bleed_track() {
+    let cx = &Cx::default();
+    let out = html(
+        view! { guest_chrome(shell: guest(None), <p>"page"</p>) },
+        cx,
+    )
+    .await;
+    assert!(
+        out.contains(r#"<main id="main" class="page-grid">"#),
+        "main must be the page grid so pages can opt into full-bleed blocks: {out}"
+    );
+}
+
+#[test]
+fn page_grid_keeps_the_old_content_width_and_offers_full_bleed() {
+    let css = include_str!("../src/style/guest.css");
+    for rule in [
+        ".page-grid {",
+        "[content-start] min(1540px - 3rem, 100% - 3rem) [content-end]",
+        ".page-grid > * {",
+        ".page-grid > .full-bleed {",
+        ".bleed-inner {",
+    ] {
+        assert!(css.contains(rule), "guest.css is missing `{rule}`");
+    }
+}

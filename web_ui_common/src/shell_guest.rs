@@ -200,7 +200,7 @@ pub async fn guest_chrome(
                 </div>
             </div>
         </header>
-        <main id="main" class="mx-auto w-full max-w-[1540px] px-6 py-12">(child)</main>
+        <main id="main" class="page-grid">(child)</main>
         <footer class="mt-32 border-t border-border">
             <div
                 class="mx-auto flex max-w-[1540px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between"

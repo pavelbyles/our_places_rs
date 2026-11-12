@@ -104,3 +104,38 @@
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
 }
+
+/* Page grid (spec-122 D10). `<main>` centres every page in a content column
+   (the old `max-w-[1540px] px-6` box) while a block marked `.full-bleed` can
+   span edge to edge. `.bleed-inner` re-centres a full-bleed block's content
+   to the same width. No `100vw`, so classic scrollbars never cause a
+   horizontal scroll. */
+@layer components {
+  .page-grid {
+    display: grid;
+    grid-template-columns:
+      [full-start] minmax(1.5rem, 1fr)
+      [content-start] min(1540px - 3rem, 100% - 3rem) [content-end]
+      minmax(1.5rem, 1fr) [full-end];
+    padding-block: 3rem;
+  }
+  .page-grid > * {
+    grid-column: content;
+    min-width: 0;
+  }
+  .page-grid > .full-bleed {
+    grid-column: full;
+  }
+  .page-grid > .full-bleed:first-child {
+    margin-top: -3rem;
+  }
+  .page-grid > .full-bleed:last-child {
+    margin-bottom: -3rem;
+  }
+  .bleed-inner {
+    width: 100%;
+    max-width: 1540px;
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+}
