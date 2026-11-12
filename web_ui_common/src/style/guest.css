@@ -148,6 +148,12 @@
   .page-grid > .page-flow:last-child > .full-bleed:last-child {
     margin-bottom: -3rem;
   }
+  /* Room for the listing page's fixed booking bar on phones. */
+  @media (width < 64rem) {
+    body:has([data-mobile-book-bar]) {
+      padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
   .bleed-inner {
     width: 100%;
     max-width: 1540px;

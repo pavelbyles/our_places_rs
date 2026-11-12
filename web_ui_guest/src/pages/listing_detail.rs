@@ -7,7 +7,7 @@ use topcoat::{
     Result,
     context::Cx,
     router::{error::not_found, page, parse_query_params, path_param},
-    view::{View, component, view},
+    view::{View, attributes, component, view},
 };
 use web_client::get_api_client;
 use web_ui_common::components::{
@@ -20,7 +20,7 @@ use web_ui_common::components::{
     },
     highlights_ribbon::highlights_ribbon,
     listing_hero::listing_hero,
-    section_nav::{PILL, section_nav},
+    section_nav::{PILL, PILL_SM, section_nav},
     star_rating::star_rating,
 };
 
@@ -381,6 +381,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .collect();
     let gallery = gallery_layout(images.len());
     let intro_photo = images.get(1).cloned();
+    let tiles_shown = gallery.1.len();
     let eyebrow = format!("The {}", listing.listing_structure.to_lowercase());
     let story = paragraphs(listing.description.as_deref());
     let links = section_links(&Sections {
@@ -392,6 +393,8 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let quote_url = format!("/listings/{}/quote", listing.slug);
     let href = checkout_href(&listing.slug, &q, currency.as_deref());
     let enquire = enquire_href(&listing.slug, &q);
+    let cta_enquire = enquire.clone();
+    let bar_price = price.clone();
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     Ok(view! {
         <article class="page-flow">
@@ -602,31 +605,62 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 </aside>
             </div>
             if !images.is_empty() {
-                <section id="photos" aria-label="Photos" class=(format!("{} scroll-mt-24", gallery.0))>
-                    for (i, ((src, alt), (span, sizes))) in images
-                        .iter()
-                        .cloned()
-                        .zip(gallery.1.iter().copied())
-                        .enumerate() {
-                        <button
-                            type="button"
-                            data-dialog-open="gallery-dialog"
-                            aria-label=(format!(
-                                "Open photo {} of {}",
-                                i + 1,
-                                images.len(),
-                            ))
-                            class=(format!(
-                                "overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/3] md:aspect-auto {span}",
-                            ))
-                        >
-                            responsive_image(
-                                src: src,
-                                alt: alt,
-                                sizes: Some(sizes.to_string())
-                            )
+                <section
+                    id="photos"
+                    aria-labelledby="photos-heading"
+                    class="scroll-mt-24 space-y-6 border-t border-border pt-12"
+                >
+                    <div class="flex flex-wrap items-end justify-between gap-4">
+                        <div class="space-y-2.5">
+                            <p
+                                class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                            >
+                                "Gallery"
+                            </p>
+                            <h2 id="photos-heading" class="font-serif text-[clamp(28px,3vw,38px)]">
+                                "Around the house"
+                            </h2>
+                        </div>
+                        <button type="button" data-dialog-open="gallery-dialog" class=(PILL_SM)>
+                            (format!("All {} photos", images.len()))
                         </button>
-                    }
+                    </div>
+                    <div data-testid="photo-mosaic" class=(gallery.0)>
+                        for (i, ((src, alt), (span, sizes))) in images
+                            .iter()
+                            .cloned()
+                            .zip(gallery.1.iter().copied())
+                            .enumerate() {
+                            <button
+                                type="button"
+                                data-dialog-open="gallery-dialog"
+                                aria-label=(format!(
+                                    "Open photo {} of {}",
+                                    i + 1,
+                                    images.len(),
+                                ))
+                                class=(format!(
+                                    "group relative overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder aspect-[4/3] md:aspect-auto {span}",
+                                ))
+                            >
+                                responsive_image(
+                                    src: src,
+                                    alt: alt,
+                                    sizes: Some(sizes.to_string()),
+                                    attrs: attributes! {
+                                        class="transition-transform duration-700 ease-out group-hover:scale-105 motion-reduce:transition-none"
+                                    }
+                                )
+                                if i + 1 == tiles_shown && images.len() > tiles_shown {
+                                    <span
+                                        class="absolute right-3 bottom-3 rounded-full bg-card px-3.5 py-1.5 text-sm text-card-foreground"
+                                    >
+                                        (format!("All {} photos", images.len()))
+                                    </span>
+                                }
+                            </button>
+                        }
+                    </div>
                 </section>
                 <dialog
                     id="gallery-dialog"
@@ -730,7 +764,55 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 </dialog>
             }
 
+                    <section
+                        data-testid="plan-your-stay"
+                        aria-labelledby="plan-heading"
+                        class="full-bleed bg-primary text-primary-foreground"
+                    >
+                        <div
+                            class="bleed-inner grid justify-items-center gap-5 py-16 text-center lg:py-24"
+                        >
+                            <p class="text-xs font-medium tracking-[0.22em] uppercase opacity-80">
+                                "Plan your stay"
+                            </p>
+                            <h2
+                                id="plan-heading"
+                                class="max-w-[22ch] font-serif text-[clamp(30px,4vw,50px)] leading-tight font-light text-balance italic"
+                            >
+                                "Tell us your dates and we'll take care of the rest"
+                            </h2>
+                            <div class="flex flex-wrap justify-center gap-3.5">
+                                <a
+                                    href="#book"
+                                    class="inline-flex h-11 items-center rounded-full border border-primary-foreground px-6 text-xs font-medium tracking-[0.16em] text-primary-foreground uppercase no-underline transition-colors hover:bg-primary-foreground hover:text-primary"
+                                >
+                                    "Check availability"
+                                </a>
+                                <a
+                                    href=(cta_enquire)
+                                    class="inline-flex h-11 items-center rounded-full px-6 text-xs font-medium tracking-[0.16em] text-primary-foreground uppercase no-underline underline-offset-4 hover:underline"
+                                >
+                                    "Ask a question"
+                                </a>
+                            </div>
+                        </div>
+                    </section>
                 </div>
+            </div>
+            <div
+                data-mobile-book-bar=""
+                class="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-border bg-card px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-card-foreground lg:hidden"
+            >
+                <span>
+                    <strong class="font-serif text-xl font-normal">(bar_price)</strong>
+                    <span class="text-sm text-muted-foreground">" / night"</span>
+                </span>
+                <a
+                    href="#book"
+                    class="inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground no-underline"
+                >
+                    "Check dates"
+                </a>
             </div>
         </article>
     })

@@ -211,7 +211,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_guest && pnpm test:e2e:guest -- listing-detail.spec.ts`
   - **Dependencies:** Tasks 2, 5
 
-- [ ] **Task 13: Photo mosaic, closing CTA and mobile booking bar**
+- [x] **Task 13: Photo mosaic, closing CTA and mobile booking bar**
   - **Scope:** M
   - **Description:** 5-tile `photo_mosaic` replacing the top photo grid (reuses `gallery_layout` tests or replaces them), closing "Plan your stay" band, fixed mobile booking bar (< 1024px) with safe-area padding; full booking form renders inline after the body on mobile.
   - **Files Touched:**
