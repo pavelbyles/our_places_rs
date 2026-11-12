@@ -29,6 +29,8 @@ pub mod edit;
 pub mod form;
 /// Signed-URL photo uploads.
 pub mod images;
+/// The "Highlights ribbon" fieldset: fixed rows, parsing and validation.
+pub mod ribbon_field;
 
 path_param!(id);
 

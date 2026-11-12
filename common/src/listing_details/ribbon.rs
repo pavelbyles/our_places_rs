@@ -37,6 +37,71 @@ pub enum RibbonIcon {
     Star,
 }
 
+impl RibbonIcon {
+    /// Every icon, in the order the admin picker lists them.
+    pub const ALL: [RibbonIcon; 14] = [
+        RibbonIcon::Bed,
+        RibbonIcon::Bath,
+        RibbonIcon::Guests,
+        RibbonIcon::Pool,
+        RibbonIcon::Beach,
+        RibbonIcon::Ocean,
+        RibbonIcon::Chef,
+        RibbonIcon::Butler,
+        RibbonIcon::Security,
+        RibbonIcon::Wifi,
+        RibbonIcon::Solar,
+        RibbonIcon::Car,
+        RibbonIcon::Gym,
+        RibbonIcon::Star,
+    ];
+
+    /// The stored name, e.g. `"beach"`.
+    pub fn key(self) -> &'static str {
+        match self {
+            RibbonIcon::Bed => "bed",
+            RibbonIcon::Bath => "bath",
+            RibbonIcon::Guests => "guests",
+            RibbonIcon::Pool => "pool",
+            RibbonIcon::Beach => "beach",
+            RibbonIcon::Ocean => "ocean",
+            RibbonIcon::Chef => "chef",
+            RibbonIcon::Butler => "butler",
+            RibbonIcon::Security => "security",
+            RibbonIcon::Wifi => "wifi",
+            RibbonIcon::Solar => "solar",
+            RibbonIcon::Car => "car",
+            RibbonIcon::Gym => "gym",
+            RibbonIcon::Star => "star",
+        }
+    }
+
+    /// The name hosts see in the picker, e.g. `"Beach house"`.
+    pub fn label(self) -> &'static str {
+        match self {
+            RibbonIcon::Bed => "Bed",
+            RibbonIcon::Bath => "Bath",
+            RibbonIcon::Guests => "Guests",
+            RibbonIcon::Pool => "Pool",
+            RibbonIcon::Beach => "Beach house",
+            RibbonIcon::Ocean => "Ocean view",
+            RibbonIcon::Chef => "Chef",
+            RibbonIcon::Butler => "Butler",
+            RibbonIcon::Security => "Security",
+            RibbonIcon::Wifi => "Wi-Fi",
+            RibbonIcon::Solar => "Solar",
+            RibbonIcon::Car => "Car",
+            RibbonIcon::Gym => "Fitness",
+            RibbonIcon::Star => "Star",
+        }
+    }
+
+    /// The icon stored as `key`, if any.
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|i| i.key() == key)
+    }
+}
+
 /// One ribbon item: an icon, a short value and a label ("6" / "Bedrooms").
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RibbonItem {
@@ -256,6 +321,18 @@ mod tests {
         assert_eq!(Ribbon::resolve(Some(items(2)), fallback.clone()), fallback);
         assert_eq!(Ribbon::resolve(Some(vec![]), fallback.clone()), fallback);
         assert_eq!(Ribbon::resolve(None, fallback.clone()), fallback);
+    }
+
+    #[test]
+    fn icon_keys_match_their_stored_names() {
+        for icon in RibbonIcon::ALL {
+            assert_eq!(
+                serde_json::to_value(icon).ok(),
+                Some(serde_json::json!(icon.key()))
+            );
+            assert_eq!(RibbonIcon::from_key(icon.key()), Some(icon));
+        }
+        assert_eq!(RibbonIcon::from_key("rocket"), None);
     }
 
     #[test]

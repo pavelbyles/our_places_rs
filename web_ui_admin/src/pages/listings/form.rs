@@ -6,13 +6,18 @@ use common::booking_request::BookingMode;
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{View, component, view},
 };
 use uuid::Uuid;
+
+use common::listing_details::{RIBBON_KEY, RibbonItem};
 use web_ui_common::components::domain::currency_selector::currency_option_list;
+
+use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
 
 /// Listing structures known to `listing_api`.
 pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "Studio"];
@@ -97,6 +102,10 @@ pub struct ListingFields {
     pub amenities: String,
     /// How the listing sells: `instant`, `request` or `both`.
     pub booking_mode: String,
+    /// Fixed-slot content fields posted as `ribbon_{n}_{part}` and similar
+    /// (the form encoding has no lists, so each row has its own names).
+    #[serde(flatten)]
+    pub slots: BTreeMap<String, String>,
 }
 
 fn opt(v: Option<Decimal>) -> String {
@@ -139,6 +148,7 @@ impl ListingFields {
             },
             amenities: amenities_of(l.listing_details.as_ref()).join("\n"),
             booking_mode: l.booking_mode.as_str().into(),
+            slots: ribbon_fields(l.listing_details.as_ref()),
         }
     }
 
@@ -194,6 +204,7 @@ pub struct ValidListing {
     longitude: Option<f64>,
     is_active: bool,
     amenities: Vec<String>,
+    ribbon: Option<Vec<RibbonItem>>,
     booking_mode: BookingMode,
 }
 
@@ -398,6 +409,10 @@ impl ListingFields {
             longitude: p.coord("Longitude", &self.longitude, 180.0),
             is_active: self.is_active == "on",
             amenities: p.amenities(&self.amenities),
+            ribbon: parse_ribbon(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                None
+            }),
             booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
         if valid.guests_included > valid.max_guests {
@@ -425,8 +440,29 @@ fn parse_booking_mode(p: &mut Parser, value: &str) -> BookingMode {
 }
 
 impl ValidListing {
+    /// `details` with the form's content sections written in: set when
+    /// filled, removed when cleared, other keys untouched.
+    fn content_details(
+        &self,
+        mut details: serde_json::Map<String, serde_json::Value>,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        details.insert(AMENITIES_KEY.to_string(), serde_json::json!(self.amenities));
+        match &self.ribbon {
+            Some(items) => {
+                details.insert(RIBBON_KEY.to_string(), serde_json::json!(items));
+            }
+            None => {
+                details.remove(RIBBON_KEY);
+            }
+        }
+        details
+    }
+
     /// The create request.
     pub fn into_new(self) -> NewListingRequest {
+        let listing_details = Some(serde_json::Value::Object(
+            self.content_details(serde_json::Map::new()),
+        ));
         NewListingRequest {
             name: self.name,
             user_id: self.owner_id,
@@ -444,9 +480,7 @@ impl ValidListing {
             square_meters: self.square_meters,
             latitude: self.latitude,
             longitude: self.longitude,
-            listing_details: Some(serde_json::json!({
-                AMENITIES_KEY: self.amenities,
-            })),
+            listing_details,
             city: self.city,
             base_currency: self.base_currency,
             minimum_stay: self.minimum_stay,
@@ -465,11 +499,12 @@ impl ValidListing {
     /// into the listing's `current_details` to keep its other keys (Wi-Fi,
     /// address, check-in instructions).
     pub fn into_update(self, current_details: Option<&serde_json::Value>) -> UpdatedListingRequest {
-        let mut details = current_details
-            .and_then(|d| d.as_object())
-            .cloned()
-            .unwrap_or_default();
-        details.insert(AMENITIES_KEY.to_string(), serde_json::json!(self.amenities));
+        let details = self.content_details(
+            current_details
+                .and_then(|d| d.as_object())
+                .cloned()
+                .unwrap_or_default(),
+        );
         UpdatedListingRequest {
             name: Some(self.name),
             description: self.description,
@@ -885,6 +920,11 @@ pub async fn listing_form(
                     </label>
                 }
             </fieldset>
+            ribbon_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
             <fieldset class="grid gap-2 rounded-xl border border-border p-6">
                 <legend class="px-1 text-sm font-semibold">"Amenities"</legend>
                 <label for="listing-amenities" class=(label)>

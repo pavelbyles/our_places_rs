@@ -127,7 +127,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p listing_api ribbon` (needs local Postgres via devenv)
   - **Dependencies:** Task 4
 
-- [ ] **Task 7: Admin "Highlights ribbon" fieldset (no-JS)**
+- [x] **Task 7: Admin "Highlights ribbon" fieldset (no-JS)**
   - **Scope:** M
   - **Description:** 6 fixed row slots (icon `<select>`, value, label) in the listing form; empty rows ignored; errors name the row; saved via the existing `listing_details` merge path (other keys preserved).
   - **Files Touched:**
