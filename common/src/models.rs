@@ -810,9 +810,11 @@ pub struct NewListingRequest {
     pub longitude: Option<f64>,
 
     // --- NEW: Dynamic Property Definitions (JSONB) ---
-    /// Amenities and other details, as JSON.
+    /// Amenities and other details, as JSON. Host-edited sections are
+    /// checked by [`crate::listing_details::validate_listing_details`].
     #[serde(default)]
     #[schema(value_type = Object)]
+    #[validate(custom(function = "crate::listing_details::validate_listing_details"))]
     pub listing_details: Option<serde_json::Value>,
 
     /// City, if known.
@@ -1011,9 +1013,11 @@ pub struct UpdatedListingRequest {
     #[schema(value_type = String, example = "Kingston")]
     pub city: Option<String>,
 
-    /// Updated amenities and other details, as JSON.
+    /// Updated amenities and other details, as JSON. Host-edited sections
+    /// are checked by [`crate::listing_details::validate_listing_details`].
     #[serde(default)]
     #[schema(value_type = Object)]
+    #[validate(custom(function = "crate::listing_details::validate_listing_details"))]
     pub listing_details: Option<serde_json::Value>,
 
     /// Updated minimum stay in nights.

@@ -114,7 +114,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_common --test components ribbon && cargo test -p web_ui_guest`
   - **Dependencies:** Tasks 2, 4
 
-- [ ] **Task 6: `listing_api` rejects invalid ribbons**
+- [x] **Task 6: `listing_api` rejects invalid ribbons**
   - **Scope:** S
   - **Description:** Validate `listing_details.ribbon` (when present) in `NewListingRequest` / update validation via `Ribbon::try_from`; map to `400 { "code": "INVALID_RIBBON", "message": <RibbonError> }` with `tracing::warn!`.
   - **Files Touched:**

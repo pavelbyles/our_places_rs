@@ -230,10 +230,79 @@ impl StructuredListingDetails {
     }
 }
 
+fn invalid(code: &'static str, message: String) -> validator::ValidationError {
+    validator::ValidationError::new(code).with_message(message.into())
+}
+
+/// The ribbon section, if present, must be 3–6 valid items. An empty list
+/// means "not set" and is allowed.
+fn validate_ribbon_section(details: &Value) -> Result<(), validator::ValidationError> {
+    details
+        .get(RIBBON_KEY)
+        .filter(|v| !v.is_null())
+        .map_or(Ok(()), |v| {
+            serde_json::from_value::<Vec<RibbonItem>>(v.clone())
+                .map_err(|_| {
+                    invalid(
+                        "INVALID_RIBBON",
+                        "Each ribbon item needs a known icon, a value and a label.".to_string(),
+                    )
+                })
+                .and_then(|items| {
+                    if items.is_empty() {
+                        Ok(())
+                    } else {
+                        Ribbon::try_from(items)
+                            .map(|_| ())
+                            .map_err(|e| invalid("INVALID_RIBBON", e.to_string()))
+                    }
+                })
+        })
+}
+
+/// Validates the host-edited sections of `listing_details` on create and
+/// update. Error codes: `INVALID_RIBBON`.
+pub fn validate_listing_details(details: &Value) -> Result<(), validator::ValidationError> {
+    validate_ribbon_section(details)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn ribbon_items(n: usize) -> Value {
+        Value::Array(
+            (0..n)
+                .map(|i| json!({ "icon": "bed", "value": i.to_string(), "label": "Bedrooms" }))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn listing_details_without_a_ribbon_are_valid() {
+        assert!(validate_listing_details(&json!({ "amenities": ["Pool"] })).is_ok());
+        assert!(validate_listing_details(&json!({ "ribbon": null })).is_ok());
+        assert!(validate_listing_details(&json!({ "ribbon": [] })).is_ok());
+    }
+
+    #[test]
+    fn an_invalid_ribbon_is_refused_with_its_reason() {
+        let e = validate_listing_details(&json!({ "ribbon": ribbon_items(2) })).err();
+        assert_eq!(e.as_ref().map(|e| e.code.as_ref()), Some("INVALID_RIBBON"));
+        assert_eq!(
+            e.and_then(|e| e.message).map(|m| m.to_string()),
+            Some("A ribbon needs between 3 and 6 items, got 2.".to_string())
+        );
+        let bad_icon = json!({ "ribbon": [{ "icon": "rocket", "value": "1", "label": "x" }] });
+        assert_eq!(
+            validate_listing_details(&bad_icon)
+                .err()
+                .map(|e| e.code.to_string()),
+            Some("INVALID_RIBBON".to_string())
+        );
+        assert!(validate_listing_details(&json!({ "ribbon": ribbon_items(3) })).is_ok());
+    }
 
     #[test]
     fn nothing_stored_is_the_default() {
