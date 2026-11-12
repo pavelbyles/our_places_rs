@@ -181,7 +181,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p listing_api amenity_groups`
   - **Dependencies:** Tasks 6, 8
 
-- [ ] **Task 11: Admin "Amenities" groups fieldset**
+- [x] **Task 11: Admin "Amenities" groups fieldset**
   - **Scope:** M
   - **Description:** Replace the flat amenities textarea with 6 group slots (title, icon, items textarea). New listings prefilled with the 4 suggested titles. Legacy flat list loads as one "Amenities" group; on save, `amenity_groups` is written and the `amenities` key removed.
   - **Files Touched:**

@@ -14,9 +14,14 @@ use topcoat::{
 };
 use uuid::Uuid;
 
-use common::listing_details::{RIBBON_KEY, RibbonItem};
+use common::listing_details::{
+    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, RIBBON_KEY, RibbonItem,
+};
 use web_ui_common::components::domain::currency_selector::currency_option_list;
 
+use super::amenity_field::{
+    amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
+};
 use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
 
 /// Listing structures known to `listing_api`.
@@ -24,21 +29,6 @@ pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "
 pub use common::listing_details::amenities::{MAX_AMENITIES, MAX_AMENITY_CHARS};
 /// Longest description `listing_api` accepts, in characters.
 pub const MAX_DESCRIPTION_CHARS: usize = 2000;
-/// Key of the amenity list inside `listing_details` (the guest listing page
-/// reads the same key).
-const AMENITIES_KEY: &str = "amenities";
-
-/// The amenities stored in a listing's `listing_details`.
-pub fn amenities_of(details: Option<&serde_json::Value>) -> Vec<String> {
-    details
-        .and_then(|d| d.get(AMENITIES_KEY))
-        .and_then(|a| a.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect()
-}
-
 /// Raw form values (strings, so the page can be re-rendered as typed).
 #[derive(Deserialize, Default, Clone, Debug)]
 #[serde(default)]
@@ -95,8 +85,6 @@ pub struct ListingFields {
     pub owner_id: String,
     /// "on" when the listing is bookable.
     pub is_active: String,
-    /// Amenities, one per line.
-    pub amenities: String,
     /// How the listing sells: `instant`, `request` or `both`.
     pub booking_mode: String,
     /// Fixed-slot content fields posted as `ribbon_{n}_{part}` and similar
@@ -143,9 +131,11 @@ impl ListingFields {
             } else {
                 String::new()
             },
-            amenities: amenities_of(l.listing_details.as_ref()).join("\n"),
             booking_mode: l.booking_mode.as_str().into(),
-            slots: ribbon_fields(l.listing_details.as_ref()),
+            slots: ribbon_fields(l.listing_details.as_ref())
+                .into_iter()
+                .chain(amenity_fields(l.listing_details.as_ref()))
+                .collect(),
         }
     }
 
@@ -166,6 +156,7 @@ impl ListingFields {
             owner_id: owner.to_string(),
             is_active: "on".into(),
             booking_mode: BookingMode::Instant.as_str().into(),
+            slots: suggested_amenity_fields(),
             ..Default::default()
         }
     }
@@ -200,7 +191,7 @@ pub struct ValidListing {
     latitude: Option<f64>,
     longitude: Option<f64>,
     is_active: bool,
-    amenities: Vec<String>,
+    amenity_groups: Vec<AmenityGroup>,
     ribbon: Option<Vec<RibbonItem>>,
     booking_mode: BookingMode,
 }
@@ -315,27 +306,6 @@ impl Parser {
         }
         Some(v).filter(|d| !d.is_empty())
     }
-    /// One entry per non-blank line, trimmed, without case-insensitive
-    /// duplicates (the first spelling wins).
-    fn amenities(&mut self, v: &str) -> Vec<String> {
-        let mut seen = std::collections::HashSet::new();
-        let list: Vec<String> = v
-            .lines()
-            .map(str::trim)
-            .filter(|a| !a.is_empty() && seen.insert(a.to_lowercase()))
-            .map(str::to_string)
-            .collect();
-        if list.len() > MAX_AMENITIES {
-            self.errors
-                .push(format!("List at most {MAX_AMENITIES} amenities."));
-        }
-        if let Some(long) = list.iter().find(|a| a.chars().count() > MAX_AMENITY_CHARS) {
-            self.errors.push(format!(
-                "Amenities can be at most {MAX_AMENITY_CHARS} characters (\"{long}\" is longer)."
-            ));
-        }
-        list
-    }
 }
 
 impl ListingFields {
@@ -405,7 +375,10 @@ impl ListingFields {
             latitude: p.coord("Latitude", &self.latitude, 90.0),
             longitude: p.coord("Longitude", &self.longitude, 180.0),
             is_active: self.is_active == "on",
-            amenities: p.amenities(&self.amenities),
+            amenity_groups: parse_amenity_groups(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                Vec::new()
+            }),
             ribbon: parse_ribbon(&self.slots).unwrap_or_else(|errors| {
                 p.errors.extend(errors);
                 None
@@ -443,7 +416,16 @@ impl ValidListing {
         &self,
         mut details: serde_json::Map<String, serde_json::Value>,
     ) -> serde_json::Map<String, serde_json::Value> {
-        details.insert(AMENITIES_KEY.to_string(), serde_json::json!(self.amenities));
+        // Amenities now live in groups; a legacy flat list moves into them.
+        details.remove(AMENITIES_KEY);
+        if self.amenity_groups.is_empty() {
+            details.remove(AMENITY_GROUPS_KEY);
+        } else {
+            details.insert(
+                AMENITY_GROUPS_KEY.to_string(),
+                serde_json::json!(self.amenity_groups),
+            );
+        }
         match &self.ribbon {
             Some(items) => {
                 details.insert(RIBBON_KEY.to_string(), serde_json::json!(items));
@@ -922,20 +904,11 @@ pub async fn listing_form(
                 label_class: label,
                 input_class: input
             )
-            <fieldset class="grid gap-2 rounded-xl border border-border p-6">
-                <legend class="px-1 text-sm font-semibold">"Amenities"</legend>
-                <label for="listing-amenities" class=(label)>
-                    "One per line, e.g. Private pool, Wi-Fi, Air conditioning. Guests see them under “What this place offers”."
-                </label>
-                <textarea
-                    id="listing-amenities"
-                    name="amenities"
-                    rows="6"
-                    class=(format!("{input} h-auto py-2"))
-                >
-                    (f.amenities.clone())
-                </textarea>
-            </fieldset>
+            amenity_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
             <button
                 id="btn-save-listing"
                 type="submit"

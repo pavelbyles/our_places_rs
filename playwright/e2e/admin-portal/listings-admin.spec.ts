@@ -143,7 +143,7 @@ test.describe('Admin Portal - Listings Management', () => {
     await page.goto('/admin/listings/new');
     await page.locator('#listing-name').fill(name);
     await page.locator('input[name="price_per_night"]').fill('300');
-    await page.locator('#listing-amenities').fill('Private pool\nWi-Fi\n\nwi-fi');
+    await page.locator('#listing-amenities-1').fill('Private pool\nWi-Fi\n\nwi-fi');
     await page.locator('#btn-save-listing').click();
     await expect(page).toHaveURL(/\/admin\/listings\/[0-9a-f-]{36}$/);
     const id = page.url().split('/').pop() ?? '';
@@ -152,8 +152,8 @@ test.describe('Admin Portal - Listings Management', () => {
     // Details set elsewhere (pre-arrival email data) must survive an edit.
     psql(`UPDATE listing SET listing_details = listing_details || '{"wifi_ssid": "E2E-Net"}'::jsonb WHERE id = '${id}';`);
     await page.goto(`/admin/listings/${id}/edit`);
-    await expect(page.locator('#listing-amenities')).toHaveValue('Private pool\nWi-Fi');
-    await page.locator('#listing-amenities').fill('Private pool\nOcean view');
+    await expect(page.locator('#listing-amenities-1')).toHaveValue('Private pool\nWi-Fi');
+    await page.locator('#listing-amenities-1').fill('Private pool\nOcean view');
     await page.locator('#btn-save-listing').click();
     await expect(page).toHaveURL(new RegExp(`/admin/listings/${id}$`));
     await expect(page.locator('#listing-amenities-list li')).toHaveText(['Private pool', 'Ocean view']);
