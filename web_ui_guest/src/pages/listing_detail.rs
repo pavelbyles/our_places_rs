@@ -238,6 +238,20 @@ fn listing_error(slug: &str, currency: Option<&str>, e: anyhow::Error) -> topcoa
 /// Most photos shown on the page; the rest are in the gallery dialog.
 const GALLERY_TILES: usize = 5;
 
+/// The listing's headline facts. A bed count of 0 means the host never
+/// entered one, so it is left out rather than shown as "0 beds".
+fn core_facts(max_guests: i32, bedrooms: i32, beds: i32, bathrooms: i32) -> Vec<String> {
+    [
+        Some(format!("Up to {max_guests} guests")),
+        Some(format!("{bedrooms} bedrooms")),
+        (beds > 0).then(|| format!("{beds} beds")),
+        Some(format!("{bathrooms} bathrooms")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
 /// The photo grid for `count` photos: the section's classes and one class
 /// list per tile shown. Phones show only the first photo; from `md` the
 /// grid has a fixed height and the tiles fill it, so no column is left empty.
@@ -294,12 +308,12 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .rating_summary
         .as_ref()
         .map(|r| i64::from(r.review_count));
-    let mut facts = vec![
-        format!("Up to {} guests", listing.max_guests),
-        format!("{} bedrooms", listing.bedrooms),
-        format!("{} beds", listing.beds),
-        format!("{} bathrooms", listing.full_bathrooms),
-    ];
+    let mut facts = core_facts(
+        listing.max_guests,
+        listing.bedrooms,
+        listing.beds,
+        listing.full_bathrooms,
+    );
     facts.extend(
         listing
             .listing_details
@@ -679,6 +693,18 @@ mod booking_mode_cta {
         assert_eq!(booking_cta(BookingMode::Both).0, "Reserve");
         assert!(booking_cta(BookingMode::Both).1.contains("request"));
         assert!(booking_cta(BookingMode::Request).1.contains("not charged"));
+    }
+}
+
+#[cfg(test)]
+mod facts_tests {
+    use super::core_facts;
+
+    #[test]
+    fn a_missing_bed_count_is_left_out() {
+        let facts = core_facts(10, 5, 0, 5);
+        assert_eq!(facts, ["Up to 10 guests", "5 bedrooms", "5 bathrooms"]);
+        assert!(core_facts(10, 5, 6, 5).contains(&"6 beds".to_string()));
     }
 }
 

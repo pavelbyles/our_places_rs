@@ -20,7 +20,7 @@ test.describe('Guest Portal - Listings Exploration Page', () => {
     // Verify villa card contents
     const villaCard = grid.locator(`#listing-card-${targetVilla.slug}`);
     await expect(villaCard).toBeVisible();
-    await expect(villaCard).toContainText('USD $650');
+    await expect(villaCard).toContainText('US$650');
     await expect(villaCard).toContainText('New Kingston, Jamaica');
     await expect(villaCard).toContainText('4 Guests');
 

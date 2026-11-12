@@ -15,6 +15,21 @@ pub fn currency_symbol(currency: &str) -> Option<&'static str> {
     }
 }
 
+/// A compact prefix for a headline price that can't be mistaken for another
+/// currency: `USD` → `"US$"`, `JMD` → `"J$"`, `CAD` → `"CA$"` (all three use
+/// `$`, so a bare `$` would be ambiguous), `GBP` → `"£"`, `EUR` → `"€"`, and
+/// any other code followed by a space (`"TTD "`).
+pub fn price_prefix(currency: &str) -> String {
+    match currency.to_ascii_uppercase().as_str() {
+        "USD" => "US$".to_string(),
+        "JMD" => "J$".to_string(),
+        "CAD" => "CA$".to_string(),
+        "GBP" => "£".to_string(),
+        "EUR" => "€".to_string(),
+        other => format!("{other} "),
+    }
+}
+
 /// An amount to 2 decimal places with comma thousands separators:
 /// `11240` → `"11,240.00"`, `-325.5` → `"-325.50"`. Rounds the way pricing
 /// does (`round_dp`); `{:.2}` on a `Decimal` would truncate instead.
@@ -69,6 +84,17 @@ pub fn total_amount(currency: &str, amount: Decimal) -> String {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    #[test]
+    fn price_prefix_is_compact_and_never_ambiguous() {
+        assert_eq!(price_prefix("USD"), "US$");
+        assert_eq!(price_prefix("usd"), "US$");
+        assert_eq!(price_prefix("JMD"), "J$");
+        assert_eq!(price_prefix("CAD"), "CA$");
+        assert_eq!(price_prefix("GBP"), "£");
+        assert_eq!(price_prefix("EUR"), "€");
+        assert_eq!(price_prefix("TTD"), "TTD ");
+    }
 
     #[test]
     fn groups_thousands_and_pads_cents() {

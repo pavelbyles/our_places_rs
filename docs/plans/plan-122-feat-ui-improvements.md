@@ -41,7 +41,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Foundation
 
-- [ ] **Task 1: Fix double currency prefix and missing bed count**
+- [x] **Task 1: Fix double currency prefix and missing bed count**
   - **Scope:** S
   - **Description:** `ListingSummary::price_text` renders `"{symbol}{price}"` when the display currency has an unambiguous symbol, otherwise a disambiguated form (`US$` style for shared `$`, ISO code for none). `listing_detail.rs` omits the beds fact when `beds <= 0`; `ListingSummary::specs()` likewise.
   - **Files Touched:**
