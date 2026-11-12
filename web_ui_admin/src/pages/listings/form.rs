@@ -15,14 +15,15 @@ use topcoat::{
 use uuid::Uuid;
 
 use common::listing_details::{
-    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, RIBBON_KEY, RibbonItem, STAFF_SERVICES_KEY,
-    SUITES_KEY, StaffServices, SuiteItem,
+    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, HousePolicies, NEARBY_KEY, NearbyPlace,
+    POLICIES_KEY, RIBBON_KEY, RibbonItem, STAFF_SERVICES_KEY, SUITES_KEY, StaffServices, SuiteItem,
 };
 use web_ui_common::components::domain::currency_selector::currency_option_list;
 
 use super::amenity_field::{
     amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
 };
+use super::policies_field::{parse_policies, policies_fields, policies_fieldset};
 use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
 use super::services_field::{parse_services, services_fields, services_fieldset};
 use super::suite_field::{SuitePhoto, parse_suites, suite_fields, suite_fieldset};
@@ -140,6 +141,7 @@ impl ListingFields {
                 .chain(amenity_fields(l.listing_details.as_ref()))
                 .chain(suite_fields(l.listing_details.as_ref()))
                 .chain(services_fields(l.listing_details.as_ref()))
+                .chain(policies_fields(l.listing_details.as_ref()))
                 .collect(),
         }
     }
@@ -200,6 +202,8 @@ pub struct ValidListing {
     ribbon: Option<Vec<RibbonItem>>,
     suites: Vec<SuiteItem>,
     services: Option<StaffServices>,
+    policies: Option<HousePolicies>,
+    nearby: Vec<NearbyPlace>,
     booking_mode: BookingMode,
 }
 
@@ -398,8 +402,18 @@ impl ListingFields {
                 p.errors.extend(errors);
                 None
             }),
+            policies: None,
+            nearby: Vec::new(),
             booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
+        let mut valid = valid;
+        match parse_policies(&self.slots) {
+            Ok((policies, nearby)) => {
+                valid.policies = policies;
+                valid.nearby = nearby;
+            }
+            Err(errors) => p.errors.extend(errors),
+        }
         if valid.guests_included > valid.max_guests {
             p.errors
                 .push("Guests included cannot exceed maximum guests.".into());
@@ -461,6 +475,19 @@ impl ValidListing {
             None => {
                 details.remove(STAFF_SERVICES_KEY);
             }
+        }
+        match &self.policies {
+            Some(policies) => {
+                details.insert(POLICIES_KEY.to_string(), serde_json::json!(policies));
+            }
+            None => {
+                details.remove(POLICIES_KEY);
+            }
+        }
+        if self.nearby.is_empty() {
+            details.remove(NEARBY_KEY);
+        } else {
+            details.insert(NEARBY_KEY.to_string(), serde_json::json!(self.nearby));
         }
         details
     }
@@ -947,6 +974,11 @@ pub async fn listing_form(
                 input_class: input
             )
             services_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            policies_fieldset(
                 fields: f.slots.clone(),
                 label_class: label,
                 input_class: input

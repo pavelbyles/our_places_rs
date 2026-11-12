@@ -31,6 +31,8 @@ pub mod edit;
 pub mod form;
 /// Signed-URL photo uploads.
 pub mod images;
+/// The "House policies" and "Nearby places" fieldsets.
+pub mod policies_field;
 /// The "Highlights ribbon" fieldset: fixed rows, parsing and validation.
 pub mod ribbon_field;
 /// The "Staff & services" fieldset: included staff, notes and add-ons.

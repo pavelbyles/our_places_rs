@@ -285,6 +285,70 @@ pub struct NearbyPlace {
     pub drive_minutes: i32,
 }
 
+/// Longest policy text, in characters.
+pub const MAX_POLICY_CHARS: usize = 160;
+/// Most nearby places.
+pub const MAX_NEARBY: usize = 8;
+/// Longest nearby place name, in characters.
+pub const MAX_NEARBY_NAME_CHARS: usize = 48;
+/// Longest drive time, in minutes.
+pub const MAX_DRIVE_MINUTES: i32 = 600;
+
+/// Why policies or nearby places can't be saved.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum PlaceRulesError {
+    /// A policy is over 160 characters.
+    #[error("{0} can be at most 160 characters.")]
+    PolicyTooLong(&'static str),
+    /// More than 8 nearby places.
+    #[error("List at most 8 nearby places, got {0}.")]
+    NearbyCount(usize),
+    /// A place has no name or one over 48 characters.
+    #[error("Nearby place {0} needs a name of up to 48 characters.")]
+    NearbyName(usize),
+    /// A drive time outside 1–600 minutes.
+    #[error("Nearby place {0}'s drive time must be 1 to 600 minutes.")]
+    NearbyMinutes(usize),
+}
+
+/// Checks house policies as saved.
+pub fn validate_policies(p: &HousePolicies) -> Result<(), PlaceRulesError> {
+    [
+        ("Check-in", &p.check_in),
+        ("Check-out", &p.check_out),
+        ("Minimum stay", &p.minimum_stay),
+        ("Cancellation", &p.cancellation),
+        ("Security deposit", &p.security_deposit),
+        ("House rules", &p.house_rules),
+    ]
+    .into_iter()
+    .find(|(_, text)| {
+        text.as_deref()
+            .is_some_and(|t| t.trim().chars().count() > MAX_POLICY_CHARS)
+    })
+    .map_or(Ok(()), |(label, _)| {
+        Err(PlaceRulesError::PolicyTooLong(label))
+    })
+}
+
+/// Checks nearby places as saved.
+pub fn validate_nearby(places: &[NearbyPlace]) -> Result<(), PlaceRulesError> {
+    if places.len() > MAX_NEARBY {
+        return Err(PlaceRulesError::NearbyCount(places.len()));
+    }
+    places.iter().enumerate().try_for_each(|(i, p)| {
+        let n = i + 1;
+        let name = p.name.trim().chars().count();
+        if name == 0 || name > MAX_NEARBY_NAME_CHARS {
+            Err(PlaceRulesError::NearbyName(n))
+        } else if !(1..=MAX_DRIVE_MINUTES).contains(&p.drive_minutes) {
+            Err(PlaceRulesError::NearbyMinutes(n))
+        } else {
+            Ok(())
+        }
+    })
+}
+
 /// "10 min", "1h", "1h 15m". Negative values read as 0.
 pub fn drive_time(minutes: i32) -> String {
     let m = minutes.max(0);
@@ -465,14 +529,54 @@ fn validate_staff_services_section(details: &Value) -> Result<(), validator::Val
         })
 }
 
+/// Parses section `key` as `T` and runs `check`, reporting `code`.
+fn validate_section<T, E: std::fmt::Display>(
+    details: &Value,
+    key: &str,
+    code: &'static str,
+    malformed: &str,
+    check: impl Fn(&T) -> Result<(), E>,
+) -> Result<(), validator::ValidationError>
+where
+    T: DeserializeOwned,
+{
+    details
+        .get(key)
+        .filter(|v| !v.is_null())
+        .map_or(Ok(()), |v| {
+            serde_json::from_value::<T>(v.clone())
+                .map_err(|_| invalid(code, malformed.to_string()))
+                .and_then(|parsed| check(&parsed).map_err(|e| invalid(code, e.to_string())))
+        })
+}
+
 /// Validates the host-edited sections of `listing_details` on create and
 /// update. Error codes: `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`,
-/// `INVALID_SUITES`, `INVALID_STAFF_SERVICES`.
+/// `INVALID_SUITES`, `INVALID_STAFF_SERVICES`, `INVALID_POLICIES`,
+/// `INVALID_NEARBY`.
 pub fn validate_listing_details(details: &Value) -> Result<(), validator::ValidationError> {
     validate_ribbon_section(details)
         .and_then(|()| validate_amenity_groups_section(details))
         .and_then(|()| validate_suites_section(details))
         .and_then(|()| validate_staff_services_section(details))
+        .and_then(|()| {
+            validate_section(
+                details,
+                POLICIES_KEY,
+                "INVALID_POLICIES",
+                "House policies must be text.",
+                validate_policies,
+            )
+        })
+        .and_then(|()| {
+            validate_section::<Vec<NearbyPlace>, _>(
+                details,
+                NEARBY_KEY,
+                "INVALID_NEARBY",
+                "Each nearby place needs a name and a drive time in minutes.",
+                |p| validate_nearby(p),
+            )
+        })
 }
 
 #[cfg(test)]
@@ -621,6 +725,42 @@ mod tests {
         assert_eq!(
             e.map(|e| e.code.to_string()),
             Some("INVALID_STAFF_SERVICES".into())
+        );
+    }
+
+    #[test]
+    fn policies_and_nearby_places_are_bounded() {
+        let long = HousePolicies {
+            house_rules: Some("x".repeat(161)),
+            ..HousePolicies::default()
+        };
+        assert_eq!(
+            validate_policies(&long),
+            Err(PlaceRulesError::PolicyTooLong("House rules"))
+        );
+        let place = |name: &str, m| NearbyPlace {
+            name: name.into(),
+            drive_minutes: m,
+        };
+        assert_eq!(validate_nearby(&[place("Devon House", 8)]), Ok(()));
+        assert_eq!(
+            validate_nearby(&[place("", 8)]),
+            Err(PlaceRulesError::NearbyName(1))
+        );
+        assert_eq!(
+            validate_nearby(&[place("A", 8), place("B", 0)]),
+            Err(PlaceRulesError::NearbyMinutes(2))
+        );
+        let nine: Vec<_> = (0..9).map(|_| place("P", 5)).collect();
+        assert_eq!(validate_nearby(&nine), Err(PlaceRulesError::NearbyCount(9)));
+        let e =
+            validate_listing_details(&json!({ "nearby": [{ "name": "X", "drive_minutes": 0 }] }))
+                .err();
+        assert_eq!(e.map(|e| e.code.to_string()), Some("INVALID_NEARBY".into()));
+        let e = validate_listing_details(&json!({ "policies": { "check_in": 5 } })).err();
+        assert_eq!(
+            e.map(|e| e.code.to_string()),
+            Some("INVALID_POLICIES".into())
         );
     }
 

@@ -290,7 +290,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p common drive_time && cargo test -p web_ui_guest`
   - **Dependencies:** Tasks 3, 12
 
-- [ ] **Task 19: Admin policies and nearby fieldsets**
+- [x] **Task 19: Admin policies and nearby fieldsets**
   - **Scope:** S
   - **Description:** Policy text inputs; nearby slots (name, drive minutes).
   - **Files Touched:**
