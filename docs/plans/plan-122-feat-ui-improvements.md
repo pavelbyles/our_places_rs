@@ -364,7 +364,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `pnpm test:e2e:guest -- listing-detail.spec.ts`
   - **Dependencies:** Task 3
 
-- [ ] **Task 25: Playwright coverage for the new page**
+- [x] **Task 25: Playwright coverage for the new page**
   - **Scope:** M
   - **Description:** Spec §6.3 items 1–6: section presence, responsive (390 / 1280), themes, host ribbon round-trip, host amenity-groups round-trip, other guest pages unchanged.
   - **Files Touched:**
