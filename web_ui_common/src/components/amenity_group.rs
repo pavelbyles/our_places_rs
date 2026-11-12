@@ -27,6 +27,28 @@ pub fn amenity_icon(icon: AmenityIcon) -> IconData {
     }
 }
 
+/// A list with a check mark before each item (amenities, included staff).
+#[component]
+pub async fn check_list(
+    cx: &Cx,
+    /// The items.
+    items: Vec<String>,
+) -> Result<impl View> {
+    Ok(view! {
+        <ul class="grid gap-2 text-sm">
+            for item in items {
+                <li class="flex items-start gap-2.5">
+                    svg_icon(
+                        data: iconify_icon!("lucide:check"),
+                        attrs: attributes! { class="mt-0.5 size-4 shrink-0 text-primary" }
+                    )
+                    <span>(item)</span>
+                </li>
+            }
+        </ul>
+    })
+}
+
 /// A grid of amenity group cards. Renders nothing for an empty list.
 #[component]
 pub async fn amenity_groups(
@@ -52,17 +74,7 @@ pub async fn amenity_groups(
                             )
                             (group.title)
                         </h3>
-                        <ul class="grid gap-2 text-sm">
-                            for item in group.items {
-                                <li class="flex items-start gap-2.5">
-                                    svg_icon(
-                                        data: iconify_icon!("lucide:check"),
-                                        attrs: attributes! { class="mt-0.5 size-4 shrink-0 text-primary" }
-                                    )
-                                    <span>(item)</span>
-                                </li>
-                            }
-                        </ul>
+                        check_list(items: group.items)
                     </div>
                 }
             </div>

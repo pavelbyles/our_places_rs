@@ -254,7 +254,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_admin --test listing_suites`
   - **Dependencies:** Task 14
 
-- [ ] **Task 16: Guest staff & services section**
+- [x] **Task 16: Guest staff & services section**
   - **Scope:** S
   - **Description:** `#services` two columns: included checklist + note; add-ons with `Decimal` price formatted in the display currency (or "On request"). "Ask us to arrange" links to the existing enquiry flow with the topic pre-filled.
   - **Files Touched:**

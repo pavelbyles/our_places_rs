@@ -1,7 +1,10 @@
 use chrono::{Months, NaiveDate};
 use common::booking_request::BookingMode;
-use common::listing_details::{Ribbon, StructuredListingDetails, SuiteItem, amenity_groups_for};
+use common::listing_details::{
+    Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem, amenity_groups_for,
+};
 use common::models::{ListingDetails, ListingImageResponse, ReviewResponse};
+use common::query::urlencode;
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -11,7 +14,7 @@ use topcoat::{
 };
 use web_client::get_api_client;
 use web_ui_common::components::{
-    amenity_group::amenity_groups,
+    amenity_group::{amenity_groups, check_list},
     date_range_calendar::{CalendarProps, date_range_calendar, first_of_month},
     domain::{
         listing_card::ListingSummary,
@@ -290,6 +293,42 @@ fn suites_with_photos(
         .collect()
 }
 
+/// `href` with `topic` added as a query parameter.
+fn with_topic(href: &str, topic: &str) -> String {
+    let sep = if href.contains('?') { '&' } else { '?' };
+    format!("{href}{sep}topic={}", urlencode(topic))
+}
+
+/// An add-on's price in the listing's currency, e.g. "US$180 each way",
+/// "US$220 / day", or "On request" without a price.
+fn addon_price(addon: &ServiceAddon, currency: &str) -> String {
+    match addon.price {
+        Some(price) => {
+            let amount = if price.fract().is_zero() {
+                common::money::grouped_whole(price)
+            } else {
+                common::money::grouped(price)
+            };
+            let unit = addon
+                .unit
+                .as_deref()
+                .map(str::trim)
+                .filter(|u| !u.is_empty())
+                .map(|u| {
+                    let lower = u.to_lowercase();
+                    if lower.starts_with("each") || lower.starts_with("per") {
+                        format!(" {u}")
+                    } else {
+                        format!(" / {u}")
+                    }
+                })
+                .unwrap_or_default();
+            format!("{}{amount}{unit}", common::money::price_prefix(currency))
+        }
+        None => "On request".to_string(),
+    }
+}
+
 /// Which optional sections the page shows.
 #[derive(Default)]
 struct Sections {
@@ -410,7 +449,22 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let tiles_shown = gallery.1.len();
     let eyebrow = format!("The {}", listing.listing_structure.to_lowercase());
     let story = paragraphs(listing.description.as_deref());
+    let enquire = enquire_href(&listing.slug, &q);
+    let services = structured.staff_services.clone();
+    let addons: Vec<(String, String, String)> = services
+        .addons
+        .iter()
+        .map(|a| {
+            (
+                a.name.clone(),
+                addon_price(a, &listing.base_currency),
+                with_topic(&enquire, &a.name),
+            )
+        })
+        .collect();
+    let arrange_href = with_topic(&enquire, "concierge add-ons");
     let links = section_links(&Sections {
+        services: !services.is_empty(),
         suites: !suites.is_empty(),
         reviews: true,
         photos: !images.is_empty(),
@@ -418,7 +472,6 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     });
     let quote_url = format!("/listings/{}/quote", listing.slug);
     let href = checkout_href(&listing.slug, &q, currency.as_deref());
-    let enquire = enquire_href(&listing.slug, &q);
     let cta_enquire = enquire.clone();
     let bar_price = price.clone();
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
@@ -547,6 +600,68 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         <p id="listing-facts" class="text-sm text-muted-foreground">(facts)</p>
                         amenity_groups(groups: groups)
                     </section>
+                    if !services.is_empty() {
+                        <section
+                            id="services"
+                            aria-labelledby="services-heading"
+                            class="scroll-mt-24 space-y-6 border-t border-border pt-12"
+                        >
+                            <div class="space-y-2.5">
+                                <p
+                                    class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                                >
+                                    "Staff & services"
+                                </p>
+                                <h2
+                                    id="services-heading"
+                                    class="font-serif text-[clamp(28px,3vw,38px)]"
+                                >
+                                    "Looked after from arrival to departure"
+                                </h2>
+                            </div>
+                            <div class="grid gap-5 md:grid-cols-2">
+                                if !services.included.is_empty() {
+                                    <div
+                                        data-testid="services-included"
+                                        class="grid content-start gap-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground"
+                                    >
+                                        <h3 class="font-serif text-[22px]">
+                                            "Included with your stay"
+                                        </h3>
+                                        check_list(items: services.included.clone())
+                                        if let Some(note) = services.included_note.clone() {
+                                            <p class="text-[13px] text-muted-foreground">(note)</p>
+                                        }
+                                    </div>
+                                }
+                                if !addons.is_empty() {
+                                    <div
+                                        data-testid="services-addons"
+                                        class="grid content-start gap-3 rounded-[var(--radius-surface,16px)] border border-dashed border-border p-6"
+                                    >
+                                        <h3 class="font-serif text-[22px]">"Concierge add-ons"</h3>
+                                        <ul class="divide-y divide-divider text-sm">
+                                            for (name, price, ask) in addons {
+                                                <li
+                                                    class="flex items-baseline justify-between gap-3 py-2.5"
+                                                >
+                                                    <a href=(ask) class="text-foreground no-underline hover:underline">
+                                                        (name)
+                                                    </a>
+                                                    <span class="shrink-0 font-medium tabular-nums">
+                                                        (price)
+                                                    </span>
+                                                </li>
+                                            }
+                                        </ul>
+                                        <a href=(arrange_href) class=(format!("{PILL_SM} w-fit"))>
+                                            "Ask us to arrange"
+                                        </a>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    }
                     <section
                         id="reviews"
                         aria-labelledby="reviews-heading"
@@ -940,6 +1055,57 @@ mod booking_mode_cta {
         assert_eq!(booking_cta(BookingMode::Both).0, "Reserve");
         assert!(booking_cta(BookingMode::Both).1.contains("request"));
         assert!(booking_cta(BookingMode::Request).1.contains("not charged"));
+    }
+}
+
+#[cfg(test)]
+mod services_tests {
+    use super::{ServiceAddon, addon_price, with_topic};
+    use rust_decimal::Decimal;
+
+    fn addon(price: Option<Decimal>, unit: Option<&str>) -> ServiceAddon {
+        ServiceAddon {
+            name: "Airport transfer".into(),
+            price,
+            unit: unit.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn addon_prices_use_the_listing_currency_and_unit() {
+        assert_eq!(
+            addon_price(&addon(Some(Decimal::new(180, 0)), Some("each way")), "USD"),
+            "US$180 each way"
+        );
+        assert_eq!(
+            addon_price(&addon(Some(Decimal::new(1250, 0)), None), "JMD"),
+            "J$1,250"
+        );
+        assert_eq!(
+            addon_price(&addon(Some(Decimal::new(9950, 2)), Some(" ")), "USD"),
+            "US$99.50"
+        );
+        assert_eq!(addon_price(&addon(None, Some("day")), "USD"), "On request");
+        assert_eq!(
+            addon_price(&addon(Some(Decimal::new(220, 0)), Some("day")), "USD"),
+            "US$220 / day"
+        );
+        assert_eq!(
+            addon_price(&addon(Some(Decimal::new(40, 0)), Some("per guest")), "USD"),
+            "US$40 per guest"
+        );
+    }
+
+    #[test]
+    fn topics_are_added_to_the_enquiry_link() {
+        assert_eq!(
+            with_topic("/listings/x/enquire", "Airport transfer"),
+            "/listings/x/enquire?topic=Airport%20transfer"
+        );
+        assert_eq!(
+            with_topic("/listings/x/enquire?check_in=2027-01-10", "Chef & butler"),
+            "/listings/x/enquire?check_in=2027-01-10&topic=Chef%20%26%20butler"
+        );
     }
 }
 
