@@ -12,8 +12,12 @@ pub mod framed_image;
 pub mod hero;
 /// Listing page ribbon of host-entered key items.
 pub mod highlights_ribbon;
+/// Listing page full-bleed hero.
+pub mod listing_hero;
 /// Header controls (theme toggle).
 pub mod navbar;
+/// Listing page sticky in-page nav and pill link styles.
+pub mod section_nav;
 /// Star rating display and input.
 pub mod star_rating;
 /// Dashboard metric tile.

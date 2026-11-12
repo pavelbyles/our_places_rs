@@ -196,7 +196,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Page Layout
 
-- [ ] **Task 12: Hero, section nav and intro**
+- [x] **Task 12: Hero, section nav and intro**
   - **Scope:** M
   - **Description:** Restructure `listing_detail.rs` as direct `.page-grid` children: full-bleed hero (first photo, `fetchpriority="high"`, location pill, rating, "View all N photos" → existing `gallery-dialog`), sticky section nav (links only for non-empty sections; price + "Check availability" anchor on desktop), intro (pull-quote, description split on blank lines, CTAs, host line, framed photo). Booking card becomes sticky beside the body, starting below the ribbon.
   - **Files Touched:**

@@ -19,6 +19,8 @@ use web_ui_common::components::{
         responsive_image::{responsive_image, variant_srcset, variant_url},
     },
     highlights_ribbon::highlights_ribbon,
+    listing_hero::listing_hero,
+    section_nav::{PILL, section_nav},
     star_rating::star_rating,
 };
 
@@ -255,6 +257,46 @@ fn core_facts(max_guests: i32, bedrooms: i32, beds: i32, bathrooms: i32) -> Vec<
     .collect()
 }
 
+/// The description as paragraphs, split on blank lines.
+fn paragraphs(description: Option<&str>) -> Vec<String> {
+    description
+        .unwrap_or_default()
+        .replace("\r\n", "\n")
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Which optional sections the page shows.
+#[derive(Default)]
+struct Sections {
+    suites: bool,
+    services: bool,
+    policies: bool,
+    reviews: bool,
+    location: bool,
+    photos: bool,
+}
+
+/// Section nav links, in page order, for the sections that are shown.
+fn section_links(s: &Sections) -> Vec<(&'static str, &'static str)> {
+    [
+        (true, ("overview", "Overview")),
+        (s.suites, ("suites", "Suites")),
+        (true, ("amenities", "Amenities")),
+        (s.services, ("services", "Services")),
+        (s.policies, ("policies", "Policies")),
+        (s.reviews, ("reviews", "Reviews")),
+        (s.location, ("location", "Location")),
+        (s.photos, ("photos", "Photos")),
+    ]
+    .into_iter()
+    .filter_map(|(shown, link)| shown.then_some(link))
+    .collect()
+}
+
 /// The photo grid for `count` photos: the section's classes and one class
 /// list per tile shown. Phones show only the first photo; from `md` the
 /// grid has a fixed height and the tiles fill it, so no column is left empty.
@@ -338,36 +380,229 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .map(|i| (i.url.clone(), listing.name.clone()))
         .collect();
     let gallery = gallery_layout(images.len());
+    let intro_photo = images.get(1).cloned();
+    let eyebrow = format!("The {}", listing.listing_structure.to_lowercase());
+    let story = paragraphs(listing.description.as_deref());
+    let links = section_links(&Sections {
+        suites: !structured.suites.is_empty(),
+        reviews: true,
+        photos: !images.is_empty(),
+        ..Sections::default()
+    });
     let quote_url = format!("/listings/{}/quote", listing.slug);
     let href = checkout_href(&listing.slug, &q, currency.as_deref());
     let enquire = enquire_href(&listing.slug, &q);
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     Ok(view! {
-        <article class="page-flow space-y-10">
-            <header class="space-y-2">
-                <h1 class="font-serif text-[clamp(36px,5vw,56px)] leading-tight">
-                    (listing.name.clone())
-                </h1>
-                <p class="flex flex-wrap items-center gap-3 text-muted-foreground">
-                    <span>(summary.location())</span>
-                    star_rating(rating: rating, review_count: review_count)
-                </p>
-                if let Some(code) = no_rate_for {
-                    <p
-                        id="currency-notice"
-                        role="status"
-                        class="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
-                    >
-                        (format!(
-                            "Prices in {code} aren't available right now, so they're shown in {}.",
-                            listing.base_currency,
+        <article class="page-flow">
+            listing_hero(
+                name: listing.name.clone(),
+                location: summary.location(),
+                rating: rating,
+                review_count: review_count,
+                photo: images.first().map(|(src, _)| src.clone()),
+                photo_count: images.len()
+            )
+            <div id="listing-body" class="full-bleed">
+                section_nav(links: links, price: price.clone())
+                <div class="page-columns gap-y-12 lg:gap-y-16">
+                    if let Some(code) = no_rate_for {
+                        <p
+                            id="currency-notice"
+                            role="status"
+                            class="mt-8 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
+                        >
+                            (format!(
+                                "Prices in {code} aren't available right now, so they're shown in {}.",
+                                listing.base_currency,
+                            ))
+                        </p>
+                    }
+                    <section
+                        id="overview"
+                        aria-labelledby="overview-heading"
+                        class=(format!(
+                            "grid scroll-mt-24 items-center gap-10 pt-10 lg:gap-14 lg:pt-16 {}",
+                            if intro_photo.is_some() { "lg:grid-cols-[1.05fr_1fr]" } else { "" },
                         ))
-                    </p>
-                }
-            </header>
+                    >
+                        <div class="min-w-0">
+                            <p
+                                class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                            >
+                                (eyebrow)
+                            </p>
+                            if let Some(quote) = structured.pull_quote.clone() {
+                                <h2
+                                    id="overview-heading"
+                                    class="mt-3.5 mb-6 font-serif text-[clamp(30px,3.6vw,46px)] leading-tight font-light text-balance italic"
+                                >
+                                    (quote)
+                                </h2>
+                            } else {
+                                <h2
+                                    id="overview-heading"
+                                    class="mt-3.5 mb-6 font-serif text-[clamp(28px,3vw,38px)] leading-tight"
+                                >
+                                    (format!("About {}", listing.name))
+                                </h2>
+                            }
+                            <div
+                                data-testid="listing-story"
+                                class="grid max-w-[60ch] gap-4 text-[17px] leading-relaxed text-muted-foreground"
+                            >
+                                for paragraph in story {
+                                    <p>(paragraph)</p>
+                                }
+                            </div>
+                            <div class="mt-8 flex flex-wrap gap-3.5">
+                                if !structured.suites.is_empty() {
+                                    <a href="#suites" class=(PILL)>"Explore suites"</a>
+                                }
+                                <a href="#book" class=(PILL)>"Check availability"</a>
+                            </div>
+                            if let Some(host) = details.host_name.clone() {
+                                <p class="mt-7 text-sm text-muted-foreground">
+                                    "Hosted by "
+                                    <span class="text-foreground">(host)</span>
+                                </p>
+                            }
+                        </div>
+                        if let Some((src, alt)) = intro_photo {
+                            <div
+                                class="relative aspect-[4/3] max-w-full overflow-hidden rounded-[var(--radius-media,12px)] bg-photo-placeholder lg:aspect-[4/5]"
+                            >
+                                responsive_image(
+                                    src: src,
+                                    alt: alt,
+                                    sizes: Some("(min-width: 1024px) 45vw, 92vw".to_string())
+                                )
+                            </div>
+                        }
+                    </section>
 
+            highlights_ribbon(ribbon: ribbon)
+
+            <div class="grid gap-12 lg:grid-cols-[1fr_380px]">
+                <div class="min-w-0 space-y-16">
+                    <section
+                        id="amenities"
+                        aria-labelledby="amenities-heading"
+                        class="scroll-mt-24 space-y-4"
+                    >
+                        <h2 id="amenities-heading" class="font-serif text-2xl">
+                            "What this place offers"
+                        </h2>
+                        <p id="listing-facts" class="text-sm text-muted-foreground">(facts)</p>
+                        amenity_groups(groups: groups)
+                    </section>
+                    <section
+                        id="reviews"
+                        aria-labelledby="reviews-heading"
+                        class="scroll-mt-24 space-y-4 border-t border-border pt-12"
+                    >
+                        <h2 id="reviews-heading" class="font-serif text-2xl">
+                            "Verified Guest Reviews"
+                        </h2>
+                        if reviews.is_empty() {
+                            <p class="text-sm text-muted-foreground">
+                                "No reviews yet. Reviews come only from guests who stayed."
+                            </p>
+                        } else {
+                            <ul class="space-y-6">
+                                for review in reviews {
+                                    <li class="space-y-1">
+                                        <p class="flex items-center gap-2 text-sm font-medium">
+                                            (review.guest_first_name.clone())
+                                            star_rating(rating: Some(review.overall_rating))
+                                        </p>
+                                        if let Some(text) = review.public_review_text.clone() {
+                                            <p class="text-sm">(text)</p>
+                                        }
+                                        if let Some(reply) = review.host_reply_text.clone() {
+                                            <p
+                                                class="border-l-2 border-border pl-3 text-sm text-muted-foreground"
+                                            >
+                                                "Host reply: "
+                                                (reply)
+                                            </p>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                </div>
+
+                <aside
+                    id="book"
+                    aria-label="Book this stay"
+                    class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground scroll-mt-24 lg:sticky lg:top-20"
+                >
+                    <p>
+                        <span class="text-2xl font-medium">(price)</span>
+                        <span class="text-muted-foreground">" per night"</span>
+                    </p>
+                    if listing.booking_mode == BookingMode::Request {
+                        <span
+                            id="listing-approval-badge"
+                            class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
+                        >
+                            "Host approval required"
+                        </span>
+                    }
+                    // novalidate: htmx validates forms even for GET, and a check-in
+                    // without a check-out yet must still refresh the quote (which
+                    // clears the breakdown for the previous dates).
+                    <form
+                        id="reserve-form"
+                        novalidate=(true)
+                        hx-get=(quote_url)
+                        hx-trigger="change"
+                        hx-target="#quote"
+                        hx-swap="innerHTML"
+                        class="space-y-4"
+                    >
+                        if let Some(c) = currency.clone() {
+                            <input type="hidden" name="currency" value=(c) />
+                        }
+                        date_range_calendar(props: calendar)
+                        <label
+                            class="block text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            "Guests"
+                            <select
+                                name="guests"
+                                class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case"
+                            >
+                                for n in 1..=max_guests {
+                                    <option
+                                        value=(n.to_string())
+                                        selected=(n == default_guests)
+                                    >
+                                        (if n == 1 {
+                                            "1 Guest".to_string()
+                                        } else {
+                                            format!("{n} Guests")
+                                        })
+                                    </option>
+                                }
+                            </select>
+                        </label>
+                    </form>
+                    <div id="quote" aria-live="polite" class="space-y-3">
+                        quote_panel(
+                            slug: listing.slug.clone(),
+                            quote: breakdown,
+                            href: href,
+                            mode: listing.booking_mode,
+                            enquire: enquire
+                        )
+                    </div>
+                </aside>
+            </div>
             if !images.is_empty() {
-                <section aria-label="Photos" class=(gallery.0)>
+                <section id="photos" aria-label="Photos" class=(format!("{} scroll-mt-24", gallery.0))>
                     for (i, ((src, alt), (span, sizes))) in images
                         .iter()
                         .cloned()
@@ -495,132 +730,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 </dialog>
             }
 
-            highlights_ribbon(ribbon: ribbon)
-
-            <div class="grid gap-12 lg:grid-cols-[1fr_380px]">
-                <div class="space-y-10">
-                    if let Some(description) = listing.description.clone() {
-                        <p class="text-lg leading-relaxed">(description)</p>
-                    }
-                    if let Some(host) = details.host_name.clone() {
-                        <p class="text-sm text-muted-foreground">
-                            "Hosted by "
-                            (host)
-                        </p>
-                    }
-                    <section
-                        id="amenities"
-                        aria-labelledby="amenities-heading"
-                        class="space-y-4 border-t border-border pt-8"
-                    >
-                        <h2 id="amenities-heading" class="font-serif text-2xl">
-                            "What this place offers"
-                        </h2>
-                        <p id="listing-facts" class="text-sm text-muted-foreground">(facts)</p>
-                        amenity_groups(groups: groups)
-                    </section>
-                    <section
-                        aria-labelledby="reviews-heading"
-                        class="space-y-4 border-t border-border pt-8"
-                    >
-                        <h2 id="reviews-heading" class="font-serif text-2xl">
-                            "Verified Guest Reviews"
-                        </h2>
-                        if reviews.is_empty() {
-                            <p class="text-sm text-muted-foreground">
-                                "No reviews yet. Reviews come only from guests who stayed."
-                            </p>
-                        } else {
-                            <ul class="space-y-6">
-                                for review in reviews {
-                                    <li class="space-y-1">
-                                        <p class="flex items-center gap-2 text-sm font-medium">
-                                            (review.guest_first_name.clone())
-                                            star_rating(rating: Some(review.overall_rating))
-                                        </p>
-                                        if let Some(text) = review.public_review_text.clone() {
-                                            <p class="text-sm">(text)</p>
-                                        }
-                                        if let Some(reply) = review.host_reply_text.clone() {
-                                            <p
-                                                class="border-l-2 border-border pl-3 text-sm text-muted-foreground"
-                                            >
-                                                "Host reply: "
-                                                (reply)
-                                            </p>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        }
-                    </section>
                 </div>
-
-                <aside
-                    aria-label="Book this stay"
-                    class="h-fit space-y-4 rounded-[var(--radius-surface,16px)] border border-border bg-card p-6 text-card-foreground lg:sticky lg:top-6"
-                >
-                    <p>
-                        <span class="text-2xl font-medium">(price)</span>
-                        <span class="text-muted-foreground">" per night"</span>
-                    </p>
-                    if listing.booking_mode == BookingMode::Request {
-                        <span
-                            id="listing-approval-badge"
-                            class="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium"
-                        >
-                            "Host approval required"
-                        </span>
-                    }
-                    // novalidate: htmx validates forms even for GET, and a check-in
-                    // without a check-out yet must still refresh the quote (which
-                    // clears the breakdown for the previous dates).
-                    <form
-                        id="reserve-form"
-                        novalidate=(true)
-                        hx-get=(quote_url)
-                        hx-trigger="change"
-                        hx-target="#quote"
-                        hx-swap="innerHTML"
-                        class="space-y-4"
-                    >
-                        if let Some(c) = currency.clone() {
-                            <input type="hidden" name="currency" value=(c) />
-                        }
-                        date_range_calendar(props: calendar)
-                        <label
-                            class="block text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                        >
-                            "Guests"
-                            <select
-                                name="guests"
-                                class="mt-1 block h-11 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground normal-case"
-                            >
-                                for n in 1..=max_guests {
-                                    <option
-                                        value=(n.to_string())
-                                        selected=(n == default_guests)
-                                    >
-                                        (if n == 1 {
-                                            "1 Guest".to_string()
-                                        } else {
-                                            format!("{n} Guests")
-                                        })
-                                    </option>
-                                }
-                            </select>
-                        </label>
-                    </form>
-                    <div id="quote" aria-live="polite" class="space-y-3">
-                        quote_panel(
-                            slug: listing.slug.clone(),
-                            quote: breakdown,
-                            href: href,
-                            mode: listing.booking_mode,
-                            enquire: enquire
-                        )
-                    </div>
-                </aside>
             </div>
         </article>
     })
@@ -700,6 +810,55 @@ mod booking_mode_cta {
         assert_eq!(booking_cta(BookingMode::Both).0, "Reserve");
         assert!(booking_cta(BookingMode::Both).1.contains("request"));
         assert!(booking_cta(BookingMode::Request).1.contains("not charged"));
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::{Sections, paragraphs, section_links};
+
+    #[test]
+    fn descriptions_split_into_paragraphs_on_blank_lines() {
+        assert_eq!(
+            paragraphs(Some(
+                "First line\nstill first.\r\n\r\nSecond.\n\n\n  \nThird."
+            )),
+            ["First line\nstill first.", "Second.", "Third."]
+        );
+        assert!(paragraphs(None).is_empty());
+        assert!(paragraphs(Some("  ")).is_empty());
+    }
+
+    #[test]
+    fn the_section_nav_links_only_shown_sections_in_page_order() {
+        let ids = |s: &Sections| {
+            section_links(s)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&Sections::default()), ["overview", "amenities"]);
+        let all = Sections {
+            suites: true,
+            services: true,
+            policies: true,
+            reviews: true,
+            location: true,
+            photos: true,
+        };
+        assert_eq!(
+            ids(&all),
+            [
+                "overview",
+                "suites",
+                "amenities",
+                "services",
+                "policies",
+                "reviews",
+                "location",
+                "photos"
+            ]
+        );
     }
 }
 

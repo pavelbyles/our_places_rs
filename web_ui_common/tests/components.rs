@@ -8,6 +8,8 @@ use web_ui_common::components::{
     framed_image::{FrameAspect, framed_image},
     hero::hero,
     highlights_ribbon::{highlights_ribbon, ribbon_columns},
+    listing_hero::{hero_rating_text, listing_hero},
+    section_nav::section_nav,
     star_rating::{star_rating, star_rating_input},
     stat_tile::stat_tile,
     steps::steps,
@@ -307,4 +309,91 @@ async fn no_amenity_groups_render_nothing() {
     let cx = &Cx::default();
     let out = html(view! { amenity_groups(groups: vec![]) }, cx).await;
     assert!(!out.contains("amenity-groups"), "{out}");
+}
+
+#[tokio::test]
+async fn listing_hero_uses_the_first_photo_eagerly_and_links_the_gallery() {
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            listing_hero(
+                name: "Sea Grape".to_string(),
+                location: "Runaway Bay, Jamaica".to_string(),
+                rating: Some(4.9),
+                review_count: Some(18),
+                photo: Some("https://storage.googleapis.com/b/listings/x".to_string()),
+                photo_count: 24
+            )
+        },
+        cx,
+    )
+    .await;
+    assert!(out.contains(r#"<h1 id="listing-title""#), "{out}");
+    assert!(
+        out.contains(r#"loading="eager""#) && out.contains(r#"fetchpriority="high""#),
+        "{out}"
+    );
+    assert!(out.contains("View all 24 photos"), "{out}");
+    assert!(
+        out.contains(r#"data-dialog-open="gallery-dialog""#),
+        "{out}"
+    );
+    assert!(out.contains("full-bleed"), "{out}");
+}
+
+#[tokio::test]
+async fn listing_hero_without_photos_is_a_title_band() {
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            listing_hero(
+                name: "Sea Grape".to_string(),
+                location: "Jamaica".to_string(),
+                rating: None,
+                review_count: None,
+                photo: None,
+                photo_count: 0
+            )
+        },
+        cx,
+    )
+    .await;
+    assert!(
+        !out.contains("<img") && !out.contains("gallery-dialog"),
+        "{out}"
+    );
+    assert!(out.contains("bg-card"), "{out}");
+}
+
+#[tokio::test]
+async fn section_nav_links_each_section_and_the_booking_card() {
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            section_nav(
+                links: vec![("overview", "Overview"), ("reviews", "Reviews")],
+                price: "US$650".to_string()
+            )
+        },
+        cx,
+    )
+    .await;
+    assert!(out.contains(r#"aria-label="On this page""#), "{out}");
+    assert!(
+        out.contains(r##"href="#overview""##) && out.contains(r##"href="#reviews""##),
+        "{out}"
+    );
+    assert!(
+        out.contains(r##"href="#book""##) && out.contains("US$650"),
+        "{out}"
+    );
+    assert!(out.contains("sticky top-0"), "{out}");
+}
+
+#[test]
+fn hero_rating_reads_naturally() {
+    assert_eq!(hero_rating_text(Some(4.87), Some(18)), "4.9 · 18 reviews");
+    assert_eq!(hero_rating_text(Some(5.0), Some(1)), "5.0 · 1 review");
+    assert_eq!(hero_rating_text(Some(4.0), None), "4.0");
+    assert_eq!(hero_rating_text(None, Some(0)), "New listing");
 }

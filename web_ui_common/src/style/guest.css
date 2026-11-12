@@ -109,27 +109,35 @@
    (the old `max-w-[1540px] px-6` box) while a block marked `.full-bleed` can
    span edge to edge. A page that needs full-bleed blocks wraps its content in
    `.page-flow` (display: contents) so its children sit on the grid.
+   `.page-columns` repeats the same columns inside a full-bleed block, so a
+   sticky bar in that block can stick for the block's whole height (a sticky
+   grid item only sticks within its own row).
    `.bleed-inner` re-centres a full-bleed block's content to the same width.
    No `100vw`, so classic scrollbars never cause a horizontal scroll. */
 @layer components {
-  .page-grid {
+  .page-grid,
+  .page-columns {
     display: grid;
     grid-template-columns:
       [full-start] minmax(1.5rem, 1fr)
       [content-start] min(1540px - 3rem, 100% - 3rem) [content-end]
       minmax(1.5rem, 1fr) [full-end];
+  }
+  .page-grid {
     padding-block: 3rem;
   }
   .page-flow {
     display: contents;
   }
   .page-grid > *,
-  .page-flow > * {
+  .page-flow > *,
+  .page-columns > * {
     grid-column: content;
     min-width: 0;
   }
   .page-grid > .full-bleed,
-  .page-flow > .full-bleed {
+  .page-flow > .full-bleed,
+  .page-columns > .full-bleed {
     grid-column: full;
   }
   .page-grid > .full-bleed:first-child,
