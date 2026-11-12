@@ -1,7 +1,7 @@
 use chrono::{Months, NaiveDate};
 use common::booking_request::BookingMode;
 use common::listing_details::{
-    Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem, amenity_groups_for,
+    Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem, amenity_groups_for, drive_time,
 };
 use common::models::{ListingDetails, ListingImageResponse, ReviewResponse};
 use common::query::urlencode;
@@ -463,12 +463,19 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         })
         .collect();
     let arrange_href = with_topic(&enquire, "concierge add-ons");
+    let policies = structured.policies.rows();
+    let nearby: Vec<(String, String)> = structured
+        .nearby
+        .iter()
+        .map(|p| (p.name.clone(), drive_time(p.drive_minutes)))
+        .collect();
     let links = section_links(&Sections {
         services: !services.is_empty(),
+        policies: !policies.is_empty(),
+        location: !nearby.is_empty(),
         suites: !suites.is_empty(),
         reviews: true,
         photos: !images.is_empty(),
-        ..Sections::default()
     });
     let quote_url = format!("/listings/{}/quote", listing.slug);
     let href = checkout_href(&listing.slug, &q, currency.as_deref());
@@ -662,6 +669,44 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                             </div>
                         </section>
                     }
+                    if !policies.is_empty() {
+                        <section
+                            id="policies"
+                            aria-labelledby="policies-heading"
+                            class="scroll-mt-24 space-y-6 border-t border-border pt-12"
+                        >
+                            <div class="space-y-2.5">
+                                <p
+                                    class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                                >
+                                    "Before you book"
+                                </p>
+                                <h2
+                                    id="policies-heading"
+                                    class="font-serif text-[clamp(28px,3vw,38px)]"
+                                >
+                                    "House policies"
+                                </h2>
+                            </div>
+                            <dl
+                                data-testid="house-policies"
+                                class="grid overflow-hidden rounded-[var(--radius-surface,16px)] border border-border bg-card text-card-foreground sm:grid-cols-2"
+                            >
+                                for (label, text) in policies {
+                                    <div
+                                        class="grid gap-1 border-b border-divider px-5 py-4 last:border-b-0 sm:odd:border-r sm:[&:nth-last-child(2):nth-child(odd)]:border-b-0"
+                                    >
+                                        <dt
+                                            class="text-xs tracking-[0.14em] text-muted-foreground uppercase"
+                                        >
+                                            (label)
+                                        </dt>
+                                        <dd>(text)</dd>
+                                    </div>
+                                }
+                            </dl>
+                        </section>
+                    }
                     <section
                         id="reviews"
                         aria-labelledby="reviews-heading"
@@ -698,6 +743,51 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                             </ul>
                         }
                     </section>
+                    if !nearby.is_empty() {
+                        <section
+                            id="location"
+                            aria-labelledby="location-heading"
+                            class="scroll-mt-24 space-y-6 border-t border-border pt-12"
+                        >
+                            <div class="space-y-2.5">
+                                <p
+                                    class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                                >
+                                    "Location"
+                                </p>
+                                <h2
+                                    id="location-heading"
+                                    class="font-serif text-[clamp(28px,3vw,38px)]"
+                                >
+                                    (summary.location())
+                                </h2>
+                                <p class="text-sm text-muted-foreground">
+                                    "The exact address is shared after you book."
+                                </p>
+                            </div>
+                            <div class="grid gap-6 md:grid-cols-[1.2fr_1fr]">
+                                <div
+                                    aria-hidden="true"
+                                    class="relative min-h-56 overflow-hidden rounded-[var(--radius-media,12px)] bg-linear-to-br from-chip to-photo-placeholder"
+                                >
+                                    <span
+                                        class="absolute top-1/2 left-1/2 size-14 -translate-1/2 rounded-full bg-primary/20"
+                                    ></span>
+                                    <span
+                                        class="absolute top-1/2 left-1/2 size-3.5 -translate-1/2 rounded-full bg-primary ring-4 ring-card"
+                                    ></span>
+                                </div>
+                                <ul data-testid="drive-times" class="divide-y divide-divider text-sm">
+                                    for (name, time) in nearby {
+                                        <li class="flex justify-between gap-3 py-3">
+                                            <span>(name)</span>
+                                            <span class="shrink-0 font-medium tabular-nums">(time)</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </section>
+                    }
                 </div>
 
                 <aside

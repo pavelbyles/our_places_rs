@@ -278,7 +278,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_admin --test listing_services`
   - **Dependencies:** Task 16
 
-- [ ] **Task 18: Guest policies and location sections**
+- [x] **Task 18: Guest policies and location sections**
   - **Scope:** S
   - **Description:** `#policies` `<dl>` from `HousePolicies`; `#location` area text + approximate-area illustration + `NearbyPlace` drive-time list (minutes → "10 min" / "1h 15m").
   - **Files Touched:**
