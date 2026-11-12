@@ -341,7 +341,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_common --test shells && pnpm test:e2e:guest -- static-pages.spec.ts`
   - **Dependencies:** Task 2
 
-- [ ] **Task 23: `ui.js` editor and nav enhancements**
+- [x] **Task 23: `ui.js` editor and nav enhancements**
   - **Scope:** M
   - **Description:** Data-attribute driven: section-nav active link (IntersectionObserver), up/down reorder for ribbon and amenity group slots, ribbon "Prefill from listing facts", live ribbon preview. All CSP-safe; forms keep working with JS off.
   - **Files Touched:**
