@@ -83,7 +83,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p common listing_details`
   - **Dependencies:** None
 
-- [ ] **Task 4: Ribbon domain — `RibbonIcon`, `RibbonItem`, `Ribbon`**
+- [x] **Task 4: Ribbon domain — `RibbonIcon`, `RibbonItem`, `Ribbon`**
   - **Scope:** S
   - **Description:** `Ribbon::try_from(Vec<RibbonItem>) -> Result<Ribbon, RibbonError>` (3–6 items, value ≤ 8, label ≤ 24, non-blank); `Ribbon::fallback(bedrooms, full_baths, half_baths, max_guests)`; `Ribbon::for_listing(&StructuredListingDetails, &ListingResponse)`. Bathrooms value = `full + 0.5 × half` computed with `Decimal` and trimmed (`5 + 1 half → "5.5"`, `5 + 2 half → "6"`).
   - **Files Touched:**

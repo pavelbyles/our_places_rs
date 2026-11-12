@@ -14,7 +14,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 pub use amenities::{AmenityGroup, AmenityIcon};
-pub use ribbon::{RibbonIcon, RibbonItem};
+pub use ribbon::{Ribbon, RibbonError, RibbonIcon, RibbonItem};
 
 /// `listing_details` key: the italic pull-quote above the description.
 pub const PULL_QUOTE_KEY: &str = "pull_quote";
