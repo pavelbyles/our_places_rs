@@ -1,7 +1,7 @@
 use chrono::{Months, NaiveDate};
 use common::booking_request::BookingMode;
-use common::listing_details::{Ribbon, StructuredListingDetails, amenity_groups_for};
-use common::models::{ListingDetails, ReviewResponse};
+use common::listing_details::{Ribbon, StructuredListingDetails, SuiteItem, amenity_groups_for};
+use common::models::{ListingDetails, ListingImageResponse, ReviewResponse};
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -22,6 +22,7 @@ use web_ui_common::components::{
     listing_hero::listing_hero,
     section_nav::{PILL, PILL_SM, section_nav},
     star_rating::star_rating,
+    suite_card::suites_grid,
 };
 
 use crate::quote::{NoQuote, public_quote};
@@ -269,6 +270,26 @@ fn paragraphs(description: Option<&str>) -> Vec<String> {
         .collect()
 }
 
+/// Each suite with its photo: the listing image its `image_id` names. An
+/// id that isn't one of this listing's images gives no photo.
+fn suites_with_photos(
+    suites: &[SuiteItem],
+    images: &[ListingImageResponse],
+) -> Vec<(SuiteItem, Option<String>)> {
+    suites
+        .iter()
+        .map(|suite| {
+            let photo = suite.image_id.and_then(|id| {
+                images
+                    .iter()
+                    .find(|image| image.id == id)
+                    .map(|image| image.url.clone())
+            });
+            (suite.clone(), photo)
+        })
+        .collect()
+}
+
 /// Which optional sections the page shows.
 #[derive(Default)]
 struct Sections {
@@ -381,11 +402,16 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .collect();
     let gallery = gallery_layout(images.len());
     let intro_photo = images.get(1).cloned();
+    let suites = suites_with_photos(&structured.suites, &details.images);
+    let suites_heading = match suites.len() {
+        1 => "One suite".to_string(),
+        n => format!("{n} suites"),
+    };
     let tiles_shown = gallery.1.len();
     let eyebrow = format!("The {}", listing.listing_structure.to_lowercase());
     let story = paragraphs(listing.description.as_deref());
     let links = section_links(&Sections {
-        suites: !structured.suites.is_empty(),
+        suites: !suites.is_empty(),
         reviews: true,
         photos: !images.is_empty(),
         ..Sections::default()
@@ -488,6 +514,28 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
 
             <div class="grid gap-12 lg:grid-cols-[1fr_380px]">
                 <div class="min-w-0 space-y-16">
+                    if !suites.is_empty() {
+                        <section
+                            id="suites"
+                            aria-labelledby="suites-heading"
+                            class="scroll-mt-24 space-y-6"
+                        >
+                            <div class="space-y-2.5">
+                                <p
+                                    class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                                >
+                                    "Sleeping arrangements"
+                                </p>
+                                <h2
+                                    id="suites-heading"
+                                    class="font-serif text-[clamp(28px,3vw,38px)]"
+                                >
+                                    (suites_heading)
+                                </h2>
+                            </div>
+                            suites_grid(suites: suites)
+                        </section>
+                    }
                     <section
                         id="amenities"
                         aria-labelledby="amenities-heading"
@@ -897,7 +945,40 @@ mod booking_mode_cta {
 
 #[cfg(test)]
 mod layout_tests {
-    use super::{Sections, paragraphs, section_links};
+    use super::{
+        ListingImageResponse, Sections, SuiteItem, paragraphs, section_links, suites_with_photos,
+    };
+    use uuid::Uuid;
+
+    #[test]
+    fn suite_photos_come_only_from_the_listings_own_images() {
+        let own = Uuid::now_v7();
+        let images = vec![ListingImageResponse {
+            id: own,
+            url: "https://storage.googleapis.com/b/listings/own".into(),
+        }];
+        let suite = |image_id| SuiteItem {
+            name: "Master".into(),
+            bed_configuration: "1 king".into(),
+            max_guests: 2,
+            features: vec![],
+            en_suite: None,
+            image_id,
+        };
+        let resolved = suites_with_photos(
+            &[suite(Some(own)), suite(Some(Uuid::now_v7())), suite(None)],
+            &images,
+        );
+        let photos: Vec<_> = resolved.iter().map(|(_, p)| p.as_deref()).collect();
+        assert_eq!(
+            photos,
+            [
+                Some("https://storage.googleapis.com/b/listings/own"),
+                None,
+                None
+            ]
+        );
+    }
 
     #[test]
     fn descriptions_split_into_paragraphs_on_blank_lines() {

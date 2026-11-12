@@ -227,7 +227,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Content Sections
 
-- [ ] **Task 14: Guest suites section**
+- [x] **Task 14: Guest suites section**
   - **Scope:** S
   - **Description:** `suite_card` component; `#suites` section, first 4 shown, rest behind `<details>` "Show all N suites". Suite image resolved from the listing's own images by `image_id` (Decision 1); unknown id → no image.
   - **Files Touched:**

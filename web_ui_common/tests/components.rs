@@ -397,3 +397,62 @@ fn hero_rating_reads_naturally() {
     assert_eq!(hero_rating_text(Some(4.0), None), "4.0");
     assert_eq!(hero_rating_text(None, Some(0)), "New listing");
 }
+
+fn suite(name: &str) -> common::listing_details::SuiteItem {
+    common::listing_details::SuiteItem {
+        name: name.into(),
+        bed_configuration: "1 king".into(),
+        max_guests: 2,
+        features: vec!["Direct ocean view".into()],
+        en_suite: Some("En-suite, soaking tub".into()),
+        image_id: None,
+    }
+}
+
+#[tokio::test]
+async fn suite_cards_show_beds_guests_bath_and_features() {
+    let cx = &Cx::default();
+    let suites = vec![(
+        suite("Oceanfront Master"),
+        Some("https://example.com/a.jpg".to_string()),
+    )];
+    let out = html(
+        view! { web_ui_common::components::suite_card::suites_grid(suites: suites) },
+        cx,
+    )
+    .await;
+    for text in [
+        "Oceanfront Master",
+        "1 king",
+        "2 guests",
+        "En-suite, soaking tub",
+        "Direct ocean view",
+    ] {
+        assert!(out.contains(text), "{text}: {out}");
+    }
+    assert!(out.contains(r#"loading="lazy""#), "{out}");
+    assert!(
+        !out.contains("<details"),
+        "no Show all for one suite: {out}"
+    );
+}
+
+#[tokio::test]
+async fn more_than_four_suites_hide_the_rest_behind_show_all() {
+    let cx = &Cx::default();
+    let suites = (1..=6)
+        .map(|i| (suite(&format!("Suite {i}")), None))
+        .collect::<Vec<_>>();
+    let out = html(
+        view! { web_ui_common::components::suite_card::suites_grid(suites: suites) },
+        cx,
+    )
+    .await;
+    assert_eq!(out.matches("data-suite").count(), 6, "{out}");
+    assert!(out.contains("Show all 6 suites"), "{out}");
+    let details = out.find("<details").unwrap_or(0);
+    assert!(
+        out[details..].contains("Suite 5") && !out[details..].contains("Suite 4"),
+        "{out}"
+    );
+}
