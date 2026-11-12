@@ -376,7 +376,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `pnpm test:e2e:guest && pnpm test:e2e:admin`
   - **Dependencies:** Tasks 13–24
 
-- [ ] **Task 26: Full quality gate**
+- [x] **Task 26: Full quality gate**
   - **Scope:** XS
   - **Description:** Full workspace run once at the end (targeted tests during iteration).
   - **Acceptance Criteria:**
@@ -408,3 +408,21 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 | 3 | Concierge contact | Typed config with no defaults; the footer's Concierge column hides when unset. |
 | 4 | Admin editors | All new fieldsets go in the **existing listing create/edit form**. |
 | 5 | Execution | `/build auto` approved for T1–T26. |
+
+---
+
+## 5. Implementation Notes (as built)
+
+| Area | Plan / spec said | Built | Why |
+|---|---|---|---|
+| Nightly price prefix (T1) | `"$2,400"` | `US$2,400` / `J$` / `CA$` / `£` / `€`, other codes `"TTD 2,400"` | USD, JMD and CAD all use `$`; a bare `$` would make JMD and USD prices look alike (spec §2.12's disambiguation rule). Totals and breakdowns still use the existing `USD $` format. |
+| Form slots (T7, T11, T15, T17, T19, T21) | — | Indexed field names (`ribbon_3_value`, `group_2_items`, `suite_1_beds`, …) collected via a flattened `slots` map on `ListingFields` | The form body is parsed with `serde_urlencoded`, which cannot read repeated names into lists. |
+| Sticky section nav (T12) | Grid child | Hero, then one `.full-bleed` wrapper holding the nav and a nested `.page-columns` grid | A sticky grid item only sticks within its own row. |
+| Photo mosaic (T13) | New `photo_mosaic.rs` | The existing photo grid was restyled in place (heading, hover zoom, "All N photos" tile) below the body | Reuses the tested `gallery_layout`; no duplicate component. |
+| Suites limit (T15) | max 12 | max 8 | Eight slots keep the single admin form usable. |
+| API validation | Ribbon and amenity groups | Also suites, staff & services, policies, nearby, guestbook (`INVALID_SUITES`, `INVALID_STAFF_SERVICES`, `INVALID_POLICIES`, `INVALID_NEARBY`, `INVALID_TESTIMONIALS`) | Every host-edited section gets the same server-side check as the form. |
+| Amenity groups | 1–6 groups | 0–6 (no groups = no cards) | Clearing every group is a valid edit. |
+| Footer gap (T22) | — | `.page-grid` bottom padding 11rem (was `py-12` + footer `mt-32`) | Lets a page end on a full-bleed band that meets the footer. |
+| Footer column titles | Headings | Plain text labels | Extra `<h2>`s broke pages' heading structure (and auth E2E). |
+| E2E seed (T24) | — | The seeded listing's `listing_details` changed from `[]` to a full object, reset on each run | The page reads every section from it. |
+| Ribbon live preview in admin | `ui.js` enhancement | Not built | Prefill and reorder cover editing; the guest page is the preview. |
