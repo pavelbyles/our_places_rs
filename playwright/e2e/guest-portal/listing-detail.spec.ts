@@ -91,8 +91,15 @@ test.describe('Guest Portal - Luxury listing page (#122)', () => {
     await expect(page.getByTestId('services-addons')).toContainText('US$120 each way');
     await expect(page.getByTestId('services-addons')).toContainText('On request');
     await expect(page.getByTestId('house-policies')).toContainText('From 3:00 PM');
-    await expect(page.getByTestId('guestbook')).toContainText('Danielle');
-    await expect(page.getByTestId('guestbook-notice')).toContainText('From the villa guestbook');
+    // Guestbook quotes show only while there are no verified reviews (spec
+    // D9); reviews.spec may have added one to this listing earlier in the run.
+    if ((await page.locator('#reviews-heading').textContent())?.includes('Verified')) {
+      await expect(page.getByTestId('guestbook')).toHaveCount(0);
+      await expect(page.getByTestId('guestbook-notice')).toHaveCount(0);
+    } else {
+      await expect(page.getByTestId('guestbook')).toContainText('Danielle');
+      await expect(page.getByTestId('guestbook-notice')).toContainText('From the villa guestbook');
+    }
     await expect(page.getByTestId('drive-times')).toContainText('30 min');
     await expect(page.getByTestId('plan-your-stay')).toBeVisible();
     await expect(page.getByTestId('site-footer').locator('a[href="/terms"]')).toBeVisible();

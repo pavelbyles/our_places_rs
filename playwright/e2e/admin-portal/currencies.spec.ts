@@ -114,7 +114,7 @@ test.describe('Admin Portal - Currencies & rates', { tag: '@new-only' }, () => {
       .poll(
         async () => {
           await page.goto('http://localhost:3010/');
-          return page.locator(`a[href="?currency=${code}"]`).count();
+          return page.locator(`a[href^="/currency/${code}?"]`).count();
         },
         { timeout: 90_000, intervals: [1_000, 5_000, 10_000] },
       )

@@ -80,6 +80,9 @@ test.describe('Guest Portal - Stay Dates Calendar', () => {
       const caption = await calendar.locator('caption').first().textContent();
       await page.getByRole('button', { name: 'Next month' }).click();
       await expect(calendar.locator('caption').first()).not.toHaveText(caption ?? '');
+      // The swapped month has no layout for a frame; wait for it before the
+      // loop's isVisible() check, which does not wait.
+      await expect(calendar.locator('button[data-date]').first()).toBeVisible();
       await expect(page.locator('#reserve-check-in')).toHaveValue(checkIn);
     }
     await calendar.locator(`button[data-date="${checkOut}"]`).click();
