@@ -142,7 +142,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Amenity Groups (vertical slice)
 
-- [ ] **Task 8: Amenity group domain**
+- [x] **Task 8: Amenity group domain**
   - **Scope:** S
   - **Description:** `AmenityIcon`, `AmenityGroup`, `AmenityGroupError`, `validate_amenity_groups`, `amenity_groups_for` (legacy flat list → one "Amenities" group), `SUGGESTED_AMENITY_GROUPS`. Move `MAX_AMENITIES` / `MAX_AMENITY_CHARS` from `form.rs` into `common` and re-export.
   - **Files Touched:**

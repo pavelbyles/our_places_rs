@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-pub use amenities::{AmenityGroup, AmenityIcon};
+pub use amenities::{
+    AmenityGroup, AmenityGroupError, AmenityIcon, SUGGESTED_AMENITY_GROUPS, amenity_groups_for,
+    validate_amenity_groups,
+};
 pub use ribbon::{Ribbon, RibbonError, RibbonIcon, RibbonItem};
 
 /// `listing_details` key: the italic pull-quote above the description.

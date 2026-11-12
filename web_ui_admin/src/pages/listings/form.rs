@@ -21,10 +21,7 @@ use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
 
 /// Listing structures known to `listing_api`.
 pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "Studio"];
-/// Most amenities a listing can list.
-pub const MAX_AMENITIES: usize = 50;
-/// Longest amenity, in characters.
-pub const MAX_AMENITY_CHARS: usize = 60;
+pub use common::listing_details::amenities::{MAX_AMENITIES, MAX_AMENITY_CHARS};
 /// Longest description `listing_api` accepts, in characters.
 pub const MAX_DESCRIPTION_CHARS: usize = 2000;
 /// Key of the amenity list inside `listing_details` (the guest listing page
