@@ -69,7 +69,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_common --test shells --test theme_tokens && pnpm test:e2e:guest -- home.spec.ts listings.spec.ts static-pages.spec.ts theme.spec.ts`
   - **Dependencies:** None
 
-- [ ] **Task 3: `StructuredListingDetails` with per-section lenient parsing**
+- [x] **Task 3: `StructuredListingDetails` with per-section lenient parsing**
   - **Scope:** S
   - **Description:** New `common::listing_details` module with the §3.1 DTOs (excluding Phase 2 experiences behaviour). `StructuredListingDetails::from_json(Option<&Value>)` parses **each section independently**, so one malformed section is dropped with a `tracing::warn!` (listing id, section key) and the rest still render.
   - **Files Touched:**

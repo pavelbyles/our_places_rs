@@ -27,6 +27,8 @@ pub mod geocode;
 /// Authenticated HTTP client for calls between services.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod http_client;
+/// Typed sections of a listing's `listing_details` (ribbon, suites, amenity groups, policies).
+pub mod listing_details;
 /// Request and response types shared across services.
 pub mod models;
 /// How money amounts are shown to people.
