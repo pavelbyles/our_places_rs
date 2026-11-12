@@ -107,9 +107,10 @@
 
 /* Page grid (spec-122 D10). `<main>` centres every page in a content column
    (the old `max-w-[1540px] px-6` box) while a block marked `.full-bleed` can
-   span edge to edge. `.bleed-inner` re-centres a full-bleed block's content
-   to the same width. No `100vw`, so classic scrollbars never cause a
-   horizontal scroll. */
+   span edge to edge. A page that needs full-bleed blocks wraps its content in
+   `.page-flow` (display: contents) so its children sit on the grid.
+   `.bleed-inner` re-centres a full-bleed block's content to the same width.
+   No `100vw`, so classic scrollbars never cause a horizontal scroll. */
 @layer components {
   .page-grid {
     display: grid;
@@ -119,17 +120,24 @@
       minmax(1.5rem, 1fr) [full-end];
     padding-block: 3rem;
   }
-  .page-grid > * {
+  .page-flow {
+    display: contents;
+  }
+  .page-grid > *,
+  .page-flow > * {
     grid-column: content;
     min-width: 0;
   }
-  .page-grid > .full-bleed {
+  .page-grid > .full-bleed,
+  .page-flow > .full-bleed {
     grid-column: full;
   }
-  .page-grid > .full-bleed:first-child {
+  .page-grid > .full-bleed:first-child,
+  .page-grid > .page-flow:first-child > .full-bleed:first-child {
     margin-top: -3rem;
   }
-  .page-grid > .full-bleed:last-child {
+  .page-grid > .full-bleed:last-child,
+  .page-grid > .page-flow:last-child > .full-bleed:last-child {
     margin-bottom: -3rem;
   }
   .bleed-inner {

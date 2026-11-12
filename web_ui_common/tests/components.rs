@@ -6,6 +6,7 @@ use web_ui_common::components::{
     chat::{chat_bubble, chat_thread},
     framed_image::{FrameAspect, framed_image},
     hero::hero,
+    highlights_ribbon::{highlights_ribbon, ribbon_columns},
     star_rating::{star_rating, star_rating_input},
     stat_tile::stat_tile,
     steps::steps,
@@ -214,4 +215,64 @@ async fn chat_thread_is_a_log_and_bubbles_escape_text() {
         out.contains("&lt;script&gt;") && !out.contains("<script>"),
         "{out}"
     );
+}
+
+fn ribbon(items: &[(&str, &str)]) -> common::listing_details::Ribbon {
+    use common::listing_details::{Ribbon, RibbonIcon, RibbonItem};
+    let items = items
+        .iter()
+        .map(|(value, label)| RibbonItem {
+            icon: RibbonIcon::Beach,
+            value: value.to_string(),
+            label: label.to_string(),
+        })
+        .collect::<Vec<_>>();
+    match Ribbon::try_from(items) {
+        Ok(r) => r,
+        Err(e) => panic!("test ribbon is invalid: {e}"),
+    }
+}
+
+#[tokio::test]
+async fn highlights_ribbon_renders_one_item_per_entry_full_bleed() {
+    let cx = &Cx::default();
+    let r = ribbon(&[
+        ("6", "Bedrooms"),
+        ("5.5", "Bathrooms"),
+        ("Direct", "Beach access"),
+        ("1", "Pool"),
+    ]);
+    let out = html(view! { highlights_ribbon(ribbon: r) }, cx).await;
+    assert!(out.contains(r#"data-testid="highlights-ribbon""#), "{out}");
+    assert!(out.contains(r#"aria-label="Villa at a glance""#), "{out}");
+    assert!(out.contains("full-bleed"), "{out}");
+    assert_eq!(out.matches("<li").count(), 4, "{out}");
+    assert!(
+        out.contains("Direct") && out.contains("Beach access"),
+        "{out}"
+    );
+    assert!(
+        out.contains(r#"aria-hidden="true""#),
+        "icons are decorative: {out}"
+    );
+    assert!(out.contains("min-[860px]:grid-cols-4"), "{out}");
+}
+
+#[tokio::test]
+async fn highlights_ribbon_escapes_host_text() {
+    let cx = &Cx::default();
+    let r = ribbon(&[("<b>6</b>", "Bedrooms"), ("2", "<i>x</i>"), ("3", "Guests")]);
+    let out = html(view! { highlights_ribbon(ribbon: r) }, cx).await;
+    assert!(!out.contains("<b>") && !out.contains("<i>"), "{out}");
+    assert!(out.contains("&lt;b&gt;6&lt;/b&gt;"), "{out}");
+}
+
+#[test]
+fn ribbon_columns_never_exceed_three_below_860px() {
+    for n in 3..=6 {
+        let cols = ribbon_columns(n);
+        assert!(cols.starts_with("grid-cols-2"), "{n}: {cols}");
+        assert!(!cols.contains("min-[600px]:grid-cols-4"), "{n}: {cols}");
+        assert!(cols.contains(&format!("grid-cols-{n}")), "{n}: {cols}");
+    }
 }

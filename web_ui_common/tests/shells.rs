@@ -178,8 +178,9 @@ fn page_grid_keeps_the_old_content_width_and_offers_full_bleed() {
     for rule in [
         ".page-grid {",
         "[content-start] min(1540px - 3rem, 100% - 3rem) [content-end]",
-        ".page-grid > * {",
-        ".page-grid > .full-bleed {",
+        ".page-flow {",
+        ".page-flow > * {",
+        ".page-flow > .full-bleed {",
         ".bleed-inner {",
     ] {
         assert!(css.contains(rule), "guest.css is missing `{rule}`");

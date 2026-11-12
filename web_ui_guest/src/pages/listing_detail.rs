@@ -1,5 +1,6 @@
 use chrono::{Months, NaiveDate};
 use common::booking_request::BookingMode;
+use common::listing_details::{Ribbon, StructuredListingDetails};
 use common::models::{ListingDetails, ReviewResponse};
 use serde::Deserialize;
 use topcoat::{
@@ -16,6 +17,7 @@ use web_ui_common::components::{
         price_breakdown::price_breakdown,
         responsive_image::{responsive_image, variant_srcset, variant_url},
     },
+    highlights_ribbon::highlights_ribbon,
     star_rating::star_rating,
 };
 
@@ -324,6 +326,19 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
             .flatten()
             .filter_map(|v| v.as_str().map(str::to_string)),
     );
+    let structured = StructuredListingDetails::from_json(listing.listing_details.as_ref());
+    let ribbon = {
+        let _listing = tracing::info_span!("listing_ribbon", listing_id = %listing.id).entered();
+        Ribbon::resolve(
+            structured.ribbon.clone(),
+            Ribbon::fallback(
+                listing.bedrooms,
+                listing.full_bathrooms,
+                listing.half_bathrooms,
+                listing.max_guests,
+            ),
+        )
+    };
     let images: Vec<(String, String)> = details
         .images
         .iter()
@@ -335,7 +350,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let enquire = enquire_href(&listing.slug, &q);
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     Ok(view! {
-        <article class="space-y-10">
+        <article class="page-flow space-y-10">
             <header class="space-y-2">
                 <h1 class="font-serif text-[clamp(36px,5vw,56px)] leading-tight">
                     (listing.name.clone())
@@ -487,9 +502,10 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 </dialog>
             }
 
+            highlights_ribbon(ribbon: ribbon)
+
             <div class="grid gap-12 lg:grid-cols-[1fr_380px]">
                 <div class="space-y-10">
-                    <p class="text-muted-foreground">(summary.specs())</p>
                     if let Some(description) = listing.description.clone() {
                         <p class="text-lg leading-relaxed">(description)</p>
                     }

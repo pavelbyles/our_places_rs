@@ -98,7 +98,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Highlights Ribbon (vertical slice)
 
-- [ ] **Task 5: Guest highlights ribbon component on the listing page**
+- [x] **Task 5: Guest highlights ribbon component on the listing page**
   - **Scope:** M
   - **Description:** `highlights_ribbon` component (`data-testid="highlights-ribbon"`, `<section aria-label="Villa at a glance"><ul>`), inline SVG per `RibbonIcon`, tokens per spec §2.10. Placed on `listing_detail.rs` as a `.full-bleed` block; replaces `<p>(summary.specs())</p>`.
   - **Files Touched:**

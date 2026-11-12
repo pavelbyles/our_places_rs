@@ -8,6 +8,8 @@ pub mod domain;
 pub mod framed_image;
 /// Guest home hero.
 pub mod hero;
+/// Listing page ribbon of host-entered key items.
+pub mod highlights_ribbon;
 /// Header controls (theme toggle).
 pub mod navbar;
 /// Star rating display and input.
