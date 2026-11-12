@@ -1,6 +1,6 @@
 use chrono::{Months, NaiveDate};
 use common::booking_request::BookingMode;
-use common::listing_details::{Ribbon, StructuredListingDetails};
+use common::listing_details::{Ribbon, StructuredListingDetails, amenity_groups_for};
 use common::models::{ListingDetails, ReviewResponse};
 use serde::Deserialize;
 use topcoat::{
@@ -11,6 +11,7 @@ use topcoat::{
 };
 use web_client::get_api_client;
 use web_ui_common::components::{
+    amenity_group::amenity_groups,
     date_range_calendar::{CalendarProps, date_range_calendar, first_of_month},
     domain::{
         listing_card::ListingSummary,
@@ -310,22 +311,13 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .rating_summary
         .as_ref()
         .map(|r| i64::from(r.review_count));
-    let mut facts = core_facts(
+    let facts = core_facts(
         listing.max_guests,
         listing.bedrooms,
         listing.beds,
         listing.full_bathrooms,
-    );
-    facts.extend(
-        listing
-            .listing_details
-            .as_ref()
-            .and_then(|d| d.get("amenities"))
-            .and_then(|a| a.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|v| v.as_str().map(str::to_string)),
-    );
+    )
+    .join(" · ");
     let structured = StructuredListingDetails::from_json(listing.listing_details.as_ref());
     let ribbon = {
         let _listing = tracing::info_span!("listing_ribbon", listing_id = %listing.id).entered();
@@ -339,6 +331,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
             ),
         )
     };
+    let groups = amenity_groups_for(structured.amenity_groups.as_deref(), &structured.amenities);
     let images: Vec<(String, String)> = details
         .images
         .iter()
@@ -516,17 +509,15 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         </p>
                     }
                     <section
-                        aria-labelledby="offers-heading"
+                        id="amenities"
+                        aria-labelledby="amenities-heading"
                         class="space-y-4 border-t border-border pt-8"
                     >
-                        <h2 id="offers-heading" class="font-serif text-2xl">
+                        <h2 id="amenities-heading" class="font-serif text-2xl">
                             "What this place offers"
                         </h2>
-                        <ul class="grid gap-2 sm:grid-cols-2">
-                            for fact in facts {
-                                <li class="text-sm">(fact)</li>
-                            }
-                        </ul>
+                        <p id="listing-facts" class="text-sm text-muted-foreground">(facts)</p>
+                        amenity_groups(groups: groups)
                     </section>
                     <section
                         aria-labelledby="reviews-heading"

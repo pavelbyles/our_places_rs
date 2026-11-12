@@ -156,7 +156,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p common amenit && cargo test -p web_ui_admin --test listing_amenities`
   - **Dependencies:** Task 3
 
-- [ ] **Task 9: Guest amenity group cards**
+- [x] **Task 9: Guest amenity group cards**
   - **Scope:** S
   - **Description:** `amenity_group` component; listing page `#amenities` section replaces "What this place offers" facts list. Empty groups skipped; section omitted when none.
   - **Files Touched:**

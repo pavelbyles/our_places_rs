@@ -3,6 +3,7 @@
 use topcoat::context::Cx;
 use topcoat::view::{ViewExt, view};
 use web_ui_common::components::{
+    amenity_group::amenity_groups,
     chat::{chat_bubble, chat_thread},
     framed_image::{FrameAspect, framed_image},
     hero::hero,
@@ -275,4 +276,35 @@ fn ribbon_columns_never_exceed_three_below_860px() {
         assert!(!cols.contains("min-[600px]:grid-cols-4"), "{n}: {cols}");
         assert!(cols.contains(&format!("grid-cols-{n}")), "{n}: {cols}");
     }
+}
+
+fn amenity_group(title: &str, items: &[&str]) -> common::listing_details::AmenityGroup {
+    common::listing_details::AmenityGroup {
+        title: title.into(),
+        icon: common::listing_details::AmenityIcon::Waves,
+        items: items.iter().map(|i| i.to_string()).collect(),
+    }
+}
+
+#[tokio::test]
+async fn amenity_groups_render_titled_cards_in_order() {
+    let cx = &Cx::default();
+    let groups = vec![
+        amenity_group("Villa", &["Air conditioning", "Starlink Wi-Fi"]),
+        amenity_group("Health & Wellness", &["Infinity pool"]),
+    ];
+    let out = html(view! { amenity_groups(groups: groups) }, cx).await;
+    assert!(out.contains(r#"data-testid="amenity-groups""#), "{out}");
+    assert_eq!(out.matches("data-amenity-group").count(), 2, "{out}");
+    let villa = out.find("Villa").unwrap_or(usize::MAX);
+    let wellness = out.find("Health &amp; Wellness").unwrap_or(0);
+    assert!(villa < wellness, "groups keep host order: {out}");
+    assert_eq!(out.matches("<li").count(), 3, "{out}");
+}
+
+#[tokio::test]
+async fn no_amenity_groups_render_nothing() {
+    let cx = &Cx::default();
+    let out = html(view! { amenity_groups(groups: vec![]) }, cx).await;
+    assert!(!out.contains("amenity-groups"), "{out}");
 }

@@ -1,3 +1,5 @@
+/// Host-configured amenity group cards.
+pub mod amenity_group;
 /// Message thread and bubbles.
 pub mod chat;
 /// Stay-dates calendar.
