@@ -326,7 +326,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Shell, Enhancements, Tests
 
-- [ ] **Task 22: Four-column guest footer and placeholder policy pages**
+- [x] **Task 22: Four-column guest footer and placeholder policy pages**
   - **Scope:** M
   - **Description:** Brand, Explore, Policies, Concierge columns; concierge contact from typed config (no raw `env::var` literals, RS-W1015), column hidden when unset. Add `/terms`, `/cancellation-policy`, `/privacy-policy`, `/house-rules` as static pages with a visible "Draft — placeholder text" notice. `/experiences` link hidden until Phase 2.
   - **Files Touched:**

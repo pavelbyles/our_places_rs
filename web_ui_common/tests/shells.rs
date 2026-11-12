@@ -179,10 +179,37 @@ fn page_grid_keeps_the_old_content_width_and_offers_full_bleed() {
         ".page-grid {",
         "[content-start] min(1540px - 3rem, 100% - 3rem) [content-end]",
         ".page-flow {",
-        ".page-flow > * {",
+        ".page-columns > * {",
+        "padding-block: 3rem 11rem;",
         ".page-columns > .full-bleed {",
         ".bleed-inner {",
     ] {
         assert!(css.contains(rule), "guest.css is missing `{rule}`");
     }
+}
+
+#[tokio::test]
+async fn guest_footer_links_explore_and_policy_pages() {
+    let cx = &Cx::default();
+    let out = html(
+        view! { guest_chrome(shell: guest(None), <p>"page"</p>) },
+        cx,
+    )
+    .await;
+    for href in [
+        "/listings",
+        "/about",
+        "/register",
+        "/terms",
+        "/cancellation-policy",
+        "/privacy-policy",
+        "/house-rules",
+    ] {
+        assert!(out.contains(&format!(r#"href="{href}""#)), "{href}: {out}");
+    }
+    assert!(out.contains("Prices include GCT where stated"), "{out}");
+    assert!(
+        !out.contains("footer-concierge"),
+        "no concierge column without GUEST_CONCIERGE_* settings: {out}"
+    );
 }

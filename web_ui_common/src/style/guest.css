@@ -123,8 +123,10 @@
       [content-start] min(1540px - 3rem, 100% - 3rem) [content-end]
       minmax(1.5rem, 1fr) [full-end];
   }
+  /* The gap above the footer lives here (not on the footer) so a page can
+     end on a full-bleed band that meets the footer. */
   .page-grid {
-    padding-block: 3rem;
+    padding-block: 3rem 11rem;
   }
   .page-flow {
     display: contents;
@@ -146,7 +148,7 @@
   }
   .page-grid > .full-bleed:last-child,
   .page-grid > .page-flow:last-child > .full-bleed:last-child {
-    margin-bottom: -3rem;
+    margin-bottom: -11rem;
   }
   /* Room for the listing page's fixed booking bar on phones. */
   @media (width < 64rem) {

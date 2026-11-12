@@ -517,6 +517,21 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 photo: images.first().map(|(src, _)| src.clone()),
                 photo_count: images.len()
             )
+            <div
+                data-mobile-book-bar=""
+                class="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-border bg-card px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-card-foreground lg:hidden"
+            >
+                <span>
+                    <strong class="font-serif text-xl font-normal">(bar_price)</strong>
+                    <span class="text-sm text-muted-foreground">" / night"</span>
+                </span>
+                <a
+                    href="#book"
+                    class="inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground no-underline"
+                >
+                    "Check dates"
+                </a>
+            </div>
             <div id="listing-body" class="full-bleed">
                 section_nav(links: links, price: price.clone())
                 <div class="page-columns gap-y-12 lg:gap-y-16">
@@ -1112,21 +1127,6 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                         </div>
                     </section>
                 </div>
-            </div>
-            <div
-                data-mobile-book-bar=""
-                class="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t border-border bg-card px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-card-foreground lg:hidden"
-            >
-                <span>
-                    <strong class="font-serif text-xl font-normal">(bar_price)</strong>
-                    <span class="text-sm text-muted-foreground">" / night"</span>
-                </span>
-                <a
-                    href="#book"
-                    class="inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground no-underline"
-                >
-                    "Check dates"
-                </a>
             </div>
         </article>
     })

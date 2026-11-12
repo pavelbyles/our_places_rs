@@ -17,6 +17,9 @@ pub mod assets;
 /// Self-hosted Newsreader and Inter.
 pub mod fonts;
 
+/// Guest footer concierge contact, from the environment.
+pub mod concierge;
+
 /// Guest portal page shell.
 pub mod shell_guest;
 
