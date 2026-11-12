@@ -1,7 +1,8 @@
 use chrono::{Months, NaiveDate};
 use common::booking_request::BookingMode;
 use common::listing_details::{
-    Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem, amenity_groups_for, drive_time,
+    CuratedTestimonial, Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem,
+    amenity_groups_for, drive_time,
 };
 use common::models::{ListingDetails, ListingImageResponse, ReviewResponse};
 use common::query::urlencode;
@@ -329,6 +330,23 @@ fn addon_price(addon: &ServiceAddon, currency: &str) -> String {
     }
 }
 
+/// Most guestbook quotes shown.
+const GUESTBOOK_SHOWN: usize = 4;
+
+/// "Danielle · Toronto · March 2026".
+fn guestbook_credit(quote: &CuratedTestimonial) -> String {
+    [
+        Some(quote.guest_name.trim()),
+        quote.location.as_deref().map(str::trim),
+        Some(quote.stay_date.trim()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
 /// Which optional sections the page shows.
 #[derive(Default)]
 struct Sections {
@@ -469,12 +487,19 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .iter()
         .map(|p| (p.name.clone(), drive_time(p.drive_minutes)))
         .collect();
+    let guestbook: Vec<CuratedTestimonial> = structured
+        .curated_testimonials
+        .iter()
+        .filter(|q| !q.quote.trim().is_empty())
+        .take(GUESTBOOK_SHOWN)
+        .cloned()
+        .collect();
     let links = section_links(&Sections {
         services: !services.is_empty(),
         policies: !policies.is_empty(),
         location: !nearby.is_empty(),
         suites: !suites.is_empty(),
-        reviews: true,
+        reviews: !reviews.is_empty() || !guestbook.is_empty(),
         photos: !images.is_empty(),
     });
     let quote_url = format!("/listings/{}/quote", listing.slug);
@@ -707,42 +732,78 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                             </dl>
                         </section>
                     }
-                    <section
-                        id="reviews"
-                        aria-labelledby="reviews-heading"
-                        class="scroll-mt-24 space-y-4 border-t border-border pt-12"
-                    >
-                        <h2 id="reviews-heading" class="font-serif text-2xl">
-                            "Verified Guest Reviews"
-                        </h2>
-                        if reviews.is_empty() {
-                            <p class="text-sm text-muted-foreground">
-                                "No reviews yet. Reviews come only from guests who stayed."
-                            </p>
-                        } else {
-                            <ul class="space-y-6">
-                                for review in reviews {
-                                    <li class="space-y-1">
-                                        <p class="flex items-center gap-2 text-sm font-medium">
-                                            (review.guest_first_name.clone())
-                                            star_rating(rating: Some(review.overall_rating))
-                                        </p>
-                                        if let Some(text) = review.public_review_text.clone() {
-                                            <p class="text-sm">(text)</p>
-                                        }
-                                        if let Some(reply) = review.host_reply_text.clone() {
-                                            <p
-                                                class="border-l-2 border-border pl-3 text-sm text-muted-foreground"
+                    if !reviews.is_empty() || !guestbook.is_empty() {
+                        <section
+                            id="reviews"
+                            aria-labelledby="reviews-heading"
+                            class="scroll-mt-24 space-y-6 border-t border-border pt-12"
+                        >
+                            <div class="space-y-2.5">
+                                <p
+                                    class="text-xs font-medium tracking-[0.22em] text-primary uppercase"
+                                >
+                                    "Guests"
+                                </p>
+                                <h2
+                                    id="reviews-heading"
+                                    class="font-serif text-[clamp(28px,3vw,38px)]"
+                                >
+                                    if reviews.is_empty() {
+                                        "What guests say"
+                                    } else {
+                                        "Verified Guest Reviews"
+                                    }
+                                </h2>
+                            </div>
+                            if reviews.is_empty() {
+                                <div data-testid="guestbook" class="grid gap-6 sm:grid-cols-2">
+                                    for quote in guestbook {
+                                        <figure
+                                            class="m-0 grid content-start gap-2.5 border-l-2 border-primary py-1 pl-5"
+                                        >
+                                            <blockquote
+                                                class="m-0 font-serif text-xl leading-snug font-light italic"
                                             >
-                                                "Host reply: "
-                                                (reply)
+                                                (format!("\u{201c}{}\u{201d}", quote.quote.trim()))
+                                            </blockquote>
+                                            <figcaption class="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+                                                (guestbook_credit(&quote))
+                                                star_rating(rating: Some(f64::from(quote.rating.clamp(1, 5))))
+                                            </figcaption>
+                                        </figure>
+                                    }
+                                </div>
+                                <p
+                                    data-testid="guestbook-notice"
+                                    class="rounded-[var(--radius-control,10px)] bg-chip px-3.5 py-2.5 text-[13px] text-muted-foreground"
+                                >
+                                    "From the villa guestbook. Verified reviews from bookings on Our Places will appear here as they come in."
+                                </p>
+                            } else {
+                                <ul class="space-y-6">
+                                    for review in reviews {
+                                        <li class="space-y-1">
+                                            <p class="flex items-center gap-2 text-sm font-medium">
+                                                (review.guest_first_name.clone())
+                                                star_rating(rating: Some(review.overall_rating))
                                             </p>
-                                        }
-                                    </li>
-                                }
-                            </ul>
-                        }
-                    </section>
+                                            if let Some(text) = review.public_review_text.clone() {
+                                                <p class="text-sm">(text)</p>
+                                            }
+                                            if let Some(reply) = review.host_reply_text.clone() {
+                                                <p
+                                                    class="border-l-2 border-border pl-3 text-sm text-muted-foreground"
+                                                >
+                                                    "Host reply: "
+                                                    (reply)
+                                                </p>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </section>
+                    }
                     if !nearby.is_empty() {
                         <section
                             id="location"
@@ -1145,6 +1206,28 @@ mod booking_mode_cta {
         assert_eq!(booking_cta(BookingMode::Both).0, "Reserve");
         assert!(booking_cta(BookingMode::Both).1.contains("request"));
         assert!(booking_cta(BookingMode::Request).1.contains("not charged"));
+    }
+}
+
+#[cfg(test)]
+mod guestbook_tests {
+    use super::{CuratedTestimonial, guestbook_credit};
+
+    #[test]
+    fn guestbook_credits_skip_missing_parts() {
+        let quote = |location: Option<&str>| CuratedTestimonial {
+            guest_name: "Danielle".into(),
+            location: location.map(str::to_string),
+            stay_date: "March 2026".into(),
+            quote: "Lovely".into(),
+            rating: 5,
+        };
+        assert_eq!(
+            guestbook_credit(&quote(Some("Toronto"))),
+            "Danielle · Toronto · March 2026"
+        );
+        assert_eq!(guestbook_credit(&quote(None)), "Danielle · March 2026");
+        assert_eq!(guestbook_credit(&quote(Some(" "))), "Danielle · March 2026");
     }
 }
 

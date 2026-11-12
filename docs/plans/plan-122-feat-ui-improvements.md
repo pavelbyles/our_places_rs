@@ -301,7 +301,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_admin --test listing_policies`
   - **Dependencies:** Task 18
 
-- [ ] **Task 20: Guest reviews / guestbook fallback**
+- [x] **Task 20: Guest reviews / guestbook fallback**
   - **Scope:** S
   - **Description:** Verified reviews unchanged. With no reviews: up to 4 `curated_testimonials` with the "From the villa guestbook…" notice; neither → section omitted. "No reviews yet" removed.
   - **Files Touched:**
