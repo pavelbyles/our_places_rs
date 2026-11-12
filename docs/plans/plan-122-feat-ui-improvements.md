@@ -353,7 +353,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `pnpm test:e2e -- ui-js.spec.ts security.spec.ts`
   - **Dependencies:** Tasks 7, 11, 12
 
-- [ ] **Task 24: E2E seed data for structured details**
+- [x] **Task 24: E2E seed data for structured details**
   - **Scope:** S
   - **Description:** Extend `playwright/e2e/setup/db-seed.ts` so one known listing has full structured content (ribbon, groups, suites, services, policies, nearby, guestbook) and one stays legacy. Add both to `fixtures/test-data.ts`.
   - **Files Touched:**
