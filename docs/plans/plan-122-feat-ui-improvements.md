@@ -267,7 +267,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_guest`
   - **Dependencies:** Tasks 3, 12
 
-- [ ] **Task 17: Admin staff & services fieldset**
+- [x] **Task 17: Admin staff & services fieldset**
   - **Scope:** S
   - **Description:** Included items textarea, note input, add-on slots (name, price, unit).
   - **Files Touched:**

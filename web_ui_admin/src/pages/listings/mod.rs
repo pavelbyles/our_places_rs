@@ -33,6 +33,8 @@ pub mod form;
 pub mod images;
 /// The "Highlights ribbon" fieldset: fixed rows, parsing and validation.
 pub mod ribbon_field;
+/// The "Staff & services" fieldset: included staff, notes and add-ons.
+pub mod services_field;
 /// The "Suites" fieldset: suite slots, photo picker, parsing and validation.
 pub mod suite_field;
 

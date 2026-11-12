@@ -15,7 +15,8 @@ use topcoat::{
 use uuid::Uuid;
 
 use common::listing_details::{
-    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, RIBBON_KEY, RibbonItem, SUITES_KEY, SuiteItem,
+    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, RIBBON_KEY, RibbonItem, STAFF_SERVICES_KEY,
+    SUITES_KEY, StaffServices, SuiteItem,
 };
 use web_ui_common::components::domain::currency_selector::currency_option_list;
 
@@ -23,6 +24,7 @@ use super::amenity_field::{
     amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
 };
 use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
+use super::services_field::{parse_services, services_fields, services_fieldset};
 use super::suite_field::{SuitePhoto, parse_suites, suite_fields, suite_fieldset};
 
 /// Listing structures known to `listing_api`.
@@ -137,6 +139,7 @@ impl ListingFields {
                 .into_iter()
                 .chain(amenity_fields(l.listing_details.as_ref()))
                 .chain(suite_fields(l.listing_details.as_ref()))
+                .chain(services_fields(l.listing_details.as_ref()))
                 .collect(),
         }
     }
@@ -196,6 +199,7 @@ pub struct ValidListing {
     amenity_groups: Vec<AmenityGroup>,
     ribbon: Option<Vec<RibbonItem>>,
     suites: Vec<SuiteItem>,
+    services: Option<StaffServices>,
     booking_mode: BookingMode,
 }
 
@@ -390,6 +394,10 @@ impl ListingFields {
                 p.errors.extend(errors);
                 Vec::new()
             }),
+            services: parse_services(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                None
+            }),
             booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
         if valid.guests_included > valid.max_guests {
@@ -445,6 +453,14 @@ impl ValidListing {
             details.remove(SUITES_KEY);
         } else {
             details.insert(SUITES_KEY.to_string(), serde_json::json!(self.suites));
+        }
+        match &self.services {
+            Some(services) => {
+                details.insert(STAFF_SERVICES_KEY.to_string(), serde_json::json!(services));
+            }
+            None => {
+                details.remove(STAFF_SERVICES_KEY);
+            }
         }
         details
     }
@@ -927,6 +943,11 @@ pub async fn listing_form(
             suite_fieldset(
                 fields: f.slots.clone(),
                 photos: suite_photos,
+                label_class: label,
+                input_class: input
+            )
+            services_fieldset(
+                fields: f.slots.clone(),
                 label_class: label,
                 input_class: input
             )

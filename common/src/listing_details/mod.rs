@@ -165,6 +165,72 @@ impl StaffServices {
     }
 }
 
+/// Most included staff/services lines.
+pub const MAX_INCLUDED_SERVICES: usize = 12;
+/// Most paid add-ons.
+pub const MAX_ADDONS: usize = 6;
+/// Longest included line or add-on name, in characters.
+pub const MAX_SERVICE_CHARS: usize = 60;
+/// Longest note under the included list, in characters.
+pub const MAX_SERVICE_NOTE_CHARS: usize = 200;
+/// Longest add-on unit, in characters.
+pub const MAX_ADDON_UNIT_CHARS: usize = 20;
+/// Highest add-on price.
+pub const MAX_ADDON_PRICE: i64 = 1_000_000;
+
+/// Why staff and services can't be saved.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum StaffServicesError {
+    /// Too many included lines, or one too long.
+    #[error("List at most 12 included services of up to 60 characters each.")]
+    Included,
+    /// The note is too long.
+    #[error("The note under included services can be at most 200 characters.")]
+    Note,
+    /// Too many add-ons.
+    #[error("Offer at most 6 add-ons, got {0}.")]
+    AddonCount(usize),
+    /// An add-on has no name, or a name or unit that is too long.
+    #[error("Add-on {0} needs a name of up to 60 characters and a unit of up to 20.")]
+    AddonText(usize),
+    /// An add-on price is negative, too high or has more than 2 decimals.
+    #[error("Add-on {0}'s price must be between 0 and 1,000,000 with at most 2 decimals.")]
+    AddonPrice(usize),
+}
+
+/// Checks staff and services as saved.
+pub fn validate_staff_services(s: &StaffServices) -> Result<(), StaffServicesError> {
+    let chars = |t: &str| t.trim().chars().count();
+    if s.included.len() > MAX_INCLUDED_SERVICES
+        || s.included.iter().any(|i| chars(i) > MAX_SERVICE_CHARS)
+    {
+        return Err(StaffServicesError::Included);
+    }
+    if s.included_note
+        .as_deref()
+        .is_some_and(|n| chars(n) > MAX_SERVICE_NOTE_CHARS)
+    {
+        return Err(StaffServicesError::Note);
+    }
+    if s.addons.len() > MAX_ADDONS {
+        return Err(StaffServicesError::AddonCount(s.addons.len()));
+    }
+    s.addons.iter().enumerate().try_for_each(|(i, a)| {
+        let n = i + 1;
+        let unit = a.unit.as_deref().map_or(0, chars);
+        if chars(&a.name) == 0 || chars(&a.name) > MAX_SERVICE_CHARS || unit > MAX_ADDON_UNIT_CHARS
+        {
+            Err(StaffServicesError::AddonText(n))
+        } else if a.price.is_some_and(|p| {
+            p < Decimal::ZERO || p > Decimal::from(MAX_ADDON_PRICE) || p.scale() > 2
+        }) {
+            Err(StaffServicesError::AddonPrice(n))
+        } else {
+            Ok(())
+        }
+    })
+}
+
 /// House policies shown before booking. Free text per row.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct HousePolicies {
@@ -377,13 +443,36 @@ fn validate_suites_section(details: &Value) -> Result<(), validator::ValidationE
         })
 }
 
+/// The staff and services section, if present, must pass
+/// [`validate_staff_services`].
+fn validate_staff_services_section(details: &Value) -> Result<(), validator::ValidationError> {
+    details
+        .get(STAFF_SERVICES_KEY)
+        .filter(|v| !v.is_null())
+        .map_or(Ok(()), |v| {
+            serde_json::from_value::<StaffServices>(v.clone())
+                .map_err(|_| {
+                    invalid(
+                        "INVALID_STAFF_SERVICES",
+                        "Staff and services need lists of names and add-ons with optional prices."
+                            .to_string(),
+                    )
+                })
+                .and_then(|s| {
+                    validate_staff_services(&s)
+                        .map_err(|e| invalid("INVALID_STAFF_SERVICES", e.to_string()))
+                })
+        })
+}
+
 /// Validates the host-edited sections of `listing_details` on create and
 /// update. Error codes: `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`,
-/// `INVALID_SUITES`.
+/// `INVALID_SUITES`, `INVALID_STAFF_SERVICES`.
 pub fn validate_listing_details(details: &Value) -> Result<(), validator::ValidationError> {
     validate_ribbon_section(details)
         .and_then(|()| validate_amenity_groups_section(details))
         .and_then(|()| validate_suites_section(details))
+        .and_then(|()| validate_staff_services_section(details))
 }
 
 #[cfg(test)]
@@ -478,6 +567,61 @@ mod tests {
         );
         let ok = json!({ "suites": [{ "name": "Master", "bed_configuration": "1 king", "max_guests": 2 }] });
         assert!(validate_listing_details(&ok).is_ok());
+    }
+
+    #[test]
+    fn staff_services_are_bounded() {
+        let addon = |name: &str, price: Option<Decimal>| ServiceAddon {
+            name: name.into(),
+            price,
+            unit: None,
+        };
+        let ok = StaffServices {
+            included: vec!["Private chef".into()],
+            included_note: None,
+            addons: vec![
+                addon("Transfer", Some(Decimal::new(18050, 2))),
+                addon("Groceries", None),
+            ],
+        };
+        assert_eq!(validate_staff_services(&ok), Ok(()));
+        let mut bad = ok.clone();
+        bad.addons[1].price = Some(Decimal::new(-1, 0));
+        assert_eq!(
+            validate_staff_services(&bad),
+            Err(StaffServicesError::AddonPrice(2))
+        );
+        let mut bad = ok.clone();
+        bad.addons[0].price = Some(Decimal::new(1001, 3));
+        assert_eq!(
+            validate_staff_services(&bad),
+            Err(StaffServicesError::AddonPrice(1))
+        );
+        let mut bad = ok.clone();
+        bad.addons[0].name = " ".into();
+        assert_eq!(
+            validate_staff_services(&bad),
+            Err(StaffServicesError::AddonText(1))
+        );
+        let mut bad = ok.clone();
+        bad.included = (0..13).map(|i| format!("S{i}")).collect();
+        assert_eq!(
+            validate_staff_services(&bad),
+            Err(StaffServicesError::Included)
+        );
+        let mut bad = ok;
+        bad.addons = (0..7).map(|i| addon(&format!("A{i}"), None)).collect();
+        assert_eq!(
+            validate_staff_services(&bad),
+            Err(StaffServicesError::AddonCount(7))
+        );
+        let e =
+            validate_listing_details(&json!({ "staff_services": { "addons": [{ "name": "" }] } }))
+                .err();
+        assert_eq!(
+            e.map(|e| e.code.to_string()),
+            Some("INVALID_STAFF_SERVICES".into())
+        );
     }
 
     #[test]
