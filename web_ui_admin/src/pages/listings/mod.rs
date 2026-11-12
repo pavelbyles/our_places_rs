@@ -29,6 +29,8 @@ pub mod create;
 pub mod edit;
 /// The studio form shared by create, clone and edit.
 pub mod form;
+/// The "Guestbook quotes" fieldset.
+pub mod guestbook_field;
 /// Signed-URL photo uploads.
 pub mod images;
 /// The "House policies" and "Nearby places" fieldsets.

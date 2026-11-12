@@ -375,6 +375,54 @@ pub struct CuratedTestimonial {
     pub rating: i32,
 }
 
+/// Most guestbook quotes.
+pub const MAX_TESTIMONIALS: usize = 4;
+/// Longest guestbook quote, in characters.
+pub const MAX_QUOTE_CHARS: usize = 400;
+/// Longest guest name, home city or stay date, in characters.
+pub const MAX_CREDIT_CHARS: usize = 48;
+
+/// Why guestbook quotes can't be saved. Quote numbers count from 1.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum TestimonialError {
+    /// More than 4 quotes.
+    #[error("Add at most 4 guestbook quotes, got {0}.")]
+    Count(usize),
+    /// A quote is missing its name, date or text, or one is too long.
+    #[error(
+        "Guestbook quote {0} needs a guest name, a stay date and a quote of up to 400 characters."
+    )]
+    Text(usize),
+    /// A rating outside 1–5.
+    #[error("Guestbook quote {0}'s rating must be 1 to 5.")]
+    Rating(usize),
+}
+
+/// Checks guestbook quotes as saved.
+pub fn validate_testimonials(quotes: &[CuratedTestimonial]) -> Result<(), TestimonialError> {
+    if quotes.len() > MAX_TESTIMONIALS {
+        return Err(TestimonialError::Count(quotes.len()));
+    }
+    let len = |s: &str| s.trim().chars().count();
+    quotes.iter().enumerate().try_for_each(|(i, q)| {
+        let n = i + 1;
+        let credit_ok = |s: &str| (1..=MAX_CREDIT_CHARS).contains(&len(s));
+        if !credit_ok(&q.guest_name)
+            || !credit_ok(&q.stay_date)
+            || q.location
+                .as_deref()
+                .is_some_and(|l| len(l) > MAX_CREDIT_CHARS)
+            || !(1..=MAX_QUOTE_CHARS).contains(&len(&q.quote))
+        {
+            Err(TestimonialError::Text(n))
+        } else if !(1..=5).contains(&q.rating) {
+            Err(TestimonialError::Rating(n))
+        } else {
+            Ok(())
+        }
+    })
+}
+
 /// Everything structured in `listing_details`. Unknown keys are ignored.
 /// (Phase 2 adds experiences.)
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -553,7 +601,7 @@ where
 /// Validates the host-edited sections of `listing_details` on create and
 /// update. Error codes: `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`,
 /// `INVALID_SUITES`, `INVALID_STAFF_SERVICES`, `INVALID_POLICIES`,
-/// `INVALID_NEARBY`.
+/// `INVALID_NEARBY`, `INVALID_TESTIMONIALS`.
 pub fn validate_listing_details(details: &Value) -> Result<(), validator::ValidationError> {
     validate_ribbon_section(details)
         .and_then(|()| validate_amenity_groups_section(details))
@@ -575,6 +623,15 @@ pub fn validate_listing_details(details: &Value) -> Result<(), validator::Valida
                 "INVALID_NEARBY",
                 "Each nearby place needs a name and a drive time in minutes.",
                 |p| validate_nearby(p),
+            )
+        })
+        .and_then(|()| {
+            validate_section::<Vec<CuratedTestimonial>, _>(
+                details,
+                TESTIMONIALS_KEY,
+                "INVALID_TESTIMONIALS",
+                "Each guestbook quote needs a guest name, stay date, quote and rating.",
+                |q| validate_testimonials(q),
             )
         })
 }
@@ -761,6 +818,37 @@ mod tests {
         assert_eq!(
             e.map(|e| e.code.to_string()),
             Some("INVALID_POLICIES".into())
+        );
+    }
+
+    #[test]
+    fn guestbook_quotes_are_bounded() {
+        let q = |rating| CuratedTestimonial {
+            guest_name: "Danielle".into(),
+            location: None,
+            stay_date: "March 2026".into(),
+            quote: "Lovely".into(),
+            rating,
+        };
+        assert_eq!(validate_testimonials(&[q(5)]), Ok(()));
+        assert_eq!(
+            validate_testimonials(&[q(5), q(6)]),
+            Err(TestimonialError::Rating(2))
+        );
+        let mut long = q(5);
+        long.quote = "x".repeat(401);
+        assert_eq!(
+            validate_testimonials(&[long]),
+            Err(TestimonialError::Text(1))
+        );
+        assert_eq!(
+            validate_testimonials(&[q(5), q(5), q(5), q(5), q(5)]),
+            Err(TestimonialError::Count(5))
+        );
+        let e = validate_listing_details(&json!({ "curated_testimonials": [{ "guest_name": "", "stay_date": "x", "quote": "y", "rating": 5 }] })).err();
+        assert_eq!(
+            e.map(|e| e.code.to_string()),
+            Some("INVALID_TESTIMONIALS".into())
         );
     }
 

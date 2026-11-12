@@ -313,7 +313,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_guest && pnpm test:e2e:guest -- reviews.spec.ts`
   - **Dependencies:** Tasks 3, 12
 
-- [ ] **Task 21: Admin guestbook fieldset**
+- [x] **Task 21: Admin guestbook fieldset**
   - **Scope:** S
   - **Description:** Up to 4 quote slots (guest name, home city, stay month, rating 1–5, quote ≤ 400 chars).
   - **Files Touched:**

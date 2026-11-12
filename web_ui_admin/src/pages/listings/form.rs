@@ -15,14 +15,16 @@ use topcoat::{
 use uuid::Uuid;
 
 use common::listing_details::{
-    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, HousePolicies, NEARBY_KEY, NearbyPlace,
-    POLICIES_KEY, RIBBON_KEY, RibbonItem, STAFF_SERVICES_KEY, SUITES_KEY, StaffServices, SuiteItem,
+    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, CuratedTestimonial, HousePolicies, NEARBY_KEY,
+    NearbyPlace, POLICIES_KEY, RIBBON_KEY, RibbonItem, STAFF_SERVICES_KEY, SUITES_KEY,
+    StaffServices, SuiteItem, TESTIMONIALS_KEY,
 };
 use web_ui_common::components::domain::currency_selector::currency_option_list;
 
 use super::amenity_field::{
     amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
 };
+use super::guestbook_field::{guestbook_fields, guestbook_fieldset, parse_guestbook};
 use super::policies_field::{parse_policies, policies_fields, policies_fieldset};
 use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
 use super::services_field::{parse_services, services_fields, services_fieldset};
@@ -142,6 +144,7 @@ impl ListingFields {
                 .chain(suite_fields(l.listing_details.as_ref()))
                 .chain(services_fields(l.listing_details.as_ref()))
                 .chain(policies_fields(l.listing_details.as_ref()))
+                .chain(guestbook_fields(l.listing_details.as_ref()))
                 .collect(),
         }
     }
@@ -204,6 +207,7 @@ pub struct ValidListing {
     services: Option<StaffServices>,
     policies: Option<HousePolicies>,
     nearby: Vec<NearbyPlace>,
+    guestbook: Vec<CuratedTestimonial>,
     booking_mode: BookingMode,
 }
 
@@ -404,6 +408,10 @@ impl ListingFields {
             }),
             policies: None,
             nearby: Vec::new(),
+            guestbook: parse_guestbook(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                Vec::new()
+            }),
             booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
         let mut valid = valid;
@@ -488,6 +496,14 @@ impl ValidListing {
             details.remove(NEARBY_KEY);
         } else {
             details.insert(NEARBY_KEY.to_string(), serde_json::json!(self.nearby));
+        }
+        if self.guestbook.is_empty() {
+            details.remove(TESTIMONIALS_KEY);
+        } else {
+            details.insert(
+                TESTIMONIALS_KEY.to_string(),
+                serde_json::json!(self.guestbook),
+            );
         }
         details
     }
@@ -979,6 +995,11 @@ pub async fn listing_form(
                 input_class: input
             )
             policies_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            guestbook_fieldset(
                 fields: f.slots.clone(),
                 label_class: label,
                 input_class: input
