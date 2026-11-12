@@ -170,7 +170,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_common --test components amenit`
   - **Dependencies:** Task 8
 
-- [ ] **Task 10: `listing_api` rejects invalid amenity groups**
+- [x] **Task 10: `listing_api` rejects invalid amenity groups**
   - **Scope:** XS
   - **Description:** Same pattern as Task 6 for `amenity_groups` → `400 INVALID_AMENITY_GROUPS`.
   - **Files Touched:**

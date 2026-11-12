@@ -2030,3 +2030,50 @@ async fn test_create_listing_refuses_an_invalid_ribbon() {
         "{stored}"
     );
 }
+
+#[actix_web::test]
+async fn test_create_listing_refuses_invalid_amenity_groups() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let user_id = create_test_user(&mut conn).await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let untitled = serde_json::json!({ "amenity_groups": [
+        { "title": " ", "icon": "home", "items": ["Pool"] },
+    ]});
+    let req = test::TestRequest::post()
+        .insert_header(admin_auth())
+        .uri("/api/v1/listings")
+        .set_json(listing_with_details(user_id, untitled))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
+    assert!(body.contains("INVALID_AMENITY_GROUPS"), "{body}");
+    assert!(body.contains("Group 1 needs a title."), "{body}");
+
+    let valid = serde_json::json!({ "amenity_groups": [
+        { "title": "Villa", "icon": "home", "items": ["Pool", "Wi-Fi"] },
+    ]});
+    let req = test::TestRequest::post()
+        .insert_header(admin_auth())
+        .uri("/api/v1/listings")
+        .set_json(listing_with_details(user_id, valid))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    let stored: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(
+        stored["listing_details"]["amenity_groups"][0]["items"][1], "Wi-Fi",
+        "{stored}"
+    );
+}

@@ -263,10 +263,32 @@ fn validate_ribbon_section(details: &Value) -> Result<(), validator::ValidationE
         })
 }
 
+/// The amenity groups section, if present, must pass
+/// [`validate_amenity_groups`].
+fn validate_amenity_groups_section(details: &Value) -> Result<(), validator::ValidationError> {
+    details
+        .get(AMENITY_GROUPS_KEY)
+        .filter(|v| !v.is_null())
+        .map_or(Ok(()), |v| {
+            serde_json::from_value::<Vec<AmenityGroup>>(v.clone())
+                .map_err(|_| {
+                    invalid(
+                        "INVALID_AMENITY_GROUPS",
+                        "Each amenity group needs a title, a known icon and a list of items."
+                            .to_string(),
+                    )
+                })
+                .and_then(|groups| {
+                    validate_amenity_groups(&groups)
+                        .map_err(|e| invalid("INVALID_AMENITY_GROUPS", e.to_string()))
+                })
+        })
+}
+
 /// Validates the host-edited sections of `listing_details` on create and
-/// update. Error codes: `INVALID_RIBBON`.
+/// update. Error codes: `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`.
 pub fn validate_listing_details(details: &Value) -> Result<(), validator::ValidationError> {
-    validate_ribbon_section(details)
+    validate_ribbon_section(details).and_then(|()| validate_amenity_groups_section(details))
 }
 
 #[cfg(test)]
@@ -287,6 +309,27 @@ mod tests {
         assert!(validate_listing_details(&json!({ "amenities": ["Pool"] })).is_ok());
         assert!(validate_listing_details(&json!({ "ribbon": null })).is_ok());
         assert!(validate_listing_details(&json!({ "ribbon": [] })).is_ok());
+    }
+
+    #[test]
+    fn invalid_amenity_groups_are_refused_with_their_reason() {
+        let untitled = json!({ "amenity_groups": [
+            { "title": "Villa", "icon": "home", "items": ["Pool"] },
+            { "title": "", "icon": "sun", "items": ["Gazebo"] },
+        ]});
+        let e = validate_listing_details(&untitled).err();
+        assert_eq!(
+            e.as_ref().map(|e| e.code.to_string()),
+            Some("INVALID_AMENITY_GROUPS".into())
+        );
+        assert_eq!(
+            e.and_then(|e| e.message).map(|m| m.to_string()),
+            Some("Group 2 needs a title.".to_string())
+        );
+        let valid =
+            json!({ "amenity_groups": [{ "title": "Villa", "icon": "home", "items": ["Pool"] }] });
+        assert!(validate_listing_details(&valid).is_ok());
+        assert!(validate_listing_details(&json!({ "amenity_groups": [] })).is_ok());
     }
 
     #[test]
