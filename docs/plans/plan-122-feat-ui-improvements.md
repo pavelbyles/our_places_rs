@@ -405,7 +405,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p common photo_name && cargo test -p listing_api image_name` (Postgres via devenv)
   - **Dependencies:** None
 
-- [ ] **Task 28: Admin photo name forms and suite picker labels**
+- [x] **Task 28: Admin photo name forms and suite picker labels**
   - **Scope:** M
   - **Description:** `web_client` method for the PATCH. In `images.rs` `photo_grid`, each processed photo gets a name form (textbox, placeholder "Photo N", Save) posting to `POST /admin/listings/{id}/images/name`. HTMX: `hx-trigger="change, submit"`, swap the photo's form only, `HX-Trigger` toast "Name saved". Without JS: redirect back to the edit page. A refused name re-renders the form with the message and the typed value. `suite_photo_choices` uses the name or "Photo N".
   - **Files Touched:**

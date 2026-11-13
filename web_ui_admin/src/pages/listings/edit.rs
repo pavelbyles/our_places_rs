@@ -12,17 +12,8 @@ use uuid::Uuid;
 use web_client::session::AdminRole;
 
 use super::form::{ListingFields, api_rejection_messages, listing_form};
-use super::images::{listing_photos, photo_grid};
-use super::suite_field::SuitePhoto;
+use super::images::{listing_photos, photo_grid, suite_photo_choices};
 
-/// The listing's photos as suite photo choices: "Photo 1", "Photo 2", …
-fn suite_photo_choices(photos: &[common::models::ListingImageResponse]) -> Vec<SuitePhoto> {
-    photos
-        .iter()
-        .enumerate()
-        .map(|(i, p)| (p.id.to_string(), format!("Photo {}", i + 1)))
-        .collect()
-}
 use super::managed_listing;
 use crate::support::{service_token, staff};
 

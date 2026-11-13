@@ -339,6 +339,39 @@ pub async fn delete_listing_image(listing_id: Uuid, image_id: Uuid, user_jwt: &s
     Ok(())
 }
 
+/// Sets or clears (`None`) a listing photo's name.
+pub async fn rename_listing_image(
+    listing_id: Uuid,
+    image_id: Uuid,
+    name: Option<&str>,
+    user_jwt: &str,
+) -> Result<()> {
+    let api_url = listing_api_url();
+    let audience = listing_api_audience();
+    let url = format!(
+        "{}/api/v1/listings/{}/images/{}",
+        api_url, listing_id, image_id
+    );
+
+    let res = get_client()
+        .user_request(reqwest::Method::PATCH, &url, &audience, Some(user_jwt))
+        .await?
+        .json(&crate::models::RenameListingImageRequest {
+            name: name.map(str::to_string),
+        })
+        .send()
+        .await
+        .context("Failed to connect to listing service")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to rename listing image ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
 /// Removes a price override from a listing.
 pub async fn delete_price_override(
     listing_id: Uuid,
