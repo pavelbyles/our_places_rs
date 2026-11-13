@@ -169,7 +169,7 @@ pub async fn photo_name_form(
             hx-trigger="change, submit"
             hx-target="this"
             hx-swap="outerHTML"
-            class="mt-2 grid gap-1"
+            class="mt-2 grid grid-cols-1 gap-1"
         >
             <input type="hidden" name="image_id" value=(image_id.to_string()) />
             <input type="hidden" name="index" value=(index.to_string()) />
@@ -184,9 +184,12 @@ pub async fn photo_name_form(
                     placeholder=(default_photo_label(index))
                     value=(value)
                     aria-invalid=(error.is_some().then_some("true"))
-                    class="h-9 min-w-0 flex-1 rounded-md border border-border bg-card px-2 text-sm"
+                    class="h-9 w-0 min-w-0 flex-1 rounded-md border border-border bg-card px-2 text-sm"
                 />
-                <button type="submit" class="h-9 rounded-md border border-border px-2.5 text-xs font-medium">
+                <button
+                    type="submit"
+                    class="h-9 shrink-0 rounded-md border border-border px-2.5 text-xs font-medium"
+                >
                     "Save"
                 </button>
             </div>
@@ -229,18 +232,24 @@ pub async fn photo_grid(
             if photos.is_empty() {
                 <p class="text-sm text-muted-foreground">"No processed photos yet."</p>
             } else {
-                <ul id="listing-photos" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ul id="listing-photos" class="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-4">
                     for (i, photo) in photos.into_iter().enumerate() {
-                        <li data-photo=(photo.id.to_string()) class="relative">
-                            responsive_image(
-                                src: photo.url,
-                                alt: photo
-                                    .name
-                                    .clone()
-                                    .unwrap_or_else(|| format!("{name}, photo {}", i + 1)),
-                                sizes: Some("(min-width: 640px) 25vw, 50vw".to_string()),
-                                attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" }
-                            )
+                        <li data-photo=(photo.id.to_string()) class="relative min-w-0">
+                            // A fixed 4:3 frame: the image fills and is clipped
+                            // to it, so the name form below keeps its place.
+                            <div
+                                data-photo-frame=""
+                                class="aspect-[4/3] overflow-hidden rounded-lg bg-photo-placeholder"
+                            >
+                                responsive_image(
+                                    src: photo.url,
+                                    alt: photo
+                                        .name
+                                        .clone()
+                                        .unwrap_or_else(|| format!("{name}, photo {}", i + 1)),
+                                    sizes: Some("(min-width: 640px) 25vw, 50vw".to_string())
+                                )
+                            </div>
                             <form
                                 method="post"
                                 action=(remove.clone())

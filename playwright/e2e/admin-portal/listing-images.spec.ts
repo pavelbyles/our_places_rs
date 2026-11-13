@@ -133,7 +133,32 @@ test.describe('Admin Portal - Photo names (#122)', () => {
        RETURNING id;`,
     ).split('\n')[0].trim();
 
+    // Two rows of photos, so the last row sits right above the upload form.
+    for (let n = 1; n <= 5; n++) {
+      psql(
+        `INSERT INTO listing_image (listing_id, client_file_id, status, upload_url, display_order)
+         VALUES ('${copy.id}', 'e2e-extra-${n}', 'Processed', 'https://storage.googleapis.com/our-places-e2e/listings/extra-${n}', ${n});`,
+      );
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/admin/listings/${copy.id}/edit`);
+
+    // Layout: every name box sits below its photo, and the upload form below
+    // the last row, so nothing is covered.
+    const tiles = page.locator('#listing-photos > li');
+    await expect(tiles).toHaveCount(6);
+    for (let i = 0; i < 6; i++) {
+      const frame = await tiles.nth(i).locator('[data-photo-frame]').boundingBox();
+      const form = await tiles.nth(i).locator('[data-photo-name-form]').boundingBox();
+      expect(frame && form && form.y >= frame.y + frame.height, `tile ${i + 1}`).toBe(true);
+      // The Save button stays inside its own tile.
+      const save = await tiles.nth(i).getByRole('button', { name: 'Save' }).boundingBox();
+      expect(frame && save && save.x + save.width <= frame.x + frame.width + 1, `tile ${i + 1} Save`).toBe(true);
+    }
+    const lastForm = await tiles.nth(5).locator('[data-photo-name-form]').boundingBox();
+    const upload = await page.locator('#image-upload-form').boundingBox();
+    expect(lastForm && upload && upload.y >= lastForm.y + lastForm.height).toBe(true);
+
     const box = page.locator(`#photo-name-${photo}`);
     await expect(box).toHaveAttribute('placeholder', 'Photo 1');
     await box.fill('Garden terrace');
