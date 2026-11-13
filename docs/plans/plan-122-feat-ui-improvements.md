@@ -6,7 +6,7 @@
 - **Mockup**: [Seagrape House listing mockup](https://claude.ai/artifact/6rTt8v5z8QJRjpwqtaWcL9)
 - **Branch**: `feat/122-ui-improvements`
 - **Baseline Commit**: `8ab9689b`
-- **Status**: Approved 2026-11-12 — executing via `/build auto`
+- **Status**: T1–T26 done; T27–T29 (photo names, spec §2.13) pending
 - **Scope**: Phase 1 only (spec D8). Phase 2 (Experiences Flow, spec §2.11) gets its own plan once Phase 1 merges.
 - **Blast Radius**: ~30 files across 6 crates (`common`, `listing_api`, `web_ui_common`, `web_ui_guest`, `web_ui_admin`) + Playwright. No migrations: all content lives in the existing `listing.listing_details` JSONB.
 
@@ -385,6 +385,52 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
     - [ ] Full Rust and Playwright suites green.
   - **Verification Command:** `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && pnpm test:e2e`
   - **Dependencies:** All
+
+
+### Photo Names (addendum, spec §2.13)
+
+- [ ] **Task 27: Photo name column, rules and rename endpoint**
+  - **Scope:** M
+  - **Description:** Migration `sqlx migrate add listing_image_name` adding `name VARCHAR(80) NULL`. `common::listing_details::photo_name` (or `common::photos`): `validate_photo_name(&str) -> Result<Option<String>, PhotoNameError>` (trim, ≤ 80 chars, blank → `None`). `ListingImageResponse.name: Option<String>` with `#[serde(default)]`; `api_core::models` maps it. `db_core` `rename_listing_image(listing_id, image_id, name)`, scoped to the listing (0 rows → not found). `listing_api` `PATCH /{id}/images/{image_id}` behind `require_listing_manager`, `400 INVALID_PHOTO_NAME`. Refresh `.sqlx` offline data.
+  - **Files Touched:**
+    - `db_core/migrations/<timestamp>_listing_image_name.sql` (new)
+    - `db_core/src/listing/images.rs`, `db_core/src/listing/queries.rs` (select `name`), `db_core/src/models.rs`
+    - `common/src/models.rs`, `common/src/listing_details/mod.rs` (rules + tests)
+    - `app_api/api_core/src/models.rs`
+    - `app_api/listing_api/src/apis.rs`, `app_api/listing_api/src/apis_test.rs`, `.sqlx/`
+  - **Acceptance Criteria:**
+    - [ ] Rename, then GET listing returns the name; `null` or blank clears it.
+    - [ ] 81 chars → 400 `INVALID_PHOTO_NAME`; another listing's image → 404; a host who doesn't own the listing → 403.
+    - [ ] Existing image/listing tests still pass; `SQLX_OFFLINE=true cargo check --workspace --tests` passes.
+  - **Verification Command:** `cargo test -p common photo_name && cargo test -p listing_api image_name` (Postgres via devenv)
+  - **Dependencies:** None
+
+- [ ] **Task 28: Admin photo name forms and suite picker labels**
+  - **Scope:** M
+  - **Description:** `web_client` method for the PATCH. In `images.rs` `photo_grid`, each processed photo gets a name form (textbox, placeholder "Photo N", Save) posting to `POST /admin/listings/{id}/images/name`. HTMX: `hx-trigger="change, submit"`, swap the photo's form only, `HX-Trigger` toast "Name saved". Without JS: redirect back to the edit page. A refused name re-renders the form with the message and the typed value. `suite_photo_choices` uses the name or "Photo N".
+  - **Files Touched:**
+    - `web_client/src/client.rs`
+    - `web_ui_admin/src/pages/listings/images.rs`, `web_ui_admin/src/pages/listings/edit.rs`
+    - `web_ui_admin/tests/listing_photo_names.rs` (new)
+  - **Acceptance Criteria:**
+    - [ ] Render test: unnamed photo 2 shows placeholder "Photo 2"; a named photo shows its name as the value; uploading/processing photos have no form.
+    - [ ] Suite picker options use names with the "Photo N" fallback.
+  - **Verification Command:** `cargo test -p web_ui_admin --test listing_photo_names`
+  - **Dependencies:** Task 27
+
+- [ ] **Task 29: Guest alt text, viewer caption and E2E**
+  - **Scope:** M
+  - **Description:** A guest helper `photo_alt(listing_name, index, name)`. Every photo `<img>` on the listing page (hero, intro, mosaic, gallery dialog, viewer items, suite cards) uses it. Gallery dialog items carry `data-caption` (the name, or empty); the viewer gets a `[data-lightbox-caption]` line (`aria-live="polite"`); `ui.js` `showPhoto` fills it. Admin E2E: name a photo (blur → toast), reload, see it in the textbox and suite picker, clear it, and check that 81 chars is refused. Guest E2E: the viewer shows the caption and the gallery dialog doesn't; alt text matches.
+  - **Files Touched:**
+    - `web_ui_guest/src/pages/listing_detail.rs`, `web_ui_common/src/components/listing_hero.rs`, `web_ui_common/src/components/suite_card.rs`
+    - `web_ui_common/src/assets/ui.js`
+    - `playwright/e2e/admin-portal/listing-images.spec.ts`, `playwright/e2e/guest-portal/listing-detail.spec.ts`
+  - **Acceptance Criteria:**
+    - [ ] The alt-text fallback reads "{listing name}, photo N".
+    - [ ] Only the full-size viewer shows a visible caption; it is empty for unnamed photos.
+    - [ ] No inline scripts (CSP spec passes).
+  - **Verification Command:** `cargo test -p web_ui_guest && pnpm test:e2e -- listing-images.spec.ts listing-detail.spec.ts ui-js.spec.ts security.spec.ts`
+  - **Dependencies:** Task 28
 
 ---
 

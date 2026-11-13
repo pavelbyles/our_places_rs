@@ -113,3 +113,15 @@ Transform the listing detail page (`/listings/{slug}`) into an editorial luxury 
 | Concierge / experience action | Opens the existing enquiry dialog pre-filled with the topic. |
 | Testimonials when there are no reviews | Per-listing `curated_testimonials`, always labelled "From the villa guestbook". |
 | Delivery | Phase 1 listing page; Phase 2 Experiences Flow. |
+
+---
+
+## 8. Addendum: Photo Names (agreed 2026-11-12, same branch and PR)
+
+- **Outcome**: Listing photos get an optional host-set name (≤ 80 chars, trimmed, duplicates allowed) in a nullable `listing_image.name` column (one new migration). On the admin edit page, each processed photo has a textbox below it (placeholder "Photo N") that saves via HTMX on blur or Save, with a toast, and works without JS. Saving an empty box clears the name. A new `listing_api` endpoint updates it behind `require_listing_manager` and refuses invalid names with a 400 error. Image responses carry the name.
+- **Where names appear**: suite photo picker (name or "Photo N"); guest alt text on the photo's images (name, or "{listing name}, photo N"); a visible caption **only in the full-size viewer**, only when a name is set.
+- **User**: hosts picking suite photos and describing pictures; guests viewing photos full size, including screen-reader users.
+- **Why now**: the #122 suite photo picker only offers "Photo 1…12".
+- **Success criteria**: a name survives reload and shows in the textbox and picker; the full-size viewer shows the caption and alt text matches it; the gallery dialog, mosaic and hero show no caption; clearing restores "Photo N" and the fallback alt; names over 80 chars are refused; non-owners get 403/404; unit, API and Playwright tests cover these.
+- **Binding constraints**: one new migration only; compile-time SQLx with refreshed offline data; no `unwrap`/`expect` in production code; CSP-safe, with behaviour wired through `ui.js` data attributes.
+- **Explicitly out of scope**: visible captions anywhere but the full-size viewer; reordering or choosing the main photo; bulk rename; naming during upload; translated or auto-generated names; separate name and description fields.

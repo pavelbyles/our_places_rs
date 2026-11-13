@@ -185,6 +185,28 @@ No new colours. Components use existing Shoreline Mist tokens in all three theme
 1. **Double Currency Prefix**: `ListingSummary::price_text` in `web_ui_common/src/components/domain/listing_card.rs` formats `"{currency} {symbol}{price}"` → `"USD $2,400"`. Render `"{symbol}{price}"` (e.g. `"$2,400"`) when the symbol is unambiguous for the selected display currency, otherwise a disambiguated form (e.g. `"US$2,400"`).
 2. **Missing Bed Count**: in `listing_detail.rs`, when `listing.beds == 0` or missing, omit the beds fact instead of rendering `"- beds"` / `"0 beds"`.
 
+### 2.13. Photo Names (addendum, intent §8)
+
+1. **Storage**: new migration adds `name VARCHAR(80) NULL` to `listing_image`. Only host-typed names are stored; there is no stored default.
+2. **Display fallback**: an unnamed photo is "Photo N", where N is its 1-based position among the listing's processed photos (`display_order`). The label is computed when shown, so removing a photo renumbers the rest.
+3. **Rules** (in `common`, shared by the admin form and `listing_api`): trimmed; at most 80 characters; an empty name clears it (`NULL`); duplicates allowed.
+4. **API**: `PATCH /api/v1/listings/{id}/images/{image_id}` with body `{ "name": string | null }`.
+   - Checked by `authz::require_listing_manager`; an image that doesn't belong to the listing gives 404.
+   - Invalid names give `400 { "code": "INVALID_PHOTO_NAME", "message": ... }` with `tracing::warn!`.
+   - Returns the updated `ListingImageResponse`.
+   - `ListingImageResponse` gains `name: Option<String>` (`#[serde(default)]`).
+5. **Admin edit page ("Photos" section)**:
+   - Below each processed photo: a small form with a textbox (`maxlength=80`, placeholder "Photo N", current name as its value) and a "Save" button.
+   - It posts to `POST /admin/listings/{id}/images/name`.
+   - With JS, HTMX submits the form when the textbox loses focus, swaps only that photo's form, and shows a "Name saved" toast. Without JS, the Save button posts and the edit page reloads.
+   - A refused name re-renders the form with the message and the typed value kept.
+   - Photos still uploading or processing show no textbox.
+6. **Suite photo picker**: the options read the photo's name, or "Photo N".
+7. **Guest page**:
+   - Every `<img>` for a photo (hero, intro, mosaic, gallery dialog, full-size viewer, suite cards) uses the name as alt text, or `"{listing name}, photo N"` when unnamed.
+   - A visible caption appears only in the full-size viewer, only when the photo has a name. `ui.js` reads `data-caption` on the active item and writes it into a `[data-lightbox-caption]` element (`aria-live="polite"`), which is left empty when there's no name.
+   - No captions in the gallery dialog, mosaic, hero or suite cards.
+
 ---
 
 ## 3. Data Models & Schemas
@@ -442,6 +464,8 @@ pub struct StructuredListingDetails {
 6. **Details deserialization**: legacy flat `amenities` → single "Amenities" group; malformed JSON → `default()` with warning.
 7. **Amenity group validation**: 0 and 7 groups → `Count`; blank title → `MissingTitle(n)`; 33-char title → `TitleTooLong`; 0 or 21 items → `ItemCount`; 61-char item → `ItemTooLong`; 1 and 6 valid groups → `Ok`.
 
+7. **Photo names**: validation (trimmed, 80/81 chars, blank → `None`); `ListingImageResponse` deserializes without `name`; "Photo N" fallback and alt-text helpers.
+
 ### 6.2. Component & Integration Tests (`cargo test -p web_ui_guest -p web_ui_admin`)
 1. **Ribbon component**: renders N `<li>` for 3–6 items with escaped text; `data-testid="highlights-ribbon"` present.
 2. **Empty sections**: no suites / policies / nearby / reviews+testimonials → section and its nav link omitted.
@@ -477,6 +501,8 @@ pub struct StructuredListingDetails {
 - [ ] **Theme**: no new colour tokens and no hard-coded hex in new components; works in light, `.dim`, `.dark`.
 - [ ] **Bug fixes**: `"USD $2,400"` → `"$2,400"`; no `"- beds"`.
 - [ ] **Quality**: zero `.unwrap()` / `.expect()` in non-test code, strict CSP, clippy clean, Playwright suite passing.
+
+- [ ] **Photo names (§2.13)**: hosts name each processed photo, with "Photo N" as the placeholder and an empty box clearing the name; names show in the suite picker, as guest alt text, and as the full-size viewer's caption only; names over 80 characters are refused; non-owners get 403/404.
 
 ### Phase 2
 - [ ] **Experiences (host)**: hosts view and toggle experiences per listing in `web_ui_admin`.
