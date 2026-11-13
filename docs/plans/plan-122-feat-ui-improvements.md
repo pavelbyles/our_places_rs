@@ -389,7 +389,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 
 ### Photo Names (addendum, spec §2.13)
 
-- [ ] **Task 27: Photo name column, rules and rename endpoint**
+- [x] **Task 27: Photo name column, rules and rename endpoint**
   - **Scope:** M
   - **Description:** Migration `sqlx migrate add listing_image_name` adding `name VARCHAR(80) NULL`. `common::listing_details::photo_name` (or `common::photos`): `validate_photo_name(&str) -> Result<Option<String>, PhotoNameError>` (trim, ≤ 80 chars, blank → `None`). `ListingImageResponse.name: Option<String>` with `#[serde(default)]`; `api_core::models` maps it. `db_core` `rename_listing_image(listing_id, image_id, name)`, scoped to the listing (0 rows → not found). `listing_api` `PATCH /{id}/images/{image_id}` behind `require_listing_manager`, `400 INVALID_PHOTO_NAME`. Refresh `.sqlx` offline data.
   - **Files Touched:**

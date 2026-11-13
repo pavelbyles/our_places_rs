@@ -423,6 +423,37 @@ pub fn validate_testimonials(quotes: &[CuratedTestimonial]) -> Result<(), Testim
     })
 }
 
+/// Longest photo name, in characters.
+pub const MAX_PHOTO_NAME_CHARS: usize = 80;
+
+/// Why a photo name can't be saved.
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum PhotoNameError {
+    /// Over 80 characters.
+    #[error("A photo name can be at most 80 characters.")]
+    TooLong,
+}
+
+/// A photo name as saved: trimmed, `None` when blank (shows "Photo N").
+pub fn validate_photo_name(name: Option<&str>) -> Result<Option<String>, PhotoNameError> {
+    match name.map(str::trim).filter(|n| !n.is_empty()) {
+        Some(n) if n.chars().count() > MAX_PHOTO_NAME_CHARS => Err(PhotoNameError::TooLong),
+        other => Ok(other.map(str::to_string)),
+    }
+}
+
+/// "Photo 3": the label for the photo at 0-based `index` when it has no name.
+pub fn default_photo_label(index: usize) -> String {
+    format!("Photo {}", index + 1)
+}
+
+/// What a photo is called: its name, or "Photo N".
+pub fn photo_label(name: Option<&str>, index: usize) -> String {
+    name.map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map_or_else(|| default_photo_label(index), str::to_string)
+}
+
 /// Everything structured in `listing_details`. Unknown keys are ignored.
 /// (Phase 2 adds experiences.)
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -850,6 +881,35 @@ mod tests {
             e.map(|e| e.code.to_string()),
             Some("INVALID_TESTIMONIALS".into())
         );
+    }
+
+    #[test]
+    fn photo_names_are_trimmed_capped_and_blank_clears() {
+        assert_eq!(
+            validate_photo_name(Some("  Ocean terrace ")),
+            Ok(Some("Ocean terrace".into()))
+        );
+        assert_eq!(validate_photo_name(Some("   ")), Ok(None));
+        assert_eq!(validate_photo_name(None), Ok(None));
+        assert_eq!(
+            validate_photo_name(Some(&"é".repeat(80))).map(|n| n.is_some()),
+            Ok(true)
+        );
+        assert_eq!(
+            validate_photo_name(Some(&"x".repeat(81))),
+            Err(PhotoNameError::TooLong)
+        );
+        assert_eq!(photo_label(Some("Pool"), 0), "Pool");
+        assert_eq!(photo_label(Some(" "), 2), "Photo 3");
+        assert_eq!(photo_label(None, 0), "Photo 1");
+    }
+
+    #[test]
+    fn image_responses_without_a_name_still_parse() {
+        let r: Result<crate::models::ListingImageResponse, _> = serde_json::from_value(json!({
+            "id": "018f3a5e-6b9c-7000-8000-000000000002", "url": "https://x/y"
+        }));
+        assert_eq!(r.ok().and_then(|r| r.name), None);
     }
 
     #[test]

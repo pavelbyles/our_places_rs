@@ -1295,6 +1295,7 @@ mod layout_tests {
         let images = vec![ListingImageResponse {
             id: own,
             url: "https://storage.googleapis.com/b/listings/own".into(),
+            name: None,
         }];
         let suite = |image_id| SuiteItem {
             name: "Master".into(),

@@ -80,7 +80,7 @@ where
         UPDATE listing_image
         SET status = 'Processing', size_bytes = $2, content_type = $3, updated_at = now()
         WHERE id = $1
-        RETURNING id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
+        RETURNING id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at, name
         "#,
         image_id,
         size_bytes,
@@ -199,5 +199,33 @@ pub async fn delete_listing_image(
         .await?;
     }
 
+    Ok(())
+}
+
+/// Sets or clears (`None`) a listing photo's name. A photo that is not an
+/// original upload on `listing_id` is `RowNotFound`.
+#[tracing::instrument(skip(executor))]
+pub async fn rename_listing_image<'e, E>(
+    executor: E,
+    listing_id: Uuid,
+    image_id: Uuid,
+    name: Option<&str>,
+) -> Result<()>
+where
+    E: sqlx::PgExecutor<'e>,
+{
+    sqlx::query_scalar!(
+        r#"
+        UPDATE listing_image
+        SET name = $3, updated_at = now()
+        WHERE id = $1 AND listing_id = $2 AND parent_id IS NULL
+        RETURNING id
+        "#,
+        image_id,
+        listing_id,
+        name
+    )
+    .fetch_one(executor)
+    .await?;
     Ok(())
 }

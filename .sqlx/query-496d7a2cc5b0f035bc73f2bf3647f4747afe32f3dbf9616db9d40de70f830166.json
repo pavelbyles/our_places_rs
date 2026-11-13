@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE listing_image\n        SET name = $3, updated_at = now()\n        WHERE id = $1 AND listing_id = $2 AND parent_id IS NULL\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "496d7a2cc5b0f035bc73f2bf3647f4747afe32f3dbf9616db9d40de70f830166"
+}

@@ -392,6 +392,17 @@ pub struct ListingImageResponse {
     pub id: Uuid,
     /// Public image URL.
     pub url: String,
+    /// The host's name for the photo; `None` shows "Photo N".
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Renames a listing photo; `None` or blank clears the name.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq, Eq, Default)]
+pub struct RenameListingImageRequest {
+    /// The new name, up to 80 characters.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Detailed listing view incorporating images and host information.

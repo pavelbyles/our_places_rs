@@ -78,7 +78,11 @@ pub fn photo_images(
                 .and_then(|v| v.upload_url.clone())
                 .or_else(|| photo.upload_url.clone())
                 .filter(|url| !url.is_empty())
-                .map(|url| common::models::ListingImageResponse { id: photo.id, url })
+                .map(|url| common::models::ListingImageResponse {
+                    id: photo.id,
+                    url,
+                    name: photo.name.clone(),
+                })
         })
         .collect()
 }
@@ -238,6 +242,7 @@ mod tests {
             is_primary: false,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
+            name: None,
         }
     }
 
