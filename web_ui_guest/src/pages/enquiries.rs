@@ -193,6 +193,22 @@ struct EnquireQuery {
     check_in: Option<NaiveDate>,
     check_out: Option<NaiveDate>,
     guests: Option<u32>,
+    /// A service the guest asked about from the listing page.
+    topic: Option<String>,
+}
+
+/// Longest topic carried into the enquiry message, in characters.
+const MAX_TOPIC_CHARS: usize = 80;
+
+/// The message an enquiry starts with when the guest came from "Ask us to
+/// arrange" on a listing: empty without a topic.
+pub fn topic_message(topic: Option<&str>) -> String {
+    topic
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| t.chars().take(MAX_TOPIC_CHARS).collect::<String>())
+        .map(|t| format!("I'd like to arrange: {t}."))
+        .unwrap_or_default()
 }
 
 /// Enquiry form fields.
@@ -343,7 +359,7 @@ pub async fn enquire_page(cx: &Cx) -> Result<impl View> {
             check_in: q.check_in.map(|d| d.to_string()).unwrap_or_default(),
             check_out: q.check_out.map(|d| d.to_string()).unwrap_or_default(),
             guests: guests_or_default(q.guests),
-            message: String::new(),
+            message: topic_message(q.topic.as_deref()),
             error: None
         )
     })
@@ -529,6 +545,26 @@ mod enquiry_pages {
                 "/checkout/sea-grape?check_in=2030-08-01&check_out=2030-08-04&guests=6&enquiry_id={}",
                 Uuid::nil()
             )
+        );
+    }
+}
+
+#[cfg(test)]
+mod topic_tests {
+    use super::topic_message;
+
+    #[test]
+    fn a_topic_starts_the_message() {
+        assert_eq!(
+            topic_message(Some(" Airport transfer ")),
+            "I'd like to arrange: Airport transfer."
+        );
+        assert_eq!(topic_message(Some("  ")), "");
+        assert_eq!(topic_message(None), "");
+        let long = "x".repeat(200);
+        assert_eq!(
+            topic_message(Some(&long)).chars().count(),
+            "I'd like to arrange: .".len() + 80
         );
     }
 }

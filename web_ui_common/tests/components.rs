@@ -3,9 +3,13 @@
 use topcoat::context::Cx;
 use topcoat::view::{ViewExt, view};
 use web_ui_common::components::{
+    amenity_group::amenity_groups,
     chat::{chat_bubble, chat_thread},
     framed_image::{FrameAspect, framed_image},
     hero::hero,
+    highlights_ribbon::{highlights_ribbon, ribbon_columns},
+    listing_hero::{hero_rating_text, listing_hero},
+    section_nav::section_nav,
     star_rating::{star_rating, star_rating_input},
     stat_tile::stat_tile,
     steps::steps,
@@ -212,6 +216,243 @@ async fn chat_thread_is_a_log_and_bubbles_escape_text() {
     );
     assert!(
         out.contains("&lt;script&gt;") && !out.contains("<script>"),
+        "{out}"
+    );
+}
+
+fn ribbon(items: &[(&str, &str)]) -> common::listing_details::Ribbon {
+    use common::listing_details::{Ribbon, RibbonIcon, RibbonItem};
+    let items = items
+        .iter()
+        .map(|(value, label)| RibbonItem {
+            icon: RibbonIcon::Beach,
+            value: value.to_string(),
+            label: label.to_string(),
+        })
+        .collect::<Vec<_>>();
+    match Ribbon::try_from(items) {
+        Ok(r) => r,
+        Err(e) => panic!("test ribbon is invalid: {e}"),
+    }
+}
+
+#[tokio::test]
+async fn highlights_ribbon_renders_one_item_per_entry_full_bleed() {
+    let cx = &Cx::default();
+    let r = ribbon(&[
+        ("6", "Bedrooms"),
+        ("5.5", "Bathrooms"),
+        ("Direct", "Beach access"),
+        ("1", "Pool"),
+    ]);
+    let out = html(view! { highlights_ribbon(ribbon: r) }, cx).await;
+    assert!(out.contains(r#"data-testid="highlights-ribbon""#), "{out}");
+    assert!(out.contains(r#"aria-label="Villa at a glance""#), "{out}");
+    assert!(out.contains("full-bleed"), "{out}");
+    assert_eq!(out.matches("<li").count(), 4, "{out}");
+    assert!(
+        out.contains("Direct") && out.contains("Beach access"),
+        "{out}"
+    );
+    assert!(
+        out.contains(r#"aria-hidden="true""#),
+        "icons are decorative: {out}"
+    );
+    assert!(out.contains("min-[860px]:grid-cols-4"), "{out}");
+}
+
+#[tokio::test]
+async fn highlights_ribbon_escapes_host_text() {
+    let cx = &Cx::default();
+    let r = ribbon(&[("<b>6</b>", "Bedrooms"), ("2", "<i>x</i>"), ("3", "Guests")]);
+    let out = html(view! { highlights_ribbon(ribbon: r) }, cx).await;
+    assert!(!out.contains("<b>") && !out.contains("<i>"), "{out}");
+    assert!(out.contains("&lt;b&gt;6&lt;/b&gt;"), "{out}");
+}
+
+#[test]
+fn ribbon_columns_never_exceed_three_below_860px() {
+    for n in 3..=6 {
+        let cols = ribbon_columns(n);
+        assert!(cols.starts_with("grid-cols-2"), "{n}: {cols}");
+        assert!(!cols.contains("min-[600px]:grid-cols-4"), "{n}: {cols}");
+        assert!(cols.contains(&format!("grid-cols-{n}")), "{n}: {cols}");
+    }
+}
+
+fn amenity_group(title: &str, items: &[&str]) -> common::listing_details::AmenityGroup {
+    common::listing_details::AmenityGroup {
+        title: title.into(),
+        icon: common::listing_details::AmenityIcon::Waves,
+        items: items.iter().map(|i| i.to_string()).collect(),
+    }
+}
+
+#[tokio::test]
+async fn amenity_groups_render_titled_cards_in_order() {
+    let cx = &Cx::default();
+    let groups = vec![
+        amenity_group("Villa", &["Air conditioning", "Starlink Wi-Fi"]),
+        amenity_group("Health & Wellness", &["Infinity pool"]),
+    ];
+    let out = html(view! { amenity_groups(groups: groups) }, cx).await;
+    assert!(out.contains(r#"data-testid="amenity-groups""#), "{out}");
+    assert_eq!(out.matches("data-amenity-group").count(), 2, "{out}");
+    let villa = out.find("Villa").unwrap_or(usize::MAX);
+    let wellness = out.find("Health &amp; Wellness").unwrap_or(0);
+    assert!(villa < wellness, "groups keep host order: {out}");
+    assert_eq!(out.matches("<li").count(), 3, "{out}");
+}
+
+#[tokio::test]
+async fn no_amenity_groups_render_nothing() {
+    let cx = &Cx::default();
+    let out = html(view! { amenity_groups(groups: vec![]) }, cx).await;
+    assert!(!out.contains("amenity-groups"), "{out}");
+}
+
+#[tokio::test]
+async fn listing_hero_uses_the_first_photo_eagerly_and_links_the_gallery() {
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            listing_hero(
+                name: "Sea Grape".to_string(),
+                location: "Runaway Bay, Jamaica".to_string(),
+                rating: Some(4.9),
+                review_count: Some(18),
+                photo: Some("https://storage.googleapis.com/b/listings/x".to_string()),
+                photo_count: 24
+            )
+        },
+        cx,
+    )
+    .await;
+    assert!(out.contains(r#"<h1 id="listing-title""#), "{out}");
+    assert!(
+        out.contains(r#"loading="eager""#) && out.contains(r#"fetchpriority="high""#),
+        "{out}"
+    );
+    assert!(out.contains("View all 24 photos"), "{out}");
+    assert!(
+        out.contains(r#"data-dialog-open="gallery-dialog""#),
+        "{out}"
+    );
+    assert!(out.contains("full-bleed"), "{out}");
+}
+
+#[tokio::test]
+async fn listing_hero_without_photos_is_a_title_band() {
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            listing_hero(
+                name: "Sea Grape".to_string(),
+                location: "Jamaica".to_string(),
+                rating: None,
+                review_count: None,
+                photo: None,
+                photo_count: 0
+            )
+        },
+        cx,
+    )
+    .await;
+    assert!(
+        !out.contains("<img") && !out.contains("gallery-dialog"),
+        "{out}"
+    );
+    assert!(out.contains("bg-card"), "{out}");
+}
+
+#[tokio::test]
+async fn section_nav_links_each_section_and_the_booking_card() {
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            section_nav(
+                links: vec![("overview", "Overview"), ("reviews", "Reviews")],
+                price: "US$650".to_string()
+            )
+        },
+        cx,
+    )
+    .await;
+    assert!(out.contains(r#"aria-label="On this page""#), "{out}");
+    assert!(
+        out.contains(r##"href="#overview""##) && out.contains(r##"href="#reviews""##),
+        "{out}"
+    );
+    assert!(
+        out.contains(r##"href="#book""##) && out.contains("US$650"),
+        "{out}"
+    );
+    assert!(out.contains("sticky top-0"), "{out}");
+}
+
+#[test]
+fn hero_rating_reads_naturally() {
+    assert_eq!(hero_rating_text(Some(4.87), Some(18)), "4.9 · 18 reviews");
+    assert_eq!(hero_rating_text(Some(5.0), Some(1)), "5.0 · 1 review");
+    assert_eq!(hero_rating_text(Some(4.0), None), "4.0");
+    assert_eq!(hero_rating_text(None, Some(0)), "New listing");
+}
+
+fn suite(name: &str) -> common::listing_details::SuiteItem {
+    common::listing_details::SuiteItem {
+        name: name.into(),
+        bed_configuration: "1 king".into(),
+        max_guests: 2,
+        features: vec!["Direct ocean view".into()],
+        en_suite: Some("En-suite, soaking tub".into()),
+        image_id: None,
+    }
+}
+
+#[tokio::test]
+async fn suite_cards_show_beds_guests_bath_and_features() {
+    let cx = &Cx::default();
+    let suites = vec![(
+        suite("Oceanfront Master"),
+        Some("https://example.com/a.jpg".to_string()),
+    )];
+    let out = html(
+        view! { web_ui_common::components::suite_card::suites_grid(suites: suites) },
+        cx,
+    )
+    .await;
+    for text in [
+        "Oceanfront Master",
+        "1 king",
+        "2 guests",
+        "En-suite, soaking tub",
+        "Direct ocean view",
+    ] {
+        assert!(out.contains(text), "{text}: {out}");
+    }
+    assert!(out.contains(r#"loading="lazy""#), "{out}");
+    assert!(
+        !out.contains("<details"),
+        "no Show all for one suite: {out}"
+    );
+}
+
+#[tokio::test]
+async fn more_than_four_suites_hide_the_rest_behind_show_all() {
+    let cx = &Cx::default();
+    let suites = (1..=6)
+        .map(|i| (suite(&format!("Suite {i}")), None))
+        .collect::<Vec<_>>();
+    let out = html(
+        view! { web_ui_common::components::suite_card::suites_grid(suites: suites) },
+        cx,
+    )
+    .await;
+    assert_eq!(out.matches("data-suite").count(), 6, "{out}");
+    assert!(out.contains("Show all 6 suites"), "{out}");
+    let details = out.find("<details").unwrap_or(0);
+    assert!(
+        out[details..].contains("Suite 5") && !out[details..].contains("Suite 4"),
         "{out}"
     );
 }

@@ -91,6 +91,11 @@ fn writes(listing: Uuid) -> Vec<(Method, String, Option<serde_json::Value>)> {
             None,
         ),
         (
+            Method::PATCH,
+            format!("/api/v1/listings/{listing}/images/{some}"),
+            Some(serde_json::json!({ "name": "Pool deck" })),
+        ),
+        (
             Method::POST,
             format!("/api/v1/listings/{listing}/price-overrides"),
             Some(serde_json::json!({
@@ -325,4 +330,102 @@ async fn public_reads_stay_public() {
         .await;
         assert_eq!(resp.status(), StatusCode::OK, "{uri}");
     }
+}
+
+/// A processed original photo on `listing`.
+async fn photo_on(pool: &PgPool, listing: Uuid) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO listing_image (listing_id, client_file_id, status, upload_url, display_order)
+         VALUES ($1, 'f', 'Processed', 'https://storage.googleapis.com/b/listings/x', 0)
+         RETURNING id",
+    )
+    .bind(listing)
+    .fetch_one(pool)
+    .await
+    .expect("photo")
+}
+
+#[actix_web::test]
+async fn a_host_names_clears_and_is_refused_long_photo_names() {
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let host = user_with(&pool, "ARRAY['host']").await;
+    let listing = listing_of(&pool, host).await;
+    let photo = photo_on(&pool, listing).await;
+    let other_listing = listing_of(&pool, host).await;
+    let other_photo = photo_on(&pool, other_listing).await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .configure(configure_routes),
+    )
+    .await;
+    let uri = format!("/api/v1/listings/{listing}/images/{photo}");
+    let stored = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, Option<String>>("SELECT name FROM listing_image WHERE id = $1")
+            .bind(photo)
+            .fetch_one(&pool)
+            .await
+            .expect("name")
+    };
+
+    let body = serde_json::json!({ "name": "  Ocean terrace " });
+    let resp = test::call_service(
+        &app,
+        request(Method::PATCH, &uri, Some(&body), Some(bearer(host))),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(stored(pool.clone()).await.as_deref(), Some("Ocean terrace"));
+
+    let long = serde_json::json!({ "name": "x".repeat(81) });
+    let resp = test::call_service(
+        &app,
+        request(Method::PATCH, &uri, Some(&long), Some(bearer(host))),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let text = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap_or_default();
+    assert!(text.contains("INVALID_PHOTO_NAME"), "{text}");
+    assert_eq!(
+        stored(pool.clone()).await.as_deref(),
+        Some("Ocean terrace"),
+        "unchanged"
+    );
+
+    let blank = serde_json::json!({ "name": "   " });
+    let resp = test::call_service(
+        &app,
+        request(Method::PATCH, &uri, Some(&blank), Some(bearer(host))),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(stored(pool.clone()).await, None, "blank clears the name");
+
+    // A photo of another listing can't be renamed through this one.
+    let wrong = format!("/api/v1/listings/{listing}/images/{other_photo}");
+    let resp = test::call_service(
+        &app,
+        request(Method::PATCH, &wrong, Some(&body), Some(bearer(host))),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // The listing page carries the name.
+    let named = serde_json::json!({ "name": "Pool deck" });
+    test::call_service(
+        &app,
+        request(Method::PATCH, &uri, Some(&named), Some(bearer(host))),
+    )
+    .await;
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!("/api/v1/listings/{listing}"))
+            .to_request(),
+    )
+    .await;
+    let details: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(details["images"][0]["name"], "Pool deck", "{details}");
 }

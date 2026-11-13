@@ -104,6 +104,21 @@
     }, 5000);
   }
 
+  // Server-rendered toasts marked [data-toast-auto] (e.g. swapped into
+  // #toast-region out of band) go away like the ones above.
+  function autoDismissToasts(scope) {
+    var toasts = scope.matches("[data-toast-auto]")
+      ? [scope]
+      : scope.querySelectorAll("[data-toast-auto]");
+    Array.prototype.forEach.call(toasts, function (toast) {
+      if (toast.hasAttribute("data-toast-timer")) return;
+      toast.setAttribute("data-toast-timer", "");
+      window.setTimeout(function () {
+        toast.remove();
+      }, 5000);
+    });
+  }
+
   // --- Photo viewer: a [data-lightbox-index] inside a [data-lightbox-group]
   // opens the group's viewer <dialog data-lightbox> (its id is the group's
   // attribute value) on that photo. [data-lightbox-step] buttons and the
@@ -121,6 +136,7 @@
     var i = ((index % items.length) + items.length) % items.length;
     var img = viewer.querySelector("[data-lightbox-img]");
     var counter = viewer.querySelector("[data-lightbox-counter]");
+    var caption = viewer.querySelector("[data-lightbox-caption]");
     viewer.setAttribute("data-index", String(i));
     if (img) {
       // srcset first, so the browser picks a variant fitting the viewer
@@ -130,6 +146,8 @@
       img.alt = items[i].getAttribute("data-alt") || "";
     }
     if (counter) counter.textContent = i + 1 + " / " + items.length;
+    // The host's photo name, shown only here; empty for unnamed photos.
+    if (caption) caption.textContent = items[i].getAttribute("data-caption") || "";
   }
 
   function stepPhoto(viewer, delta) {
@@ -604,6 +622,7 @@
       if (!dialogs[i].open && typeof dialogs[i].showModal === "function")
         dialogs[i].showModal();
     }
+    autoDismissToasts(el);
   });
 
   document.addEventListener("keydown", function (event) {
@@ -1007,12 +1026,140 @@
     true,
   );
 
+  // ----- Listing page: mark the section in view in the sticky section nav.
+  function watchSectionNav() {
+    var nav = document.querySelector("[data-section-nav]");
+    if (!nav || !("IntersectionObserver" in window)) return;
+    var links = Array.prototype.slice.call(nav.querySelectorAll("[data-section-link]"));
+    var sections = links
+      .map(function (a) { return document.getElementById(a.getAttribute("data-section-link")); })
+      .filter(Boolean);
+    if (!sections.length) return;
+    var visible = {};
+    function mark() {
+      var current = null;
+      sections.forEach(function (s) { if (!current && visible[s.id]) current = s.id; });
+      links.forEach(function (a) {
+        if (current && a.getAttribute("data-section-link") === current) {
+          a.setAttribute("aria-current", "true");
+        } else {
+          a.removeAttribute("aria-current");
+        }
+      });
+    }
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+        mark();
+      },
+      { rootMargin: "-80px 0px -55% 0px" },
+    );
+    sections.forEach(function (s) { observer.observe(s); });
+  }
+
+  // ----- Listing studio: reorder fixed form rows (ribbon items, amenity
+  // groups). Field names carry the row number, so moving a row swaps the
+  // values of two rows; without JS the host orders rows by slot.
+  function rowFields(row) {
+    return Array.prototype.slice.call(row.querySelectorAll("input, select, textarea"));
+  }
+
+  function swapRows(a, b) {
+    var fa = rowFields(a);
+    var fb = rowFields(b);
+    fa.forEach(function (field, i) {
+      var other = fb[i];
+      if (!other) return;
+      var v = field.value;
+      field.value = other.value;
+      other.value = v;
+    });
+  }
+
+  function addReorderButtons(editor, rowSelector) {
+    var rows = Array.prototype.slice.call(editor.querySelectorAll(rowSelector));
+    rows.forEach(function (row, i) {
+      if (row.querySelector("[data-row-move]")) return;
+      var bar = document.createElement("div");
+      bar.className = "flex justify-end gap-1";
+      [["up", -1, "\u2191"], ["down", 1, "\u2193"]].forEach(function (spec) {
+        var target = i + spec[1];
+        var button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("data-row-move", spec[0]);
+        button.setAttribute("aria-label", "Move row " + (i + 1) + " " + spec[0]);
+        button.className = "size-8 rounded-md border border-border text-sm disabled:opacity-40";
+        button.textContent = spec[2];
+        button.disabled = target < 0 || target >= rows.length;
+        button.addEventListener("click", function () {
+          swapRows(row, rows[target]);
+          var moved = rowFields(rows[target])[0];
+          if (moved) moved.focus();
+          editor.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        bar.appendChild(button);
+      });
+      row.appendChild(bar);
+    });
+  }
+
+  // "Prefill from listing facts": bedrooms, bathrooms and maximum guests go
+  // first in the ribbon; the host's other items keep their order after them.
+  function prefillRibbon(editor) {
+    var form = editor.closest("form");
+    if (!form) return;
+    function num(name) {
+      var field = form.querySelector('[name="' + name + '"]');
+      var n = field ? parseInt(field.value, 10) : NaN;
+      return isNaN(n) ? 0 : Math.max(0, n);
+    }
+    var baths = num("full_bathrooms") + num("half_bathrooms") / 2;
+    var facts = [
+      ["bed", String(num("bedrooms")), "Bedrooms"],
+      ["bath", String(baths), "Bathrooms"],
+      ["guests", String(num("max_guests")), "Max guests"],
+    ];
+    var rows = Array.prototype.slice.call(editor.querySelectorAll("[data-ribbon-row]"));
+    var others = rows
+      .map(function (row) { return rowFields(row).map(function (f) { return f.value; }); })
+      .filter(function (v) {
+        var filled = (v[1] || "").trim() || (v[2] || "").trim();
+        return filled && ["bed", "bath", "guests"].indexOf(v[0]) === -1;
+      });
+    var values = facts.concat(others).slice(0, rows.length);
+    rows.forEach(function (row, i) {
+      var fields = rowFields(row);
+      var v = values[i] || [fields[0] ? fields[0].options[0].value : "", "", ""];
+      fields.forEach(function (field, j) { field.value = v[j] || ""; });
+    });
+  }
+
+  function enhanceListingStudio() {
+    var ribbon = document.querySelector("[data-ribbon-editor]");
+    if (ribbon) {
+      addReorderButtons(ribbon, "[data-ribbon-row]");
+      if (!ribbon.querySelector("[data-ribbon-prefill]")) {
+        var prefill = document.createElement("button");
+        prefill.type = "button";
+        prefill.setAttribute("data-ribbon-prefill", "");
+        prefill.className = "h-9 w-fit rounded-lg border border-border px-3 text-sm";
+        prefill.textContent = "Prefill from listing facts";
+        prefill.addEventListener("click", function () { prefillRibbon(ribbon); });
+        ribbon.appendChild(prefill);
+      }
+    }
+    var amenities = document.querySelector("[data-amenity-editor]");
+    if (amenities) addReorderButtons(amenities, "[data-amenity-slot]");
+  }
+
   function init() {
     applyTheme(currentTheme());
     enhanceCalendars(document);
     convertDateInputs(document);
     updateCarousels();
     storeTimezoneOffset();
+    watchSectionNav();
+    enhanceListingStudio();
   }
 
   if (document.readyState === "loading") {

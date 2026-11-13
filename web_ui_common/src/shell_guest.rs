@@ -1,6 +1,7 @@
 //! The guest portal page shell: document head, header (wordmark, nav,
 //! currency, theme toggle, server-rendered account menu), main and footer.
 
+use chrono::Datelike;
 use topcoat::{
     Result,
     asset::Asset,
@@ -43,6 +44,14 @@ pub struct GuestShell {
     pub return_to: String,
 }
 
+/// The footer's policy pages: (path, label).
+pub const POLICY_LINKS: [(&str, &str); 4] = [
+    ("/terms", "Terms"),
+    ("/cancellation-policy", "Cancellation policy"),
+    ("/privacy-policy", "Privacy policy"),
+    ("/house-rules", "House rules"),
+];
+
 /// Header, main landmark, footer and toast region. Separate from the
 /// document head so it can be rendered without the asset bundle.
 #[component]
@@ -61,6 +70,8 @@ pub async fn guest_chrome(
         return_to,
         ..
     } = shell;
+    let contact = crate::concierge::concierge().links();
+    let footer_currency = currency.clone();
     let pill = "inline-flex h-11 items-center whitespace-nowrap rounded-full px-3 text-sm font-medium sm:px-5";
     Ok(view! {
         <a
@@ -200,16 +211,74 @@ pub async fn guest_chrome(
                 </div>
             </div>
         </header>
-        <main id="main" class="mx-auto w-full max-w-[1540px] px-6 py-12">(child)</main>
-        <footer class="mt-32 border-t border-border">
+        <main id="main" class="page-grid">(child)</main>
+        <footer data-testid="site-footer" class="border-t border-border bg-card text-card-foreground">
             <div
-                class="mx-auto flex max-w-[1540px] flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:justify-between"
+                class="mx-auto grid max-w-[1540px] gap-8 px-6 pt-14 pb-8 text-sm sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1.2fr]"
             >
-                <p class="font-serif text-xl text-foreground">"Our Places"</p>
-                <nav aria-label="Footer" class="flex flex-wrap gap-6">
-                    <a href="/register">"List your property"</a>
-                    <a href="/about">"About"</a>
+                <div class="space-y-2.5">
+                    <p class="font-serif text-xl">"Our Places"</p>
+                    <p class="max-w-[32ch] text-muted-foreground">
+                        "Staffed villas and apartments in Runaway Bay and Kingston, Jamaica."
+                    </p>
+                </div>
+                <nav aria-labelledby="footer-explore" class="space-y-3">
+                    <p
+                        id="footer-explore"
+                        class="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase"
+                    >
+                        "Explore"
+                    </p>
+                    <ul class="grid gap-2">
+                        <li><a href="/listings" class="no-underline">"Villas"</a></li>
+                        <li><a href="/about" class="no-underline">"About"</a></li>
+                        <li><a href="/register" class="no-underline">"List your property"</a></li>
+                    </ul>
                 </nav>
+                <nav aria-labelledby="footer-policies" class="space-y-3">
+                    <p
+                        id="footer-policies"
+                        class="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase"
+                    >
+                        "Policies"
+                    </p>
+                    <ul class="grid gap-2">
+                        for (href, label) in POLICY_LINKS {
+                            <li><a href=(href) class="no-underline">(label)</a></li>
+                        }
+                    </ul>
+                </nav>
+                if !contact.is_empty() {
+                    <div data-testid="footer-concierge" class="space-y-3">
+                        <p class="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
+                            "Concierge"
+                        </p>
+                        <ul class="grid gap-2">
+                            for (label, href) in contact {
+                                <li>
+                                    <a
+                                        href=(href.clone())
+                                        rel=(href.starts_with("https://").then_some("noopener"))
+                                        class="no-underline"
+                                    >
+                                        (label)
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+            <div
+                class="mx-auto flex max-w-[1540px] flex-wrap justify-between gap-2 border-t border-divider px-6 py-5 text-[13px] text-muted-foreground"
+            >
+                <span>(format!("\u{a9} {} Our Places", chrono::Utc::now().year()))</span>
+                <span>
+                    "Prices include GCT where stated"
+                    if let Some(code) = footer_currency {
+                        (format!(" \u{b7} Shown in {code}"))
+                    }
+                </span>
             </div>
         </footer>
         toast_region()

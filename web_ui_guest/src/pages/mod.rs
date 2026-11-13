@@ -26,6 +26,8 @@ pub mod listing_detail;
 pub mod listings;
 /// Guest–host messaging.
 pub mod messages;
+/// Footer policy pages (draft placeholder text).
+pub mod policies;
 /// The guest's profile.
 pub mod profile;
 /// Guest registration.

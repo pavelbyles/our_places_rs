@@ -293,7 +293,7 @@ where
     let images = sqlx::query_as!(
         crate::models::ListingImage,
         r#"
-        SELECT id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
+        SELECT id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at, name
         FROM listing_image
         WHERE listing_id = $1 AND status = 'Processed'
         ORDER BY display_order ASC
@@ -379,7 +379,7 @@ where
     let images = sqlx::query_as!(
         crate::models::ListingImage,
         r#"
-        SELECT id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at
+        SELECT id, listing_id, client_file_id, status as "status: crate::models::ImageStatus", resolution as "resolution: crate::models::ImageResolution", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at, name
         FROM listing_image
         WHERE listing_id = $1 AND status = 'Processed'
         ORDER BY display_order ASC

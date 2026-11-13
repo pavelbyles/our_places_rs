@@ -392,6 +392,17 @@ pub struct ListingImageResponse {
     pub id: Uuid,
     /// Public image URL.
     pub url: String,
+    /// The host's name for the photo; `None` shows "Photo N".
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Renames a listing photo; `None` or blank clears the name.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema, PartialEq, Eq, Default)]
+pub struct RenameListingImageRequest {
+    /// The new name, up to 80 characters.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Detailed listing view incorporating images and host information.
@@ -810,9 +821,11 @@ pub struct NewListingRequest {
     pub longitude: Option<f64>,
 
     // --- NEW: Dynamic Property Definitions (JSONB) ---
-    /// Amenities and other details, as JSON.
+    /// Amenities and other details, as JSON. Host-edited sections are
+    /// checked by [`crate::listing_details::validate_listing_details`].
     #[serde(default)]
     #[schema(value_type = Object)]
+    #[validate(custom(function = "crate::listing_details::validate_listing_details"))]
     pub listing_details: Option<serde_json::Value>,
 
     /// City, if known.
@@ -1011,9 +1024,11 @@ pub struct UpdatedListingRequest {
     #[schema(value_type = String, example = "Kingston")]
     pub city: Option<String>,
 
-    /// Updated amenities and other details, as JSON.
+    /// Updated amenities and other details, as JSON. Host-edited sections
+    /// are checked by [`crate::listing_details::validate_listing_details`].
     #[serde(default)]
     #[schema(value_type = Object)]
+    #[validate(custom(function = "crate::listing_details::validate_listing_details"))]
     pub listing_details: Option<serde_json::Value>,
 
     /// Updated minimum stay in nights.

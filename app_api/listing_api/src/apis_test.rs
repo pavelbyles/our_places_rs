@@ -1945,3 +1945,135 @@ async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
     .await;
     assert_eq!(resp.status(), 400);
 }
+
+fn listing_with_details(
+    user_id: Uuid,
+    details: serde_json::Value,
+) -> common::models::NewListingRequest {
+    common::models::NewListingRequest {
+        name: "Ribbon Villa".to_string(),
+        user_id,
+        description: None,
+        listing_structure: "Villa".to_string(),
+        country: "Jamaica".to_string(),
+        price_per_night: Some(dec!(100.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 6,
+        bedrooms: 3,
+        beds: 3,
+        full_bathrooms: 2,
+        half_bathrooms: 1,
+        square_meters: None,
+        latitude: None,
+        longitude: None,
+        listing_details: Some(details),
+        city: None,
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
+        commission_pct: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: 1,
+        extra_guest_fee: None,
+        is_active: true,
+    }
+}
+
+#[actix_web::test]
+async fn test_create_listing_refuses_an_invalid_ribbon() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let user_id = create_test_user(&mut conn).await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let two_items = serde_json::json!({ "ribbon": [
+        { "icon": "bed", "value": "3", "label": "Bedrooms" },
+        { "icon": "bath", "value": "2.5", "label": "Bathrooms" },
+    ]});
+    let req = test::TestRequest::post()
+        .insert_header(admin_auth())
+        .uri("/api/v1/listings")
+        .set_json(listing_with_details(user_id, two_items))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
+    assert!(body.contains("INVALID_RIBBON"), "{body}");
+    assert!(body.contains("between 3 and 6 items"), "{body}");
+
+    let three_items = serde_json::json!({ "ribbon": [
+        { "icon": "bed", "value": "3", "label": "Bedrooms" },
+        { "icon": "bath", "value": "2.5", "label": "Bathrooms" },
+        { "icon": "beach", "value": "Direct", "label": "Beach access" },
+    ]});
+    let req = test::TestRequest::post()
+        .insert_header(admin_auth())
+        .uri("/api/v1/listings")
+        .set_json(listing_with_details(user_id, three_items))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    let stored: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(
+        stored["listing_details"]["ribbon"][2]["value"], "Direct",
+        "{stored}"
+    );
+}
+
+#[actix_web::test]
+async fn test_create_listing_refuses_invalid_amenity_groups() {
+    dotenvy::dotenv().ok();
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let user_id = create_test_user(&mut conn).await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let untitled = serde_json::json!({ "amenity_groups": [
+        { "title": " ", "icon": "home", "items": ["Pool"] },
+    ]});
+    let req = test::TestRequest::post()
+        .insert_header(admin_auth())
+        .uri("/api/v1/listings")
+        .set_json(listing_with_details(user_id, untitled))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
+    assert!(body.contains("INVALID_AMENITY_GROUPS"), "{body}");
+    assert!(body.contains("Group 1 needs a title."), "{body}");
+
+    let valid = serde_json::json!({ "amenity_groups": [
+        { "title": "Villa", "icon": "home", "items": ["Pool", "Wi-Fi"] },
+    ]});
+    let req = test::TestRequest::post()
+        .insert_header(admin_auth())
+        .uri("/api/v1/listings")
+        .set_json(listing_with_details(user_id, valid))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    let stored: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(
+        stored["listing_details"]["amenity_groups"][0]["items"][1], "Wi-Fi",
+        "{stored}"
+    );
+}

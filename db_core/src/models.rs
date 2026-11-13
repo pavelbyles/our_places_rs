@@ -1117,6 +1117,8 @@ pub struct ListingImage {
     pub created_at: DateTime<Utc>,
     /// When this was last changed.
     pub updated_at: DateTime<Utc>,
+    /// The host's name for the photo; `None` shows "Photo N".
+    pub name: Option<String>,
 }
 
 /// A listing with everything its page needs.

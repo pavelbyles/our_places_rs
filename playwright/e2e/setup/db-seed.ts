@@ -58,6 +58,50 @@ function cleanupPreviousRuns(dbUrl: string): void {
   }
 }
 
+/**
+ * Structured listing content (spec-122) for the seeded listing, so the guest
+ * listing page shows every section. Reset on every run.
+ */
+export const COURTYARD_DETAILS = JSON.stringify({
+  pull_quote: 'A private garden hideaway in the heart of New Kingston',
+  ribbon: [
+    { icon: 'bed', value: '2', label: 'Bedrooms' },
+    { icon: 'bath', value: '2', label: 'Bathrooms' },
+    { icon: 'guests', value: '4', label: 'Max guests' },
+    { icon: 'pool', value: '1', label: 'Infinity pool' },
+    { icon: 'chef', value: 'Daily', label: 'Private chef' },
+  ],
+  amenity_groups: [
+    { title: 'Villa', icon: 'home', items: ['Air conditioning throughout', 'Starlink Wi-Fi', 'Smart TVs'] },
+    { title: 'Health & Wellness', icon: 'waves', items: ['Infinity pool', 'Yoga deck'] },
+    { title: 'Common Areas', icon: 'sun', items: ['Private garden', 'Covered verandah'] },
+  ],
+  suites: [
+    {
+      name: 'Garden Master', bed_configuration: '1 king', max_guests: 2,
+      features: ['Garden view', 'Private patio'], en_suite: 'En-suite, rain shower',
+      image_id: '018f3a5e-6b9c-7000-8000-000000000002',
+    },
+    { name: 'Courtyard Room', bed_configuration: '1 queen', max_guests: 2, features: ['Courtyard view'], en_suite: 'En-suite' },
+  ],
+  staff_services: {
+    included: ['Private chef, breakfast and dinner', 'Daily housekeeping'],
+    included_note: 'Groceries are billed at cost.',
+    addons: [
+      { name: 'Airport transfer, KIN', price: '120', unit: 'each way' },
+      { name: 'Pre-arrival grocery stocking' },
+    ],
+  },
+  policies: { check_in: 'From 3:00 PM', check_out: 'By 11:00 AM', house_rules: 'No smoking indoors' },
+  nearby: [
+    { name: 'Devon House', drive_minutes: 8 },
+    { name: 'Norman Manley Intl. (KIN)', drive_minutes: 30 },
+  ],
+  curated_testimonials: [
+    { guest_name: 'Danielle', location: 'Toronto', stay_date: 'March 2026', quote: 'The garden was our favourite place to start each morning.', rating: 5 },
+  ],
+}).replaceAll("'", "''");
+
 export async function seedTestData(): Promise<void> {
   const dbUrl = process.env.DATABASE_URL || 'postgres://postgres:password@localhost:5432/our_places';
   cleanupPreviousRuns(dbUrl);
@@ -160,8 +204,9 @@ export async function seedTestData(): Promise<void> {
         0.1000,
         75.00,
         150.00,
-        '[]'::jsonb
+        '${COURTYARD_DETAILS}'::jsonb
     ) ON CONFLICT (slug) DO UPDATE SET
+        listing_details = EXCLUDED.listing_details,
         price_per_night = EXCLUDED.price_per_night,
         cleaning_fee = EXCLUDED.cleaning_fee,
         damage_deposit = EXCLUDED.damage_deposit,

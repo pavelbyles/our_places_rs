@@ -6,37 +6,35 @@ use common::booking_request::BookingMode;
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use topcoat::context::Cx;
 use topcoat::{
     Result,
     view::{View, component, view},
 };
 use uuid::Uuid;
+
+use common::listing_details::{
+    AMENITIES_KEY, AMENITY_GROUPS_KEY, AmenityGroup, CuratedTestimonial, HousePolicies, NEARBY_KEY,
+    NearbyPlace, POLICIES_KEY, RIBBON_KEY, RibbonItem, STAFF_SERVICES_KEY, SUITES_KEY,
+    StaffServices, SuiteItem, TESTIMONIALS_KEY,
+};
 use web_ui_common::components::domain::currency_selector::currency_option_list;
+
+use super::amenity_field::{
+    amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
+};
+use super::guestbook_field::{guestbook_fields, guestbook_fieldset, parse_guestbook};
+use super::policies_field::{parse_policies, policies_fields, policies_fieldset};
+use super::ribbon_field::{parse_ribbon, ribbon_fields, ribbon_fieldset};
+use super::services_field::{parse_services, services_fields, services_fieldset};
+use super::suite_field::{SuitePhoto, parse_suites, suite_fields, suite_fieldset};
 
 /// Listing structures known to `listing_api`.
 pub const STRUCTURES: [&str; 5] = ["Villa", "House", "Apartment", "Townhouse", "Studio"];
-/// Most amenities a listing can list.
-pub const MAX_AMENITIES: usize = 50;
-/// Longest amenity, in characters.
-pub const MAX_AMENITY_CHARS: usize = 60;
+pub use common::listing_details::amenities::{MAX_AMENITIES, MAX_AMENITY_CHARS};
 /// Longest description `listing_api` accepts, in characters.
 pub const MAX_DESCRIPTION_CHARS: usize = 2000;
-/// Key of the amenity list inside `listing_details` (the guest listing page
-/// reads the same key).
-const AMENITIES_KEY: &str = "amenities";
-
-/// The amenities stored in a listing's `listing_details`.
-pub fn amenities_of(details: Option<&serde_json::Value>) -> Vec<String> {
-    details
-        .and_then(|d| d.get(AMENITIES_KEY))
-        .and_then(|a| a.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect()
-}
-
 /// Raw form values (strings, so the page can be re-rendered as typed).
 #[derive(Deserialize, Default, Clone, Debug)]
 #[serde(default)]
@@ -93,10 +91,12 @@ pub struct ListingFields {
     pub owner_id: String,
     /// "on" when the listing is bookable.
     pub is_active: String,
-    /// Amenities, one per line.
-    pub amenities: String,
     /// How the listing sells: `instant`, `request` or `both`.
     pub booking_mode: String,
+    /// Fixed-slot content fields posted as `ribbon_{n}_{part}` and similar
+    /// (the form encoding has no lists, so each row has its own names).
+    #[serde(flatten)]
+    pub slots: BTreeMap<String, String>,
 }
 
 fn opt(v: Option<Decimal>) -> String {
@@ -137,8 +137,15 @@ impl ListingFields {
             } else {
                 String::new()
             },
-            amenities: amenities_of(l.listing_details.as_ref()).join("\n"),
             booking_mode: l.booking_mode.as_str().into(),
+            slots: ribbon_fields(l.listing_details.as_ref())
+                .into_iter()
+                .chain(amenity_fields(l.listing_details.as_ref()))
+                .chain(suite_fields(l.listing_details.as_ref()))
+                .chain(services_fields(l.listing_details.as_ref()))
+                .chain(policies_fields(l.listing_details.as_ref()))
+                .chain(guestbook_fields(l.listing_details.as_ref()))
+                .collect(),
         }
     }
 
@@ -159,6 +166,7 @@ impl ListingFields {
             owner_id: owner.to_string(),
             is_active: "on".into(),
             booking_mode: BookingMode::Instant.as_str().into(),
+            slots: suggested_amenity_fields(),
             ..Default::default()
         }
     }
@@ -193,7 +201,13 @@ pub struct ValidListing {
     latitude: Option<f64>,
     longitude: Option<f64>,
     is_active: bool,
-    amenities: Vec<String>,
+    amenity_groups: Vec<AmenityGroup>,
+    ribbon: Option<Vec<RibbonItem>>,
+    suites: Vec<SuiteItem>,
+    services: Option<StaffServices>,
+    policies: Option<HousePolicies>,
+    nearby: Vec<NearbyPlace>,
+    guestbook: Vec<CuratedTestimonial>,
     booking_mode: BookingMode,
 }
 
@@ -307,27 +321,6 @@ impl Parser {
         }
         Some(v).filter(|d| !d.is_empty())
     }
-    /// One entry per non-blank line, trimmed, without case-insensitive
-    /// duplicates (the first spelling wins).
-    fn amenities(&mut self, v: &str) -> Vec<String> {
-        let mut seen = std::collections::HashSet::new();
-        let list: Vec<String> = v
-            .lines()
-            .map(str::trim)
-            .filter(|a| !a.is_empty() && seen.insert(a.to_lowercase()))
-            .map(str::to_string)
-            .collect();
-        if list.len() > MAX_AMENITIES {
-            self.errors
-                .push(format!("List at most {MAX_AMENITIES} amenities."));
-        }
-        if let Some(long) = list.iter().find(|a| a.chars().count() > MAX_AMENITY_CHARS) {
-            self.errors.push(format!(
-                "Amenities can be at most {MAX_AMENITY_CHARS} characters (\"{long}\" is longer)."
-            ));
-        }
-        list
-    }
 }
 
 impl ListingFields {
@@ -397,9 +390,38 @@ impl ListingFields {
             latitude: p.coord("Latitude", &self.latitude, 90.0),
             longitude: p.coord("Longitude", &self.longitude, 180.0),
             is_active: self.is_active == "on",
-            amenities: p.amenities(&self.amenities),
+            amenity_groups: parse_amenity_groups(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                Vec::new()
+            }),
+            ribbon: parse_ribbon(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                None
+            }),
+            suites: parse_suites(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                Vec::new()
+            }),
+            services: parse_services(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                None
+            }),
+            policies: None,
+            nearby: Vec::new(),
+            guestbook: parse_guestbook(&self.slots).unwrap_or_else(|errors| {
+                p.errors.extend(errors);
+                Vec::new()
+            }),
             booking_mode: parse_booking_mode(&mut p, &self.booking_mode),
         };
+        let mut valid = valid;
+        match parse_policies(&self.slots) {
+            Ok((policies, nearby)) => {
+                valid.policies = policies;
+                valid.nearby = nearby;
+            }
+            Err(errors) => p.errors.extend(errors),
+        }
         if valid.guests_included > valid.max_guests {
             p.errors
                 .push("Guests included cannot exceed maximum guests.".into());
@@ -425,8 +447,72 @@ fn parse_booking_mode(p: &mut Parser, value: &str) -> BookingMode {
 }
 
 impl ValidListing {
+    /// `details` with the form's content sections written in: set when
+    /// filled, removed when cleared, other keys untouched.
+    fn content_details(
+        &self,
+        mut details: serde_json::Map<String, serde_json::Value>,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        // Amenities now live in groups; a legacy flat list moves into them.
+        details.remove(AMENITIES_KEY);
+        if self.amenity_groups.is_empty() {
+            details.remove(AMENITY_GROUPS_KEY);
+        } else {
+            details.insert(
+                AMENITY_GROUPS_KEY.to_string(),
+                serde_json::json!(self.amenity_groups),
+            );
+        }
+        match &self.ribbon {
+            Some(items) => {
+                details.insert(RIBBON_KEY.to_string(), serde_json::json!(items));
+            }
+            None => {
+                details.remove(RIBBON_KEY);
+            }
+        }
+        if self.suites.is_empty() {
+            details.remove(SUITES_KEY);
+        } else {
+            details.insert(SUITES_KEY.to_string(), serde_json::json!(self.suites));
+        }
+        match &self.services {
+            Some(services) => {
+                details.insert(STAFF_SERVICES_KEY.to_string(), serde_json::json!(services));
+            }
+            None => {
+                details.remove(STAFF_SERVICES_KEY);
+            }
+        }
+        match &self.policies {
+            Some(policies) => {
+                details.insert(POLICIES_KEY.to_string(), serde_json::json!(policies));
+            }
+            None => {
+                details.remove(POLICIES_KEY);
+            }
+        }
+        if self.nearby.is_empty() {
+            details.remove(NEARBY_KEY);
+        } else {
+            details.insert(NEARBY_KEY.to_string(), serde_json::json!(self.nearby));
+        }
+        if self.guestbook.is_empty() {
+            details.remove(TESTIMONIALS_KEY);
+        } else {
+            details.insert(
+                TESTIMONIALS_KEY.to_string(),
+                serde_json::json!(self.guestbook),
+            );
+        }
+        details
+    }
+
     /// The create request.
     pub fn into_new(self) -> NewListingRequest {
+        let listing_details = Some(serde_json::Value::Object(
+            self.content_details(serde_json::Map::new()),
+        ));
         NewListingRequest {
             name: self.name,
             user_id: self.owner_id,
@@ -444,9 +530,7 @@ impl ValidListing {
             square_meters: self.square_meters,
             latitude: self.latitude,
             longitude: self.longitude,
-            listing_details: Some(serde_json::json!({
-                AMENITIES_KEY: self.amenities,
-            })),
+            listing_details,
             city: self.city,
             base_currency: self.base_currency,
             minimum_stay: self.minimum_stay,
@@ -465,11 +549,12 @@ impl ValidListing {
     /// into the listing's `current_details` to keep its other keys (Wi-Fi,
     /// address, check-in instructions).
     pub fn into_update(self, current_details: Option<&serde_json::Value>) -> UpdatedListingRequest {
-        let mut details = current_details
-            .and_then(|d| d.as_object())
-            .cloned()
-            .unwrap_or_default();
-        details.insert(AMENITIES_KEY.to_string(), serde_json::json!(self.amenities));
+        let details = self.content_details(
+            current_details
+                .and_then(|d| d.as_object())
+                .cloned()
+                .unwrap_or_default(),
+        );
         UpdatedListingRequest {
             name: Some(self.name),
             description: self.description,
@@ -521,6 +606,9 @@ pub async fn listing_form(
     can_set_commission: bool,
     /// Validation or API errors to show.
     errors: Vec<String>,
+    /// The listing's photos, for each suite's photo picker (none when new).
+    #[default]
+    suite_photos: Vec<SuitePhoto>,
 ) -> Result<impl View> {
     let label = "block text-xs font-medium text-muted-foreground";
     let input = "mt-1 block h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground";
@@ -885,20 +973,37 @@ pub async fn listing_form(
                     </label>
                 }
             </fieldset>
-            <fieldset class="grid gap-2 rounded-xl border border-border p-6">
-                <legend class="px-1 text-sm font-semibold">"Amenities"</legend>
-                <label for="listing-amenities" class=(label)>
-                    "One per line, e.g. Private pool, Wi-Fi, Air conditioning. Guests see them under “What this place offers”."
-                </label>
-                <textarea
-                    id="listing-amenities"
-                    name="amenities"
-                    rows="6"
-                    class=(format!("{input} h-auto py-2"))
-                >
-                    (f.amenities.clone())
-                </textarea>
-            </fieldset>
+            ribbon_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            amenity_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            suite_fieldset(
+                fields: f.slots.clone(),
+                photos: suite_photos,
+                label_class: label,
+                input_class: input
+            )
+            services_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            policies_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
+            guestbook_fieldset(
+                fields: f.slots.clone(),
+                label_class: label,
+                input_class: input
+            )
             <button
                 id="btn-save-listing"
                 type="submit"

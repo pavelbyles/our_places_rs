@@ -17,6 +17,8 @@ use web_ui_common::components::domain::price_breakdown::money;
 
 use crate::support::{scoped_listings, staff};
 
+/// The "Amenities" fieldset: group slots, parsing and validation.
+pub mod amenity_field;
 /// Calendar sync: export link, imported calendars, blocks and conflicts.
 pub mod calendar;
 #[cfg(test)]
@@ -27,8 +29,18 @@ pub mod create;
 pub mod edit;
 /// The studio form shared by create, clone and edit.
 pub mod form;
+/// The "Guestbook quotes" fieldset.
+pub mod guestbook_field;
 /// Signed-URL photo uploads.
 pub mod images;
+/// The "House policies" and "Nearby places" fieldsets.
+pub mod policies_field;
+/// The "Highlights ribbon" fieldset: fixed rows, parsing and validation.
+pub mod ribbon_field;
+/// The "Staff & services" fieldset: included staff, notes and add-ons.
+pub mod services_field;
+/// The "Suites" fieldset: suite slots, photo picker, parsing and validation.
+pub mod suite_field;
 
 path_param!(id);
 
@@ -297,7 +309,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
             },
         ),
     ];
-    let amenities = form::amenities_of(l.listing_details.as_ref());
+    let amenity_groups = amenity_field::amenity_groups_of(l.listing_details.as_ref());
     let action = "inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm font-medium no-underline text-foreground";
     Ok(view! {
         <div class="space-y-6">
@@ -345,20 +357,29 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 <h2 id="amenities-heading" class="text-sm font-semibold">
                     "Amenities"
                 </h2>
-                if amenities.is_empty() {
+                if amenity_groups.is_empty() {
                     <p class="text-sm text-muted-foreground">
                         "None listed yet. Add them from Edit."
                     </p>
                 } else {
-                    <ul id="listing-amenities-list" class="flex flex-wrap gap-2">
-                        for a in amenities {
-                            <li
-                                class="rounded-full border border-border px-3 py-1 text-sm"
-                            >
-                                (a)
-                            </li>
+                    <div id="listing-amenities-list" class="space-y-3">
+                        for group in amenity_groups {
+                            <div class="space-y-1.5">
+                                <h3 class="text-xs font-medium text-muted-foreground">
+                                    (group.title)
+                                </h3>
+                                <ul class="flex flex-wrap gap-2">
+                                    for a in group.items {
+                                        <li
+                                            class="rounded-full border border-border px-3 py-1 text-sm"
+                                        >
+                                            (a)
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
                         }
-                    </ul>
+                    </div>
                 }
             </section>
         </div>

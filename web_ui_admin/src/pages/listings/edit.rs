@@ -12,7 +12,8 @@ use uuid::Uuid;
 use web_client::session::AdminRole;
 
 use super::form::{ListingFields, api_rejection_messages, listing_form};
-use super::images::{listing_photos, photo_grid};
+use super::images::{listing_photos, photo_grid, suite_photo_choices};
+
 use super::managed_listing;
 use crate::support::{service_token, staff};
 
@@ -30,6 +31,7 @@ pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
     let action = format!("/admin/listings/{}/edit", listing.id);
     let presign = format!("/admin/listings/{}/images/presign", listing.id);
     let photos = listing_photos(cx, listing.id).await;
+    let suite_photos = suite_photo_choices(&photos);
     Ok(view! {
         <div class="space-y-6">
             <div>
@@ -46,7 +48,8 @@ pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
                 fields: fields,
                 owners: Vec::new(),
                 can_set_commission: admin,
-                errors: Vec::new()
+                errors: Vec::new(),
+                suite_photos: suite_photos
             )
             <section
                 aria-labelledby="photos-heading"
@@ -133,6 +136,7 @@ pub async fn update_listing(
         Err(errors) => errors,
     };
     let action = format!("/admin/listings/{}/edit", listing.id);
+    let suite_photos = suite_photo_choices(&listing_photos(cx, listing.id).await);
     Ok(view! {
         <div class="space-y-6">
             <h1 class="text-2xl font-semibold">(format!("Edit {}", listing.name))</h1>
@@ -142,7 +146,8 @@ pub async fn update_listing(
                 fields: fields,
                 owners: Vec::new(),
                 can_set_commission: admin,
-                errors: errors
+                errors: errors,
+                suite_photos: suite_photos
             )
         </div>
     })

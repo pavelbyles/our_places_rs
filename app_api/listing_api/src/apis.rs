@@ -885,6 +885,46 @@ async fn delete_listing_image(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[tracing::instrument(skip(claims, pool, body))]
+#[utoipa::path(
+    patch,
+    path = "/api/v1/listings/{id}/images/{image_id}",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID"),
+        ("image_id" = String, Path, description = "Photo UUID (the original upload, not a resized variant)")
+    ),
+    request_body = common::models::RenameListingImageRequest,
+    responses(
+        (status = 200, description = "Photo renamed; body is `{ \"id\", \"name\" }`"),
+        (status = 400, description = "INVALID_PHOTO_NAME: over 80 characters"),
+        (status = 404, description = "Photo not found on this listing"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+async fn rename_listing_image(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    path: web::Path<(Uuid, Uuid)>,
+    body: web::Json<common::models::RenameListingImageRequest>,
+) -> Result<impl Responder, ApiError> {
+    let (listing_id, image_id) = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "rename_image").await?;
+    let name = common::listing_details::validate_photo_name(body.name.as_deref()).map_err(|e| {
+        tracing::warn!(%listing_id, %image_id, error = %e, "photo name refused");
+        let mut errors = validator::ValidationErrors::new();
+        errors.add(
+            "name",
+            validator::ValidationError::new("INVALID_PHOTO_NAME")
+                .with_message(e.to_string().into()),
+        );
+        ApiError::ValidationError(errors)
+    })?;
+    db_listing::rename_listing_image(pool.get_ref(), listing_id, image_id, name.as_deref()).await?;
+    tracing::info!(%listing_id, %image_id, named = name.is_some(), "listing photo renamed");
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "id": image_id, "name": name })))
+}
+
 /// Registers the listing routes.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     #[derive(OpenApi)]
@@ -897,6 +937,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             delete_listing,
             presign_batch,
             delete_listing_image,
+            rename_listing_image,
             crate::reviews::get_review_token_info,
             crate::reviews::submit_review,
             crate::reviews::submit_host_reply,
@@ -1004,6 +1045,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/{id}/images/{image_id}",
                 web::delete()
                     .to(delete_listing_image)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/images/{image_id}",
+                web::patch()
+                    .to(rename_listing_image)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(

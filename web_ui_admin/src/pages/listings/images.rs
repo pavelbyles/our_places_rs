@@ -3,6 +3,9 @@
 //! portal). `image_worker` processes the uploads afterwards. Photos can be
 //! removed from the grid on the edit page.
 
+use common::listing_details::{
+    MAX_PHOTO_NAME_CHARS, default_photo_label, photo_label, validate_photo_name,
+};
 use common::models::{
     ImagePresignRequest, ImagePresignResponse, ListingImageResponse, PendingImageMetadata,
 };
@@ -12,7 +15,7 @@ use topcoat::{
     context::Cx,
     router::{
         content::{Form, Json},
-        error::not_found,
+        error::{not_found, see_other},
         page, path_param, route,
     },
     view::{View, component, view},
@@ -20,6 +23,7 @@ use topcoat::{
 use uuid::Uuid;
 use web_client::get_api_client;
 use web_ui_common::components::domain::responsive_image::responsive_image;
+use web_ui_common::components::toast::{ToastVariant, toast};
 
 use super::managed_listing;
 use crate::support::{service_token, staff};
@@ -115,6 +119,87 @@ pub async fn listing_photos(cx: &Cx, listing_id: Uuid) -> Vec<ListingImageRespon
         .unwrap_or_default()
 }
 
+/// Photo-name form fields.
+#[derive(Deserialize)]
+pub struct NameForm {
+    /// The photo to name.
+    pub image_id: Uuid,
+    /// Its 0-based position, for the "Photo N" placeholder.
+    #[serde(default)]
+    pub index: usize,
+    /// The name; blank clears it.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// The listing's photos as suite photo choices: (id, name or "Photo N").
+pub fn suite_photo_choices(photos: &[ListingImageResponse]) -> Vec<(String, String)> {
+    photos
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.id.to_string(), photo_label(p.name.as_deref(), i)))
+        .collect()
+}
+
+/// One photo's name form: a textbox (placeholder "Photo N") and Save. With
+/// HTMX it saves when the textbox changes and swaps only itself.
+#[component]
+pub async fn photo_name_form(
+    cx: &Cx,
+    /// The listing.
+    listing_id: Uuid,
+    /// The photo.
+    image_id: Uuid,
+    /// The photo's 0-based position.
+    index: usize,
+    /// The textbox value.
+    value: String,
+    /// Why the last save failed, if it did.
+    error: Option<String>,
+) -> Result<impl View> {
+    let action = format!("/admin/listings/{listing_id}/images/name");
+    let field_id = format!("photo-name-{image_id}");
+    Ok(view! {
+        <form
+            id=(format!("photo-name-form-{image_id}"))
+            data-photo-name-form=""
+            method="post"
+            action=(action.clone())
+            hx-post=(action)
+            hx-trigger="change, submit"
+            hx-target="this"
+            hx-swap="outerHTML"
+            class="mt-2 grid grid-cols-1 gap-1"
+        >
+            <input type="hidden" name="image_id" value=(image_id.to_string()) />
+            <input type="hidden" name="index" value=(index.to_string()) />
+            <label for=(field_id.clone()) class="sr-only">
+                (format!("Name for {}", default_photo_label(index)))
+            </label>
+            <div class="flex gap-1.5">
+                <input
+                    id=(field_id)
+                    name="name"
+                    maxlength=(MAX_PHOTO_NAME_CHARS.to_string())
+                    placeholder=(default_photo_label(index))
+                    value=(value)
+                    aria-invalid=(error.is_some().then_some("true"))
+                    class="h-9 w-0 min-w-0 flex-1 rounded-md border border-border bg-card px-2 text-sm"
+                />
+                <button
+                    type="submit"
+                    class="h-9 shrink-0 rounded-md border border-border px-2.5 text-xs font-medium"
+                >
+                    "Save"
+                </button>
+            </div>
+            if let Some(error) = error {
+                <p role="alert" class="text-xs text-destructive">(error)</p>
+            }
+        </form>
+    })
+}
+
 /// The photo grid with a remove button per photo. HTMX swaps it (outerHTML)
 /// after a removal, and ui.js re-reads it from the page after an upload.
 #[component]
@@ -122,7 +207,7 @@ pub async fn photo_grid(
     cx: &Cx,
     /// The listing the photos belong to.
     listing_id: Uuid,
-    /// Listing name, used as alt text.
+    /// Listing name.
     name: String,
     /// Processed photos in display order.
     photos: Vec<ListingImageResponse>,
@@ -147,15 +232,24 @@ pub async fn photo_grid(
             if photos.is_empty() {
                 <p class="text-sm text-muted-foreground">"No processed photos yet."</p>
             } else {
-                <ul id="listing-photos" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ul id="listing-photos" class="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-4">
                     for (i, photo) in photos.into_iter().enumerate() {
-                        <li class="relative">
-                            responsive_image(
-                                src: photo.url,
-                                alt: name.clone(),
-                                sizes: Some("(min-width: 640px) 25vw, 50vw".to_string()),
-                                attrs: topcoat::view::attributes! { class="aspect-[4/3] rounded-lg" }
-                            )
+                        <li data-photo=(photo.id.to_string()) class="relative min-w-0">
+                            // A fixed 4:3 frame: the image fills and is clipped
+                            // to it, so the name form below keeps its place.
+                            <div
+                                data-photo-frame=""
+                                class="aspect-[4/3] overflow-hidden rounded-lg bg-photo-placeholder"
+                            >
+                                responsive_image(
+                                    src: photo.url,
+                                    alt: photo
+                                        .name
+                                        .clone()
+                                        .unwrap_or_else(|| format!("{name}, photo {}", i + 1)),
+                                    sizes: Some("(min-width: 640px) 25vw, 50vw".to_string())
+                                )
+                            </div>
                             <form
                                 method="post"
                                 action=(remove.clone())
@@ -178,6 +272,13 @@ pub async fn photo_grid(
                                     "Remove"
                                 </button>
                             </form>
+                            photo_name_form(
+                                listing_id: listing_id,
+                                image_id: photo.id,
+                                index: i,
+                                value: photo.name.clone().unwrap_or_default(),
+                                error: None
+                            )
                         </li>
                     }
                 </ul>
@@ -222,6 +323,67 @@ pub async fn remove_image(
             photos: photos,
             error: error
         )
+    })
+}
+
+/// Saves one photo's name. With HTMX it returns the photo's form (and a
+/// toast); without, it goes back to the edit page.
+#[page(POST "/admin/listings/{id}/images/name")]
+pub async fn name_image(
+    cx: &Cx,
+    /// The name form.
+    Form(form): Form<NameForm>,
+) -> Result<impl View> {
+    let user = staff(cx).await?;
+    let raw = id(cx);
+    Uuid::parse_str(raw).map_err(|_| not_found())?;
+    let listing = managed_listing(cx, &user, raw).await?;
+    let saved = match validate_photo_name(Some(&form.name)) {
+        Err(e) => Err(e.to_string()),
+        Ok(name) => common::app_client::rename_listing_image(
+            listing.id,
+            form.image_id,
+            name.as_deref(),
+            &service_token(cx, &user)?,
+        )
+        .await
+        .map(|()| name)
+        .map_err(|e| {
+            tracing::warn!(listing_id = %listing.id, image_id = %form.image_id, "photo rename rejected: {e}");
+            "The name could not be saved. Try again.".to_string()
+        }),
+    };
+    if !topcoat::htmx::hx_request(cx) && saved.is_ok() {
+        return Err(see_other(format!("/admin/listings/{}/edit", listing.id)).into());
+    }
+    if let Ok(name) = &saved {
+        tracing::info!(listing_id = %listing.id, image_id = %form.image_id, named = name.is_some(), "photo named");
+    }
+    let (value, error, message) = match saved {
+        Ok(name) => (
+            name.unwrap_or_default(),
+            None,
+            Some("Photo name saved".to_string()),
+        ),
+        Err(error) => (form.name.trim().to_string(), Some(error), None),
+    };
+    Ok(view! {
+        photo_name_form(
+            listing_id: listing.id,
+            image_id: form.image_id,
+            index: form.index,
+            value: value,
+            error: error
+        )
+        if let Some(message) = message {
+            <div hx-swap-oob="beforeend:#toast-region">
+                toast(
+                    message: message,
+                    variant: ToastVariant::Success,
+                    attrs: topcoat::view::attributes! { data-toast-auto="" }
+                )
+            </div>
+        }
     })
 }
 

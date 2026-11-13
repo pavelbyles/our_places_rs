@@ -91,7 +91,7 @@ Dependency rules:
 | **`app_api/email_worker/`** | bin | Pub/Sub push handler: loads an `email_outbox` row, renders its template, sends over SMTP (logs instead when no SMTP is configured). | `db_core`, `common` |
 | **`web_client/`** | lib | UI-free API client, typed sessions, route guards, short-lived HS256 user JWTs. Adds the service account's Google ID token to every API call. | `common` |
 | **`web_ui_common/`** | lib | Shared Topcoat components (DaisyUI v5 / Tailwind v4), theme tokens, guest and admin shells, security headers (CSP), asset bundler used by the Docker builds. | `web_client`, `common` |
-| **`web_ui_guest/`** | bin | Guest portal: home, search, listing detail, checkout, bookings, change requests, messages, documents, reviews, profile. | `web_ui_common`, `web_client`, `common` |
+| **`web_ui_guest/`** | bin | Guest portal: home, search, listing detail, checkout, bookings, change requests, messages, documents, reviews, profile, policy pages. | `web_ui_common`, `web_client`, `common` |
 | **`web_ui_admin/`** | bin | Admin and host portal: dashboard, listings and photos, pricing, bookings, users, payouts, promo codes, exchange rates. | `web_ui_common`, `web_client`, `common` |
 | **`protoproj/`** | lib | gRPC/protobuf experiment (`tonic`). Not deployed; excluded from CI gates. | — |
 
@@ -286,6 +286,12 @@ flowchart LR
 ```
 
 Image bytes never pass through an API. The portals render `<picture>`/`srcset` from the `listing_image` rows.
+
+Hosts can name a photo (`listing_image.name`, nullable, ≤ 80 characters) through `PATCH /api/v1/listings/{id}/images/{image_id}`. Guests see the name as alt text, and as a caption only in the full-size viewer; unnamed photos show as "Photo N" in admin.
+
+### 4.3.1. Structured Listing Content (#122)
+
+The listing page's host-edited sections live in `listing.listing_details` (JSONB), typed by `common::listing_details::StructuredListingDetails`: highlights ribbon, amenity groups, suites, staff & services, house policies, nearby places and guestbook quotes. `validate_listing_details` runs in the admin form and again in `listing_api` on create and update (400 with `INVALID_RIBBON`, `INVALID_AMENITY_GROUPS`, `INVALID_SUITES`, `INVALID_STAFF_SERVICES`, `INVALID_POLICIES`, `INVALID_NEARBY` or `INVALID_TESTIMONIALS`). The guest page parses each section on its own: a malformed section is logged and left out, an empty one is hidden with its nav link, and a missing ribbon falls back to bedrooms / bathrooms / max guests. Spec: [`spec-122`](specs/spec-122-feat-ui-improvements.md).
 
 ### 4.4. Transactional Email (Outbox)
 

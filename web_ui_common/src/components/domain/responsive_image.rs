@@ -64,11 +64,17 @@ pub async fn responsive_image(
     /// pass it wherever the image is drawn narrower than the screen.
     #[default]
     sizes: Option<String>,
+    /// Load at once with high priority (the page's main image, e.g. a hero)
+    /// instead of lazily.
+    #[default]
+    eager: bool,
     /// Extra HTML attributes for the `<img>`; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
 ) -> Result<impl View> {
     let img_class = class!("size-full object-cover", attrs.remove("class"));
+    let loading = if eager { "eager" } else { "lazy" };
+    let priority = eager.then_some("high");
     let sizes = sizes.unwrap_or_else(|| "100vw".to_string());
     Ok(view! {
         if let Some(srcset) = variant_srcset(&src) {
@@ -77,7 +83,8 @@ pub async fn responsive_image(
                 srcset=(srcset)
                 sizes=(sizes)
                 alt=(alt)
-                loading="lazy"
+                loading=(loading)
+                fetchpriority=(priority)
                 decoding="async"
                 class=(img_class)
                 (attrs)
@@ -86,7 +93,8 @@ pub async fn responsive_image(
             <img
                 src=(src)
                 alt=(alt)
-                loading="lazy"
+                loading=(loading)
+                fetchpriority=(priority)
                 decoding="async"
                 class=(img_class)
                 (attrs)

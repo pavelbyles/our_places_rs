@@ -57,6 +57,7 @@ No longer read by the workflow: `INFRA_GATEWAY_API_KEY_*`, `INFRA_*_API_URL_DEV`
 | `RUST_LOG`, `LOG_FORMAT`                                       | no               |                                              | `info`, `json`                                                                                                                          |
 | `TRACE_EXPORTER`, `TRACE_SAMPLE_RATIO`, `GOOGLE_CLOUD_PROJECT` | no               | unset (no export)                            | `gcp`, `1.0`, the project (set by CI). See §4.                                                                                          |
 | `GUEST_PORTAL_URL`                                             | admin            | `http://localhost:3010`                      | Guest portal base for the calendar export link (`GUEST_PORTAL_URL_*`, else the guest service URL; set by CI after both portals deploy). |
+| `GUEST_CONCIERGE_WHATSAPP`, `GUEST_CONCIERGE_PHONE`, `GUEST_CONCIERGE_EMAIL`, `GUEST_CONCIERGE_INSTAGRAM` | guest, optional | unset | The footer's Concierge column. WhatsApp is the number with country code (digits are kept), Instagram a handle with or without `@`. Each unset value is left out, and the column is hidden when none are set. |
 
 The portals call the APIs with two credentials: the service account's Google ID token in `Authorization` (Cloud Run IAM) and the signed-in user's JWT in `X-Forwarded-Authorization`. On Cloud Run the ID token comes from the metadata server; locally `gcloud auth print-identity-token` is tried and skipped if unavailable.
 

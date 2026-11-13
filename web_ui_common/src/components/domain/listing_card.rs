@@ -132,15 +132,14 @@ pub enum StayTotalLines {
 }
 
 impl ListingSummary {
-    /// The card's price line: `Ok("USD $1,650")`, or `Err("Price unavailable in JMD")`
+    /// The card's price line: `Ok("US$1,650")`, or `Err("Price unavailable in JMD")`
     /// when no rate could quote it (never a made-up amount).
     pub fn price_text(&self) -> std::result::Result<String, String> {
         match &self.price_unavailable_in {
             Some(code) => Err(format!("Price unavailable in {code}")),
             None => Ok(format!(
-                "{} {}{}",
-                self.currency,
-                common::money::currency_symbol(&self.currency).unwrap_or(""),
+                "{}{}",
+                common::money::price_prefix(&self.currency),
                 self.price
             )),
         }
@@ -192,10 +191,10 @@ impl ListingSummary {
         }
     }
 
-    /// "4 Guests · 2 Beds · 2 Baths".
+    /// "4 Guests · 2 Bedrooms · 2 Baths".
     pub fn specs(&self) -> String {
         format!(
-            "{} Guests · {} Beds · {} Baths",
+            "{} Guests · {} Bedrooms · {} Baths",
             self.max_guests, self.bedrooms, self.full_bathrooms
         )
     }
@@ -363,6 +362,21 @@ mod stay_card_tests {
         }
     }
 
+    #[test]
+    fn price_text_has_one_unambiguous_prefix() {
+        assert_eq!(summary().price_text(), Ok("US$650".to_string()));
+        let jmd = ListingSummary {
+            currency: "JMD".into(),
+            ..summary()
+        };
+        assert_eq!(jmd.price_text(), Ok("J$650".to_string()));
+    }
+
+    #[test]
+    fn specs_name_bedrooms_as_bedrooms() {
+        assert_eq!(summary().specs(), "4 Guests · 2 Bedrooms · 2 Baths");
+    }
+
     fn total(nights: i32, deposit: Decimal) -> StayTotal {
         StayTotal {
             nights,
@@ -401,7 +415,7 @@ mod stay_card_tests {
                 out.contains("Includes taxes, fees and a USD $500.00 refundable deposit"),
                 "{out}"
             );
-            assert!(out.contains("USD $650"), "the nightly line stays: {out}");
+            assert!(out.contains("US$650"), "the nightly line stays: {out}");
         }
     }
 

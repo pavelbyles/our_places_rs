@@ -314,7 +314,7 @@ async fn listing_card_keeps_the_texts_the_e2e_suite_checks() {
     };
     let out = html(view! { listing_card(listing: listing) }, cx).await;
     for text in [
-        "USD $650",
+        "US$650",
         "New Kingston, Jamaica",
         "4 Guests",
         "View Listing",

@@ -34,7 +34,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 
 #### 🏖️ Guest Experience ([`web_ui_guest`](web_ui_guest))
 - **Luxury Villa Catalog & Search**: Browse curated Jamaican luxury villas and apartments with real-time HTMX filtering by destination, guest capacity, and amenities.
-- **Rich Property Detail Pages**: View responsive multi-resolution photo galleries, location information, detailed amenity checklists, and host descriptions.
+- **Rich Property Detail Pages**: An editorial villa page with a full-width hero, sticky section nav, a highlights ribbon set by the host, room-by-room suites, grouped amenities, staff and paid add-ons, house policies, drive times to nearby places, and a full-size photo viewer with captions from host-set photo names.
 - **Dynamic Pricing & Multi-Currency Quotes**: Instant rate computation supporting multiple guest checkout currencies (USD, JMD, EUR, GBP, CAD) with statutory tax breakdowns (Jamaican GCT 15%).
 - **Frictionless Checkout & Temporary Holds**: Reserve dates with a `pending` hold (2 hours by default, configurable per deploy), preventing dates from being taken during checkout.
 - **Shadow User Guest Checkouts**: Guests can book immediately without prior account registration; temporary shadow accounts can be promoted post-checkout without losing booking state.
@@ -46,6 +46,7 @@ High-performance, full-stack short-term property rental platform for luxury vill
 #### 💼 Host & Administrator Experience ([`web_ui_admin`](web_ui_admin))
 - **Executive Operations Dashboard**: High-level KPI monitoring, real-time booking statistics, and operational health summaries.
 - **Property Catalog Management**: Create, edit, clone from existing templates, and manage villa listings, descriptions, and amenities.
+- **Listing Page Content**: Set each villa's highlights ribbon (3–6 items), amenity groups, suites (with a photo from the listing's uploads), staff & services, house policies, nearby places and guestbook quotes from the listing form; name each photo for alt text and viewer captions.
 - **Seasonal Rates & Price Overrides**: Configure custom seasonal pricing rules, holiday surcharges, and promotional rate adjustments with automated priority resolution.
 - **Centralized Reservation Pipeline**: Inspect all bookings across properties, filter by reservation status (`pending_payment`, `confirmed`, `completed`, `cancelled`), and process modifications.
 - **Host Direct Messaging Center**: Unified messaging portal to manage guest communications, view booking context, and respond to inquiries with unread indicators.
@@ -244,6 +245,7 @@ Property catalog management, GCS V4 signed upload URLs, seasonal pricing rules, 
 | `PATCH` | `/api/v1/listings/{id}` | Update listing details, amenities, or configuration |
 | `DELETE` | `/api/v1/listings/{id}` | Delete a listing record |
 | `POST` | `/api/v1/listings/{id}/images/presign` | Generate Google Cloud Storage (GCS) V4 Signed URLs for direct client uploads |
+| `PATCH` | `/api/v1/listings/{id}/images/{image_id}` | Rename a photo (≤ 80 characters; empty clears the name) |
 | `GET` | `/api/v1/listings/{id}/reviews` | Fetch paginated guest reviews and ratings for a listing |
 | `GET` | `/api/v1/listings/{id}/price-overrides` | List seasonal and custom date-range price override rules |
 | `POST` | `/api/v1/listings/{id}/price-overrides` | Create a seasonal or promotional price override rule |
@@ -308,7 +310,7 @@ Public-facing Topcoat SSR & HTMX portal (default port `3010`). Sessions are serv
 | `GET` | `/` | Page | Homepage with hero, search and featured villas |
 | `GET` | `/about` | Page | About Our Places |
 | `GET` | `/listings` | Page | Villa catalog with filters |
-| `GET` | `/listings/{slug}` | Page | Villa detail with gallery, amenities and booking widget |
+| `GET` | `/listings/{slug}` | Page | Villa detail: hero, highlights ribbon, suites, amenity groups, services, policies, location, gallery and booking widget |
 | `GET` | `/listings/{slug}/quote` | HTMX | Price quote for the chosen dates and currency |
 | `GET` | `/listings/{slug}/calendar` | HTMX | Availability calendar month |
 | `GET`, `POST` | `/checkout/{slug}` | Page | Checkout (sign-in required); places the date hold |
@@ -325,6 +327,7 @@ Public-facing Topcoat SSR & HTMX portal (default port `3010`). Sessions are serv
 | `GET`, `POST` | `/profile` | Page | Profile details |
 | `GET`, `POST` | `/reviews/submit` | Page | Review form (invitation token) |
 | `GET` | `/reviews/success` | Page | Review confirmation |
+| `GET` | `/terms`, `/cancellation-policy`, `/privacy-policy`, `/house-rules` | Page | Policy pages (draft placeholder text) |
 
 ---
 
@@ -338,7 +341,7 @@ Administrative Topcoat SSR & HTMX portal (default port `3012`). Short aliases (`
 | `GET`, `POST` | `/login`, `/register`, `/verify`, `/verify/resend`, `/logout` | Page | Sign in, host sign-up, verification, sign out |
 | `GET`, `POST` | `/admin/listings`, `/admin/listings/new`, `/admin/listings/clone/{slug}` | Page | Listing table, create and clone |
 | `GET`, `POST` | `/admin/listings/{id}`, `/admin/listings/{id}/edit` | Page | Listing detail and edit |
-| `POST` | `/admin/listings/{id}/images/presign`, `/admin/listings/{id}/images/remove` | HTMX | Photo upload (signed URL, browser PUT to Cloud Storage) and removal |
+| `POST` | `/admin/listings/{id}/images/presign`, `/admin/listings/{id}/images/remove`, `/admin/listings/{id}/images/name` | HTMX | Photo upload (signed URL, browser PUT to Cloud Storage), removal and naming |
 | `GET`, `POST` | `/admin/listings/{id}/pricing[/add,/remove]` | Page | Seasonal rates and price overrides |
 | `GET` | `/admin/bookings`, `/admin/bookings/export.csv` | Page | Bookings pipeline and CSV export |
 | `GET` | `/admin/bookings/{id}`, `/admin/bookings/{id}/cancellation-quote`, `/admin/bookings/{id}/documents/{number}` | HTMX / Page | Booking detail dialog, refund quote, tax documents |

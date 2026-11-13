@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, listing_id, client_file_id, status as \"status: crate::models::ImageStatus\", resolution as \"resolution: crate::models::ImageResolution\", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at\n        FROM listing_image\n        WHERE listing_id = $1 AND status = 'Processed'\n        ORDER BY display_order ASC\n        ",
+  "query": "\n        SELECT id, listing_id, client_file_id, status as \"status: crate::models::ImageStatus\", resolution as \"resolution: crate::models::ImageResolution\", parent_id, upload_url, content_type, size_bytes, display_order, is_primary, created_at, updated_at, name\n        FROM listing_image\n        WHERE listing_id = $1 AND status = 'Processed'\n        ORDER BY display_order ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -94,6 +94,11 @@
         "ordinal": 12,
         "name": "updated_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "name",
+        "type_info": "Varchar"
       }
     ],
     "parameters": {
@@ -114,8 +119,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "b4cb8c4ac4b253ad469d681f6e5507ff37a68169c2229f2c742c6f4bed94a219"
+  "hash": "5c3df45a8e5fe5c09a46f65023bec54c3fb75d16ef606592d1d9248b7dd08d47"
 }

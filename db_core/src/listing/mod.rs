@@ -8,7 +8,7 @@ mod queries;
 mod write;
 pub use images::{
     create_listing_image_presigns, delete_listing_image, insert_listing_image_variants,
-    mark_listing_image_processed, update_listing_image_to_processing,
+    mark_listing_image_processed, rename_listing_image, update_listing_image_to_processing,
 };
 pub use price_overrides::{
     create_price_override, delete_price_override, get_active_overrides_for_dates,
