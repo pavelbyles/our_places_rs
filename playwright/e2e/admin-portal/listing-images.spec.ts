@@ -164,6 +164,8 @@ test.describe('Admin Portal - Photo names (#122)', () => {
     await box.fill('Garden terrace');
     await box.press('Tab');
     await expect(page.getByText('Photo name saved')).toBeVisible();
+    // The toast goes away on its own.
+    await expect(page.getByText('Photo name saved')).toHaveCount(0, { timeout: 8000 });
     expect(psql(`SELECT name FROM listing_image WHERE id = '${photo}';`)).toBe('Garden terrace');
 
     await page.reload();

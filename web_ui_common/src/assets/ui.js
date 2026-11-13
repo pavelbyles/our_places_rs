@@ -104,6 +104,21 @@
     }, 5000);
   }
 
+  // Server-rendered toasts marked [data-toast-auto] (e.g. swapped into
+  // #toast-region out of band) go away like the ones above.
+  function autoDismissToasts(scope) {
+    var toasts = scope.matches("[data-toast-auto]")
+      ? [scope]
+      : scope.querySelectorAll("[data-toast-auto]");
+    Array.prototype.forEach.call(toasts, function (toast) {
+      if (toast.hasAttribute("data-toast-timer")) return;
+      toast.setAttribute("data-toast-timer", "");
+      window.setTimeout(function () {
+        toast.remove();
+      }, 5000);
+    });
+  }
+
   // --- Photo viewer: a [data-lightbox-index] inside a [data-lightbox-group]
   // opens the group's viewer <dialog data-lightbox> (its id is the group's
   // attribute value) on that photo. [data-lightbox-step] buttons and the
@@ -607,6 +622,7 @@
       if (!dialogs[i].open && typeof dialogs[i].showModal === "function")
         dialogs[i].showModal();
     }
+    autoDismissToasts(el);
   });
 
   document.addEventListener("keydown", function (event) {

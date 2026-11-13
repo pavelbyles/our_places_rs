@@ -377,7 +377,11 @@ pub async fn name_image(
         )
         if let Some(message) = message {
             <div hx-swap-oob="beforeend:#toast-region">
-                toast(message: message, variant: ToastVariant::Success)
+                toast(
+                    message: message,
+                    variant: ToastVariant::Success,
+                    attrs: topcoat::view::attributes! { data-toast-auto="" }
+                )
             </div>
         }
     })
