@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/auth.fixture.js';
 import { createHost, loginAdminAs } from '../fixtures/admin-data.js';
-import { psql, SEEDED_LISTING_ID } from '../fixtures/bookings-data.js';
+import { createListingCopy, psql, SEEDED_LISTING_ID } from '../fixtures/bookings-data.js';
 
 // Inventory A15 (owner decision): photo upload is new in the redesigned
 // console. Files go straight to Cloud Storage via signed URLs.
@@ -123,3 +123,44 @@ test.describe('Admin Portal - Listing Photos', () => {
     await context.close();
   });
 });
+
+test.describe('Admin Portal - Photo names (#122)', () => {
+  test('a host names a photo, sees it in the suite picker, and can clear it', NEW_ONLY, async ({ authenticatedAdminPage: page }) => {
+    const copy = createListingCopy();
+    const photo = psql(
+      `INSERT INTO listing_image (listing_id, client_file_id, status, upload_url, display_order, is_primary)
+       VALUES ('${copy.id}', 'e2e-name', 'Processed', 'https://storage.googleapis.com/our-places-e2e/listings/name-test', 0, true)
+       RETURNING id;`,
+    ).split('\n')[0].trim();
+
+    await page.goto(`/admin/listings/${copy.id}/edit`);
+    const box = page.locator(`#photo-name-${photo}`);
+    await expect(box).toHaveAttribute('placeholder', 'Photo 1');
+    await box.fill('Garden terrace');
+    await box.press('Tab');
+    await expect(page.getByText('Photo name saved')).toBeVisible();
+    expect(psql(`SELECT name FROM listing_image WHERE id = '${photo}';`)).toBe('Garden terrace');
+
+    await page.reload();
+    await expect(page.locator(`#photo-name-${photo}`)).toHaveValue('Garden terrace');
+    await expect(page.locator('select[name="suite_1_image"] option', { hasText: 'Garden terrace' })).toHaveCount(1);
+
+    // The box stops at 80 characters; past that (a tampered form), the
+    // server refuses with a reason, keeps the text and saves nothing.
+    await expect(page.locator(`#photo-name-${photo}`)).toHaveAttribute('maxlength', '80');
+    await page.locator(`#photo-name-${photo}`).evaluate((el) => el.removeAttribute('maxlength'));
+    await page.locator(`#photo-name-${photo}`).fill('x'.repeat(81));
+    await page.locator(`#photo-name-form-${photo}`).getByRole('button', { name: 'Save' }).click();
+    await expect(page.locator(`#photo-name-form-${photo} [role="alert"]`)).toContainText('at most 80 characters');
+    expect(psql(`SELECT name FROM listing_image WHERE id = '${photo}';`)).toBe('Garden terrace');
+
+    // Clearing goes back to the Photo 1 fallback.
+    await page.locator(`#photo-name-${photo}`).fill('');
+    await page.locator(`#photo-name-form-${photo}`).getByRole('button', { name: 'Save' }).click();
+    await expect(page.locator(`#photo-name-form-${photo} [role="alert"]`)).toHaveCount(0);
+    await expect.poll(() => psql(`SELECT COALESCE(name, '<null>') FROM listing_image WHERE id = '${photo}';`)).toBe('<null>');
+    await page.reload();
+    await expect(page.locator('select[name="suite_1_image"] option', { hasText: 'Photo 1' })).toHaveCount(1);
+  });
+});
+

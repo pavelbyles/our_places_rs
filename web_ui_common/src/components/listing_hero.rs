@@ -39,6 +39,9 @@ pub async fn listing_hero(
     photo: Option<String>,
     /// How many photos the gallery holds.
     photo_count: usize,
+    /// Alt text for the photo (its name, or "{listing}, photo 1").
+    #[default]
+    photo_alt: String,
 ) -> Result<impl View> {
     let rating_text = hero_rating_text(rating, review_count);
     let photos_label = match photo_count {
@@ -68,7 +71,7 @@ pub async fn listing_hero(
                 <div class="absolute inset-0 -z-10 bg-photo-placeholder">
                     responsive_image(
                         src: src,
-                        alt: String::new(),
+                        alt: photo_alt,
                         eager: true,
                         attrs: attributes! { data-hero-photo="" }
                     )

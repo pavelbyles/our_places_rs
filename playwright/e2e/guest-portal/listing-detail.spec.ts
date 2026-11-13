@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/base.fixture.js';
 import { KNOWN_LISTINGS } from '../fixtures/test-data.js';
+import { createListingCopy, psql } from '../fixtures/bookings-data.js';
 
 test.describe('Guest Portal - Listing Detail & Dynamic Pricing', () => {
   const targetVilla = KNOWN_LISTINGS.courtyardStudio;
@@ -158,6 +159,32 @@ test.describe('Guest Portal - Luxury listing page (#122)', () => {
       const left = await page.locator('main#main > *').first().evaluate((el) => el.getBoundingClientRect().left);
       expect(left, path).toBeGreaterThanOrEqual(24);
     }
+  });
+});
+
+test.describe('Guest Portal - Photo names (#122)', () => {
+  test('a named photo is its alt text and the full-size caption, and nowhere else visible', { tag: '@new-only' }, async ({ page }) => {
+    const copy = createListingCopy();
+    psql(
+      `INSERT INTO listing_image (listing_id, client_file_id, status, upload_url, display_order, is_primary, name) VALUES
+         ('${copy.id}', 'n1', 'Processed', 'https://storage.googleapis.com/our-places-e2e/listings/n1', 0, true, 'Ocean terrace'),
+         ('${copy.id}', 'n2', 'Processed', 'https://storage.googleapis.com/our-places-e2e/listings/n2', 1, false, NULL);`,
+    );
+    await page.goto(`/listings/${copy.slug}`);
+    await expect(page.locator('#gallery-grid img').first()).toHaveAttribute('alt', 'Ocean terrace');
+    await expect(page.locator('#gallery-grid img').nth(1)).toHaveAttribute('alt', `${copy.name}, photo 2`);
+    await expect(page.getByTestId('listing-hero').locator('img')).toHaveAttribute('alt', 'Ocean terrace');
+
+    // The gallery dialog shows no captions; only the full-size viewer does.
+    await page.getByTestId('listing-hero').getByRole('button', { name: /View all 2 photos/ }).click();
+    await expect(page.locator('#gallery-dialog')).toBeVisible();
+    await expect(page.locator('#gallery-dialog').getByText('Ocean terrace')).toHaveCount(0);
+    await page.locator('#gallery-grid [data-lightbox-index="0"]').click();
+    await expect(page.locator('#photo-viewer-caption')).toHaveText('Ocean terrace');
+    await expect(page.locator('#photo-viewer-img')).toHaveAttribute('alt', 'Ocean terrace');
+    await page.getByRole('button', { name: 'Next photo' }).click();
+    await expect(page.locator('#photo-viewer-caption')).toHaveText('');
+    await expect(page.locator('#photo-viewer-img')).toHaveAttribute('alt', `${copy.name}, photo 2`);
   });
 });
 

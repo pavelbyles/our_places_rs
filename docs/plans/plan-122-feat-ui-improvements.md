@@ -6,7 +6,7 @@
 - **Mockup**: [Seagrape House listing mockup](https://claude.ai/artifact/6rTt8v5z8QJRjpwqtaWcL9)
 - **Branch**: `feat/122-ui-improvements`
 - **Baseline Commit**: `8ab9689b`
-- **Status**: T1–T26 done; T27–T29 (photo names, spec §2.13) pending
+- **Status**: T1–T29 done
 - **Scope**: Phase 1 only (spec D8). Phase 2 (Experiences Flow, spec §2.11) gets its own plan once Phase 1 merges.
 - **Blast Radius**: ~30 files across 6 crates (`common`, `listing_api`, `web_ui_common`, `web_ui_guest`, `web_ui_admin`) + Playwright. No migrations: all content lives in the existing `listing.listing_details` JSONB.
 
@@ -418,7 +418,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
   - **Verification Command:** `cargo test -p web_ui_admin --test listing_photo_names`
   - **Dependencies:** Task 27
 
-- [ ] **Task 29: Guest alt text, viewer caption and E2E**
+- [x] **Task 29: Guest alt text, viewer caption and E2E**
   - **Scope:** M
   - **Description:** A guest helper `photo_alt(listing_name, index, name)`. Every photo `<img>` on the listing page (hero, intro, mosaic, gallery dialog, viewer items, suite cards) uses it. Gallery dialog items carry `data-caption` (the name, or empty); the viewer gets a `[data-lightbox-caption]` line (`aria-live="polite"`); `ui.js` `showPhoto` fills it. Admin E2E: name a photo (blur → toast), reload, see it in the textbox and suite picker, clear it, and check that 81 chars is refused. Guest E2E: the viewer shows the caption and the gallery dialog doesn't; alt text matches.
   - **Files Touched:**
@@ -472,3 +472,7 @@ Risk-first ordering: **T2** (shell grid touches every guest page) and **T3/T4** 
 | Footer column titles | Headings | Plain text labels | Extra `<h2>`s broke pages' heading structure (and auth E2E). |
 | E2E seed (T24) | — | The seeded listing's `listing_details` changed from `[]` to a full object, reset on each run | The page reads every section from it. |
 | Ribbon live preview in admin | `ui.js` enhancement | Not built | Prefill and reorder cover editing; the guest page is the preview. |
+| Photo rename response (T27) | Updated `ListingImageResponse` | `200 { "id", "name" }` | The admin form only needs the saved name; no variant lookup. |
+| Suite card alt text (T29) | Photo name | Suite name | The suite name describes the card; the photo's name already labels it in the suite picker. |
+| Over-long photo names (T28) | — | The box has `maxlength="80"`; the server still refuses 81+ with the reason (E2E removes `maxlength` to prove it) | Browsers cut typing at 80. |
+

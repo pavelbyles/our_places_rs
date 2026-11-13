@@ -347,6 +347,14 @@ fn guestbook_credit(quote: &CuratedTestimonial) -> String {
     .join(" · ")
 }
 
+/// A photo's alt text: the host's name for it, or "{listing}, photo N".
+fn photo_alt(listing_name: &str, index: usize, name: Option<&str>) -> String {
+    name.map(str::trim).filter(|n| !n.is_empty()).map_or_else(
+        || format!("{listing_name}, photo {}", index + 1),
+        str::to_string,
+    )
+}
+
 /// Which optional sections the page shows.
 #[derive(Default)]
 struct Sections {
@@ -455,7 +463,25 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let images: Vec<(String, String)> = details
         .images
         .iter()
-        .map(|i| (i.url.clone(), listing.name.clone()))
+        .enumerate()
+        .map(|(n, i)| {
+            (
+                i.url.clone(),
+                photo_alt(&listing.name, n, i.name.as_deref()),
+            )
+        })
+        .collect();
+    // Shown only in the full-size viewer, and only for named photos.
+    let captions: Vec<String> = details
+        .images
+        .iter()
+        .map(|i| {
+            i.name
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string()
+        })
         .collect();
     let gallery = gallery_layout(images.len());
     let intro_photo = images.get(1).cloned();
@@ -515,6 +541,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                 rating: rating,
                 review_count: review_count,
                 photo: images.first().map(|(src, _)| src.clone()),
+                photo_alt: images.first().map(|(_, alt)| alt.clone()).unwrap_or_default(),
                 photo_count: images.len()
             )
             <div
@@ -1025,6 +1052,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                                 ))
                                 data-full-srcset=(variant_srcset(&src).unwrap_or_default())
                                 data-alt=(alt.clone())
+                                data-caption=(captions.get(i).cloned().unwrap_or_default())
                                 aria-label=(format!(
                                     "View photo {} of {} full size",
                                     i + 1,
@@ -1075,6 +1103,12 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                                 "›"
                             </button>
                         }
+                        <p
+                            id="photo-viewer-caption"
+                            data-lightbox-caption=""
+                            aria-live="polite"
+                            class="absolute bottom-11 left-1/2 max-w-[80vw] -translate-x-1/2 text-center text-base empty:hidden"
+                        ></p>
                         <p
                             id="photo-viewer-counter"
                             data-lightbox-counter=""
@@ -1206,6 +1240,21 @@ mod booking_mode_cta {
         assert_eq!(booking_cta(BookingMode::Both).0, "Reserve");
         assert!(booking_cta(BookingMode::Both).1.contains("request"));
         assert!(booking_cta(BookingMode::Request).1.contains("not charged"));
+    }
+}
+
+#[cfg(test)]
+mod photo_alt_tests {
+    use super::photo_alt;
+
+    #[test]
+    fn named_photos_use_their_name_and_others_fall_back() {
+        assert_eq!(
+            photo_alt("Sea Grape", 0, Some(" Ocean terrace ")),
+            "Ocean terrace"
+        );
+        assert_eq!(photo_alt("Sea Grape", 2, None), "Sea Grape, photo 3");
+        assert_eq!(photo_alt("Sea Grape", 0, Some("  ")), "Sea Grape, photo 1");
     }
 }
 

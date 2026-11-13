@@ -121,6 +121,7 @@
     var i = ((index % items.length) + items.length) % items.length;
     var img = viewer.querySelector("[data-lightbox-img]");
     var counter = viewer.querySelector("[data-lightbox-counter]");
+    var caption = viewer.querySelector("[data-lightbox-caption]");
     viewer.setAttribute("data-index", String(i));
     if (img) {
       // srcset first, so the browser picks a variant fitting the viewer
@@ -130,6 +131,8 @@
       img.alt = items[i].getAttribute("data-alt") || "";
     }
     if (counter) counter.textContent = i + 1 + " / " + items.length;
+    // The host's photo name, shown only here; empty for unnamed photos.
+    if (caption) caption.textContent = items[i].getAttribute("data-caption") || "";
   }
 
   function stepPhoto(viewer, delta) {
