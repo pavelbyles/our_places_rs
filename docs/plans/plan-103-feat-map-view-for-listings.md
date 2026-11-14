@@ -666,7 +666,7 @@ T25 prod version, full gates    ← T23, T24
     - Tests: 6 in db_core, plus 2 API tests (the status × caller matrix on both reads and the update response, and the span count: 0 when all bookings are pending, 1 when all are confirmed). The status shortcut is mutation-checked. `.sqlx` was regenerated with `-- --all-targets`, because without it prepare drops 35 test-only queries.
     - The notification payload was checked by reading the code, not by a test: `notifications.rs` and `request_notifications.rs` build their own payloads and never use `BookingResponse`.
 
-- [ ] **Task 21: `/bookings` location block**
+- [x] **Task 21: `/bookings` location block**
   - **Scope:** S
   - **Description:** A card with `listing_location` renders the spec §1.8 block with `map_container(booking, exact point, Exact)`. Other cards are unchanged. A map more than two viewports away is removed, and created again on return, through the T15 init guard.
   - **Files Touched:**
@@ -674,10 +674,11 @@ T25 prod version, full gates    ← T23, T24
     - `web_ui_common/src/assets/map.js`
     - `playwright/e2e/ui-js/map-booking.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] The block appears only with `listing_location`, carrying exactly that point. Other cards render as they do today.
-    - [ ] With three confirmed cards, at most two maps are live while scrolling, and fast scrolling leaks no context (ui-js).
+    - [x] The block appears only with `listing_location`, carrying exactly that point. Other cards render as they do today.
+    - [x] With three confirmed cards, at most two maps are live while scrolling, and fast scrolling leaks no context (ui-js).
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest bookings_location_tests && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=ui-js-chromium map-booking`
   - **Dependencies:** Task 15, Task 20
+  - **Built:** `booking_location` renders `#booking-location-{id}` only when the booking has a `listing_location` and maps are on. The API decides which bookings get one; the page adds no status check of its own. `map.js` needed no changes: the `booking` kind and the far-observer removal came with T15. 3 Rust tests and 2 `map-booking` tests; removal of far maps is mutation-checked (with removal disabled, both tests fail).
 
 - [ ] **Task 22: Admin pin picker**
   - **Scope:** M
