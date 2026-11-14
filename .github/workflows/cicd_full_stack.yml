@@ -12,6 +12,7 @@ env:
   CARGO_TERM_COLOR: always
   GCS_PUBLIC_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_PUBLIC_PREFIX }}
   GCS_RAW_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
+  GCS_MAP_TILES_BUCKET_PREFIX: ${{ vars.INFRA_GCS_MAP_TILES_BUCKET_PREFIX }}
 
 on:
   push:
@@ -330,6 +331,45 @@ jobs:
             --member="serviceAccount:$SA_EMAIL" \
             --role="roles/iam.serviceAccountTokenCreator" \
             --quiet
+
+      # Map tiles (#103, spec §1.10). One bucket per environment, not per
+      # branch: every non-main branch shares -dev, and main uses -prod. It holds
+      # only public, versioned map data, so anyone may read it and CORS allows
+      # GET/HEAD from any origin. The settings are applied again on every run so
+      # they can't drift.
+      - name: Create Map Tiles Bucket
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GCS_MAP_TILES_BUCKET_PREFIX:-}" ]; then
+            echo "::error::Variable INFRA_GCS_MAP_TILES_BUCKET_PREFIX is not set."
+            exit 1
+          fi
+          TILES_BUCKET="gs://${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+
+          echo "Checking if map tiles bucket $TILES_BUCKET exists..."
+          if ! gcloud storage buckets describe "$TILES_BUCKET" >/dev/null 2>&1; then
+            echo "Creating map tiles bucket..."
+            gcloud storage buckets create "$TILES_BUCKET" \
+              --location=us-east1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Map tiles bucket already exists."
+          fi
+
+          echo "Making map tiles bucket readable by allUsers..."
+          gcloud storage buckets update "$TILES_BUCKET" --no-public-access-prevention
+          gcloud storage buckets add-iam-policy-binding "$TILES_BUCKET" \
+            --member="allUsers" \
+            --role="roles/storage.objectViewer"
+
+          echo "Applying CORS (GET/HEAD from any origin; range reads by the map)..."
+          jq -n '[{origin: ["*"], method: ["GET", "HEAD"], responseHeader: ["Content-Range", "Content-Length", "ETag", "Accept-Ranges"], maxAgeSeconds: 86400}]' > map-tiles-cors.json
+          cat map-tiles-cors.json
+          gcloud storage buckets update "$TILES_BUCKET" --cors-file=map-tiles-cors.json
 
       - name: Create PubSub Topic
         run: |

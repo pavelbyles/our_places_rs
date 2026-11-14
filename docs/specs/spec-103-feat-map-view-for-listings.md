@@ -146,34 +146,49 @@ Constants: `APPROX_MIN_M = 150`, `APPROX_MAX_M = 500` (also the displayed circle
    - `--location=us-east1`
    - `--uniform-bucket-level-access`
    - `--no-public-access-prevention`
-   - `allUsers` → `roles/storage.legacyObjectReader`, which allows reading objects but not listing the bucket
+   - `allUsers` → `roles/storage.objectViewer`, the same as the photo bucket. This also lets anyone list the bucket, which exposes only the version folder names, and those are public data anyway. `legacyObjectReader` (read objects, no listing) was dropped because it isn't clear whether it can be granted on a bucket with uniform bucket-level access.
+   - Implemented as the step **"Create Map Tiles Bucket"** in `setup-gcs-image-gcs-items` (added 2026-11-14).
 3. **CORS**: `[{origin:["*"], method:["GET","HEAD"], responseHeader:["Content-Range","Content-Length","ETag","Accept-Ranges"], maxAgeSeconds:86400}]`.
    - `*` is acceptable because the bucket holds only public, versioned map data and no credentials are ever sent.
    - It also avoids listing every branch's Cloud Run portal URL.
-4. **Writes**: only the CI deployer credentials (`GCP_CREDENTIALS`), used by the refresh workflow.
+4. **Writes**: only the CI deployer credentials (`GCP_CREDENTIALS`), used by the populate step.
+5. **Names**: `-dev` and `-prod` (decided 2026-11-13), from `INFRA_GCS_MAP_TILES_BUCKET_PREFIX` = `our-places-gcs-map-tiles`, which is already set. Dev uses `-dev` for every branch except `main`; `main` uses `-prod`.
 
 **Layout** (each version is never changed once uploaded):
 
 ```text
-gs://<bucket>/v<YYYY-MM>/jamaica.pmtiles
-gs://<bucket>/v<YYYY-MM>/style-light.json  style-dark.json
-gs://<bucket>/v<YYYY-MM>/sprites/…          fonts/{fontstack}/{range}.pbf
+gs://<bucket>/v<YYYYMMDD>/jamaica.pmtiles
+gs://<bucket>/v<YYYYMMDD>/style-light.json  style-dark.json
+gs://<bucket>/v<YYYYMMDD>/sprites/…          fonts/{fontstack}/{range}.pbf
+gs://<bucket>/v<YYYYMMDD>/_READY             ← written last
 ```
+
+The version **is the Protomaps daily build date** (`YYYYMMDD`), so every folder can be traced to, and rebuilt from, one specific upstream build.
 
 - Every object is served with `Cache-Control: public, max-age=31536000, immutable`.
 - `jamaica.pmtiles` is uploaded **without** `Content-Encoding` (`gcloud storage cp --no-gzip…` with no `-z` and no `-Z`). GCS decompressive transcoding ignores `Range`, and the map would break.
 
-**Refresh workflow**
-1. A new `workflow_dispatch` workflow, `refresh_map_tiles.yml`, runs `scripts/refresh_map_tiles.sh <env> <version>`.
-2. The script:
-   - runs `pmtiles extract` from the Protomaps daily build, with `--bbox=-78.60,17.55,-75.95,18.70 --maxzoom=15`;
-   - generates the light and dark styles from `@protomaps/basemaps` for one pinned version, with the source `pmtiles://<base>/jamaica.pmtiles`, the glyphs URL and the sprite URL;
-   - copies the fonts and sprites from the pinned `protomaps/basemaps-assets` commit;
-   - uploads everything to `v<version>/`.
-3. Old versions are kept until a later run deletes versions older than the previous one.
+**Populating the bucket automatically in CI** (decided 2026-11-13; there is no separate refresh workflow)
+1. **Version variables**: `MAP_TILES_VERSION_DEV` and `MAP_TILES_VERSION_PROD`, each a Protomaps build date such as `20261101`. CI picks the variable for the environment, as it does for `JWT_SECRET`. A value that isn't 8 digits fails the job.
+2. **New step, "Populate Map Tiles"**, in `setup-gcs-image-gcs-items`, right after "Create Map Tiles Bucket". It isn't a separate job (decided 2026-11-14).
+   - The job gains `concurrency: { group: map-tiles-${{ ENV_SUFFIX }}, cancel-in-progress: false }`, so two runs never fill the same folder at once. All dev-branch setup runs are serialized by this, which is acceptable because the job is short when `_READY` exists.
+   - `deploy-web-ui-guest` and `deploy-web-ui-admin` add `setup-gcs-image-gcs-items` to `needs`, with `if: always() && needs.setup-gcs-image-gcs-items.result != 'failure' && …` (their existing conditions). Without this, a portal-only push, where the setup job is skipped, would skip the portal deploys. When the setup job was skipped, the portals use the last populated version as recorded by `_READY`, which is a quick `gcloud storage cat` in the deploy job.
+3. **What the job does**:
+   1. If `gs://<bucket>/v<version>/_READY` exists, it does nothing more. This takes a few seconds and is the usual case.
+   2. Otherwise it runs `scripts/populate_map_tiles.sh <bucket> <version>`:
+      - downloads the pinned `pmtiles` CLI and verifies its sha256;
+      - runs `pmtiles extract https://build.protomaps.com/<version>.pmtiles jamaica.pmtiles --bbox=-78.60,17.55,-75.95,18.70 --maxzoom=15`, which reads only the Jamaica ranges;
+      - generates `style-light.json` and `style-dark.json` with the pinned `@protomaps/basemaps` version, pointing at `pmtiles://<base>/jamaica.pmtiles` and at the bucket's glyph and sprite URLs;
+      - copies the fonts and sprites from the pinned `protomaps/basemaps-assets` commit;
+      - uploads everything to `v<version>/` with `Cache-Control: public, max-age=31536000, immutable`. `jamaica.pmtiles` is uploaded with no `Content-Encoding`.
+   3. It writes `_READY` **last**, holding the build date, the tool versions and the file's sha256.
+4. **Failure**: if the upstream build has expired or a download fails, the job fails, `_READY` is never written, and the portal deploys don't run. The next run retries from the start and overwrites any partial files, which no portal is pointing at yet.
+5. **Updating the map**: set the variable to a newer build date. The next CI run fills the new folder and then deploys the portals pointing at it. To roll back, set the variable back; the old folder is still there.
+6. **Old versions**: kept, and deleted only by hand. Each one is tens of MB, so the cost is negligible, and open pages and rollbacks keep working.
+7. **Version unset**: the job skips, `MAP_TILES_BASE_URL` is empty, and the portals run with no maps (see below).
 
 **Portal configuration**
-1. `MAP_TILES_BASE_URL` (both portals) is the full base URL, e.g. `https://storage.googleapis.com/<bucket>/v2026-11`. It is set by `deploy-web-ui-guest` and `deploy-web-ui-admin` from the variable `MAP_TILES_VERSION_{DEV,PROD}`.
+1. `MAP_TILES_BASE_URL` (both portals) is the full base URL, e.g. `https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101`. It is built by `deploy-web-ui-guest` and `deploy-web-ui-admin` from the bucket prefix, the environment suffix and `MAP_TILES_VERSION_{DEV,PROD}`, and only when `v<version>/_READY` exists (checked in the deploy job). Otherwise it is empty, and the portals run with no maps.
 2. A value is accepted only if it starts with `https://storage.googleapis.com/` and contains no characters from `; , ' " space \n`. Otherwise it counts as unset.
 3. **Unset**: maps are not rendered (§1.6, §1.7), and there is one `warn` at startup. The portal still starts, because maps are an add-on.
 
@@ -283,11 +298,12 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 
 ### 2.4. CI and Infrastructure
 1. **`cicd_full_stack.yml`**:
-   - `setup-gcs-image-gcs-items`: the tile bucket steps (§1.10);
+   - `setup-gcs-image-gcs-items`: the tile bucket steps (§1.10), which create the bucket, grant public object read and apply CORS. They run again on every run, so the settings can't drift;
+   - "Populate Map Tiles", a step after "Create Map Tiles Bucket" (done), plus job-level `concurrency` (§1.10);
    - `deploy-api`: `LOCATION_OFFSET_KEY` for listing_api, with the empty-secret guard;
-   - the two portal deploys: `MAP_TILES_BASE_URL`.
-2. **New**: `.github/workflows/refresh_map_tiles.yml` and `scripts/refresh_map_tiles.sh`. The script pins the `pmtiles` CLI, `@protomaps/basemaps` and the `basemaps-assets` commit, and checks the CLI's checksum.
-3. **New repository variables**: `INFRA_GCS_MAP_TILES_BUCKET_PREFIX`, `MAP_TILES_VERSION_DEV` and `MAP_TILES_VERSION_PROD`. **New secrets**: `LOCATION_OFFSET_KEY_DEV` and `LOCATION_OFFSET_KEY_PROD`.
+   - the two portal deploys: `needs` the setup job with the `always()` guard, a `_READY` check, and `MAP_TILES_BASE_URL`.
+2. **New**: `scripts/populate_map_tiles.sh`. It pins the `pmtiles` CLI (with its sha256), `@protomaps/basemaps` and the `basemaps-assets` commit. It must be idempotent and safe to rerun.
+3. **Repository variables**: `INFRA_GCS_MAP_TILES_BUCKET_PREFIX` (set 2026-11-14), `MAP_TILES_VERSION_DEV` and `MAP_TILES_VERSION_PROD` (not set yet; set one to a recent build date to turn maps on). **Secrets**: `LOCATION_OFFSET_KEY_DEV` and `LOCATION_OFFSET_KEY_PROD` (set 2026-11-14).
 4. **Docs**: `docs/ENVIRONMENT.md` (the new variables, the key-rotation warning) and `docs/ARCHITECTURE.md` (the map data flow).
 
 ---
@@ -311,7 +327,10 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 | JavaScript off | The toggle links still switch views server-side. The map container shows "Map needs JavaScript" in `<noscript>`, and the list is always available |
 | WebGL unavailable, a tile fetch fails, or an old browser | "Map unavailable" fallback (§1.11) |
 | `pmtiles` file uploaded gzip-encoded | Range requests return the whole body and the map breaks. The script uploads without `Content-Encoding`, and the Phase 0 check catches it |
-| Tile version bumped while a page is open | Old versions stay in the bucket until the run after next, so open pages keep working |
+| Tile version bumped while a page is open | Old versions are never deleted automatically, so open pages keep working |
+| `MAP_TILES_VERSION_*` names an expired Protomaps build | "Populate Map Tiles" fails the setup job, so the portals aren't deployed. Pick a recent build date |
+| CI run fails halfway through populating | No `_READY`. The next run repopulates. The portals were never pointed at the folder |
+| Two CI runs fill the same version at once | Serialized by the `map-tiles-<env>` concurrency group. The second run finds `_READY` and skips |
 | 50 results with coordinates | 50 DOM badges; acceptable. Clustering is a non-goal |
 | Theme toggled while a map is open | `setStyle`; markers and the circle layer are added again on `style.load` |
 | Several booking cards with maps | Lazy load per card; maps far off-screen are removed (§1.8) |
@@ -343,8 +362,9 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 | Edit form overwrites the true point with the approximate one | Prefill only from the manager endpoint; 503 on failure (§1.9) |
 | XSS through the popup | Cards are server-rendered `<template>`s escaped by Topcoat and attached with `setDOMContent`. `map.js` never uses `innerHTML` |
 | CSP loosened too far | Only the bucket path is added, plus `worker-src 'self'`. No `unsafe-*`. `MAP_TILES_BASE_URL` is validated against the directive-breaking characters, like `csp_with_storage_origin` |
-| Supply chain (vendored JS) | Exact versions with `sha256` checksums in `asset!`, checked against the npm tarball. The refresh script pins its tools and checksums them. Licences: MapLibre BSD-3, pmtiles BSD-3; data ODbL with attribution |
+| Supply chain (vendored JS) | Exact versions with `sha256` checksums in `asset!`, checked against the npm tarball. `populate_map_tiles.sh` pins its tools and checksums them. Licences: MapLibre BSD-3, pmtiles BSD-3; data ODbL with attribution |
 | Bucket abuse | Object read only (no listing), CORS `GET` and `HEAD` only, writes only from CI credentials, egress budget alert |
+| Tampered upstream build | The CLI checksum is pinned, and the extract comes from a named build date. `_READY` records the file's sha256, so a later run or a person can check the object hasn't changed |
 | Secret in source | The key comes only from a GitHub secret into the environment. Nothing goes in `.env.example` beyond a placeholder |
 
 ---
@@ -441,10 +461,10 @@ Record the results in this spec before building the UI.
    - the admin edit form switched to the location endpoint, with the privacy radio;
    - the regression tests.
 2. **Phase 0 spike.**
-3. **Phase 2, map infrastructure**: the bucket, CORS, the refresh workflow and the first upload to dev; vendored assets, `map.js`, the lazy loader, CSP and `MAP_TILES_BASE_URL`.
+3. **Phase 2, map infrastructure**: the "Populate Map Tiles" step and its script (the bucket step is already in `cicd_full_stack.yml`), the portal-deploy `needs` and the `_READY` guard, and setting `MAP_TILES_VERSION_DEV` so the first push fills dev; vendored assets, `map.js`, the lazy loader, CSP and `MAP_TILES_BASE_URL`.
 4. **Phase 3, guest maps**: the listing page, then `/listings` (grid, toggle, badges, popups).
 5. **Phase 4, reveal and picker**: `listing_location` in booking_api and the `/bookings` block; the admin pin picker.
-6. **Phase 5**: E2E, docs, and the prod bucket and upload before merging to `main`.
+6. **Phase 5**: E2E and docs. Set `MAP_TILES_VERSION_PROD` before merging to `main`, so the `main` run creates and fills `-prod`.
 
 ---
 
@@ -459,7 +479,7 @@ Record the results in this spec before building the UI.
 8. [ ] The exact location appears on `/bookings` only for the guest's `confirmed` or `completed` bookings, and never in emails.
 9. [ ] The admin edit form loads exact coordinates from `GET /api/v1/listings/{id}/location`. The pin and the inputs stay in step, and a load failure never renders the form with public coordinates.
 10. [ ] No map JS, CSS or tile request happens before a map container is visible or toggled on. Container heights are reserved.
-11. [ ] Tiles come only from the dedicated `us-east1` bucket. The CSP adds only that bucket path and `worker-src 'self'`, with no `unsafe-*`, and the console shows no CSP violations.
+11. [ ] CI creates the `-dev` and `-prod` tile buckets and fills `v<YYYYMMDD>/` once per version, gated on `_READY`. Runs where the folder is already filled skip in seconds. Tiles come only from the dedicated `us-east1` bucket. The CSP adds only that bucket path and `worker-src 'self'`, with no `unsafe-*`, and the console shows no CSP violations.
 12. [ ] With `MAP_TILES_BASE_URL` unset, or JavaScript or WebGL unavailable, every page still works and shows the location text.
 13. [ ] OSM and Protomaps attribution is visible on every map.
 14. [ ] Every gate in CONSTRAINTS.md passes: fmt, clippy `-D warnings`, `missing_docs`, no unwrap or expect, env-var hygiene, `sqlx prepare --check`, backend and web UI tests, `cargo audit`.
