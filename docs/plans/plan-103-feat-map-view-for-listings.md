@@ -766,7 +766,7 @@ T25 prod version, full gates    ← T23, T24
     - [x] No `.unwrap()`, `.expect()` or raw `env::var` literal in the lines this branch adds to production code.
     - [x] `missing_docs` reports nothing on the items this branch adds.
     - [x] The float gate passes.
-    - [ ] Each of spec acceptance criteria 1–14 is ticked.
+    - [x] Each of spec acceptance criteria 1–14 is ticked.
     - [ ] The local sanity check, measured with `time`, stays within 90s.
     - [ ] CI-only evidence is recorded as run URLs in the plan: T3's guard, T11's concurrent runs and cancel-mid-upload, T14's portal-only push and the failed-setup block.
     - [x] Inline `#[cfg(test)]` modules added in page files use `match` or `panic!`, not `.unwrap()`, because the added-lines check doesn't exclude them.
@@ -794,9 +794,26 @@ T25 prod version, full gates    ← T23, T24
     - `sqlx prepare --check -- --all-targets`;
     - `cargo audit`;
     - `missing_docs`: 0 warnings on added lines.
+  - **Acceptance walk, 2026-11-14 at `0953362b`.** Targeted Rust tests rerun: 131 passed, 0 failed. Playwright from the T24 run the same day: guest 7/7, admin 2/2, ui-js 38/38.
+
+    | # | Evidence |
+    |---|---|
+    | 1 | Migration `20261114053147` adds `location_privacy NOT NULL DEFAULT 'approximate'`; `db_core` location tests; admin `the_privacy_radio_defaults_to_approximate_and_shows_the_stored_value`; e2e pin picker saves and reloads the radio. |
+    | 2 | `listing_api` public location tests (JSON and XML), `user_api` tests, `db_core/tests/listing_span_privacy`; e2e scans the HTML of `/listings` and the listing page for the stored seed point. |
+    | 3 | `common` location tests (deterministic, 150–500m, keyed). |
+    | 4 | `location_key_tests` (missing, blank, short refused; 32 bytes loads), called from `listing_api/src/main.rs:45`; CI step "Require Location Offset Key" fails an empty secret. A set but short key fails at revision start rather than in that step. |
+    | 5 | `listings_map_layout_tests` (9); ui-js `map-search` toggle; e2e phone toggle and `?view=map` surviving a reload. |
+    | 6 | ui-js `map-search` (badge per card, 44px buttons, circles, popup link, keyboard); e2e desktop flow. |
+    | 7 | `listing_map_tests` (6); ui-js `map.spec` circle/pin; e2e approximate and exact. |
+    | 8 | `db_core` `listing_location_tests` (6), `booking_api` `listing_location_api_tests` (2), `bookings_location_tests` (3), e2e confirmed vs pending. Emails: only the two GET handlers in `bookings.rs` fill `listing_location`; `map_booking_to_response` sets `None` and the notification builders never take a `BookingResponse` (code read, no test). The host and admins see it too, for their own listings. |
+    | 9 | `web_client/tests/listing_location_client`, `web_ui_admin/tests/listing_location` (stored point, not the public one; a failed load is a 503); ui-js `map-picker` (4); e2e drag, save, reload. |
+    | 10 | ui-js `map.spec` (nothing before scrolling near), `map-search` (no requests before the toggle), `map-booking`; e2e phone test and listing-page scroll; heights set by the container classes. |
+    | 11 | CI runs 43607591230 and 43633780392: Build Map Tiles skipped the filled folder in 5s and 4s. The deployed feature guest portal sends `connect-src 'self' https://storage.googleapis.com/our-places-gcs-map-tiles-dev/` and `worker-src 'self'` with no `unsafe-*`; `security_headers` (12). No CSP refusals in the e2e runs (watcher now records them). **The feature dev env has no listings, so no map has rendered on the deployed site yet.** |
+    | 12 | `map_config_tests` (unset or invalid turns maps off), `maps_off_means_no_block`; ui-js no-WebGL, style 500 and style timeout; e2e no-JS note. |
+    | 13 | One `AttributionControl` with the OSM and Protomaps credits for every map kind (`map.js`); ui-js `map.spec` and e2e `/listings` check the text. It is `compact`, so it collapses to an (i) button after the first interaction. |
+    | 14 | Gates above at `f56ba3f9`; later commits change only Playwright specs and docs. |
+
   - **Still open:**
-    - the T24 run;
-    - the spec acceptance walk, which needs T24's evidence;
     - `MAP_TILES_VERSION_PROD`, which needs the originator's approval;
     - the timed local sanity check;
     - T14's portal-only push.

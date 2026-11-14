@@ -505,17 +505,17 @@ Done 2026-11-14 (plan T9). Page served from a local server on :3099 with the §1
 ---
 
 ## Acceptance Criteria
-1. [ ] Every existing and new listing defaults to `approximate`, and hosts can choose `exact` in the admin form.
-2. [ ] No public listing response, and no guest-portal HTML, contains the stored coordinates of an Approximate listing (automated test).
-3. [ ] Approximate public points are deterministic and 150–500m from the true point, and use a keyed seed.
-4. [ ] listing_api refuses to start without a `LOCATION_OFFSET_KEY` of at least 32 bytes, and CI refuses to deploy without it.
-5. [ ] `/listings` shows a sticky map beside a results grid at `md` and above, and a List/Map toggle (`?view=`) below `md`.
-6. [ ] Each result with coordinates has a keyboard-reachable price badge. Approximate listings also have a 500m circle. Clicking a badge opens a card that links to the listing.
-7. [ ] The listing page shows a circle (Approximate) or a pin (Exact), or "Location not mapped".
-8. [ ] The exact location appears on `/bookings` only for the guest's `confirmed` or `completed` bookings, and never in emails.
-9. [ ] The admin edit form loads exact coordinates from `GET /api/v1/listings/{id}/location`. The pin and the inputs stay in step, and a load failure never renders the form with public coordinates.
-10. [ ] No map JS, CSS or tile request happens before a map container is visible or toggled on. Container heights are reserved.
-11. [ ] CI creates the `-dev` and `-prod` tile buckets and fills `v<YYYYMMDD>/` once per version, gated on `_READY`. Runs where the folder is already filled skip in seconds. Tiles come only from the dedicated `us-east1` bucket. The CSP adds only that bucket path and `worker-src 'self'`, with no `unsafe-*`, and the console shows no CSP violations.
-12. [ ] With `MAP_TILES_BASE_URL` unset, or JavaScript or WebGL unavailable, every page still works and shows the location text.
-13. [ ] OSM and Protomaps attribution is visible on every map.
-14. [ ] Every gate in CONSTRAINTS.md passes: fmt, clippy `-D warnings`, `missing_docs`, no unwrap or expect, env-var hygiene, `sqlx prepare --check`, backend and web UI tests, `cargo audit`.
+1. [x] Every existing and new listing defaults to `approximate`, and hosts can choose `exact` in the admin form.
+2. [x] No public listing response, and no guest-portal HTML, contains the stored coordinates of an Approximate listing (automated test).
+3. [x] Approximate public points are deterministic and 150–500m from the true point, and use a keyed seed.
+4. [x] listing_api refuses to start without a `LOCATION_OFFSET_KEY` of at least 32 bytes, and CI refuses to deploy without it.
+5. [x] `/listings` shows a sticky map beside a results grid at `md` and above, and a List/Map toggle (`?view=`) below `md`.
+6. [x] Each result with coordinates has a keyboard-reachable price badge. Approximate listings also have a 500m circle. Clicking a badge opens a card that links to the listing.
+7. [x] The listing page shows a circle (Approximate) or a pin (Exact), or "Location not mapped".
+8. [x] The exact location appears on `/bookings` only for the guest's `confirmed` or `completed` bookings, and never in emails.
+9. [x] The admin edit form loads exact coordinates from `GET /api/v1/listings/{id}/location`. The pin and the inputs stay in step, and a load failure never renders the form with public coordinates.
+10. [x] No map JS, CSS or tile request happens before a map container is visible or toggled on. Container heights are reserved.
+11. [x] CI creates the `-dev` and `-prod` tile buckets and fills `v<YYYYMMDD>/` once per version, gated on `_READY`. Runs where the folder is already filled skip in seconds. Tiles come only from the dedicated `us-east1` bucket. The CSP adds only that bucket path and `worker-src 'self'`, with no `unsafe-*`, and the console shows no CSP violations.
+12. [x] With `MAP_TILES_BASE_URL` unset, or JavaScript or WebGL unavailable, every page still works and shows the location text.
+13. [x] OSM and Protomaps attribution is visible on every map.
+14. [x] Every gate in CONSTRAINTS.md passes: fmt, clippy `-D warnings`, `missing_docs`, no unwrap or expect, env-var hygiene, `sqlx prepare --check`, backend and web UI tests, `cargo audit`.
