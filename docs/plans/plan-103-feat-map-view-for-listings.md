@@ -286,7 +286,7 @@ T25 prod version, full gates    ← T23, T24
     - **Mutation checks:** making the mapper return the stored point fails the search/detail test. Disabling the guard fails the echo test.
   - **Dependencies:** Task 2, Task 3, Task 4
 
-- [ ] **Task 6: `user_api` drops coordinates**
+- [x] **Task 6: `user_api` drops coordinates**
   - **Scope:** XS
   - **Description:** `GET /api/v1/users/{email}/listings` uses the fail-closed mapper and never opts in, so coordinates, `location_privacy` and `location_precision` are all `None` (spec §1.2).
   - **Files Touched:**
@@ -295,6 +295,7 @@ T25 prod version, full gates    ← T23, T24
   - **Acceptance Criteria:**
     - [ ] A listing with stored coordinates appears with no coordinate or privacy keys, and every other field is unchanged.
   - **Verification Command:** `devenv shell -- cargo test -p user_api user_listings_drop_coordinates`
+  - **Built note:** the test passed the first time it ran, because T2's fail-closed mapper already removes the coordinates. T6 pins that behaviour and adds a comment at the call site so a later change doesn't opt in by mistake.
   - **Dependencies:** Task 2
 
 - [ ] **Task 7: Add `GET /api/v1/listings/{id}/location`**

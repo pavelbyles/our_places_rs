@@ -923,3 +923,99 @@ mod currency_inactive_tests {
         assert_eq!(unchanged.status(), 200);
     }
 }
+
+/// Spec 103 §1.2: user_api has no offset key, so the user's listings carry no
+/// coordinates and no location setting at all.
+#[actix_web::test]
+async fn user_listings_drop_coordinates() {
+    dotenvy::dotenv().ok();
+    let db_url = match env::var(DATABASE_URL_ENV) {
+        Ok(url) => url,
+        Err(_) => panic!("DATABASE_URL must be set"),
+    };
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(get_test_settings()))
+            .configure(configure_routes),
+    )
+    .await;
+
+    let email = format!("located_{}@example.com", Uuid::now_v7());
+    let created: UserResponse = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/users/")
+            .set_json(json!({
+                "email": email,
+                "password": "password123",
+                "first_name": "Located",
+                "last_name": "Host",
+                "is_active": true,
+                "roles": ["host"],
+                "host_profile": {"verified_status": "verified", "description": "Host"}
+            }))
+            .to_request(),
+    )
+    .await;
+
+    let listing = db_core::models::NewListing {
+        name: format!("Hidden Villa {}", Uuid::now_v7()),
+        user_id: created.id,
+        description: None,
+        listing_structure_id: 5,
+        country: "Jamaica".to_string(),
+        price_per_night: Some(rust_decimal_macros::dec!(300.00)),
+        weekly_discount_percentage: None,
+        monthly_discount_percentage: None,
+        max_guests: 4,
+        bedrooms: 2,
+        beds: 2,
+        full_bathrooms: 2,
+        half_bathrooms: 0,
+        square_meters: None,
+        latitude: Some(18.40741),
+        longitude: Some(-77.10313),
+        listing_details: None,
+        city: Some("Ocho Rios".to_string()),
+        base_currency: "USD".to_string(),
+        minimum_stay: 1,
+        days_between_bookings: 0,
+        commission_pct: None,
+        cleaning_fee: None,
+        damage_deposit: None,
+        guests_included: None,
+        extra_guest_fee: None,
+        is_active: true,
+        location_privacy: Some(common::location::LocationPrivacy::Exact),
+    };
+    if let Err(e) = db_core::listing::create_listing(&pool, &listing).await {
+        panic!("create listing: {e}");
+    }
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!("/api/v1/users/user/{email}/listings"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let body = String::from_utf8_lossy(&test::read_body(resp).await).to_string();
+    let listings: Vec<serde_json::Value> = match serde_json::from_str(&body) {
+        Ok(listings) => listings,
+        Err(e) => panic!("{e}: {body}"),
+    };
+    assert_eq!(listings.len(), 1, "{body}");
+    assert_eq!(listings[0]["latitude"], serde_json::Value::Null);
+    assert_eq!(listings[0]["longitude"], serde_json::Value::Null);
+    assert!(listings[0].get("location_privacy").is_none(), "{body}");
+    assert!(listings[0].get("location_precision").is_none(), "{body}");
+    assert!(
+        !body.contains("18.40741") && !body.contains("77.10313"),
+        "{body}"
+    );
+    assert_eq!(listings[0]["city"], "Ocho Rios");
+}
