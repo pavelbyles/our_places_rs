@@ -581,7 +581,7 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 5
   - **Built:** `MapPoint::of_listing` (shared with T16's `listing_map_point`, which adds the `warn`). `listing_card_map_attrs(cx, &summary)` also sets `data-map-name` for the badge label. `map_card_template` renders `<template data-map-card="{slug}">`. 3 `map_card_*` tests; the bounds filter is mutation-checked through T16's test.
 
-- [ ] **Task 18: `/listings` grid, sticky map and toggle**
+- [x] **Task 18: `/listings` grid, sticky map and toggle**
   - **Scope:** M
   - **Description:**
     - Replace `villa_carousel` on `/listings` with a grid whose card wrappers carry the T17 attributes and templates.
@@ -594,12 +594,13 @@ T25 prod version, full gates    ← T23, T24
     - `web_ui_common/src/assets/ui.js`
     - `web_ui_common/src/components/domain/currency_selector.rs` (only if the kept-params list lives there)
   - **Acceptance Criteria:**
-    - [ ] With `view=map`, the list carries a mobile-hidden class. With `view=list` or `view=junk`, the map does. At `md` both are visible, checked by class.
-    - [ ] `params()` never includes `view`, and the currency links keep it.
-    - [ ] There's no `data-map` on Refused, Failed or empty, or when unconfigured.
-    - [ ] The existing `listings_page_tests` still pass.
+    - [x] With `view=map`, the list carries a mobile-hidden class. With `view=list` or `view=junk`, the map does. At `md` both are visible, checked by class.
+    - [x] `params()` never includes `view`, and the currency links keep it.
+    - [x] There's no `data-map` on Refused, Failed or empty, or when unconfigured.
+    - [x] The existing `listings_page_tests` still pass.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest listings_map_layout_tests && SQLX_OFFLINE=true cargo test -p web_ui_guest listings_page_tests`
   - **Dependencies:** Task 17
+  - **Built:** `ResultsView` and `SearchQuery::view_href`. The grid keeps `#listings-grid` and `#listing-card-{slug}`, using `villa_card(fluid: true)` because `class!` only joins classes and can't override the carousel width. `view` was added to `KEPT_SEARCH_PARAMS`. The `ui.js` toggle (`[data-view-link]`) uses `replaceState` and calls `OurPlacesMap.resize`. The maps-on test context moved to `web_ui_common::map_config::testing` (feature `test-util`, dev-only). 9 tests; the phone-hidden map class is mutation-checked. The in-place toggle is covered in T19's `map-search` spec.
 
 - [ ] **Task 19: Search map: badges, circles and popups**
   - **Scope:** M

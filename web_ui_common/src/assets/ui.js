@@ -1244,6 +1244,37 @@
     watchMaps(e.target);
   });
 
+  // /listings List/Map toggle (phones): the links work without JavaScript;
+  // here they switch in place and keep the URL in step. A map shown for the
+  // first time starts through the observers; one already built is resized.
+  function showResults(results, view) {
+    var list = results.querySelector("[data-results-list]");
+    var map = results.querySelector("[data-results-map]");
+    if (!list || !map) return;
+    var onMap = view === "map";
+    results.setAttribute("data-view", view);
+    list.classList.toggle("hidden", onMap);
+    list.classList.toggle("md:grid", onMap);
+    list.classList.toggle("grid", !onMap);
+    map.classList.toggle("hidden", !onMap);
+    results.querySelectorAll("[data-view-link]").forEach(function (a) {
+      if (a.getAttribute("data-view-link") === view) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
+    var container = map.querySelector("[data-map]");
+    if (onMap && container && window.OurPlacesMap) window.OurPlacesMap.resize(container);
+  }
+
+  document.addEventListener("click", function (e) {
+    var link = e.target.closest && e.target.closest("[data-view-link]");
+    if (!link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var results = link.closest("[data-results]");
+    if (!results) return;
+    e.preventDefault();
+    showResults(results, link.getAttribute("data-view-link"));
+    history.replaceState(history.state, "", link.getAttribute("href"));
+  });
+
   function init() {
     applyTheme(currentTheme());
     watchMaps(document);

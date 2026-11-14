@@ -134,3 +134,50 @@ pub fn map_config(cx: &Cx) -> Option<&MapConfig> {
 #[cfg(test)]
 #[path = "map_config_tests.rs"]
 mod map_config_tests;
+
+/// Test helpers: a context with maps on.
+#[cfg(any(test, feature = "test-util"))]
+pub mod testing {
+    use super::MapConfig;
+    use crate::assets::{MAP_JS, MAPLIBRE_CSS, MAPLIBRE_JS, MAPLIBRE_WORKER_JS, PMTILES_JS};
+    use topcoat::asset::{Asset, AssetConfig, Manifest, ManifestEntry};
+    use topcoat::context::Cx;
+
+    /// The tile folder the helpers use.
+    pub const TEST_TILES: &str =
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261113";
+
+    fn entry(asset: Asset, file: &str) -> ManifestEntry {
+        ManifestEntry {
+            id: asset.id(),
+            file: file.to_string(),
+            hash: "0".to_string(),
+            content_type: "application/javascript".to_string(),
+        }
+    }
+
+    /// A context with maps on ([`TEST_TILES`]) and the map assets hosted at
+    /// `/_topcoat/assets`.
+    ///
+    /// # Panics
+    /// If [`TEST_TILES`] stops parsing: a test helper, never production.
+    pub fn maps_on() -> Cx {
+        let manifest = Manifest {
+            version: 1,
+            assets: vec![
+                entry(MAPLIBRE_JS, "maplibre-gl-6.15.0-aaaa.mjs"),
+                entry(MAPLIBRE_WORKER_JS, "maplibre-gl-worker-6.15.0-bbbb.mjs"),
+                entry(MAPLIBRE_CSS, "maplibre-gl-6.15.0-cccc.css"),
+                entry(PMTILES_JS, "pmtiles-4.5.0-dddd.js"),
+                entry(MAP_JS, "map-eeee.js"),
+            ],
+        };
+        let config = match MapConfig::parse(TEST_TILES, None) {
+            Ok(config) => config,
+            Err(e) => panic!("{e}"),
+        };
+        Cx::default()
+            .with(AssetConfig::hosted_at("/_topcoat/assets", manifest))
+            .with(config)
+    }
+}

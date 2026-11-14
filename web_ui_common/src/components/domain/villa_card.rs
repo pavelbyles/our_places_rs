@@ -41,6 +41,9 @@ pub async fn villa_card(
     cx: &Cx,
     /// The listing to show.
     listing: ListingSummary,
+    /// Fill the width of a grid cell instead of the carousel's fixed width.
+    #[default]
+    fluid: bool,
     /// Extra HTML attributes for the root element; `class` is merged with the defaults.
     #[default]
     mut attrs: Attributes,
@@ -60,7 +63,8 @@ pub async fn villa_card(
     Ok(view! {
         <article
             class=(class!(
-                "group flex w-[240px] shrink-0 snap-start flex-col sm:w-[280px]",
+                "group flex shrink-0 snap-start flex-col",
+                "w-full" if fluid else "w-[240px] sm:w-[280px]",
                 attrs.remove("class"),
             ))
             (attrs)

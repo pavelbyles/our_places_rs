@@ -33,3 +33,7 @@ uuid = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
 reqwest = { workspace = true }
+
+[features]
+# Test helpers for crates that render maps (`map_config::testing`).
+test-util = []

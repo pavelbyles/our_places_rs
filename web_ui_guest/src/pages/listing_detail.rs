@@ -1543,16 +1543,10 @@ mod listing_map_tests {
     use super::{ListingResponse, listing_map_point, location_map, location_note};
     use std::io::Write;
     use std::sync::{Arc, Mutex};
-    use topcoat::asset::{Asset, AssetConfig, Manifest, ManifestEntry};
     use topcoat::context::Cx;
     use topcoat::view::{View, ViewExt, view};
     use uuid::Uuid;
-    use web_ui_common::assets::{
-        MAP_JS, MAPLIBRE_CSS, MAPLIBRE_JS, MAPLIBRE_WORKER_JS, PMTILES_JS,
-    };
-    use web_ui_common::map_config::MapConfig;
-
-    const TILES: &str = "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261113";
+    use web_ui_common::map_config::testing::maps_on;
 
     fn listing(coords: Option<(f64, f64)>, precision: Option<&str>) -> ListingResponse {
         let response: Result<ListingResponse, _> = serde_json::from_value(serde_json::json!({
@@ -1582,35 +1576,6 @@ mod listing_map_tests {
             Ok(listing) => listing,
             Err(e) => panic!("{e}"),
         }
-    }
-
-    fn entry(asset: Asset, file: &str) -> ManifestEntry {
-        ManifestEntry {
-            id: asset.id(),
-            file: file.to_string(),
-            hash: "0".to_string(),
-            content_type: "application/javascript".to_string(),
-        }
-    }
-
-    fn maps_on() -> Cx {
-        let manifest = Manifest {
-            version: 1,
-            assets: vec![
-                entry(MAPLIBRE_JS, "maplibre-gl-6.15.0-aaaa.mjs"),
-                entry(MAPLIBRE_WORKER_JS, "maplibre-gl-worker-6.15.0-bbbb.mjs"),
-                entry(MAPLIBRE_CSS, "maplibre-gl-6.15.0-cccc.css"),
-                entry(PMTILES_JS, "pmtiles-4.5.0-dddd.js"),
-                entry(MAP_JS, "map-eeee.js"),
-            ],
-        };
-        let config = match MapConfig::parse(TILES, None) {
-            Ok(config) => config,
-            Err(e) => panic!("{e}"),
-        };
-        Cx::default()
-            .with(AssetConfig::hosted_at("/_topcoat/assets", manifest))
-            .with(config)
     }
 
     async fn html(v: impl View, cx: &Cx) -> String {
