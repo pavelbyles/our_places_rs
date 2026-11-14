@@ -259,6 +259,7 @@ mod tests {
             stay_total: None,
             stay_searched: false,
             search_query: None,
+            map_point: None,
         }
     }
 
@@ -300,6 +301,7 @@ mod villa_card_price_tests {
             stay_total: None,
             stay_searched: false,
             search_query: None,
+            map_point: None,
         }
     }
 

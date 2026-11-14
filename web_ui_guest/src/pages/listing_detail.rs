@@ -4,7 +4,7 @@ use common::listing_details::{
     CuratedTestimonial, Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem,
     amenity_groups_for, drive_time,
 };
-use common::location::{LocationPrecision, in_bounds};
+use common::location::LocationPrecision;
 use common::models::{ListingDetails, ListingImageResponse, ListingResponse, ReviewResponse};
 use common::query::urlencode;
 use serde::Deserialize;
@@ -358,23 +358,15 @@ fn photo_alt(listing_name: &str, index: usize, name: Option<&str>) -> String {
     )
 }
 
-/// The listing's public point for the map (spec 103 §1.7), or `None` when it
-/// has no coordinates or they lie outside the mapped area. Out of bounds is
-/// logged: the host entered something the map can't show.
+/// The listing's public point for the map (spec 103 §1.7). Coordinates
+/// outside the mapped area are logged, without the coordinates: the host
+/// entered something the map can't show.
 fn listing_map_point(listing: &ListingResponse) -> Option<MapPoint> {
-    let (lat, lng) = listing.latitude.zip(listing.longitude)?;
-    if !in_bounds(lat, lng) {
+    let point = MapPoint::of_listing(listing);
+    if point.is_none() && listing.latitude.is_some() && listing.longitude.is_some() {
         tracing::warn!(listing_id = %listing.id, "listing coordinates are outside the mapped area");
-        return None;
     }
-    Some(MapPoint {
-        lat,
-        lng,
-        // A point of unknown precision is treated as public, never as exact.
-        precision: listing
-            .location_precision
-            .unwrap_or(LocationPrecision::Approximate),
-    })
+    point
 }
 
 /// The line under the location heading.

@@ -567,18 +567,19 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 5, Task 15
   - **Built:** `listing_map_point` (a point of unknown precision is drawn as approximate; out of bounds logs `warn` with the listing ID and no coordinates) and `location_map`. With maps off, the old decorative placeholder stays, so the box doesn't change. `#location` now also shows when there are coordinates but no drive times. 6 tests; the bounds check and the approximate default are mutation-checked.
 
-- [ ] **Task 17: Map data and popup templates on listing cards**
+- [x] **Task 17: Map data and popup templates on listing cards**
   - **Scope:** S
   - **Description:** `ListingSummary` gains `map_point: Option<MapPoint>`, taken from the public coordinates. It's `None` when either coordinate is missing or out of bounds. Add `map_card_template` and `listing_card_map_attrs`, as spec §1.6 describes.
   - **Files Touched:**
     - `web_ui_common/src/components/domain/listing_card.rs`
     - `web_ui_common/tests/components.rs` (new `map_card_*` tests)
   - **Acceptance Criteria:**
-    - [ ] The attributes carry the public point and precision, and nothing when `None`.
-    - [ ] The template escapes the name and carries the card's href, search included.
-    - [ ] The whole `components` suite still passes, so the existing snapshots haven't changed.
+    - [x] The attributes carry the public point and precision, and nothing when `None`.
+    - [x] The template escapes the name and carries the card's href, search included.
+    - [x] The whole `components` suite still passes, so the existing snapshots haven't changed.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test components`
   - **Dependencies:** Task 5
+  - **Built:** `MapPoint::of_listing` (shared with T16's `listing_map_point`, which adds the `warn`). `listing_card_map_attrs(cx, &summary)` also sets `data-map-name` for the badge label. `map_card_template` renders `<template data-map-card="{slug}">`. 3 `map_card_*` tests; the bounds filter is mutation-checked through T16's test.
 
 - [ ] **Task 18: `/listings` grid, sticky map and toggle**
   - **Scope:** M

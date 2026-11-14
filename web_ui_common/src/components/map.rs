@@ -2,7 +2,8 @@
 //! (no valid `MAP_TILES_BASE_URL`, see [`crate::map_config`]); otherwise an
 //! empty box of fixed height that `ui.js` fills once it nears the viewport.
 
-use common::location::LocationPrecision;
+use common::location::{LocationPrecision, in_bounds};
+use common::models::ListingResponse;
 use topcoat::context::Cx;
 use topcoat::{
     Result,
@@ -46,6 +47,30 @@ pub struct MapPoint {
     pub lng: f64,
     /// Exact, or a public approximate point.
     pub precision: LocationPrecision,
+}
+
+impl MapPoint {
+    /// A listing's public point, or `None` when it has no coordinates or they
+    /// lie outside the mapped area. A point of unknown precision is treated as
+    /// public, never as exact.
+    pub fn of_listing(listing: &ListingResponse) -> Option<Self> {
+        listing
+            .latitude
+            .zip(listing.longitude)
+            .filter(|&(lat, lng)| in_bounds(lat, lng))
+            .map(|(lat, lng)| Self {
+                lat,
+                lng,
+                precision: listing
+                    .location_precision
+                    .unwrap_or(LocationPrecision::Approximate),
+            })
+    }
+
+    /// The `data-precision` value.
+    pub fn precision_str(&self) -> &'static str {
+        precision_attr(self.precision)
+    }
 }
 
 fn precision_attr(precision: LocationPrecision) -> &'static str {

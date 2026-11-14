@@ -456,3 +456,93 @@ async fn more_than_four_suites_hide_the_rest_behind_show_all() {
         "{out}"
     );
 }
+
+mod map_card {
+    //! Spec 103 §1.6: what a result card gives the search map.
+    use super::html;
+    use common::location::LocationPrecision;
+    use topcoat::context::Cx;
+    use topcoat::view::view;
+    use web_ui_common::components::domain::listing_card::{
+        ListingSummary, listing_card_map_attrs, map_card_template,
+    };
+    use web_ui_common::components::map::MapPoint;
+
+    fn summary(point: Option<MapPoint>) -> ListingSummary {
+        ListingSummary {
+            slug: "sea-grape".into(),
+            name: "Sea <Grape> & \"Co\"".into(),
+            image_url: None,
+            price: "650".into(),
+            currency: "USD".into(),
+            country: "Jamaica".into(),
+            city: None,
+            max_guests: 4,
+            bedrooms: 2,
+            full_bathrooms: 2,
+            rating: None,
+            review_count: None,
+            host: None,
+            price_unavailable_in: None,
+            stay_total: None,
+            stay_searched: false,
+            search_query: Some("check_in=2030-08-01&check_out=2030-08-04&guests=2".into()),
+            map_point: point,
+        }
+    }
+
+    async fn wrapper(listing: ListingSummary) -> String {
+        let cx = &Cx::default();
+        let attrs = listing_card_map_attrs(cx, &listing);
+        html(view! { <div (attrs)></div> }, cx).await
+    }
+
+    #[tokio::test]
+    async fn map_card_attrs_carry_the_public_point_and_precision() {
+        let point = MapPoint {
+            lat: 18.40741,
+            lng: -77.10313,
+            precision: LocationPrecision::Approximate,
+        };
+        let out = wrapper(summary(Some(point))).await;
+        for expected in [
+            r#"data-map-lat="18.40741""#,
+            r#"data-map-lng="-77.10313""#,
+            r#"data-map-precision="approximate""#,
+            r#"data-map-price="US$650""#,
+        ] {
+            assert!(out.contains(expected), "missing {expected}: {out}");
+        }
+        let exact = MapPoint {
+            precision: LocationPrecision::Exact,
+            ..point
+        };
+        let out = wrapper(summary(Some(exact))).await;
+        assert!(out.contains(r#"data-map-precision="exact""#), "{out}");
+    }
+
+    #[tokio::test]
+    async fn map_card_attrs_are_empty_without_a_point() {
+        let out = wrapper(summary(None)).await;
+        assert!(!out.contains("data-map"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn map_card_template_escapes_the_name_and_carries_the_search() {
+        let cx = &Cx::default();
+        let out = html(view! { map_card_template(listing: summary(None)) }, cx).await;
+        assert!(
+            out.contains(r#"<template data-map-card="sea-grape">"#),
+            "{out}"
+        );
+        assert!(out.contains("Sea &lt;Grape&gt; &amp;"), "{out}");
+        assert!(!out.contains("<Grape>"), "{out}");
+        assert!(
+            out.contains(
+                r#"href="/listings/sea-grape?check_in=2030-08-01&amp;check_out=2030-08-04&amp;guests=2""#
+            ),
+            "{out}"
+        );
+        assert!(out.contains("US$650"), "{out}");
+    }
+}

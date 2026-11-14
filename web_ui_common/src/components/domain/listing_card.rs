@@ -5,11 +5,12 @@ use common::query::urlencode;
 use rust_decimal::Decimal;
 use topcoat::{
     Result,
-    view::{Attributes, View, class, component, view},
+    view::{Attributes, View, attributes, class, component, view},
 };
 
 use super::price_breakdown::money;
 use super::responsive_image::responsive_image;
+use crate::components::map::MapPoint;
 use crate::components::star_rating::star_rating;
 use topcoat::context::Cx;
 
@@ -67,6 +68,9 @@ pub struct ListingSummary {
     pub stay_searched: bool,
     /// The search, as a query string, for the card's links to carry.
     pub search_query: Option<String>,
+    /// The public point for the search map; `None` when the listing has no
+    /// coordinates or they lie outside the mapped area.
+    pub map_point: Option<MapPoint>,
 }
 
 /// What a card's links carry from a search, as the guest gave it.
@@ -329,8 +333,83 @@ impl From<&common::models::ListingResponse> for ListingSummary {
             stay_total: l.stay_total.clone(),
             stay_searched: false,
             search_query: None,
+            map_point: MapPoint::of_listing(l),
         }
     }
+}
+
+/// The marker data for a result card's wrapper (`#listing-card-{slug}`,
+/// spec 103 §1.6): the public point, its precision, the badge price and the
+/// name. Nothing when the listing has no point, so it gets no marker.
+pub fn listing_card_map_attrs(cx: &Cx, listing: &ListingSummary) -> Attributes {
+    match listing.map_point {
+        Some(point) => {
+            let price = listing
+                .price_text()
+                .unwrap_or_else(|unavailable| unavailable);
+            attributes! {
+                data-map-lat=(point.lat.to_string())
+                data-map-lng=(point.lng.to_string())
+                data-map-precision=(point.precision_str())
+                data-map-price=(price)
+                data-map-name=(listing.name.clone())
+            }
+        }
+        None => Attributes::default(),
+    }
+}
+
+/// The compact card a search map popup shows (spec 103 §1.6): photo, name,
+/// price or stay total, and a link carrying the search. `map.js` clones it
+/// into the popup, so no HTML is ever built in JavaScript.
+#[component]
+pub async fn map_card_template(
+    cx: &Cx,
+    /// The listing to show.
+    listing: ListingSummary,
+) -> Result<impl View> {
+    let href = listing.href();
+    let price = listing.price_text();
+    let total = match listing.stay_total_lines() {
+        Some(StayTotalLines::Total { amount, .. }) => Some(amount),
+        _ => None,
+    };
+    let ListingSummary {
+        slug,
+        name,
+        image_url,
+        ..
+    } = listing;
+    let alt = name.clone();
+    Ok(view! {
+        <template data-map-card=(slug)>
+            <a href=(href) class="flex w-64 gap-3 text-foreground no-underline">
+                <span class="block size-20 shrink-0 overflow-hidden rounded-lg bg-photo-placeholder">
+                    if let Some(src) = image_url {
+                        responsive_image(src: src, alt: alt, sizes: Some("80px".to_string()))
+                    }
+                </span>
+                <span class="flex min-w-0 flex-col gap-1">
+                    <span class="truncate font-serif text-base leading-tight">(name)</span>
+                    match price {
+                        Ok(price) => {
+                            <span class="text-sm">
+                                <span class="font-medium">(price)</span>
+                                <span class="text-muted-foreground">" per night"</span>
+                            </span>
+                        }
+                        Err(unavailable) => {
+                            <span class="text-sm text-muted-foreground">(unavailable)</span>
+                        }
+                    }
+                    if let Some(total) = total {
+                        <span class="text-xs text-muted-foreground">(total)</span>
+                    }
+                    <span class="text-sm font-medium text-primary">"View Listing"</span>
+                </span>
+            </a>
+        </template>
+    })
 }
 
 #[cfg(test)]
@@ -359,6 +438,7 @@ mod stay_card_tests {
             stay_total: None,
             stay_searched: false,
             search_query: None,
+            map_point: None,
         }
     }
 
