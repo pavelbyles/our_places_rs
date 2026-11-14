@@ -172,6 +172,18 @@ pub struct ListingLocation {
     pub longitude: f64,
 }
 
+/// A listing's stored location and setting, as its managers see it
+/// (`GET /api/v1/listings/{id}/location`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct ListingLocationResponse {
+    /// Stored latitude; `None` unless both coordinates are stored.
+    pub latitude: Option<f64>,
+    /// Stored longitude; `None` unless both coordinates are stored.
+    pub longitude: Option<f64>,
+    /// What guests may see before they book.
+    pub location_privacy: LocationPrivacy,
+}
+
 /// Why a location offset key was refused. Never carries the value.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LocationKeyError {

@@ -741,6 +741,57 @@ async fn update_listing(
     ))
 }
 
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    get,
+    path = "/api/v1/listings/{id}/location",
+    tag = "listings",
+    params(
+        ("id" = String, Path, description = "Listing UUID")
+    ),
+    responses(
+        (status = 200, description = "The stored location and setting", body = common::location::ListingLocationResponse),
+        (status = 401, description = "Missing or invalid user token"),
+        (status = 403, description = "Not the listing's owner or an admin"),
+        (status = 404, description = "Listing not found or deleted"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+/// The stored location of a listing, for its owner or an admin (spec 103
+/// §2.2). Built from the row, never from the fail-closed public mapper.
+async fn get_listing_location(
+    claims: Claims,
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let listing_id = path.into_inner();
+    authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "get_listing_location")
+        .await?;
+    let row = db_listing::get_listing_location(pool.get_ref(), listing_id)
+        .await?
+        .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+            sqlx::Error::RowNotFound,
+        )))?;
+    let point = row.latitude.zip(row.longitude);
+    let body = common::location::ListingLocationResponse {
+        latitude: point.map(|(lat, _)| lat),
+        longitude: point.map(|(_, lng)| lng),
+        location_privacy: row.location_privacy,
+    };
+    let mut response = respond(
+        &req,
+        Payload::Item(body),
+        |_: Vec<common::location::ListingLocationResponse>| (),
+        actix_web::http::StatusCode::OK,
+    );
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
+}
+
 /// Query parameters of listing deletion.
 #[derive(Deserialize, IntoParams, Debug)]
 pub struct DeleteListingParams {
@@ -985,6 +1036,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             get_listing_by_id,
             update_listing,
             delete_listing,
+            get_listing_location,
             presign_batch,
             delete_listing_image,
             rename_listing_image,
@@ -1011,6 +1063,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 UpdatedListingRequest,
                 ListingResponse,
                 common::models::ListingDetails,
+                common::location::ListingLocationResponse,
+                common::location::LocationPrivacy,
+                common::location::LocationPrecision,
                 pagination::Pagination,
                 common::models::ListingFilter,
                 common::models::ImagePresignRequest,
@@ -1083,6 +1138,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/{id}",
                 web::delete()
                     .to(delete_listing)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/{id}/location",
+                web::get()
+                    .to(get_listing_location)
                     .wrap(from_fn(content_negotiation_middleware)),
             )
             .route(
@@ -1347,6 +1408,10 @@ mod location_input_tests;
 #[cfg(test)]
 #[path = "public_location_tests.rs"]
 mod public_location_tests;
+
+#[cfg(test)]
+#[path = "listing_location_tests.rs"]
+mod listing_location_tests;
 
 #[cfg(test)]
 #[path = "stay_total_tests.rs"]

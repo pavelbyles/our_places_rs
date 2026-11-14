@@ -298,7 +298,7 @@ T25 prod version, full gates    ← T23, T24
   - **Built note:** the test passed the first time it ran, because T2's fail-closed mapper already removes the coordinates. T6 pins that behaviour and adds a comment at the call site so a later change doesn't opt in by mistake.
   - **Dependencies:** Task 2
 
-- [ ] **Task 7: Add `GET /api/v1/listings/{id}/location`**
+- [x] **Task 7: Add `GET /api/v1/listings/{id}/location`**
   - **Scope:** S
   - **Description:** Add a handler that takes `Claims`, calls `authz::require_listing_manager(…, "get_listing_location")`, and returns `{latitude, longitude, location_privacy}` with `Cache-Control: no-store`. Register it in the `/api/v1/listings` scope with `content_negotiation_middleware` and `#[instrument(skip_all)]`. Add it to the OpenAPI paths and schemas.
   - **Files Touched:**
@@ -308,6 +308,7 @@ T25 prod version, full gates    ← T23, T24
     - [ ] The owner and an admin get 200 with the stored values (Approximate included), and `Cache-Control: no-store`.
     - [ ] Another host gets 403, with a captured `warn`. No JWT gets 401. A deleted or unknown listing gets 404. No coordinates gets 200 with `null`s.
   - **Verification Command:** `devenv shell -- cargo test -p listing_api listing_location_tests`
+  - **Built note:** the response type is `common::location::ListingLocationResponse`, which `web_client` reuses in T8. The handler builds it from `db_core::listing::get_listing_location`, the T5 query, not from the mapper.
   - **Dependencies:** Task 2
 
 - [ ] **Task 8: Admin edit form loads from the location endpoint**
