@@ -7,7 +7,7 @@ Guests can see where villas are. `/listings` gets a map of the results, and each
 
 Each listing has a location privacy setting: **Approximate** (the default, for both existing and new listings) or **Exact**. An Approximate listing shows only a 500m circle, and its real coordinates never leave `listing_api` on public paths. The exact location is shown only to the booking's guest, on `/bookings`, once the booking is `confirmed` or `completed`.
 
-There is one map stack. MapLibre GL JS (its CSP build) is vendored as hashed assets. The tiles are a Jamaica-only Protomaps `.pmtiles` extract, served straight from a dedicated public GCS bucket in `us-east1`. There is no CDN, no third-party tile server and no API key.
+There is one map stack. MapLibre GL JS 6 (ES modules, with a same-origin module worker) is vendored as hashed assets. The tiles are a Jamaica-only Protomaps `.pmtiles` extract, served straight from a dedicated public GCS bucket in `us-east1`. There is no CDN, no third-party tile server and no API key.
 
 **Personas**:
 - **Guest**: browses the map and sees the area around each villa. After booking, they see the exact location.
@@ -209,10 +209,11 @@ The version **is the Protomaps daily build date** (`YYYYMMDD`), so every folder 
 
 | Asset | Notes |
 |---|---|
-| `maplibre-gl-csp-<v>.js` | Exact version pinned when implemented; at least two weeks old |
-| `maplibre-gl-csp-worker-<v>.js` | |
-| `maplibre-gl-<v>.css` | |
-| `pmtiles-<v>.js` | |
+| `maplibre-gl-6.15.0.mjs` | Pinned by the Phase 0 spike (§7). ES module only; v6 has no separate CSP build |
+| `maplibre-gl-worker-6.15.0.mjs` | Self-contained module worker |
+| `maplibre-gl-6.15.0.css` | |
+| `pmtiles-4.5.0.js` | The IIFE build (`dist/pmtiles.js`, global `pmtiles`); the ESM build imports `fflate` |
+| `basemaps-5.7.2.mjs` | `@protomaps/basemaps` ESM build, for `layers()` and `namedFlavor()`; no imports |
 | `map.js` | Ours: all map setup |
 
 **Container**: every map is a `<div data-map="search|listing|booking|picker">` that carries:
@@ -224,11 +225,11 @@ The container reserves its height, so loading causes no layout shift.
 
 **Loading**
 1. `ui.js` watches `[data-map]` with an IntersectionObserver (`rootMargin: "200px"`). It also loads a map when a hidden map becomes visible after the toggle.
-2. On the first trigger it adds `<link rel=stylesheet>` and then the scripts, in order, once per page, and calls `OurPlacesMap.init(el)` from `map.js`.
+2. On the first trigger it adds `<link rel=stylesheet>` and the `pmtiles` script, loads MapLibre and the basemaps module with `import()` (both are ES modules; allowed by `script-src 'self'`), once per page, and calls `OurPlacesMap.init(el)` from `map.js`.
 3. Before that trigger, the page makes **no** request for map JS, CSS, styles or tiles.
 
 **Map setup**
-1. `maplibregl.setWorkerUrl(data-map-worker)` before the first map is created, so no `blob:` worker is needed.
+1. `maplibregl.setWorkerUrl(data-map-worker)` (an absolute URL) before the first map is created. Required, because MapLibre's default worker URL is its unhashed sibling file. A same-origin URL is started as `new Worker(url, {type: 'module'})`, so no `blob:` worker is needed.
 2. `pmtiles.Protocol` is registered once.
 3. Style: `style-light.json` for the `light` theme, `style-dark.json` for `dim` and `dark`. When the theme toggle changes the theme, `map.setStyle(...)` follows.
 4. `maxBounds` is `JAMAICA_BOUNDS` and `maxZoom` is 17 (overzoomed above 15).
@@ -250,8 +251,8 @@ The container reserves its height, so loading causes no layout shift.
 
 | Directive | Change |
 |---|---|
-| `connect-src` | add `https://storage.googleapis.com/<bucket>/`: the style, tiles (range fetches), glyphs and sprite JSON |
-| `img-src` | add `https://storage.googleapis.com/<bucket>/` (sprite PNG), and `blob:` only if the Phase 0 spike shows MapLibre needs it |
+| `connect-src` | add `https://storage.googleapis.com/<bucket>/`: the style, tiles (range fetches), glyphs, and the sprite JSON and PNG (MapLibre fetches both with `fetch`) |
+| `img-src` | no change. The spike rendered with `img-src 'self' data:` alone; no `blob:` |
 | `worker-src` | new: `'self'` |
 
 **Composition order**: `csp_with_storage_origin` currently rewrites every occurrence of `https://storage.googleapis.com`. It must run **before** `with_map_origin`, or be changed to replace only the host as a whole token, so the bucket path is never broadened. A test covers both origins being set together.
@@ -367,7 +368,7 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 
 ## 4. Performance Considerations
 - **First paint**: unchanged. Nothing map-related loads before a container is about to be shown. Container heights are reserved, so CLS is 0.
-- **Map payload**: loaded lazily, once per page. MapLibre's CSP build is about 220KB gzipped plus its worker. Phase 0 must confirm that Topcoat's asset serving sends compressed responses, because Cloud Run doesn't compress. If it doesn't, precompressed `.br` and `.gz` variants are a Phase 0 decision.
+- **Map payload**: loaded lazily, once per page. MapLibre 6.15.0 is 1.10MB raw (285KB gzip) plus its worker at 519KB raw (143KB gzip); `pmtiles` is 8KB gzip. Phase 0 confirmed Topcoat serves assets with `content-encoding: br`, `vary: accept-encoding` and `max-age=31536000, immutable`, so no precompressed variants are needed.
 - **Tiles**: a first view is the header and root directory (one range) plus about 15–30 tile ranges from `us-east1`. Later views come from the browser cache (`immutable`).
 - **listing_api**: one HMAC-SHA256 per listing that has coordinates, a few µs each, which is negligible for 50 rows. There are no new queries on search or detail; `location_privacy` is a column on the same row. The key is parsed once at startup, so the cold start doesn't change.
 - **booking_api**: one extra indexed `ANY($1)` query per bookings-list call, on the primary key. Not N+1.
@@ -439,7 +440,7 @@ Run targeted tests while iterating, and the whole suite once at the end.
 - **`/bookings`**: the location block appears only when `listing_location` is set.
 - **Admin edit**: prefilled from the location endpoint; a failure is 503 with no coordinate inputs; the privacy radio is posted.
 - **CSP** (`web_ui_common/tests/security_headers.rs`):
-  - the map origin is added only to `connect-src` and `img-src`;
+  - the map origin is added only to `connect-src` (never `img-src`);
   - `worker-src 'self'`;
   - an invalid origin is refused;
   - no `unsafe-*`.
@@ -460,11 +461,18 @@ Run targeted tests while iterating, and the whole suite once at the end.
 ---
 
 ## 7. Phase 0 Spike (before Phase 2)
-Record the results in this spec before building the UI.
-- [ ] Confirm against the current MapLibre docs and dist that the pinned MapLibre CSP build runs with `setWorkerUrl` under the §1.12 CSP, with no violations. Decide on `img-src blob:`.
-- [ ] Topcoat asset compression (§4).
-- [ ] With a test `pmtiles` file in a us-east1 bucket: range requests return 206, CORS works from a portal origin, and there is no transcoding. Record whether GCS edge caching applies to range responses (the open question in the intent). If it doesn't, we accept serving from `us-east1` and track the p95 tile latency.
-- [ ] The size of the Jamaica z15 extract, the fonts and the sprites.
+Done 2026-11-14 (plan T9). Page served from a local server on :3099 with the §1.12 CSP, rendered in headless Chromium with real tiles from `gs://our-places-gcs-map-tiles-dev/spike/` (since deleted).
+
+**Pinned**: `maplibre-gl` 6.15.0 (2026-10-18), `pmtiles` (JS) 4.5.0, `@protomaps/basemaps` 5.7.2, `go-pmtiles` CLI v1.31.2, fonts and sprites from `protomaps/basemaps-assets` @ `028c18f`. Source build: `https://build.protomaps.com/20261113.pmtiles`.
+
+- [x] **CSP**: the map rendered with zero `securitypolicyviolation` events and no console errors under `script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' <bucket>/; worker-src 'self'`. The worker loaded as a same-origin module worker via `setWorkerUrl`. `img-src blob:` is **not** needed, and neither is the bucket in `img-src` (§1.12). v6 has no CSP build; it is ESM only (§1.11).
+- [x] **Topcoat compression**: yes, `br` (§4).
+- [x] **GCS**: ranged `GET` → `206` with `content-range`; `x-goog-stored-content-encoding: identity` (no transcoding); `access-control-allow-origin: *`; `Content-Range` is exposed. Responses carry `cache-control: public, max-age=3600` and no `Age` or other edge-cache indicator on a repeat request, so we treat range responses as **not** edge-cached: serve from `us-east1` and track p95 tile latency. A first view made 5 tile range requests at z8.
+- [x] **fake-gcs-server**: ranged `GET` on `http://localhost:4443/<bucket>/<object>` → `206` with `Content-Range`, and `access-control-allow-origin: *`. T12 can use it.
+- [x] **Lock**: `gcloud storage cp --if-generation-match=0` succeeds once and fails the second time with `412`. T11's lock works as designed.
+- [x] **Sizes**: z15 Jamaica extract 40.0MB (z12: 3.3MB). Fonts: Noto Sans Regular 6.9MB, Medium 4.4MB, Italic 2.2MB (as 256-glyph `.pbf` ranges; a view fetches one range per stack). Sprites `v4`: 180KB for all flavors.
+
+---
 
 ## 8. Exclusions / Non-Goals
 - Search by visible area: #124.

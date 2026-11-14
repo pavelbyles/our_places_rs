@@ -339,7 +339,8 @@ T25 prod version, full gates    ← T23, T24
 
 ### Phase 0: Spike
 
-- [ ] **Task 9: Spike: MapLibre CSP build, asset compression, GCS ranges, CI lock**
+- [x] **Task 9: Spike: MapLibre CSP build, asset compression, GCS ranges, CI lock**
+  - **Built:** all criteria met; results in spec §7. Served from a local CSP server on :3099 rather than the guest portal (originator's choice). `img-src` needs no change; MapLibre 6 is ESM only.
   - **Scope:** S, with no production code. Use a scratch directory.
   - **Description:**
     - Pin the candidate MapLibre GL JS and `pmtiles` versions.
@@ -347,12 +348,12 @@ T25 prod version, full gates    ← T23, T24
     - Serve a bare page from the guest portal (:3010) under the spec §1.12 CSP, using `setWorkerUrl`.
     - Record the results in spec §7, then delete `spike/`.
   - **Acceptance Criteria (each objective):**
-    - [ ] The map renders: there's a non-background canvas pixel, zero CSP violations, and no `Refused to` messages in the console. Record whether `img-src blob:` is needed.
-    - [ ] Topcoat's asset route sends `Content-Encoding: br` or `gzip`, yes or no. If no, record the chosen fix in spec §4.
-    - [ ] A ranged **GET** returns `206`, and `access-control-allow-origin` matches the origin. Record any edge-cache headers on a repeat request.
-    - [ ] fake-gcs-server returns `206` for a range request, yes or no (this decides T12).
-    - [ ] `gcloud storage cp --if-generation-match=0` fails on the second attempt (this decides T11's lock).
-    - [ ] Record the size of the full z15 extract, the fonts and the sprites.
+    - [x] The map renders: there's a non-background canvas pixel, zero CSP violations, and no `Refused to` messages in the console. Record whether `img-src blob:` is needed.
+    - [x] Topcoat's asset route sends `Content-Encoding: br` or `gzip`, yes or no. If no, record the chosen fix in spec §4.
+    - [x] A ranged **GET** returns `206`, and `access-control-allow-origin` matches the origin. Record any edge-cache headers on a repeat request.
+    - [x] fake-gcs-server returns `206` for a range request, yes or no (this decides T12).
+    - [x] `gcloud storage cp --if-generation-match=0` fails on the second attempt (this decides T11's lock).
+    - [x] Record the size of the full z15 extract, the fonts and the sprites.
   - **Verification Command:** `curl -s -D - -o /dev/null -H 'Range: bytes=0-127' -H 'Origin: http://localhost:3010' https://storage.googleapis.com/our-places-gcs-map-tiles-dev/spike/jamaica.pmtiles | grep -iE '^HTTP|access-control-allow-origin|content-range'`, plus the bare page's console log.
   - **Dependencies:** Phase 1 checkpoint pushed
 
@@ -445,7 +446,7 @@ T25 prod version, full gates    ← T23, T24
     - `web_ui_guest/src/main.rs`
     - `web_ui_admin/src/main.rs`
   - **Acceptance Criteria:**
-    - [ ] Valid values: both policies gain `https://storage.googleapis.com/<bucket>/` in `connect-src` and `img-src`, plus `worker-src 'self'`. `script-src` and `style-src` don't change.
+    - [ ] Valid values: both policies gain `https://storage.googleapis.com/<bucket>/` in `connect-src` only (spec §7: `img-src` unchanged), plus `worker-src 'self'`. `script-src` and `style-src` don't change.
     - [ ] Each of these is refused, with a captured `warn`, and leaves the policies byte-identical to today's:
       - `https://storage.googleapis.com/`
       - `…/bucket` with no version
@@ -477,7 +478,7 @@ T25 prod version, full gates    ← T23, T24
 - [ ] **Task 15: Vendored map assets and the lazy loader**
   - **Scope:** M
   - **Description:**
-    - Vendor the versions T9 pinned (`maplibre-gl-csp`, its worker, its CSS, `pmtiles`) as checksummed `asset!` constants.
+    - Vendor the versions T9 pinned (`maplibre-gl` 6.15.0 `.mjs`, its module worker, its CSS, `pmtiles` 4.5.0 IIFE, `@protomaps/basemaps` 5.7.2 ESM) as checksummed `asset!` constants. MapLibre and basemaps load with `import()` (spec §1.11).
     - Add `map.js` with `OurPlacesMap.init(el)` for the kinds `listing` and `booking`, each with one point and either a circle or a pin. Any other kind renders "Map unavailable"; this is real behaviour, not a stub. Include:
       - the light and dark style switch;
       - `maxBounds`;
