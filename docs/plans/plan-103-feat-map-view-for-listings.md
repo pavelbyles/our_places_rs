@@ -389,6 +389,20 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 9
 
 - [ ] **Task 11: Upload step, lock and prod copy**
+  - **Built (local):** script and workflow steps done; CI acceptance pending `MAP_TILES_VERSION_DEV` and a push. Tested on fake-gcs:
+    - publish: 783 objects;
+    - re-run skips in 1.5s;
+    - two concurrent runs give one upload, and the other waits and exits 0;
+    - a stale lock is cleared and taken;
+    - a held lock times out with `::warning::` and exit 0;
+    - a modified file, an extra file and a symlink are each refused with nothing uploaded;
+    - `--copy-from-dev` gives an identical manifest and `crc32c`.
+
+    The generation-matched lock release was checked on the real bucket, because fake-gcs reports an error on a delete that succeeds. Deviations:
+    - `--copy-from-dev` takes the dev bucket from `DEV_BUCKET`, downloads the folder and runs the same allowlist and `MANIFEST` checks as an artifact;
+    - the lock is released on every exit;
+    - the setup job now tolerates a failed `build-map-tiles` (`!cancelled()` with the other needs checked explicitly), so a bad upstream date can't block the image worker;
+    - unpublished tiles also start the setup job.
   - **Scope:** M
   - **Description:**
     - Write `scripts/upload_map_tiles.sh <bucket> <version> <artifact_dir|--copy-from-dev>`. It:
