@@ -54,6 +54,10 @@ test.describe('Guest Portal - listing page map without JavaScript', () => {
   test('the location text stays and the map says it needs JavaScript', async ({ page }) => {
     await page.goto(`/listings/${target.slug}`);
     await expect(page.locator('#location-heading')).toHaveText(`${target.city}, Jamaica`);
-    await expect(page.locator('#location')).toContainText('Map needs JavaScript');
+    // Chromium shows <noscript> with JavaScript off, but Playwright's
+    // locators never match inside it, so read the box and the markup.
+    await expect(page.locator('#location [data-map="listing"]')).toBeVisible();
+    const html = await page.locator('#location [data-map="listing"]').evaluate((el) => el.innerHTML);
+    expect(html).toMatch(/<noscript>[^]*Map needs JavaScript[^]*<\/noscript>/);
   });
 });

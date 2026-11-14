@@ -622,14 +622,14 @@ T25 prod version, full gates    ← T23, T24
     - [x] The number of badges equals the number of cards with `data-map-lat`, and Approximate listings have circles. After a theme toggle, and after a toggle **before** the first `load`, the badge count still equals the card count.
     - [x] Clicking a badge opens the popup, and its link goes to the listing with the search.
     - [x] Keyboard: Tab reaches the badges, Enter opens, and Escape closes and restores focus.
-    - [ ] On the guest portal, there are no map requests before the map container is visible, and no CSP violations, `Refused to` messages or failed map requests.
+    - [x] On the guest portal, there are no map requests before the map container is visible, and no CSP violations, `Refused to` messages or failed map requests.
   - **Verification Command:** `! grep -nE "innerHTML|outerHTML|insertAdjacentHTML|setHTML|document\.write|new Function" web_ui_common/src/assets/map.js && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=ui-js-chromium map-search && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium listings-map`
   - **Dependencies:** Task 15, Task 18
   - **Built:** the `search` kind in `map.js`, with markers read from `[data-map-lat]` cards in the same `[data-results]`. Each badge is a `<button>` inside a wrapper div that takes MapLibre's `role="img"`, label and tabindex, which are then cleared. Styles are set through the CSSOM. One popup at a time; Escape restores focus. Circles come from one `op-area` FeatureCollection.
     - **Bug found and fixed:** MapLibre's CSS sets `.maplibregl-map { position: relative }` and loads last. That undid the canvas's `absolute inset-0`, so the map had no visible area. The canvas is now `h-full w-full`. `map.spec` checks the canvas size, and the check fails with the old CSS.
     - The harness was extracted to `ui-js/map-harness.ts`. 8 `map-search` tests; focus restore and once-only markers are mutation-checked.
     - Seed: Courtyard Studio is stored at `KNOWN_LOCATION` (approximate). The exact listing is a copy updated in the spec.
-    - **Not yet run:** `guest-portal/listings-map`, which needs the portal restarted with `MAP_TILES_BASE_URL`. It runs in T24 at the latest.
+    - `guest-portal/listings-map` passed in the T24 run.
 
 ### Phase 4: Reveal and Picker
 
@@ -725,7 +725,7 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 14, Task 22
   - **Built:** in `ENVIRONMENT.md`, rows for the secret, the variables, the portal and API env, and a new §5 (the rotation warning; publish, promote, roll back, turn off; local; egress). `ARCHITECTURE.md` §4.5.1 covers who sees which point, the redaction boundary and the client, and links to spec §5. **The egress budget alert is pending: the originator creates it by hand.**
 
-- [ ] **Task 24: Playwright end-to-end flows**
+- [x] **Task 24: Playwright end-to-end flows**
   - **Scope:** M
   - **Description:** Guest and admin specs that cover spec §6's E2E list, against the local seeded tiles (T12) and the T19 seed coordinates, with the CSP and console checks from the cross-cutting rules.
   - **Files Touched:**
@@ -734,24 +734,26 @@ T25 prod version, full gates    ← T23, T24
     - `playwright/e2e/guest-portal/bookings-location.spec.ts`
     - `playwright/e2e/admin-portal/listing-pin-picker.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] Desktop `/listings`:
+    - [x] Desktop `/listings`:
       - the map loads lazily;
       - the number of badges equals the number of cards;
       - a badge opens its card and the link works;
       - the keyboard path works;
       - the attribution is visible.
-    - [ ] Mobile `/listings`: there are **no map requests before the toggle**, the toggle works, and `?view=map` survives a reload.
-    - [ ] The HTML of the listing page **and** of `/listings` never contains an Approximate seed listing's stored coordinates.
-    - [ ] Listing page: the map loads only after scrolling. Approximate shows a circle and Exact shows a pin. With `javaScriptEnabled: false`, the location text is shown and the `<noscript>` note appears.
-    - [ ] `/bookings`: a confirmed booking shows the exact pin, and a pending one shows none.
-    - [ ] Admin: drag the pin, save, reload, and the stored values show. The privacy radio persists.
-    - [ ] Zero CSP violations, `Refused to` messages or failed map requests across all of the above.
+    - [x] Mobile `/listings`: there are **no map requests before the toggle**, the toggle works, and `?view=map` survives a reload.
+    - [x] The HTML of the listing page **and** of `/listings` never contains an Approximate seed listing's stored coordinates.
+    - [x] Listing page: the map loads only after scrolling. Approximate shows a circle and Exact shows a pin. With `javaScriptEnabled: false`, the location text is shown and the `<noscript>` note appears.
+    - [x] `/bookings`: a confirmed booking shows the exact pin, and a pending one shows none.
+    - [x] Admin: drag the pin, save, reload, and the stored values show. The privacy radio persists.
+    - [x] Zero CSP violations, `Refused to` messages or failed map requests across all of the above.
   - **Verification Command:** `devenv shell -- npm run test:e2e:guest -- --grep "map|location" && devenv shell -- npm run test:e2e:admin -- --grep "pin picker"`
   - **Dependencies:** Task 16, Task 19, Task 21, Task 22
   - **Written, not yet run:**
     - specs `guest-portal/listings-map`, `listing-detail-map` and `bookings-location`, `admin-portal/listing-pin-picker`, and the shared helper `fixtures/map-watch.ts`;
     - a `<noscript>` "Map needs JavaScript" note was added to `map_container` (spec §6 failure table) with a unit test.
-    - **Blocked:** the local portals were started without `MAP_TILES_BASE_URL` (stale devenv env), and the APIs (06:25) predate T20. They need restarting before this runs.
+  - **Run (2026-11-14):** guest 7/7, admin 2/2, against the local portals started by hand with `MAP_TILES_BASE_URL` (the devenv daemon still had the old start scripts).
+    - The no-JS test first failed: Playwright's locators never match inside `<noscript>`, though Chromium shows it (checked with a screenshot). It now checks the map box is visible and the markup holds the note.
+    - `fixtures/map-watch.ts` now also puts any `Refused to` console message into `failed`, so every spec's `failed` check covers CSP. Checked: a blocked `fetch` on `/listings` produces one.
 
 - [ ] **Task 25: Production version and full gates**
   - **Scope:** S
