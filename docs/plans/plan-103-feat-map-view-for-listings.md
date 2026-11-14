@@ -361,7 +361,8 @@ T25 prod version, full gates    ← T23, T24
 
 ### Phase 2: Map Infrastructure
 
-- [ ] **Task 10: Build tiles in a job with no secrets**
+- [x] **Task 10: Build tiles in a job with no secrets**
+  - **Built:** `build-map-tiles` outputs `needed`, `mode` (`build`, `copy-from-dev` or `none`) and `version`, and builds only for `mode=build`. The workflow-level `PROJECT_ID` (from a secret) is blanked in the job. The script also writes `BUILD_INFO` (build date, source, tool versions), which `MANIFEST` covers. A local build of `20261113` gave 781 files, 52MB, and `MANIFEST` verifies.
   - **Scope:** M
   - **Description:**
     - Write `scripts/build_map_tiles.sh <version> <base_url> <out_dir>` and `scripts/map-tiles/package.json` with a committed `package-lock.json` that pins `@protomaps/basemaps`.
@@ -381,9 +382,9 @@ T25 prod version, full gates    ← T23, T24
     - `.github/workflows/cicd_full_stack.yml`
     - `devenv.nix`
   - **Acceptance Criteria:**
-    - [ ] `shellcheck` and `actionlint` are clean. The job has no `secrets.*` reference and no `google-github-actions/auth` step (grep check).
-    - [ ] A version that isn't 8 digits exits non-zero. `--dry-run` writes nothing.
-    - [ ] A local run with a recent build date produces `jamaica.pmtiles`, both styles, the fonts, the sprites and a `MANIFEST` whose sha256 values verify. The styles contain no `"attribution"` key.
+    - [x] `shellcheck` and `actionlint` are clean. The job has no `secrets.*` reference and no `google-github-actions/auth` step (grep check).
+    - [x] A version that isn't 8 digits exits non-zero. `--dry-run` writes nothing.
+    - [x] A local run with a recent build date produces `jamaica.pmtiles`, both styles, the fonts, the sprites and a `MANIFEST` whose sha256 values verify. The styles contain no `"attribution"` key.
   - **Verification Command:** `devenv shell -- shellcheck scripts/build_map_tiles.sh && devenv shell -- actionlint .github/workflows/cicd_full_stack.yml && devenv shell -- bash -o pipefail -c 'yq -e ".jobs[\"build-map-tiles\"]" .github/workflows/cicd_full_stack.yml > /tmp/bmt.yml && ! grep -qE "secrets\.|google-github-actions/auth" /tmp/bmt.yml' && devenv shell -- scripts/build_map_tiles.sh --dry-run 20261101 https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101 "$(mktemp -d)"`
   - **Dependencies:** Task 9
 

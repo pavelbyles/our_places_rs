@@ -63,8 +63,13 @@
     pkgs.jq
     (pkgs.google-cloud-sdk.withExtraComponents [ pkgs.google-cloud-sdk.components.pubsub-emulator ])
     pkgs.fake-gcs-server
-    # Map view (#103): lints the CI workflow.
+    # Map view (#103): lints the CI workflow and the tile scripts, reads
+    # workflow YAML, and inspects .pmtiles files locally. CI downloads its
+    # own pinned pmtiles CLI (scripts/build_map_tiles.sh).
     pkgs.actionlint
+    pkgs.shellcheck
+    pkgs.yq-go
+    pkgs.pmtiles
   ];
 
   # Fast git pre-commit formatting check

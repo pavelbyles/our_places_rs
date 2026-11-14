@@ -1,0 +1,9 @@
+{
+  "name": "our-places-map-tiles",
+  "private": true,
+  "description": "Build-time only: generates the map styles uploaded with the tiles (spec 103 §1.10).",
+  "type": "module",
+  "dependencies": {
+    "@protomaps/basemaps": "5.7.2"
+  }
+}

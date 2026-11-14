@@ -221,6 +221,104 @@ jobs:
         run: cargo test --locked -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose
 
   # =========================================================
+  # BUILD MAP TILES (spec 103 §1.10)
+  # Downloads a CLI, npm packages and upstream map data, so it runs with
+  # no GCP auth and no secrets. "Upload Map Tiles" in the setup job
+  # publishes the artifact.
+  # =========================================================
+  build-map-tiles:
+    name: Build Map Tiles
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # The workflow-level value comes from a secret; this job needs none.
+      PROJECT_ID: ""
+      TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      MAP_TILES_VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+    outputs:
+      needed: ${{ steps.check.outputs.needed }}
+      mode: ${{ steps.check.outputs.mode }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check Published Tiles
+        id: check
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAP_TILES_VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps stay off."
+            { echo "needed=false"; echo "mode=none"; echo "version="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$MAP_TILES_VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::MAP_TILES_VERSION_${TILES_ENV^^} must be 8 digits (YYYYMMDD), got '$MAP_TILES_VERSION'."
+            exit 1
+          fi
+          if [ -z "${GCS_MAP_TILES_BUCKET_PREFIX:-}" ]; then
+            echo "::error::Variable INFRA_GCS_MAP_TILES_BUCKET_PREFIX is not set."
+            exit 1
+          fi
+          echo "version=$MAP_TILES_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Anonymous reads (the bucket is public); the query string and
+          # no-cache header keep a cached 404 or 200 from deciding.
+          ready_status() {
+            curl -s -o /dev/null -w '%{http_code}' -H 'Cache-Control: no-cache' \
+              "https://storage.googleapis.com/${GCS_MAP_TILES_BUCKET_PREFIX}-$1/v${MAP_TILES_VERSION}/_READY?t=${RUN_ID}"
+          }
+
+          status=$(ready_status "$TILES_ENV")
+          echo "_READY in -${TILES_ENV}/v${MAP_TILES_VERSION}: HTTP $status"
+          if [ "$status" = "200" ]; then
+            { echo "needed=false"; echo "mode=none"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$status" != "404" ]; then
+            echo "::error::Unexpected HTTP $status checking _READY."
+            exit 1
+          fi
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+          # Prod copies a verified dev folder rather than rebuilding: the
+          # upstream daily build may have expired by then.
+          if [ "$TILES_ENV" = "prod" ] && [ "$(ready_status dev)" = "200" ]; then
+            echo "mode=copy-from-dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=build" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.mode == 'build'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Build Map Tiles
+        if: steps.check.outputs.mode == 'build'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/map-tiles"
+          mkdir -p "$OUT"
+          scripts/build_map_tiles.sh "$VERSION" \
+            "https://storage.googleapis.com/${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}/v${VERSION}" "$OUT"
+
+      - name: Upload Map Tiles Artifact
+        if: steps.check.outputs.mode == 'build'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: map-tiles
+          path: ${{ runner.temp }}/map-tiles
+          if-no-files-found: error
+          retention-days: 1
+          # .pmtiles is already compressed.
+          compression-level: 0
+
+  # =========================================================
   # SETUP GCS BUCKETS
   # =========================================================
   setup-gcs-image-gcs-items:
