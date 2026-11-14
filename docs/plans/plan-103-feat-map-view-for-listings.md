@@ -487,6 +487,7 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 9
 
 - [ ] **Task 14: Portal deploy wiring**
+  - **Built (local):** both portal jobs need the setup and tile-build jobs and use the `!cancelled()` guard. A "Resolve Map Tiles" step sets `MAP_TILES_BASE_URL` only when `_READY` and the `crc32c` match. actionlint is clean. The deploy acceptance checks wait on the next push.
   - **Scope:** S
   - **Description:**
     - `deploy-web-ui-guest` and `deploy-web-ui-admin` add `setup-gcs-image-gcs-items` and `build-map-tiles` to `needs`, with `if: ${{ !cancelled() && needs.deploy-api.result == 'success' && needs.test-web-ui.result == 'success' && needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure' && <existing conditions> }}`. It's wrapped in `${{ }}` because a bare `!` starts a YAML tag. A failed build therefore blocks the portal deploys, as spec §1.10.5 says, and doesn't just skip the setup job.
