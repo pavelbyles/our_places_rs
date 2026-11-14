@@ -502,7 +502,21 @@ T25 prod version, full gates    ← T23, T24
   - **Verification Command:** `devenv shell -- actionlint .github/workflows/cicd_full_stack.yml`, plus `gcloud run services describe our-places-web-ui-guest-<branch-suffix> --region us-central1 --format='value(spec.template.spec.containers[0].env)' | grep MAP_TILES_BASE_URL` after a portal-only push.
   - **Dependencies:** Task 11, Task 13
 
-- [ ] **Task 15: Vendored map assets and the lazy loader**
+- [x] **Task 15: Vendored map assets and the lazy loader**
+  - **Built:**
+    - Vendored verbatim from the npm tarballs (registry `sha512` integrity checked) with `sha256` `asset!` checksums, plus MapLibre's licence file.
+    - `map.js` is a classic script that `import()`s MapLibre. It exposes `OurPlacesMap.{init, remove, resize}` and sets `data-map-state` (`loading`, `ready`, `failed` or `idle`).
+    - The `ui.js` loader uses a 200px observer to start a map, and an observer at two viewports (`200%`) to end it. It also watches `htmx:load`.
+    - `map_container(kind, point, label, attrs)`.
+    - 8 Playwright tests:
+      - nothing loads before scroll, then a CSP-clean render with attribution;
+      - a circle for approximate, a pin for exact;
+      - a style 500;
+      - no WebGL;
+      - the 11-second timeout;
+      - the generation token;
+      - a quick scroll.
+    - The generation-token test was mutation-checked: it finds 3 canvases without the guard. The quick-scroll test alone didn't catch that, because IntersectionObserver batches its callbacks.
   - **Scope:** M
   - **Description:**
     - Vendor the versions T9 pinned (`maplibre-gl` 6.15.0 `.mjs`, its module worker, its CSS, `pmtiles` 4.5.0 IIFE) as checksummed `asset!` constants. MapLibre loads with `import()` (spec §1.11); styles are prebuilt JSON from T10, so `@protomaps/basemaps` is build-time only.
@@ -523,7 +537,7 @@ T25 prod version, full gates    ← T23, T24
     - `web_ui_common/src/components/mod.rs`
     - `playwright/e2e/ui-js/map.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] ui-js tests, on the fake-origin page with the T13 CSP header and the fixture served with real 206 slicing:
+    - [x] ui-js tests, on the fake-origin page with the T13 CSP header and the fixture served with real 206 slicing:
       - zero map requests happen before the container scrolls into view;
       - the canvas renders after it scrolls in;
       - the attribution text is visible;
@@ -531,9 +545,9 @@ T25 prod version, full gates    ← T23, T24
       - with `getContext` stubbed to return `null`, "Map unavailable" shows and the location text is still there;
       - a style that never responds shows "Map unavailable" within 11 seconds;
       - scrolling out and in quickly leaves one live map.
-    - [ ] Approximate draws a circle and no pin. Exact draws a pin.
-    - [ ] `map_container` renders nothing without `MapConfig`, and otherwise carries the hashed URLs and a fixed height.
-    - [ ] `map.js` contains none of the forbidden DOM or eval APIs (grep).
+    - [x] Approximate draws a circle and no pin. Exact draws a pin.
+    - [x] `map_container` renders nothing without `MapConfig`, and otherwise carries the hashed URLs and a fixed height.
+    - [x] `map.js` contains none of the forbidden DOM or eval APIs (grep).
   - **Verification Command:** `! grep -nE "innerHTML|outerHTML|insertAdjacentHTML|setHTML|document\.write|new Function|eval\(" web_ui_common/src/assets/map.js && SQLX_OFFLINE=true cargo test -p web_ui_common map_component_tests && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=ui-js-chromium map.spec`
   - **Dependencies:** Task 9, Task 12, Task 13
 

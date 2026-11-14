@@ -1152,8 +1152,101 @@
     if (amenities) addReorderButtons(amenities, "[data-amenity-slot]");
   }
 
+  // --- Maps (spec 103 §1.11): nothing map-related is requested until a
+  // [data-map] container is within 200px of the viewport. Then the
+  // stylesheet, pmtiles.js and map.js load once per page, and map.js builds
+  // the map. A map more than two viewports away is ended to cap WebGL
+  // contexts; it is built again if it comes back.
+  var mapAssets = null;
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var script = document.createElement("script");
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = function () {
+        reject(new Error("couldn't load " + src));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  function loadMapAssets(el) {
+    if (!mapAssets) {
+      var css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = el.getAttribute("data-map-css");
+      document.head.appendChild(css);
+      mapAssets = loadScript(el.getAttribute("data-pmtiles-js")).then(function () {
+        return loadScript(el.getAttribute("data-map-init"));
+      });
+      mapAssets.catch(function () {
+        mapAssets = null;
+      });
+    }
+    return mapAssets;
+  }
+
+  function mapUnavailable(el, reason) {
+    var canvas = el.querySelector("[data-map-canvas]");
+    var fallback = el.querySelector("[data-map-fallback]");
+    if (canvas) canvas.hidden = true;
+    if (fallback) fallback.hidden = false;
+    el.setAttribute("data-map-state", "failed");
+    console.warn("Map unavailable:", reason);
+  }
+
+  function startMap(el) {
+    loadMapAssets(el)
+      .then(function () {
+        window.OurPlacesMap.init(el);
+      })
+      .catch(function (e) {
+        mapUnavailable(el, (e && e.message) || "map scripts failed");
+      });
+  }
+
+  var mapNear = null;
+  var mapFar = null;
+
+  function watchMaps(scope) {
+    var maps = scope.querySelectorAll ? scope.querySelectorAll("[data-map]") : [];
+    if (!maps.length || !("IntersectionObserver" in window)) return;
+    if (!mapNear) {
+      mapNear = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) startMap(entry.target);
+          });
+        },
+        { rootMargin: "200px" }
+      );
+      mapFar = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting && window.OurPlacesMap) {
+              window.OurPlacesMap.remove(entry.target);
+            }
+          });
+        },
+        { rootMargin: "200% 0px" }
+      );
+    }
+    for (var i = 0; i < maps.length; i++) {
+      if (maps[i].__opWatched) continue;
+      maps[i].__opWatched = true;
+      mapNear.observe(maps[i]);
+      mapFar.observe(maps[i]);
+    }
+  }
+
+  document.addEventListener("htmx:load", function (e) {
+    watchMaps(e.target);
+  });
+
   function init() {
     applyTheme(currentTheme());
+    watchMaps(document);
     enhanceCalendars(document);
     convertDateInputs(document);
     updateCarousels();
