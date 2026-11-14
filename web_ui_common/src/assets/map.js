@@ -25,7 +25,8 @@
     '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>',
     '<a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a>',
   ];
-  var SUPPORTED_KINDS = { listing: true, booking: true, search: true };
+  var SUPPORTED_KINDS = { listing: true, booking: true, search: true, picker: true };
+  var OUTSIDE = "Outside the mapped area";
 
   var library = null; // Promise of the MapLibre module, shared by all maps.
   var live = []; // Containers with a map, for theme changes.
@@ -276,6 +277,95 @@
     };
   }
 
+  // --- The admin pin picker (spec 103 §1.9): one draggable marker tied to
+  // the form's Latitude and Longitude inputs, which stay the source of truth.
+  function inJamaica(c) {
+    return (
+      c[0] >= JAMAICA_BOUNDS[0][0] &&
+      c[0] <= JAMAICA_BOUNDS[1][0] &&
+      c[1] >= JAMAICA_BOUNDS[0][1] &&
+      c[1] <= JAMAICA_BOUNDS[1][1]
+    );
+  }
+
+  function pickerInputs(el) {
+    var form = el.closest("form") || document;
+    return {
+      lat: form.querySelector('input[name="latitude"]'),
+      lng: form.querySelector('input[name="longitude"]'),
+    };
+  }
+
+  // A typed pair, when both parse within the form's own limits.
+  function typed(inputs) {
+    if (!inputs.lat || !inputs.lng) return null;
+    var lat = inputs.lat.value.trim();
+    var lng = inputs.lng.value.trim();
+    if (!lat || !lng) return null;
+    var c = [Number(lng), Number(lat)];
+    if (!isFinite(c[0]) || !isFinite(c[1]) || Math.abs(c[1]) > 90 || Math.abs(c[0]) > 180) {
+      return null;
+    }
+    return c;
+  }
+
+  function setOutside(el, outside) {
+    var note = el.querySelector("[data-map-overlay]");
+    if (outside && !note) overlay(el, OUTSIDE);
+    if (!outside && note) note.remove();
+  }
+
+  function addPicker(maplibregl, map, el, start) {
+    var inputs = pickerInputs(el);
+    var marker = null;
+    function write(c) {
+      if (inputs.lat) inputs.lat.value = c[1].toFixed(6);
+      if (inputs.lng) inputs.lng.value = c[0].toFixed(6);
+      [inputs.lat, inputs.lng].forEach(function (input) {
+        if (input) input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    function place(c) {
+      if (!marker) {
+        marker = new maplibregl.Marker({ color: AREA_COLOR, draggable: true })
+          .setLngLat(c)
+          .addTo(map);
+        marker.getElement().setAttribute("aria-label", "Listing location");
+        marker.on("dragend", function () {
+          var p = marker.getLngLat();
+          write([p.lng, p.lat]);
+        });
+      } else {
+        marker.setLngLat(c);
+      }
+    }
+    if (start && inJamaica(start)) place(start);
+    setOutside(el, !!start && !inJamaica(start));
+    map.on("click", function (e) {
+      var c = [e.lngLat.lng, e.lngLat.lat];
+      place(c);
+      setOutside(el, false);
+      write(c);
+    });
+    function onChange() {
+      var c = typed(inputs);
+      if (!c) return;
+      var inside = inJamaica(c);
+      setOutside(el, !inside);
+      if (!inside) return;
+      place(c);
+      map.easeTo({ center: c });
+    }
+    [inputs.lat, inputs.lng].forEach(function (input) {
+      if (input) input.addEventListener("change", onChange);
+    });
+    el.__opPickerCleanup = function () {
+      [inputs.lat, inputs.lng].forEach(function (input) {
+        if (input) input.removeEventListener("change", onChange);
+      });
+    };
+  }
+
   function setState(el, state) {
     el.setAttribute("data-map-state", state);
   }
@@ -298,6 +388,10 @@
     if (i >= 0) live.splice(i, 1);
     var note = el.querySelector("[data-map-overlay]");
     if (note) note.remove();
+    if (el.__opPickerCleanup) {
+      el.__opPickerCleanup();
+      el.__opPickerCleanup = null;
+    }
     if (map) {
       try {
         map.remove();
@@ -324,8 +418,9 @@
     var kind = el.getAttribute("data-map");
     if (!SUPPORTED_KINDS[kind]) return fail(el, "unsupported map kind " + kind);
     var search = kind === "search";
+    var picker = kind === "picker";
     var center = search ? null : point(el);
-    if (!search && !center) return fail(el, "no coordinates");
+    if (!search && !picker && !center) return fail(el, "no coordinates");
     if (!hasWebGL()) return fail(el, "WebGL is unavailable");
 
     // The generation token: remove() during a pending init bumps it, and the
@@ -341,7 +436,17 @@
         if (el.__opGen !== gen) return;
         var how = search ? null : precision(el);
         var cards = search ? cardsFor(el) : [];
-        var view = search ? searchView(cards) : { center: center, zoom: ZOOM[how] };
+        var view;
+        if (search) view = searchView(cards);
+        else if (picker) {
+          // The picker starts from what the inputs hold now, which may be
+          // newer than the server-rendered point.
+          var start = typed(pickerInputs(el)) || center;
+          center = start;
+          view = start && inJamaica(start)
+            ? { center: start, zoom: ZOOM.exact }
+            : { bounds: JAMAICA_BOUNDS };
+        } else view = { center: center, zoom: ZOOM[how] };
         var options = {
           container: el.querySelector("[data-map-canvas]") || el,
           style: styleUrl(el),
@@ -375,7 +480,10 @@
           setState(el, "ready");
         });
         var areas;
-        if (search) {
+        if (picker) {
+          addPicker(maplibregl, map, el, center);
+          areas = [];
+        } else if (search) {
           addSearchMarkers(maplibregl, map, el, cards);
           if (!cards.length) overlay(el, NOT_MAPPED);
           areas = cards

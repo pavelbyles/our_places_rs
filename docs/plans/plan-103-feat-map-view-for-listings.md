@@ -680,7 +680,7 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 15, Task 20
   - **Built:** `booking_location` renders `#booking-location-{id}` only when the booking has a `listing_location` and maps are on. The API decides which bookings get one; the page adds no status check of its own. `map.js` needed no changes: the `booking` kind and the far-observer removal came with T15. 3 Rust tests and 2 `map-booking` tests; removal of far maps is mutation-checked (with removal disabled, both tests fail).
 
-- [ ] **Task 22: Admin pin picker**
+- [x] **Task 22: Admin pin picker**
   - **Scope:** M
   - **Description:**
     - Add `map_container(picker, point, Exact)` next to the inputs on create and edit.
@@ -691,10 +691,19 @@ T25 prod version, full gates    ← T23, T24
     - `web_ui_common/src/assets/map.js`
     - `playwright/e2e/ui-js/map-picker.spec.ts`
   - **Acceptance Criteria:**
-    - [ ] Dragging updates both inputs to 6 decimal places, and typing moves the marker. An empty form has no marker until the first click. An out-of-bounds point shows "Outside the mapped area".
-    - [ ] The container's point is the prefill value, or the posted value on a validation error. It's never the public detail's.
+    - [x] Dragging updates both inputs to 6 decimal places, and typing moves the marker. An empty form has no marker until the first click. An out-of-bounds point shows "Outside the mapped area".
+    - [x] The container's point is the prefill value, or the posted value on a validation error. It's never the public detail's.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_admin pin_picker_tests && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=ui-js-chromium map-picker`
   - **Dependencies:** Task 8, Task 15
+  - **Built:**
+    - `picker_point` reads the form's own Latitude and Longitude, which hold the manager prefill or the posted values.
+    - `map.js` `picker`:
+      - it starts from what the inputs hold when the map is built;
+      - clicking places the draggable marker and writes `toFixed(6)`, firing `input` events;
+      - a `change` on either input moves the pin;
+      - outside Jamaica, the note "Outside the mapped area" shows and the pin doesn't move;
+      - listeners are removed on teardown.
+    - 4 Rust tests: stored point, posted values, empty or bad values, and `from_listing` never filling the picker. 4 `map-picker` tests; the typed move and the 6dp writes are mutation-checked.
 
 ### Phase 5: Finish
 

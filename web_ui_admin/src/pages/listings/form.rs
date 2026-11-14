@@ -3,7 +3,7 @@
 use std::str::FromStr;
 
 use common::booking_request::BookingMode;
-use common::location::{ListingLocationResponse, LocationPrivacy};
+use common::location::{ListingLocationResponse, LocationPrecision, LocationPrivacy};
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -21,6 +21,7 @@ use common::listing_details::{
     StaffServices, SuiteItem, TESTIMONIALS_KEY,
 };
 use web_ui_common::components::domain::currency_selector::currency_option_list;
+use web_ui_common::components::map::{MapKind, MapPoint, map_container};
 
 use super::amenity_field::{
     amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
@@ -101,6 +102,26 @@ pub struct ListingFields {
     /// (the form encoding has no lists, so each row has its own names).
     #[serde(flatten)]
     pub slots: BTreeMap<String, String>,
+}
+
+/// The pin picker's starting point: the form's own Latitude and Longitude,
+/// which hold the manager prefill or the values just posted (spec 103 §1.9),
+/// never a public point. `None` when either is blank or out of range; the
+/// map then shows Jamaica with no marker until the first click.
+fn picker_point(f: &ListingFields) -> Option<MapPoint> {
+    let parse = |v: &str, limit: f64| {
+        v.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|x| x.is_finite() && x.abs() <= limit)
+    };
+    parse(&f.latitude, 90.0)
+        .zip(parse(&f.longitude, 180.0))
+        .map(|(lat, lng)| MapPoint {
+            lat,
+            lng,
+            precision: LocationPrecision::Exact,
+        })
 }
 
 fn opt(v: Option<Decimal>) -> String {
@@ -881,6 +902,14 @@ pub async fn listing_form(
                         class=(input)
                     />
                 </label>
+                <div class="md:col-span-2">
+                    map_container(
+                        kind: MapKind::Picker,
+                        point: picker_point(&f),
+                        label: Some("Pick the listing's location: click the map or drag the pin".to_string()),
+                        attrs: topcoat::view::attributes! { class="h-72" }
+                    )
+                </div>
                 <fieldset
                     id="location-privacy"
                     aria-describedby="location-privacy-help"
@@ -1159,5 +1188,108 @@ mod listing_booking_mode {
     #[test]
     fn a_listing_fills_the_form_with_its_mode() {
         assert_eq!(ListingFields::blank(Uuid::nil()).booking_mode, "instant");
+    }
+}
+
+#[cfg(test)]
+mod pin_picker_tests {
+    //! Spec 103 §1.9: the picker starts from the form's own values.
+    use super::*;
+    use topcoat::view::ViewExt;
+    use web_ui_common::map_config::testing::maps_on;
+
+    async fn render(fields: ListingFields) -> String {
+        let cx = &maps_on();
+        let v = view! {
+            listing_form(
+                action: "/listings/new".to_string(),
+                submit_label: "Save".to_string(),
+                fields: fields,
+                owners: Vec::new(),
+                can_set_commission: false,
+                errors: Vec::new()
+            )
+        };
+        match v.first().await {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    fn picker(html: &str) -> &str {
+        let at = html
+            .find(r#"data-map="picker""#)
+            .unwrap_or_else(|| panic!("no picker: {html}"));
+        let start = html[..at].rfind('<').unwrap_or(0);
+        let end = html[at..].find('>').map_or(html.len(), |e| at + e);
+        &html[start..end]
+    }
+
+    #[tokio::test]
+    async fn the_picker_starts_at_the_stored_point() {
+        let stored = ListingLocationResponse {
+            latitude: Some(18.012345),
+            longitude: Some(-76.790123),
+            location_privacy: LocationPrivacy::Approximate,
+        };
+        let fields = ListingFields::blank(Uuid::nil()).with_location(&stored);
+        let out = render(fields).await;
+        let tag = picker(&out);
+        assert!(tag.contains(r#"data-lat="18.012345""#), "{tag}");
+        assert!(tag.contains(r#"data-lng="-76.790123""#), "{tag}");
+        assert!(tag.contains(r#"data-precision="exact""#), "{tag}");
+    }
+
+    #[tokio::test]
+    async fn posted_values_win_after_a_validation_error() {
+        let fields = ListingFields {
+            latitude: "18.5".into(),
+            longitude: "-77.25".into(),
+            ..ListingFields::blank(Uuid::nil())
+        };
+        let tag = render(fields).await;
+        let tag = picker(&tag).to_string();
+        assert!(tag.contains(r#"data-lat="18.5""#), "{tag}");
+        assert!(tag.contains(r#"data-lng="-77.25""#), "{tag}");
+    }
+
+    #[tokio::test]
+    async fn an_empty_or_bad_form_has_no_starting_point() {
+        for (lat, lng) in [
+            ("", ""),
+            ("18.5", ""),
+            ("abc", "-77"),
+            ("91", "-77"),
+            ("18", "181"),
+        ] {
+            let fields = ListingFields {
+                latitude: lat.into(),
+                longitude: lng.into(),
+                ..ListingFields::blank(Uuid::nil())
+            };
+            let out = render(fields).await;
+            let tag = picker(&out);
+            assert!(!tag.contains("data-lat="), "{lat},{lng}: {tag}");
+        }
+    }
+
+    #[test]
+    fn a_listing_alone_never_fills_the_picker() {
+        // `from_listing` takes the public detail, whose point may be the
+        // approximate one; only `with_location` (the manager endpoint) fills
+        // the coordinates.
+        let listing: ListingResponse = match serde_json::from_value(serde_json::json!({
+            "id": Uuid::now_v7(), "user_id": Uuid::now_v7(), "name": "V",
+            "listing_structure": "Villa", "country": "Jamaica", "price_per_night": "1",
+            "is_active": true, "added_at": "2030-01-01T00:00:00Z", "max_guests": 1,
+            "bedrooms": 1, "beds": 1, "full_bathrooms": 1, "half_bathrooms": 0,
+            "slug": "v", "base_currency": "USD", "minimum_stay": 1,
+            "days_between_bookings": 0, "guests_included": 1,
+            "latitude": 18.01, "longitude": -76.79, "location_precision": "approximate",
+        })) {
+            Ok(l) => l,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(picker_point(&ListingFields::from_listing(&listing)), None);
     }
 }
