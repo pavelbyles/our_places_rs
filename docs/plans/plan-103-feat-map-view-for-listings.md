@@ -478,7 +478,7 @@ T25 prod version, full gates    ← T23, T24
 - [ ] **Task 15: Vendored map assets and the lazy loader**
   - **Scope:** M
   - **Description:**
-    - Vendor the versions T9 pinned (`maplibre-gl` 6.15.0 `.mjs`, its module worker, its CSS, `pmtiles` 4.5.0 IIFE, `@protomaps/basemaps` 5.7.2 ESM) as checksummed `asset!` constants. MapLibre and basemaps load with `import()` (spec §1.11).
+    - Vendor the versions T9 pinned (`maplibre-gl` 6.15.0 `.mjs`, its module worker, its CSS, `pmtiles` 4.5.0 IIFE) as checksummed `asset!` constants. MapLibre loads with `import()` (spec §1.11); styles are prebuilt JSON from T10, so `@protomaps/basemaps` is build-time only.
     - Add `map.js` with `OurPlacesMap.init(el)` for the kinds `listing` and `booking`, each with one point and either a circle or a pin. Any other kind renders "Map unavailable"; this is real behaviour, not a stub. Include:
       - the light and dark style switch;
       - `maxBounds`;

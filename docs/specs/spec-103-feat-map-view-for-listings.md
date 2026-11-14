@@ -213,7 +213,6 @@ The version **is the Protomaps daily build date** (`YYYYMMDD`), so every folder 
 | `maplibre-gl-worker-6.15.0.mjs` | Self-contained module worker |
 | `maplibre-gl-6.15.0.css` | |
 | `pmtiles-4.5.0.js` | The IIFE build (`dist/pmtiles.js`, global `pmtiles`); the ESM build imports `fflate` |
-| `basemaps-5.7.2.mjs` | `@protomaps/basemaps` ESM build, for `layers()` and `namedFlavor()`; no imports |
 | `map.js` | Ours: all map setup |
 
 **Container**: every map is a `<div data-map="search|listing|booking|picker">` that carries:
@@ -225,7 +224,7 @@ The container reserves its height, so loading causes no layout shift.
 
 **Loading**
 1. `ui.js` watches `[data-map]` with an IntersectionObserver (`rootMargin: "200px"`). It also loads a map when a hidden map becomes visible after the toggle.
-2. On the first trigger it adds `<link rel=stylesheet>` and the `pmtiles` script, loads MapLibre and the basemaps module with `import()` (both are ES modules; allowed by `script-src 'self'`), once per page, and calls `OurPlacesMap.init(el)` from `map.js`.
+2. On the first trigger it adds `<link rel=stylesheet>` and the `pmtiles` script, loads MapLibre with `import()` (it is an ES module; allowed by `script-src 'self'`), once per page, and calls `OurPlacesMap.init(el)` from `map.js`.
 3. Before that trigger, the page makes **no** request for map JS, CSS, styles or tiles.
 
 **Map setup**
