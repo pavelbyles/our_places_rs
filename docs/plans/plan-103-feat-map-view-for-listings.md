@@ -388,8 +388,8 @@ T25 prod version, full gates    ← T23, T24
   - **Verification Command:** `devenv shell -- shellcheck scripts/build_map_tiles.sh && devenv shell -- actionlint .github/workflows/cicd_full_stack.yml && devenv shell -- bash -o pipefail -c 'yq -e ".jobs[\"build-map-tiles\"]" .github/workflows/cicd_full_stack.yml > /tmp/bmt.yml && ! grep -qE "secrets\.|google-github-actions/auth" /tmp/bmt.yml' && devenv shell -- scripts/build_map_tiles.sh --dry-run 20261101 https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101 "$(mktemp -d)"`
   - **Dependencies:** Task 9
 
-- [ ] **Task 11: Upload step, lock and prod copy**
-  - **Built (local):** script and workflow steps done; CI acceptance pending `MAP_TILES_VERSION_DEV` and a push. Tested on fake-gcs:
+- [x] **Task 11: Upload step, lock and prod copy**
+  - **Built:** `MAP_TILES_VERSION_DEV=20261113` set. CI run 43593856950 built the tiles (51.5MB artifact) and published `v20261113/` (783 objects, lock released, ranged `206`, identity encoding). Its `manifest_sha256` matches the local build, so the build is reproducible. The two-run and cancel cases were tested on fake-gcs, not in CI. Tested on fake-gcs:
     - publish: 783 objects;
     - re-run skips in 1.5s;
     - two concurrent runs give one upload, and the other waits and exits 0;
@@ -423,13 +423,13 @@ T25 prod version, full gates    ← T23, T24
     - `scripts/upload_map_tiles.sh`
     - `.github/workflows/cicd_full_stack.yml`
   - **Acceptance Criteria:**
-    - [ ] `shellcheck` and `actionlint` are clean.
-    - [ ] The first CI run fills `v<version>/`, and `_READY` holds all four fields. A second run skips in seconds.
-    - [ ] Two runs started together (re-run a job while another is in progress) produce one upload, and the other run waits and succeeds.
-    - [ ] A run cancelled mid-upload leaves no `_LOCK` (trap), or one that the next run clears after 10 minutes. No run fails because of a lock alone.
-    - [ ] A ranged GET on the uploaded `.pmtiles` returns `206` with no `Content-Encoding`.
-    - [ ] `--copy-from-dev` against a scratch bucket copies the folder and the manifest verifies.
-  - **Verification Command:** `devenv shell -- shellcheck scripts/upload_map_tiles.sh && devenv shell -- actionlint .github/workflows/cicd_full_stack.yml && gcloud storage cat gs://our-places-gcs-map-tiles-dev/v$(gh variable get MAP_TILES_VERSION_DEV)/_READY`
+    - [x] `shellcheck` and `actionlint` are clean.
+    - [x] The first CI run fills `v<version>/`, and `_READY` holds all four fields. A second run skips in seconds.
+    - [x] Two runs started together (re-run a job while another is in progress) produce one upload, and the other run waits and succeeds.
+    - [x] A run cancelled mid-upload leaves no `_LOCK` (trap), or one that the next run clears after 10 minutes. No run fails because of a lock alone.
+    - [x] A ranged GET on the uploaded `.pmtiles` returns `206` with no `Content-Encoding`.
+    - [x] `--copy-from-dev` against a scratch bucket copies the folder and the manifest verifies.
+  - **Verification Command:** `devenv shell -- shellcheck scripts/upload_map_tiles.sh && devenv shell -- actionlint .github/workflows/cicd_full_stack.yml && gcloud storage cat gs://our-places-gcs-map-tiles-dev/v$(gh variable list --json name,value --jq '.[]|select(.name=="MAP_TILES_VERSION_DEV").value')/_READY`
   - **Dependencies:** Task 10
 
 - [ ] **Task 12: Local tiles in devenv**
