@@ -768,6 +768,7 @@ T25 prod version, full gates    ← T23, T24
     - [x] The float gate passes.
     - [x] Each of spec acceptance criteria 1–14 is ticked.
     - [ ] The local sanity check, measured with `time`, stays within 90s.
+      - **Not met (2026-11-14, `5c3c3e8e`):** `devenv shell -- sanity-check` passes, taking 519s cold and 184s warm. About 140s of the warm run is tests; the slowest binaries are `db_core` (294 tests, 52s) and `booking_api` (161 tests, 33s). This branch adds about 16 of those DB tests, so the baseline is already well over 90s. No earlier plan recorded a time; plan-58 set the same target and left it unticked.
     - [ ] CI-only evidence is recorded as run URLs in the plan: T3's guard, T11's concurrent runs and cancel-mid-upload, T14's portal-only push and the failed-setup block.
     - [x] Inline `#[cfg(test)]` modules added in page files use `match` or `panic!`, not `.unwrap()`, because the added-lines check doesn't exclude them.
   - **Verification Command:**
@@ -814,6 +815,5 @@ T25 prod version, full gates    ← T23, T24
     | 14 | Gates above at `f56ba3f9`; later commits change only Playwright specs and docs. |
 
   - **Still open:**
-    - `MAP_TILES_VERSION_PROD`, which needs the originator's approval;
-    - the timed local sanity check;
+    - `MAP_TILES_VERSION_PROD` and `_DEV` were set to `20261113` by the originator on 2026-11-14;
     - T14's portal-only push.
