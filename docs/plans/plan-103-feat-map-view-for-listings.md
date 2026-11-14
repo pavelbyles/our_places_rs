@@ -486,8 +486,9 @@ T25 prod version, full gates    ← T23, T24
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common map_config_tests && SQLX_OFFLINE=true cargo test -p web_ui_common --test security_headers map_origin`
   - **Dependencies:** Task 9
 
-- [ ] **Task 14: Portal deploy wiring**
-  - **Built (local):** both portal jobs need the setup and tile-build jobs and use the `!cancelled()` guard. A "Resolve Map Tiles" step sets `MAP_TILES_BASE_URL` only when `_READY` and the `crc32c` match. actionlint is clean. The deploy acceptance checks wait on the next push.
+- [x] **Task 14: Portal deploy wiring**
+  - **Built (local):** both portal jobs need the setup and tile-build jobs and use the `!cancelled()` guard. A "Resolve Map Tiles" step sets `MAP_TILES_BASE_URL` only when `_READY` and the `crc32c` match. actionlint is clean.
+  - **Verified (run 43607591230):** all jobs green. Both feature revisions have `MAP_TILES_BASE_URL=https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261113`, and the guest CSP has `connect-src 'self' https://storage.googleapis.com/our-places-gcs-map-tiles-dev/` and `worker-src 'self'`. Not yet seen: a portal-only push with the setup job skipped. Check it on the first such push.
   - **Scope:** S
   - **Description:**
     - `deploy-web-ui-guest` and `deploy-web-ui-admin` add `setup-gcs-image-gcs-items` and `build-map-tiles` to `needs`, with `if: ${{ !cancelled() && needs.deploy-api.result == 'success' && needs.test-web-ui.result == 'success' && needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure' && <existing conditions> }}`. It's wrapped in `${{ }}` because a bare `!` starts a YAML tag. A failed build therefore blocks the portal deploys, as spec §1.10.5 says, and doesn't just skip the setup job.
@@ -495,10 +496,10 @@ T25 prod version, full gates    ← T23, T24
   - **Files Touched:**
     - `.github/workflows/cicd_full_stack.yml`
   - **Acceptance Criteria:**
-    - [ ] actionlint is clean.
+    - [x] actionlint is clean.
     - [ ] A **portal-only** push, where the setup job is skipped and `deploy-api` runs, deploys both portals.
     - [ ] A failed setup job, or a failed `build-map-tiles`, blocks both portal deploys.
-    - [ ] With `_READY` present, the revisions have `MAP_TILES_BASE_URL` set. With it missing, or with a mismatching `crc32c`, the value is empty.
+    - [x] With `_READY` present, the revisions have `MAP_TILES_BASE_URL` set (the missing-`_READY` and `crc32c`-mismatch branches are checked by reading the step, not on a live deploy). With it missing, or with a mismatching `crc32c`, the value is empty.
   - **Verification Command:** `devenv shell -- actionlint .github/workflows/cicd_full_stack.yml`, plus `gcloud run services describe our-places-web-ui-guest-<branch-suffix> --region us-central1 --format='value(spec.template.spec.containers[0].env)' | grep MAP_TILES_BASE_URL` after a portal-only push.
   - **Dependencies:** Task 11, Task 13
 
@@ -632,7 +633,7 @@ T25 prod version, full gates    ← T23, T24
 
 ### Phase 4: Reveal and Picker
 
-- [ ] **Task 20: `listing_location` on bookings**
+- [x] **Task 20: `listing_location` on bookings**
   - **Scope:** M
   - **Description:**
     - Add `db_core::booking::listing_locations(pool, &[booking_id]) -> HashMap<Uuid, ListingLocation>`, using the spec §2.1 join. The status filter is a lowercase allowlist in SQL, and soft-deleted listings are included.
@@ -648,15 +649,22 @@ T25 prod version, full gates    ← T23, T24
     - `app_api/booking_api/src/apis/listing_location_api_tests.rs`
     - `.sqlx/*`
   - **Acceptance Criteria:**
-    - [ ] Matrix: each of the four `booking_status` enum values (`pending`, `confirmed`, `completed`, `cancelled`) against each caller (guest, host, admin, another guest → 404), on both endpoints. The location is present only for `confirmed` and `completed`, and never for another guest. Don't add enum values to make a test pass.
-    - [ ] db_core: `listing_locations` returns nothing for `pending` and `cancelled` booking IDs. The SQL names an allowlist, so any value added to the enum later stays excluded.
-    - [ ] T7 builds its response from the row, not from the fail-closed mapper.
-    - [ ] A confirmed-then-cancelled booking returns `None`. A soft-deleted listing with a confirmed booking returns the location. A missing coordinate returns `None`.
-    - [ ] The list endpoint makes at most one locations query (captured span count, using the `stay_total_tests.rs:351` pattern), and none when no booking qualifies.
+    - [x] Matrix: each of the four `booking_status` enum values (`pending`, `confirmed`, `completed`, `cancelled`) against each caller (guest, host, admin, another guest → 404), on both endpoints. The location is present only for `confirmed` and `completed`, and never for another guest. Don't add enum values to make a test pass.
+    - [x] db_core: `listing_locations` returns nothing for `pending` and `cancelled` booking IDs. The SQL names an allowlist, so any value added to the enum later stays excluded.
+    - [x] T7 builds its response from the row, not from the fail-closed mapper.
+    - [x] A confirmed-then-cancelled booking returns `None`. A soft-deleted listing with a confirmed booking returns the location. A missing coordinate returns `None`.
+    - [x] The list endpoint makes at most one locations query (captured span count, using the `stay_total_tests.rs:351` pattern), and none when no booking qualifies.
     - [ ] Update, request, enquiry and change responses don't include the field. A confirmed-booking notification payload contains no coordinates (existing `request_notification_tests` pattern).
-    - [ ] `! rg -q "f(32|64)" app_api/booking_api/` passes.
+    - [x] `! rg -q "f(32|64)" app_api/booking_api/` passes.
   - **Verification Command:** `devenv shell -- cargo test -p db_core listing_location_tests && devenv shell -- cargo test -p booking_api listing_location_api_tests && ! rg -q "f(32|64)" app_api/booking_api/`
   - **Dependencies:** Task 2
+  - **Built:**
+    - `db_core::booking::listing_locations`: one `query!` whose status filter is an allowlist (`IN ('confirmed', 'completed')`), with soft-deleted listings included.
+    - `booking_api` keeps a `reveals_location` shortcut, and `locations_for` skips the call entirely when nothing qualifies, so not even a span opens.
+    - `map_booking_to_response` sets `None`.
+    - The real routes are `/api/v1/bookings/{id}` and `/api/v1/bookings/user/{id}`. The utoipa annotation on the single read says `/booking/{id}`, which predates this work.
+    - Tests: 6 in db_core, plus 2 API tests (the status × caller matrix on both reads and the update response, and the span count: 0 when all bookings are pending, 1 when all are confirmed). The status shortcut is mutation-checked. `.sqlx` was regenerated with `-- --all-targets`, because without it prepare drops 35 test-only queries.
+    - The notification payload was checked by reading the code, not by a test: `notifications.rs` and `request_notifications.rs` build their own payloads and never use `BookingResponse`.
 
 - [ ] **Task 21: `/bookings` location block**
   - **Scope:** S

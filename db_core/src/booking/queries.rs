@@ -3,8 +3,10 @@
 use crate::error::Result;
 use crate::models::{Booking, BookingStatus, CancellationPolicy, FeeItem};
 use chrono::NaiveDate;
+use common::location::ListingLocation;
 use sqlx::PgExecutor;
 use sqlx::types::Json;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Retrieves all bookings with pagination.
@@ -309,4 +311,51 @@ where
     .await?;
 
     Ok(bookings)
+}
+
+/// The stored point of each booking's listing, keyed by booking ID, for the
+/// bookings whose guest may see it (spec 103 §1.5): only `confirmed` and
+/// `completed` ones, checked in this same read so a status change between
+/// two reads can't reveal it. The statuses are an allowlist, so a status
+/// added later stays excluded. Soft-deleted listings count: the guest may be
+/// on their way. A listing missing either coordinate gives nothing.
+///
+/// One query for any number of bookings, and none for an empty slice.
+#[tracing::instrument(skip_all, fields(bookings = booking_ids.len()))]
+pub async fn listing_locations<'e, E>(
+    executor: E,
+    booking_ids: &[Uuid],
+) -> Result<HashMap<Uuid, ListingLocation>>
+where
+    E: PgExecutor<'e>,
+{
+    if booking_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query!(
+        r#"
+        SELECT b.id, l.latitude AS "latitude!", l.longitude AS "longitude!"
+        FROM booking b
+        JOIN listing l ON l.id = b.listing_id
+        WHERE b.id = ANY($1)
+          AND b.status IN ('confirmed', 'completed')
+          AND l.latitude IS NOT NULL
+          AND l.longitude IS NOT NULL
+        "#,
+        booking_ids
+    )
+    .fetch_all(executor)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                r.id,
+                ListingLocation {
+                    latitude: r.latitude,
+                    longitude: r.longitude,
+                },
+            )
+        })
+        .collect())
 }

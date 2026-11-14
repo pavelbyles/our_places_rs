@@ -280,6 +280,8 @@ pub fn map_booking_to_response(booking: Booking) -> BookingResponse {
             .as_ref()
             .map(|terms| terms.0.code.clone()),
         promo_discount: booking.promo_stay_discount + booking.promo_cleaning_discount,
+        // Only the booking reads fill this, after their own check (spec 103 §1.5).
+        listing_location: None,
         created_at: booking.created_at,
         updated_at: booking.updated_at,
     }

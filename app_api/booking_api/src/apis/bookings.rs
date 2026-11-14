@@ -340,6 +340,31 @@ pub(super) async fn get_bookings(
     ))
 }
 
+/// Whether a booking in `status` may carry its listing's stored point. Only
+/// a shortcut to skip the query: `listing_locations` checks the status again
+/// in the same read as the point (spec 103 §1.5).
+fn reveals_location(status: &db_core::models::BookingStatus) -> bool {
+    use db_core::models::BookingStatus::{Completed, Confirmed};
+    matches!(status, Confirmed | Completed)
+}
+
+/// The stored points for `booking_ids`: one query, and none (not even a
+/// span) when no booking qualifies.
+async fn locations_for(
+    pool: &PgPool,
+    booking_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, common::location::ListingLocation>, ApiError> {
+    if booking_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    db_booking::listing_locations(pool, booking_ids)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, bookings = booking_ids.len(), "listing locations lookup failed");
+            ApiError::Database(e)
+        })
+}
+
 #[tracing::instrument(skip_all)]
 #[utoipa::path(
     get,
@@ -363,7 +388,11 @@ pub(super) async fn get_booking_by_id(
         .await
         .map_err(ApiError::Database)?;
 
+    let reveal = reveals_location(&booking.status).then_some(booking.id);
     let mut response = map_booking_to_response(booking);
+    response.listing_location = locations_for(pool.get_ref(), reveal.as_slice())
+        .await?
+        .remove(&response.id);
 
     if let Some(target_currency) = &currency_query.currency {
         let rate = display_rate(pool.get_ref(), &response.currency, target_currency).await?;
@@ -411,11 +440,18 @@ pub(super) async fn get_user_bookings(
         .await
         .map_err(ApiError::Database)?;
 
+    let revealed: Vec<Uuid> = bookings
+        .iter()
+        .filter(|b| reveals_location(&b.booking.status))
+        .map(|b| b.booking.id)
+        .collect();
+    let mut locations = locations_for(pool.get_ref(), &revealed).await?;
     let response: Vec<BookingResponse> = bookings
         .into_iter()
         .map(|b| {
             let mut resp = map_booking_to_response(b.booking);
             resp.review_eligibility = b.review_eligibility;
+            resp.listing_location = locations.remove(&resp.id);
             resp
         })
         .collect();

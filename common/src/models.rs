@@ -386,6 +386,11 @@ pub struct BookingResponse {
     /// The whole promo discount.
     #[serde(default)]
     pub promo_discount: Decimal,
+    /// The listing's stored point. Set only by the booking reads
+    /// (`GET /bookings/booking/{id}`, `GET /bookings/user/{id}`) for a
+    /// confirmed or completed booking (spec 103 §1.5); `None` everywhere else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listing_location: Option<crate::location::ListingLocation>,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
