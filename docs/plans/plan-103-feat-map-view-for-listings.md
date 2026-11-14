@@ -760,14 +760,14 @@ T25 prod version, full gates    ← T23, T24
     - Walk the spec's acceptance criteria and tick each one with evidence.
     - Before the merge to `main`, set `MAP_TILES_VERSION_PROD` to the dev version, so prod copies the verified dev folder.
   - **Acceptance Criteria:**
-    - [ ] fmt, clippy `-D warnings`, `sqlx prepare --check`, the backend and web UI tests and `cargo audit` pass.
-    - [ ] No `.unwrap()`, `.expect()` or raw `env::var` literal in the lines this branch adds to production code.
-    - [ ] `missing_docs` reports nothing on the items this branch adds.
-    - [ ] The float gate passes.
+    - [x] fmt, clippy `-D warnings`, `sqlx prepare --check`, the backend and web UI tests and `cargo audit` pass.
+    - [x] No `.unwrap()`, `.expect()` or raw `env::var` literal in the lines this branch adds to production code.
+    - [x] `missing_docs` reports nothing on the items this branch adds.
+    - [x] The float gate passes.
     - [ ] Each of spec acceptance criteria 1–14 is ticked.
     - [ ] The local sanity check, measured with `time`, stays within 90s.
     - [ ] CI-only evidence is recorded as run URLs in the plan: T3's guard, T11's concurrent runs and cancel-mid-upload, T14's portal-only push and the failed-setup block.
-    - [ ] Inline `#[cfg(test)]` modules added in page files use `match` or `panic!`, not `.unwrap()`, because the added-lines check doesn't exclude them.
+    - [x] Inline `#[cfg(test)]` modules added in page files use `match` or `panic!`, not `.unwrap()`, because the added-lines check doesn't exclude them.
   - **Verification Command:**
     ```bash
     set -o pipefail
@@ -782,3 +782,19 @@ T25 prod version, full gates    ← T23, T24
     SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features --message-format=short -- -W missing_docs   # compare against this branch's added items
     ```
   - **Dependencies:** Task 23, Task 24
+  - **Gates run 2026-11-14 at `f56ba3f9`, all exit 0:**
+    - `cargo fmt --check`;
+    - workspace clippy `-D warnings`;
+    - the float gate;
+    - the added-lines unwrap, expect and `env::var` check (inline page test modules included);
+    - backend tests in devenv (24 test binaries);
+    - `web_client`, `web_ui_*` tests;
+    - `sqlx prepare --check -- --all-targets`;
+    - `cargo audit`;
+    - `missing_docs`: 0 warnings on added lines.
+  - **Still open:**
+    - the T24 run;
+    - the spec acceptance walk, which needs T24's evidence;
+    - `MAP_TILES_VERSION_PROD`, which needs the originator's approval;
+    - the timed local sanity check;
+    - T14's portal-only push.
