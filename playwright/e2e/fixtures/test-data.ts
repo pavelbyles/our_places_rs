@@ -56,3 +56,13 @@ export const KNOWN_LISTINGS = {
     city: 'Kingston',
   },
 };
+
+/**
+ * The seeded listing's stored point (spec 103): New Kingston, kept
+ * approximate, so public pages must never show it. Copies made with
+ * `createListingCopy` start from it too.
+ */
+export const KNOWN_LOCATION = { latitude: 18.012345, longitude: -76.790123 };
+
+/** An exact point for listing copies that test the Exact setting. */
+export const EXACT_LOCATION = { latitude: 18.407412, longitude: -77.103134 };

@@ -120,7 +120,9 @@ pub async fn map_container(
                 ))
                 (attrs)
             >
-                <div data-map-canvas="" class="absolute inset-0"></div>
+                // Sized, not positioned: MapLibre's stylesheet makes this
+                // element `position: relative`, which would undo `inset-0`.
+                <div data-map-canvas="" class="h-full w-full"></div>
                 <p
                     data-map-fallback=""
                     hidden=(true)

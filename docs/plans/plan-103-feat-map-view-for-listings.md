@@ -602,7 +602,7 @@ T25 prod version, full gates    ← T23, T24
   - **Dependencies:** Task 17
   - **Built:** `ResultsView` and `SearchQuery::view_href`. The grid keeps `#listings-grid` and `#listing-card-{slug}`, using `villa_card(fluid: true)` because `class!` only joins classes and can't override the carousel width. `view` was added to `KEPT_SEARCH_PARAMS`. The `ui.js` toggle (`[data-view-link]`) uses `replaceState` and calls `OurPlacesMap.resize`. The maps-on test context moved to `web_ui_common::map_config::testing` (feature `test-util`, dev-only). 9 tests; the phone-hidden map class is mutation-checked. The in-place toggle is covered in T19's `map-search` spec.
 
-- [ ] **Task 19: Search map: badges, circles and popups**
+- [x] **Task 19: Search map: badges, circles and popups**
   - **Scope:** M
   - **Description:** In `map.js`, add the `search` kind (spec §1.6):
     - a `<button>` badge for each card, at least 44px;
@@ -618,12 +618,17 @@ T25 prod version, full gates    ← T23, T24
     - `playwright/e2e/guest-portal/listings-map.spec.ts`
     - `playwright/e2e/fixtures/test-data.ts` (or the seed it uses): known Approximate and Exact points
   - **Acceptance Criteria:**
-    - [ ] The number of badges equals the number of cards with `data-map-lat`, and Approximate listings have circles. After a theme toggle, and after a toggle **before** the first `load`, the badge count still equals the card count.
-    - [ ] Clicking a badge opens the popup, and its link goes to the listing with the search.
-    - [ ] Keyboard: Tab reaches the badges, Enter opens, and Escape closes and restores focus.
+    - [x] The number of badges equals the number of cards with `data-map-lat`, and Approximate listings have circles. After a theme toggle, and after a toggle **before** the first `load`, the badge count still equals the card count.
+    - [x] Clicking a badge opens the popup, and its link goes to the listing with the search.
+    - [x] Keyboard: Tab reaches the badges, Enter opens, and Escape closes and restores focus.
     - [ ] On the guest portal, there are no map requests before the map container is visible, and no CSP violations, `Refused to` messages or failed map requests.
   - **Verification Command:** `! grep -nE "innerHTML|outerHTML|insertAdjacentHTML|setHTML|document\.write|new Function" web_ui_common/src/assets/map.js && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=ui-js-chromium map-search && devenv shell -- npx playwright test --config=playwright/playwright.config.ts --project=guest-portal-chromium listings-map`
   - **Dependencies:** Task 15, Task 18
+  - **Built:** the `search` kind in `map.js`, with markers read from `[data-map-lat]` cards in the same `[data-results]`. Each badge is a `<button>` inside a wrapper div that takes MapLibre's `role="img"`, label and tabindex, which are then cleared. Styles are set through the CSSOM. One popup at a time; Escape restores focus. Circles come from one `op-area` FeatureCollection.
+    - **Bug found and fixed:** MapLibre's CSS sets `.maplibregl-map { position: relative }` and loads last. That undid the canvas's `absolute inset-0`, so the map had no visible area. The canvas is now `h-full w-full`. `map.spec` checks the canvas size, and the check fails with the old CSS.
+    - The harness was extracted to `ui-js/map-harness.ts`. 8 `map-search` tests; focus restore and once-only markers are mutation-checked.
+    - Seed: Courtyard Studio is stored at `KNOWN_LOCATION` (approximate). The exact listing is a copy updated in the spec.
+    - **Not yet run:** `guest-portal/listings-map`, which needs the portal restarted with `MAP_TILES_BASE_URL`. It runs in T24 at the latest.
 
 ### Phase 4: Reveal and Picker
 
