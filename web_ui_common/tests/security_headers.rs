@@ -8,6 +8,7 @@ use topcoat::{
     router::{Router, RouterBuilderDiscoverExt, page},
     view::{View, view},
 };
+use web_ui_common::map_config::MapConfig;
 use web_ui_common::security_headers::{
     ADMIN_CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY, HTML_CACHE_CONTROL, SecurityHeaders,
     csp_with_storage_origin,
@@ -178,4 +179,132 @@ fn storage_origins_that_could_inject_directives_are_refused() {
             "{origin}"
         );
     }
+}
+
+// ---- Spec 103 §1.12: the map tiles' bucket path ----
+
+const TILES: &str = "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261113";
+const BUCKET_PATH: &str = "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/";
+
+async fn csp_of(layer: SecurityHeaders) -> String {
+    let base = serve(layer).await;
+    match reqwest::get(format!("{base}/__probe")).await {
+        Ok(res) => res.headers()["content-security-policy"]
+            .to_str()
+            .unwrap_or_default()
+            .to_string(),
+        Err(e) => panic!("probe: {e}"),
+    }
+}
+
+/// The sources of one directive, or `None` when it's absent.
+fn directive<'a>(csp: &'a str, name: &str) -> Option<Vec<&'a str>> {
+    csp.split("; ")
+        .map(|d| d.split(' ').collect::<Vec<_>>())
+        .find(|parts| parts.first() == Some(&name))
+        .map(|parts| parts[1..].to_vec())
+}
+
+fn tiles() -> MapConfig {
+    match MapConfig::parse(TILES, None) {
+        Ok(config) => config,
+        Err(e) => panic!("{e}"),
+    }
+}
+
+#[tokio::test]
+async fn map_origin_adds_the_bucket_path_to_connect_src_and_a_worker() {
+    let map = tiles();
+    for (layer, base) in [
+        (SecurityHeaders::new(), CONTENT_SECURITY_POLICY),
+        (SecurityHeaders::admin(), ADMIN_CONTENT_SECURITY_POLICY),
+    ] {
+        let csp = csp_of(layer.with_map_origin(Some(&map))).await;
+        let connect = directive(&csp, "connect-src").unwrap_or_default();
+        assert!(connect.contains(&BUCKET_PATH), "{csp}");
+        assert_eq!(directive(&csp, "worker-src"), Some(vec!["'self'"]), "{csp}");
+        // Nothing else moves: img-src, script-src and style-src are as before.
+        for name in ["img-src", "script-src", "style-src", "default-src"] {
+            assert_eq!(directive(&csp, name), directive(base, name), "{name}");
+        }
+        assert!(!csp.contains("unsafe-"), "{csp}");
+        assert!(!csp.contains("blob:"), "{csp}");
+    }
+}
+
+#[tokio::test]
+async fn map_origin_none_leaves_both_policies_byte_identical() {
+    for raw in [
+        "https://storage.googleapis.com/",
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev",
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v2026-11",
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101/",
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101?a",
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101#a",
+        "https://storage.googleapis.com/our%2Dplaces/v20261101",
+        "https://storage.googleapis.com/a..b/v20261101",
+        "https://storage.googleapis.com/our-places\tx/v20261101",
+        "https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101\r",
+        "http://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101",
+        "http://localhost:4443/our-places-gcs-map-tiles-local/v20261101",
+    ] {
+        let map = MapConfig::parse(raw, None).ok();
+        assert_eq!(map, None, "{raw:?}");
+        assert_eq!(
+            csp_of(SecurityHeaders::new().with_map_origin(map.as_ref())).await,
+            CONTENT_SECURITY_POLICY
+        );
+        assert_eq!(
+            csp_of(SecurityHeaders::admin().with_map_origin(map.as_ref())).await,
+            ADMIN_CONTENT_SECURITY_POLICY
+        );
+    }
+}
+
+#[tokio::test]
+async fn map_origin_with_a_storage_origin_never_widens_guest_connect_src() {
+    let map = tiles();
+    let csp = csp_of(
+        SecurityHeaders::new()
+            .with_storage_origin(Some("http://localhost:4443".to_string()))
+            .with_map_origin(Some(&map)),
+    )
+    .await;
+    let connect = directive(&csp, "connect-src").unwrap_or_default();
+    assert_eq!(connect, vec!["'self'", BUCKET_PATH], "{csp}");
+    assert!(
+        !connect.contains(&"https://storage.googleapis.com"),
+        "{csp}"
+    );
+    // The storage origin still applies where it did.
+    assert!(
+        csp.contains("img-src 'self' https://storage.googleapis.com http://localhost:4443 data:"),
+        "{csp}"
+    );
+    assert!(!csp.contains("unsafe-"), "{csp}");
+}
+
+#[tokio::test]
+async fn an_emulator_map_origin_is_its_own_bucket_path() {
+    let map = match MapConfig::parse(
+        "http://localhost:4443/our-places-gcs-map-tiles-local/v20261113",
+        Some("http://localhost:4443"),
+    ) {
+        Ok(map) => map,
+        Err(e) => panic!("{e}"),
+    };
+    let csp = csp_of(
+        SecurityHeaders::new()
+            .with_storage_origin(Some("http://localhost:4443".to_string()))
+            .with_map_origin(Some(&map)),
+    )
+    .await;
+    assert_eq!(
+        directive(&csp, "connect-src"),
+        Some(vec![
+            "'self'",
+            "http://localhost:4443/our-places-gcs-map-tiles-local/"
+        ]),
+        "{csp}"
+    );
 }

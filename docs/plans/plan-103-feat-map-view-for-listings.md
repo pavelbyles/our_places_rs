@@ -451,7 +451,14 @@ T25 prod version, full gates    ← T23, T24
   - **Verification Command:** `devenv shell -- gcs-start && devenv shell -- map-tiles-seed && devenv shell -- bash -c 'curl -s -o /dev/null -w "%{http_code}" -H "Range: bytes=0-127" "$MAP_TILES_BASE_URL/jamaica.pmtiles"'` returns `206`, and `du -sb playwright/e2e/ui-js/fixtures/map` is under 2097152.
   - **Dependencies:** Task 9, Task 10
 
-- [ ] **Task 13: Map origin config and CSP**
+- [x] **Task 13: Map origin config and CSP**
+  - **Built:**
+    - `MapConfig::parse` is a hand-written allowlist; no `regex` dependency.
+    - `from_lookup` and `from_env` give one `warn` for unset or invalid.
+    - Portals register `MapConfig` with `.with(..)` only when it's valid, so `map_config(cx)` returning `None` means maps are off.
+    - `with_map_origin` takes `Option<&MapConfig>`.
+    - `csp_with_map_origin` adds the bucket path to `connect-src` and `worker-src 'self'`, and runs after the storage origin.
+    - Mutation-checked: dropping the `..` guard, and swapping the composition order.
   - **Scope:** M
   - **Description:**
     - Add `web_ui_common::map_config::MapConfig::from_env()`, which reads `static MAP_TILES_BASE_URL_ENV` and validates it with the spec §1.10 allowlist regex. The emulator form is accepted only when `emulator_endpoint()` is set. Anything else counts as unset, with one `warn`.
@@ -465,8 +472,8 @@ T25 prod version, full gates    ← T23, T24
     - `web_ui_guest/src/main.rs`
     - `web_ui_admin/src/main.rs`
   - **Acceptance Criteria:**
-    - [ ] Valid values: both policies gain `https://storage.googleapis.com/<bucket>/` in `connect-src` only (spec §7: `img-src` unchanged), plus `worker-src 'self'`. `script-src` and `style-src` don't change.
-    - [ ] Each of these is refused, with a captured `warn`, and leaves the policies byte-identical to today's:
+    - [x] Valid values: both policies gain `https://storage.googleapis.com/<bucket>/` in `connect-src` only (spec §7: `img-src` unchanged), plus `worker-src 'self'`. `script-src` and `style-src` don't change.
+    - [x] Each of these is refused, with a captured `warn`, and leaves the policies byte-identical to today's:
       - `https://storage.googleapis.com/`
       - `…/bucket` with no version
       - `…/bucket/v2026-11`
@@ -474,8 +481,8 @@ T25 prod version, full gates    ← T23, T24
       - `?`, `#`, `%`, `..`, `\t` and `\r` variants
       - `http://…`
       - the emulator form with no emulator set
-    - [ ] With both a storage origin and a map origin set, the guest `connect-src` contains the bucket path and never the bare `https://storage.googleapis.com`.
-    - [ ] No policy contains `unsafe-`.
+    - [x] With both a storage origin and a map origin set, the guest `connect-src` contains the bucket path and never the bare `https://storage.googleapis.com`.
+    - [x] No policy contains `unsafe-`.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common map_config_tests && SQLX_OFFLINE=true cargo test -p web_ui_common --test security_headers map_origin`
   - **Dependencies:** Task 9
 

@@ -246,7 +246,7 @@ The container reserves its height, so loading causes no layout shift.
 - one `console.warn` is written, and nothing is sent to the server.
 
 ### 1.12. Content-Security-Policy
-`SecurityHeaders` gains `.with_map_origin(Option<String>)`, which takes the validated `MAP_TILES_BASE_URL` and keeps only its path up to and including the bucket, with a trailing `/` (e.g. `https://storage.googleapis.com/<bucket>/`). When it is set, both portals' policies change as follows:
+`SecurityHeaders` gains `.with_map_origin(Option<&MapConfig>)`, which takes the validated `MAP_TILES_BASE_URL` (as `MapConfig`, so an unvalidated string can't reach the policy) and uses only its path up to and including the bucket, with a trailing `/` (e.g. `https://storage.googleapis.com/<bucket>/`). When it is set, both portals' policies change as follows:
 
 | Directive | Change |
 |---|---|

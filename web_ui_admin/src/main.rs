@@ -8,6 +8,7 @@ use topcoat::cookie::CookieLayer;
 use topcoat::router::{Router, RouterBuilderDiscoverExt};
 use topcoat::session::{SessionTokenStore, cookie::CookieTokenStore};
 use web_client::{TopcoatApiClient, jwt::ServiceJwt};
+use web_ui_common::map_config::MapConfig;
 use web_ui_common::security_headers::SecurityHeaders;
 
 use web_ui_admin::DEFAULT_PORT;
@@ -40,17 +41,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sessions = SessionTokenStore::new(CookieTokenStore::new().name("op_admin_session"));
 
     // No `RuntimeLayer`: it needs 'unsafe-eval' (spec, Phase 0 spike results).
-    let router = Router::builder()
+    // Maps are an add-on: an unset or invalid MAP_TILES_BASE_URL turns them
+    // off with one warn (spec 103 §1.10). Registered only when on.
+    let map_config = MapConfig::from_env();
+
+    let builder = Router::builder()
         .discover()
         .layer(CookieLayer::new())
         .with(sessions)
         .with(TopcoatApiClient::from_env())
-        .with(service_jwt)
+        .with(service_jwt);
+    let builder = match map_config.clone() {
+        Some(map) => builder.with(map),
+        None => builder,
+    };
+    let router = builder
         .assets(assets)
         .layer(
             SecurityHeaders::admin()
                 .with_hsts(hsts)
-                .with_storage_origin(common::gcs::emulator_endpoint()),
+                .with_storage_origin(common::gcs::emulator_endpoint())
+                .with_map_origin(map_config.as_ref()),
         )
         .layer(web_ui_common::request_tracing::RequestTracing)
         .build();

@@ -3,6 +3,8 @@ use topcoat::router::header::{HeaderName, HeaderValue};
 use topcoat::router::response::response_headers;
 use topcoat::router::{Body, Layer, LayerFuture, Next, Path};
 
+use crate::map_config::MapConfig;
+
 /// Content-Security-Policy for both portals. No inline scripts or styles and
 /// no `eval` (the Topcoat runtime is not used; spec Phase 0 spike results).
 /// Listing photos are served from Cloud Storage.
@@ -46,6 +48,7 @@ pub struct SecurityHeaders {
     hsts: bool,
     admin: bool,
     storage_origin: Option<String>,
+    map: Option<MapConfig>,
 }
 
 /// `csp` with `origin` allowed wherever Cloud Storage is (`img-src`, and
@@ -60,6 +63,28 @@ pub fn csp_with_storage_origin(csp: &str, origin: &str) -> Option<String> {
                 &format!("https://storage.googleapis.com {o}"),
             )
         })
+}
+
+/// `csp` with the map tiles allowed (spec 103 §1.12): the tile bucket path
+/// in `connect-src` (style, tiles, glyphs and sprites are all fetched), and
+/// `worker-src 'self'` for MapLibre's module worker. `img-src` is unchanged
+/// (Phase 0 spike, spec §7).
+///
+/// Apply after [`csp_with_storage_origin`], which rewrites every
+/// `https://storage.googleapis.com` and would otherwise widen the bucket
+/// path to the whole host.
+pub fn csp_with_map_origin(csp: &str, map: &MapConfig) -> String {
+    csp.split("; ")
+        .map(|directive| {
+            if directive.starts_with("connect-src ") {
+                format!("{directive} {}", map.origin())
+            } else {
+                directive.to_string()
+            }
+        })
+        .chain(std::iter::once("worker-src 'self'".to_string()))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 impl SecurityHeaders {
@@ -90,17 +115,36 @@ impl SecurityHeaders {
         }
     }
 
+    /// Also allow the map tiles' bucket path ([`csp_with_map_origin`]).
+    /// `None` (maps off) changes nothing.
+    pub fn with_map_origin(self, map: Option<&MapConfig>) -> Self {
+        Self {
+            map: map.cloned(),
+            ..self
+        }
+    }
+
     fn content_security_policy(&self) -> HeaderValue {
         let base = if self.admin {
             ADMIN_CONTENT_SECURITY_POLICY
         } else {
             CONTENT_SECURITY_POLICY
         };
-        self.storage_origin
+        if self.storage_origin.is_none() && self.map.is_none() {
+            return HeaderValue::from_static(base);
+        }
+        // Storage origin first: it rewrites every Cloud Storage occurrence.
+        let csp = self
+            .storage_origin
             .as_deref()
             .and_then(|origin| csp_with_storage_origin(base, origin))
-            .and_then(|csp| HeaderValue::from_str(&csp).ok())
-            .unwrap_or_else(|| HeaderValue::from_static(base))
+            .unwrap_or_else(|| base.to_string());
+        let csp = self
+            .map
+            .as_ref()
+            .map(|map| csp_with_map_origin(&csp, map))
+            .unwrap_or(csp);
+        HeaderValue::from_str(&csp).unwrap_or_else(|_| HeaderValue::from_static(base))
     }
 
     fn static_headers(&self) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {

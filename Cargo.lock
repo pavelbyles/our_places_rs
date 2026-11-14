@@ -6421,6 +6421,7 @@ dependencies = [
  "reqwest",
  "rust_decimal",
  "rust_decimal_macros",
+ "thiserror",
  "tokio",
  "topcoat",
  "topcoat-asset",

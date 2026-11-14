@@ -21,6 +21,7 @@ chrono = { workspace = true }
 rust_decimal = { workspace = true }
 topcoat-asset = { workspace = true }
 form_urlencoded = "1"
+thiserror = { workspace = true }
 
 [build-dependencies]
 topcoat = { version = "0.12.1", default-features = false, features = [
