@@ -37,6 +37,23 @@ def get_issue_title(issue_num):
         return None
 
 
+def clean_title_tags(title):
+    """Strip commit tags, issue numbers, and brackets from title."""
+    text = title.strip()
+    # Strip [#123] or #123: or #123 -
+    text = re.sub(r"^(?:#\d+|\[#?\d+\])\s*[:\-]?\s*", "", text, flags=re.IGNORECASE)
+    # Strip [tag]
+    text = re.sub(r"^\[[a-zA-Z0-9_\-]+\]\s*", "", text)
+    # Strip conventional commit tags like feat:, feat(scope):, feat/123:, feat -
+    text = re.sub(
+        r"^(?:feat|fix|chore|docs|style|refactor|perf|test|build|ci|task|bug)(?:\([^)]*\))?(?:/\d+)?\s*[:\-]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text.strip()
+
+
 def slugify(text):
     """Convert text to lowercase hyphenated slug."""
     text = text.lower()
@@ -52,14 +69,18 @@ def format_branch_name(issue_num, title, prefix="feat", max_length=62):
     Format branch name: <prefix>/<issue_num>-<slug> (or <issue_num>-<slug> if prefix is empty).
     Ensures branch name is strictly less than 63 characters (< 63).
     """
-    slug = slugify(title)
+    cleaned_title = clean_title_tags(title)
+    slug = slugify(cleaned_title)
     if prefix:
-        base = f"{prefix}/{issue_num}-"
+        clean_prefix = prefix.strip("/")
+        if slug == clean_prefix or slug.startswith(f"{clean_prefix}-"):
+            slug = slug[len(clean_prefix) + 1 :]
+        base = f"{clean_prefix}/{issue_num}-"
     else:
         base = f"{issue_num}-"
 
     max_slug_len = max_length - len(base)
-    if max_slug_len <= 0:
+    if not slug or max_slug_len <= 0:
         return base.rstrip("-/")
 
     if len(slug) > max_slug_len:
@@ -140,8 +161,16 @@ def main():
     if not has_remote_ref:
         base_ref = args.source_branch
 
-    print(f"Creating worktree based on '{base_ref}'...")
-    run_cmd(["git", "worktree", "add", worktree_path, "-b", branch_name, base_ref])
+    branch_exists_locally = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"]
+    ).returncode == 0
+
+    if branch_exists_locally:
+        print(f"Local branch '{branch_name}' already exists. Checking out existing branch into worktree...")
+        run_cmd(["git", "worktree", "add", worktree_path, branch_name])
+    else:
+        print(f"Creating worktree based on '{base_ref}'...")
+        run_cmd(["git", "worktree", "add", worktree_path, "-b", branch_name, base_ref])
 
     # 6. Copy .env if present in current workspace
     env_src = os.path.join(toplevel, ".env")
