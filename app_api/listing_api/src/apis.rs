@@ -504,6 +504,7 @@ async fn create_listing(
     let creator = authz::require_host_or_admin(pool.get_ref(), &claims, "create_listing").await?;
     let mut req_data = new_listing.into_inner();
     req_data.validate()?;
+    common::location::validate_coordinates(req_data.latitude, req_data.longitude)?;
     // A host always owns what they create; an admin may name an owner.
     req_data.user_id = authz::listing_owner_for(pool.get_ref(), &creator, req_data.user_id).await?;
 
@@ -562,7 +563,7 @@ async fn create_listing(
             guests_included: Some(req_data.guests_included),
             extra_guest_fee: req_data.extra_guest_fee,
             is_active: req_data.is_active,
-            location_privacy: None,
+            location_privacy: req_data.location_privacy,
         };
 
         match db_listing::create_listing_with_active_currency(pool.get_ref(), &listing).await {
@@ -634,6 +635,7 @@ async fn update_listing(
     authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "update_listing").await?;
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
+    common::location::validate_coordinates(req_data.latitude, req_data.longitude)?;
 
     let structure_id = if let Some(ref structure_str) = req_data.listing_structure {
         let st = StructureType::from_str(structure_str).map_err(|_| {
@@ -688,7 +690,7 @@ async fn update_listing(
         guests_included: req_data.guests_included,
         extra_guest_fee: req_data.extra_guest_fee,
         booking_mode: req_data.booking_mode,
-        location_privacy: None,
+        location_privacy: req_data.location_privacy,
     };
 
     let updated_listing =
@@ -1300,6 +1302,10 @@ async fn delete_price_override(
 #[cfg(test)]
 #[path = "apis_test.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "location_input_tests.rs"]
+mod location_input_tests;
 
 #[cfg(test)]
 #[path = "stay_total_tests.rs"]

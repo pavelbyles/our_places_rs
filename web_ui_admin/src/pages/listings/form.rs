@@ -541,6 +541,7 @@ impl ValidListing {
             guests_included: self.guests_included,
             extra_guest_fee: self.extra_guest_fee,
             is_active: self.is_active,
+            location_privacy: None,
         }
     }
 
@@ -583,6 +584,7 @@ impl ValidListing {
             guests_included: Some(self.guests_included),
             extra_guest_fee: self.extra_guest_fee,
             booking_mode: Some(self.booking_mode),
+            location_privacy: None,
         }
     }
 }

@@ -232,7 +232,7 @@ T25 prod version, full gates    ← T23, T24
   - **Built note:** there's no `.env.example` in the repo, so no placeholder was added. The local key is already in this worktree's `.env`. The plan's later "actionlint clean" criteria (T10, T11, T14) use the same no-new-findings rule.
   - **Dependencies:** Task 1
 
-- [ ] **Task 4: Validate privacy and coordinate input**
+- [x] **Task 4: Validate privacy and coordinate input**
   - **Scope:** S
   - **Description:**
     - `NewListingRequest` and `UpdatedListingRequest` gain `location_privacy: Option<LocationPrivacy>`, passed through to `db_core`.
@@ -252,6 +252,7 @@ T25 prod version, full gates    ← T23, T24
       - `longitude: -181`;
       - a `NaN` or `Infinity` sent as a string-encoded float.
   - **Verification Command:** `devenv shell -- cargo test -p listing_api location_input_tests`
+  - **Built note:** an unknown privacy value is refused by actix's JSON extractor with a 400 whose body names the bad value (`nearby`), not the field. Coordinate errors come from `common::location::validate_coordinates` and are keyed by field. JSON can't carry `NaN` or `Infinity`: a `"NaN"` string or `1e400` is refused with a 400 by deserialization, and the validator also refuses non-finite values. Mutation-checked: removing the validation call makes the tests fail. `web_ui_admin` sends `location_privacy: None` until T8.
   - **Dependencies:** Task 2
 
 - [ ] **Task 5: Public coordinates mapper and echo guard**

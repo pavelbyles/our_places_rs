@@ -256,6 +256,7 @@ async fn test_create_listing_validation_error() {
         guests_included: 1,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
 
     let req = test::TestRequest::post()
@@ -768,6 +769,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         guests_included: 2,
         extra_guest_fee: Some(dec!(30.00)),
         is_active: true,
+        location_privacy: None,
     };
 
     let req = test::TestRequest::post()
@@ -812,6 +814,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
         guests_included: 1,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
 
     let req = test::TestRequest::post()
@@ -1208,6 +1211,7 @@ mod currency_inactive_tests {
             guests_included: 1,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         }
     }
 
@@ -1467,6 +1471,7 @@ mod gap_limit_tests {
             guests_included: 1,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         }
     }
 
@@ -1815,6 +1820,7 @@ mod search_param_tests {
                 guests_included: 1,
                 extra_guest_fee: None,
                 is_active: true,
+                location_privacy: None,
             };
             let req = test::TestRequest::post()
                 .insert_header(admin_auth())
@@ -2006,6 +2012,7 @@ fn listing_with_details(
         guests_included: 1,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     }
 }
 

@@ -827,6 +827,11 @@ pub struct NewListingRequest {
     #[schema(example = -77.7990)]
     pub longitude: Option<f64>,
 
+    /// What guests may see of the location before they book. `approximate`
+    /// if omitted.
+    #[serde(default)]
+    pub location_privacy: Option<crate::location::LocationPrivacy>,
+
     // --- NEW: Dynamic Property Definitions (JSONB) ---
     /// Amenities and other details, as JSON. Host-edited sections are
     /// checked by [`crate::listing_details::validate_listing_details`].
@@ -1025,6 +1030,10 @@ pub struct UpdatedListingRequest {
     #[serde(default)]
     #[schema(example = -77.7990)]
     pub longitude: Option<f64>,
+
+    /// Updated location privacy; absent keeps it.
+    #[serde(default)]
+    pub location_privacy: Option<crate::location::LocationPrivacy>,
 
     /// Updated city, if known.
     #[serde(default)]

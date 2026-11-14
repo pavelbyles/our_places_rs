@@ -63,6 +63,59 @@ pub fn in_bounds(latitude: f64, longitude: f64) -> bool {
         && (b.west..=b.east).contains(&longitude)
 }
 
+/// Checks a listing's coordinate input (spec 103 §1.1.4): both or neither,
+/// finite, latitude within ±90 and longitude within ±180. Errors are keyed by
+/// field, as `validator` reports them.
+pub fn validate_coordinates(
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+) -> Result<(), validator::ValidationErrors> {
+    let mut errors = validator::ValidationErrors::new();
+    let mut refuse = |field: &'static str, code: &'static str, message: &'static str| {
+        errors.add(
+            field,
+            validator::ValidationError::new(code).with_message(message.into()),
+        );
+    };
+    match (latitude, longitude) {
+        (Some(_), None) => refuse(
+            "longitude",
+            "coordinates_together",
+            "Latitude and longitude must be given together.",
+        ),
+        (None, Some(_)) => refuse(
+            "latitude",
+            "coordinates_together",
+            "Latitude and longitude must be given together.",
+        ),
+        _ => {}
+    }
+    if let Some(lat) = latitude {
+        match lat.is_finite() && (-90.0..=90.0).contains(&lat) {
+            true => {}
+            false => refuse(
+                "latitude",
+                "latitude_range",
+                "Latitude must be a number between -90 and 90.",
+            ),
+        }
+    }
+    if let Some(lng) = longitude {
+        match lng.is_finite() && (-180.0..=180.0).contains(&lng) {
+            true => {}
+            false => refuse(
+                "longitude",
+                "longitude_range",
+                "Longitude must be a number between -180 and 180.",
+            ),
+        }
+    }
+    match errors.is_empty() {
+        true => Ok(()),
+        false => Err(errors),
+    }
+}
+
 /// What a host lets guests see before they book.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema,
