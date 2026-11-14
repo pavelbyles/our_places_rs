@@ -535,6 +535,23 @@ impl TopcoatApiClient {
         get_json_as(&self.client, &url, &booking_api_audience(), jwt).await
     }
 
+    /// A listing's stored location and setting, authenticated as a user who
+    /// may manage it (spec 103 §2.2). 403/404 for anyone else.
+    pub async fn get_listing_location_as(
+        &self,
+        id: Uuid,
+        jwt: &str,
+    ) -> Result<common::location::ListingLocationResponse, UserCallError> {
+        let url = format!("{}/api/v1/listings/{id}/location", self.listing_api_url);
+        get_json_as(
+            &self.client,
+            &url,
+            &common::app_client::listing_api_audience(),
+            jwt,
+        )
+        .await
+    }
+
     /// Fetches one booking, authenticated as the user who owns `jwt`.
     pub async fn get_booking_as(
         &self,

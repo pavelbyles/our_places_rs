@@ -311,7 +311,7 @@ T25 prod version, full gates    ← T23, T24
   - **Built note:** the response type is `common::location::ListingLocationResponse`, which `web_client` reuses in T8. The handler builds it from `db_core::listing::get_listing_location`, the T5 query, not from the mapper.
   - **Dependencies:** Task 2
 
-- [ ] **Task 8: Admin edit form loads from the location endpoint**
+- [x] **Task 8: Admin edit form loads from the location endpoint**
   - **Scope:** M
   - **Description:**
     - Add `web_client::TopcoatApiClient::get_listing_location_as(id, jwt)`.
@@ -329,6 +329,10 @@ T25 prod version, full gates    ← T23, T24
     - [ ] `edit_prefill` uses the endpoint's point, not the detail's. Wiremock serves two different points, and the test checks which one is used. A 5xx gives `Err`, and the page renders no `name="latitude"` input.
     - [ ] The radio defaults to Approximate on create and reflects the stored value on edit, and the posted form carries `location_privacy`.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_client --test listing_location_client && SQLX_OFFLINE=true cargo test -p web_ui_admin --test listing_location`
+  - **Built note:**
+    - **Prefill:** `ListingFields::from_listing` no longer reads coordinates. `with_location` fills them from the endpoint.
+    - **Failure:** a failed location load returns topcoat's `service_unavailable(5)` and logs the listing ID. The page shows the framework's generic 503, not the spec §1.9 wording.
+    - **Test scope:** the test checks the prefill source, the radio rendering and the posted value. It doesn't drive the full page route.
   - **Dependencies:** Task 4, Task 7
 
 > **Phase 1 checkpoint**: run T1–T8's commands together, then push. This deploys the redaction and the echo guard. The push's backend changes trigger the setup job, which creates `our-places-gcs-map-tiles-dev`. Confirm with `gcloud storage buckets describe gs://our-places-gcs-map-tiles-dev`.

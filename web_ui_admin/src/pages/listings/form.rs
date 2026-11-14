@@ -3,6 +3,7 @@
 use std::str::FromStr;
 
 use common::booking_request::BookingMode;
+use common::location::{ListingLocationResponse, LocationPrivacy};
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -93,6 +94,9 @@ pub struct ListingFields {
     pub is_active: String,
     /// How the listing sells: `instant`, `request` or `both`.
     pub booking_mode: String,
+    /// What guests see of the location before booking: `approximate` or `exact`.
+    #[serde(default)]
+    pub location_privacy: String,
     /// Fixed-slot content fields posted as `ribbon_{n}_{part}` and similar
     /// (the form encoding has no lists, so each row has its own names).
     #[serde(flatten)]
@@ -129,8 +133,13 @@ impl ListingFields {
             square_meters: l.square_meters.map(|v| v.to_string()).unwrap_or_default(),
             minimum_stay: l.minimum_stay.to_string(),
             days_between_bookings: l.days_between_bookings.to_string(),
-            latitude: l.latitude.map(|v| v.to_string()).unwrap_or_default(),
-            longitude: l.longitude.map(|v| v.to_string()).unwrap_or_default(),
+            // Never from a listing response: on public paths it carries the
+            // approximate point, and saving that would replace the stored one
+            // (spec 103 §1.9). `with_location` fills these from the manager
+            // endpoint.
+            latitude: String::new(),
+            longitude: String::new(),
+            location_privacy: String::new(),
             owner_id: l.user_id.to_string(),
             is_active: if l.is_active {
                 "on".into()
@@ -146,6 +155,19 @@ impl ListingFields {
                 .chain(policies_fields(l.listing_details.as_ref()))
                 .chain(guestbook_fields(l.listing_details.as_ref()))
                 .collect(),
+        }
+    }
+
+    /// Fills the location from the manager endpoint's stored values.
+    pub fn with_location(self, location: &ListingLocationResponse) -> Self {
+        Self {
+            latitude: location.latitude.map(|v| v.to_string()).unwrap_or_default(),
+            longitude: location
+                .longitude
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            location_privacy: location.location_privacy.as_str().into(),
+            ..self
         }
     }
 
@@ -166,6 +188,7 @@ impl ListingFields {
             owner_id: owner.to_string(),
             is_active: "on".into(),
             booking_mode: BookingMode::Instant.as_str().into(),
+            location_privacy: LocationPrivacy::Approximate.as_str().into(),
             slots: suggested_amenity_fields(),
             ..Default::default()
         }
@@ -200,6 +223,7 @@ pub struct ValidListing {
     days_between_bookings: i32,
     latitude: Option<f64>,
     longitude: Option<f64>,
+    location_privacy: LocationPrivacy,
     is_active: bool,
     amenity_groups: Vec<AmenityGroup>,
     ribbon: Option<Vec<RibbonItem>>,
@@ -389,6 +413,7 @@ impl ListingFields {
             ),
             latitude: p.coord("Latitude", &self.latitude, 90.0),
             longitude: p.coord("Longitude", &self.longitude, 180.0),
+            location_privacy: parse_location_privacy(&mut p, &self.location_privacy),
             is_active: self.is_active == "on",
             amenity_groups: parse_amenity_groups(&self.slots).unwrap_or_else(|errors| {
                 p.errors.extend(errors);
@@ -436,6 +461,19 @@ impl ListingFields {
 
 /// The booking mode as posted; a blank value (the create form has no select)
 /// means instant.
+/// The location setting; blank means the default, approximate.
+fn parse_location_privacy(p: &mut Parser, value: &str) -> LocationPrivacy {
+    match value.trim() {
+        "" | "approximate" => LocationPrivacy::Approximate,
+        "exact" => LocationPrivacy::Exact,
+        _ => {
+            p.errors
+                .push("Choose how the location is shown to guests.".to_string());
+            LocationPrivacy::Approximate
+        }
+    }
+}
+
 fn parse_booking_mode(p: &mut Parser, value: &str) -> BookingMode {
     match value.trim() {
         "" => BookingMode::Instant,
@@ -541,7 +579,7 @@ impl ValidListing {
             guests_included: self.guests_included,
             extra_guest_fee: self.extra_guest_fee,
             is_active: self.is_active,
-            location_privacy: None,
+            location_privacy: Some(self.location_privacy),
         }
     }
 
@@ -584,7 +622,7 @@ impl ValidListing {
             guests_included: Some(self.guests_included),
             extra_guest_fee: self.extra_guest_fee,
             booking_mode: Some(self.booking_mode),
-            location_privacy: None,
+            location_privacy: Some(self.location_privacy),
         }
     }
 }
@@ -843,6 +881,33 @@ pub async fn listing_form(
                         class=(input)
                     />
                 </label>
+                <fieldset
+                    id="location-privacy"
+                    aria-describedby="location-privacy-help"
+                    class="md:col-span-2"
+                >
+                    <legend class=(label)>"Location shown to guests before booking"</legend>
+                    <div class="mt-2 flex flex-wrap gap-4 text-sm">
+                        for (value, title) in [
+                            ("approximate", "Approximate area (500 m)"),
+                            ("exact", "Exact location"),
+                        ] {
+                            <label class="inline-flex items-center gap-2">
+                                <input
+                                    type="radio"
+                                    name="location_privacy"
+                                    value=(value)
+                                    checked=(f.location_privacy == value
+                                        || (value == "approximate" && f.location_privacy.is_empty()))
+                                />
+                                (title)
+                            </label>
+                        }
+                    </div>
+                    <p id="location-privacy-help" class="mt-1 text-xs text-muted-foreground">
+                        "Switching back to Approximate can't hide a location guests have already seen."
+                    </p>
+                </fieldset>
                 if !owners.is_empty() {
                     <label class=(label)>
                         "Owner"
