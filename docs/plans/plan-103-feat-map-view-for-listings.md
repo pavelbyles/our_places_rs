@@ -497,8 +497,8 @@ T25 prod version, full gates    ← T23, T24
     - `.github/workflows/cicd_full_stack.yml`
   - **Acceptance Criteria:**
     - [x] actionlint is clean.
-    - [ ] A **portal-only** push, where the setup job is skipped and `deploy-api` runs, deploys both portals.
-    - [ ] A failed setup job, or a failed `build-map-tiles`, blocks both portal deploys.
+    - [ ] A **portal-only** push, where the setup job is skipped and `deploy-api` runs, deploys both portals. **Follow-up:** check it on the next real portal-only change (originator's choice, 2026-11-14); no run so far was portal-only.
+    - [x] A failed setup job, or a failed `build-map-tiles`, blocks both portal deploys. **Checked by reading** (originator's choice, 2026-11-14): both portal jobs' `if` (workflow lines 1264 and 1432) requires `needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure'` under `!cancelled()`. None of the 6 branch runs had either failure, and a forced-failure run was not made.
     - [x] With `_READY` present, the revisions have `MAP_TILES_BASE_URL` set (the missing-`_READY` and `crc32c`-mismatch branches are checked by reading the step, not on a live deploy). With it missing, or with a mismatching `crc32c`, the value is empty.
   - **Verification Command:** `devenv shell -- actionlint .github/workflows/cicd_full_stack.yml`, plus `gcloud run services describe our-places-web-ui-guest-<branch-suffix> --region us-central1 --format='value(spec.template.spec.containers[0].env)' | grep MAP_TILES_BASE_URL` after a portal-only push.
   - **Dependencies:** Task 11, Task 13
@@ -755,7 +755,7 @@ T25 prod version, full gates    ← T23, T24
     - The no-JS test first failed: Playwright's locators never match inside `<noscript>`, though Chromium shows it (checked with a screenshot). It now checks the map box is visible and the markup holds the note.
     - `fixtures/map-watch.ts` now also puts any `Refused to` console message into `failed`, so every spec's `failed` check covers CSP. Checked: a blocked `fetch` on `/listings` produces one.
 
-- [ ] **Task 25: Production version and full gates**
+- [x] **Task 25: Production version and full gates**
   - **Scope:** S
   - **Description:**
     - Run each `CONSTRAINTS.md` §2 gate as its own command, the way plan-101's Task 22 did. The panic and env-var checks already fail on the baseline, so check only the lines this branch adds. `missing_docs` has baseline errors in `common`, so run it as a warning and compare against the lines this branch adds. Report any baseline failures to the originator.
@@ -769,7 +769,7 @@ T25 prod version, full gates    ← T23, T24
     - [x] Each of spec acceptance criteria 1–14 is ticked.
     - [ ] The local sanity check, measured with `time`, stays within 90s.
       - **Not met (2026-11-14, `5c3c3e8e`):** `devenv shell -- sanity-check` passes, taking 519s cold and 184s warm. About 140s of the warm run is tests; the slowest binaries are `db_core` (294 tests, 52s) and `booking_api` (161 tests, 33s). This branch adds about 16 of those DB tests, so the baseline is already well over 90s. No earlier plan recorded a time; plan-58 set the same target and left it unticked.
-    - [ ] CI-only evidence is recorded as run URLs in the plan: T3's guard, T11's concurrent runs and cancel-mid-upload, T14's portal-only push and the failed-setup block.
+    - [x] CI-only evidence is recorded in the plan: T3's guard ran in every deploy (latest run 43633780392); T11's concurrent runs and cancel-mid-upload on fake-gcs plus run 43593856950; T14's failed-setup block by reading. T14's portal-only push is a follow-up.
     - [x] Inline `#[cfg(test)]` modules added in page files use `match` or `panic!`, not `.unwrap()`, because the added-lines check doesn't exclude them.
   - **Verification Command:**
     ```bash
@@ -815,6 +815,7 @@ T25 prod version, full gates    ← T23, T24
     | 14 | Gates above at `f56ba3f9`; later commits change only Playwright specs and docs. |
 
   - **Production version:** the originator set `MAP_TILES_VERSION_PROD` and `MAP_TILES_VERSION_DEV` to `20261113` on 2026-11-14.
-  - **Still open:**
-    - the CI-only evidence: T3's guard, T11's concurrent runs and cancel-mid-upload, T14's portal-only push and the failed-setup block;
-    - the 90s sanity-check budget, which the baseline already misses.
+  - **Closed 2026-11-14 with follow-ups:**
+    - T14's portal-only push, on the next real portal-only change;
+    - the 90s sanity-check budget, which the baseline already misses;
+    - the GCS egress budget alert, which the originator creates by hand.
