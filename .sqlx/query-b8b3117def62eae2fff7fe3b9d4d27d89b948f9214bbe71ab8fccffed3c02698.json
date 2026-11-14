@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT latitude, longitude, location_privacy AS \"location_privacy: common::location::LocationPrivacy\"\n           FROM listing WHERE id = $1 AND deleted_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 1,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "location_privacy: common::location::LocationPrivacy",
+        "type_info": {
+          "Custom": {
+            "name": "location_privacy",
+            "kind": {
+              "Enum": [
+                "approximate",
+                "exact"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "b8b3117def62eae2fff7fe3b9d4d27d89b948f9214bbe71ab8fccffed3c02698"
+}

@@ -143,6 +143,7 @@ async fn every_listing_write_checks_the_caller() {
     let admin = user_with(&pool, "ARRAY['admin']").await;
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings()))
             .configure(configure_routes),
@@ -217,6 +218,7 @@ async fn a_deactivated_account_is_401() {
         .expect("deactivate");
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings()))
             .configure(configure_routes),
@@ -254,6 +256,7 @@ async fn creating_a_listing_needs_a_host_or_admin_and_hosts_own_what_they_create
     let admin = user_with(&pool, "ARRAY['admin']").await;
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings()))
             .configure(configure_routes),
@@ -310,6 +313,7 @@ async fn public_reads_stay_public() {
     let listing = listing_of(&pool, owner).await;
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings()))
             .configure(configure_routes),
@@ -356,6 +360,7 @@ async fn a_host_names_clears_and_is_refused_long_photo_names() {
     let other_photo = photo_on(&pool, other_listing).await;
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings()))
             .configure(configure_routes),

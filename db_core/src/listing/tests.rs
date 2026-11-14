@@ -92,6 +92,7 @@ async fn test_create_listing() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
 
     let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -135,6 +136,7 @@ async fn test_create_listing_fails_without_host_profile() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
 
     let result = create_listing(&mut *tx, &new_listing).await;
@@ -178,6 +180,7 @@ async fn test_get_listing_by_id() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = create_listing(&mut *tx, &new_listing).await.unwrap();
 
@@ -232,6 +235,7 @@ async fn test_get_listings_pagination() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         };
         let created = create_listing(&mut *tx, &listing).await.unwrap();
         created_ids.push(created.id);
@@ -310,6 +314,7 @@ async fn test_get_listings_uniqueness_across_pages() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         };
         create_listing(&mut *tx, &listing).await.unwrap();
     }
@@ -378,6 +383,7 @@ async fn test_get_listings_filtering() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     create_listing(&mut *tx, &listing1).await.unwrap();
 
@@ -410,6 +416,7 @@ async fn test_get_listings_filtering() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     create_listing(&mut *tx, &listing2).await.unwrap();
 
@@ -442,6 +449,7 @@ async fn test_get_listings_filtering() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     create_listing(&mut *tx, &listing3).await.unwrap();
 
@@ -550,6 +558,7 @@ async fn test_update_listing_image_to_processing() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
 
@@ -610,6 +619,7 @@ async fn test_delete_listing_image_promotes_next_primary() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = create_listing(&mut *tx, &listing).await.unwrap();
     let images: Vec<_> = (0..2)
@@ -752,6 +762,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     create_listing(&mut *tx, &l1).await.unwrap();
 
@@ -784,6 +795,7 @@ async fn test_get_listings_owner_exact_email_filtering() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     create_listing(&mut *tx, &l2).await.unwrap();
 
@@ -922,6 +934,7 @@ async fn test_create_and_update_listing_with_fees() {
         guests_included: Some(2),
         extra_guest_fee: Some(dec!(25.00)),
         is_active: true,
+        location_privacy: None,
     };
 
     let created = create_listing(&mut *tx, &new_listing).await.unwrap();
@@ -959,6 +972,7 @@ async fn test_create_and_update_listing_with_fees() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_no_fees = create_listing(&mut *tx, &no_fees_listing).await.unwrap();
     assert_eq!(created_no_fees.cleaning_fee, dec!(0.00));
@@ -1029,6 +1043,7 @@ mod search_filter_tests {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         };
         create_listing(&mut *conn, &listing).await.unwrap().id
     }
@@ -1390,6 +1405,7 @@ mod text_search_tests {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         };
         create_listing(&mut *conn, &new_listing).await.unwrap().id
     }
@@ -1506,6 +1522,7 @@ mod batched_override_tests {
                 guests_included: None,
                 extra_guest_fee: None,
                 is_active: true,
+                location_privacy: None,
             };
             ids.push(create_listing(&mut *conn, &listing).await.unwrap().id);
         }

@@ -551,6 +551,7 @@ async fn test_get_booking_documents_and_authorization() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
@@ -915,6 +916,7 @@ async fn test_booking_date_change_api() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
@@ -1536,6 +1538,7 @@ async fn test_complete_stays_cron() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
@@ -1950,6 +1953,7 @@ async fn test_unavailable_ranges_endpoint() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
@@ -2217,6 +2221,7 @@ async fn test_create_booking_currency_policy_and_hold_expiry() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
@@ -2434,6 +2439,7 @@ async fn test_confirmation_code_collision_is_detected() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
@@ -2571,6 +2577,7 @@ mod gap_change_tests {
                 guests_included: None,
                 extra_guest_fee: None,
                 is_active: true,
+                location_privacy: None,
             },
         )
         .await

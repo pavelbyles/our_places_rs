@@ -12,6 +12,7 @@ env:
   CARGO_TERM_COLOR: always
   GCS_PUBLIC_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_PUBLIC_PREFIX }}
   GCS_RAW_BUCKET_PREFIX: ${{ vars.INFRA_GCS_BUCKET_RAW_PREFIX }}
+  GCS_MAP_TILES_BUCKET_PREFIX: ${{ vars.INFRA_GCS_MAP_TILES_BUCKET_PREFIX }}
 
 on:
   push:
@@ -220,13 +221,121 @@ jobs:
         run: cargo test --locked -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose
 
   # =========================================================
+  # BUILD MAP TILES (spec 103 §1.10)
+  # Downloads a CLI, npm packages and upstream map data, so it runs with
+  # no GCP auth and no secrets. "Upload Map Tiles" in the setup job
+  # publishes the artifact.
+  # =========================================================
+  build-map-tiles:
+    name: Build Map Tiles
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # The workflow-level value comes from a secret; this job needs none.
+      PROJECT_ID: ""
+      TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      MAP_TILES_VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+    outputs:
+      needed: ${{ steps.check.outputs.needed }}
+      mode: ${{ steps.check.outputs.mode }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check Published Tiles
+        id: check
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAP_TILES_VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps stay off."
+            { echo "needed=false"; echo "mode=none"; echo "version="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$MAP_TILES_VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::MAP_TILES_VERSION_${TILES_ENV^^} must be 8 digits (YYYYMMDD), got '$MAP_TILES_VERSION'."
+            exit 1
+          fi
+          if [ -z "${GCS_MAP_TILES_BUCKET_PREFIX:-}" ]; then
+            echo "::error::Variable INFRA_GCS_MAP_TILES_BUCKET_PREFIX is not set."
+            exit 1
+          fi
+          echo "version=$MAP_TILES_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Anonymous reads (the bucket is public); the query string and
+          # no-cache header keep a cached 404 or 200 from deciding.
+          ready_status() {
+            curl -s -o /dev/null -w '%{http_code}' -H 'Cache-Control: no-cache' \
+              "https://storage.googleapis.com/${GCS_MAP_TILES_BUCKET_PREFIX}-$1/v${MAP_TILES_VERSION}/_READY?t=${RUN_ID}"
+          }
+
+          status=$(ready_status "$TILES_ENV")
+          echo "_READY in -${TILES_ENV}/v${MAP_TILES_VERSION}: HTTP $status"
+          if [ "$status" = "200" ]; then
+            { echo "needed=false"; echo "mode=none"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$status" != "404" ]; then
+            echo "::error::Unexpected HTTP $status checking _READY."
+            exit 1
+          fi
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+          # Prod copies a verified dev folder rather than rebuilding: the
+          # upstream daily build may have expired by then.
+          if [ "$TILES_ENV" = "prod" ] && [ "$(ready_status dev)" = "200" ]; then
+            echo "mode=copy-from-dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=build" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.mode == 'build'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Build Map Tiles
+        if: steps.check.outputs.mode == 'build'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/map-tiles"
+          mkdir -p "$OUT"
+          scripts/build_map_tiles.sh "$VERSION" \
+            "https://storage.googleapis.com/${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}/v${VERSION}" "$OUT"
+
+      - name: Upload Map Tiles Artifact
+        if: steps.check.outputs.mode == 'build'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: map-tiles
+          path: ${{ runner.temp }}/map-tiles
+          if-no-files-found: error
+          retention-days: 1
+          # .pmtiles is already compressed.
+          compression-level: 0
+
+  # =========================================================
   # SETUP GCS BUCKETS
   # =========================================================
   setup-gcs-image-gcs-items:
     name: Setup GCS Buckets
     runs-on: ubuntu-latest
-    needs: [audit, lint-check, test-api, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.image_worker == 'true' || needs.changes.outputs.backend == 'true')
+    needs: [audit, lint-check, test-api, changes, build-map-tiles]
+    # A failed tile build mustn't block the buckets or the image worker, so
+    # build-map-tiles is the one need allowed to fail (the portals then run
+    # with maps off). Unpublished tiles also bring this job up on their own.
+    if: >-
+      !cancelled()
+      && needs.audit.result == 'success' && needs.lint-check.result == 'success'
+      && needs.test-api.result == 'success' && needs.changes.result == 'success'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+          || needs.changes.outputs.image_worker == 'true' || needs.changes.outputs.backend == 'true'
+          || needs.build-map-tiles.outputs.needed == 'true')
     env:
       SA_IMAGE_WORKER: ${{ vars[format('INFRA_SA_IMAGE_WORKER_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SA_LISTING_API: ${{ vars[format('INFRA_SA_LISTING_API_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -330,6 +439,69 @@ jobs:
             --member="serviceAccount:$SA_EMAIL" \
             --role="roles/iam.serviceAccountTokenCreator" \
             --quiet
+
+      # Map tiles (#103, spec §1.10). One bucket per environment, not per
+      # branch: every non-main branch shares -dev, and main uses -prod. It holds
+      # only public, versioned map data, so anyone may read it and CORS allows
+      # GET/HEAD from any origin. The settings are applied again on every run so
+      # they can't drift.
+      - name: Create Map Tiles Bucket
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GCS_MAP_TILES_BUCKET_PREFIX:-}" ]; then
+            echo "::error::Variable INFRA_GCS_MAP_TILES_BUCKET_PREFIX is not set."
+            exit 1
+          fi
+          TILES_BUCKET="gs://${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+
+          echo "Checking if map tiles bucket $TILES_BUCKET exists..."
+          if ! gcloud storage buckets describe "$TILES_BUCKET" >/dev/null 2>&1; then
+            echo "Creating map tiles bucket..."
+            gcloud storage buckets create "$TILES_BUCKET" \
+              --location=us-east1 \
+              --default-storage-class=STANDARD \
+              --uniform-bucket-level-access \
+              --soft-delete-duration=0
+          else
+            echo "Map tiles bucket already exists."
+          fi
+
+          echo "Making map tiles bucket readable by allUsers..."
+          gcloud storage buckets update "$TILES_BUCKET" --no-public-access-prevention
+          gcloud storage buckets add-iam-policy-binding "$TILES_BUCKET" \
+            --member="allUsers" \
+            --role="roles/storage.objectViewer"
+
+          echo "Applying CORS (GET/HEAD from any origin; range reads by the map)..."
+          jq -n '[{origin: ["*"], method: ["GET", "HEAD"], responseHeader: ["Content-Range", "Content-Length", "ETag", "Accept-Ranges"], maxAgeSeconds: 86400}]' > map-tiles-cors.json
+          cat map-tiles-cors.json
+          gcloud storage buckets update "$TILES_BUCKET" --cors-file=map-tiles-cors.json
+
+      # Only this run's artifact, never one fetched by run-id.
+      - name: Download Map Tiles Artifact
+        if: needs.build-map-tiles.result == 'success' && needs.build-map-tiles.outputs.mode == 'build'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: map-tiles
+          path: ${{ runner.temp }}/map-tiles
+
+      - name: Upload Map Tiles
+        if: needs.build-map-tiles.result == 'success' && needs.build-map-tiles.outputs.needed == 'true'
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          MODE: ${{ needs.build-map-tiles.outputs.mode }}
+          VERSION: ${{ needs.build-map-tiles.outputs.version }}
+        run: |
+          set -euo pipefail
+          TILES_BUCKET="${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+          if [ "$MODE" = "copy-from-dev" ]; then
+            DEV_BUCKET="${GCS_MAP_TILES_BUCKET_PREFIX}-dev" \
+              scripts/upload_map_tiles.sh "$TILES_BUCKET" "$VERSION" --copy-from-dev
+          else
+            scripts/upload_map_tiles.sh "$TILES_BUCKET" "$VERSION" "$RUNNER_TEMP/map-tiles"
+          fi
 
       - name: Create PubSub Topic
         run: |
@@ -673,6 +845,8 @@ jobs:
       TAJ_SUPPLIER_ADDRESS: ${{ vars[format('TAJ_SUPPLIER_ADDRESS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_ADDRESS || 'Main Street, Ocho Rios, St. Ann, Jamaica' }}
       CRON_SECRET: ${{ secrets[format('CRON_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || secrets.CRON_SECRET || 'dev-cron-secret' }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Map view (#103, spec §1.4): fixes each approximate listing's offset. listing_api only.
+      LOCATION_OFFSET_KEY: ${{ secrets[format('LOCATION_OFFSET_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SYSTEM_ADMIN_PASSWORD: ${{ secrets[format('SYSTEM_ADMIN_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
@@ -726,6 +900,13 @@ jobs:
         run: |
           if [ -z "$JWT_SECRET" ]; then
             echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set. The APIs would fall back to a public default and the portals refuse to start without it."
+            exit 1
+          fi
+
+      - name: Require Location Offset Key
+        run: |
+          if [ -z "$LOCATION_OFFSET_KEY" ]; then
+            echo "::error::Secret LOCATION_OFFSET_KEY_${{ env.ENV_SUFFIX }} is not set. listing_api refuses to start without it, and it must never change once set (docs/ENVIRONMENT.md)."
             exit 1
           fi
 
@@ -904,6 +1085,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             JWT_SECRET=${{ env.JWT_SECRET }}
+            LOCATION_OFFSET_KEY=${{ env.LOCATION_OFFSET_KEY }}
             EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
             EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false
@@ -1071,8 +1253,17 @@ jobs:
   deploy-web-ui-guest:
     name: Build & Deploy Web UI Guest
     runs-on: ubuntu-latest
-    needs: [deploy-api, test-web-ui, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.web_ui_guest == 'true')
+    needs: [deploy-api, test-web-ui, changes, setup-gcs-image-gcs-items, build-map-tiles]
+    # The setup job may be skipped (portal-only push); a failed setup or tile
+    # build blocks the deploy (spec 103 §1.10). Wrapped in ${{ }} because a
+    # bare `!` starts a YAML tag.
+    if: >-
+      ${{ !cancelled()
+      && needs.deploy-api.result == 'success' && needs.test-web-ui.result == 'success'
+      && needs.changes.result == 'success'
+      && needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.web_ui_guest == 'true') }}
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -1104,6 +1295,39 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # MAP_TILES_BASE_URL only for the configured version, only when its
+      # _READY exists and the .pmtiles crc32c matches it; otherwise empty
+      # (maps off). There is no fallback to an older version.
+      - name: Resolve Map Tiles
+        id: map_tiles
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+        run: |
+          set -euo pipefail
+          url=""
+          if [ -z "${VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps are off."
+          elif ! [[ "$VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::warning::MAP_TILES_VERSION_${TILES_ENV^^} is not 8 digits; maps are off."
+          else
+            bucket="${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+            prefix="gs://${bucket}/v${VERSION}"
+            if ready=$(gcloud storage cat "$prefix/_READY" 2>/dev/null); then
+              want=$(jq -r '.pmtiles_crc32c // empty' <<<"$ready")
+              have=$(gcloud storage objects describe "$prefix/jamaica.pmtiles" --format='value(crc32c_hash)' 2>/dev/null || true)
+              if [ -n "$want" ] && [ "$want" = "$have" ]; then
+                url="https://storage.googleapis.com/${bucket}/v${VERSION}"
+              else
+                echo "::warning::$prefix/jamaica.pmtiles crc32c '$have' doesn't match _READY '$want'; maps are off."
+              fi
+            else
+              echo "::warning::$prefix/_READY is missing; maps are off."
+            fi
+          fi
+          echo "Map tiles: ${url:-off}"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Configure Docker
         env:
@@ -1185,6 +1409,7 @@ jobs:
             LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
+            MAP_TILES_BASE_URL=${{ steps.map_tiles.outputs.url }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
 
       - name: Show Deployed URL for the Web UI Guest
@@ -1196,8 +1421,17 @@ jobs:
   deploy-web-ui-admin:
     name: Build & Deploy Web UI Admin
     runs-on: ubuntu-latest
-    needs: [deploy-api, test-web-ui, changes]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.web_ui_admin == 'true')
+    needs: [deploy-api, test-web-ui, changes, setup-gcs-image-gcs-items, build-map-tiles]
+    # The setup job may be skipped (portal-only push); a failed setup or tile
+    # build blocks the deploy (spec 103 §1.10). Wrapped in ${{ }} because a
+    # bare `!` starts a YAML tag.
+    if: >-
+      ${{ !cancelled()
+      && needs.deploy-api.result == 'success' && needs.test-web-ui.result == 'success'
+      && needs.changes.result == 'success'
+      && needs.setup-gcs-image-gcs-items.result != 'failure' && needs.build-map-tiles.result != 'failure'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || needs.changes.outputs.web_ui_admin == 'true') }}
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
@@ -1229,6 +1463,39 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # MAP_TILES_BASE_URL only for the configured version, only when its
+      # _READY exists and the .pmtiles crc32c matches it; otherwise empty
+      # (maps off). There is no fallback to an older version.
+      - name: Resolve Map Tiles
+        id: map_tiles
+        env:
+          TILES_ENV: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          VERSION: ${{ github.ref == 'refs/heads/main' && vars.MAP_TILES_VERSION_PROD || vars.MAP_TILES_VERSION_DEV }}
+        run: |
+          set -euo pipefail
+          url=""
+          if [ -z "${VERSION:-}" ]; then
+            echo "::notice::MAP_TILES_VERSION_${TILES_ENV^^} is not set; maps are off."
+          elif ! [[ "$VERSION" =~ ^[0-9]{8}$ ]]; then
+            echo "::warning::MAP_TILES_VERSION_${TILES_ENV^^} is not 8 digits; maps are off."
+          else
+            bucket="${GCS_MAP_TILES_BUCKET_PREFIX}-${TILES_ENV}"
+            prefix="gs://${bucket}/v${VERSION}"
+            if ready=$(gcloud storage cat "$prefix/_READY" 2>/dev/null); then
+              want=$(jq -r '.pmtiles_crc32c // empty' <<<"$ready")
+              have=$(gcloud storage objects describe "$prefix/jamaica.pmtiles" --format='value(crc32c_hash)' 2>/dev/null || true)
+              if [ -n "$want" ] && [ "$want" = "$have" ]; then
+                url="https://storage.googleapis.com/${bucket}/v${VERSION}"
+              else
+                echo "::warning::$prefix/jamaica.pmtiles crc32c '$have' doesn't match _READY '$want'; maps are off."
+              fi
+            else
+              echo "::warning::$prefix/_READY is missing; maps are off."
+            fi
+          fi
+          echo "Map tiles: ${url:-off}"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Configure Docker
         env:
@@ -1310,6 +1577,7 @@ jobs:
             LISTING_API_AUDIENCE=${{ needs.deploy-api.outputs.listing_url }}
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
+            MAP_TILES_BASE_URL=${{ steps.map_tiles.outputs.url }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
 
       # The admin portal uploads listing photos from the browser straight to

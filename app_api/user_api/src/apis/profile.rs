@@ -230,6 +230,8 @@ pub(super) async fn get_user_listings(
         .await
         .map_err(ApiError::Database)?;
 
+    // No coordinates here, ever (spec 103 §1.2): this route has no offset key
+    // and needs no location, so it never opts in to public or stored points.
     let response: Vec<ListingResponse> =
         listings.into_iter().map(map_listing_to_response).collect();
 

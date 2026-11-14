@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.id, l.latitude AS \"latitude!\", l.longitude AS \"longitude!\"\n        FROM booking b\n        JOIN listing l ON l.id = b.listing_id\n        WHERE b.id = ANY($1)\n          AND b.status IN ('confirmed', 'completed')\n          AND l.latitude IS NOT NULL\n          AND l.longitude IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "latitude!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "longitude!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "99484a83fb152cf8709a69867017a7d5f2ba5db18c0990a8abff1e5e5a85a111"
+}

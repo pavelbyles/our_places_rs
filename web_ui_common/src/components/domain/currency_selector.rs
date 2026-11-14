@@ -14,7 +14,7 @@ use topcoat::{
 pub const CURRENCY_COOKIE: &str = "op_currency";
 
 /// The search values a currency link keeps. Nothing else in the URL carries over.
-const KEPT_SEARCH_PARAMS: [&str; 5] = ["q", "host", "check_in", "check_out", "guests"];
+const KEPT_SEARCH_PARAMS: [&str; 6] = ["q", "host", "check_in", "check_out", "guests", "view"];
 
 /// The search in a query string, as `key=value` pairs still encoded as they
 /// arrived, so nothing needs decoding and encoding again. Empty values are left out.
@@ -286,14 +286,15 @@ mod currency_menu_search_tests {
     fn keeps_the_search_and_drops_everything_else() {
         assert_eq!(
             search_params_from_query(
-                "q=Runaway%20Bay&currency=USD&check_in=2030-08-01&check_out=2030-08-04&guests=2&host=sea&new_booking=true&page=3"
+                "q=Runaway%20Bay&currency=USD&check_in=2030-08-01&check_out=2030-08-04&guests=2&host=sea&new_booking=true&page=3&view=map"
             ),
             [
                 "q=Runaway%20Bay",
                 "check_in=2030-08-01",
                 "check_out=2030-08-04",
                 "guests=2",
-                "host=sea"
+                "host=sea",
+                "view=map"
             ]
         );
     }

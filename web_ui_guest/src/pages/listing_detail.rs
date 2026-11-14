@@ -4,7 +4,8 @@ use common::listing_details::{
     CuratedTestimonial, Ribbon, ServiceAddon, StructuredListingDetails, SuiteItem,
     amenity_groups_for, drive_time,
 };
-use common::models::{ListingDetails, ListingImageResponse, ReviewResponse};
+use common::location::LocationPrecision;
+use common::models::{ListingDetails, ListingImageResponse, ListingResponse, ReviewResponse};
 use common::query::urlencode;
 use serde::Deserialize;
 use topcoat::{
@@ -24,10 +25,12 @@ use web_ui_common::components::{
     },
     highlights_ribbon::highlights_ribbon,
     listing_hero::listing_hero,
+    map::{MapKind, MapPoint, map_container},
     section_nav::{PILL, PILL_SM, section_nav},
     star_rating::star_rating,
     suite_card::suites_grid,
 };
+use web_ui_common::map_config::map_config;
 
 use crate::quote::{NoQuote, public_quote};
 use crate::support::{display_currency, guests_or_default, jamaica_today};
@@ -355,6 +358,61 @@ fn photo_alt(listing_name: &str, index: usize, name: Option<&str>) -> String {
     )
 }
 
+/// The listing's public point for the map (spec 103 §1.7). Coordinates
+/// outside the mapped area are logged, without the coordinates: the host
+/// entered something the map can't show.
+fn listing_map_point(listing: &ListingResponse) -> Option<MapPoint> {
+    let point = MapPoint::of_listing(listing);
+    if point.is_none() && listing.latitude.is_some() && listing.longitude.is_some() {
+        tracing::warn!(listing_id = %listing.id, "listing coordinates are outside the mapped area");
+    }
+    point
+}
+
+/// The line under the location heading.
+fn location_note(point: Option<&MapPoint>) -> &'static str {
+    match point.map(|p| p.precision) {
+        Some(LocationPrecision::Exact) => "Exact location shown.",
+        _ => "The exact address is shared after you book.",
+    }
+}
+
+/// The map box of `#location`: the map when there is a point and maps are on,
+/// the decorative placeholder when maps are off, and "Location not mapped"
+/// when there is no point. All three keep the same `min-h-56` box.
+#[component]
+async fn location_map(cx: &Cx, point: Option<MapPoint>) -> Result<impl View> {
+    const BOX: &str = "relative min-h-56 overflow-hidden rounded-[var(--radius-media,12px)]";
+    let maps_on = map_config(cx).is_some();
+    Ok(view! {
+        if let Some(point) = point {
+            if maps_on {
+                map_container(
+                    kind: MapKind::Listing,
+                    point: Some(point),
+                    label: Some("Map of the listing's area".to_string()),
+                    attrs: attributes! { class="min-h-56 h-full" }
+                )
+            } else {
+                <div aria-hidden="true" class=(format!("{BOX} bg-linear-to-br from-chip to-photo-placeholder"))>
+                    <span
+                        class="absolute top-1/2 left-1/2 size-14 -translate-1/2 rounded-full bg-primary/20"
+                    ></span>
+                    <span
+                        class="absolute top-1/2 left-1/2 size-3.5 -translate-1/2 rounded-full bg-primary ring-4 ring-card"
+                    ></span>
+                </div>
+            }
+        } else {
+            <div class=(format!("{BOX} grid place-items-center bg-muted"))>
+                <p data-testid="location-not-mapped" class="text-sm text-muted-foreground">
+                    "Location not mapped"
+                </p>
+            </div>
+        }
+    })
+}
+
 /// Which optional sections the page shows.
 #[derive(Default)]
 struct Sections {
@@ -520,10 +578,11 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         .take(GUESTBOOK_SHOWN)
         .cloned()
         .collect();
+    let map_point = listing_map_point(&details.listing);
     let links = section_links(&Sections {
         services: !services.is_empty(),
         policies: !policies.is_empty(),
-        location: !nearby.is_empty(),
+        location: !nearby.is_empty() || map_point.is_some(),
         suites: !suites.is_empty(),
         reviews: !reviews.is_empty() || !guestbook.is_empty(),
         photos: !images.is_empty(),
@@ -846,7 +905,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                             }
                         </section>
                     }
-                    if !nearby.is_empty() {
+                    if !nearby.is_empty() || map_point.is_some() {
                         <section
                             id="location"
                             aria-labelledby="location-heading"
@@ -865,29 +924,21 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                                     (summary.location())
                                 </h2>
                                 <p class="text-sm text-muted-foreground">
-                                    "The exact address is shared after you book."
+                                    (location_note(map_point.as_ref()))
                                 </p>
                             </div>
                             <div class="grid gap-6 md:grid-cols-[1.2fr_1fr]">
-                                <div
-                                    aria-hidden="true"
-                                    class="relative min-h-56 overflow-hidden rounded-[var(--radius-media,12px)] bg-linear-to-br from-chip to-photo-placeholder"
-                                >
-                                    <span
-                                        class="absolute top-1/2 left-1/2 size-14 -translate-1/2 rounded-full bg-primary/20"
-                                    ></span>
-                                    <span
-                                        class="absolute top-1/2 left-1/2 size-3.5 -translate-1/2 rounded-full bg-primary ring-4 ring-card"
-                                    ></span>
-                                </div>
-                                <ul data-testid="drive-times" class="divide-y divide-divider text-sm">
-                                    for (name, time) in nearby {
-                                        <li class="flex justify-between gap-3 py-3">
-                                            <span>(name)</span>
-                                            <span class="shrink-0 font-medium tabular-nums">(time)</span>
-                                        </li>
-                                    }
-                                </ul>
+                                location_map(point: map_point)
+                                if !nearby.is_empty() {
+                                    <ul data-testid="drive-times" class="divide-y divide-divider text-sm">
+                                        for (name, time) in nearby {
+                                            <li class="flex justify-between gap-3 py-3">
+                                                <span>(name)</span>
+                                                <span class="shrink-0 font-medium tabular-nums">(time)</span>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
                             </div>
                         </section>
                     }
@@ -1483,5 +1534,163 @@ mod tests {
                 assert!(sizes.ends_with("100vw"), "{count}: {tile} -> {sizes}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod listing_map_tests {
+    //! Spec 103 §1.7: the listing page map.
+    use super::{ListingResponse, listing_map_point, location_map, location_note};
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    use topcoat::context::Cx;
+    use topcoat::view::{View, ViewExt, view};
+    use uuid::Uuid;
+    use web_ui_common::map_config::testing::maps_on;
+
+    fn listing(coords: Option<(f64, f64)>, precision: Option<&str>) -> ListingResponse {
+        let response: Result<ListingResponse, _> = serde_json::from_value(serde_json::json!({
+            "id": Uuid::now_v7(),
+            "user_id": Uuid::now_v7(),
+            "name": "Sea Grape",
+            "listing_structure": "Villa",
+            "country": "Jamaica",
+            "price_per_night": "650",
+            "is_active": true,
+            "added_at": "2030-01-01T00:00:00Z",
+            "max_guests": 4,
+            "bedrooms": 2,
+            "beds": 2,
+            "full_bathrooms": 2,
+            "half_bathrooms": 0,
+            "slug": "sea-grape",
+            "base_currency": "USD",
+            "minimum_stay": 1,
+            "days_between_bookings": 0,
+            "guests_included": 1,
+            "latitude": coords.map(|c| c.0),
+            "longitude": coords.map(|c| c.1),
+            "location_precision": precision,
+        }));
+        match response {
+            Ok(listing) => listing,
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    async fn html(v: impl View, cx: &Cx) -> String {
+        match v.first().await {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    async fn render(listing: &ListingResponse, cx: &Cx) -> (String, &'static str) {
+        let point = listing_map_point(listing);
+        let note = location_note(point.as_ref());
+        (html(view! { location_map(point: point) }, cx).await, note)
+    }
+
+    #[derive(Clone, Default)]
+    struct Logged(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Logged {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if let Ok(mut lines) = self.0.lock() {
+                lines.extend_from_slice(buf);
+            }
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Logged {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn approximate_shows_the_public_point_and_the_after_you_book_copy() {
+        let cx = &maps_on();
+        let (out, note) = render(
+            &listing(Some((18.40741, -77.10313)), Some("approximate")),
+            cx,
+        )
+        .await;
+        for expected in [
+            r#"data-map="listing""#,
+            r#"data-lat="18.40741""#,
+            r#"data-lng="-77.10313""#,
+            r#"data-precision="approximate""#,
+        ] {
+            assert!(out.contains(expected), "missing {expected}: {out}");
+        }
+        assert_eq!(note, "The exact address is shared after you book.");
+    }
+
+    #[tokio::test]
+    async fn exact_shows_a_pin_and_says_so() {
+        let cx = &maps_on();
+        let (out, note) = render(&listing(Some((18.4, -77.1)), Some("exact")), cx).await;
+        assert!(out.contains(r#"data-precision="exact""#), "{out}");
+        assert_eq!(note, "Exact location shown.");
+    }
+
+    #[tokio::test]
+    async fn unknown_precision_is_never_shown_as_exact() {
+        let cx = &maps_on();
+        let (out, note) = render(&listing(Some((18.4, -77.1)), None), cx).await;
+        assert!(out.contains(r#"data-precision="approximate""#), "{out}");
+        assert_eq!(note, "The exact address is shared after you book.");
+    }
+
+    #[tokio::test]
+    async fn no_coordinates_means_not_mapped_and_no_map() {
+        let cx = &maps_on();
+        let (out, _) = render(&listing(None, None), cx).await;
+        assert!(out.contains("Location not mapped"), "{out}");
+        assert!(!out.contains("data-map"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn out_of_bounds_is_not_mapped_and_logged_with_the_listing_id() {
+        let cx = &maps_on();
+        let far = listing(Some((40.7128, -74.006)), Some("exact"));
+        let logs = Logged::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(logs.clone())
+            .finish();
+        let point = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            listing_map_point(&far)
+        });
+        assert_eq!(point, None);
+        let text = match logs.0.lock() {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Err(e) => panic!("{e}"),
+        };
+        assert!(text.contains("WARN"), "{text}");
+        assert!(text.contains(&far.id.to_string()), "{text}");
+        assert!(
+            !text.contains("40.71"),
+            "coordinates must not be logged: {text}"
+        );
+        let (out, _) = render(&far, cx).await;
+        assert!(out.contains("Location not mapped"), "{out}");
+        assert!(!out.contains("data-map"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn without_map_config_no_map_but_the_box_stays() {
+        let cx = &Cx::default();
+        let (out, note) = render(&listing(Some((18.4, -77.1)), Some("approximate")), cx).await;
+        assert!(!out.contains("data-map"), "{out}");
+        assert!(out.contains("min-h-56"), "{out}");
+        assert_eq!(note, "The exact address is shared after you book.");
     }
 }

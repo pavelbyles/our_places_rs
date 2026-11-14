@@ -14,6 +14,8 @@ pub mod hero;
 pub mod highlights_ribbon;
 /// Listing page full-bleed hero.
 pub mod listing_hero;
+/// Lazily loaded map container (spec 103).
+pub mod map;
 /// Header controls (theme toggle).
 pub mod navbar;
 /// Listing page sticky in-page nav and pill link styles.

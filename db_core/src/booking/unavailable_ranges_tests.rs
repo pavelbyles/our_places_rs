@@ -77,6 +77,7 @@ pub(super) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     crate::listing::create_listing(pool, &new_listing)
         .await

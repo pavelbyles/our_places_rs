@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { TEST_USERS, passwordHash } from '../fixtures/test-data.js';
+import { KNOWN_LOCATION, TEST_USERS, passwordHash } from '../fixtures/test-data.js';
 
 /**
  * Seeds the database with essential test entities (test user, listing, image)
@@ -178,7 +178,10 @@ export async function seedTestData(): Promise<void> {
         commission_pct,
         cleaning_fee,
         damage_deposit,
-        listing_details
+        listing_details,
+        latitude,
+        longitude,
+        location_privacy
     ) VALUES (
         '018f3a5e-6b9c-7000-8000-000000000001',
         (SELECT id FROM "user" WHERE email = 'admin@ourplaces.io' LIMIT 1),
@@ -204,9 +207,15 @@ export async function seedTestData(): Promise<void> {
         0.1000,
         75.00,
         150.00,
-        '${COURTYARD_DETAILS}'::jsonb
+        '${COURTYARD_DETAILS}'::jsonb,
+        ${KNOWN_LOCATION.latitude},
+        ${KNOWN_LOCATION.longitude},
+        'approximate'
     ) ON CONFLICT (slug) DO UPDATE SET
         listing_details = EXCLUDED.listing_details,
+        latitude = EXCLUDED.latitude,
+        longitude = EXCLUDED.longitude,
+        location_privacy = EXCLUDED.location_privacy,
         price_per_night = EXCLUDED.price_per_night,
         cleaning_fee = EXCLUDED.cleaning_fee,
         damage_deposit = EXCLUDED.damage_deposit,

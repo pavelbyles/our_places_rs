@@ -314,6 +314,8 @@ mod conversation_api_tests;
 #[cfg(test)]
 mod enquiry_api_tests;
 #[cfg(test)]
+mod listing_location_api_tests;
+#[cfg(test)]
 mod past_date_tests;
 #[cfg(test)]
 mod promo_hold_tests;

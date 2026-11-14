@@ -6,13 +6,15 @@ use topcoat::{
     Result,
     context::Cx,
     router::{page, parse_query_params},
-    view::{View, component, view},
+    view::{View, attributes, class, component, view},
 };
 use web_client::{client::ListingSearchParams, get_api_client};
 use web_ui_common::components::domain::{
-    listing_card::{ListingSummary, SearchLink},
-    villa_card::villa_carousel,
+    listing_card::{ListingSummary, SearchLink, listing_card_map_attrs, map_card_template},
+    villa_card::villa_card,
 };
+use web_ui_common::components::map::{MapKind, map_container};
+use web_ui_common::map_config::map_config;
 
 use crate::support::{display_currency, jamaica_today};
 
@@ -30,6 +32,24 @@ struct SearchQuery {
     check_in: Option<String>,
     check_out: Option<String>,
     guests: Option<String>,
+    /// `map` or `list` (the default): which one phones show. Never sent to the API.
+    view: Option<String>,
+}
+
+/// Which of the list and the map phones show; from `md` both are shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResultsView {
+    List,
+    Map,
+}
+
+impl ResultsView {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Map => "map",
+        }
+    }
 }
 
 /// A value that was given, trimmed.
@@ -44,6 +64,26 @@ fn given(value: &Option<String>) -> Option<String> {
 impl SearchQuery {
     fn host(&self) -> Option<String> {
         given(&self.host).map(|h| h.to_lowercase())
+    }
+
+    /// `?view=map` shows the map on phones; anything else is the list.
+    fn view(&self) -> ResultsView {
+        match given(&self.view).as_deref() {
+            Some("map") => ResultsView::Map,
+            _ => ResultsView::List,
+        }
+    }
+
+    /// This search, shown as `view`.
+    fn view_href(&self, view: ResultsView, currency: Option<String>) -> String {
+        let pairs = [("q", given(&self.q)), ("host", self.host())]
+            .into_iter()
+            .filter_map(|(key, value)| value.map(|v| format!("{key}={}", urlencode(&v))))
+            .chain(self.link(currency).query())
+            .chain(std::iter::once(format!("view={}", view.as_str())))
+            .collect::<Vec<_>>()
+            .join("&");
+        format!("/listings?{pairs}")
     }
 
     fn has_dates(&self) -> bool {
@@ -221,7 +261,18 @@ async fn listing_search_form(
     })
 }
 
-/// What's below the form: cards, an empty state, or why there are none.
+/// Links to this search as the list and as the map.
+#[derive(Debug, Clone, PartialEq, Default)]
+struct ViewLinks {
+    list: String,
+    map: String,
+}
+
+const TOGGLE_LINK: &str = "inline-flex h-10 items-center rounded-full border border-border px-5 text-sm font-medium no-underline aria-[current=page]:bg-foreground aria-[current=page]:text-background";
+
+/// What's below the form: cards, an empty state, or why there are none. With
+/// results and maps on, the cards sit beside a sticky map (spec 103 §1.6);
+/// phones show one of the two, picked by `view`.
 #[component]
 async fn listings_results(
     cx: &Cx,
@@ -229,18 +280,92 @@ async fn listings_results(
     outcome: SearchOutcome,
     /// What to say when nothing matched.
     empty: String,
+    /// Which one phones show.
+    #[default(ResultsView::List)]
+    view: ResultsView,
+    /// The toggle's links.
+    #[default]
+    links: ViewLinks,
 ) -> Result<impl View> {
+    let maps_on = map_config(cx).is_some();
+    let on_map = maps_on && view == ResultsView::Map;
+    let list_current = (view == ResultsView::List).then_some("page");
+    let map_current = (view == ResultsView::Map).then_some("page");
     Ok(view! {
         match outcome {
             SearchOutcome::Found(listings) => {
                 if listings.is_empty() {
                     <p class="py-10 text-center text-muted-foreground">(empty)</p>
                 } else {
-                    villa_carousel(
-                        listings: listings,
-                        track_id: "listings-grid".to_string(),
-                        label: "Available villas".to_string()
-                    )
+                    <div
+                        data-results=""
+                        data-view=(view.as_str())
+                        class=(class!(
+                            "md:grid md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:gap-8" if maps_on
+                        ))
+                    >
+                        if maps_on {
+                            <nav
+                                data-view-toggle=""
+                                aria-label="Show results as"
+                                class="mb-6 flex gap-2 md:hidden"
+                            >
+                                <a
+                                    href=(links.list)
+                                    data-view-link="list"
+                                    aria-current=(list_current)
+                                    class=(TOGGLE_LINK)
+                                >
+                                    "List"
+                                </a>
+                                <a
+                                    href=(links.map)
+                                    data-view-link="map"
+                                    aria-current=(map_current)
+                                    class=(TOGGLE_LINK)
+                                >
+                                    "Map"
+                                </a>
+                            </nav>
+                        }
+                        <div
+                            id="listings-grid"
+                            data-results-list=""
+                            role="region"
+                            aria-label="Available villas"
+                            class=(class!(
+                                "grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2",
+                                "hidden md:grid" if on_map else "grid",
+                            ))
+                        >
+                            for listing in listings {
+                                <div
+                                    id=(format!("listing-card-{}", listing.slug))
+                                    (listing_card_map_attrs(cx, &listing))
+                                >
+                                    villa_card(listing: listing.clone(), fluid: true)
+                                    if maps_on {
+                                        map_card_template(listing: listing)
+                                    }
+                                </div>
+                            }
+                        </div>
+                        if maps_on {
+                            <div
+                                data-results-map=""
+                                class=(class!(
+                                    "md:sticky md:top-24 md:block md:h-[calc(100dvh-7rem)]",
+                                    "hidden" if !on_map,
+                                ))
+                            >
+                                map_container(
+                                    kind: MapKind::Search,
+                                    label: Some("Map of the results".to_string()),
+                                    attrs: attributes! { class="h-[70dvh] md:h-full" }
+                                )
+                            </div>
+                        }
+                    </div>
                 }
             }
             SearchOutcome::Refused(message) => {
@@ -313,6 +438,11 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
     let summary = stays_line(&outcome);
     let empty = empty_message(&query).to_string();
     let all_listings = query.all_listings_href(currency.clone());
+    let view = query.view();
+    let links = ViewLinks {
+        list: query.view_href(ResultsView::List, currency.clone()),
+        map: query.view_href(ResultsView::Map, currency.clone()),
+    };
     let today = jamaica_today().to_string();
     Ok(view! {
         <div class="space-y-10">
@@ -341,7 +471,7 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
                 </div>
                 listing_search_form(query: query, today: today, currency: currency)
             </div>
-            listings_results(outcome: outcome, empty: empty)
+            listings_results(outcome: outcome, empty: empty, view: view, links: links)
         </div>
     })
 }
@@ -607,5 +737,221 @@ mod listings_page_tests {
         ] {
             assert!(out.contains(expected), "{expected}: {out}");
         }
+    }
+}
+
+#[cfg(test)]
+mod listings_map_layout_tests {
+    //! Spec 103 §1.6: the results grid, the sticky map and the phone toggle.
+    use super::*;
+    use topcoat::view::ViewExt;
+    use uuid::Uuid;
+    use web_ui_common::map_config::testing::maps_on;
+
+    fn parse(url_query: &str) -> SearchQuery {
+        match serde_urlencoded::from_str(url_query) {
+            Ok(query) => query,
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    fn listing(slug: &str, coords: Option<(f64, f64)>) -> ListingSummary {
+        let response: std::result::Result<ListingResponse, _> =
+            serde_json::from_value(serde_json::json!({
+                "id": Uuid::now_v7(),
+                "user_id": Uuid::now_v7(),
+                "name": "Sea Grape",
+                "listing_structure": "Villa",
+                "country": "Jamaica",
+                "price_per_night": "650",
+                "is_active": true,
+                "added_at": "2030-01-01T00:00:00Z",
+                "max_guests": 4,
+                "bedrooms": 2,
+                "beds": 2,
+                "full_bathrooms": 2,
+                "half_bathrooms": 0,
+                "slug": slug,
+                "base_currency": "USD",
+                "minimum_stay": 1,
+                "days_between_bookings": 0,
+                "guests_included": 1,
+                "latitude": coords.map(|c| c.0),
+                "longitude": coords.map(|c| c.1),
+                "location_precision": coords.map(|_| "approximate"),
+            }));
+        match response {
+            Ok(listing) => ListingSummary::from(&listing),
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    fn found() -> SearchOutcome {
+        SearchOutcome::Found(vec![
+            listing("sea-grape", Some((18.4, -77.1))),
+            listing("no-coords", None),
+        ])
+    }
+
+    async fn render(cx: &Cx, outcome: SearchOutcome, view: ResultsView) -> String {
+        let links = ViewLinks {
+            list: "/listings?view=list".into(),
+            map: "/listings?view=map".into(),
+        };
+        let empty = "none".to_string();
+        match view! { listings_results(outcome: outcome, empty: empty, view: view, links: links) }
+            .first()
+            .await
+        {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    /// The `class` of the element that has `marker`.
+    fn class_of<'a>(html: &'a str, marker: &str) -> &'a str {
+        let at = html
+            .find(marker)
+            .unwrap_or_else(|| panic!("no {marker}: {html}"));
+        let tag_start = html[..at].rfind('<').unwrap_or(0);
+        let tag = &html[tag_start..html[at..].find('>').map_or(html.len(), |e| at + e)];
+        let class = tag
+            .find("class=\"")
+            .unwrap_or_else(|| panic!("no class: {tag}"));
+        let rest = &tag[class + 7..];
+        &rest[..rest.find('"').unwrap_or(rest.len())]
+    }
+
+    fn classes(class: &str) -> Vec<&str> {
+        class.split_whitespace().collect()
+    }
+
+    #[test]
+    fn view_is_map_only_when_it_says_map() {
+        assert_eq!(parse("view=map").view(), ResultsView::Map);
+        assert_eq!(parse("view=%20map%20").view(), ResultsView::Map);
+        for other in ["view=list", "view=junk", "view=", "", "view=MAP"] {
+            assert_eq!(parse(other).view(), ResultsView::List, "{other}");
+        }
+    }
+
+    #[test]
+    fn view_is_never_sent_to_the_api() {
+        let params = parse("q=x&view=map").params(None);
+        // `ListingSearchParams` has no `view` field; nothing carries "map".
+        let sent = format!("{params:?}");
+        assert!(!sent.contains("view"), "{sent}");
+        assert!(!sent.contains("\"map\""), "{sent}");
+    }
+
+    #[test]
+    fn toggle_links_keep_the_search() {
+        let q = parse(
+            "q=Runaway%20Bay&host=Sea&check_in=2030-08-01&check_out=2030-08-04&guests=2&view=list",
+        );
+        let href = q.view_href(ResultsView::Map, Some("JMD".into()));
+        assert_eq!(
+            href,
+            "/listings?q=Runaway%20Bay&host=sea&check_in=2030-08-01&check_out=2030-08-04&guests=2&currency=JMD&view=map"
+        );
+        assert_eq!(
+            parse("").view_href(ResultsView::List, None),
+            "/listings?view=list"
+        );
+    }
+
+    #[test]
+    fn currency_links_keep_the_view() {
+        let back = web_ui_common::components::domain::currency_selector::return_to(
+            "/listings",
+            "q=x&view=map&currency=USD",
+        );
+        assert_eq!(back, "/listings?q=x&view=map");
+    }
+
+    #[tokio::test]
+    async fn view_map_hides_the_list_on_phones_only() {
+        let cx = &maps_on();
+        let out = render(cx, found(), ResultsView::Map).await;
+        let list = classes(class_of(&out, "data-results-list"));
+        let map = classes(class_of(&out, "data-results-map"));
+        assert!(
+            list.contains(&"hidden") && list.contains(&"md:grid"),
+            "{list:?}"
+        );
+        assert!(!list.contains(&"grid"), "{list:?}");
+        assert!(
+            !map.contains(&"hidden") && map.contains(&"md:block"),
+            "{map:?}"
+        );
+        assert!(
+            out.contains(r#"data-view-link="map" aria-current="page""#),
+            "{out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn view_list_hides_the_map_on_phones_only() {
+        let cx = &maps_on();
+        for view in [ResultsView::List, parse("view=junk").view()] {
+            let out = render(cx, found(), view).await;
+            let list = classes(class_of(&out, "data-results-list"));
+            let map = classes(class_of(&out, "data-results-map"));
+            assert!(
+                list.contains(&"grid") && !list.contains(&"hidden"),
+                "{list:?}"
+            );
+            assert!(
+                map.contains(&"hidden") && map.contains(&"md:block"),
+                "{map:?}"
+            );
+            assert!(
+                out.contains(r#"data-view-link="list" aria-current="page""#),
+                "{out}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cards_carry_their_marker_data_and_popup_template() {
+        let cx = &maps_on();
+        let out = render(cx, found(), ResultsView::List).await;
+        assert!(out.contains(r#"data-map="search""#), "{out}");
+        assert_eq!(out.matches("data-map-lat=").count(), 1, "{out}");
+        assert_eq!(out.matches("<template data-map-card=").count(), 2, "{out}");
+        assert!(out.contains(r#"id="listings-grid""#), "{out}");
+        assert!(out.contains(r#"id="listing-card-sea-grape""#), "{out}");
+    }
+
+    #[tokio::test]
+    async fn no_map_when_refused_failed_or_empty() {
+        let cx = &maps_on();
+        for outcome in [
+            SearchOutcome::Refused("no".into()),
+            SearchOutcome::Failed,
+            SearchOutcome::Found(vec![]),
+        ] {
+            let out = render(cx, outcome, ResultsView::Map).await;
+            assert!(!out.contains("data-map"), "{out}");
+            assert!(!out.contains("data-view-toggle"), "{out}");
+        }
+    }
+
+    #[tokio::test]
+    async fn no_map_toggle_or_templates_when_unconfigured() {
+        let cx = &Cx::default();
+        let out = render(cx, found(), ResultsView::Map).await;
+        assert!(
+            !out.contains(r#"data-map=""#) && !out.contains(r#"data-map="search""#),
+            "{out}"
+        );
+        assert!(!out.contains("data-view-toggle"), "{out}");
+        assert!(!out.contains("<template"), "{out}");
+        // The list shows whatever view says, since there is no map to show.
+        let list = classes(class_of(&out, "data-results-list"));
+        assert!(
+            list.contains(&"grid") && !list.contains(&"hidden"),
+            "{list:?}"
+        );
     }
 }

@@ -29,6 +29,8 @@ pub mod geocode;
 pub mod http_client;
 /// Typed sections of a listing's `listing_details` (ribbon, suites, amenity groups, policies).
 pub mod listing_details;
+/// Listing location privacy and approximate public points.
+pub mod location;
 /// Request and response types shared across services.
 pub mod models;
 /// How money amounts are shown to people.

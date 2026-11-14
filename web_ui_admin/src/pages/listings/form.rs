@@ -3,6 +3,7 @@
 use std::str::FromStr;
 
 use common::booking_request::BookingMode;
+use common::location::{ListingLocationResponse, LocationPrecision, LocationPrivacy};
 use common::models::{ListingResponse, NewListingRequest, UpdatedListingRequest};
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -20,6 +21,7 @@ use common::listing_details::{
     StaffServices, SuiteItem, TESTIMONIALS_KEY,
 };
 use web_ui_common::components::domain::currency_selector::currency_option_list;
+use web_ui_common::components::map::{MapKind, MapPoint, map_container};
 
 use super::amenity_field::{
     amenity_fields, amenity_fieldset, parse_amenity_groups, suggested_amenity_fields,
@@ -93,10 +95,33 @@ pub struct ListingFields {
     pub is_active: String,
     /// How the listing sells: `instant`, `request` or `both`.
     pub booking_mode: String,
+    /// What guests see of the location before booking: `approximate` or `exact`.
+    #[serde(default)]
+    pub location_privacy: String,
     /// Fixed-slot content fields posted as `ribbon_{n}_{part}` and similar
     /// (the form encoding has no lists, so each row has its own names).
     #[serde(flatten)]
     pub slots: BTreeMap<String, String>,
+}
+
+/// The pin picker's starting point: the form's own Latitude and Longitude,
+/// which hold the manager prefill or the values just posted (spec 103 §1.9),
+/// never a public point. `None` when either is blank or out of range; the
+/// map then shows Jamaica with no marker until the first click.
+fn picker_point(f: &ListingFields) -> Option<MapPoint> {
+    let parse = |v: &str, limit: f64| {
+        v.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|x| x.is_finite() && x.abs() <= limit)
+    };
+    parse(&f.latitude, 90.0)
+        .zip(parse(&f.longitude, 180.0))
+        .map(|(lat, lng)| MapPoint {
+            lat,
+            lng,
+            precision: LocationPrecision::Exact,
+        })
 }
 
 fn opt(v: Option<Decimal>) -> String {
@@ -129,8 +154,13 @@ impl ListingFields {
             square_meters: l.square_meters.map(|v| v.to_string()).unwrap_or_default(),
             minimum_stay: l.minimum_stay.to_string(),
             days_between_bookings: l.days_between_bookings.to_string(),
-            latitude: l.latitude.map(|v| v.to_string()).unwrap_or_default(),
-            longitude: l.longitude.map(|v| v.to_string()).unwrap_or_default(),
+            // Never from a listing response: on public paths it carries the
+            // approximate point, and saving that would replace the stored one
+            // (spec 103 §1.9). `with_location` fills these from the manager
+            // endpoint.
+            latitude: String::new(),
+            longitude: String::new(),
+            location_privacy: String::new(),
             owner_id: l.user_id.to_string(),
             is_active: if l.is_active {
                 "on".into()
@@ -146,6 +176,19 @@ impl ListingFields {
                 .chain(policies_fields(l.listing_details.as_ref()))
                 .chain(guestbook_fields(l.listing_details.as_ref()))
                 .collect(),
+        }
+    }
+
+    /// Fills the location from the manager endpoint's stored values.
+    pub fn with_location(self, location: &ListingLocationResponse) -> Self {
+        Self {
+            latitude: location.latitude.map(|v| v.to_string()).unwrap_or_default(),
+            longitude: location
+                .longitude
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            location_privacy: location.location_privacy.as_str().into(),
+            ..self
         }
     }
 
@@ -166,6 +209,7 @@ impl ListingFields {
             owner_id: owner.to_string(),
             is_active: "on".into(),
             booking_mode: BookingMode::Instant.as_str().into(),
+            location_privacy: LocationPrivacy::Approximate.as_str().into(),
             slots: suggested_amenity_fields(),
             ..Default::default()
         }
@@ -200,6 +244,7 @@ pub struct ValidListing {
     days_between_bookings: i32,
     latitude: Option<f64>,
     longitude: Option<f64>,
+    location_privacy: LocationPrivacy,
     is_active: bool,
     amenity_groups: Vec<AmenityGroup>,
     ribbon: Option<Vec<RibbonItem>>,
@@ -389,6 +434,7 @@ impl ListingFields {
             ),
             latitude: p.coord("Latitude", &self.latitude, 90.0),
             longitude: p.coord("Longitude", &self.longitude, 180.0),
+            location_privacy: parse_location_privacy(&mut p, &self.location_privacy),
             is_active: self.is_active == "on",
             amenity_groups: parse_amenity_groups(&self.slots).unwrap_or_else(|errors| {
                 p.errors.extend(errors);
@@ -436,6 +482,19 @@ impl ListingFields {
 
 /// The booking mode as posted; a blank value (the create form has no select)
 /// means instant.
+/// The location setting; blank means the default, approximate.
+fn parse_location_privacy(p: &mut Parser, value: &str) -> LocationPrivacy {
+    match value.trim() {
+        "" | "approximate" => LocationPrivacy::Approximate,
+        "exact" => LocationPrivacy::Exact,
+        _ => {
+            p.errors
+                .push("Choose how the location is shown to guests.".to_string());
+            LocationPrivacy::Approximate
+        }
+    }
+}
+
 fn parse_booking_mode(p: &mut Parser, value: &str) -> BookingMode {
     match value.trim() {
         "" => BookingMode::Instant,
@@ -541,6 +600,7 @@ impl ValidListing {
             guests_included: self.guests_included,
             extra_guest_fee: self.extra_guest_fee,
             is_active: self.is_active,
+            location_privacy: Some(self.location_privacy),
         }
     }
 
@@ -583,6 +643,7 @@ impl ValidListing {
             guests_included: Some(self.guests_included),
             extra_guest_fee: self.extra_guest_fee,
             booking_mode: Some(self.booking_mode),
+            location_privacy: Some(self.location_privacy),
         }
     }
 }
@@ -841,6 +902,41 @@ pub async fn listing_form(
                         class=(input)
                     />
                 </label>
+                <div class="md:col-span-2">
+                    map_container(
+                        kind: MapKind::Picker,
+                        point: picker_point(&f),
+                        label: Some("Pick the listing's location: click the map or drag the pin".to_string()),
+                        attrs: topcoat::view::attributes! { class="h-72" }
+                    )
+                </div>
+                <fieldset
+                    id="location-privacy"
+                    aria-describedby="location-privacy-help"
+                    class="md:col-span-2"
+                >
+                    <legend class=(label)>"Location shown to guests before booking"</legend>
+                    <div class="mt-2 flex flex-wrap gap-4 text-sm">
+                        for (value, title) in [
+                            ("approximate", "Approximate area (500 m)"),
+                            ("exact", "Exact location"),
+                        ] {
+                            <label class="inline-flex items-center gap-2">
+                                <input
+                                    type="radio"
+                                    name="location_privacy"
+                                    value=(value)
+                                    checked=(f.location_privacy == value
+                                        || (value == "approximate" && f.location_privacy.is_empty()))
+                                />
+                                (title)
+                            </label>
+                        }
+                    </div>
+                    <p id="location-privacy-help" class="mt-1 text-xs text-muted-foreground">
+                        "Switching back to Approximate can't hide a location guests have already seen."
+                    </p>
+                </fieldset>
                 if !owners.is_empty() {
                     <label class=(label)>
                         "Owner"
@@ -1092,5 +1188,108 @@ mod listing_booking_mode {
     #[test]
     fn a_listing_fills_the_form_with_its_mode() {
         assert_eq!(ListingFields::blank(Uuid::nil()).booking_mode, "instant");
+    }
+}
+
+#[cfg(test)]
+mod pin_picker_tests {
+    //! Spec 103 §1.9: the picker starts from the form's own values.
+    use super::*;
+    use topcoat::view::ViewExt;
+    use web_ui_common::map_config::testing::maps_on;
+
+    async fn render(fields: ListingFields) -> String {
+        let cx = &maps_on();
+        let v = view! {
+            listing_form(
+                action: "/listings/new".to_string(),
+                submit_label: "Save".to_string(),
+                fields: fields,
+                owners: Vec::new(),
+                can_set_commission: false,
+                errors: Vec::new()
+            )
+        };
+        match v.first().await {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    fn picker(html: &str) -> &str {
+        let at = html
+            .find(r#"data-map="picker""#)
+            .unwrap_or_else(|| panic!("no picker: {html}"));
+        let start = html[..at].rfind('<').unwrap_or(0);
+        let end = html[at..].find('>').map_or(html.len(), |e| at + e);
+        &html[start..end]
+    }
+
+    #[tokio::test]
+    async fn the_picker_starts_at_the_stored_point() {
+        let stored = ListingLocationResponse {
+            latitude: Some(18.012345),
+            longitude: Some(-76.790123),
+            location_privacy: LocationPrivacy::Approximate,
+        };
+        let fields = ListingFields::blank(Uuid::nil()).with_location(&stored);
+        let out = render(fields).await;
+        let tag = picker(&out);
+        assert!(tag.contains(r#"data-lat="18.012345""#), "{tag}");
+        assert!(tag.contains(r#"data-lng="-76.790123""#), "{tag}");
+        assert!(tag.contains(r#"data-precision="exact""#), "{tag}");
+    }
+
+    #[tokio::test]
+    async fn posted_values_win_after_a_validation_error() {
+        let fields = ListingFields {
+            latitude: "18.5".into(),
+            longitude: "-77.25".into(),
+            ..ListingFields::blank(Uuid::nil())
+        };
+        let tag = render(fields).await;
+        let tag = picker(&tag).to_string();
+        assert!(tag.contains(r#"data-lat="18.5""#), "{tag}");
+        assert!(tag.contains(r#"data-lng="-77.25""#), "{tag}");
+    }
+
+    #[tokio::test]
+    async fn an_empty_or_bad_form_has_no_starting_point() {
+        for (lat, lng) in [
+            ("", ""),
+            ("18.5", ""),
+            ("abc", "-77"),
+            ("91", "-77"),
+            ("18", "181"),
+        ] {
+            let fields = ListingFields {
+                latitude: lat.into(),
+                longitude: lng.into(),
+                ..ListingFields::blank(Uuid::nil())
+            };
+            let out = render(fields).await;
+            let tag = picker(&out);
+            assert!(!tag.contains("data-lat="), "{lat},{lng}: {tag}");
+        }
+    }
+
+    #[test]
+    fn a_listing_alone_never_fills_the_picker() {
+        // `from_listing` takes the public detail, whose point may be the
+        // approximate one; only `with_location` (the manager endpoint) fills
+        // the coordinates.
+        let listing: ListingResponse = match serde_json::from_value(serde_json::json!({
+            "id": Uuid::now_v7(), "user_id": Uuid::now_v7(), "name": "V",
+            "listing_structure": "Villa", "country": "Jamaica", "price_per_night": "1",
+            "is_active": true, "added_at": "2030-01-01T00:00:00Z", "max_guests": 1,
+            "bedrooms": 1, "beds": 1, "full_bathrooms": 1, "half_bathrooms": 0,
+            "slug": "v", "base_currency": "USD", "minimum_stay": 1,
+            "days_between_bookings": 0, "guests_included": 1,
+            "latitude": 18.01, "longitude": -76.79, "location_precision": "approximate",
+        })) {
+            Ok(l) => l,
+            Err(e) => panic!("{e}"),
+        };
+        assert_eq!(picker_point(&ListingFields::from_listing(&listing)), None);
     }
 }

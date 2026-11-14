@@ -3,7 +3,7 @@ use topcoat::{
     context::Cx,
     router::{
         content::Form,
-        error::{not_found, see_other},
+        error::{not_found, see_other, service_unavailable},
         page, path_param,
     },
     view::{View, view},
@@ -19,6 +19,18 @@ use crate::support::{service_token, staff};
 
 path_param!(id);
 
+/// The stored location for the edit form, from the manager-only endpoint
+/// (spec 103 §1.9). Never from the public detail, whose point may be the
+/// approximate one: saving that would replace the stored point.
+pub async fn edit_prefill(
+    client: &web_client::TopcoatApiClient,
+    listing_id: Uuid,
+    jwt: &str,
+) -> std::result::Result<common::location::ListingLocationResponse, web_client::client::UserCallError>
+{
+    client.get_listing_location_as(listing_id, jwt).await
+}
+
 /// The studio form for an existing listing.
 #[page("/admin/listings/{id}/edit")]
 pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
@@ -27,7 +39,14 @@ pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
     let admin = user.role == AdminRole::Admin;
-    let fields = ListingFields::from_listing(&listing);
+    let jwt = service_token(cx, &user)?;
+    let location = edit_prefill(web_client::get_api_client(cx), listing.id, &jwt)
+        .await
+        .map_err(|e| {
+            tracing::error!(listing_id = %listing.id, error = %e, "couldn't load this listing's location for editing");
+            service_unavailable(5)
+        })?;
+    let fields = ListingFields::from_listing(&listing).with_location(&location);
     let action = format!("/admin/listings/{}/edit", listing.id);
     let presign = format!("/admin/listings/{}/images/presign", listing.id);
     let photos = listing_photos(cx, listing.id).await;

@@ -214,10 +214,17 @@ pub struct ListingResponse {
     pub half_bathrooms: i32,
     /// Property size in square meters.
     pub square_meters: Option<i32>,
-    /// Geographic latitude.
+    /// Latitude: the stored value on manager paths, the public (possibly
+    /// approximate) one on public paths, or `None` (spec 103 §1.2).
     pub latitude: Option<f64>,
-    /// Geographic longitude.
+    /// Longitude, on the same terms as `latitude`.
     pub longitude: Option<f64>,
+    /// The host's location setting. Only manager paths set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_privacy: Option<crate::location::LocationPrivacy>,
+    /// How precise `latitude` and `longitude` are; `None` when they are absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_precision: Option<crate::location::LocationPrecision>,
     /// Aggregated overall star rating.
     pub overall_rating: Option<f64>,
     /// City or locality.
@@ -379,6 +386,11 @@ pub struct BookingResponse {
     /// The whole promo discount.
     #[serde(default)]
     pub promo_discount: Decimal,
+    /// The listing's stored point. Set only by the booking reads
+    /// (`GET /bookings/booking/{id}`, `GET /bookings/user/{id}`) for a
+    /// confirmed or completed booking (spec 103 §1.5); `None` everywhere else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listing_location: Option<crate::location::ListingLocation>,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last update timestamp.
@@ -820,6 +832,11 @@ pub struct NewListingRequest {
     #[schema(example = -77.7990)]
     pub longitude: Option<f64>,
 
+    /// What guests may see of the location before they book. `approximate`
+    /// if omitted.
+    #[serde(default)]
+    pub location_privacy: Option<crate::location::LocationPrivacy>,
+
     // --- NEW: Dynamic Property Definitions (JSONB) ---
     /// Amenities and other details, as JSON. Host-edited sections are
     /// checked by [`crate::listing_details::validate_listing_details`].
@@ -1018,6 +1035,10 @@ pub struct UpdatedListingRequest {
     #[serde(default)]
     #[schema(example = -77.7990)]
     pub longitude: Option<f64>,
+
+    /// Updated location privacy; absent keeps it.
+    #[serde(default)]
+    pub location_privacy: Option<crate::location::LocationPrivacy>,
 
     /// Updated city, if known.
     #[serde(default)]

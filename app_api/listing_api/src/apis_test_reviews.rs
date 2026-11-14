@@ -40,6 +40,7 @@ async fn test_reviews_endpoints() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -82,6 +83,7 @@ async fn test_reviews_endpoints() {
     // Initialize the API App
     let app = test::init_service(
         App::new()
+.app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes)
@@ -212,6 +214,7 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -248,6 +251,7 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
 
     let app = test::init_service(
         App::new()
+.app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes)

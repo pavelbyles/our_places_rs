@@ -7,7 +7,9 @@ use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
 
 /// Creates a new listing in the database.
-#[tracing::instrument(skip(executor))]
+// `skip_all`: the listing carries its coordinates, which must never reach a
+// span or log (spec 103 §1.2).
+#[tracing::instrument(skip_all, fields(user_id = %new_listing.user_id))]
 pub async fn create_listing<'e, E>(executor: E, new_listing: &NewListing) -> Result<Listing>
 where
     E: PgExecutor<'e>,
@@ -26,16 +28,16 @@ where
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             weekly_discount_percentage, monthly_discount_percentage, added_at, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, is_active
+            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, is_active, location_privacy
         )
-        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, COALESCE($27, 0.0000), COALESCE($28, 0.00), COALESCE($29, 0.00), COALESCE($30, 1), COALESCE($31, 0.00), $32
+        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, COALESCE($27, 0.0000), COALESCE($28, 0.00), COALESCE($29, 0.00), COALESCE($30, 1), COALESCE($31, 0.00), $32, COALESCE($33, 'approximate'::location_privacy)
         WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)
         RETURNING 
             id, user_id, name, description, listing_structure_id, country, price_per_night, 
             is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, 
             weekly_discount_percentage, monthly_discount_percentage, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode"
+            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy"
         "#,
         Uuid::now_v7(),                                  // $1
         new_listing.user_id,                             // $2
@@ -69,6 +71,7 @@ where
         new_listing.guests_included,                     // $30
         new_listing.extra_guest_fee,                     // $31
         new_listing.is_active,                           // $32
+        new_listing.location_privacy as Option<common::location::LocationPrivacy>, // $33
     )
     .fetch_one(executor)
     .await
@@ -82,10 +85,9 @@ where
     Ok(listing)
 }
 
-/// Updates a listing in the database.
-#[tracing::instrument(skip(pool))]
 /// Creates a listing after checking, in the same transaction, that its base
 /// currency exists and is active (`CURRENCY_NOT_FOUND` / `CURRENCY_INACTIVE`).
+#[tracing::instrument(skip_all, fields(user_id = %new_listing.user_id))]
 pub async fn create_listing_with_active_currency(
     pool: &PgPool,
     new_listing: &NewListing,
@@ -117,7 +119,7 @@ pub async fn update_listing_with_conn(
 ) -> Result<Listing> {
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode" FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy" FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -151,13 +153,13 @@ pub async fn update_listing_with_conn(
             listing_id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode
+            latitude, longitude, overall_rating, review_count, listing_details, valid_from, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode, location_privacy
         )
         SELECT 
             id, user_id, name, description, listing_structure_id, country, 
             price_per_night, is_active, weekly_discount_percentage, monthly_discount_percentage, 
             slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode
+            latitude, longitude, overall_rating, review_count, listing_details, added_at, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode, location_privacy
         FROM listing 
         WHERE id = $1
         "#,
@@ -199,9 +201,10 @@ pub async fn update_listing_with_conn(
             damage_deposit = COALESCE($25, damage_deposit),
             guests_included = COALESCE($26, guests_included),
             extra_guest_fee = COALESCE($27, extra_guest_fee),
-            booking_mode = COALESCE($28, booking_mode)
+            booking_mode = COALESCE($28, booking_mode),
+            location_privacy = COALESCE($29, location_privacy)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode"
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy"
         "#,
         id,
         updated_listing_data.name,
@@ -231,6 +234,7 @@ pub async fn update_listing_with_conn(
         updated_listing_data.guests_included,
         updated_listing_data.extra_guest_fee,
         updated_listing_data.booking_mode as Option<common::booking_request::BookingMode>,
+        updated_listing_data.location_privacy as Option<common::location::LocationPrivacy>,
     )
     .fetch_one(&mut *tx)
     .await?;

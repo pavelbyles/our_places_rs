@@ -11,6 +11,9 @@ pub mod theme;
 /// Content-Security-Policy and hardening headers for both portals.
 pub mod security_headers;
 
+/// Where the map tiles are served from (`MAP_TILES_BASE_URL`).
+pub mod map_config;
+
 /// Hashed client assets: `ui.js` and vendored htmx.
 pub mod assets;
 

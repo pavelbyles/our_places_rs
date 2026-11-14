@@ -828,6 +828,7 @@ dependencies = [
  "chrono",
  "google-cloud-auth",
  "google-cloud-storage",
+ "hmac 0.13.0",
  "http 1.5.0",
  "opentelemetry",
  "opentelemetry-http",
@@ -6391,6 +6392,8 @@ dependencies = [
 name = "web_ui_admin"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "chrono",
  "common",
  "dotenvy",
@@ -6405,6 +6408,7 @@ dependencies = [
  "uuid",
  "web_client",
  "web_ui_common",
+ "wiremock",
 ]
 
 [[package]]
@@ -6417,6 +6421,7 @@ dependencies = [
  "reqwest",
  "rust_decimal",
  "rust_decimal_macros",
+ "thiserror",
  "tokio",
  "topcoat",
  "topcoat-asset",

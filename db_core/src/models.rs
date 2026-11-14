@@ -795,6 +795,19 @@ pub struct Listing {
     pub extra_guest_fee: Decimal,
     /// How the listing sells: instantly, on request, or both.
     pub booking_mode: common::booking_request::BookingMode,
+    /// What guests may see of the location before they book.
+    pub location_privacy: common::location::LocationPrivacy,
+}
+
+/// A listing's stored location, for its managers.
+#[derive(Debug, Clone, Copy, PartialEq, FromRow)]
+pub struct ListingLocationRow {
+    /// Stored latitude.
+    pub latitude: Option<f64>,
+    /// Stored longitude.
+    pub longitude: Option<f64>,
+    /// What guests may see before they book.
+    pub location_privacy: common::location::LocationPrivacy,
 }
 
 /// A listing with its host's name, for search results.
@@ -872,6 +885,8 @@ pub struct ListingWithOwner {
     pub extra_guest_fee: Decimal,
     /// How the listing sells: instantly, on request, or both.
     pub booking_mode: common::booking_request::BookingMode,
+    /// What guests may see of the location before they book.
+    pub location_privacy: common::location::LocationPrivacy,
 }
 
 /// Fields for creating a listing.
@@ -941,6 +956,10 @@ pub struct NewListing {
     pub guests_included: Option<i32>,
     /// Optional fee per extra guest per night above `guests_included` (defaults to `0.00`).
     pub extra_guest_fee: Option<Decimal>,
+    /// What guests may see of the location before they book; `None` stores
+    /// the default, `approximate`.
+    #[serde(default)]
+    pub location_privacy: Option<common::location::LocationPrivacy>,
 }
 
 /// Changes to a listing. `None` leaves a field as it is.
@@ -1014,6 +1033,8 @@ pub struct UpdatedListing {
     /// Updated booking mode; open requests and offers carry on either way.
     #[serde(default)]
     pub booking_mode: Option<common::booking_request::BookingMode>,
+    /// Updated location privacy; `None` keeps it.
+    pub location_privacy: Option<common::location::LocationPrivacy>,
 }
 
 /// What kind of building a listing is.

@@ -39,6 +39,17 @@ async fn main() -> anyhow::Result<()> {
     // User tokens cannot be verified without it, and there is no fallback.
     api_core::auth::jwt_secret().context("Refusing to start")?;
 
+    // Approximate listings can't be served without it, and exact coordinates
+    // are never served in its place (spec 103 §1.4).
+    let location_key = actix_web::web::Data::new(
+        listing_api::location_key::load(|key| std::env::var(key).ok())
+            .map_err(|e| {
+                tracing::error!(error = %e, "location offset key refused");
+                e
+            })
+            .context("Refusing to start")?,
+    );
+
     // Calendar sync settings come from the environment only. Local-only
     // toggles stop the service on Cloud Run.
     let calendar_settings = settings::CalendarSyncSettings::from_process_env()
@@ -85,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         db_connection_pool,
         move |cfg: &mut actix_web::web::ServiceConfig| {
             cfg.app_data(calendar.clone());
+            cfg.app_data(location_key.clone());
             apis::configure_routes(cfg);
         },
         config.clone(),

@@ -109,6 +109,7 @@ pub(super) async fn fixture() -> Fixture {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await

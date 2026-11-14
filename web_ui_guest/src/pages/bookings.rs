@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 use common::cancellation::RefundQuote;
+use common::location::{ListingLocation, LocationPrecision};
 use common::models::{
     BookingResponse, ChangeInitiatorRole, ListingResponse, ReservationChangeRequestResponse,
     ReservationChangeStatus, UpdatedBookingRequest,
@@ -16,6 +17,8 @@ use topcoat::{
 use uuid::Uuid;
 use web_client::{client::ListingSearchParams, get_api_client};
 use web_ui_common::components::domain::price_breakdown::money;
+use web_ui_common::components::map::{MapKind, MapPoint, map_container};
+use web_ui_common::map_config::map_config;
 
 use crate::support::{guest, owned_booking, parse_booking_id, service_token};
 
@@ -41,6 +44,42 @@ struct BookingCard {
     listing_slug: Option<String>,
     location: String,
     pending_change: Option<ReservationChangeRequestResponse>,
+}
+
+/// The exact location of a confirmed or completed stay (spec 103 §1.8): a
+/// lazy map with a pin. The API sets `listing_location` only for those
+/// bookings; with no location, or maps off, there is no block.
+#[component]
+async fn booking_location(
+    cx: &Cx,
+    /// The booking, for the block's id.
+    booking_id: Uuid,
+    /// The listing's stored point, as the API gave it.
+    location: Option<ListingLocation>,
+) -> Result<impl View> {
+    let point = location
+        .filter(|_| map_config(cx).is_some())
+        .map(|l| MapPoint {
+            lat: l.latitude,
+            lng: l.longitude,
+            precision: LocationPrecision::Exact,
+        });
+    Ok(view! {
+        if let Some(point) = point {
+            <section
+                id=(format!("booking-location-{booking_id}"))
+                aria-label="Location"
+                class="space-y-2"
+            >
+                map_container(
+                    kind: MapKind::Booking,
+                    point: Some(point),
+                    label: Some("Map of your stay's location".to_string())
+                )
+                <p class="text-sm text-muted-foreground">"Exact location for your stay."</p>
+            </section>
+        }
+    })
 }
 
 #[component]
@@ -128,6 +167,7 @@ async fn booking_card(cx: &Cx, card: BookingCard) -> Result<impl View> {
                     ))
                 </p>
             }
+            booking_location(booking_id: b.id, location: b.listing_location)
             if is_cancelled {
                 if let Some(href) = book_again.clone() {
                     <p class="text-sm">
@@ -488,4 +528,97 @@ pub async fn cancel_booking(cx: &Cx) -> Result<()> {
         .map_err(web_client::app_error)?;
     tracing::info!(booking_id = %id, "booking cancelled by guest");
     Err(see_other("/bookings").into())
+}
+
+#[cfg(test)]
+mod bookings_location_tests {
+    //! Spec 103 §1.8: the location block on a guest's booking card.
+    use super::*;
+    use topcoat::view::ViewExt;
+    use web_ui_common::map_config::testing::maps_on;
+
+    const POINT: ListingLocation = ListingLocation {
+        latitude: 18.012345,
+        longitude: -76.790123,
+    };
+
+    fn booking(status: &str, location: Option<ListingLocation>) -> BookingResponse {
+        let parsed: std::result::Result<BookingResponse, _> = serde_json::from_value(
+            serde_json::json!({
+                "id": Uuid::now_v7(),
+                "confirmation_code": "OP-ABC123",
+                "guest_id": Uuid::now_v7(),
+                "listing_id": Uuid::now_v7(),
+                "status": status,
+                "date_from": "2030-08-01",
+                "date_to": "2030-08-04",
+                "currency": "USD",
+                "daily_rate": "200",
+                "number_of_persons": 2,
+                "total_days": 3,
+                "sub_total_price": "600",
+                "discount_value": "0",
+                "tax_value": "0",
+                "total_price": "600",
+                "cancellation_policy": "Flexible",
+                "metadata": {"num_adults": 2, "num_children": 0, "num_infants": 0, "num_pets": 0, "is_business_trip": false},
+                "listing_location": location,
+                "created_at": "2030-01-01T00:00:00Z",
+                "updated_at": "2030-01-01T00:00:00Z",
+            }),
+        );
+        match parsed {
+            Ok(b) => b,
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    async fn card(cx: &Cx, booking: BookingResponse) -> String {
+        let card = BookingCard {
+            booking,
+            listing_name: "Sea Grape".into(),
+            listing_slug: Some("sea-grape".into()),
+            location: "Ocho Rios, Jamaica".into(),
+            pending_change: None,
+        };
+        match view! { booking_card(card: card) }.first().await {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_located_booking_shows_its_exact_point() {
+        let cx = &maps_on();
+        let out = card(cx, booking("Confirmed", Some(POINT))).await;
+        for expected in [
+            r#"data-map="booking""#,
+            r#"data-lat="18.012345""#,
+            r#"data-lng="-76.790123""#,
+            r#"data-precision="exact""#,
+            "Exact location for your stay.",
+        ] {
+            assert!(out.contains(expected), "missing {expected}: {out}");
+        }
+        assert_eq!(out.matches("data-map=").count(), 1, "{out}");
+    }
+
+    #[tokio::test]
+    async fn other_cards_render_as_before() {
+        let cx = &maps_on();
+        for status in ["Pending", "Confirmed", "Completed", "Cancelled"] {
+            let out = card(cx, booking(status, None)).await;
+            assert!(!out.contains("data-map"), "{status}: {out}");
+            assert!(!out.contains("booking-location-"), "{status}: {out}");
+            assert!(!out.contains("Exact location"), "{status}: {out}");
+        }
+    }
+
+    #[tokio::test]
+    async fn maps_off_means_no_block() {
+        let cx = &Cx::default();
+        let out = card(cx, booking("Confirmed", Some(POINT))).await;
+        assert!(!out.contains("booking-location-"), "{out}");
+        assert!(!out.contains("18.012345"), "{out}");
+    }
 }
