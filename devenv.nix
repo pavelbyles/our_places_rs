@@ -14,6 +14,11 @@
   env.STORAGE_EMULATOR_HOST = "http://localhost:4443";
   env.GCS_RAW_BUCKET = "our-places-gcs-img-raw-local";
   env.GCS_PUBLIC_BUCKET = "our-places-gcs-img-public-local";
+  # Map tiles (#103), served by the same emulator. `map-tiles-seed` fills a
+  # folder and records its URL in MAP_TILES_BASE_URL_FILE, which the portals
+  # and the shell read (the folder is named after the Protomaps build date).
+  env.MAP_TILES_BUCKET = "our-places-gcs-map-tiles-local";
+  env.MAP_TILES_BASE_URL_FILE = "${config.devenv.state}/map-tiles/BASE_URL";
 
   # Calendar sync (#58), local only: listing_api and calendar_sync_job may fetch
   # feeds from the Playwright fixture server on localhost, trusting its CA
@@ -291,7 +296,7 @@
           -public-host localhost:4443 -external-url http://localhost:4443 \
           -backend filesystem -filesystem-root "$GCS_DIR/data" \
           -event.pubsub-project-id our-places-dev -event.pubsub-topic gcs-image-uploads \
-          -event.bucket "$GCS_RAW_BUCKET" -cors-headers content-type,x-goog-meta-traceparent \
+          -event.bucket "$GCS_RAW_BUCKET" -cors-headers content-type,x-goog-meta-traceparent,range \
           > /tmp/fake_gcs.log 2>&1 &
         echo $! > /tmp/fake_gcs.pid
       fi
@@ -310,6 +315,46 @@
       else
         echo "❌ Failed to start Cloud Storage emulator. Check /tmp/fake_gcs.log"
       fi
+    '';
+
+    # Map tiles (#103): builds a z12 Jamaica extract (about 3MB) with the CI
+    # script and uploads it to the emulator. Optional argument: a Protomaps
+    # build date (YYYYMMDD; default yesterday, UTC). Restart the portals
+    # afterwards (`frontends-stop`, then `frontends`) so they pick it up.
+    map-tiles-seed.exec = ''
+      set -euo pipefail
+      version="''${1:-$(date -u -d yesterday +%Y%m%d)}"
+      base="$STORAGE_EMULATOR_HOST/$MAP_TILES_BUCKET/v$version"
+      out="$DEVENV_STATE/map-tiles/v$version"
+      if ! (echo > /dev/tcp/127.0.0.1/4443) >/dev/null 2>&1; then
+        echo "❌ The Cloud Storage emulator isn't running; run gcs-start first."
+        exit 1
+      fi
+      if [ ! -f "$out/MANIFEST" ]; then
+        rm -rf "$out"
+        mkdir -p "$out"
+        "$DEVENV_ROOT/scripts/build_map_tiles.sh" --maxzoom 12 "$version" "$base" "$out"
+      fi
+      curl -s -X POST "$STORAGE_EMULATOR_HOST/storage/v1/b?project=our-places-dev" \
+        -H "Content-Type: application/json" -d "{\"name\":\"$MAP_TILES_BUCKET\"}" >/dev/null || true
+      echo "Uploading v$version to the emulator..."
+      (
+        cd "$out"
+        { cut -c67- MANIFEST; echo MANIFEST; } | while IFS= read -r path; do
+          name=$(jq -rn --arg n "v$version/$path" '$n | @uri')
+          curl -sf -X POST --data-binary "@$path" -H "Content-Type: application/octet-stream" \
+            "$STORAGE_EMULATOR_HOST/upload/storage/v1/b/$MAP_TILES_BUCKET/o?uploadType=media&name=$name" >/dev/null
+        done
+      )
+      status=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-127' "$base/jamaica.pmtiles")
+      if [ "$status" != "206" ]; then
+        echo "❌ A ranged GET returned $status, not 206."
+        exit 1
+      fi
+      mkdir -p "$(dirname "$MAP_TILES_BASE_URL_FILE")"
+      echo "$base" > "$MAP_TILES_BASE_URL_FILE"
+      echo "✓ Map tiles v$version at $base"
+      echo "  Restart the portals (frontends-stop, then frontends) to use them."
     '';
 
     gcs-stop.exec = ''
@@ -491,16 +536,25 @@
     # Guest Portal (Topcoat UI). It refuses to start without JWT_SECRET;
     # local backends fall back to "secret", so match that.
     web_ui_guest.exec = ''
+      MAP_TILES_BASE_URL="$(cat "$MAP_TILES_BASE_URL_FILE" 2>/dev/null || true)"
+      export MAP_TILES_BASE_URL
       cd web_ui_guest && PORT=3010 JWT_SECRET="''${JWT_SECRET:-secret}" CARGO_TARGET_DIR=../target/ui_guest topcoat dev
     '';
 
     # Admin Portal (Topcoat UI)
     web_ui_admin.exec = ''
+      MAP_TILES_BASE_URL="$(cat "$MAP_TILES_BASE_URL_FILE" 2>/dev/null || true)"
+      export MAP_TILES_BASE_URL
       cd web_ui_admin && PORT=3012 JWT_SECRET="''${JWT_SECRET:-secret}" CARGO_TARGET_DIR=../target/ui_admin topcoat dev
     '';
   };
 
   enterShell = ''
+    # Map tiles (#103): the folder `map-tiles-seed` last filled, if any.
+    if [ -f "$MAP_TILES_BASE_URL_FILE" ]; then
+      MAP_TILES_BASE_URL="$(cat "$MAP_TILES_BASE_URL_FILE")"
+      export MAP_TILES_BASE_URL
+    fi
     echo "🚀 Welcome to our_places_rs dev environment!"
     echo "   - Rust:       $(rustc --version)"
     echo "   - Cargo:      $(cargo --version)"
@@ -526,6 +580,7 @@
     echo "       • pubsub-stop    (stop Pub/Sub emulator)"
     echo "       • gcs-start      (start Cloud Storage emulator + create photo buckets)"
     echo "       • gcs-stop       (stop Cloud Storage emulator)"
+    echo "       • map-tiles-seed (build z12 map tiles into the emulator; then restart frontends)"
     echo "       • frontends      (launch Topcoat UI portals):"
     echo "           - web_ui_guest:     :3010 (guest)"
     echo "           - web_ui_admin:     :3012 (admin)"

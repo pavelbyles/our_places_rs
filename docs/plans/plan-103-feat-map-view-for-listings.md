@@ -432,7 +432,11 @@ T25 prod version, full gates    ← T23, T24
   - **Verification Command:** `devenv shell -- shellcheck scripts/upload_map_tiles.sh && devenv shell -- actionlint .github/workflows/cicd_full_stack.yml && gcloud storage cat gs://our-places-gcs-map-tiles-dev/v$(gh variable list --json name,value --jq '.[]|select(.name=="MAP_TILES_VERSION_DEV").value')/_READY`
   - **Dependencies:** Task 10
 
-- [ ] **Task 12: Local tiles in devenv**
+- [x] **Task 12: Local tiles in devenv**
+  - **Built:** `map-tiles-seed [YYYYMMDD]` (default: yesterday, UTC) builds z12 with the CI script into `.devenv/state/map-tiles/`, uploads it to fake-gcs with `curl` (no gcloud login needed), and requires a ranged `206`. It writes the base URL to `MAP_TILES_BASE_URL_FILE`. A version folder can't be named in static `env`, because Protomaps builds expire, so the portal processes and `enterShell` export `MAP_TILES_BASE_URL` from that file.
+  - `build_map_tiles.sh` gained `--maxzoom` and accepts the emulator base URL only when `STORAGE_EMULATOR_HOST` is set.
+  - `gcs-start` now allows the `range` request header in CORS; this applies the next time the emulator starts.
+  - Fixture: z10, 1.39MB, 16 files, at `https://storage.googleapis.com/our-places-gcs-map-tiles-test/v20261113`.
   - **Scope:** S
   - **Description:**
     - Add the devenv script `map-tiles-seed`, which runs `build_map_tiles.sh` locally with `--maxzoom=12` and uploads to `our-places-gcs-map-tiles-local` in fake-gcs-server. If T9 showed fake-gcs-server can't serve ranges, it serves the folder from a local static server that can.
@@ -442,8 +446,8 @@ T25 prod version, full gates    ← T23, T24
     - `devenv.nix`
     - `playwright/e2e/ui-js/fixtures/map/*`
   - **Acceptance Criteria:**
-    - [ ] After `gcs-start` and `map-tiles-seed`, a ranged GET against the local base URL returns `206`.
-    - [ ] The fixture is under 2MB.
+    - [x] After `gcs-start` and `map-tiles-seed`, a ranged GET against the local base URL returns `206`.
+    - [x] The fixture is under 2MB.
   - **Verification Command:** `devenv shell -- gcs-start && devenv shell -- map-tiles-seed && devenv shell -- bash -c 'curl -s -o /dev/null -w "%{http_code}" -H "Range: bytes=0-127" "$MAP_TILES_BASE_URL/jamaica.pmtiles"'` returns `206`, and `du -sb playwright/e2e/ui-js/fixtures/map` is under 2097152.
   - **Dependencies:** Task 9, Task 10
 
