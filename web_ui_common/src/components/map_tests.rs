@@ -112,3 +112,16 @@ fn kinds_match_map_js() {
     .map(MapKind::as_str);
     assert_eq!(kinds, ["search", "listing", "booking", "picker"]);
 }
+
+#[tokio::test]
+async fn says_it_needs_javascript_when_scripts_are_off() {
+    let cx = &maps_on();
+    let out = html(view! { map_container(kind: MapKind::Listing) }, cx).await;
+    let start = out
+        .find("<noscript>")
+        .unwrap_or_else(|| panic!("no noscript: {out}"));
+    let end = out
+        .find("</noscript>")
+        .unwrap_or_else(|| panic!("unclosed: {out}"));
+    assert!(out[start..end].contains("Map needs JavaScript"), "{out}");
+}

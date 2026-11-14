@@ -130,6 +130,11 @@ pub async fn map_container(
                 >
                     "Map unavailable"
                 </p>
+                <noscript>
+                    <p class="absolute inset-0 grid place-items-center text-sm text-muted-foreground">
+                        "Map needs JavaScript"
+                    </p>
+                </noscript>
             </div>
         }
     })
