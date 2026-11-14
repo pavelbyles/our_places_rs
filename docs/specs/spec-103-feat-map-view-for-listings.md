@@ -23,6 +23,8 @@ There is one map stack. MapLibre GL JS (its CSP build) is vendored as hashed ass
 1. `listing.location_privacy` is a `location_privacy` enum with the values `approximate` and `exact`. It is `NOT NULL DEFAULT 'approximate'`.
 2. The setting can be changed through create and update (`NewListingRequest` and `UpdatedListingRequest` gain `location_privacy: Option<LocationPrivacy>`). If it is left out on create, it is `approximate`. If it is left out on update, it doesn't change.
 3. An unknown value returns 400 `VALIDATION_ERROR`, with field `location_privacy`.
+4. **Coordinate input** (create and update; added at review): `latitude` and `longitude` are given both or neither, each is finite, and they lie within [−90, 90] and [−180, 180]. Anything else returns 400 `VALIDATION_ERROR`. Today a PATCH with only `latitude` keeps the old longitude through `COALESCE`, and Postgres accepts `NaN` and `Infinity`.
+5. **Echo guard** (review blocker): on update of an `approximate` listing, each incoming component (latitude and longitude separately) equal, to 5 decimal places, to that component of `approximate_point(stored)` is treated as **unchanged**: the stored point is kept and a `warn` is logged with the listing ID only. This stops a stale form, which still pre-fills from the public detail, from saving the public point as the stored one. Because the offset is fixed, a saved public point would reveal the offset and with it the real point.
 
 ### 1.2. Public Coordinates
 **Public coordinates** are what any caller without manager rights receives in `ListingResponse.latitude/longitude`:
@@ -33,22 +35,24 @@ There is one map stack. MapLibre GL JS (its CSP build) is vendored as hashed ass
 | `approximate` | set | `approximate_point(stored, key, listing_id)` (§1.3) | `"approximate"` |
 | either | latitude or longitude is null | both `null` | `null` |
 
-- `ListingResponse` gains `location_precision: Option<LocationPrecision>`. This is the setting that applied to the coordinates in the response, so a guest-facing view knows whether to draw a circle or a pin.
+- `ListingResponse` gains `location_precision: Option<LocationPrecision>`. This is the setting that applied to the coordinates in the response, so a guest-facing view knows whether to draw a circle or a pin. It also gains `location_privacy: Option<LocationPrivacy>` with `#[serde(default, skip_serializing_if = "Option::is_none")]`, which is set only on manager paths. Serde can't skip a field on some paths and not others, so this has to be an `Option`.
+- **The default is closed** (review): the `api_core` mappers produce `latitude`, `longitude`, `location_privacy` and `location_precision` as `None`. Each path opts in: the public mapper fills public coordinates, and manager paths fill stored ones through `with_stored_location`. A new path, such as #124's, shows no coordinates until someone decides which kind it should get.
 - **Public paths** that must return public coordinates: `GET /api/v1/listings` (search) and `GET /api/v1/listings/{id}` (detail).
 - **Manager paths** return the stored coordinates: the responses to `POST /api/v1/listings` and `PATCH /api/v1/listings/{id}`, and the new `GET /api/v1/listings/{id}/location` (§2.2). The caller has already passed `require_listing_manager` or `require_host_or_admin`.
 - **`user_api` `GET /api/v1/users/{email}/listings`** sets `latitude`, `longitude` and `location_precision` to `null`. It has no offset key and no portal uses it, so it gets no coordinates at all rather than a second copy of the redaction logic.
-- The rule lives in exactly one place: a `listing_api` mapper, `public_location(&mut ListingResponse, privacy, &LocationKey)`, which every public path calls.
+- The rule lives in exactly one place: a `listing_api` mapper, `public_location(&mut ListingResponse, stored, privacy, &LocationKey)`, which every public path calls. JSON and XML (`Accept: application/xml`) responses are both covered.
+- **Logs and traces**: coordinates never appear in span fields or logs. The `#[instrument]` on `db_core::listing::write::create_listing` and `create_listing_with_active_currency` currently records the whole `NewListing`, coordinates included, in its span fields. Both switch to `skip_all` with explicit non-location fields.
 
 ### 1.3. Approximation
 The function is pure and lives in `common::location::approximate_point(lat, lng, key: &LocationKey, listing_id: Uuid) -> (f64, f64)`.
 
-1. **Seed**: `HMAC-SHA256(key, listing_id.as_bytes())`. The first 8 bytes give `u_angle`, the next 8 give `u_dist`, both read as little-endian `u64` and divided by `2^64`, so each lies in [0, 1).
+1. **Seed**: `HMAC-SHA256(key, listing_id.as_bytes())`. The first 8 bytes give `u_angle` and the next 8 give `u_dist`. Each is read as a little-endian `u64`, and its top 53 bits are divided by `2^53`, so each lies in [0, 1) exactly. A plain `as f64 / 2^64` can round up to 1.0.
 2. **Bearing**: `θ = 2π · u_angle`.
 3. **Distance**: area-uniform within the annulus [150m, 500m], as `d = sqrt(150² + u_dist · (500² − 150²))`.
 4. **Offset**:
    - `Δlat = d·cos θ / 111_320`
    - `Δlng = d·sin θ / (111_320 · cos(lat_rad))`
-5. **Result**: each component is rounded to 5 decimal places (about 1.1m). Latitude is clamped to [−90, 90], and longitude is wrapped to [−180, 180).
+5. **Result**: each component is rounded to 5 decimal places (about 1.1m). Then latitude is clamped to [−90, 90] and longitude is wrapped to [−180, 180). The wrap comes **after** rounding, because 179.999996 rounds to 180.0.
 6. **The same offset every time**: for a given listing and key, the offset never changes. If the host moves the pin, the same offset is applied to the new position.
 
 Constants: `APPROX_MIN_M = 150`, `APPROX_MAX_M = 500` (also the displayed circle radius), `APPROX_DECIMALS = 5`. Since `d ≤ 500`, the true point is always inside the 500m circle drawn around the public point. Coordinates are `f64` here; the `Decimal` rule covers money only.
@@ -63,11 +67,14 @@ Constants: `APPROX_MIN_M = 150`, `APPROX_MAX_M = 500` (also the displayed circle
 ### 1.5. Exact Location for Guests
 1. `BookingResponse` gains `listing_location: Option<ListingLocation { latitude: f64, longitude: f64 }>`, with `#[serde(default, skip_serializing_if = "Option::is_none")]`.
 2. It is filled only by `GET /api/v1/bookings/booking/{id}` and `GET /api/v1/bookings/user/{id}`, and only when all of these hold:
-   - the booking's `status` is `confirmed` or `completed`;
+   - the booking's `status` is `confirmed` or `completed`. The check is done **in the same SQL that reads the location** (`JOIN booking … WHERE b.id = ANY($1) AND b.status IN ('confirmed','completed')`), so a status change between two reads can't reveal the location, and anything outside that allowlist fails closed;
+   - the listing may be soft-deleted. A confirmed or completed stay still shows its location, because the guest may be on their way;
    - the existing authorization passed (`authorize_booking_party` for the single booking; for the list, the caller is the user or an admin);
    - the listing has both coordinates.
 3. Every other path that returns a `BookingResponse` (updates, requests, enquiries, changes) leaves it `None`.
 4. `email_worker` payloads, iCal exports and every `listing_api` response never contain it.
+5. **Accepted policy** (review): a guest can book, see the exact location, and then cancel within the free-cancellation window. The exact location is the price of a confirmed booking, and this is recorded as accepted.
+6. `listing_locations` returns `HashMap<Uuid, ListingLocation>`, never bare `f64` tuples, so booking_api code still passes the CONSTRAINTS float gate (`! rg "f(32|64)" app_api/booking_api/`).
 
 ### 1.6. `/listings` Map
 **Layout**
@@ -137,6 +144,7 @@ Constants: `APPROX_MIN_M = 150`, `APPROX_MAX_M = 500` (also the displayed circle
    - "Approximate area (500 m)", the default;
    - "Exact location".
 2. Its value is sent as `location_privacy`.
+3. Help text under the radio group: "Switching back to Approximate can't hide a location guests have already seen." 
 3. On create, the form has no listing ID yet, so the map starts empty. The create response's coordinates are exact, because the caller is the manager.
 
 ### 1.10. Tiles and Map Assets
@@ -168,28 +176,31 @@ The version **is the Protomaps daily build date** (`YYYYMMDD`), so every folder 
 - Every object is served with `Cache-Control: public, max-age=31536000, immutable`.
 - `jamaica.pmtiles` is uploaded **without** `Content-Encoding` (`gcloud storage cp --no-gzip…` with no `-z` and no `-Z`). GCS decompressive transcoding ignores `Range`, and the map would break.
 
-**Populating the bucket automatically in CI** (decided 2026-11-13; there is no separate refresh workflow)
-1. **Version variables**: `MAP_TILES_VERSION_DEV` and `MAP_TILES_VERSION_PROD`, each a Protomaps build date such as `20261101`. CI picks the variable for the environment, as it does for `JWT_SECRET`. A value that isn't 8 digits fails the job.
-2. **New step, "Populate Map Tiles"**, in `setup-gcs-image-gcs-items`, right after "Create Map Tiles Bucket". It isn't a separate job (decided 2026-11-14).
-   - The job gains `concurrency: { group: map-tiles-${{ ENV_SUFFIX }}, cancel-in-progress: false }`, so two runs never fill the same folder at once. All dev-branch setup runs are serialized by this, which is acceptable because the job is short when `_READY` exists.
-   - `deploy-web-ui-guest` and `deploy-web-ui-admin` add `setup-gcs-image-gcs-items` to `needs`, with `if: always() && needs.setup-gcs-image-gcs-items.result != 'failure' && …` (their existing conditions). Without this, a portal-only push, where the setup job is skipped, would skip the portal deploys. When the setup job was skipped, the portals use the last populated version as recorded by `_READY`, which is a quick `gcloud storage cat` in the deploy job.
-3. **What the job does**:
-   1. If `gs://<bucket>/v<version>/_READY` exists, it does nothing more. This takes a few seconds and is the usual case.
-   2. Otherwise it runs `scripts/populate_map_tiles.sh <bucket> <version>`:
+**Populating the bucket automatically in CI** (decided 2026-11-13; build and upload were split at review, 2026-11-14)
+1. **Version variables**: `MAP_TILES_VERSION_DEV` and `MAP_TILES_VERSION_PROD`, each a Protomaps build date such as `20261101`. A value that isn't 8 digits fails the job.
+2. **Building runs with no secrets** (review: security). A new job, `build-map-tiles`, needs nothing and has **no GCP auth and no secrets**.
+   1. It checks `https://storage.googleapis.com/<bucket>/v<version>/_READY` with an anonymous `curl`, which works because the bucket is public. A `200` means it outputs `needed=false` and stops.
+   2. Otherwise it runs `scripts/build_map_tiles.sh <version> <base_url>`:
       - downloads the pinned `pmtiles` CLI and verifies its sha256;
-      - runs `pmtiles extract https://build.protomaps.com/<version>.pmtiles jamaica.pmtiles --bbox=-78.60,17.55,-75.95,18.70 --maxzoom=15`, which reads only the Jamaica ranges;
-      - generates `style-light.json` and `style-dark.json` with the pinned `@protomaps/basemaps` version, pointing at `pmtiles://<base>/jamaica.pmtiles` and at the bucket's glyph and sprite URLs;
-      - copies the fonts and sprites from the pinned `protomaps/basemaps-assets` commit;
-      - uploads everything to `v<version>/` with `Cache-Control: public, max-age=31536000, immutable`. `jamaica.pmtiles` is uploaded with no `Content-Encoding`.
-   3. It writes `_READY` **last**, holding the build date, the tool versions and the file's sha256.
-4. **Failure**: if the upstream build has expired or a download fails, the job fails, `_READY` is never written, and the portal deploys don't run. The next run retries from the start and overwrites any partial files, which no portal is pointing at yet.
-5. **Updating the map**: set the variable to a newer build date. The next CI run fills the new folder and then deploys the portals pointing at it. To roll back, set the variable back; the old folder is still there.
-6. **Old versions**: kept, and deleted only by hand. Each one is tens of MB, so the cost is negligible, and open pages and rollbacks keep working.
-7. **Version unset**: the job skips, `MAP_TILES_BASE_URL` is empty, and the portals run with no maps (see below).
+      - runs `npm ci` from a committed `scripts/map-tiles/package-lock.json` that pins `@protomaps/basemaps`;
+      - fetches `protomaps/basemaps-assets` by commit SHA with `git`;
+      - extracts Jamaica (`--bbox=-78.60,17.55,-75.95,18.70 --maxzoom=15`) from `https://build.protomaps.com/<version>.pmtiles`;
+      - generates the light and dark styles, with no source attribution HTML (see §1.11);
+      - writes `MANIFEST` with the sha256 of each file.
+   3. It uploads the result as a workflow artifact.
+
+   Downloaded code therefore never runs where the deployer key exists.
+3. **Uploading is a step in `setup-gcs-image-gcs-items`**. "Upload Map Tiles" runs after "Create Map Tiles Bucket", only when `needed=true`, and only once it has downloaded the artifact and checked it against `MANIFEST`.
+   - **Lock**: `gcloud storage cp --if-generation-match=0` of `v<version>/_LOCK` succeeds for exactly one run, and that run releases it in an `EXIT` trap. A run that loses waits, polling for `_READY` for up to 10 minutes. On timeout it warns and continues with maps off; it doesn't fail the job. A `_LOCK` older than 10 minutes with no `_READY` is abandoned, and is deleted with a generation-matched delete. There is **no** job-level `concurrency` group: GitHub keeps only one pending run per group and would cancel other dev branches' setup jobs.
+   - **Upload**: `Cache-Control: public, max-age=31536000, immutable`, with no `Content-Encoding` on `jamaica.pmtiles`. Afterwards, a ranged GET must return `206` before `_READY` is written **last**. `_READY` holds the build date, the tool versions and the manifest's sha256.
+4. **Prod copies from dev** (review): when `v<version>/_READY` exists in `-dev`, the prod run copies that verified folder (`gcloud storage cp -r`, checked against its `MANIFEST`) instead of rebuilding. Protomaps keeps daily builds only briefly, so a prod date set weeks after dev can't depend on the build still being available. The build job is skipped for that case.
+5. **Failure**: if the upstream build has expired or a download fails, the job fails, `_READY` is never written, and the portal deploys don't run. The next run retries.
+6. **Updating and rolling back**: change the variable. Old folders are kept, and deleted only by hand.
+7. **Version unset**: build and upload skip, and the portals run with no maps.
 
 **Portal configuration**
-1. `MAP_TILES_BASE_URL` (both portals) is the full base URL, e.g. `https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101`. It is built by `deploy-web-ui-guest` and `deploy-web-ui-admin` from the bucket prefix, the environment suffix and `MAP_TILES_VERSION_{DEV,PROD}`, and only when `v<version>/_READY` exists (checked in the deploy job). Otherwise it is empty, and the portals run with no maps.
-2. A value is accepted only if it starts with `https://storage.googleapis.com/` and contains no characters from `; , ' " space \n`. Otherwise it counts as unset.
+1. `MAP_TILES_BASE_URL` (both portals) is the full base URL, e.g. `https://storage.googleapis.com/our-places-gcs-map-tiles-dev/v20261101`. It is built by `deploy-web-ui-guest` and `deploy-web-ui-admin` from the bucket prefix, the environment suffix and `MAP_TILES_VERSION_{DEV,PROD}`, and only when `v<version>/_READY` exists for the **configured** version, checked in the deploy job. Otherwise it is empty, and the portals run with no maps. There is no "last populated version" fallback. The deploy job also compares `jamaica.pmtiles`'s `crc32c` (`objects describe`) with the value recorded in `_READY`.
+2. **Validation is an allowlist** (review): the value must match `^https://storage\.googleapis\.com/[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]/v\d{8}$`. In local development it may instead match the same shape under `common::gcs::emulator_endpoint()`, and only when that endpoint is set. Anything else counts as unset, with one `warn`. An empty bucket name, `?`, `#`, `%`, `..`, whitespace and a trailing `/` are all refused.
 3. **Unset**: maps are not rendered (§1.6, §1.7), and there is one `warn` at startup. The portal still starts, because maps are an add-on.
 
 **Attribution**: the style sources carry `© OpenStreetMap contributors` (linked to the ODbL copyright page) and `Protomaps`. `AttributionControl({compact: true})` is always on.
@@ -223,7 +234,14 @@ The container reserves its height, so loading causes no layout shift.
 3. Style: `style-light.json` for the `light` theme, `style-dark.json` for `dim` and `dark`. When the theme toggle changes the theme, `map.setStyle(...)` follows.
 4. `maxBounds` is `JAMAICA_BOUNDS` and `maxZoom` is 17 (overzoomed above 15).
 
-**Failure**: if a script fails to load, WebGL is unavailable, or a style or tile request fails before the first `load` event:
+**Lifecycle** (review):
+- each container has an init guard, using a generation token, so a `remove()` during a pending init doesn't leak a WebGL context;
+- a map initialized while hidden calls `resize()` when the toggle shows it;
+- DOM markers are created once and are **not** added again on `style.load`, because they survive `setStyle`. Only the circle layers and sources are added again.
+
+**Attribution**: `map.js` sets `customAttribution` to fixed text: "© OpenStreetMap contributors", linked, and "Protomaps". The generated styles carry no source `attribution` HTML, so no HTML coming from the bucket is ever rendered.
+
+**Failure**: if a script fails to load, WebGL is unavailable, the first `load` event hasn't fired within **10 seconds**, or a style or tile request fails before it:
 - the container shows "Map unavailable" with the location text;
 - the list and the page keep working;
 - one `console.warn` is written, and nothing is sent to the server.
@@ -236,6 +254,8 @@ The container reserves its height, so loading causes no layout shift.
 | `connect-src` | add `https://storage.googleapis.com/<bucket>/`: the style, tiles (range fetches), glyphs and sprite JSON |
 | `img-src` | add `https://storage.googleapis.com/<bucket>/` (sprite PNG), and `blob:` only if the Phase 0 spike shows MapLibre needs it |
 | `worker-src` | new: `'self'` |
+
+**Composition order**: `csp_with_storage_origin` currently rewrites every occurrence of `https://storage.googleapis.com`. It must run **before** `with_map_origin`, or be changed to replace only the host as a whole token, so the bucket path is never broadened. A test covers both origins being set together.
 
 These don't change:
 - `script-src 'self'` and `style-src 'self'`, with no `'unsafe-inline'` and no `'unsafe-eval'`.
@@ -268,7 +288,9 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 - Every listing `SELECT` in `listing/queries.rs` and every `RETURNING` in `listing/write.rs` adds `location_privacy AS "location_privacy: LocationPrivacy"`.
 - Create and update bind it, using `COALESCE($n, location_privacy)` on update.
 - The `listing_history` insert in `update_listing` (`write.rs:150`) records it.
-- New `db_core::booking::listing_locations(pool, &[listing_id]) -> HashMap<Uuid, (f64, f64)>`: a single `WHERE id = ANY($1) AND latitude IS NOT NULL AND longitude IS NOT NULL`, so the bookings list is not N+1.
+- New `db_core::booking::listing_locations(pool, &[booking_id]) -> HashMap<Uuid, ListingLocation>`, keyed by booking ID. It is a single query, `SELECT b.id, l.latitude, l.longitude FROM booking b JOIN listing l ON l.id = b.listing_id WHERE b.id = ANY($1) AND b.status IN ('confirmed','completed') AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL`, so the bookings list is not N+1 and the status check runs in the same read. It is skipped when no booking qualifies.
+- **Create binds privacy with a default** (review): the create `INSERT` names its columns explicitly, so a NULL bind would violate `NOT NULL`. Bind `COALESCE($n, 'approximate'::location_privacy)`, or `unwrap_or_default()` in Rust.
+- **The search query is runtime-built** (`QueryBuilder` in `get_listings`, `queries.rs:112`), so `sqlx prepare --check` won't catch a missing column. A DB test must run `get_listings` and read `location_privacy`.
 - Run `cargo sqlx prepare --workspace` afterwards.
 
 ### 2.2. API
@@ -277,7 +299,7 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 |---|---|---|---|
 | `GET /api/v1/listings` | listing_api | none (IAM) | `ListingResponse[]` with public coordinates and `location_precision` |
 | `GET /api/v1/listings/{id}` | listing_api | none (IAM) | `ListingDetails` with public coordinates |
-| `GET /api/v1/listings/{id}/location` **(new)** | listing_api | `Claims` + `require_listing_manager` | `200 {latitude, longitude, location_privacy}`; 401, 403 (`warn`), 404 |
+| `GET /api/v1/listings/{id}/location` **(new)** | listing_api | `Claims` + `require_listing_manager` | `200 {latitude, longitude, location_privacy}`, sent with `Cache-Control: no-store`; 401, 403 (`warn`), 404 |
 | `POST /api/v1/listings`, `PATCH /api/v1/listings/{id}` | listing_api | as today | accept `location_privacy`; return stored coordinates and `location_precision` = the stored setting |
 | `GET /api/v1/bookings/booking/{id}` | booking_api | as today | `listing_location` per §1.5 |
 | `GET /api/v1/bookings/user/{id}` | booking_api | as today | `listing_location` per §1.5, filled by one `listing_locations` call |
@@ -299,10 +321,14 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 ### 2.4. CI and Infrastructure
 1. **`cicd_full_stack.yml`**:
    - `setup-gcs-image-gcs-items`: the tile bucket steps (§1.10), which create the bucket, grant public object read and apply CORS. They run again on every run, so the settings can't drift;
-   - "Populate Map Tiles", a step after "Create Map Tiles Bucket" (done), plus job-level `concurrency` (§1.10);
+   - a new job, `build-map-tiles`, with no secrets (§1.10), and the step "Upload Map Tiles" after "Create Map Tiles Bucket" (done), which uses the `_LOCK` object;
    - `deploy-api`: `LOCATION_OFFSET_KEY` for listing_api, with the empty-secret guard;
    - the two portal deploys: `needs` the setup job with the `always()` guard, a `_READY` check, and `MAP_TILES_BASE_URL`.
-2. **New**: `scripts/populate_map_tiles.sh`. It pins the `pmtiles` CLI (with its sha256), `@protomaps/basemaps` and the `basemaps-assets` commit. It must be idempotent and safe to rerun.
+2. **New**:
+   - `scripts/build_map_tiles.sh`, which runs with no credentials and pins the `pmtiles` CLI (with its sha256), `@protomaps/basemaps` through `scripts/map-tiles/package-lock.json`, and the `basemaps-assets` commit;
+   - `scripts/upload_map_tiles.sh`, which handles the lock, the manifest check, the upload, the 206 check and `_READY`, and the prod copy from dev.
+
+   Both are idempotent and safe to rerun.
 3. **Repository variables**: `INFRA_GCS_MAP_TILES_BUCKET_PREFIX` (set 2026-11-14), `MAP_TILES_VERSION_DEV` and `MAP_TILES_VERSION_PROD` (not set yet; set one to a recent build date to turn maps on). **Secrets**: `LOCATION_OFFSET_KEY_DEV` and `LOCATION_OFFSET_KEY_PROD` (set 2026-11-14).
 4. **Docs**: `docs/ENVIRONMENT.md` (the new variables, the key-rotation warning) and `docs/ARCHITECTURE.md` (the map data flow).
 
@@ -328,9 +354,11 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 | WebGL unavailable, a tile fetch fails, or an old browser | "Map unavailable" fallback (§1.11) |
 | `pmtiles` file uploaded gzip-encoded | Range requests return the whole body and the map breaks. The script uploads without `Content-Encoding`, and the Phase 0 check catches it |
 | Tile version bumped while a page is open | Old versions are never deleted automatically, so open pages keep working |
-| `MAP_TILES_VERSION_*` names an expired Protomaps build | "Populate Map Tiles" fails the setup job, so the portals aren't deployed. Pick a recent build date |
+| `MAP_TILES_VERSION_*` names an expired Protomaps build | `build-map-tiles` fails and the portals aren't deployed. Pick a recent build date. Prod copies the verified dev folder, so this mostly affects dev |
 | CI run fails halfway through populating | No `_READY`. The next run repopulates. The portals were never pointed at the folder |
-| Two CI runs fill the same version at once | Serialized by the `map-tiles-<env>` concurrency group. The second run finds `_READY` and skips |
+| Two CI runs fill the same version at once | The `_LOCK` object (`--if-generation-match=0`) lets one run upload. The other waits for `_READY`, up to 10 minutes. A stale lock (over 30 minutes, no `_READY`) is cleared |
+| Admin portal on an old revision saves the public point | The echo guard (§1.1.5) keeps the stored point and logs `warn` |
+| Booking status changes between reads | The status check is in the same SQL as the location read (§1.5) |
 | 50 results with coordinates | 50 DOM badges; acceptable. Clustering is a non-goal |
 | Theme toggled while a map is open | `setStyle`; markers and the circle layer are added again on `style.load` |
 | Several booking cards with maps | Lazy load per card; maps far off-screen are removed (§1.8) |
@@ -362,10 +390,12 @@ ALTER TABLE listing_history ADD COLUMN location_privacy location_privacy;
 | Edit form overwrites the true point with the approximate one | Prefill only from the manager endpoint; 503 on failure (§1.9) |
 | XSS through the popup | Cards are server-rendered `<template>`s escaped by Topcoat and attached with `setDOMContent`. `map.js` never uses `innerHTML` |
 | CSP loosened too far | Only the bucket path is added, plus `worker-src 'self'`. No `unsafe-*`. `MAP_TILES_BASE_URL` is validated against the directive-breaking characters, like `csp_with_storage_origin` |
-| Supply chain (vendored JS) | Exact versions with `sha256` checksums in `asset!`, checked against the npm tarball. `populate_map_tiles.sh` pins its tools and checksums them. Licences: MapLibre BSD-3, pmtiles BSD-3; data ODbL with attribution |
-| Bucket abuse | Object read only (no listing), CORS `GET` and `HEAD` only, writes only from CI credentials, egress budget alert |
+| Supply chain (vendored JS) | Exact versions with `sha256` checksums in `asset!`, checked against the npm tarball. `build_map_tiles.sh` pins its tools and checksums them, and runs with no secrets. Licences: MapLibre BSD-3, pmtiles BSD-3; data ODbL with attribution |
+| Bucket abuse | Public read via `objectViewer`, which allows listing; it exposes only version folder names (§1.10). CORS `GET` and `HEAD` only. Writes only from CI credentials. Downloaded build tools run in a job with no secrets. An egress budget alert is set up by hand (plan T22) |
 | Tampered upstream build | The CLI checksum is pinned, and the extract comes from a named build date. `_READY` records the file's sha256, so a later run or a person can check the object hasn't changed |
 | Secret in source | The key comes only from a GitHub secret into the environment. Nothing goes in `.env.example` beyond a placeholder |
+| Key readable from Cloud Run config | Anyone with `run.services.get` can read plaintext env vars. Accepted for parity with `JWT_SECRET` (originator decision, 2026-11-13). Moving both to Secret Manager is a follow-up |
+| Leaks that remain (accepted and documented) | The same property listed under two IDs gets two independent offsets, and their circles intersect. `city` is reverse-geocoded from the exact point and can fall back to a neighbourhood name. Free-text `listing_details` written by the host may mention an address. Switching Exact → Approximate can't un-publish a point. Photos are safe: guests get only re-encoded WebP with no EXIF, and the raw originals stay private |
 
 ---
 
@@ -461,7 +491,7 @@ Record the results in this spec before building the UI.
    - the admin edit form switched to the location endpoint, with the privacy radio;
    - the regression tests.
 2. **Phase 0 spike.**
-3. **Phase 2, map infrastructure**: the "Populate Map Tiles" step and its script (the bucket step is already in `cicd_full_stack.yml`), the portal-deploy `needs` and the `_READY` guard, and setting `MAP_TILES_VERSION_DEV` so the first push fills dev; vendored assets, `map.js`, the lazy loader, CSP and `MAP_TILES_BASE_URL`.
+3. **Phase 2, map infrastructure**: the `build-map-tiles` job and the "Upload Map Tiles" step with their scripts (the bucket step is already in `cicd_full_stack.yml`), the portal-deploy `needs` and the `_READY` and `crc32c` guard, and setting `MAP_TILES_VERSION_DEV` so the first push fills dev; vendored assets, `map.js`, the lazy loader, CSP and `MAP_TILES_BASE_URL`.
 4. **Phase 3, guest maps**: the listing page, then `/listings` (grid, toggle, badges, popups).
 5. **Phase 4, reveal and picker**: `listing_location` in booking_api and the `/bookings` block; the admin pin picker.
 6. **Phase 5**: E2E and docs. Set `MAP_TILES_VERSION_PROD` before merging to `main`, so the `main` run creates and fills `-prod`.
