@@ -158,6 +158,7 @@ async fn test_get_listing_by_id_success() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -191,6 +192,7 @@ async fn test_get_listing_by_id_not_found() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -218,6 +220,7 @@ async fn test_create_listing_validation_error() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -311,6 +314,7 @@ async fn test_delete_listing() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -435,6 +439,7 @@ async fn test_delete_listing_hard_forbidden() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(settings))
             .configure(configure_routes),
@@ -553,6 +558,7 @@ async fn test_update_listing_multiple_times() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -685,6 +691,7 @@ async fn test_get_listings_with_filter() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -725,6 +732,7 @@ async fn test_create_and_update_listing_with_fees_endpoint() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -972,6 +980,7 @@ mod currency_conversion_tests {
     async fn get(c: &Ctx, uri: &str) -> (u16, serde_json::Value) {
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new(c.pool.clone()))
                 .app_data(web::Data::new(get_test_settings()))
                 .configure(configure_routes),
@@ -1162,6 +1171,7 @@ mod currency_inactive_tests {
     > {
         test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new(pool.clone()))
                 .app_data(web::Data::new(get_test_settings()))
                 .configure(configure_routes),
@@ -1470,6 +1480,7 @@ mod gap_limit_tests {
         let user_id = create_test_user(&mut conn).await;
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new(pool.clone()))
                 .app_data(web::Data::new(get_test_settings()))
                 .configure(configure_routes),
@@ -1646,6 +1657,7 @@ mod search_param_tests {
     async fn invalid_input_gets_a_typed_400_and_runs_no_query() {
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new(no_database()))
                 .app_data(web::Data::new(get_test_settings()))
                 .configure(configure_routes),
@@ -1734,6 +1746,7 @@ mod search_param_tests {
     async fn a_refused_search_logs_no_error_and_no_search_text() {
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .wrap(TracingLogger::<CustomRootSpanBuilder>::new())
                 .app_data(web::Data::new(no_database()))
                 .app_data(web::Data::new(get_test_settings()))
@@ -1765,6 +1778,7 @@ mod search_param_tests {
         drop(conn);
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .wrap(TracingLogger::<CustomRootSpanBuilder>::new())
                 .app_data(web::Data::new(pool.clone()))
                 .app_data(web::Data::new(get_test_settings()))
@@ -1901,6 +1915,7 @@ async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
 
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -2004,6 +2019,7 @@ async fn test_create_listing_refuses_an_invalid_ribbon() {
     let user_id = create_test_user(&mut conn).await;
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),
@@ -2054,6 +2070,7 @@ async fn test_create_listing_refuses_invalid_amenity_groups() {
     let user_id = create_test_user(&mut conn).await;
     let app = test::init_service(
         App::new()
+            .app_data(crate::location_key::test_key_data())
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(get_test_settings()))
             .configure(configure_routes),

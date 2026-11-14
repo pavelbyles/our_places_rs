@@ -91,6 +91,7 @@ macro_rules! app {
     ($pool:expr) => {
         test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new($pool.clone()))
                 .app_data(web::Data::new(get_test_settings()))
                 .configure(configure_routes),

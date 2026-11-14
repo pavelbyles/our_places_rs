@@ -63,6 +63,8 @@
     pkgs.jq
     (pkgs.google-cloud-sdk.withExtraComponents [ pkgs.google-cloud-sdk.components.pubsub-emulator ])
     pkgs.fake-gcs-server
+    # Map view (#103): lints the CI workflow.
+    pkgs.actionlint
   ];
 
   # Fast git pre-commit formatting check

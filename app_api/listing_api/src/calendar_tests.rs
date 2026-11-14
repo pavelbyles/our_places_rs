@@ -122,6 +122,7 @@ impl Ctx {
     ) {
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new(self.pool.clone()))
                 .app_data(web::Data::new(settings()))
                 .app_data(self.runtime.clone())
@@ -944,6 +945,7 @@ mod export {
     ) -> (StatusCode, String, actix_web::http::header::HeaderMap) {
         let app = test::init_service(
             App::new()
+                .app_data(crate::location_key::test_key_data())
                 .app_data(web::Data::new(c.pool.clone()))
                 .app_data(web::Data::new(settings()))
                 .configure(crate::apis::configure_routes),

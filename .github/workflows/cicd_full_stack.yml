@@ -713,6 +713,8 @@ jobs:
       TAJ_SUPPLIER_ADDRESS: ${{ vars[format('TAJ_SUPPLIER_ADDRESS_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || vars.TAJ_SUPPLIER_ADDRESS || 'Main Street, Ocho Rios, St. Ann, Jamaica' }}
       CRON_SECRET: ${{ secrets[format('CRON_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || secrets.CRON_SECRET || 'dev-cron-secret' }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Map view (#103, spec §1.4): fixes each approximate listing's offset. listing_api only.
+      LOCATION_OFFSET_KEY: ${{ secrets[format('LOCATION_OFFSET_KEY_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       SYSTEM_ADMIN_PASSWORD: ${{ secrets[format('SYSTEM_ADMIN_PASSWORD_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
     permissions:
       contents: "read"
@@ -766,6 +768,13 @@ jobs:
         run: |
           if [ -z "$JWT_SECRET" ]; then
             echo "::error::Secret JWT_SECRET_${{ env.ENV_SUFFIX }} is not set. The APIs would fall back to a public default and the portals refuse to start without it."
+            exit 1
+          fi
+
+      - name: Require Location Offset Key
+        run: |
+          if [ -z "$LOCATION_OFFSET_KEY" ]; then
+            echo "::error::Secret LOCATION_OFFSET_KEY_${{ env.ENV_SUFFIX }} is not set. listing_api refuses to start without it, and it must never change once set (docs/ENVIRONMENT.md)."
             exit 1
           fi
 
@@ -944,6 +953,7 @@ jobs:
             EA__DATABASE__DATABASE_URL=postgres://${{ env.DB_USER }}:${{ env.DB_PASS }}@localhost/${{ env.DB_NAME}}?host=/cloudsql/${{ env.PROJECT_ID }}:${{ env.REGION }}:${{ env.DB_INSTANCE_NAME }}&options=-c%20search_path%3D${{ steps.branch_name.outputs.SCHEMA_NAME }}
             GCS_RAW_BUCKET=${{ env.GCS_BUCKET_RAW_PREFIX }}-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             JWT_SECRET=${{ env.JWT_SECRET }}
+            LOCATION_OFFSET_KEY=${{ env.LOCATION_OFFSET_KEY }}
             EMAIL_PUBSUB_TOPIC_ID=our-places-email-notifications-${{ steps.branch_name.outputs.SERVICE_SUFFIX }}
             GCP_PROJECT_ID=${{ env.PROJECT_ID }}
             EA__CALENDAR_SYNC__ALLOW_PRIVATE_HOSTS=false

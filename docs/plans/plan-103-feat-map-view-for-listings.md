@@ -208,7 +208,7 @@ T25 prod version, full gates    ← T23, T24
   - **Built note:** the span check lives in its own integration binary (`db_core/tests/listing_span_privacy.rs`). Tracing caches callsite interest across the whole process, so a thread-local recorder missed spans whenever parallel tests had registered the same callsites first. Mutation-checked: putting back `skip(executor)` makes it fail.
   - **Dependencies:** Task 1
 
-- [ ] **Task 3: Load the offset key at startup and in CI**
+- [x] **Task 3: Load the offset key at startup and in CI**
   - **Scope:** S
   - **Description:**
     - Add `listing_api::location_key::load(get_env) -> Result<LocationKey>`, reading `static LOCATION_OFFSET_KEY_ENV`.
@@ -227,8 +227,9 @@ T25 prod version, full gates    ← T23, T24
   - **Acceptance Criteria:**
     - [ ] With the variable missing, blank or 31 bytes, `load` returns an error that names the variable and not the value. With 32 bytes or more, it returns `Ok`.
     - [ ] The whole listing_api crate passes with the test key registered.
-    - [ ] actionlint is clean. The new guard step uses the same shape as the `JWT_SECRET` guard (`cicd_full_stack.yml:727`), and the key appears only in the listing_api `env_vars`.
-  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p listing_api location_key_tests && devenv shell -- cargo test -p listing_api && devenv shell -- actionlint .github/workflows/cicd_full_stack.yml`
+    - [ ] `actionlint -shellcheck=` is clean, and the number of shellcheck findings doesn't go up. The baseline already has 67, all from before this branch, so a plain `actionlint` can't exit 0. The new guard step uses the same shape as the `JWT_SECRET` guard, and the key appears only in the listing_api `env_vars`.
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p listing_api location_key_tests && devenv shell -- cargo test -p listing_api && devenv shell -- actionlint -shellcheck= .github/workflows/cicd_full_stack.yml`, and `actionlint` findings compared with `git show <base>:.github/workflows/cicd_full_stack.yml` (67 → 67)
+  - **Built note:** there's no `.env.example` in the repo, so no placeholder was added. The local key is already in this worktree's `.env`. The plan's later "actionlint clean" criteria (T10, T11, T14) use the same no-new-findings rule.
   - **Dependencies:** Task 1
 
 - [ ] **Task 4: Validate privacy and coordinate input**
