@@ -330,6 +330,23 @@ stateDiagram-v2
 
 ---
 
+### 4.5.1. Maps and Location Privacy (#103)
+
+Listings store their exact `latitude`/`longitude` and a `location_privacy` setting (`approximate` by default, or `exact`). Guests see a point that depends on who is asking:
+
+| Who | Path | Point |
+| :--- | :--- | :--- |
+| Anyone | a host's listings (`user_api`, `GET /api/v1/users/{email}/listings`) | None: no coordinates and no setting. |
+| Anyone | listing search and detail (`listing_api`) | Exact listings: the stored point. Approximate listings: a fixed offset point (150–500 m, keyed by `LOCATION_OFFSET_KEY` and the listing ID, `common::location::approximate_point`), drawn as a 500 m circle. `location_precision` says which. |
+| The listing's managers | `GET /api/v1/listings/{id}/location` (owner or admin) | The stored point and the setting. The admin pin picker loads from here, never from the public detail. |
+| The guest, and the host and admins, on a confirmed or completed booking | `GET /api/v1/bookings/{id}`, `GET /api/v1/bookings/user/{id}` | `listing_location`, the stored point. `db_core::booking::listing_locations` reads the point and checks the status allowlist in one query. |
+
+**Redaction boundary.** `listing_api::public_location` is the only place a public path fills coordinates, and it fails closed: no stored point, no coordinates. Mappers default to `None` (`api_core::models::map_listing_to_response`, `map_booking_to_response`), so a new path shows nothing until it opts in. The echo guard (`drop_echoed_public_point`) stops an update from saving the public point over the real one. Coordinates are never logged: spans on these paths use `skip_all`.
+
+**Client.** The portals render an empty `[data-map]` box only when `MAP_TILES_BASE_URL` is valid (`web_ui_common::map_config`). `ui.js` loads MapLibre (vendored, ES module, same-origin worker) and pmtiles only when a box comes within 200 px of the viewport, and ends a map more than two viewports away. `map.js` builds the four kinds (`listing`, `search`, `booking`, `picker`) from `data-*` attributes and never builds HTML from strings: search popups clone server-rendered `<template>`s. Tiles, styles and fonts come from the tile bucket by range request. The CSP adds only that bucket path to `connect-src`, plus `worker-src 'self'`.
+
+Accepted risks (same property under two IDs, the reverse-geocoded `city`, free text, and Exact → Approximate not un-publishing) are listed in [spec 103 §5](specs/spec-103-feat-map-view-for-listings.md#5-security-mitigations).
+
 ### 4.6. Distributed Tracing
 
 One trace follows a request from the browser through the portal, the APIs and the workers (`common::telemetry`, OpenTelemetry):

@@ -707,7 +707,7 @@ T25 prod version, full gates    ← T23, T24
 
 ### Phase 5: Finish
 
-- [ ] **Task 23: Documentation and egress alert**
+- [x] **Task 23: Documentation and egress alert**
   - **Scope:** S
   - **Description:**
     - `docs/ENVIRONMENT.md`: `LOCATION_OFFSET_KEY` (32 bytes, never rotated, how to generate it), `MAP_TILES_BASE_URL`, `MAP_TILES_VERSION_{DEV,PROD}` (a build date, plus updating and rolling back) and `INFRA_GCS_MAP_TILES_BUCKET_PREFIX`.
@@ -718,11 +718,12 @@ T25 prod version, full gates    ← T23, T24
     - `docs/ENVIRONMENT.md`
     - `docs/ARCHITECTURE.md`
   - **Acceptance Criteria:**
-    - [ ] Each of the 5 names is documented, with who sets it and what happens when it's unset.
-    - [ ] The rotation warning is present.
-    - [ ] The budget alert is confirmed by the originator, or recorded as pending.
+    - [x] Each of the 5 names is documented, with who sets it and what happens when it's unset.
+    - [x] The rotation warning is present.
+    - [x] The budget alert is confirmed by the originator, or recorded as pending (recorded as pending).
   - **Verification Command:** `for v in LOCATION_OFFSET_KEY MAP_TILES_BASE_URL MAP_TILES_VERSION_DEV MAP_TILES_VERSION_PROD INFRA_GCS_MAP_TILES_BUCKET_PREFIX; do grep -q "$v" docs/ENVIRONMENT.md || { echo "missing $v"; exit 1; }; done && grep -qi "never rotate\|don't rotate\|do not rotate" docs/ENVIRONMENT.md`
   - **Dependencies:** Task 14, Task 22
+  - **Built:** in `ENVIRONMENT.md`, rows for the secret, the variables, the portal and API env, and a new §5 (the rotation warning; publish, promote, roll back, turn off; local; egress). `ARCHITECTURE.md` §4.5.1 covers who sees which point, the redaction boundary and the client, and links to spec §5. **The egress budget alert is pending: the originator creates it by hand.**
 
 - [ ] **Task 24: Playwright end-to-end flows**
   - **Scope:** M
