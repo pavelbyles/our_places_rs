@@ -150,6 +150,7 @@ async fn test_get_listing_by_id_success() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -302,6 +303,7 @@ async fn test_delete_listing() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -359,6 +361,7 @@ async fn test_delete_listing() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing_2 = db_listing::create_listing(&mut *conn, &new_listing_2)
         .await
@@ -420,6 +423,7 @@ async fn test_delete_listing_hard_forbidden() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -493,6 +497,8 @@ async fn test_xml_serialization_of_vec() {
         guests_included: 1,
         extra_guest_fee: None,
         booking_mode: common::booking_request::BookingMode::Instant,
+        location_privacy: None,
+        location_precision: None,
     }];
 
     let wrapper = ListingsWrapper { listing: response };
@@ -539,6 +545,7 @@ async fn test_update_listing_multiple_times() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let created_listing = db_listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -636,6 +643,7 @@ async fn test_get_listings_with_filter() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     db_listing::create_listing(&mut *conn, &listing1)
         .await
@@ -669,6 +677,7 @@ async fn test_get_listings_with_filter() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     db_listing::create_listing(&mut *conn, &listing2)
         .await
@@ -945,6 +954,7 @@ mod currency_conversion_tests {
                 guests_included: None,
                 extra_guest_fee: None,
                 is_active: true,
+                location_privacy: None,
             },
         )
         .await
@@ -1319,6 +1329,7 @@ mod currency_inactive_tests {
                 guests_included: None,
                 extra_guest_fee: None,
                 is_active: true,
+                location_privacy: None,
             },
         )
         .await
@@ -1380,6 +1391,7 @@ mod currency_inactive_tests {
                     guests_included: None,
                     extra_guest_fee: None,
                     is_active: true,
+                    location_privacy: None,
                 },
             )
             .await
@@ -1877,6 +1889,7 @@ async fn booking_mode_defaults_to_instant_and_round_trips_with_history() {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await

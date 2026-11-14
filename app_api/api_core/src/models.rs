@@ -39,8 +39,12 @@ pub fn map_listing_to_response(
         full_bathrooms: listing.full_bathrooms,
         half_bathrooms: listing.half_bathrooms,
         square_meters: listing.square_meters,
-        latitude: listing.latitude,
-        longitude: listing.longitude,
+        // Fail closed (spec 103 §1.2): each path opts in to public or
+        // stored coordinates.
+        latitude: None,
+        longitude: None,
+        location_privacy: None,
+        location_precision: None,
         overall_rating: listing.overall_rating,
         city: listing.city,
         base_currency: listing.base_currency,
@@ -135,8 +139,12 @@ pub fn map_listing_with_owner_to_response(
         full_bathrooms: listing.full_bathrooms,
         half_bathrooms: listing.half_bathrooms,
         square_meters: listing.square_meters,
-        latitude: listing.latitude,
-        longitude: listing.longitude,
+        // Fail closed (spec 103 §1.2): each path opts in to public or
+        // stored coordinates.
+        latitude: None,
+        longitude: None,
+        location_privacy: None,
+        location_precision: None,
         overall_rating: listing.overall_rating,
         city: listing.city,
         base_currency: listing.base_currency,
@@ -151,6 +159,57 @@ pub fn map_listing_with_owner_to_response(
         guests_included: listing.guests_included,
         extra_guest_fee: Some(listing.extra_guest_fee),
     }
+}
+
+/// A listing's stored location, read from its row before mapping.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StoredLocation {
+    /// Stored latitude.
+    pub latitude: Option<f64>,
+    /// Stored longitude.
+    pub longitude: Option<f64>,
+    /// The host's setting.
+    pub privacy: common::location::LocationPrivacy,
+}
+
+impl StoredLocation {
+    /// Both coordinates, when both are stored.
+    pub fn point(&self) -> Option<(f64, f64)> {
+        self.latitude.zip(self.longitude)
+    }
+}
+
+impl From<&db_core::models::Listing> for StoredLocation {
+    fn from(listing: &db_core::models::Listing) -> Self {
+        Self {
+            latitude: listing.latitude,
+            longitude: listing.longitude,
+            privacy: listing.location_privacy,
+        }
+    }
+}
+
+impl From<&db_core::models::ListingWithOwner> for StoredLocation {
+    fn from(listing: &db_core::models::ListingWithOwner) -> Self {
+        Self {
+            latitude: listing.latitude,
+            longitude: listing.longitude,
+            privacy: listing.location_privacy,
+        }
+    }
+}
+
+/// Puts the stored location on a response, for callers allowed to manage the
+/// listing. A listing missing either coordinate gets neither.
+pub fn with_stored_location(
+    response: &mut common::models::ListingResponse,
+    stored: StoredLocation,
+) {
+    let point = stored.point();
+    response.latitude = point.map(|(lat, _)| lat);
+    response.longitude = point.map(|(_, lng)| lng);
+    response.location_privacy = Some(stored.privacy);
+    response.location_precision = point.map(|_| stored.privacy.into());
 }
 
 /// XML collection wrapper for listings responses.
@@ -299,5 +358,104 @@ mod tests {
         ];
         let urls: Vec<_> = photo_images(&images).into_iter().map(|i| i.url).collect();
         assert_eq!(urls, ["first", "second"]);
+    }
+
+    fn listing_row(lat: Option<f64>, lng: Option<f64>) -> db_core::models::Listing {
+        db_core::models::Listing {
+            id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            name: "Villa".into(),
+            description: None,
+            listing_structure_id: 5,
+            country: "Jamaica".into(),
+            price_per_night: None,
+            is_active: true,
+            added_at: chrono::Utc::now(),
+            deleted_at: None,
+            primary_image_url: None,
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            slug: "villa".into(),
+            max_guests: 4,
+            bedrooms: 2,
+            beds: 2,
+            full_bathrooms: 2,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: lat,
+            longitude: lng,
+            overall_rating: None,
+            review_count: 0,
+            listing_details: sqlx::types::Json(serde_json::json!({})),
+            city: None,
+            base_currency: "USD".into(),
+            minimum_stay: 1,
+            days_between_bookings: 0,
+            commission_pct: rust_decimal::Decimal::ZERO,
+            cleaning_fee: rust_decimal::Decimal::ZERO,
+            damage_deposit: rust_decimal::Decimal::ZERO,
+            guests_included: 1,
+            extra_guest_fee: rust_decimal::Decimal::ZERO,
+            booking_mode: common::booking_request::BookingMode::Instant,
+            location_privacy: common::location::LocationPrivacy::Approximate,
+        }
+    }
+
+    #[test]
+    fn listing_mapper_fail_closed() {
+        let response = map_listing_to_response(listing_row(Some(18.40741), Some(-77.10313)));
+        assert_eq!(response.latitude, None);
+        assert_eq!(response.longitude, None);
+        assert_eq!(response.location_privacy, None);
+        assert_eq!(response.location_precision, None);
+        let json = serde_json::to_string(&response).unwrap_or_default();
+        assert!(!json.contains("18.40741"), "{json}");
+        assert!(!json.contains("location_privacy"), "{json}");
+        assert!(!json.contains("location_precision"), "{json}");
+    }
+
+    #[test]
+    fn listing_mapper_fail_closed_stored_location_opts_in() {
+        let row = listing_row(Some(18.40741), Some(-77.10313));
+        let stored = StoredLocation::from(&row);
+        let mut response = map_listing_to_response(row);
+        with_stored_location(&mut response, stored);
+        assert_eq!(response.latitude, Some(18.40741));
+        assert_eq!(response.longitude, Some(-77.10313));
+        assert_eq!(
+            response.location_privacy,
+            Some(common::location::LocationPrivacy::Approximate)
+        );
+        assert_eq!(
+            response.location_precision,
+            Some(common::location::LocationPrecision::Approximate)
+        );
+
+        // Half a point is no point.
+        let half = listing_row(Some(18.40741), None);
+        let stored = StoredLocation::from(&half);
+        let mut response = map_listing_to_response(half);
+        with_stored_location(&mut response, stored);
+        assert_eq!((response.latitude, response.longitude), (None, None));
+        assert_eq!(response.location_precision, None);
+    }
+
+    #[test]
+    fn listing_mapper_fail_closed_older_json_still_reads() {
+        // What an API from before this change sends: no location_* keys.
+        let mut value = match serde_json::to_value(map_listing_to_response(listing_row(None, None)))
+        {
+            Ok(value) => value,
+            Err(e) => panic!("serialize: {e}"),
+        };
+        if let Some(object) = value.as_object_mut() {
+            object.remove("location_privacy");
+            object.remove("location_precision");
+        }
+        let read: Result<common::models::ListingResponse, _> = serde_json::from_value(value);
+        match read {
+            Ok(listing) => assert_eq!(listing.location_privacy, None),
+            Err(e) => panic!("older JSON no longer deserializes: {e}"),
+        }
     }
 }

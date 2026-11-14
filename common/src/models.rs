@@ -214,10 +214,17 @@ pub struct ListingResponse {
     pub half_bathrooms: i32,
     /// Property size in square meters.
     pub square_meters: Option<i32>,
-    /// Geographic latitude.
+    /// Latitude: the stored value on manager paths, the public (possibly
+    /// approximate) one on public paths, or `None` (spec 103 §1.2).
     pub latitude: Option<f64>,
-    /// Geographic longitude.
+    /// Longitude, on the same terms as `latitude`.
     pub longitude: Option<f64>,
+    /// The host's location setting. Only manager paths set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_privacy: Option<crate::location::LocationPrivacy>,
+    /// How precise `latitude` and `longitude` are; `None` when they are absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location_precision: Option<crate::location::LocationPrecision>,
     /// Aggregated overall star rating.
     pub overall_rating: Option<f64>,
     /// City or locality.

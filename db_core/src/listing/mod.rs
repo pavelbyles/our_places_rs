@@ -54,3 +54,6 @@ pub fn generate_listing_slug_native(title: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod location_privacy_tests;

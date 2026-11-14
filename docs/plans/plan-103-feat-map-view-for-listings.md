@@ -176,7 +176,7 @@ T25 prod version, full gates    ← T23, T24
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p common location_tests && cargo audit`
   - **Dependencies:** None
 
-- [ ] **Task 2: Add the `location_privacy` column, and make the mappers fail closed**
+- [x] **Task 2: Add the `location_privacy` column, and make the mappers fail closed**
   - **Scope:** M (mostly mechanical literal updates)
   - **Description:**
     - **Migration**: add the spec §2.1 migration with `devenv shell -- sqlx migrate add map_view_location_privacy`.
@@ -204,7 +204,8 @@ T25 prod version, full gates    ← T23, T24
     - [ ] A JSON `ListingResponse` with no `location_*` keys still deserializes, which is the case for portals reading older APIs.
     - [ ] A test with a capturing subscriber shows no latitude or longitude value in the spans of a db_core create.
     - [ ] `sqlx prepare --check` passes.
-  - **Verification Command:** `devenv shell -- sqlx migrate run && devenv shell -- cargo test -p db_core location_privacy_tests && SQLX_OFFLINE=true cargo test -p api_core listing_mapper_fail_closed && devenv shell -- cargo sqlx prepare --workspace --check -- --all-targets`
+  - **Verification Command:** `devenv shell -- sqlx migrate run && devenv shell -- cargo test -p db_core location_privacy_tests && devenv shell -- cargo test -p db_core --test listing_span_privacy && SQLX_OFFLINE=true cargo test -p api_core listing_mapper_fail_closed && devenv shell -- cargo sqlx prepare --workspace --check -- --all-targets`
+  - **Built note:** the span check lives in its own integration binary (`db_core/tests/listing_span_privacy.rs`). Tracing caches callsite interest across the whole process, so a thread-local recorder missed spans whenever parallel tests had registered the same callsites first. Mutation-checked: putting back `skip(executor)` makes it fail.
   - **Dependencies:** Task 1
 
 - [ ] **Task 3: Load the offset key at startup and in CI**

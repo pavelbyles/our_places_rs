@@ -40,6 +40,7 @@ async fn test_reviews_endpoints() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await
@@ -212,6 +213,7 @@ async fn test_booking_review_token_eligibility_and_lifecycle() {
         guests_included: None,
         extra_guest_fee: None,
         is_active: true,
+        location_privacy: None,
     };
     let listing = db_core::listing::create_listing(&mut *conn, &new_listing)
         .await

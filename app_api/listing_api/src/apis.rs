@@ -401,6 +401,15 @@ pub async fn get_listings(
     ))
 }
 
+/// A listing as its manager sees it: the stored coordinates and setting.
+/// Only call this after `require_listing_manager` or `require_host_or_admin`.
+fn manager_listing_response(listing: db_core::models::Listing) -> ListingResponse {
+    let stored = api_core::models::StoredLocation::from(&listing);
+    let mut response = map_listing_to_response(listing);
+    api_core::models::with_stored_location(&mut response, stored);
+    response
+}
+
 /// Query parameter choosing a display currency.
 #[derive(Deserialize, Debug)]
 pub struct CurrencyQuery {
@@ -553,13 +562,14 @@ async fn create_listing(
             guests_included: Some(req_data.guests_included),
             extra_guest_fee: req_data.extra_guest_fee,
             is_active: req_data.is_active,
+            location_privacy: None,
         };
 
         match db_listing::create_listing_with_active_currency(pool.get_ref(), &listing).await {
             Ok(created_listing) => {
                 return Ok(respond(
                     &req,
-                    Payload::Item(map_listing_to_response(created_listing)),
+                    Payload::Item(manager_listing_response(created_listing)),
                     |_: Vec<ListingResponse>| (),
                     actix_web::http::StatusCode::CREATED,
                 ));
@@ -678,6 +688,7 @@ async fn update_listing(
         guests_included: req_data.guests_included,
         extra_guest_fee: req_data.extra_guest_fee,
         booking_mode: req_data.booking_mode,
+        location_privacy: None,
     };
 
     let updated_listing =
@@ -685,7 +696,7 @@ async fn update_listing(
 
     Ok(respond(
         &req,
-        Payload::Item(map_listing_to_response(updated_listing)),
+        Payload::Item(manager_listing_response(updated_listing)),
         |_: Vec<ListingResponse>| (),
         actix_web::http::StatusCode::OK,
     ))

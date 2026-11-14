@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO listing (\n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            weekly_discount_percentage, monthly_discount_percentage, added_at, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, listing_details, overall_rating, review_count, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, is_active\n        )\n        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, COALESCE($20, '{}'::jsonb), $21, $22, $23, $24, $25, $26, COALESCE($27, 0.0000), COALESCE($28, 0.00), COALESCE($29, 0.00), COALESCE($30, 1), COALESCE($31, 0.00), $32\n        WHERE EXISTS (SELECT 1 FROM host_profiles WHERE user_id = $2)\n        RETURNING \n            id, user_id, name, description, listing_structure_id, country, price_per_night, \n            is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, \n            weekly_discount_percentage, monthly_discount_percentage, slug, \n            max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, \n            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS \"booking_mode: common::booking_request::BookingMode\"\n        ",
+  "query": "\n            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS \"booking_mode: common::booking_request::BookingMode\", listing.location_privacy AS \"location_privacy: common::location::LocationPrivacy\"\n            FROM listing\n            LEFT JOIN LATERAL (\n                SELECT thumb_img.upload_url\n                FROM listing_image parent_img\n                JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n                WHERE parent_img.listing_id = listing.id\n                  AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n                ORDER BY parent_img.is_primary DESC, parent_img.display_order\n                LIMIT 1\n            ) AS primary_img ON true\n            INNER JOIN \"user\" ON listing.user_id = \"user\".id\n            WHERE listing.id = $1 AND listing.deleted_at IS NULL AND \"user\".is_active = TRUE\n            ",
   "describe": {
     "columns": [
       {
@@ -55,18 +55,18 @@
       },
       {
         "ordinal": 10,
-        "name": "primary_image_url",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 11,
         "name": "weekly_discount_percentage",
         "type_info": "Numeric"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "monthly_discount_percentage",
         "type_info": "Numeric"
+      },
+      {
+        "ordinal": 12,
+        "name": "primary_image_url",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 13,
@@ -188,42 +188,26 @@
             }
           }
         }
+      },
+      {
+        "ordinal": 35,
+        "name": "location_privacy: common::location::LocationPrivacy",
+        "type_info": {
+          "Custom": {
+            "name": "location_privacy",
+            "kind": {
+              "Enum": [
+                "approximate",
+                "exact"
+              ]
+            }
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Int4",
-        "Text",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Timestamptz",
-        "Text",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Int4",
-        "Float8",
-        "Float8",
-        "Jsonb",
-        "Numeric",
-        "Int4",
-        "Text",
-        "Varchar",
-        "Int4",
-        "Int4",
-        "Numeric",
-        "Numeric",
-        "Numeric",
-        "Int4",
-        "Numeric",
-        "Bool"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -237,22 +221,23 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
       null,
-      true,
-      true,
-      false,
-      false,
-      false,
-      false,
       false,
       false,
       true,
-      true,
-      true,
-      null,
       false,
-      false,
-      true,
       false,
       false,
       false,
@@ -264,5 +249,5 @@
       false
     ]
   },
-  "hash": "7d7ab85d7c611d38b6a3b0964430054a1bb5fb351eb2f0dfb07c199c5153b9f3"
+  "hash": "8659897d9c54e54558e36276f962ab74abc9e41222a9803d6df197c2e012d781"
 }

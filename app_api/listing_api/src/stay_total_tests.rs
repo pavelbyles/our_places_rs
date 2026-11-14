@@ -67,6 +67,7 @@ async fn villa(pool: &PgPool, user_id: Uuid) -> Uuid {
             guests_included: None,
             extra_guest_fee: None,
             is_active: true,
+            location_privacy: None,
         },
     )
     .await
