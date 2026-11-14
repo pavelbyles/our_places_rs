@@ -53,6 +53,7 @@ bcrypt = "0.19.0"
 base64 = "0.23.1"
 subtle = "2.6.1"
 sha2 = "0.11.1"
+hmac = "0.13.0"
 url = "2.5"
 
 [workspace.dependencies.chrono]

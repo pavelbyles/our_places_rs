@@ -150,7 +150,7 @@ T25 prod version, full gates    ← T23, T24
 
 ### Phase 1: Redaction
 
-- [ ] **Task 1: Add `common::location`**
+- [x] **Task 1: Add `common::location`**
   - **Scope:** S
   - **Description:** Add the module with:
     - `LocationPrivacy` (`#[default] Approximate`) and `LocationPrecision`. Both use serde `snake_case`, and `sqlx::Type` with `type_name = "location_privacy"` behind the `sqlx` feature, as `BookingMode` is (`common/src/booking_request.rs:24-30`).

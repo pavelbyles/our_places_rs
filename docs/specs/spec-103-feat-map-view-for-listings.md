@@ -50,8 +50,7 @@ The function is pure and lives in `common::location::approximate_point(lat, lng,
 2. **Bearing**: `θ = 2π · u_angle`.
 3. **Distance**: area-uniform within the annulus [150m, 500m], as `d = sqrt(150² + u_dist · (500² − 150²))`.
 4. **Offset**:
-   - `Δlat = d·cos θ / 111_320`
-   - `Δlng = d·sin θ / (111_320 · cos(lat_rad))`
+   - `Δlat = d·cos θ / M` and `Δlng = d·sin θ / (M · cos(lat_rad))`, where `M = 6_371_000 · π / 180` (≈ 111_195 m per degree), the same sphere as the haversine distance and the JavaScript circle
 5. **Result**: each component is rounded to 5 decimal places (about 1.1m). Then latitude is clamped to [−90, 90] and longitude is wrapped to [−180, 180). The wrap comes **after** rounding, because 179.999996 rounds to 180.0.
 6. **The same offset every time**: for a given listing and key, the offset never changes. If the host moves the pin, the same offset is applied to the new position.
 
