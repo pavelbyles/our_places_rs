@@ -814,6 +814,7 @@ T25 prod version, full gates    ← T23, T24
     | 13 | One `AttributionControl` with the OSM and Protomaps credits for every map kind (`map.js`); ui-js `map.spec` and e2e `/listings` check the text. It is `compact`, so it collapses to an (i) button after the first interaction. |
     | 14 | Gates above at `f56ba3f9`; later commits change only Playwright specs and docs. |
 
+  - **Production version:** the originator set `MAP_TILES_VERSION_PROD` and `MAP_TILES_VERSION_DEV` to `20261113` on 2026-11-14.
   - **Still open:**
-    - `MAP_TILES_VERSION_PROD` and `_DEV` were set to `20261113` by the originator on 2026-11-14;
-    - T14's portal-only push.
+    - the CI-only evidence: T3's guard, T11's concurrent runs and cancel-mid-upload, T14's portal-only push and the failed-setup block;
+    - the 90s sanity-check budget, which the baseline already misses.
