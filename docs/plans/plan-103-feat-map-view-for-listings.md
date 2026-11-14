@@ -748,6 +748,10 @@ T25 prod version, full gates    ← T23, T24
     - [ ] Zero CSP violations, `Refused to` messages or failed map requests across all of the above.
   - **Verification Command:** `devenv shell -- npm run test:e2e:guest -- --grep "map|location" && devenv shell -- npm run test:e2e:admin -- --grep "pin picker"`
   - **Dependencies:** Task 16, Task 19, Task 21, Task 22
+  - **Written, not yet run:**
+    - specs `guest-portal/listings-map`, `listing-detail-map` and `bookings-location`, `admin-portal/listing-pin-picker`, and the shared helper `fixtures/map-watch.ts`;
+    - a `<noscript>` "Map needs JavaScript" note was added to `map_container` (spec §6 failure table) with a unit test.
+    - **Blocked:** the local portals were started without `MAP_TILES_BASE_URL` (stale devenv env), and the APIs (06:25) predate T20. They need restarting before this runs.
 
 - [ ] **Task 25: Production version and full gates**
   - **Scope:** S
