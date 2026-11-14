@@ -553,18 +553,19 @@ T25 prod version, full gates    ← T23, T24
 
 ### Phase 3: Guest Maps
 
-- [ ] **Task 16: Listing page map**
+- [x] **Task 16: Listing page map**
   - **Scope:** S
   - **Description:** In `#location`, add `map_container(listing, public point, precision)`, at zoom 13 for Approximate and 15 for Exact, with cooperative gestures. Update the copy as spec §1.7 describes. With no coordinates, or coordinates outside the bounds, show "Location not mapped" and no container. The out-of-bounds case logs `warn`.
   - **Files Touched:**
     - `web_ui_guest/src/pages/listing_detail.rs` (inline `mod listing_map_tests`)
   - **Acceptance Criteria:**
-    - [ ] Approximate: the container shows the public point, `data-precision="approximate"`, and the "shared after you book" copy.
-    - [ ] Exact: `data-precision="exact"` and "Exact location shown."
-    - [ ] No coordinates, or out of bounds: "Location not mapped" and no `data-map`. The out-of-bounds `warn` is captured.
-    - [ ] Without `MapConfig`: no `data-map`, and the location text is still there.
+    - [x] Approximate: the container shows the public point, `data-precision="approximate"`, and the "shared after you book" copy.
+    - [x] Exact: `data-precision="exact"` and "Exact location shown."
+    - [x] No coordinates, or out of bounds: "Location not mapped" and no `data-map`. The out-of-bounds `warn` is captured.
+    - [x] Without `MapConfig`: no `data-map`, and the location text is still there.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest listing_map_tests`
   - **Dependencies:** Task 5, Task 15
+  - **Built:** `listing_map_point` (a point of unknown precision is drawn as approximate; out of bounds logs `warn` with the listing ID and no coordinates) and `location_map`. With maps off, the old decorative placeholder stays, so the box doesn't change. `#location` now also shows when there are coordinates but no drive times. 6 tests; the bounds check and the approximate default are mutation-checked.
 
 - [ ] **Task 17: Map data and popup templates on listing cards**
   - **Scope:** S
