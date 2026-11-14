@@ -297,6 +297,7 @@ pub async fn get_listings(
     pool: web::Data<sqlx::PgPool>,
     query: web::Query<common::models::ListingQueryParams>,
     settings: web::Data<Settings>,
+    location_key: web::Data<common::location::LocationKey>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
     tracing::info!("GET /api/v1/listings entered");
@@ -383,7 +384,12 @@ pub async fn get_listings(
 
     let mut response: Vec<ListingResponse> = rows
         .into_iter()
-        .map(map_listing_with_owner_to_response)
+        .map(|row| {
+            let stored = api_core::models::StoredLocation::from(&row);
+            let mut listing = map_listing_with_owner_to_response(row);
+            crate::public_location::public_location(&mut listing, stored, &location_key);
+            listing
+        })
         .collect();
 
     if let (Some(rates), Some(target)) = (&rates, &target) {
@@ -435,12 +441,15 @@ async fn get_listing_by_id(
     path: web::Path<String>,
     pool: web::Data<PgPool>,
     query: web::Query<CurrencyQuery>,
+    location_key: web::Data<common::location::LocationKey>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id_or_slug = path.into_inner();
     let listing_details =
         db_listing::get_listing_by_id_or_slug(pool.get_ref(), &listing_id_or_slug).await?;
 
+    let stored = api_core::models::StoredLocation::from(&listing_details.listing);
     let mut response = api_core::models::map_listing_details_to_response(listing_details);
+    crate::public_location::public_location(&mut response.listing, stored, &location_key);
 
     if let Some(target) = requested_currency(query.currency.as_deref())? {
         let rate = db_core::exchange_rate::get_rate_pool(
@@ -630,12 +639,40 @@ async fn update_listing(
     pool: web::Data<PgPool>,
     path: web::Path<Uuid>,
     updated_listing_req: web::Json<UpdatedListingRequest>,
+    location_key: web::Data<common::location::LocationKey>,
 ) -> Result<impl Responder, ApiError> {
     let listing_id = path.into_inner();
     authz::require_listing_manager(pool.get_ref(), &claims, listing_id, "update_listing").await?;
     let req_data = updated_listing_req.into_inner();
     req_data.validate()?;
     common::location::validate_coordinates(req_data.latitude, req_data.longitude)?;
+
+    // Echo guard (spec 103 §1.1.5): a stale form may send back the public point.
+    let (latitude, longitude) = match (req_data.latitude, req_data.longitude) {
+        (None, None) => (None, None),
+        (lat, lng) => {
+            let stored = db_listing::get_listing_location(pool.get_ref(), listing_id)
+                .await?
+                .map(api_core::models::StoredLocation::from)
+                .ok_or(ApiError::Database(db_core::error::DbError::Sqlx(
+                    sqlx::Error::RowNotFound,
+                )))?;
+            let (lat, lng, echoed) = crate::public_location::drop_echoed_public_point(
+                lat,
+                lng,
+                stored,
+                &location_key,
+                listing_id,
+            );
+            if echoed {
+                tracing::warn!(
+                    %listing_id,
+                    "update carried the public point of an approximate listing; kept the stored coordinates"
+                );
+            }
+            (lat, lng)
+        }
+    };
 
     let structure_id = if let Some(ref structure_str) = req_data.listing_structure {
         let st = StructureType::from_str(structure_str).map_err(|_| {
@@ -654,7 +691,7 @@ async fn update_listing(
 
     let city = if req_data.city.is_some() {
         req_data.city
-    } else if let (Some(lat), Some(lon)) = (req_data.latitude, req_data.longitude) {
+    } else if let (Some(lat), Some(lon)) = (latitude, longitude) {
         common::geocode::reverse_geocode(lat, lon)
             .await
             .unwrap_or(None)
@@ -677,8 +714,8 @@ async fn update_listing(
         full_bathrooms: req_data.full_bathrooms,
         half_bathrooms: req_data.half_bathrooms,
         square_meters: req_data.square_meters,
-        latitude: req_data.latitude,
-        longitude: req_data.longitude,
+        latitude,
+        longitude,
         listing_details: req_data.listing_details,
         city,
         base_currency: req_data.base_currency,
@@ -1306,6 +1343,10 @@ pub(crate) mod tests;
 #[cfg(test)]
 #[path = "location_input_tests.rs"]
 mod location_input_tests;
+
+#[cfg(test)]
+#[path = "public_location_tests.rs"]
+mod public_location_tests;
 
 #[cfg(test)]
 #[path = "stay_total_tests.rs"]

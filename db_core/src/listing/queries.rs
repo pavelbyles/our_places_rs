@@ -1,7 +1,7 @@
 //! Reading listings: search, by owner, by id or slug.
 
 use crate::error::Result;
-use crate::models::{Listing, ListingWithOwner};
+use crate::models::{Listing, ListingLocationRow, ListingWithOwner};
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
@@ -403,4 +403,25 @@ where
         owner_name,
         rating_summary: Some(rating_summary),
     })
+}
+
+/// A listing's stored coordinates and location setting, or `None` when it
+/// doesn't exist or is deleted. For callers allowed to manage the listing.
+#[tracing::instrument(skip(executor))]
+pub async fn get_listing_location<'e, E>(
+    executor: E,
+    id: Uuid,
+) -> Result<Option<ListingLocationRow>>
+where
+    E: PgExecutor<'e>,
+{
+    let row = sqlx::query_as!(
+        ListingLocationRow,
+        r#"SELECT latitude, longitude, location_privacy AS "location_privacy: common::location::LocationPrivacy"
+           FROM listing WHERE id = $1 AND deleted_at IS NULL"#,
+        id
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(row)
 }

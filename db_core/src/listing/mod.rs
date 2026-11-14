@@ -16,7 +16,8 @@ pub use price_overrides::{
     update_price_override,
 };
 pub use queries::{
-    get_listing_by_id, get_listing_by_id_or_slug, get_listings, get_listings_by_user_id,
+    get_listing_by_id, get_listing_by_id_or_slug, get_listing_location, get_listings,
+    get_listings_by_user_id,
 };
 pub use write::{
     create_listing, create_listing_with_active_currency, delete_listing, update_listing,

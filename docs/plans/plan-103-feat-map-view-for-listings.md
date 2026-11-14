@@ -255,7 +255,7 @@ T25 prod version, full gates    ← T23, T24
   - **Built note:** an unknown privacy value is refused by actix's JSON extractor with a 400 whose body names the bad value (`nearby`), not the field. Coordinate errors come from `common::location::validate_coordinates` and are keyed by field. JSON can't carry `NaN` or `Infinity`: a `"NaN"` string or `1e400` is refused with a 400 by deserialization, and the validator also refuses non-finite values. Mutation-checked: removing the validation call makes the tests fail. `web_ui_admin` sends `location_privacy: None` until T8.
   - **Dependencies:** Task 2
 
-- [ ] **Task 5: Public coordinates mapper and echo guard**
+- [x] **Task 5: Public coordinates mapper and echo guard**
   - **Scope:** M
   - **Description:**
     - Add `public_location(&mut ListingResponse, stored, privacy, &LocationKey)`, implementing spec §1.2, and call it in `get_listings` and `get_listing_by_id` before the currency conversion.
@@ -280,6 +280,10 @@ T25 prod version, full gates    ← T23, T24
       - a genuinely new point is saved.
     - [ ] Captured logs and spans across search, detail, create and update contain no coordinate value.
   - **Verification Command:** `devenv shell -- cargo test -p listing_api public_location_tests`
+  - **Built note:**
+    - **New query:** `db_core::listing::get_listing_location` (stored point and privacy, excluding deleted listings). The echo guard uses it, and T7 will reuse it.
+    - **Leak check:** "the body contains neither stored value" is checked per component. An offset that runs purely east–west can leave latitude unchanged at 5 decimal places, so a component is checked only when the public value differs from the stored one. The whole point must always differ.
+    - **Mutation checks:** making the mapper return the stored point fails the search/detail test. Disabling the guard fails the echo test.
   - **Dependencies:** Task 2, Task 3, Task 4
 
 - [ ] **Task 6: `user_api` drops coordinates**

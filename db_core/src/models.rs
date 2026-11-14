@@ -799,6 +799,17 @@ pub struct Listing {
     pub location_privacy: common::location::LocationPrivacy,
 }
 
+/// A listing's stored location, for its managers.
+#[derive(Debug, Clone, Copy, PartialEq, FromRow)]
+pub struct ListingLocationRow {
+    /// Stored latitude.
+    pub latitude: Option<f64>,
+    /// Stored longitude.
+    pub longitude: Option<f64>,
+    /// What guests may see before they book.
+    pub location_privacy: common::location::LocationPrivacy,
+}
+
 /// A listing with its host's name, for search results.
 #[derive(Debug, FromRow, Serialize, Deserialize)]
 pub struct ListingWithOwner {

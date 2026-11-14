@@ -13,5 +13,7 @@ pub mod calendar;
 mod calendar_tests;
 /// The location offset key, loaded at startup.
 pub mod location_key;
+/// Public coordinates and the echo guard.
+pub mod public_location;
 /// Review routes.
 pub mod reviews;

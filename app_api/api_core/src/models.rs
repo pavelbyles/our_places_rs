@@ -189,6 +189,16 @@ impl From<&db_core::models::Listing> for StoredLocation {
     }
 }
 
+impl From<db_core::models::ListingLocationRow> for StoredLocation {
+    fn from(row: db_core::models::ListingLocationRow) -> Self {
+        Self {
+            latitude: row.latitude,
+            longitude: row.longitude,
+            privacy: row.location_privacy,
+        }
+    }
+}
+
 impl From<&db_core::models::ListingWithOwner> for StoredLocation {
     fn from(listing: &db_core::models::ListingWithOwner) -> Self {
         Self {
