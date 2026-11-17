@@ -62,8 +62,8 @@ This feature adds:
 7. The router gets `.with(site.base_url.clone())`, `.with(site.clone())`, and `.with(Metadata::new()…)` holding the site-wide defaults (§1.5).
 
 ### 1.2. `/sitemap.xml` (guest)
-1. `#[route(GET "/sitemap.xml")]` in a new `web_ui_guest/src/pages/seo.rs`, modelled on `calendar_export.rs`'s `calendar_ics`.
-2. Body: sitemaps.org 0.9 `<urlset>`, UTF-8, `content-type: application/xml; charset=utf-8`.
+1. `#[route(GET "/sitemap.xml")]` in a new `web_ui_guest/src/pages/seo.rs`, returning Topcoat's **`topcoat::router::content::sitemap::Sitemap`** (`sitemap` feature on `web_ui_guest`'s `topcoat` dependency; decided 2026-11-17 at the owner's request). Topcoat writes the XML, escapes text, resolves root-relative paths against the router's `BaseUrl`, and formats `<lastmod>` as RFC 3339; no hand-written XML.
+2. Body: sitemaps.org 0.9 `<urlset>` with the XML declaration, `content-type: application/xml` (Topcoat's `Sitemap` sets it).
 3. Static URLs, with no `<lastmod>` (we have no truthful date for them): `/`, `/listings`, `/about`, `/terms`, `/cancellation-policy`, `/privacy-policy`, `/house-rules` (the last four from `POLICY_LINKS`).
 4. Listing URLs: one `<url>` per listing returned by the public search (`get_api_client(cx).search_listings(…)`):
    - Paged at `per_page = 100` until a short page. There is a hard cap of 50 pages; hitting it is treated as a failure (`error!` + 503, item 7), because serving what was collected would be a partial sitemap. 5000 listings is far beyond the MVP, and the fix at that scale is a sitemap index (out of scope).
@@ -72,7 +72,7 @@ This feature adds:
    - `<loc>` = `base_url.join(&format!("/listings/{slug}"))`.
    - `<lastmod>` = `last_modified_at` in W3C datetime (`%Y-%m-%dT%H:%M:%SZ`), omitted if `None`.
    - The request is built from `ListingSearchParams::default()` with only `page`/`per_page` set. A unit test asserts `include_inactive == false` and that `owner`/`host`/`user_id` are unset, so the privacy filter can't be loosened by accident.
-5. All text is XML-escaped (`&`, `<`, `>`, `"`, `'`) even though slugs are `[a-z0-9-]`.
+5. All text is XML-escaped by Topcoat's `Sitemap` (text-node escaping of `&`, `<`, `>`), even though slugs are `[a-z0-9-]`. A test feeds a hostile slug through the real route.
 6. Listings are ordered by slug and deduplicated by slug, so output is deterministic.
 7. If any page of the listing search fails:
    - log `tracing::error!` (with page number and error);
@@ -311,7 +311,7 @@ This feature adds:
 | `web_ui_common/src/security_headers.rs` | `noindex` default on, queued before `next.run`; `.indexable(bool)`; `.noindex_prefixes(&[..])`; tests in `web_ui_common/tests/security_headers.rs` |
 | `web_ui_common/src/shell_guest.rs` | `tags()` in `<head>`; remove `title` from `GuestShell`/`guest_shell` |
 | `web_ui_common/src/assets.rs` | `OG_DEFAULT_IMAGE` |
-| `web_ui_guest/src/seo/mod.rs` (+ `tests.rs`) | Pure builders: `sitemap_xml(base, &[SitemapEntry]) -> String`, `robots_txt(base, indexable) -> String`, `PRIVATE_PREFIXES`, `vacation_rental(&ListingDetails, canonical, review summary) -> VacationRental` (serde structs) |
+| `web_ui_guest/src/seo/mod.rs` (+ `seo_tests.rs`, `sitemap_tests.rs`) | `PRIVATE_PREFIXES`, `robots_txt(base, indexable)`, `sitemap_search(page)`, `collect_listings(&client)` (paging, cap), `sitemap_for(listings) -> Sitemap` (Topcoat type), `vacation_rental(...)` (serde structs) |
 | `web_ui_guest/src/pages/seo.rs` | `/sitemap.xml` and `/robots.txt` routes (I/O only; logic in `seo/`) |
 | `web_ui_guest/src/pages/listing_detail.rs` | `#[memoize(as_ref)] load`; `listing_metadata` (slug canonical, swallows load errors); `json_ld(...)` in the view |
 | `web_client/src/client.rs`, `common/src/app_client/listings.rs` | `get_listing_by_id_at(client, base, …)`, so the listing client honours `listing_api_url` (testable with wiremock) |
@@ -406,8 +406,8 @@ Iterate with targeted tests; run the full suite once at the end.
 | U1 | `SiteConfig::from_lookup` | malformed input is never echoed (`!err.to_string().contains(input)`); missing → `Missing`; `""` → `Missing`; `ourplaces.io` → `NotAbsolute`; `https://x.io/app` → `HasPath`; `https://x.io/?a=1` → `NotAbsolute`; `http://localhost:3010` + not indexable → ok; `http://…` + indexable → `InsecureWhenIndexable`; trailing `/` accepted; `SEO_INDEXABLE` ∈ {`true`,`1`} → true, {`TRUE `,`yes`,`0`,unset} → false; Twitter handle valid/invalid/unset |
 | U2 | `robots_txt` | indexable: every `PRIVATE_PREFIXES` entry present, `Allow: /`, `Sitemap:` line with absolute URL; not indexable: exactly `User-agent: *\nDisallow: /\n`, no `Sitemap` |
 | U3 | admin robots | always disallow-all |
-| U4 | `sitemap_xml` | parses as XML (`quick-xml` dev-dependency); 7 static URLs; listing URLs absolute; `lastmod` format; omitted when `None`; dedup and sort; XML escaping of a hostile slug; the search params have `include_inactive == false` and no owner/host filter |
-| U4b | `sitemap_reply` against a **wiremock** `listing_api` (same setup as `calendar_export_tests.rs`) | 0 listings → 200 with 7 URLs; 101 listings → `.expect(2)` page calls; page 2 returns 500 → 503 + `retry-after: 300` + `cache-control: no-store`; 50 full pages → 503 (cap); success → `application/xml; charset=utf-8` + `public, max-age=3600`. Needs `TopcoatApiClient::search_listings` (already URL-injectable, `web_client/src/client.rs:80-90`) |
+| U4 | `/sitemap.xml` served over HTTP (real route, Topcoat `Sitemap`, `BaseUrl` on the router) against a **wiremock** `listing_api` | parses as XML (`quick-xml`); 7 static URLs in order; listing URLs absolute, sorted and deduplicated; `<lastmod>` RFC 3339 and omitted when `None`; hostile slug escaped; the search has no `include_inactive`, `user_id`, `host`, `owner` or `currency` parameter |
+| U4b | same harness, paging and failures | 101 listings → 2 page calls; page 2 returns 500 → 503 + `retry-after: 300` + `cache-control: no-store`, no `<urlset>`; 50 full pages → 503 (cap); success → `application/xml` + `public, max-age=3600` |
 | U5 | robots coverage | every auth-guarded guest route prefix (`/checkout`, `/bookings`, `/profile`, `/requests`, `/reviews/submit`, `/verify`, …) is matched by a `Disallow` rule |
 | U6 | `vacation_rental` | full listing → all properties; no price → no `makesOffer`; `review_count = 0` → no `aggregateRating`; NaN rating → none; coordinates `None` → no lat/long; no images → no `image`; amenities deduplicated and capped at 50; `price` serialised as a string equal to `Decimal::to_string()`; `numberOfBathroomsTotal = full + half`; `floorSize` only when set |
 | U7 | `vacation_rental` currency | converted pair passes through; `no_rate_for` → base currency |

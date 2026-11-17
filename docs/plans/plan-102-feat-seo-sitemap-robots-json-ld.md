@@ -190,18 +190,17 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_client get_listing_by_id_at && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests`
   - **Dependencies:** None
 
-- [ ] **T9: Guest `/sitemap.xml`**
+- [x] **T9: Guest `/sitemap.xml`**
   - **Scope:** M
   - **Description:**
-    - In `seo/mod.rs`, a pure `sitemap_xml(base, entries)`: the 7 static URLs, sorted and deduplicated by slug, XML-escaped, W3C dates from `last_modified_at`.
-    - A `sitemap_reply(&TopcoatApiClient) -> Response` used by the route. It pages `search_listings` at 100 (params from `ListingSearchParams::default()`). Any error **or** reaching the 50-page cap → `error!` + 503 (`retry-after: 300`, `no-store`). Success → `application/xml; charset=utf-8`, `public, max-age=3600`.
-    - Add `quick-xml` as a dev-dependency.
+    - In `seo/mod.rs`: `sitemap_for(listings) -> Sitemap` builds **Topcoat's `Sitemap`** (`topcoat::router::content::sitemap`, `sitemap` feature on `web_ui_guest`; owner request 2026-11-17). It holds the 7 static paths, then listings sorted and deduplicated by slug, with `last_modified(SystemTime::from(last_modified_at))`. Topcoat writes, escapes and resolves the XML against `BaseUrl`.
+    - `collect_listings(&TopcoatApiClient)` pages `search_listings` at 100 (`sitemap_search(page)`: `ListingSearchParams::default()` plus paging). The route returns the `Sitemap` with a queued `cache-control: public, max-age=3600`. Any error **or** reaching the 50-page cap → `error!` + 503 (`retry-after: 300`, `no-store`). Success → `application/xml` (set by Topcoat).
+    - Add `quick-xml` and `reqwest` as dev-dependencies (the tests serve the real route over HTTP).
   - **Files Touched:**
     - `web_ui_guest/src/seo/mod.rs`, `web_ui_guest/src/seo/seo_tests.rs`, `web_ui_guest/src/seo/sitemap_tests.rs`
     - `web_ui_guest/src/pages/seo.rs`, `web_ui_guest/Cargo.toml`
   - **Acceptance Criteria:**
-    - [ ] U4 passes (≥ 7 tests, including the params privacy assertion).
-    - [ ] U4b passes with wiremock (≥ 5 tests: empty, 101 → 2 calls, page-2 500 → 503 + headers, cap → 503, success headers).
+    - [x] U4 + U4b pass: 7 HTTP tests against the real route and a wiremock `listing_api` (empty, sorted/deduplicated/dated, hostile slug, 101 → 2 calls, public-only params, page-2 500 → 503 + headers, cap → 503).
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest seo::seo_tests && SQLX_OFFLINE=true cargo test -p web_ui_guest seo::sitemap_tests` (cargo takes one filter per run)
   - **Dependencies:** T2, T7
 
