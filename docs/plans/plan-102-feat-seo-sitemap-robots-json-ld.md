@@ -233,7 +233,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest page_titles_tests` (2 ✅)
   - **Dependencies:** T10
 
-- [ ] **T12: Listing metadata (slug canonical, error-safe)**
+- [x] **T12: Listing metadata (slug canonical, error-safe)**
   - **Scope:** M
   - **Description:**
     - Make `load` `#[memoize(as_ref)] async fn load(cx: &Cx, slug: &str) -> Result<Loaded>`, and adapt the call sites.
@@ -246,8 +246,8 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - Attach it with `#[page("/listings/{slug}", with(Metadata::from_fn(listing_metadata)))]`.
   - **Files Touched:** `web_ui_guest/src/pages/listing_detail.rs`, `web_ui_guest/src/pages/listing_detail_seo_tests.rs`
   - **Acceptance Criteria:**
-    - [ ] U12 passes (≥ 6 tests, including emoji and multi-byte text and both fallbacks).
-    - [ ] U13 passes with wiremock (≥ 4 tests: one detail call per full page, UUID path → slug canonical, mocked 404 → 404, mocked 500 → 5xx error page with the default head).
+    - [x] U12 passes (6 tests, including emoji and multi-byte text and both fallbacks). `truncate_on_word` and `meta_description` live in `crate::seo` (pure; the JSON-LD description cap reuses them).
+    - [x] U13 passes with wiremock (4 tests: one detail call per request, `.expect(1)`, shared by the page and `listing_metadata`; UUID path → slug canonical; mocked 404 → 404; mocked 500 → 5xx). They use an explicit router (probe layout rendering `tags()`, probe page using the real `load`), because full guest pages need the asset bundle. On errors Topcoat sends its plain error body, not a page with a head (T1).
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest listing_detail_seo_tests`
   - **Dependencies:** T1, T8, T10
 

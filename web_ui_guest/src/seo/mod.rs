@@ -57,6 +57,60 @@ pub fn robots_txt(base: &BaseUrl, indexable: bool) -> String {
     )
 }
 
+/// Longest page description, in characters (search engines show about
+/// this much).
+pub const META_DESCRIPTION_CHARS: usize = 160;
+
+/// `text` cut to at most `max_chars` characters (not bytes, so multi-byte
+/// text never splits a character), at the last word boundary, with `…`.
+/// Text that fits is returned as is.
+pub fn truncate_on_word(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    let cut = match head.rfind(char::is_whitespace) {
+        Some(at) if at > 0 => &head[..at],
+        _ => head.as_str(),
+    };
+    format!(
+        "{}…",
+        cut.trim_end_matches(|c: char| c.is_whitespace() || c == ',')
+    )
+}
+
+/// A listing's `<meta name="description">` (spec 102 §1.5.4): its own
+/// description, whitespace collapsed and cut at a word within
+/// [`META_DESCRIPTION_CHARS`]; without one, "3-bedroom villa in Negril,
+/// Jamaica" (bedrooms left out when 0, city when unknown).
+pub fn meta_description(listing: &ListingResponse) -> String {
+    let own = listing
+        .description
+        .as_deref()
+        .map(|d| d.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|d| !d.is_empty());
+    match own {
+        Some(text) => truncate_on_word(&text, META_DESCRIPTION_CHARS),
+        None => {
+            let place = match listing
+                .city
+                .as_deref()
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+            {
+                Some(city) => format!("{city}, {}", listing.country),
+                None => listing.country.clone(),
+            };
+            let structure = listing.listing_structure.to_lowercase();
+            if listing.bedrooms > 0 {
+                format!("{}-bedroom {structure} in {place}", listing.bedrooms)
+            } else {
+                format!("{} in {place}", listing.listing_structure)
+            }
+        }
+    }
+}
+
 /// Listings fetched per page while building the sitemap.
 pub const SITEMAP_PAGE_SIZE: u32 = 100;
 
