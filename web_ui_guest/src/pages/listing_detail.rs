@@ -25,6 +25,7 @@ use web_ui_common::components::{
         responsive_image::{responsive_image, variant_srcset, variant_url},
     },
     highlights_ribbon::highlights_ribbon,
+    json_ld::json_ld,
     listing_hero::listing_hero,
     map::{MapKind, MapPoint, map_container},
     section_nav::{PILL, PILL_SM, section_nav},
@@ -248,6 +249,18 @@ async fn load(cx: &Cx, slug: &str) -> Result<Loaded> {
 /// D10). `None` only without a configured origin (never in a running portal).
 pub fn listing_canonical(cx: &Cx, listing: &ListingResponse) -> Option<String> {
     try_base_url(cx).map(|base| base.join(&format!("/listings/{}", listing.slug)))
+}
+
+/// The listing's `VacationRental` JSON-LD (spec 102 §1.4), identified by
+/// the same slug canonical as the head. `None` without a configured origin,
+/// or if it can't be serialized (logged): the page works without it.
+fn listing_structured_data(cx: &Cx, details: &ListingDetails) -> Option<serde_json::Value> {
+    let canonical = listing_canonical(cx, &details.listing)?;
+    serde_json::to_value(crate::seo::json_ld::vacation_rental(details, &canonical))
+        .inspect_err(|e| {
+            tracing::warn!(listing_id = %details.listing.id, error = %e, "listing JSON-LD not rendered");
+        })
+        .ok()
 }
 
 /// Head metadata for a listing page (spec 102 §1.5.4): its name, a
@@ -528,6 +541,7 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
         currency,
         no_rate_for,
     } = load(cx, slug).await?.clone();
+    let structured_data = listing_structured_data(cx, &details);
     let q = stay_query(cx);
     let month = q.check_in.unwrap_or_else(jamaica_today);
     let (calendar, reviews) = tokio::join!(
@@ -1266,6 +1280,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     </section>
                 </div>
             </div>
+            if let Some(structured_data) = structured_data {
+                json_ld(value: structured_data)
+            }
         </article>
     })
 }

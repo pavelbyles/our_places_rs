@@ -280,13 +280,13 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest vacation_rental_tests`
   - **Dependencies:** None
 
-- [ ] **T15: Render JSON-LD on the listing page**
+- [x] **T15: Render JSON-LD on the listing page**
   - **Scope:** XS
   - **Description:** At the end of the listing content, render `json_ld(value: serde_json::to_value(vacation_rental(&details, &canonical))?)`, where `canonical` is the same slug-based value T12 uses. Extract it into one helper, `listing_canonical(cx, &listing)`.
   - **Files Touched:** `web_ui_guest/src/pages/listing_detail.rs`, `web_ui_guest/src/pages/listing_detail_seo_tests.rs`
   - **Acceptance Criteria:**
-    - [ ] Extend U13: exactly one `ld+json` block; it parses; its `url` equals the canonical `<link>`, including on a `/listings/<uuid>` request.
-    - [ ] The existing `listing_detail` tests are green.
+    - [x] Extend U13: exactly one `ld+json` block; it parses; its `url` equals the canonical `<link>`, including on a `/listings/<uuid>` request (2 new tests). The page and the probe share `listing_structured_data(cx, &details)`, built on `listing_canonical`.
+    - [x] The existing `listing_detail` tests are green (30 in the filter; 117 across `web_ui_guest`).
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest listing_detail`
   - **Dependencies:** T12, T13, T14
 

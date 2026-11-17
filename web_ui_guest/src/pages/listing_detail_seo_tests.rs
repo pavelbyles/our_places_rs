@@ -137,7 +137,13 @@ async fn probe_layout(cx: &Cx, slot: Slot<'_>) -> Result<impl View> {
 async fn probe_listing(cx: &Cx) -> Result<impl View> {
     let loaded = super::load(cx, super::slug(cx)).await?;
     let name = loaded.details.listing.name.clone();
-    Ok(view! { <h1>(name)</h1> })
+    let structured = super::listing_structured_data(cx, &loaded.details);
+    Ok(view! {
+        <h1>(name)</h1>
+        if let Some(structured) = structured {
+            web_ui_common::components::json_ld::json_ld(value: structured)
+        }
+    })
 }
 
 fn details_json(slug: &str, images: serde_json::Value) -> serde_json::Value {
@@ -293,4 +299,60 @@ async fn an_api_failure_keeps_its_error_status() {
         .await;
     let (status, _) = get(&api, "villa-azure").await;
     assert!(status >= 500, "{status}");
+}
+
+/// The single JSON-LD block of `html`, parsed.
+fn structured_data(html: &str) -> serde_json::Value {
+    let open = r#"<script type="application/ld+json">"#;
+    assert_eq!(html.matches(open).count(), 1, "{html}");
+    let body = html
+        .split(open)
+        .nth(1)
+        .and_then(|rest| rest.split("</script>").next())
+        .unwrap_or_default();
+    match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => panic!("JSON-LD does not parse: {e}: {body}"),
+    }
+}
+
+#[tokio::test]
+async fn structured_data_is_rendered_once_with_the_canonical_url() {
+    let api = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/listings/villa-azure"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(details_json("villa-azure", serde_json::json!([]))),
+        )
+        .expect(1)
+        .mount(&api)
+        .await;
+    let (status, html) = get(&api, "villa-azure").await;
+    assert_eq!(status, 200, "{html}");
+    let ld = structured_data(&html);
+    assert_eq!(ld["@type"], "VacationRental");
+    assert_eq!(ld["url"], "https://ourplaces.io/listings/villa-azure");
+    assert_eq!(ld["description"], "Sea views & a private pool.");
+}
+
+#[tokio::test]
+async fn structured_data_on_a_uuid_url_uses_the_slug_canonical() {
+    let api = MockServer::start().await;
+    let id = "0190a0a0-0000-7000-8000-000000000001";
+    Mock::given(method("GET"))
+        .and(path(format!("/api/v1/listings/{id}")))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(details_json("villa-azure", serde_json::json!([]))),
+        )
+        .mount(&api)
+        .await;
+    let (_, html) = get(&api, id).await;
+    let ld = structured_data(&html);
+    assert_eq!(ld["url"], "https://ourplaces.io/listings/villa-azure");
+    assert_eq!(
+        ld["@id"],
+        "https://ourplaces.io/listings/villa-azure#rental"
+    );
 }
