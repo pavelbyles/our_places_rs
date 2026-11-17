@@ -107,7 +107,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** locally `SQLX_OFFLINE=true cargo test -p web_ui_common site_config_tests && ! GUEST_PORTAL_URL= SQLX_OFFLINE=true cargo run -q -p web_ui_guest 2>err.log; grep -q 'GUEST_PORTAL_URL' err.log && grep -q 'refusing to start' err.log` (it must fail **because of** the variable, not for an unrelated reason); after CI `for s in our-places-web-ui-guest-$SFX booking-api-$SFX our-places-web-ui-admin-$SFX; do gcloud run services describe $s --region us-central1 --format=json | jq -r '.spec.template.spec.containers[0].env[] | select(.name|test("GUEST_PORTAL_URL|BASE_URL|SEO_INDEXABLE")) | "\(.name)=\(.value)"'; done` with `SFX=feat-102-seo-sitemap-xml-robots-txt`
   - **Dependencies:** None
 
-- [ ] **T3: `X-Robots-Tag`: queued, on by default, private prefixes**
+- [x] **T3: `X-Robots-Tag`: queued, on by default, private prefixes**
   - **Scope:** S
   - **Description:** Change `SecurityHeaders` (spec §1.6):
     - `noindex` defaults to `true` for `new()` and `admin()`;
@@ -120,8 +120,8 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - `web_ui_common/src/security_headers.rs`, `web_ui_common/tests/security_headers.rs`
     - `web_ui_guest/src/main.rs`, `web_ui_guest/src/seo/mod.rs`, `web_ui_guest/src/lib.rs`
   - **Acceptance Criteria:**
-    - [ ] U11 passes (≥ 6 tests: HTML, non-HTML, 404 error, indexable `/`, indexable private prefix, admin 404).
-    - [ ] The CSP constants are unchanged (existing tests green, untouched).
+    - [x] U11 passes (7 tests: HTML, non-HTML, 404 error, indexable `/`, indexable private prefix, admin incl. 404 and `indexable(true)`, wildcard matcher).
+    - [x] The CSP constants are unchanged (existing tests green, untouched).
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test security_headers`
   - **Dependencies:** T2
 

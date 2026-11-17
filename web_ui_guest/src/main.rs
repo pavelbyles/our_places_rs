@@ -36,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "invalid site configuration; refusing to start"
         );
     })?;
+    let site_indexable = site.indexable();
 
     // Fail fast: no fallback signing secret, and rendering any page panics
     // without the asset bundle (topcoat-asset), so neither may be missing.
@@ -73,6 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(
             SecurityHeaders::new()
                 .with_hsts(hsts)
+                .indexable(site_indexable)
+                .noindex_prefixes(web_ui_guest::seo::PRIVATE_PREFIXES)
                 .with_storage_origin(common::gcs::emulator_endpoint())
                 .with_map_origin(map_config.as_ref()),
         )
