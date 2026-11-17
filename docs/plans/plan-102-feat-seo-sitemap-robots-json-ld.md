@@ -204,7 +204,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest seo::seo_tests && SQLX_OFFLINE=true cargo test -p web_ui_guest seo::sitemap_tests` (cargo takes one filter per run)
   - **Dependencies:** T2, T7
 
-- [ ] **T10: Shell metadata, router defaults and the OG asset**
+- [x] **T10: Shell metadata, router defaults and the OG asset**
   - **Scope:** M
   - **Description:**
     - Crop the image once: `magick web_ui_common/assets/8ac5cca0-cf4e-11f1-9294-9dd6950248f8.jpg -resize 1200x630^ -gravity center -extent 1200x630 -quality 82 -strip web_ui_common/src/assets/og-default.jpg`. Keep it ≤ 250 KB, then `git rm`/remove the original and `web_ui_common/assets/`.
@@ -218,9 +218,9 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - `web_ui_common/src/shell_guest.rs`, `web_ui_common/tests/shells.rs`
     - `web_ui_guest/src/layout.rs`, `web_ui_guest/src/main.rs`
   - **Acceptance Criteria:**
-    - [ ] U10 passes (≥ 7 tests, including the `//evil.example/x` canonical).
-    - [ ] `file og-default.jpg` reports 1200x630; size ≤ 250 KB.
-    - [ ] The admin shell is unchanged.
+    - [x] U10 passes: 7 HTTP tests in `web_ui_common/tests/site_metadata.rs` (a probe layout rendering `tags()`, the router set up like the guest's), including the `//evil.example/x` canonical. The defaults come from `site_config::site_metadata` (`Metadata::from_fn`), with the image in `default_image_metadata()`.
+    - [x] `file og-default.jpg` reports 1200x630; size ≤ 250 KB (190 KB). The owner's full-size original is left **untracked** in `web_ui_common/assets/`, not deleted: it's their only copy. The alt text was changed to "Garden path to a villa entrance with the sea beyond" to match the photo.
+    - [x] The admin shell is unchanged. (The asset OG image and the full document head are checked end to end in E6, because `cargo test` has no asset bundle.)
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test shells && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests`
   - **Dependencies:** T1, T2
 

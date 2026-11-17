@@ -5,12 +5,15 @@ use std::env;
 use tokio::net::TcpListener;
 use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
 use topcoat::cookie::CookieLayer;
+use topcoat::metadata::Metadata;
 use topcoat::router::{Router, RouterBuilderDiscoverExt};
 use topcoat::session::{SessionTokenStore, cookie::CookieTokenStore};
 use web_client::{TopcoatApiClient, jwt::ServiceJwt};
 use web_ui_common::map_config::MapConfig;
 use web_ui_common::security_headers::SecurityHeaders;
-use web_ui_common::site_config::{GUEST_PORTAL_URL_ENV, SiteConfig};
+use web_ui_common::site_config::{
+    GUEST_PORTAL_URL_ENV, SiteConfig, default_image_metadata, site_metadata,
+};
 
 use web_ui_guest::DEFAULT_PORT;
 
@@ -64,7 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(TopcoatApiClient::from_env())
         .with(service_jwt)
         .with(site.base_url().clone())
-        .with(site);
+        .with(site)
+        // Site-wide head metadata; pages override fields (spec 102 §1.5).
+        .with(Metadata::from_fn(site_metadata))
+        .with(default_image_metadata());
     let builder = match map_config.clone() {
         Some(map) => builder.with(map),
         None => builder,

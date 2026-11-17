@@ -10,7 +10,11 @@
 use std::env;
 
 use thiserror::Error;
-use topcoat::context::{BaseUrl, Cx, try_context};
+use topcoat::context::{BaseUrl, Cx, try_base_url, try_context};
+use topcoat::metadata::{Image, Metadata, OpenGraph, Twitter, TwitterCard};
+use topcoat::router::request::uri;
+
+use crate::assets::OG_DEFAULT_IMAGE;
 
 /// The guest portal's public origin, e.g. `https://ourplaces.io`.
 pub static GUEST_PORTAL_URL_ENV: &str = "GUEST_PORTAL_URL";
@@ -29,7 +33,10 @@ pub const SITE_NAME: &str = "Our Places";
 pub const SITE_DESCRIPTION: &str = "Private luxury villas and apartments in Jamaica, hosted by their owners. Book direct with Our Places.";
 
 /// Alternative text of the default Open Graph image.
-pub const OG_DEFAULT_ALT: &str = "A villa on the Jamaican coast";
+pub const OG_DEFAULT_ALT: &str = "Garden path to a villa entrance with the sea beyond";
+
+/// Pixel size of the default Open Graph image (`og-default.jpg`).
+pub const OG_DEFAULT_IMAGE_SIZE: (u32, u32) = (1200, 630);
 
 /// Title of pages that set none.
 pub const DEFAULT_PAGE_TITLE: &str = "Luxury Jamaica Stays";
@@ -144,6 +151,43 @@ impl SiteConfig {
 /// router (`.with(..)`).
 pub fn site_config(cx: &Cx) -> Option<&SiteConfig> {
     try_context::<SiteConfig>(cx)
+}
+
+/// Site-wide head metadata for the guest portal (spec 102 §1.5), registered
+/// on the router with `Metadata::from_fn`; pages override fields.
+///
+/// The canonical is the request path, without its query, joined onto the
+/// configured origin. It deliberately avoids `Url::Current`, which leaves a
+/// `//host/...` path unresolved and so could name another site; `join`
+/// always stays on the origin.
+pub async fn site_metadata(cx: &Cx) -> topcoat::Result<Metadata> {
+    let twitter = Twitter::new().card(TwitterCard::SummaryLargeImage);
+    let twitter = match site_config(cx).and_then(SiteConfig::twitter_site) {
+        Some(handle) => twitter.site(handle.to_string()),
+        None => twitter,
+    };
+    let metadata = Metadata::new()
+        .title(page_title(DEFAULT_PAGE_TITLE))
+        .description(SITE_DESCRIPTION)
+        .open_graph(OpenGraph::new().site_name(SITE_NAME))
+        .twitter(twitter);
+    Ok(match try_base_url(cx) {
+        Some(base) => metadata.canonical(base.join(uri(cx).path())),
+        None => metadata,
+    })
+}
+
+/// The default Open Graph image (a bundled asset), registered on the router
+/// beside [`site_metadata`]. Pages with their own photo replace it.
+pub fn default_image_metadata() -> Metadata {
+    let (width, height) = OG_DEFAULT_IMAGE_SIZE;
+    Metadata::new().open_graph(
+        OpenGraph::new().image(
+            Image::new(OG_DEFAULT_IMAGE)
+                .size(width, height)
+                .alt(OG_DEFAULT_ALT),
+        ),
+    )
 }
 
 /// A page title with the site name appended: `"Villas · Our Places"`.
