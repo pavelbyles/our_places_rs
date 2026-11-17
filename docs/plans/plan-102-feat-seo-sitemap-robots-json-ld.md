@@ -125,15 +125,15 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test security_headers`
   - **Dependencies:** T2
 
-- [ ] **T4: Guest `/robots.txt`**
+- [x] **T4: Guest `/robots.txt`**
   - **Scope:** S
   - **Description:** A pure `robots_txt(base: &BaseUrl, indexable: bool) -> String` in `seo/mod.rs`, and `#[route(GET "/robots.txt")]` in `pages/seo.rs` (`text/plain; charset=utf-8`, `public, max-age=3600`). Test U5 scans `include_str!` of the `pages/*.rs` files for guarded `#[page("…")]` paths, meaning files whose handler calls `require_guest`, and asserts each is disallowed. No hand-maintained expected list.
   - **Files Touched:**
     - `web_ui_guest/src/seo/mod.rs`, `web_ui_guest/src/seo/seo_tests.rs`
     - `web_ui_guest/src/pages/seo.rs`, `web_ui_guest/src/pages/mod.rs`
   - **Acceptance Criteria:**
-    - [ ] U2 and U5 pass (≥ 4 tests). U5 fails when a guarded page is added without a matching prefix (check by temporarily removing one prefix).
-    - [ ] Local `curl -i localhost:3010/robots.txt` → `Disallow: /`, no `Sitemap`, `x-robots-tag` present.
+    - [x] U2 and U5 pass (6 tests). U5 fails when a guarded page is added without a matching prefix (verified by temporarily removing `/profile`).
+    - [ ] Local `curl -i localhost:3010/robots.txt` → `Disallow: /`, no `Sitemap`, `x-robots-tag` present. (Deferred to E3 in T16, which needs a running guest.)
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest seo_tests`
   - **Dependencies:** T2, T3
 
