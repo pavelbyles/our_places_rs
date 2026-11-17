@@ -35,3 +35,7 @@ pub mod guard;
 /// Logging setup and the per-request tracing layer that joins page loads
 /// and API calls into one trace.
 pub mod request_tracing;
+
+/// The guest portal's public origin and SEO switches (`GUEST_PORTAL_URL`,
+/// `SEO_INDEXABLE`, `SEO_TWITTER_SITE`), read once at startup.
+pub mod site_config;

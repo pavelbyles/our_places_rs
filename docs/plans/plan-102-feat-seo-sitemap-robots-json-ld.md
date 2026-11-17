@@ -76,7 +76,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test metadata_contract` (8 tests ✅)
   - **Dependencies:** None
 
-- [ ] **T2: Fail-fast `SiteConfig` with CI public-URL wiring (one commit, one push)**
+- [x] **T2: Fail-fast `SiteConfig` with CI public-URL wiring (one commit, one push)**
   - **Scope:** L (kept as one task on purpose: shipping the startup check without the CI wiring breaks the next deploy)
   - **Description:**
     - **App**: add `web_ui_common::site_config` (spec §1.1):
@@ -100,9 +100,9 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - `devenv.nix`, `docker-compose.yml`, `playwright/playwright.config.ts`
     - `.github/workflows/cicd_full_stack.yml`
   - **Acceptance Criteria:**
-    - [ ] U1 passes (≥ 15 tests, including "malformed input not echoed").
-    - [ ] Startup fails as intended: exactly one `ERROR` line naming `GUEST_PORTAL_URL`, and the port is not bound.
-    - [ ] `npx --yes actionlint` (or `docker run rhysd/actionlint`) is clean on the workflow.
+    - [x] U1 passes (18 tests, including "malformed input not echoed").
+    - [x] Startup fails as intended: exactly one `ERROR` line naming `GUEST_PORTAL_URL`, and the port is not bound (exit 1, verified).
+    - [x] `npx --yes actionlint` (or `docker run rhysd/actionlint`) is clean on the workflow. Verified with `rhysd/actionlint:1.7.7`: 67 findings before and after, none new.
     - [ ] After the push: the guest service env has `GUEST_PORTAL_URL` equal to its own reachable `run.app` URL and `SEO_INDEXABLE=false`. booking-api `BASE_URL` and admin `GUEST_PORTAL_URL` equal the same value. The feature-branch deploy is green.
   - **Verification Command:** locally `SQLX_OFFLINE=true cargo test -p web_ui_common site_config_tests && ! GUEST_PORTAL_URL= SQLX_OFFLINE=true cargo run -q -p web_ui_guest 2>err.log; grep -q 'GUEST_PORTAL_URL' err.log && grep -q 'refusing to start' err.log` (it must fail **because of** the variable, not for an unrelated reason); after CI `for s in our-places-web-ui-guest-$SFX booking-api-$SFX our-places-web-ui-admin-$SFX; do gcloud run services describe $s --region us-central1 --format=json | jq -r '.spec.template.spec.containers[0].env[] | select(.name|test("GUEST_PORTAL_URL|BASE_URL|SEO_INDEXABLE")) | "\(.name)=\(.value)"'; done` with `SFX=feat-102-seo-sitemap-xml-robots-txt`
   - **Dependencies:** None

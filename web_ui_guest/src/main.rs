@@ -10,6 +10,7 @@ use topcoat::session::{SessionTokenStore, cookie::CookieTokenStore};
 use web_client::{TopcoatApiClient, jwt::ServiceJwt};
 use web_ui_common::map_config::MapConfig;
 use web_ui_common::security_headers::SecurityHeaders;
+use web_ui_common::site_config::{GUEST_PORTAL_URL_ENV, SiteConfig};
 
 use web_ui_guest::DEFAULT_PORT;
 
@@ -25,6 +26,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Link the layout so Topcoat's discovery sees this crate's routes.
     let _ = web_ui_guest::layout::guest_layout;
+
+    // Fail fast (spec 102 §1.1): canonical, Open Graph and sitemap URLs are
+    // built from GUEST_PORTAL_URL, never from the request's Host header.
+    let site = SiteConfig::from_env().inspect_err(|e| {
+        tracing::error!(
+            variable = GUEST_PORTAL_URL_ENV,
+            reason = %e,
+            "invalid site configuration; refusing to start"
+        );
+    })?;
 
     // Fail fast: no fallback signing secret, and rendering any page panics
     // without the asset bundle (topcoat-asset), so neither may be missing.
@@ -50,7 +61,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(CookieLayer::new())
         .with(sessions)
         .with(TopcoatApiClient::from_env())
-        .with(service_jwt);
+        .with(service_jwt)
+        .with(site.base_url().clone())
+        .with(site);
     let builder = match map_config.clone() {
         Some(map) => builder.with(map),
         None => builder,

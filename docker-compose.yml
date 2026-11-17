@@ -148,6 +148,9 @@ services:
       - LISTING_API_URL=http://listing_api:8080
       - USER_API_URL=http://user_api:8080
       - BOOKING_API_URL=http://booking_api:8080
+      # Required (#102): canonical and sitemap URLs; the portal refuses to
+      # start without it.
+      - GUEST_PORTAL_URL=${GUEST_PORTAL_URL:-http://localhost:3010}
     depends_on:
       listing_api:
         condition: service_healthy
