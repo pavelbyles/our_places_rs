@@ -25,7 +25,7 @@ Search engines are the main sales channel for a villa site, and today the guest 
    - **Not indexable (every other environment)**: `Disallow: /` for all agents, plus an `X-Robots-Tag: noindex, nofollow` header on every guest response.
    - **Admin portal** (`web_ui_admin`, every environment): `/robots.txt` returns `Disallow: /`, and every response carries `X-Robots-Tag: noindex, nofollow` (Q7).
 3. **JSON-LD on listing detail pages** (`/listings/{slug}`): a `VacationRental` (Q5), including the properties Google requires for that type (`containsPlace` with an `Accommodation` and its `occupancy`, bedrooms, bathrooms), with name, description, URL, images, `address` (locality, country), `geo` (public coordinates only), amenities (`amenityFeature`), occupancy/bedrooms, `aggregateRating` from `ListingRatingSummary` (only when `review_count > 0`), and an `Offer` with the base nightly rate (`price_per_night`) in the listing's `base_currency` (Q6). The `Offer` is left out when `price_per_night` is `None`.
-4. **Canonical + social meta** on home and listing detail pages, and a default on other public pages. Each page's canonical points at itself; filtered `/listings?…` URLs aren't collapsed (Q8). Pages without a listing photo use the default OG image (Q9). The tags are: `<link rel="canonical">`, `<meta name="description">`, OpenGraph (`og:title`, `og:description`, `og:url`, `og:image`, `og:type`, `og:site_name`) and Twitter card (`summary_large_image`) tags.
+4. **Canonical + social meta** on home and listing detail pages, and a default on other public pages. Each page's canonical is its own path without the query string (Q8). Pages without a listing photo use the default OG image (Q9). The tags are: `<link rel="canonical">`, `<meta name="description">`, OpenGraph (`og:title`, `og:description`, `og:url`, `og:image`, `og:type`, `og:site_name`) and Twitter card (`summary_large_image`) tags.
 5. **CSP-compatible emission**: JSON-LD ships as `<script type="application/ld+json">`, and the policy in `web_ui_common/src/security_headers.rs` (`script-src 'self'`, no `'unsafe-inline'`) stays unweakened.
 6. **Playwright coverage** (`playwright/`): checks that `/sitemap.xml` parses and lists only live listings, that `/robots.txt` carries the expected rules for the environment, and that each listing page's JSON-LD parses and has the required properties.
 
@@ -51,7 +51,7 @@ Search engines are the main sales channel for a villa site, and today the guest 
 - Admin portal SEO beyond blocking it (Q7).
 - Page-speed or Core Web Vitals work.
 - `Event`, `FAQPage` or `BreadcrumbList` schema.
-- Canonicalising or `noindex`-ing filtered `/listings` URLs or policy pages (Q8).
+- `noindex`-ing filtered `/listings` URLs or policy pages (Q8).
 
 ---
 
@@ -109,5 +109,5 @@ Search engines are the main sales channel for a villa site, and today the guest 
 - [x] **Q5 Schema type**: `VacationRental`.
 - [x] **Q6 Offer price**: the base nightly rate (`price_per_night`, base currency, exact decimal). The `Offer` is omitted when there's no price.
 - [x] **Q7 Admin portal**: in scope. Disallow-all robots plus `X-Robots-Tag: noindex, nofollow` in every environment.
-- [x] **Q8 Extra pages**: let search engines crawl everything naturally. Policy pages stay in the sitemap and are indexable. Canonicals are self-referencing, and filtered `/listings` URLs aren't collapsed. No `BreadcrumbList`.
+- [x] **Q8 Extra pages**: let search engines crawl everything naturally. Policy pages stay in the sitemap and are indexable. Canonicals are the page's own path **without the query string** (revised 2026-11-16 during spec: `/listings?…` and `/listings/{slug}?check_in=…&currency=…` fold into the bare path, while crawlers can still fetch them). No `BreadcrumbList`.
 - [x] **Q9 Default OG image**: the owner supplied a 1350×900 JPEG, now at `web_ui_common/assets/8ac5cca0-cf4e-11f1-9294-9dd6950248f8.jpg`. During the build, move it to `web_ui_common/src/assets/og-default.jpg` (where `asset!()` bundles from, next to `hero.jpg`) and serve it as a hashed asset. Crop and compress it to 1200×630 if the spec confirms that Google's or OG's preferred ratio matters. It's 3:2 today and 374 KB.
