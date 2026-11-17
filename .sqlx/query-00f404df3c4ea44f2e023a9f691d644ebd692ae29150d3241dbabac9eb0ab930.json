@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS \"booking_mode: common::booking_request::BookingMode\", listing.location_privacy AS \"location_privacy: common::location::LocationPrivacy\"\n            FROM listing\n            LEFT JOIN LATERAL (\n                SELECT thumb_img.upload_url\n                FROM listing_image parent_img\n                JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n                WHERE parent_img.listing_id = listing.id\n                  AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n                ORDER BY parent_img.is_primary DESC, parent_img.display_order\n                LIMIT 1\n            ) AS primary_img ON true\n            INNER JOIN \"user\" ON listing.user_id = \"user\".id\n            WHERE listing.slug = $1 AND listing.deleted_at IS NULL AND \"user\".is_active = TRUE\n            ",
+  "query": "\n        SELECT listing.id, listing.user_id, listing.name, listing.description, listing.listing_structure_id, listing.country, listing.price_per_night, listing.is_active, listing.added_at, listing.deleted_at, listing.weekly_discount_percentage, listing.monthly_discount_percentage, primary_img.upload_url as primary_image_url, listing.slug, listing.max_guests, listing.bedrooms, listing.beds, listing.full_bathrooms, listing.half_bathrooms, listing.square_meters, listing.latitude, listing.longitude, CAST(listing.overall_rating AS FLOAT8) as overall_rating, listing.review_count, listing.listing_details, listing.city, listing.base_currency, listing.minimum_stay, listing.days_between_bookings, listing.commission_pct, listing.cleaning_fee, listing.damage_deposit, listing.guests_included, listing.extra_guest_fee, listing.booking_mode AS \"booking_mode: common::booking_request::BookingMode\", listing.location_privacy AS \"location_privacy: common::location::LocationPrivacy\", listing.updated_at, listing_last_modified(listing.id, listing.updated_at) AS \"last_modified_at!\"\n        FROM listing\n        LEFT JOIN LATERAL (\n            SELECT thumb_img.upload_url\n            FROM listing_image parent_img\n            JOIN listing_image thumb_img ON thumb_img.parent_id = parent_img.id\n            WHERE parent_img.listing_id = listing.id\n              AND thumb_img.resolution = 'Thumbnail400w'::image_resolution\n            ORDER BY parent_img.is_primary DESC, parent_img.display_order\n            LIMIT 1\n        ) AS primary_img ON true\n        WHERE listing.user_id = $1 AND listing.deleted_at IS NULL\n        ORDER BY listing.added_at DESC, listing.id DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -203,11 +203,21 @@
             }
           }
         }
+      },
+      {
+        "ordinal": 36,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 37,
+        "name": "last_modified_at!",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -246,8 +256,10 @@
       false,
       false,
       false,
-      false
+      false,
+      false,
+      null
     ]
   },
-  "hash": "e80e0fa68b65629b50fe31b6023f93c03d2a781605baf92d880f3ccb12df5bfc"
+  "hash": "00f404df3c4ea44f2e023a9f691d644ebd692ae29150d3241dbabac9eb0ab930"
 }

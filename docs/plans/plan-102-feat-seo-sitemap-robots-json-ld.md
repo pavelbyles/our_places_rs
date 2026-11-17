@@ -103,7 +103,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - [x] U1 passes (18 tests, including "malformed input not echoed").
     - [x] Startup fails as intended: exactly one `ERROR` line naming `GUEST_PORTAL_URL`, and the port is not bound (exit 1, verified).
     - [x] `npx --yes actionlint` (or `docker run rhysd/actionlint`) is clean on the workflow. Verified with `rhysd/actionlint:1.7.7`: 67 findings before and after, none new.
-    - [ ] After the push: the guest service env has `GUEST_PORTAL_URL` equal to its own reachable `run.app` URL and `SEO_INDEXABLE=false`. booking-api `BASE_URL` and admin `GUEST_PORTAL_URL` equal the same value. The feature-branch deploy is green.
+    - [x] After the push: the guest service env has `GUEST_PORTAL_URL` equal to its own reachable `run.app` URL and `SEO_INDEXABLE=false`. booking-api `BASE_URL` and admin `GUEST_PORTAL_URL` equal the same value. The feature-branch deploy is green. (Run 44003087150: reconcile replaced the deterministic URL, which wasn't issued for this 59-char name, with `status.url`; all three match; the guest returns 200.)
   - **Verification Command:** locally `SQLX_OFFLINE=true cargo test -p web_ui_common site_config_tests && ! GUEST_PORTAL_URL= SQLX_OFFLINE=true cargo run -q -p web_ui_guest 2>err.log; grep -q 'GUEST_PORTAL_URL' err.log && grep -q 'refusing to start' err.log` (it must fail **because of** the variable, not for an unrelated reason); after CI `for s in our-places-web-ui-guest-$SFX booking-api-$SFX our-places-web-ui-admin-$SFX; do gcloud run services describe $s --region us-central1 --format=json | jq -r '.spec.template.spec.containers[0].env[] | select(.name|test("GUEST_PORTAL_URL|BASE_URL|SEO_INDEXABLE")) | "\(.name)=\(.value)"'; done` with `SFX=feat-102-seo-sitemap-xml-robots-txt`
   - **Dependencies:** None
 
@@ -159,7 +159,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `devenv shell -- cargo test -p db_core updated_at_tests`
   - **Dependencies:** None
 
-- [ ] **T7: `last_modified_at` read path, photo-delete bump and plumbing**
+- [x] **T7: `last_modified_at` read path, photo-delete bump and plumbing**
   - **Scope:** M (compiler-driven, wide but mechanical)
   - **Description:**
     - Select `listing_last_modified(listing.id, listing.updated_at) AS "last_modified_at!"` (the function comes from T6's migration; spec §1.7.2) in **every** select that fills `Listing`/`ListingWithOwner`: `queries.rs` `get_listings`, `get_listings_by_user_id`, `get_listing_by_id` and `get_listing_by_id_or_slug` (both branches). Check with `EXPLAIN` that the inner query uses `idx_listing_image_listing_id`.
@@ -176,8 +176,8 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - `web_ui_guest/src/pages/{listings,listing_detail}.rs` (test literals), `web_ui_admin/tests/listing_location.rs`, `protoproj/src/lib.rs`
     - `.sqlx/`, `db_core/.sqlx/`, `app_api/listing_api/.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] I3, I4, I6, I7 and **I8 (concurrent photo delete vs rename/processed, no 40P01 or 55P03)** pass (≥ 6 tests).
-    - [ ] `cargo sqlx prepare --workspace --check` is clean, and the workspace `cargo check --tests` passes.
+    - [x] I3, I4, I6, I7 and **I8 (concurrent photo delete vs rename/processed, no 40P01 or 55P03)** pass (11 tests: 8 db_core, 1 listing_api, 2 common). `EXPLAIN` shows the photo lookup uses the `listing_id` index.
+    - [x] `cargo sqlx prepare --workspace --check` is clean, and the workspace `cargo check --tests` passes. Only the root `.sqlx/` holds these queries; `db_core/.sqlx` and `listing_api/.sqlx` are stale legacy directories (last touched in #96) and never held them. `protoproj`'s `ListingResponse` is an unrelated protobuf type, and the guest/admin test "literals" are JSON, so neither needed changes.
   - **Verification Command:** `devenv shell -- cargo test -p db_core updated_at_tests && devenv shell -- cargo test -p listing_api last_modified && SQLX_OFFLINE=true cargo test -p common listing_response_last_modified && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests`
   - **Dependencies:** T6
 

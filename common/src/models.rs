@@ -265,6 +265,10 @@ pub struct ListingResponse {
     /// Set by listing search when dates are given and the stay can be priced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stay_total: Option<StayTotal>,
+    /// When the listing's public content last changed (spec 102 §1.7), for
+    /// the sitemap's `<lastmod>`. `None` from a listing API that predates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_modified_at: Option<DateTime<Utc>>,
 }
 
 /// What a stay costs, as shown on a search result. The same total as a quote
@@ -1821,6 +1825,45 @@ mod tests {
     use super::*;
     use rust_decimal::Decimal;
     use std::str::FromStr;
+
+    /// A listing as an older listing API sent it (before spec 102).
+    fn older_api_listing_json() -> serde_json::Value {
+        serde_json::json!({
+            "id": "0190a0a0-0000-7000-8000-000000000001",
+            "user_id": "0190a0a0-0000-7000-8000-000000000002",
+            "name": "Villa Azure",
+            "listing_structure": "Villa",
+            "country": "Jamaica",
+            "is_active": true,
+            "added_at": "2026-01-01T00:00:00Z",
+            "max_guests": 6,
+            "bedrooms": 3,
+            "beds": 3,
+            "full_bathrooms": 2,
+            "half_bathrooms": 0,
+            "base_currency": "USD",
+            "slug": "villa-azure",
+            "minimum_stay": 2,
+            "days_between_bookings": 0
+        })
+    }
+
+    #[test]
+    fn listing_response_last_modified_defaults_to_none_for_older_apis() {
+        let listing: ListingResponse = serde_json::from_value(older_api_listing_json()).unwrap();
+        assert_eq!(listing.last_modified_at, None);
+    }
+
+    #[test]
+    fn listing_response_last_modified_round_trips() {
+        let mut json = older_api_listing_json();
+        json["last_modified_at"] = serde_json::json!("2026-11-16T12:30:00Z");
+        let listing: ListingResponse = serde_json::from_value(json).unwrap();
+        let expected = "2026-11-16T12:30:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(listing.last_modified_at, Some(expected));
+        let back = serde_json::to_value(&listing).unwrap();
+        assert_eq!(back["last_modified_at"], "2026-11-16T12:30:00Z");
+    }
 
     #[test]
     fn test_overall_rating_calculation() {
