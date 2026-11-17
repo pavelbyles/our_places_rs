@@ -251,7 +251,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest listing_detail_seo_tests`
   - **Dependencies:** T1, T8, T10
 
-- [ ] **T13: `json_ld` component and script-safe escaping**
+- [x] **T13: `json_ld` component and script-safe escaping**
   - **Scope:** S
   - **Description:** Add `web_ui_common::components::json_ld`:
     - `escape_json_for_script(&str) -> String`: each of `<` `>` `&` U+2028 U+2029 becomes its six-character JSON escape (hex `003c` `003e` `0026` `2028` `2029`; spec §1.4.7);
@@ -260,8 +260,8 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     Tests go in `mod json_ld_tests`, named `json_ld_*`.
   - **Files Touched:** `web_ui_common/src/components/json_ld.rs`, `web_ui_common/src/components/mod.rs`, `web_ui_common/tests/components.rs`
   - **Acceptance Criteria:**
-    - [ ] U8 and U9 pass (≥ 6 tests). The output has no raw `<`, `>`, `&`, U+2028 or U+2029. `serde_json::from_str(escaped) == original` for hostile inputs (`</script><script>…`, `<!--`, `<script`, `&amp;`, a literal backslash before `<`). `&` is not HTML-escaped.
-    - [ ] `rg -l "Unescaped" web_ui_*/src` lists only `json_ld.rs`.
+    - [x] U8 and U9 pass (6 tests). The output has no raw `<`, `>`, `&`, U+2028 or U+2029. `serde_json::from_str(escaped) == original` for hostile inputs (`</script><script>…`, `<!--`, `<script`, `&amp;`, a literal backslash before `<`). `&` is not HTML-escaped.
+    - [x] `rg -l "Unescaped" web_ui_*/src` lists only `json_ld.rs`. No backslash-u sequence was typed: escapes are built from code points, and `grep -c u003c` returns 0 in both files.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common json_ld_`
   - **Dependencies:** T1
 

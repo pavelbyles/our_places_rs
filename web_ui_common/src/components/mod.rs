@@ -12,13 +12,15 @@ pub mod framed_image;
 pub mod hero;
 /// Listing page ribbon of host-entered key items.
 pub mod highlights_ribbon;
+/// Listing page sticky in-page nav and pill link styles.
+/// JSON-LD structured data in a script element (the only unescaped output).
+pub mod json_ld;
 /// Listing page full-bleed hero.
 pub mod listing_hero;
 /// Lazily loaded map container (spec 103).
 pub mod map;
 /// Header controls (theme toggle).
 pub mod navbar;
-/// Listing page sticky in-page nav and pill link styles.
 pub mod section_nav;
 /// Star rating display and input.
 pub mod star_rating;
