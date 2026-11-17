@@ -2158,7 +2158,7 @@ mod last_modified_tests {
     #[actix_web::test]
     async fn public_listing_responses_carry_last_modified_and_hide_dead_listings() {
         dotenvy::dotenv().ok();
-        let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
         let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
         let pool = test_db.get_pool().await;
         let mut conn = pool.acquire().await.unwrap();

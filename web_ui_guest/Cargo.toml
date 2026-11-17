@@ -36,7 +36,7 @@ topcoat = { version = "0.12.1", default-features = false, features = [
 web_ui_common = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
 reqwest = { workspace = true }
-quick-xml = "0.38"
+quick-xml = "0.41"
 async-trait = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde_json = { workspace = true }

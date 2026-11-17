@@ -5,7 +5,7 @@
 **Baseline Commit:** `796460aa`
 **Branch:** `feat/102-seo-sitemap-xml-robots-txt-and-json-ld-structured-dat`
 
-> **Engineering Review Status**: LOCKED (rev 4). Round 2 re-verification: no open blockers; 6 text fixes applied
+> **Engineering Review Status**: LOCKED (rev 4). **IMPLEMENTED** (T1–T17, 2026-11-17)
 > **Review Date**: 2026-11-16
 > **Review Panel**: Lead Architect, Edge Case Analyst, Security Reviewer, DB Guardian, QA Strategist
 
@@ -309,7 +309,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `npx playwright test --config=playwright/playwright.config.ts playwright/e2e/guest-portal/seo.spec.ts playwright/e2e/admin-portal/seo.spec.ts --project=guest-portal-chromium --project=guest-portal-firefox --project=admin-portal-chromium --project=admin-portal-firefox` (explicit paths: a bare `seo` filter matches this worktree's directory name)
   - **Dependencies:** T4, T5, T9, T11, T15
 
-- [ ] **T17: Docs and full quality gates**
+- [x] **T17: Docs and full quality gates**
   - **Scope:** S
   - **Description:**
     - `docs/ENVIRONMENT.md`: `GUEST_PORTAL_URL` (guest, **required**), `SEO_INDEXABLE`, `SEO_TWITTER_SITE`, the CI resolution rule, and the `devenv up -d` restart note.
@@ -317,8 +317,8 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - Run the sanity-check workflow in full, including `npm ci`, `git branch -vv`, `cargo update --dry-run`/`cargo audit` and `cargo check --tests`, plus every `CONSTRAINTS.md` §2 gate.
   - **Files Touched:** `docs/ENVIRONMENT.md`, this plan (tick boxes)
   - **Acceptance Criteria:**
-    - [ ] `cargo fmt --check`; clippy `-D warnings`; clippy `-D missing_docs`; the unwrap/expect, float and env-var `rg` gates; `cargo sqlx prepare --workspace --check`; backend tests; web UI tests; `cargo audit`. All green.
-    - [ ] Spec Acceptance Criteria 1–12 ticked, or explicitly deferred with a reason.
+    - [x] `cargo fmt --check`; clippy `-D warnings` (incl. `--all-targets`); clippy `-D missing_docs`; float gate; `cargo sqlx prepare --workspace --check`; backend tests (984 passed); web UI tests (419 passed); `cargo audit` (clean after bumping the test-only `quick-xml` 0.38 → 0.41: RUSTSEC-2026-0194/0195). The unwrap/expect and env-var `rg` gates match existing code and tests too; compared with base `a30213d4`, the only new hits are in test code (one env-var literal in a new test was switched to `DATABASE_URL_ENV`).
+    - [x] Spec Acceptance Criteria 1–12 ticked, with the deferred manual checks noted.
   - **Verification Command:** see the `CONSTRAINTS.md` §2 table and `.claude/skills/sanity-check-workflow/`
   - **Dependencies:** T1–T16
 
