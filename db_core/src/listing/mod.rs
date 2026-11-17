@@ -58,3 +58,6 @@ mod tests;
 
 #[cfg(test)]
 mod location_privacy_tests;
+
+#[cfg(test)]
+mod updated_at_tests;

@@ -35,7 +35,7 @@ pub(super) async fn user(pool: &PgPool, role: crate::models::UserRole) -> Uuid {
     id
 }
 
-pub(super) async fn host(pool: &PgPool) -> Uuid {
+pub(crate) async fn host(pool: &PgPool) -> Uuid {
     let host_id = user(pool, crate::models::UserRole::Host).await;
     let profile = crate::models::NewHostProfile {
         description: None,
@@ -48,7 +48,7 @@ pub(super) async fn host(pool: &PgPool) -> Uuid {
     host_id
 }
 
-pub(super) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
+pub(crate) async fn listing(pool: &PgPool, host_id: Uuid) -> Uuid {
     let new_listing = crate::models::NewListing {
         name: format!("Villa {}", Uuid::now_v7()),
         user_id: host_id,

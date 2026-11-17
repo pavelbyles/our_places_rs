@@ -147,15 +147,15 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_admin robots_tests`
   - **Dependencies:** T3
 
-- [ ] **T6: Migration adding `listing.updated_at` and its row trigger**
+- [x] **T6: Migration adding `listing.updated_at` and its row trigger**
   - **Scope:** S
   - **Description:** `sqlx migrate add listing_updated_at`, with the spec §1.7.1–2 SQL: add the column, backfill from `added_at`, `NOT NULL DEFAULT now()`, the `BEFORE UPDATE` trigger using `update_updated_at_column()`, and the `STABLE` function `listing_last_modified(uuid, timestamptz)`. **No `listing_image` triggers.**
   - **Files Touched:**
     - `db_core/migrations/<ts>_listing_updated_at.sql`
     - `db_core/src/listing/updated_at_tests.rs`, `db_core/src/listing/mod.rs`
   - **Acceptance Criteria:**
-    - [ ] I1 (via `information_schema`, which also asserts that the function exists), I2 and I5 pass, using a `2000-01-01` baseline so changes are visible (≥ 4 tests).
-    - [ ] Manual backfill check, recorded in the PR: on a DB copy at `20261114053147` with rows, `SELECT count(*) FROM listing WHERE updated_at <> added_at` → 0.
+    - [x] I1 (via `information_schema`, which also asserts that the function exists and that `listing_image` has no triggers), I2 and I5 pass (6 tests), using a `2000-01-01` baseline so changes are visible (≥ 4 tests).
+    - [x] Manual backfill check, recorded in the PR: on a DB copy at `20261114053147` with rows, `SELECT count(*) FROM listing WHERE updated_at <> added_at` → 0. (2026-11-17: 3 seeded rows, 0 mismatched.)
   - **Verification Command:** `devenv shell -- cargo test -p db_core updated_at_tests`
   - **Dependencies:** None
 
