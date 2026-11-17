@@ -11,6 +11,8 @@ use topcoat::router::content::sitemap::{Sitemap, SitemapUrl};
 use web_client::TopcoatApiClient;
 use web_ui_common::shell_guest::POLICY_LINKS;
 
+/// The listing's `VacationRental` structured data.
+pub mod json_ld;
 /// `<title>`s of the static pages.
 pub mod titles;
 
@@ -207,3 +209,6 @@ mod sitemap_tests;
 
 #[cfg(test)]
 mod page_titles_tests;
+
+#[cfg(test)]
+mod vacation_rental_tests;

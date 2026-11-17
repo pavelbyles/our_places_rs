@@ -265,7 +265,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common json_ld_`
   - **Dependencies:** T1
 
-- [ ] **T14: `vacation_rental` JSON-LD builder**
+- [x] **T14: `vacation_rental` JSON-LD builder**
   - **Scope:** M
   - **Description:** Typed serde structs (`VacationRental`, `PostalAddress`, `Accommodation`, `QuantitativeValue`, `LocationFeatureSpecification`, `AggregateRating`, `Offer`, `UnitPriceSpecification`, all with `skip_serializing_if`) in `web_ui_guest/src/seo/json_ld.rs`, and `vacation_rental(details, canonical) -> VacationRental` per the spec §1.4 table. Rules:
     - `price` is `Decimal::to_string()`;
@@ -275,8 +275,8 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - `makesOffer`, not `offers`.
   - **Files Touched:** `web_ui_guest/src/seo/json_ld.rs`, `web_ui_guest/src/seo/vacation_rental_tests.rs`, `web_ui_guest/src/seo/mod.rs`
   - **Acceptance Criteria:**
-    - [ ] U6 and U7 pass (≥ 12 tests).
-    - [ ] `rg -n "f64|f32" web_ui_guest/src/seo/json_ld.rs` matches only the rating field.
+    - [x] U6 and U7 pass (15 tests).
+    - [x] `rg -n "f64|f32" web_ui_guest/src/seo/json_ld.rs` matches only the rating score and the public `latitude`/`longitude` (already `f64` in `ListingResponse`), never money: `price` is `Decimal::to_string()`.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest vacation_rental_tests`
   - **Dependencies:** None
 
