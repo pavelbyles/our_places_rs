@@ -16,6 +16,7 @@
 - **Money**: JSON-LD `price` comes from `Decimal::to_string()` and never touches `f64`. The rating `f64` is a score, not money.
 - **Strings**: truncate by `chars()`, never by byte index (multi-byte text panics).
 - **`BaseUrl` in tests**: any render of `guest_document`/`tags()` puts `topcoat::context::BaseUrl` in the test `Cx`. Without it, Topcoat panics resolving canonical, OG URLs or asset images.
+- **JSON escape sequences in source** (T1 finding): never type a backslash-u-plus-4-hex escape literally in files written by the agent; the write tool decodes it into the real character. Build such escapes at runtime (`concat!("\\", "u003c")`, or `format!("\\u{:04x}", c as u32)`), and check the bytes afterwards with `grep -c 'u003c'` or `od -c`. This applies above all to T13 (`escape_json_for_script`) and its tests.
 - **One `Unescaped` site**: `topcoat::view::Unescaped::new_unchecked` is used **only** in `web_ui_common/src/components/json_ld.rs`. Check with `rg -l "Unescaped" web_ui_*/src`, which must list exactly that file.
 - **HTTP mocking**: web UI tests that need `listing_api` use **wiremock**, with the setup in `web_ui_guest/src/pages/calendar_export_tests.rs`. The client must be built with the mock URL. `get_listing_by_id` ignores `listing_api_url` today (`web_client/src/client.rs:103-109`), so T8 fixes that first.
 - **Test naming**: new tests live in named modules whose names are the verification filters: `site_config_tests`, `seo_tests`, `robots_tests`, `updated_at_tests`, `sitemap_tests`, `page_titles_tests`, `listing_detail_seo_tests`, `json_ld_tests`, `vacation_rental_tests`. A filter must match ≥ the stated test count, because "0 passed" is not green.
@@ -60,7 +61,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
 
 ## Tasks
 
-- [ ] **T1: Topcoat risk spike**
+- [x] **T1: Topcoat risk spike** (kept as regression test `web_ui_common/tests/metadata_contract.rs`, 8 tests)
   - **Scope:** XS
   - **Description:** A test module with **probe pages** (not the real listing route, which needs a live `listing_api` and returns 500 offline). It answers:
     - **Q1**: a `#[page]` with `with(Metadata::from_fn(f))`, where `f` and the page both return `Err(not_found())`. Is the response a 404 with the normal body, or a 500?
@@ -68,11 +69,11 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
     - **Q1c**: the same, where `f` returns `Ok(Metadata::new())` and the page errors. Is the status correct and is the head the default?
     - **Q2**: does `<script type="application/ld+json">(Unescaped::new_unchecked(s))</script>` emit `s` byte-for-byte, with `&` not turned into `&amp;`?
     - **Q3**: does `tags()` with a canonical and an `asset!` OG image panic without `BaseUrl`, and pass with it?
-  - **Files Touched:** `web_ui_guest/src/spike_tests.rs` (temporary), `web_ui_guest/src/lib.rs` (`#[cfg(test)] mod spike_tests;`)
+  - **Files Touched:** `web_ui_common/tests/metadata_contract.rs` (moved from the planned `web_ui_guest/src/spike_tests.rs`; see Spike Results)
   - **Acceptance Criteria:**
-    - [ ] Answers recorded under "Spike Results".
-    - [ ] Q1c is the design (spec §1.5.4): `listing_metadata` swallows every load error. If Q1c doesn't give the right status, stop and revise T12 before building it.
-  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest spike_tests` (≥ 5 tests)
+    - [x] Answers recorded under "Spike Results".
+    - [x] Q1c is the design (spec §1.5.4): `listing_metadata` swallows every load error. If Q1c doesn't give the right status, stop and revise T12 before building it.
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test metadata_contract` (8 tests ✅)
   - **Dependencies:** None
 
 - [ ] **T2: Fail-fast `SiteConfig` with CI public-URL wiring (one commit, one push)**
@@ -313,7 +314,7 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Scope:** S
   - **Description:**
     - `docs/ENVIRONMENT.md`: `GUEST_PORTAL_URL` (guest, **required**), `SEO_INDEXABLE`, `SEO_TWITTER_SITE`, the CI resolution rule, and the `devenv up -d` restart note.
-    - Remove `spike_tests` unless it's kept as a regression test.
+    - Keep `web_ui_common/tests/metadata_contract.rs` (T1) as the Topcoat-upgrade regression guard.
     - Run the sanity-check workflow in full, including `npm ci`, `git branch -vv`, `cargo update --dry-run`/`cargo audit` and `cargo check --tests`, plus every `CONSTRAINTS.md` §2 gate.
   - **Files Touched:** `docs/ENVIRONMENT.md`, this plan (tick boxes)
   - **Acceptance Criteria:**
@@ -357,11 +358,16 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
 | I8 would time out on its own wait | Explicit sequence: detect the wait via `pg_locks`, commit tx 1, then conn 2 completes; 10s `lock_timeout` |
 
 ## Spike Results (filled by T1)
-- Q1 (`from_fn` + page both 404): _pending_
-- Q1b (both 5xx): _pending_
-- Q1c (`from_fn` Ok, page errors): _pending_
-- Q2 (`Unescaped` inside `<script>`): _pending_
-- Q3 (`tags()` without `BaseUrl`): _pending_
+Run 2026-11-16. Kept as `web_ui_common/tests/metadata_contract.rs` (8 tests), not in `web_ui_guest`: there, `discover()` would also pick up the real guest layout, which calls the API.
+- **Q1** (loader and page both 404): **404**.
+- **Q1b** (both 5xx): **500**.
+- **Q1c** (loader `Ok`, page 404 / 500): **404 / 500**, so the page status is kept. **The T12 design (swallow every load error) is confirmed.**
+- **Extra**: loader 500 + page 404 → **500**. A failing loader overrides the page's status, which is why swallowing is required, not optional.
+- **Extra**: error responses are Topcoat's plain bodies (`not found`, `internal server error`) and are **not** rendered through layouts. There is no head and no `tags()` on errors. The spec's "normal 404 page" means this plain 404, which is today's guest behaviour (the guest has no error boundary).
+- **Q2** (`Unescaped` in `ld+json`): emitted byte-for-byte; `&` is not turned into `&amp;`.
+- **Q3**: a site-relative canonical without `BaseUrl` **panics → 500**; with `BaseUrl` it gives an absolute URL. `tags()` also emits `charset`, `viewport`, `og:type=website` and `twitter:card` by default.
+- **Asset OG image + `BaseUrl`**: not covered here, because an asset needs the asset bundle in the test binary. T10 (`tests/shells.rs`) covers it.
+- **Tooling quirk found**: the agent's file-writing tool decodes a backslash-u-plus-4-hex sequence into the literal character. The spike's first JSON-LD probe silently became a real `</script>`. See the new cross-cutting rule.
 
 ## Open Items (carried from the spec)
 - [ ] X handle for `SEO_TWITTER_SITE`, not yet supplied. Doesn't block the build.
