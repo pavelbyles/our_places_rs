@@ -224,13 +224,13 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common --test shells && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests`
   - **Dependencies:** T1, T2
 
-- [ ] **T11: Static page titles**
+- [x] **T11: Static page titles**
   - **Scope:** S
   - **Description:** Add `with(Metadata::new().title(page_title("…")))` to `/listings` ("Villas in Jamaica"), `/about`, the 4 policy pages, `/login` and `/register`. `/` keeps the default. Table-driven render test in `mod page_titles_tests`.
   - **Files Touched:** `web_ui_guest/src/pages/{listings,about,policies,auth,register}.rs`, `web_ui_guest/src/pages/page_titles_tests.rs`
   - **Acceptance Criteria:**
-    - [ ] Each page's `<title>` is its page title plus ` · Our Places` (≥ 1 test, 8 cases).
-  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest page_titles_tests`
+    - [x] Each page's `<title>` is its page title plus ` · Our Places`: 2 tests (`seo::page_titles_tests`) over the `seo::titles` table and a source scan proving each of the 8 pages attaches its entry. Rendered titles are checked in E6, because `cargo test` can't render guest pages (the layout needs the asset bundle and a session store).
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest page_titles_tests` (2 ✅)
   - **Dependencies:** T10
 
 - [ ] **T12: Listing metadata (slug canonical, error-safe)**

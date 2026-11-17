@@ -11,6 +11,9 @@ use topcoat::router::content::sitemap::{Sitemap, SitemapUrl};
 use web_client::TopcoatApiClient;
 use web_ui_common::shell_guest::POLICY_LINKS;
 
+/// `<title>`s of the static pages.
+pub mod titles;
+
 /// robots.txt for an environment search engines must stay out of.
 pub const DISALLOW_ALL: &str = "User-agent: *\nDisallow: /\n";
 
@@ -147,3 +150,6 @@ mod seo_tests;
 
 #[cfg(test)]
 mod sitemap_tests;
+
+#[cfg(test)]
+mod page_titles_tests;

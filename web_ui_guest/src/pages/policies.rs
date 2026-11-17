@@ -9,6 +9,8 @@ use topcoat::{
     view::{View, component, view},
 };
 
+use crate::seo::titles;
+
 /// The notice every placeholder policy page shows.
 pub const DRAFT_NOTICE: &str = "Draft \u{2014} placeholder text. This page will be replaced with our final policy before launch. Contact us with any questions in the meantime.";
 
@@ -48,7 +50,7 @@ async fn policy_page(
 }
 
 /// Terms of booking and use.
-#[page("/terms")]
+#[page("/terms", with(titles::metadata(titles::TERMS)))]
 pub async fn terms_page(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! {
@@ -65,7 +67,7 @@ pub async fn terms_page(cx: &Cx) -> Result<impl View> {
 }
 
 /// Cancellation and refunds.
-#[page("/cancellation-policy")]
+#[page("/cancellation-policy", with(titles::metadata(titles::CANCELLATION)))]
 pub async fn cancellation_policy_page(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! {
@@ -82,7 +84,7 @@ pub async fn cancellation_policy_page(cx: &Cx) -> Result<impl View> {
 }
 
 /// Privacy.
-#[page("/privacy-policy")]
+#[page("/privacy-policy", with(titles::metadata(titles::PRIVACY)))]
 pub async fn privacy_policy_page(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! {
@@ -99,7 +101,7 @@ pub async fn privacy_policy_page(cx: &Cx) -> Result<impl View> {
 }
 
 /// House rules.
-#[page("/house-rules")]
+#[page("/house-rules", with(titles::metadata(titles::HOUSE_RULES)))]
 pub async fn house_rules_page(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! {

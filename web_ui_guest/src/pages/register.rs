@@ -7,6 +7,8 @@ use topcoat::{
     router::{content::Form, error::see_other, page},
     view::{View, component, view},
 };
+
+use crate::seo::titles;
 use web_client::get_api_client;
 
 /// Registration form fields.
@@ -115,7 +117,7 @@ async fn register_form(cx: &Cx, form: RegisterForm, error: Option<String>) -> Re
 }
 
 /// The guest registration page.
-#[page("/register")]
+#[page("/register", with(titles::metadata(titles::REGISTER)))]
 pub async fn register_page(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! { register_form(form: RegisterForm::default(), error: None) })
