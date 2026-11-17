@@ -137,13 +137,13 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_guest seo_tests`
   - **Dependencies:** T2, T3
 
-- [ ] **T5: Admin `/robots.txt`**
+- [x] **T5: Admin `/robots.txt`**
   - **Scope:** XS
   - **Description:** `#[route(GET "/robots.txt")]` in `web_ui_admin/src/pages/robots.rs`. It always returns `User-agent: *\nDisallow: /\n` and has no auth guard. Tests go in `mod robots_tests`.
   - **Files Touched:** `web_ui_admin/src/pages/robots.rs`, `web_ui_admin/src/pages/mod.rs`
   - **Acceptance Criteria:**
-    - [ ] U3 passes (≥ 1 test).
-    - [ ] A signed-out `curl localhost:3012/robots.txt` → 200, disallow-all, `x-robots-tag`.
+    - [x] U3 passes (2 tests).
+    - [ ] A signed-out `curl localhost:3012/robots.txt` → 200, disallow-all, `x-robots-tag`. (Live check deferred to E8 in T16; the header is covered by U11.)
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_admin robots_tests`
   - **Dependencies:** T3
 
