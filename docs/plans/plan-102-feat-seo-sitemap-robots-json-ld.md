@@ -181,12 +181,12 @@ Risk-first: T1 settles the Topcoat unknowns before T10, T12 and T13. T6, T8 and 
   - **Verification Command:** `devenv shell -- cargo test -p db_core updated_at_tests && devenv shell -- cargo test -p listing_api last_modified && SQLX_OFFLINE=true cargo test -p common listing_response_last_modified && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests`
   - **Dependencies:** T6
 
-- [ ] **T8: `TopcoatApiClient::get_listing_by_id_at` (mockable listing client)**
+- [x] **T8: `TopcoatApiClient::get_listing_by_id_at` (mockable listing client)**
   - **Scope:** S
   - **Description:** Add `common::app_client::get_listing_by_id_at(client, base_url, audience, id_or_slug, currency)`, following the `search_listings_at` pattern, and make `TopcoatApiClient::get_listing_by_id` call it with `self.listing_api_url`. The existing free function keeps its behaviour for other callers.
   - **Files Touched:** `common/src/app_client/listings.rs`, `web_client/src/client.rs`, `web_client/src/client_tests.rs` (or the existing tests module)
   - **Acceptance Criteria:**
-    - [ ] A wiremock test proves `get_listing_by_id` hits the configured `listing_api_url` (≥ 1 test).
+    - [x] A wiremock test proves `get_listing_by_id` hits the configured `listing_api_url` (2 tests; the second shows the slug is percent-encoded, so a crafted path value can't add upstream query parameters).
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_client get_listing_by_id_at && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests`
   - **Dependencies:** None
 
