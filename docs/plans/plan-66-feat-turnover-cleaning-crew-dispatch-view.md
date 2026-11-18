@@ -262,7 +262,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core outbox && devenv shell -- cargo test -p db_core turnover_tests && devenv shell -- cargo test -p booking_api turnover`
   - **Dependencies:** Task 5, Task 10, Task 11
 
-- [ ] **Task 13: Build `web_ui_admin` `/admin/turnovers` Mobile-First Dispatch Board**
+- [x] **Task 13: Build `web_ui_admin` `/admin/turnovers` Mobile-First Dispatch Board**
   - **Scope:** M
   - **Description:** Create `web_ui_admin/src/pages/turnovers.rs` (`dispatch_actor` guard) rendering a responsive Topcoat/DaisyUI card board with window tabs (`Today`, `Upcoming`, `Past`, `All`), status & listing filters, pagination, manual turnover creation form, and HTMX status transition buttons tailored to caller role (omitting `Inspected & Ready` action for `Staff` while enabling `Maintenance Required` / `Needs Cleaning` from `Inspected & Ready`). Render explicit error banners on API failures rather than `.unwrap_or_default()`. Link `/admin/turnovers` in `shell_admin.rs`.
   - **Files Touched:**
@@ -270,9 +270,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `web_ui_admin/src/pages/mod.rs`
     - `web_ui_common/src/shell_admin.rs`
   - **Acceptance Criteria:**
-    - [ ] Mobile viewport (`390px`) renders stacked dispatch cards with ≥ 44px touch targets and zero horizontal overflow.
-    - [ ] `Staff` sessions do not see `Inspected & Ready` trigger buttons or any revenue/booking/guest PII links.
-    - [ ] Upstream API failure renders a visible alert banner (`role="alert"`) and logs `tracing::error!`.
+    - [x] Mobile viewport (`390px`) renders stacked dispatch cards with ≥ 44px touch targets and zero horizontal overflow.
+    - [x] `Staff` sessions do not see `Inspected & Ready` trigger buttons or any revenue/booking/guest PII links.
+    - [x] Upstream API failure renders a visible alert banner (`role="alert"`) and logs `tracing::error!`.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common -p web_ui_admin`
   - **Dependencies:** Task 6, Task 11
 

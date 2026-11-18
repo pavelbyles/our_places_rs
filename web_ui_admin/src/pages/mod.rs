@@ -32,5 +32,7 @@ pub mod requests;
 pub mod robots;
 /// Host-scoped staff roster and listing assignments (`/admin/staff-users`).
 pub mod staff_users;
+/// Mobile-first turnover & cleaning crew dispatch board (`/admin/turnovers`).
+pub mod turnovers;
 /// User administration.
 pub mod users;
