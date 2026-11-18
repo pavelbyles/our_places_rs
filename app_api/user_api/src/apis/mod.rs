@@ -17,6 +17,7 @@ pub use common::models::{
     CreateSessionRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, VerifyRequest,
 };
+pub use common::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest};
 
 mod account;
 mod admin;
@@ -130,6 +131,13 @@ pub struct UsersWrapper {
     pub user: Vec<UserResponse>,
 }
 
+/// Generic JSON acknowledgment payload returned by password action endpoints.
+#[derive(Serialize, ToSchema)]
+pub struct ActionStatusResponse {
+    /// Machine-readable status indicator.
+    pub status: String,
+}
+
 /// A 400 with one validation message for `field`.
 fn field_error(field: &'static str, message: String) -> ApiError {
     let mut errors = validator::ValidationErrors::new();
@@ -175,6 +183,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             profile::get_user_listings,
             account::request_password_change,
             account::confirm_password_change,
+            account::request_password_reset,
+            account::confirm_password_reset,
             account::change_email,
             account::deactivate_account,
             sessions::create_session_handler,
@@ -187,7 +197,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest,
                 UserResponse, ListingResponse, BookingResponse, pagination::Pagination,
                 UserFilter, UsersWrapper, PasswordChangeRequest,
-                PasswordChangeConfirm, EmailChangeRequest, DeactivateRequest,
+                PasswordChangeConfirm, PasswordResetRequest, PasswordTokenRedeemRequest,
+                ActionStatusResponse, EmailChangeRequest, DeactivateRequest,
                 CreateSessionRequest, SessionResponse, SessionNamespaceQuery
             )
         ),
@@ -346,6 +357,18 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/profile/deactivate",
                 web::post()
                     .to(account::deactivate_account)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/password-reset/request",
+                web::post()
+                    .to(account::request_password_reset)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/password-reset/confirm",
+                web::post()
+                    .to(account::confirm_password_reset)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );

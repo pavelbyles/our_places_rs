@@ -1,6 +1,8 @@
 //! PostgreSQL schema access: queries, row locks and migrations.
 #![deny(missing_docs)]
 
+/// Hashed single-use account action tokens for staff invites and password resets.
+pub mod action_token;
 /// Booking domain entities and operations.
 pub mod booking;
 /// Guest-to-host booking messaging operations.

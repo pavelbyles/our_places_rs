@@ -12,7 +12,17 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidateEmail, ValidationError};
+
+/// Rejects invalid email addresses while tolerating leading/trailing whitespace
+/// so copy-pasted addresses work cleanly after `.trim().to_lowercase()`.
+fn validate_trimmed_email(email: &str) -> Result<(), ValidationError> {
+    if email.trim().validate_email() {
+        Ok(())
+    } else {
+        Err(ValidationError::new("email"))
+    }
+}
 
 /// Maximum length of a manual turnover title in characters.
 pub const MAX_TURNOVER_TITLE_LEN: usize = 120;
@@ -567,7 +577,7 @@ pub struct StaffListResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate, ToSchema)]
 pub struct InviteStaffRequest {
     /// Staff email address.
-    #[validate(email)]
+    #[validate(custom(function = "validate_trimmed_email"))]
     pub email: String,
     /// First name used only when creating a brand-new account.
     #[serde(default)]
@@ -591,7 +601,7 @@ pub struct UpdateStaffAssignmentsRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate, ToSchema)]
 pub struct PasswordResetRequest {
     /// Target account email address.
-    #[validate(email)]
+    #[validate(custom(function = "validate_trimmed_email"))]
     pub email: String,
 }
 

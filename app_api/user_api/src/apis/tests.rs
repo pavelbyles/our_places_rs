@@ -1019,3 +1019,306 @@ async fn user_listings_drop_coordinates() {
     );
     assert_eq!(listings[0]["city"], "Ocho Rios");
 }
+
+mod password_reset_tests {
+    use super::*;
+
+    fn test_db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = match env::var(DATABASE_URL_ENV) {
+            Ok(url) => url,
+            Err(_) => "postgres://postgres:password@localhost:5432/our_places".to_string(),
+        };
+        TestPg::new(db_url, Path::new("../../db_core/migrations"))
+    }
+
+    async fn create_active_user(
+        pool: &sqlx::PgPool,
+        email: &str,
+        verified: bool,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let id = Uuid::now_v7();
+        let slug = format!("rst-{}", id.simple());
+        sqlx::query(
+            r#"
+            INSERT INTO "user" (id, email, password_hash, first_name, last_name, is_active, is_verified, roles, default_currency, slug)
+            VALUES ($1, $2, '!locked!initial', 'Crewed', 'Cleaner', TRUE, $3, ARRAY['staff'::user_role], 'USD', $4)
+            "#,
+        )
+        .bind(id)
+        .bind(email)
+        .bind(verified)
+        .bind(slug)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    fn extract_token_from_url(url: &str) -> Option<String> {
+        url.split("?token=").nth(1).map(ToString::to_string)
+    }
+
+    #[actix_web::test]
+    async fn password_reset_non_enumerating_and_single_use_flow()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        // 1. Unknown email still returns 202 Accepted and queues no email.
+        let unknown_email = format!("nobody_{}@example.com", Uuid::now_v7().simple());
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": unknown_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 202);
+        let outbox_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link'",
+        )
+        .bind(&unknown_email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(outbox_count, 0);
+
+        // 2. Soft-deleted user also returns 202 with no email queued.
+        let deleted_email = format!("deleted_{}@example.com", Uuid::now_v7().simple());
+        let deleted_id = create_active_user(&pool, &deleted_email, true).await?;
+        sqlx::query(r#"UPDATE "user" SET deleted_at = NOW(), is_active = FALSE WHERE id = $1"#)
+            .bind(deleted_id)
+            .execute(&pool)
+            .await?;
+        let del_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": deleted_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(del_resp.status(), 202);
+        let del_outbox: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link'",
+        )
+        .bind(&deleted_email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(del_outbox, 0);
+
+        // 3. Active staff user receives reset link (case/whitespace normalized) and prior token is invalidated on re-request.
+        let canonical_email = format!("staff_{}@example.com", Uuid::now_v7().simple());
+        let staff_id = create_active_user(&pool, &canonical_email, false).await?;
+
+        // Seed an active session to confirm password reset revokes it.
+        db_core::sessions::SessionsDb::new(pool.clone())
+            .save_session(
+                &format!("sess_{}", Uuid::now_v7().simple()),
+                Some(staff_id),
+                Some(&canonical_email),
+                "admin",
+                b"{}",
+                3600,
+            )
+            .await?;
+
+        let first_req = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": format!("  {}  ", canonical_email.to_uppercase()) }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(first_req.status(), 202);
+
+        let second_req = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": canonical_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(second_req.status(), 202);
+
+        let open_tokens: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM account_action_token WHERE user_id = $1 AND purpose = 'password_reset' AND used_at IS NULL",
+        )
+        .bind(staff_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(open_tokens, 1);
+
+        let payloads: Vec<serde_json::Value> = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link' ORDER BY created_at ASC",
+        )
+        .bind(&canonical_email)
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(payloads.len(), 2);
+
+        let stale_url = payloads[0]["reset_url"]
+            .as_str()
+            .ok_or("missing stale reset_url")?;
+        let fresh_url = payloads[1]["reset_url"]
+            .as_str()
+            .ok_or("missing fresh reset_url")?;
+        assert!(fresh_url.contains("/reset-password?token="), "{fresh_url}");
+        let stale_token = extract_token_from_url(stale_url).ok_or("missing stale token")?;
+        let fresh_token = extract_token_from_url(fresh_url).ok_or("missing fresh token")?;
+
+        // Stale token rejected.
+        let stale_confirm = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": stale_token, "new_password": "NewPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert!(matches!(stale_confirm.status().as_u16(), 400 | 401));
+
+        // Short password rejected with 400.
+        let short_confirm = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": fresh_token, "new_password": "short" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(short_confirm.status(), 400);
+
+        // Fresh token succeeds, verifies user, revokes sessions, and rejects replay.
+        let ok_confirm = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": fresh_token, "new_password": "NewPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(ok_confirm.status(), 200);
+
+        let is_verified: bool =
+            sqlx::query_scalar(r#"SELECT is_verified FROM "user" WHERE id = $1"#)
+                .bind(staff_id)
+                .fetch_one(&pool)
+                .await?;
+        assert!(is_verified);
+
+        let remaining_sessions: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE user_id = $1")
+                .bind(staff_id)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(remaining_sessions, 0);
+
+        let replay = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": fresh_token, "new_password": "AnotherPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert!(matches!(replay.status().as_u16(), 400 | 401));
+
+        // Login succeeds with the new password.
+        let login_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/login")
+                .set_json(json!({ "email": canonical_email, "password": "NewPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(login_resp.status(), 200);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn password_reset_concurrent_redemption_allows_only_one_winner()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let email = format!("race_{}@example.com", Uuid::now_v7().simple());
+        let user_id = create_active_user(&pool, &email, false).await?;
+
+        let app_a = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let app_b = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let req_resp = test::call_service(
+            &app_a,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(req_resp.status(), 202);
+
+        let payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link' ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await?;
+        let reset_url = payload["reset_url"].as_str().ok_or("missing reset_url")?;
+        let token = extract_token_from_url(reset_url).ok_or("missing token")?;
+
+        let t1 = token.clone();
+        let t2 = token;
+        let (r1, r2) = tokio::join!(
+            test::call_service(
+                &app_a,
+                test::TestRequest::post()
+                    .uri("/api/v1/users/password-reset/confirm")
+                    .set_json(json!({ "token": t1, "new_password": "WinnerPassword1!" }))
+                    .to_request(),
+            ),
+            test::call_service(
+                &app_b,
+                test::TestRequest::post()
+                    .uri("/api/v1/users/password-reset/confirm")
+                    .set_json(json!({ "token": t2, "new_password": "LoserPassword2!" }))
+                    .to_request(),
+            ),
+        );
+
+        let mut statuses = [r1.status().as_u16(), r2.status().as_u16()];
+        statuses.sort_unstable();
+        assert_eq!(statuses[0], 200, "statuses: {statuses:?}");
+        assert!(matches!(statuses[1], 400 | 401), "statuses: {statuses:?}");
+
+        let used_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM account_action_token WHERE user_id = $1 AND used_at IS NOT NULL",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(used_count, 1);
+        Ok(())
+    }
+}

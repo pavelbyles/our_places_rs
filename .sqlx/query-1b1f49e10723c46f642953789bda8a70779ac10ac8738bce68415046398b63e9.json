@@ -26,7 +26,8 @@
                     "Enum": [
                       "booker",
                       "host",
-                      "admin"
+                      "admin",
+                      "staff"
                     ]
                   }
                 }

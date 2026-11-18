@@ -103,7 +103,7 @@ async fn record_user_history(conn: &mut PgConnection, current: &User) -> Result<
 
 /// Locks the user row for the rest of the transaction and records its
 /// current state in `user_history` before the caller changes it.
-async fn lock_and_snapshot(conn: &mut PgConnection, id: Uuid) -> Result<User> {
+pub(crate) async fn lock_and_snapshot(conn: &mut PgConnection, id: Uuid) -> Result<User> {
     let current = query_user!(select "WHERE id = $1 FOR UPDATE", id)
         .fetch_one(&mut *conn)
         .await?;
@@ -133,6 +133,23 @@ where
     let user = query_user!(select "WHERE email = $1", email)
         .fetch_one(executor)
         .await?;
+
+    Ok(user)
+}
+
+/// Retrieves an active, non-deleted user by case-insensitive normalized email.
+#[tracing::instrument(skip(executor, email))]
+pub async fn get_active_user_by_email_ci<'e, E>(executor: E, email: &str) -> Result<Option<User>>
+where
+    E: PgExecutor<'e>,
+{
+    let normalized = email.trim().to_lowercase();
+    let user = query_user!(
+        select "WHERE LOWER(email) = $1 AND is_active = TRUE AND deleted_at IS NULL",
+        normalized
+    )
+    .fetch_optional(executor)
+    .await?;
 
     Ok(user)
 }

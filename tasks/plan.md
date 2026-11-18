@@ -106,7 +106,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 
 ### Phase B: Password Setup & Forgot-Password Vertical Slice
 
-- [ ] **Task 4: Implement `db_core::action_token` and `user_api` Password Setup / Reset APIs**
+- [x] **Task 4: Implement `db_core::action_token` and `user_api` Password Setup / Reset APIs**
   - **Scope:** M
   - **Description:** Create `db_core/src/action_token.rs` storing SHA-256 hashes of CSPRNG 32-byte tokens (`staff_invite` 72h, `password_reset` 30m), invalidating prior unused tokens for `(user_id, purpose)` on re-issue, and atomically consuming tokens via `UPDATE account_action_token SET used_at = NOW() WHERE token_hash = $1 AND used_at IS NULL AND expires_at > clock_timestamp() RETURNING user_id` while verifying `user.is_active = TRUE AND deleted_at IS NULL`. Add an unusable-password helper. Add `POST /api/v1/users/password-reset/request` (normalizing email via `.trim().to_lowercase()`, building reset URL strictly from `ADMIN_BASE_URL`, returning non-enumerating `202 Accepted`) and `POST /api/v1/users/password-reset/confirm` (hashing via `tokio::task::spawn_blocking` *before* opening the DB transaction, setting `is_verified = true`, revoking sessions via `SessionsDb::delete_user_sessions`) in `app_api/user_api/src/apis/account.rs` and `mod.rs`. Never log raw tokens or emails. Add a multi-threaded concurrency test proving two simultaneous token redemptions produce one success and one rejection.
   - **Files Touched:**
