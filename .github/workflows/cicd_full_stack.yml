@@ -1736,6 +1736,8 @@ jobs:
           if [ -n "$ADMIN_URL" ]; then
             gcloud run services update "listing-api-$SUFFIX" --region "${{ env.REGION }}" \
               --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet
+            gcloud run services update "user-api-$SUFFIX" --region "${{ env.REGION }}" \
+              --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet || echo "User API not deployed in this run."
             gcloud run jobs update "calendar-sync-$SUFFIX" --region "${{ env.REGION }}" \
               --update-env-vars "ADMIN_BASE_URL=$ADMIN_URL" --quiet || echo "Calendar sync job not deployed in this run."
           fi

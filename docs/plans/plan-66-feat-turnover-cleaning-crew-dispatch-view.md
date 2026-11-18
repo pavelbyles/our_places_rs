@@ -292,7 +292,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 
 ### Phase F: CI/CD Wiring, E2E Suite & Final Gates
 
-- [ ] **Task 15: Wire `ADMIN_BASE_URL` on `user_api`, Update `docs/ENVIRONMENT.md`, and Sync `.sqlx/`**
+- [x] **Task 15: Wire `ADMIN_BASE_URL` on `user_api`, Update `docs/ENVIRONMENT.md`, and Sync `.sqlx/`**
   - **Scope:** S
   - **Description:** Update `.github/workflows/cicd_full_stack.yml` (`configure-email-links`) so `ADMIN_BASE_URL=$ADMIN_URL` is injected onto `user_api` alongside `booking_api`, `listing_api`, and `calendar_sync_job`. Document `ADMIN_BASE_URL` for `user_api` in `docs/ENVIRONMENT.md`. Run `cargo sqlx prepare --workspace -- --all-targets` to verify all offline queries sync cleanly.
   - **Files Touched:**
@@ -300,8 +300,8 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `docs/ENVIRONMENT.md`
     - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] `cicd_full_stack.yml` sets `ADMIN_BASE_URL` on the `user-api` Cloud Run service.
-    - [ ] `devenv shell -- cargo sqlx prepare --workspace --check` passes with exit code `0`.
+    - [x] `cicd_full_stack.yml` sets `ADMIN_BASE_URL` on the `user-api` Cloud Run service.
+    - [x] `devenv shell -- cargo sqlx prepare --workspace --check` passes with exit code `0`.
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace --check`
   - **Dependencies:** Task 7, Task 12
 
