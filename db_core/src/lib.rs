@@ -45,6 +45,8 @@ pub mod review;
 pub mod sessions;
 /// Statutory tax documents and compliance invoicing.
 pub mod tax_document;
+#[cfg(test)]
+mod turnover_migration_tests;
 /// User account and profile operations.
 pub mod user;
 

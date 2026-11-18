@@ -70,7 +70,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `cargo test -p common turnover && SQLX_OFFLINE=true cargo clippy -p common --all-targets --all-features -- -D warnings && SQLX_OFFLINE=true cargo clippy -p common --all-features -- -D missing_docs`
   - **Dependencies:** None
 
-- [ ] **Task 2: Add Database Migration for `staff` Role, Tokens, Roster, and Turnovers**
+- [x] **Task 2: Add Database Migration for `staff` Role, Tokens, Roster, and Turnovers**
   - **Scope:** M
   - **Description:** Create a new timestamped migration via `sqlx migrate add` extending `user_role` with `'staff'` (`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'staff'`) and creating `account_action_token`, `host_staff` (`invited_by UUID REFERENCES "user"(id) ON DELETE SET NULL`), `listing_staff` (`assigned_by UUID REFERENCES "user"(id) ON DELETE SET NULL`), `turnover` (`source_feed_id UUID REFERENCES listing_calendar_feed(id) ON DELETE SET NULL`, partial unique indexes on `booking_id` and `(listing_id, source_feed_id, source_external_uid)` plus `ON DELETE SET NULL` FKs), `turnover_status_history`, and `turnover_comment` (`author_user_id UUID REFERENCES "user"(id) ON DELETE SET NULL`, `author_name TEXT NOT NULL`). Update `db_core/src/models.rs` with `UserRole::Staff`.
   - **Files Touched:**
