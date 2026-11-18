@@ -49,3 +49,5 @@ pub mod slug;
 pub mod tax_document;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod telemetry;
+/// Turnover dispatch, cleaning status transitions, and staff roster contracts.
+pub mod turnover;

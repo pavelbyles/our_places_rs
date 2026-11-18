@@ -56,7 +56,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 
 ### Phase A: Foundations & Guard Rename (Risk-First)
 
-- [ ] **Task 1: Add `UserRole::Staff` and `common::turnover` Domain Types & Transition Rules**
+- [x] **Task 1: Add `UserRole::Staff` and `common::turnover` Domain Types & Transition Rules**
   - **Scope:** S
   - **Description:** Add `UserRole::Staff` with `Display`/`FromStr` support in `common/src/models.rs`. Create `common/src/turnover.rs` defining `TurnoverStatus`, `TurnoverSourceKind`, `TurnoverActorRole`, `TurnoverResponse`, `TurnoverDetailResponse`, `TurnoverStatusHistoryEntry`, `TurnoverCommentResponse` (including `author_user_id: Option<Uuid>` and `author_name: String`), `TransitionTurnoverRequest` (including `expected_status: Option<TurnoverStatus>`), `StaffMemberSummary`, `InviteStaffRequest`, `UpdateStaffAssignmentsRequest`, `PasswordResetRequest`, `PasswordTokenRedeemRequest`, and pure `can_transition(actor_role, source_kind, from, to) -> Result<(), TurnoverTransitionError>` enforcing that `Staff` cannot enter `InspectedAndReady`, `Staff` can leave `InspectedAndReady`, and `Staff` can mark only `Manual` turnovers `NotRequired`.
   - **Files Touched:**

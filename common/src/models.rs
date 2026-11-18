@@ -24,6 +24,8 @@ pub enum UserRole {
     Host,
     /// System administrator with elevated access.
     Admin,
+    /// Cleaning and maintenance crew account.
+    Staff,
 }
 
 impl fmt::Display for UserRole {
@@ -32,6 +34,7 @@ impl fmt::Display for UserRole {
             Self::Booker => write!(f, "Booker"),
             Self::Host => write!(f, "Host"),
             Self::Admin => write!(f, "Admin"),
+            Self::Staff => write!(f, "Staff"),
         }
     }
 }
@@ -44,6 +47,7 @@ impl std::str::FromStr for UserRole {
             "booker" => Ok(Self::Booker),
             "host" => Ok(Self::Host),
             "admin" => Ok(Self::Admin),
+            "staff" => Ok(Self::Staff),
             other => Err(format!("Unknown user role: {other}")),
         }
     }
@@ -2110,6 +2114,19 @@ mod tests {
         assert_eq!(json, "\"host\"");
         let parsed: UserRole = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, UserRole::Host);
+    }
+
+    #[test]
+    fn test_user_role_staff_display_and_parsing() -> Result<(), Box<dyn std::error::Error>> {
+        use std::str::FromStr;
+        assert_eq!(UserRole::Staff.to_string(), "Staff");
+        assert_eq!(UserRole::from_str("staff")?, UserRole::Staff);
+        assert_eq!(UserRole::from_str("STAFF")?, UserRole::Staff);
+        let json = serde_json::to_string(&UserRole::Staff)?;
+        assert_eq!(json, "\"staff\"");
+        let parsed: UserRole = serde_json::from_str(&json)?;
+        assert_eq!(parsed, UserRole::Staff);
+        Ok(())
     }
 
     #[test]
