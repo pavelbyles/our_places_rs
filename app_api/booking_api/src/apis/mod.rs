@@ -34,6 +34,7 @@ mod request_notifications;
 mod reservation_changes;
 mod routes;
 mod stay_pricing;
+mod turnovers;
 
 pub use availability::{AvailabilityParams, AvailabilityResponse, UnavailableRangesParams};
 pub use booking_updates::UpdatedBookingRequest;
@@ -339,3 +340,5 @@ mod stay_pricing_pin_tests;
 mod stay_total_golden_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod turnover_api_tests;

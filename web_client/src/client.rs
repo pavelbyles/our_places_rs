@@ -10,8 +10,10 @@ pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
 use common::turnover::{
-    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery,
-    StaffListResponse, StaffMemberSummary, UpdateStaffAssignmentsRequest,
+    CreateManualTurnoverRequest, InviteStaffRequest, PasswordResetRequest,
+    PasswordTokenRedeemRequest, StaffListQuery, StaffListResponse, StaffMemberSummary,
+    TransitionTurnoverRequest, TurnoverDetailResponse, TurnoverListQuery, TurnoverListResponse,
+    TurnoverResponse, UpdateStaffAssignmentsRequest,
 };
 use std::sync::Arc;
 use topcoat::context::{Cx, try_context};
@@ -817,6 +819,79 @@ impl TopcoatApiClient {
         .await?;
         let _: serde_json::Value = decode_api(request.send().await?).await?;
         Ok(())
+    }
+
+    /// Lists turnover dispatch cards visible to `user_jwt` (`booking_api` `GET /api/v1/turnovers`).
+    pub async fn list_turnovers(
+        &self,
+        query: &TurnoverListQuery,
+        user_jwt: &str,
+    ) -> Result<TurnoverListResponse, UserCallError> {
+        let url = common::app_client::turnovers_list_url(&self.booking_api_url, query);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Fetches a single scoped turnover detail (`booking_api` `GET /api/v1/turnovers/{id}`).
+    pub async fn get_turnover_detail(
+        &self,
+        turnover_id: Uuid,
+        user_jwt: &str,
+    ) -> Result<TurnoverDetailResponse, UserCallError> {
+        let url = common::app_client::turnover_detail_url(&self.booking_api_url, turnover_id);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Creates a manual turnover (`booking_api` `POST /api/v1/turnovers`).
+    pub async fn create_manual_turnover(
+        &self,
+        req: &CreateManualTurnoverRequest,
+        user_jwt: &str,
+    ) -> Result<TurnoverResponse, UserCallError> {
+        let url = common::app_client::turnovers_create_url(&self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
+    }
+
+    /// Transitions a turnover's operational status (`booking_api` `POST /api/v1/turnovers/{id}/status`).
+    pub async fn transition_turnover_status(
+        &self,
+        turnover_id: Uuid,
+        req: &TransitionTurnoverRequest,
+        user_jwt: &str,
+    ) -> Result<TurnoverResponse, UserCallError> {
+        let url = common::app_client::turnover_status_url(&self.booking_api_url, turnover_id);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
     }
 }
 

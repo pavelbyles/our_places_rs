@@ -226,7 +226,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core && devenv shell -- cargo test -p booking_api cron`
   - **Dependencies:** Task 9
 
-- [ ] **Task 11: Add `booking_api` `/api/v1/turnovers` Endpoints and `app_client` Methods**
+- [x] **Task 11: Add `booking_api` `/api/v1/turnovers` Endpoints and `app_client` Methods**
   - **Scope:** M
   - **Description:** Create `app_api/booking_api/src/apis/turnovers.rs` and register routes in `routes.rs` for `GET /api/v1/turnovers`, `POST /api/v1/turnovers`, `GET /api/v1/turnovers/{id}`, and `POST /api/v1/turnovers/{id}/status`. Enforce `Claims` + listing-scoped access (`Admin`, `Host` owner, or assigned `Staff`), map invalid transitions to `403 TURNOVER_TRANSITION_FORBIDDEN`, map `DbError::Conflict` (`expected_status`) to `409 Conflict`, map `DbError::LockContention` to `503 ServiceUnavailable`, and verify zero guest PII or financial fields appear in JSON responses. Add typed `common/src/app_client/turnovers.rs` and `web_client` methods, plus API integration tests in `app_api/booking_api/src/apis/turnover_api_tests.rs`.
   - **Files Touched:**
@@ -236,9 +236,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `common/src/app_client/{mod.rs, turnovers.rs (create)}`
     - `web_client/src/client.rs`
   - **Acceptance Criteria:**
-    - [ ] `Staff` receives `404`/`403` for listings they are not assigned to, and `403` when attempting to set `InspectedAndReady` or mark a booking/`ical_feed` turnover `NotRequired`.
-    - [ ] `Staff` succeeds in transitioning `InspectedAndReady` -> `MaintenanceRequired` or `NeedsCleaning`.
-    - [ ] Response payloads omit guest identity, booking totals, confirmation codes, and door codes, and stale `expected_status` returns `409 Conflict`.
+    - [x] `Staff` receives `404`/`403` for listings they are not assigned to, and `403` when attempting to set `InspectedAndReady` or mark a booking/`ical_feed` turnover `NotRequired`.
+    - [x] `Staff` succeeds in transitioning `InspectedAndReady` -> `MaintenanceRequired` or `NeedsCleaning`.
+    - [x] Response payloads omit guest identity, booking totals, confirmation codes, and door codes, and stale `expected_status` returns `409 Conflict`.
   - **Verification Command:** `devenv shell -- cargo test -p booking_api turnover_api_tests && SQLX_OFFLINE=true cargo check -p web_client`
   - **Dependencies:** Task 3, Task 9
 
