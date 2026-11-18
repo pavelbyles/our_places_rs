@@ -42,13 +42,52 @@ pub async fn admin_only(cx: &Cx) -> topcoat::Result<AdminSession> {
 /// logged and left at 0, so a page never fails because of it.
 pub async fn nav_user(cx: &Cx) -> Option<AdminNavUser> {
     let session = require_admin(cx).await.ok()?;
-    let unread_messages = unread_guest_messages(cx, &session).await;
+    let unread_messages = if session.role == AdminRole::Staff {
+        0
+    } else {
+        unread_guest_messages(cx, &session).await
+    };
     Some(AdminNavUser {
         name: session.name,
         email: session.email,
         role: session.role,
         unread_messages,
     })
+}
+
+/// Default console landing path for each admin-portal role.
+pub fn default_landing_path(role: AdminRole) -> &'static str {
+    match role {
+        AdminRole::Staff => "/admin/turnovers",
+        AdminRole::Host | AdminRole::Admin => "/admin",
+    }
+}
+
+/// Validates and resolves the post-authentication redirect target by role.
+/// `Staff` users may only deep-link within `/admin/turnovers`; any other target
+/// (including `/`, `/admin`, or `/admin/bookings`) is forced to `/admin/turnovers`.
+pub fn post_login_target(role: AdminRole, raw_redirect: &str) -> &str {
+    let safe = web_client::redirect::safe_redirect(raw_redirect);
+    match role {
+        AdminRole::Staff => {
+            if safe == "/admin/turnovers"
+                || safe.starts_with("/admin/turnovers/")
+                || safe.starts_with("/admin/turnovers?")
+                || safe.starts_with("/admin/turnovers#")
+            {
+                safe
+            } else {
+                "/admin/turnovers"
+            }
+        }
+        AdminRole::Host | AdminRole::Admin => {
+            if safe == "/" {
+                "/admin"
+            } else {
+                safe
+            }
+        }
+    }
 }
 
 async fn unread_guest_messages(cx: &Cx, session: &AdminSession) -> i64 {

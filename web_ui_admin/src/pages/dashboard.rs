@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use topcoat::{
     Result,
     context::Cx,
-    router::{error::redirect_permanent, page},
+    router::{error::see_other, page},
     view::{View, component, view},
 };
 use web_client::session::AdminRole;
@@ -152,9 +152,12 @@ pub async fn dashboard_page(cx: &Cx) -> Result<impl View> {
     })
 }
 
-/// `/` goes to the dashboard.
+/// `/` routes signed-in staff directly to `/admin/turnovers` and others to `/admin` using `303`.
 #[page("/")]
 pub async fn root_page(cx: &Cx) -> Result<()> {
-    let _ = cx;
-    Err(redirect_permanent("/admin").into())
+    let target = match web_client::session::require_admin(cx).await {
+        Ok(session) => crate::support::default_landing_path(session.role),
+        Err(_) => "/admin",
+    };
+    Err(see_other(target).into())
 }

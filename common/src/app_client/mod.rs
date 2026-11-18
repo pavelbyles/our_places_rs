@@ -123,7 +123,8 @@ pub use reviews::{
     submit_review,
 };
 pub use users::{
-    create_session, create_user, delete_session, fetch_user_profile, get_all_users,
-    get_all_users_filtered, get_session, hard_delete_user, login_user, resend_verification,
-    restore_user, revoke_user_sessions, soft_delete_user, update_user, verify_user,
+    confirm_password_reset, create_session, create_session_at, create_user, delete_session,
+    fetch_user_profile, get_all_users, get_all_users_filtered, get_session, get_session_at,
+    hard_delete_user, login_user, login_user_at, request_password_reset, resend_verification,
+    restore_user, revoke_user_sessions, soft_delete_user, update_user, verify_user, verify_user_at,
 };

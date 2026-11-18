@@ -1,10 +1,12 @@
 //! Users, authentication and portal sessions.
 
 use super::{get_client, user_api_audience, user_api_url};
+use crate::http_client::AuthenticatedClient;
 use crate::models::{
     CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, UserResponse, VerifyRequest,
 };
+use crate::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest};
 use anyhow::{Context, Result, bail};
 use reqwest::Response;
 use uuid::Uuid;
@@ -172,13 +174,16 @@ pub async fn create_user(req: &NewUserRequest) -> Result<UserResponse> {
         .context("Failed to parse created user response")
 }
 
-/// Creates a session.
-pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionResponse> {
-    let url = format!("{}/api/v1/sessions", user_api_url());
-    let audience = user_api_audience();
-
-    let res = get_client()
-        .post(&url, &audience, req)
+/// Creates a session against an explicit `user_api` base URL.
+pub async fn create_session_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
+    req: &CreateSessionRequest,
+) -> Result<SessionResponse> {
+    let url = format!("{}/api/v1/sessions", api_url.trim_end_matches('/'));
+    let res = client
+        .post(&url, audience, req)
         .await
         .context("Failed to connect to user service for session creation")?;
 
@@ -193,20 +198,30 @@ pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionRespons
         .context("Failed to parse session creation response")
 }
 
-/// Fetches a session if it exists, optionally only from one portal.
-pub async fn get_session(
+/// Creates a session.
+pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionResponse> {
+    create_session_at(get_client(), &user_api_url(), &user_api_audience(), req).await
+}
+
+/// Fetches a session against an explicit `user_api` base URL.
+pub async fn get_session_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
     token_hash: &str,
     namespace: Option<&str>,
 ) -> Result<Option<SessionResponse>> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let mut url = format!("{}/api/v1/sessions/{}", api_url, token_hash);
+    let mut url = format!(
+        "{}/api/v1/sessions/{}",
+        api_url.trim_end_matches('/'),
+        token_hash
+    );
     if let Some(ns) = namespace {
         url.push_str(&format!("?namespace={}", ns));
     }
 
-    let res = get_client()
-        .get(&url, &audience)
+    let res = client
+        .get(&url, audience)
         .await
         .context("Failed to connect to user service for session lookup")?;
 
@@ -226,6 +241,21 @@ pub async fn get_session(
         .context("Failed to parse session response")?;
 
     Ok(Some(session))
+}
+
+/// Fetches a session if it exists, optionally only from one portal.
+pub async fn get_session(
+    token_hash: &str,
+    namespace: Option<&str>,
+) -> Result<Option<SessionResponse>> {
+    get_session_at(
+        get_client(),
+        &user_api_url(),
+        &user_api_audience(),
+        token_hash,
+        namespace,
+    )
+    .await
 }
 
 /// Deletes a session.
@@ -270,14 +300,16 @@ pub async fn revoke_user_sessions(user_id: Uuid, namespace: Option<&str>) -> Res
     Ok(())
 }
 
-/// Checks a user's email and password.
-pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let url = format!("{}/api/v1/users/login", api_url);
-
-    let res = get_client()
-        .post(&url, &audience, req)
+/// Checks a user's email and password against an explicit `user_api` base URL.
+pub async fn login_user_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
+    req: &LoginRequest,
+) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/login", api_url.trim_end_matches('/'));
+    let res = client
+        .post(&url, audience, req)
         .await
         .context("Failed to connect to user service for login")?;
 
@@ -295,14 +327,21 @@ pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
     Ok(user)
 }
 
-/// Verifies a user's email address with their 6-character OTP code.
-pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let url = format!("{}/api/v1/users/verify", api_url);
+/// Checks a user's email and password.
+pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
+    login_user_at(get_client(), &user_api_url(), &user_api_audience(), req).await
+}
 
-    let res = get_client()
-        .post(&url, &audience, req)
+/// Verifies a user's email address with their OTP code against an explicit `user_api` base URL.
+pub async fn verify_user_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
+    req: &VerifyRequest,
+) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/verify", api_url.trim_end_matches('/'));
+    let res = client
+        .post(&url, audience, req)
         .await
         .context("Failed to connect to user service for verification")?;
 
@@ -318,6 +357,11 @@ pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
         .context("Failed to parse user response from verification")?;
 
     Ok(user)
+}
+
+/// Verifies a user's email address with their 6-character OTP code.
+pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
+    verify_user_at(get_client(), &user_api_url(), &user_api_audience(), req).await
 }
 
 /// Resends the 6-character OTP verification code to a user's email address.
@@ -343,4 +387,44 @@ pub async fn resend_verification(req: &ResendVerificationRequest) -> Result<User
         .context("Failed to parse user response from resend verification")?;
 
     Ok(user)
+}
+
+/// Initiates a single-use password-reset email link for an active account (`202 Accepted`).
+pub async fn request_password_reset(req: &PasswordResetRequest) -> Result<()> {
+    let url = format!("{}/api/v1/users/password-reset/request", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for password reset request")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Password reset request failed ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
+/// Redeems a single-use invite or password-reset token to set a new password.
+pub async fn confirm_password_reset(req: &PasswordTokenRedeemRequest) -> Result<()> {
+    let url = format!("{}/api/v1/users/password-reset/confirm", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for password reset confirmation")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!(
+            "Password reset confirmation failed ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    Ok(())
 }

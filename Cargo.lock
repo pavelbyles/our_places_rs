@@ -6410,6 +6410,7 @@ dependencies = [
  "chrono",
  "common",
  "dotenvy",
+ "reqwest",
  "rust_decimal",
  "serde",
  "serde_json",

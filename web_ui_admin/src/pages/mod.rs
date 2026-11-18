@@ -16,6 +16,8 @@ pub mod exchange_rate_history;
 pub mod exchange_rates;
 /// Listings studio.
 pub mod listings;
+/// Forgot-password and single-use password setup/reset flows.
+pub mod password_reset;
 /// Payout ledger.
 pub mod payouts;
 /// Seasonal pricing overrides.

@@ -350,7 +350,7 @@ pub async fn verify_submit(
                 tracing::error!("{e}");
                 return Err(see_other("/login").into());
             }
-            return Err(see_other("/admin").into());
+            return Err(see_other(crate::support::default_landing_path(role)).into());
         }
         Err(e) => {
             tracing::info!("host verification rejected: {e}");

@@ -17,11 +17,16 @@ use validator::{Validate, ValidateEmail, ValidationError};
 /// Rejects invalid email addresses while tolerating leading/trailing whitespace
 /// so copy-pasted addresses work cleanly after `.trim().to_lowercase()`.
 fn validate_trimmed_email(email: &str) -> Result<(), ValidationError> {
-    if email.trim().validate_email() {
+    if is_valid_trimmed_email(email) {
         Ok(())
     } else {
         Err(ValidationError::new("email"))
     }
+}
+
+/// Returns `true` if `email.trim()` is a syntactically valid email address.
+pub fn is_valid_trimmed_email(email: &str) -> bool {
+    email.trim().validate_email()
 }
 
 /// Maximum length of a manual turnover title in characters.

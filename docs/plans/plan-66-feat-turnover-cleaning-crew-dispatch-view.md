@@ -138,7 +138,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `cargo test -p common email && cargo test -p email_worker`
   - **Dependencies:** Task 1
 
-- [ ] **Task 6: Add `web_ui_admin` Forgot/Reset Password Pages, `Staff` Login Redirect, and Shell Isolation**
+- [x] **Task 6: Add `web_ui_admin` Forgot/Reset Password Pages, `Staff` Login Redirect, and Shell Isolation**
   - **Scope:** M
   - **Description:** Add `/forgot-password` and `/reset-password` Topcoat pages (`web_ui_admin/src/pages/password_reset.rs`), add `"Forgot password?"` link on `/login`, and wire `web_client/src/client.rs` methods. Update `web_ui_common/src/shell_admin.rs` (`admin_chrome`), `web_ui_admin/src/support.rs` (`nav_user`, `dispatch_actor`), `auth.rs`, `register.rs` (`verify_submit`), and `dashboard.rs` (`root_page`) so `AdminRole::Staff` skips `unread_guest_messages`, hides all non-dispatch links in desktop and mobile navs, `/` uses `303 see_other` (replacing `308 redirect_permanent` so browser cache cannot break role switches), and `/`, `/verify`, and `/login` route `AdminRole::Staff` directly to `/admin/turnovers`.
   - **Files Touched:**
@@ -147,9 +147,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `web_ui_common/src/shell_admin.rs`
     - `web_ui_admin/src/{support.rs, pages/mod.rs, pages/auth.rs, pages/dashboard.rs, pages/dashboard_tests.rs, pages/register.rs, pages/password_reset.rs (create)}`
   - **Acceptance Criteria:**
-    - [ ] Shell tests verify `AdminRole::Staff` renders `"Staff"` badge and only `Turnover Dispatch` and `Sign out` links in sidebar and mobile menu.
-    - [ ] `/`, `/login`, and `/verify` return `303` to `/admin/turnovers` for `AdminRole::Staff` and honor valid `/admin/turnovers*` redirect params while rejecting `/admin/bookings` redirects for `Staff`.
-    - [ ] `/reset-password?token=...` renders an inline recovery prompt when a token is expired or invalid.
+    - [x] Shell tests verify `AdminRole::Staff` renders `"Staff"` badge and only `Turnover Dispatch` and `Sign out` links in sidebar and mobile menu.
+    - [x] `/`, `/login`, and `/verify` return `303` to `/admin/turnovers` for `AdminRole::Staff` and honor valid `/admin/turnovers*` redirect params while rejecting `/admin/bookings` redirects for `Staff`.
+    - [x] `/reset-password?token=...` renders an inline recovery prompt when a token is expired or invalid.
   - **Verification Command:** `cargo test -p web_ui_common && SQLX_OFFLINE=true cargo test -p web_client -p web_ui_admin`
   - **Dependencies:** Task 3, Task 4, Task 5
 

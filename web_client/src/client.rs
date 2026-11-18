@@ -9,6 +9,7 @@ use common::models::{
 pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
+use common::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest};
 use std::sync::Arc;
 use topcoat::context::{Cx, try_context};
 use uuid::Uuid;
@@ -380,7 +381,13 @@ impl TopcoatApiClient {
         &self,
         req: &CreateSessionRequest,
     ) -> anyhow::Result<SessionResponse> {
-        common::app_client::create_session(req).await
+        common::app_client::create_session_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            req,
+        )
+        .await
     }
 
     /// Retrieve session from user_api
@@ -389,7 +396,14 @@ impl TopcoatApiClient {
         token_hash: &str,
         namespace: Option<&str>,
     ) -> anyhow::Result<Option<SessionResponse>> {
-        common::app_client::get_session(token_hash, namespace).await
+        common::app_client::get_session_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            token_hash,
+            namespace,
+        )
+        .await
     }
 
     /// Delete session in user_api
@@ -408,12 +422,24 @@ impl TopcoatApiClient {
 
     /// Authenticate user credentials with user_api
     pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
-        common::app_client::login_user(req).await
+        common::app_client::login_user_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            req,
+        )
+        .await
     }
 
     /// Verifies a user's email address with their 6-character OTP code
     pub async fn verify_user(&self, req: &VerifyRequest) -> anyhow::Result<UserResponse> {
-        common::app_client::verify_user(req).await
+        common::app_client::verify_user_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            req,
+        )
+        .await
     }
 
     /// Resends the 6-character OTP verification code to a user's email address
@@ -653,6 +679,42 @@ impl TopcoatApiClient {
         )
         .await?;
         decode(request.send().await?).await
+    }
+
+    /// Initiates a password-reset email link for `req.email` (`202 Accepted`).
+    pub async fn request_password_reset(
+        &self,
+        req: &PasswordResetRequest,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/users/password-reset/request", self.user_api_url);
+        let _: serde_json::Value = send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            None,
+            req,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Redeems a single-use invite or password-reset token to set a new password.
+    pub async fn confirm_password_reset(
+        &self,
+        req: &PasswordTokenRedeemRequest,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/users/password-reset/confirm", self.user_api_url);
+        let _: serde_json::Value = send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            None,
+            req,
+        )
+        .await?;
+        Ok(())
     }
 }
 
@@ -966,6 +1028,19 @@ pub(crate) async fn service_request(
         .map_err(UserCallError::Identity)
 }
 
+/// Sends a JSON body (optionally authenticated by `jwt`) and decodes structured API rejections.
+pub(crate) async fn send_api_json<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
+    client: &AuthenticatedClient,
+    method: reqwest::Method,
+    url: &str,
+    audience: &str,
+    jwt: Option<&str>,
+    body: &B,
+) -> Result<T, UserCallError> {
+    let request = service_request(client, method, url, audience, jwt).await?;
+    decode_api(request.json(body).send().await?).await
+}
+
 /// Sends a JSON body as the user who owns `jwt` and decodes a JSON response.
 async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
     client: &AuthenticatedClient,
@@ -1134,5 +1209,48 @@ mod get_listing_by_id_at_tests {
             .get_listing_by_id("x?currency=EUR", None)
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn password_reset_client_methods_handle_success_401_and_400()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let server = MockServer::start().await;
+        let client = client_for(&server);
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/users/password-reset/request"))
+            .respond_with(
+                ResponseTemplate::new(202)
+                    .set_body_json(serde_json::json!({ "status": "accepted" })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        client
+            .request_password_reset(&common::turnover::PasswordResetRequest {
+                email: "crew@ourplaces.example".into(),
+            })
+            .await?;
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/users/password-reset/confirm"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "code": "UNAUTHORIZED",
+                "message": "Invalid or expired token"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let err = client
+            .confirm_password_reset(&common::turnover::PasswordTokenRedeemRequest {
+                token: "expired".into(),
+                new_password: "new-password-123".into(),
+            })
+            .await;
+        assert!(matches!(err, Err(super::UserCallError::Unauthorized)));
+
+        Ok(())
     }
 }
