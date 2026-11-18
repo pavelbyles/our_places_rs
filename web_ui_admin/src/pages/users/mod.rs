@@ -137,6 +137,16 @@ impl UserForm {
     /// legacy capability rules: bookers hold no capabilities, and hosts may
     /// only manage listings and bookings.
     pub fn validate(&self, creating: bool) -> Result<ValidUser, Vec<String>> {
+        self.validate_preserving_staff(creating, false)
+    }
+
+    /// Checks the form while optionally preserving the `'staff'` role for existing
+    /// staff/multi-role accounts whose dispatch access is managed via `/admin/staff-users`.
+    pub fn validate_preserving_staff(
+        &self,
+        creating: bool,
+        preserve_staff: bool,
+    ) -> Result<ValidUser, Vec<String>> {
         let mut errors = Vec::new();
         let (first, last, email) = (
             self.first_name.trim(),
@@ -173,11 +183,14 @@ impl UserForm {
             self.role_host.is_some(),
             self.role_booker.is_some(),
         );
-        let roles: Vec<String> = [(admin, "admin"), (host, "host"), (booker, "booker")]
+        let mut roles: Vec<String> = [(admin, "admin"), (host, "host"), (booker, "booker")]
             .into_iter()
             .filter(|(on, _)| *on)
             .map(|(_, name)| name.to_string())
             .collect();
+        if preserve_staff && !roles.iter().any(|r| r == "staff") {
+            roles.push("staff".to_string());
+        }
         if roles.is_empty() {
             errors.push("Choose at least one role.".to_string());
         }
@@ -328,5 +341,48 @@ mod tests {
             ..valid()
         };
         assert_eq!(admin.validate(true).map(|u| u.permissions.len()), Ok(4));
+    }
+
+    #[test]
+    fn editing_user_preserves_staff_role_without_checkbox_error() {
+        let staff_only = UserForm {
+            password: String::new(),
+            role_admin: None,
+            role_host: None,
+            role_booker: None,
+            ..valid()
+        };
+        let preserved = staff_only
+            .validate_preserving_staff(false, true)
+            .map_err(|e| e.join(" "));
+        assert_eq!(
+            preserved.as_ref().map(|u| u.roles.clone()),
+            Ok(vec!["staff".to_string()])
+        );
+
+        let host_and_staff = UserForm {
+            password: String::new(),
+            role_host: on(),
+            role_booker: None,
+            ..valid()
+        };
+        assert_eq!(
+            host_and_staff
+                .validate_preserving_staff(false, true)
+                .map(|u| u.roles),
+            Ok(vec!["host".to_string(), "staff".to_string()])
+        );
+
+        let booker_and_staff = UserForm {
+            password: String::new(),
+            role_booker: on(),
+            ..valid()
+        };
+        assert_eq!(
+            booker_and_staff
+                .validate_preserving_staff(false, true)
+                .map(|u| u.roles),
+            Ok(vec!["booker".to_string(), "staff".to_string()])
+        );
     }
 }

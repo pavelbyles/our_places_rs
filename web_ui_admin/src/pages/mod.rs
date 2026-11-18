@@ -30,5 +30,7 @@ pub mod register;
 pub mod requests;
 /// `/robots.txt`: disallow everything.
 pub mod robots;
+/// Host-scoped staff roster and listing assignments (`/admin/staff-users`).
+pub mod staff_users;
 /// User administration.
 pub mod users;

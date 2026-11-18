@@ -1768,4 +1768,61 @@ mod staff_api_tests {
         assert_eq!(user_count, 1);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn patch_user_preserves_staff_role_when_editing_via_admin_users()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let staff_only =
+            create_user_with_roles(&pool, "staff.only@example.com", &["staff"]).await?;
+        let host_staff =
+            create_user_with_roles(&pool, "host.staff@example.com", &["host", "staff"]).await?;
+        let booker_staff =
+            create_user_with_roles(&pool, "booker.staff@example.com", &["booker", "staff"]).await?;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        for (uid, sent_roles, expected_extra) in [
+            (staff_only, Vec::<&str>::new(), None),
+            (host_staff, vec!["host"], Some("host")),
+            (booker_staff, vec!["booker"], Some("booker")),
+        ] {
+            let resp = test::call_service(
+                &app,
+                test::TestRequest::patch()
+                    .uri(&format!("/api/v1/users/user/{uid}"))
+                    .set_json(json!({
+                        "first_name": "UpdatedName",
+                        "roles": sent_roles
+                    }))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(resp.status(), 200, "patch user {uid} must succeed");
+            let updated: serde_json::Value = test::read_body_json(resp).await;
+            let roles = updated["roles"].as_array().ok_or("roles array")?;
+            assert!(
+                roles
+                    .iter()
+                    .any(|r| r.as_str().is_some_and(|s| s.eq_ignore_ascii_case("staff"))),
+                "staff role must be retained: {roles:?}"
+            );
+            if let Some(extra) = expected_extra {
+                assert!(
+                    roles
+                        .iter()
+                        .any(|r| r.as_str().is_some_and(|s| s.eq_ignore_ascii_case(extra))),
+                    "expected {extra} in {roles:?}"
+                );
+            }
+        }
+        Ok(())
+    }
 }

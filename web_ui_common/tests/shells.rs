@@ -251,3 +251,15 @@ async fn staff_session_sees_only_turnover_dispatch_and_sign_out() {
         );
     }
 }
+
+#[tokio::test]
+async fn hosts_and_admins_see_staff_and_crew_link() {
+    let cx = &Cx::default();
+    for role in [AdminRole::Host, AdminRole::Admin] {
+        let out = html(view! { admin_chrome(shell: admin(Some(role))) }, cx).await;
+        assert!(
+            out.contains(r#"href="/admin/staff-users""#) && out.contains("Staff &amp; Crew"),
+            "expected Staff & Crew link for {role:?}: {out}"
+        );
+    }
+}

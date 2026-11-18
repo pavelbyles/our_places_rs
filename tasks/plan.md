@@ -173,7 +173,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core staff && devenv shell -- cargo test -p user_api staff`
   - **Dependencies:** Task 2, Task 4, Task 5
 
-- [ ] **Task 8: Build `/admin/staff-users` Portal UI and Preserve `Staff` Role on `/admin/users`**
+- [x] **Task 8: Build `/admin/staff-users` Portal UI and Preserve `Staff` Role on `/admin/users`**
   - **Scope:** M
   - **Description:** Add `common::app_client` and `web_client` methods for staff roster endpoints. Create `web_ui_admin/src/pages/staff_users.rs` (`host_or_admin` guard) with invite form, owned-listing multi-checkbox selector, resend-invite action, and remove-from-roster confirmation dialog. Add `"Staff & Crew"` link to `shell_admin.rs` for `Host | Admin`. Update `UserForm::validate` in `web_ui_admin/src/pages/users/mod.rs`, `users/form.rs`, and `user_api/src/apis/profile.rs` so editing a `Staff`-only or multi-role `Staff` user via `/admin/users` retains `'staff'` in `user.roles` without failing the 3-checkbox `"Choose at least one role."` validation.
   - **Files Touched:**
@@ -183,9 +183,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `web_ui_admin/src/pages/{mod.rs, staff_users.rs (create), users/mod.rs, users/form.rs}`
     - `app_api/user_api/src/apis/profile.rs`
   - **Acceptance Criteria:**
-    - [ ] `Staff` sessions get `403` on `/admin/staff-users` and `/admin/users`.
-    - [ ] Host sees only their own staff and owned listings on `/admin/staff-users`.
-    - [ ] Editing a `Staff`-only, `Host + Staff`, or `Booker + Staff` user in `/admin/users` succeeds and retains `'staff'` in `user.roles`.
+    - [x] `Staff` sessions get `403` on `/admin/staff-users` and `/admin/users`.
+    - [x] Host sees only their own staff and owned listings on `/admin/staff-users`.
+    - [x] Editing a `Staff`-only, `Host + Staff`, or `Booker + Staff` user in `/admin/users` succeeds and retains `'staff'` in `user.roles`.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common -p web_client -p web_ui_admin && devenv shell -- cargo test -p user_api`
   - **Dependencies:** Task 6, Task 7
 

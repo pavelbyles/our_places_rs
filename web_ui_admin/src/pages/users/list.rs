@@ -97,6 +97,7 @@ pub async fn users_page(cx: &Cx) -> Result<impl View> {
         ("", "All roles"),
         ("admin", "Administrators"),
         ("host", "Hosts"),
+        ("staff", "Staff"),
         ("booker", "Guests"),
     ];
     let button = "h-8 rounded-lg border border-border px-3 text-xs font-medium";

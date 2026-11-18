@@ -9,7 +9,10 @@ use common::models::{
 pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
-use common::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest};
+use common::turnover::{
+    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery,
+    StaffListResponse, StaffMemberSummary, UpdateStaffAssignmentsRequest,
+};
 use std::sync::Arc;
 use topcoat::context::{Cx, try_context};
 use uuid::Uuid;
@@ -714,6 +717,105 @@ impl TopcoatApiClient {
             req,
         )
         .await?;
+        Ok(())
+    }
+
+    /// Lists host-scoped staff users visible to the authenticated host/admin caller.
+    pub async fn list_staff_users(
+        &self,
+        query: &StaffListQuery,
+        user_jwt: &str,
+    ) -> Result<StaffListResponse, UserCallError> {
+        let url = common::app_client::staff_users_list_url(&self.user_api_url, query);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Invites or attaches a staff user to one or more owned active listings.
+    pub async fn invite_staff_user(
+        &self,
+        req: &InviteStaffRequest,
+        user_jwt: &str,
+    ) -> Result<StaffMemberSummary, UserCallError> {
+        let url = format!("{}/api/v1/staff-users", self.user_api_url);
+        send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+            req,
+        )
+        .await
+    }
+
+    /// Replaces the target staff user's assigned listings within the caller's ownership scope.
+    pub async fn update_staff_listings(
+        &self,
+        staff_user_id: Uuid,
+        req: &UpdateStaffAssignmentsRequest,
+        user_jwt: &str,
+    ) -> Result<StaffMemberSummary, UserCallError> {
+        let url = format!(
+            "{}/api/v1/staff-users/{staff_user_id}/listings",
+            self.user_api_url
+        );
+        send_api_json(
+            &self.client,
+            reqwest::Method::PUT,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+            req,
+        )
+        .await
+    }
+
+    /// Invalidates prior unused invite links and emails a fresh onboarding link.
+    pub async fn resend_staff_invite(
+        &self,
+        staff_user_id: Uuid,
+        user_jwt: &str,
+    ) -> Result<(), UserCallError> {
+        let url = format!(
+            "{}/api/v1/staff-users/{staff_user_id}/resend-invite",
+            self.user_api_url
+        );
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        let _: serde_json::Value = decode_api(request.send().await?).await?;
+        Ok(())
+    }
+
+    /// Removes a staff user from the caller's roster and owned listings.
+    pub async fn remove_staff_user(
+        &self,
+        staff_user_id: Uuid,
+        user_jwt: &str,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/staff-users/{staff_user_id}", self.user_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::DELETE,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        let _: serde_json::Value = decode_api(request.send().await?).await?;
         Ok(())
     }
 }

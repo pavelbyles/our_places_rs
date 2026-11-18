@@ -6,7 +6,10 @@ use crate::models::{
     CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, UserResponse, VerifyRequest,
 };
-use crate::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest};
+use crate::turnover::{
+    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery,
+    StaffListResponse, StaffMemberSummary, UpdateStaffAssignmentsRequest,
+};
 use anyhow::{Context, Result, bail};
 use reqwest::Response;
 use uuid::Uuid;
@@ -424,6 +427,160 @@ pub async fn confirm_password_reset(req: &PasswordTokenRedeemRequest) -> Result<
             status,
             err_text
         );
+    }
+
+    Ok(())
+}
+
+/// Percent-encodes query-parameter values safely.
+pub fn encode_query_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Builds the `/api/v1/staff-users` URL with encoded search & pagination parameters.
+pub fn staff_users_list_url(api_url: &str, query: &StaffListQuery) -> String {
+    let mut url = format!("{}/api/v1/staff-users", api_url.trim_end_matches('/'));
+    let mut params = Vec::new();
+    if let Some(q) = query.q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        params.push(format!("q={}", encode_query_component(q)));
+    }
+    if let Some(page) = query.page {
+        params.push(format!("page={page}"));
+    }
+    if let Some(per_page) = query.per_page {
+        params.push(format!("per_page={per_page}"));
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    url
+}
+
+/// Fetches host-scoped staff users from `/api/v1/staff-users`.
+pub async fn list_staff_users(query: &StaffListQuery, user_jwt: &str) -> Result<StaffListResponse> {
+    let url = staff_users_list_url(&user_api_url(), query);
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::GET, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
+        .await
+        .context("Failed to connect to user service for staff list")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to fetch staff users ({}): {}", status, err_text);
+    }
+
+    res.json::<StaffListResponse>()
+        .await
+        .context("Failed to parse staff list response")
+}
+
+/// Invites or attaches a staff member via `POST /api/v1/staff-users`.
+pub async fn invite_staff_user(
+    req: &InviteStaffRequest,
+    user_jwt: &str,
+) -> Result<StaffMemberSummary> {
+    let url = format!("{}/api/v1/staff-users", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
+        .await
+        .context("Failed to connect to user service for staff invite")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to invite staff member ({}): {}", status, err_text);
+    }
+
+    res.json::<StaffMemberSummary>()
+        .await
+        .context("Failed to parse staff member summary")
+}
+
+/// Updates a staff member's assigned owned listings via `PUT /api/v1/staff-users/{id}/listings`.
+pub async fn update_staff_listings(
+    staff_user_id: Uuid,
+    req: &UpdateStaffAssignmentsRequest,
+    user_jwt: &str,
+) -> Result<StaffMemberSummary> {
+    let url = format!(
+        "{}/api/v1/staff-users/{staff_user_id}/listings",
+        user_api_url()
+    );
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::PUT, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
+        .await
+        .context("Failed to connect to user service for staff assignments")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to update staff listings ({}): {}", status, err_text);
+    }
+
+    res.json::<StaffMemberSummary>()
+        .await
+        .context("Failed to parse updated staff member")
+}
+
+/// Resends a pending staff onboarding invite via `POST /api/v1/staff-users/{id}/resend-invite`.
+pub async fn resend_staff_invite(staff_user_id: Uuid, user_jwt: &str) -> Result<()> {
+    let url = format!(
+        "{}/api/v1/staff-users/{staff_user_id}/resend-invite",
+        user_api_url()
+    );
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
+        .await
+        .context("Failed to connect to user service for invite resend")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to resend staff invite ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
+/// Removes a staff member from the caller's roster via `DELETE /api/v1/staff-users/{id}`.
+pub async fn remove_staff_user(staff_user_id: Uuid, user_jwt: &str) -> Result<()> {
+    let url = format!("{}/api/v1/staff-users/{staff_user_id}", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::DELETE, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
+        .await
+        .context("Failed to connect to user service for staff removal")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to remove staff member ({}): {}", status, err_text);
     }
 
     Ok(())

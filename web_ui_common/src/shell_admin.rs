@@ -111,6 +111,13 @@ pub async fn admin_chrome(
                             >
                                 "Turnover Dispatch"
                             </a>
+                            <a
+                                id="admin-sidebar-staff-users-link"
+                                href="/admin/staff-users"
+                                class=(NAV_LINK)
+                            >
+                                "Staff & Crew"
+                            </a>
                             <a href="/admin/inbox" class=(NAV_LINK)>
                                 "Inbox"
                                 if let Some(label) = unread.clone() {
@@ -191,6 +198,13 @@ pub async fn admin_chrome(
                                         class=(NAV_LINK)
                                     >
                                         "Turnover Dispatch"
+                                    </a>
+                                    <a
+                                        id="admin-mobile-staff-users-link"
+                                        href="/admin/staff-users"
+                                        class=(NAV_LINK)
+                                    >
+                                        "Staff & Crew"
                                     </a>
                                     <a href="/admin/inbox" class=(NAV_LINK)>
                                         "Inbox"
