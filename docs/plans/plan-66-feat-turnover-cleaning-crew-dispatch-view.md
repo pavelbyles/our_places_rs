@@ -246,7 +246,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 
 ### Phase E: Comments, Outbox Recovery & Mobile Dispatch UI
 
-- [ ] **Task 12: Implement Turnover Comments API and General Stuck `email_outbox` Republisher**
+- [x] **Task 12: Implement Turnover Comments API and General Stuck `email_outbox` Republisher**
   - **Scope:** M
   - **Description:** Add `POST /api/v1/turnovers/{id}/comments` in `app_api/booking_api/src/apis/turnovers.rs` backed by `db_core::turnover::add_comment_with_outbox` (acquiring parent `listing` `FOR UPDATE` lock with `5s` `lock_timeout` before locking `turnover`, and persisting `author_name` snapshot). Resolve recipients as active verified `listing_staff` assigned to `listing_id` plus `listing.user_id`, excluding the comment author, insert `EmailTemplate::TurnoverCommentNotification` rows transactionally, and publish with `.instrument(tracing::Span::current())`. Leave `db_core::calendar::outbox::stuck_calendar_emails` untouched (preserving existing `outbox_tests.rs` and `calendar_sync_job` tests) and add `db_core::email_outbox::stuck_pending_emails(pool, older_than, limit)` called by `booking_api::cron::run_sweeps` (`EmailPublisher`).
   - **Files Touched:**
@@ -256,9 +256,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `app_api/booking_api/src/apis/{turnovers.rs, turnover_api_tests.rs, cron.rs}`
     - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] Posting a comment inserts `turnover_comment` (with `author_name` snapshot) and `email_outbox` rows atomically for host + other assigned active staff (never the author, never unassigned/inactive staff).
-    - [ ] No comment body or email address appears in `tracing` logs.
-    - [ ] Existing `db_core::calendar::outbox` and `calendar_sync_job` tests pass unmodified while `db_core::email_outbox::stuck_pending_emails` picks up stuck `staff_invite`, `password_reset_link`, and `turnover_comment_notification` rows.
+    - [x] Posting a comment inserts `turnover_comment` (with `author_name` snapshot) and `email_outbox` rows atomically for host + other assigned active staff (never the author, never unassigned/inactive staff).
+    - [x] No comment body or email address appears in `tracing` logs.
+    - [x] Existing `db_core::calendar::outbox` and `calendar_sync_job` tests pass unmodified while `db_core::email_outbox::stuck_pending_emails` picks up stuck `staff_invite`, `password_reset_link`, and `turnover_comment_notification` rows.
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core outbox && devenv shell -- cargo test -p db_core turnover_tests && devenv shell -- cargo test -p booking_api turnover`
   - **Dependencies:** Task 5, Task 10, Task 11
 

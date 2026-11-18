@@ -125,9 +125,9 @@ pub use reviews::{
 };
 pub use turnovers::{
     create_manual_turnover, create_manual_turnover_at, get_turnover_detail, get_turnover_detail_at,
-    list_turnovers, list_turnovers_at, transition_turnover_status, transition_turnover_status_at,
-    turnover_comments_url, turnover_detail_url, turnover_status_url, turnovers_create_url,
-    turnovers_list_url,
+    list_turnovers, list_turnovers_at, post_turnover_comment, post_turnover_comment_at,
+    transition_turnover_status, transition_turnover_status_at, turnover_comments_url,
+    turnover_detail_url, turnover_status_url, turnovers_create_url, turnovers_list_url,
 };
 pub use users::{
     confirm_password_reset, create_session, create_session_at, create_user, delete_session,

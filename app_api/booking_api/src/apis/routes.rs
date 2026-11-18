@@ -108,6 +108,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             turnovers::create_manual_turnover,
             turnovers::get_turnover_detail,
             turnovers::transition_turnover_status,
+            turnovers::post_turnover_comment,
         ),
         components(
             schemas(
@@ -522,6 +523,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/{id}/status",
                 web::post().to(turnovers::transition_turnover_status),
+            )
+            .route(
+                "/{id}/comments",
+                web::post().to(turnovers::post_turnover_comment),
             ),
     );
 

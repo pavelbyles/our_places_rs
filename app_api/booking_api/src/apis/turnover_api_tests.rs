@@ -432,3 +432,143 @@ async fn turnover_api_enforces_scoping_role_transitions_conflicts_and_zero_pii()
 
     Ok(())
 }
+
+#[tokio::test]
+async fn turnover_comments_fanout_outbox_redact_logs_and_cron_republishes()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::settings::CronSettings;
+    use api_core::email_publisher::EmailPublisher;
+    use common::turnover::TurnoverCommentResponse;
+
+    let test_db = test_db();
+    let pool = test_db.get_pool().await;
+
+    let host_a = user(&pool, UserRole::Host).await;
+    let staff_a = user(&pool, UserRole::Staff).await;
+    let staff_unassigned = user(&pool, UserRole::Staff).await;
+
+    let host_email: String = sqlx::query_scalar("SELECT email FROM \"user\" WHERE id = $1")
+        .bind(host_a)
+        .fetch_one(&pool)
+        .await?;
+    let staff_email: String = sqlx::query_scalar("SELECT email FROM \"user\" WHERE id = $1")
+        .bind(staff_a)
+        .fetch_one(&pool)
+        .await?;
+
+    let villa = seed_listing(&pool, host_a, "Outbox Breeze").await?;
+    link_staff(&pool, host_a, staff_a, villa).await?;
+    sqlx::query("INSERT INTO host_staff (host_user_id, staff_user_id) VALUES ($1, $2)")
+        .bind(host_a)
+        .bind(staff_unassigned)
+        .execute(&pool)
+        .await?;
+
+    let today = listing_today(Utc::now());
+    let created = db_core::turnover::create_manual_turnover(
+        &pool,
+        db_core::turnover::TurnoverActor {
+            user_id: host_a,
+            role: common::turnover::TurnoverActorRole::Host,
+        },
+        &common::turnover::CreateManualTurnoverRequest {
+            listing_id: villa,
+            checkout_date: today,
+            title: Some("Pool chemical balance".into()),
+            initial_status: None,
+        },
+    )
+    .await?;
+
+    let cron_settings = CronSettings {
+        cron_secret: "test-comment-cron-secret".to_string(),
+    };
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings()))
+            .app_data(web::Data::new(tax_settings()))
+            .app_data(web::Data::new(cron_settings))
+            .app_data(web::Data::new(EmailPublisher::disabled()))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+
+    // Unassigned staff blocked (404).
+    assert_eq!(
+        test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/v1/turnovers/{}/comments", created.id))
+                .insert_header(bearer(staff_unassigned))
+                .set_json(serde_json::json!({ "body": "Should fail" }))
+                .to_request(),
+        )
+        .await
+        .status(),
+        404
+    );
+
+    // Assigned staff posts comment; capture logs to verify zero comment body & zero email leaks.
+    let secret_comment_text = "CONFIDENTIAL_GATE_NOTE_98765_DO_NOT_LOG";
+    let (logs, guard) = super::promo_hold_tests::capture_logs();
+    let post_resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/turnovers/{}/comments", created.id))
+            .insert_header(bearer(staff_a))
+            .set_json(serde_json::json!({ "body": secret_comment_text }))
+            .to_request(),
+    )
+    .await;
+    // Allow spawned task one yield to execute while capture_logs is active.
+    tokio::task::yield_now().await;
+    drop(guard);
+
+    assert_eq!(post_resp.status(), 201);
+    let comment: TurnoverCommentResponse = test::read_body_json(post_resp).await;
+    assert_eq!(comment.body, secret_comment_text);
+
+    let log_text = logs.text();
+    assert!(
+        !log_text.contains(secret_comment_text),
+        "comment body must never appear in tracing logs: {log_text}"
+    );
+    assert!(
+        !log_text.contains(&host_email) && !log_text.contains(&staff_email),
+        "recipient/author email must never appear in tracing logs: {log_text}"
+    );
+
+    // Outbox has pending notification for host_a only.
+    let (outbox_id, outbox_recipient): (Uuid, String) = sqlx::query_as(
+        "SELECT id, recipient_email FROM email_outbox WHERE template_id = 'turnover_comment_notification' LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(outbox_recipient, host_email);
+
+    // Simulate stranded outbox row > 5 min old and invoke cron run-sweeps to republish.
+    sqlx::query("UPDATE email_outbox SET created_at = NOW() - INTERVAL '10 minutes' WHERE id = $1")
+        .bind(outbox_id)
+        .execute(&pool)
+        .await?;
+
+    let sweep_resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/internal/cron/run-sweeps")
+            .insert_header(("x-cron-secret", "test-comment-cron-secret"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(sweep_resp.status(), 200);
+    let sweep_body: serde_json::Value = test::read_body_json(sweep_resp).await;
+    assert!(
+        sweep_body["stuck_emails_republished"]
+            .as_u64()
+            .is_some_and(|n| n >= 1),
+        "expected cron run-sweeps to republish stuck turnover comment outbox email: {sweep_body}"
+    );
+
+    Ok(())
+}

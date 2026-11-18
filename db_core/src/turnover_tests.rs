@@ -951,3 +951,170 @@ async fn booking_update_and_reservation_change_reconcile_turnovers_atomically()
 
     Ok(())
 }
+
+#[tokio::test]
+async fn add_comment_with_outbox_snapshots_author_and_queues_active_verified_recipients()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::turnover::add_comment_with_outbox;
+
+    let db = test_db();
+    let pool = db.get_pool().await;
+
+    let host = seed_user(&pool, "cm-host@example.com", "Elena", &["host"]).await?;
+    let staff_active = seed_user(&pool, "cm-active@example.com", "Marco", &["staff"]).await?;
+    let staff_other = seed_user(&pool, "cm-other@example.com", "Unassigned", &["staff"]).await?;
+    let staff_inactive =
+        seed_user(&pool, "cm-inactive@example.com", "Inactive", &["staff"]).await?;
+    let staff_unverified =
+        seed_user(&pool, "cm-unverified@example.com", "Unverified", &["staff"]).await?;
+
+    sqlx::query("UPDATE \"user\" SET is_active = FALSE WHERE id = $1")
+        .bind(staff_inactive)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE \"user\" SET is_verified = FALSE WHERE id = $1")
+        .bind(staff_unverified)
+        .execute(&pool)
+        .await?;
+
+    let listing_a = seed_listing(&pool, host, "Palm Breeze").await?;
+    let listing_other = seed_listing(&pool, host, "Other Villa").await?;
+    for staff_id in [staff_active, staff_inactive, staff_unverified] {
+        sqlx::query("INSERT INTO host_staff (host_user_id, staff_user_id) VALUES ($1, $2)")
+            .bind(host)
+            .bind(staff_id)
+            .execute(&pool)
+            .await?;
+        sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+            .bind(listing_a)
+            .bind(staff_id)
+            .execute(&pool)
+            .await?;
+    }
+    sqlx::query("INSERT INTO host_staff (host_user_id, staff_user_id) VALUES ($1, $2)")
+        .bind(host)
+        .bind(staff_other)
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+        .bind(listing_other)
+        .bind(staff_other)
+        .execute(&pool)
+        .await?;
+
+    let today = listing_today(Utc::now());
+    let created = create_manual_turnover(
+        &pool,
+        TurnoverActor {
+            user_id: host,
+            role: TurnoverActorRole::Host,
+        },
+        &CreateManualTurnoverRequest {
+            listing_id: listing_a,
+            checkout_date: today,
+            title: Some("Fan repair".into()),
+            initial_status: None,
+        },
+    )
+    .await?;
+
+    // Blank body rejected.
+    let blank_err = add_comment_with_outbox(
+        &pool,
+        TurnoverActor {
+            user_id: host,
+            role: TurnoverActorRole::Host,
+        },
+        created.id,
+        "   ",
+        "https://admin.example.com",
+    )
+    .await;
+    assert!(matches!(blank_err, Err(DbError::ValidationError(_))));
+
+    // Unassigned staff blocked (RowNotFound).
+    let unauth_err = add_comment_with_outbox(
+        &pool,
+        TurnoverActor {
+            user_id: staff_other,
+            role: TurnoverActorRole::Staff,
+        },
+        created.id,
+        "Not my villa",
+        "https://admin.example.com",
+    )
+    .await;
+    assert!(matches!(
+        unauth_err,
+        Err(DbError::Sqlx(sqlx::Error::RowNotFound))
+    ));
+
+    // Assigned active staff posts comment -> queues email ONLY for host (excludes author, unassigned, inactive, unverified).
+    let staff_comment = add_comment_with_outbox(
+        &pool,
+        TurnoverActor {
+            user_id: staff_active,
+            role: TurnoverActorRole::Staff,
+        },
+        created.id,
+        "Need replacement fan blade before next guest.",
+        "https://admin.example.com",
+    )
+    .await?;
+    assert_eq!(staff_comment.comment.author_name, "Marco Tester");
+    assert_eq!(staff_comment.comment.author_role, "staff");
+    assert_eq!(staff_comment.outbox_ids.len(), 1);
+
+    let recipients_1: Vec<String> = sqlx::query_scalar(
+        "SELECT recipient_email FROM email_outbox WHERE id = ANY($1) ORDER BY recipient_email",
+    )
+    .bind(&staff_comment.outbox_ids)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(recipients_1, vec!["cm-host@example.com".to_string()]);
+
+    // Host replies -> queues email ONLY for active verified assigned staff.
+    let host_reply = add_comment_with_outbox(
+        &pool,
+        TurnoverActor {
+            user_id: host,
+            role: TurnoverActorRole::Host,
+        },
+        created.id,
+        "Ordered a spare fan for 2pm delivery.",
+        "https://admin.example.com/",
+    )
+    .await?;
+    assert_eq!(host_reply.comment.author_name, "Elena Tester");
+    assert_eq!(host_reply.outbox_ids.len(), 1);
+
+    let (recip, template, payload): (String, String, serde_json::Value) = sqlx::query_as(
+        "SELECT recipient_email, template_id, payload FROM email_outbox WHERE id = $1",
+    )
+    .bind(host_reply.outbox_ids[0])
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(recip, "cm-active@example.com");
+    assert_eq!(template, "turnover_comment_notification");
+    assert_eq!(payload["listing_name"], "Palm Breeze");
+    assert_eq!(payload["author_name"], "Elena Tester");
+    assert_eq!(payload["author_role"], "host");
+    assert_eq!(
+        payload["turnover_url"],
+        format!("https://admin.example.com/admin/turnovers/{}", created.id)
+    );
+
+    let detail = get_turnover_detail(
+        &pool,
+        TurnoverActor {
+            user_id: host,
+            role: TurnoverActorRole::Host,
+        },
+        created.id,
+    )
+    .await?;
+    assert_eq!(detail.comments.len(), 2);
+    assert_eq!(detail.turnover.comment_count, 2);
+
+    Ok(())
+}

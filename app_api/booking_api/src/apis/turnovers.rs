@@ -3,13 +3,16 @@
 use actix_web::{HttpResponse, web};
 use api_core::auth::Claims;
 use api_core::error::ApiError;
+use common::email::EmailTemplate;
 use common::turnover::{
-    CreateManualTurnoverRequest, TransitionTurnoverRequest, TurnoverActorRole,
-    TurnoverDetailResponse, TurnoverListQuery, TurnoverListResponse, TurnoverResponse,
+    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, TransitionTurnoverRequest,
+    TurnoverActorRole, TurnoverCommentResponse, TurnoverDetailResponse, TurnoverListQuery,
+    TurnoverListResponse, TurnoverResponse,
 };
 use db_core::models::UserRole;
 use db_core::turnover::TurnoverActor;
 use sqlx::PgPool;
+use tracing::Instrument;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -161,4 +164,71 @@ pub async fn transition_turnover_status(
     .await
     .map_err(ApiError::Database)?;
     Ok(HttpResponse::Ok().json(updated))
+}
+
+/// Posts a crew/host comment on a scoped turnover and asynchronously publishes transactional outbox emails.
+#[tracing::instrument(skip(pool, claims, body, publisher), fields(user_id = %claims.sub, turnover_id = %path))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/turnovers/{id}/comments",
+    tag = "turnovers",
+    params(
+        ("id" = Uuid, Path, description = "Turnover ID")
+    ),
+    request_body = CreateTurnoverCommentRequest,
+    responses(
+        (status = 201, description = "Turnover comment created", body = TurnoverCommentResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Turnover not found or inaccessible"),
+        (status = 503, description = "Service temporarily unavailable"),
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn post_turnover_comment(
+    pool: web::Data<PgPool>,
+    claims: Claims,
+    path: web::Path<Uuid>,
+    body: web::Json<CreateTurnoverCommentRequest>,
+    publisher: Option<web::Data<api_core::email_publisher::EmailPublisher>>,
+) -> Result<HttpResponse, ApiError> {
+    body.validate()?;
+    let actor = resolve_dispatch_actor(pool.get_ref(), &claims).await?;
+    let admin_url = super::admin_base_url();
+    let outcome = db_core::turnover::add_comment_with_outbox(
+        pool.get_ref(),
+        actor,
+        path.into_inner(),
+        &body.body,
+        &admin_url,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    if !outcome.outbox_ids.is_empty() {
+        let email_publisher = publisher
+            .map(|p| p.get_ref().clone())
+            .unwrap_or_else(api_core::email_publisher::EmailPublisher::from_env);
+        let outbox_ids = outcome.outbox_ids;
+        let span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                let template = EmailTemplate::TurnoverCommentNotification.as_str();
+                for email_id in outbox_ids {
+                    if let Err(e) = email_publisher.publish_email_event(email_id).await {
+                        tracing::error!(
+                            %email_id,
+                            template,
+                            error = ?e,
+                            "turnover comment email queued but publish failed"
+                        );
+                    }
+                }
+            }
+            .instrument(span),
+        );
+    }
+
+    Ok(HttpResponse::Created().json(outcome.comment))
 }

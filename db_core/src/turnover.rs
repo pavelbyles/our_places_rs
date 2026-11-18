@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
 use chrono::{DateTime, NaiveDate, Utc};
+use common::email::{EmailTemplate, TurnoverCommentNotificationPayload};
 use common::reference::listing_today;
 use common::turnover::{
     CreateManualTurnoverRequest, MAX_TURNOVER_REASON_LEN, MAX_TURNOVER_TITLE_LEN,
@@ -1218,4 +1219,203 @@ pub async fn backfill_listing_turnovers(
     reconcile_for_listing_conn(&mut tx, listing_id, None, true, entry_point).await?;
     tx.commit().await?;
     Ok(())
+}
+
+/// Output of posting a turnover comment together with outbox IDs queued in the same transaction.
+#[derive(Debug, Clone)]
+pub struct AddCommentOutcome {
+    /// Persisted turnover comment with immutable `author_name` snapshot.
+    pub comment: TurnoverCommentResponse,
+    /// `email_outbox` IDs inserted atomically for post-commit Pub/Sub publishing.
+    pub outbox_ids: Vec<Uuid>,
+}
+
+const MAX_TURNOVER_COMMENT_LEN: usize = 2000;
+const TURNOVER_COMMENT_MAX_RETRIES: i32 = 3;
+
+/// Inserts a crew/host/admin comment onto a scoped turnover and atomically queues notification
+/// emails (`TurnoverCommentNotification`) for the listing owner and active verified assigned
+/// staff, excluding the author (`listing -> turnover` lock order under `5s` `lock_timeout`).
+#[tracing::instrument(skip(pool, body, admin_base_url), fields(turnover_id = %turnover_id, user_id = %actor.user_id))]
+pub async fn add_comment_with_outbox(
+    pool: &PgPool,
+    actor: TurnoverActor,
+    turnover_id: Uuid,
+    body: &str,
+    admin_base_url: &str,
+) -> Result<AddCommentOutcome> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() || trimmed.chars().count() > MAX_TURNOVER_COMMENT_LEN {
+        return Err(DbError::ValidationError(format!(
+            "Comment must be between 1 and {MAX_TURNOVER_COMMENT_LEN} characters."
+        )));
+    }
+
+    let listing_lookup = sqlx::query!(
+        r#"
+        SELECT t.listing_id
+        FROM turnover t
+        INNER JOIN listing l ON l.id = t.listing_id
+        WHERE t.id = $1 AND l.deleted_at IS NULL
+        "#,
+        turnover_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or(DbError::Sqlx(sqlx::Error::RowNotFound))?;
+
+    let mut tx = pool.begin().await?;
+    set_lock_timeout(&mut tx).await?;
+
+    let Some((owner_user_id, is_deleted)) =
+        lock_listing(&mut tx, listing_lookup.listing_id).await?
+    else {
+        return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
+    };
+    if is_deleted
+        || !actor_has_listing_access(&mut tx, actor, listing_lookup.listing_id, owner_user_id)
+            .await?
+    {
+        return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
+    }
+
+    let turnover = sqlx::query!(
+        r#"
+        SELECT id, checkout_date
+        FROM turnover
+        WHERE id = $1 AND listing_id = $2
+        FOR UPDATE
+        "#,
+        turnover_id,
+        listing_lookup.listing_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| DbError::from_sqlx_contended(e, "lock turnover for comment"))?
+    .ok_or(DbError::Sqlx(sqlx::Error::RowNotFound))?;
+
+    let listing_name = sqlx::query_scalar!(
+        "SELECT name FROM listing WHERE id = $1",
+        listing_lookup.listing_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let author_row = sqlx::query!(
+        r#"
+        SELECT first_name, last_name
+        FROM "user"
+        WHERE id = $1 AND deleted_at IS NULL
+        "#,
+        actor.user_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let author_name = author_row
+        .map(|u| {
+            format!("{} {}", u.first_name, u.last_name)
+                .trim()
+                .to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Crew Member".to_string());
+
+    let inserted = sqlx::query!(
+        r#"
+        INSERT INTO turnover_comment (
+            turnover_id, author_user_id, author_name, author_role, body
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, turnover_id, author_user_id, author_name, author_role, body, created_at
+        "#,
+        turnover_id,
+        actor.user_id,
+        author_name,
+        actor.role.as_str(),
+        trimmed,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE turnover SET updated_at = NOW() WHERE id = $1",
+        turnover_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    let recipients = sqlx::query!(
+        r#"
+        SELECT DISTINCT u.id, u.email
+        FROM "user" u
+        WHERE u.is_active = TRUE
+          AND u.is_verified = TRUE
+          AND u.deleted_at IS NULL
+          AND u.id <> $1
+          AND (
+              u.id = $2
+              OR EXISTS (
+                  SELECT 1
+                  FROM listing_staff ls
+                  WHERE ls.listing_id = $3
+                    AND ls.staff_user_id = u.id
+                    AND 'staff'::user_role = ANY(u.roles)
+              )
+          )
+        ORDER BY u.id
+        "#,
+        actor.user_id,
+        owner_user_id,
+        listing_lookup.listing_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let payload = TurnoverCommentNotificationPayload {
+        listing_name: listing_name.clone(),
+        checkout_date: turnover.checkout_date.format("%Y-%m-%d").to_string(),
+        author_name: inserted.author_name.clone(),
+        author_role: inserted.author_role.clone(),
+        comment_body: inserted.body.clone(),
+        turnover_url: format!(
+            "{}/admin/turnovers/{turnover_id}",
+            admin_base_url.trim_end_matches('/')
+        ),
+    };
+    let payload_value = serde_json::to_value(&payload)
+        .map_err(|e| DbError::ValidationError(format!("turnover comment email payload: {e}")))?;
+    let subject = format!(
+        "Turnover note for {listing_name} ({})",
+        turnover.checkout_date
+    );
+    let template_id = EmailTemplate::TurnoverCommentNotification.as_str();
+
+    let mut outbox_ids = Vec::with_capacity(recipients.len());
+    for recipient in recipients {
+        let outbox = crate::email_outbox::insert_email_outbox_conn(
+            &mut tx,
+            &recipient.email,
+            &subject,
+            template_id,
+            &payload_value,
+            TURNOVER_COMMENT_MAX_RETRIES,
+        )
+        .await?;
+        outbox_ids.push(outbox.id);
+    }
+
+    tx.commit().await?;
+
+    Ok(AddCommentOutcome {
+        comment: TurnoverCommentResponse {
+            id: inserted.id,
+            turnover_id: inserted.turnover_id,
+            author_user_id: inserted.author_user_id,
+            author_name: inserted.author_name,
+            author_role: inserted.author_role,
+            body: inserted.body,
+            created_at: inserted.created_at,
+        },
+        outbox_ids,
+    })
 }

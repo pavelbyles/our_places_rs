@@ -225,6 +225,35 @@ pub async fn delete_sent_emails_older_than(pool: &PgPool, days: i32) -> Result<u
     Ok(result.rows_affected())
 }
 
+/// Returns `pending` outbox row IDs older than `older_than` with remaining retry attempts,
+/// oldest first, capped at `limit`. Covers all templates (`staff_invite`, `password_reset_link`,
+/// `turnover_comment_notification`, bookings, etc.) without modifying `calendar::outbox`.
+#[tracing::instrument(skip(pool))]
+pub async fn stuck_pending_emails(
+    pool: &PgPool,
+    older_than: chrono::Duration,
+    limit: i64,
+) -> Result<Vec<Uuid>> {
+    let cutoff_secs = older_than.num_seconds().max(0);
+    let ids = sqlx::query_scalar!(
+        r#"
+        SELECT id
+        FROM email_outbox
+        WHERE status = 'pending'::email_status
+          AND created_at < NOW() - ($1::int8 * INTERVAL '1 second')
+          AND attempts < max_retries
+        ORDER BY created_at ASC
+        LIMIT $2
+        "#,
+        cutoff_secs,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +352,94 @@ mod tests {
             failed.last_error.as_deref(),
             Some("SMTP connection timeout")
         );
+    }
+
+    #[tokio::test]
+    async fn stuck_pending_emails_picks_up_general_pending_rows()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let test_db = setup_test_db().await;
+        let pool = test_db.get_pool().await;
+
+        let invite = insert_email_outbox(
+            &pool,
+            "staff-a@example.com",
+            "You're invited",
+            "staff_invite",
+            &serde_json::json!({"ok": true}),
+            3,
+        )
+        .await?;
+        let reset = insert_email_outbox(
+            &pool,
+            "staff-b@example.com",
+            "Reset password",
+            "password_reset_link",
+            &serde_json::json!({"ok": true}),
+            3,
+        )
+        .await?;
+        let note = insert_email_outbox(
+            &pool,
+            "host@example.com",
+            "New turnover note",
+            "turnover_comment_notification",
+            &serde_json::json!({"ok": true}),
+            3,
+        )
+        .await?;
+        let fresh = insert_email_outbox(
+            &pool,
+            "fresh@example.com",
+            "Fresh email",
+            "staff_invite",
+            &serde_json::json!({"ok": true}),
+            3,
+        )
+        .await?;
+        let sent = insert_email_outbox(
+            &pool,
+            "sent@example.com",
+            "Sent email",
+            "staff_invite",
+            &serde_json::json!({"ok": true}),
+            3,
+        )
+        .await?;
+        mark_email_sent(&pool, sent.id, 1).await?;
+
+        let exhausted = insert_email_outbox(
+            &pool,
+            "exhausted@example.com",
+            "Exhausted",
+            "turnover_comment_notification",
+            &serde_json::json!({"ok": true}),
+            3,
+        )
+        .await?;
+
+        // Age eligible rows and sent/exhausted rows > 5 minutes.
+        sqlx::query(
+            r#"UPDATE email_outbox
+               SET created_at = NOW() - INTERVAL '10 minutes'
+               WHERE id = ANY($1)"#,
+        )
+        .bind([invite.id, reset.id, note.id, sent.id, exhausted.id])
+        .execute(&pool)
+        .await?;
+
+        sqlx::query("UPDATE email_outbox SET attempts = max_retries WHERE id = $1")
+            .bind(exhausted.id)
+            .execute(&pool)
+            .await?;
+
+        let found = stuck_pending_emails(&pool, chrono::Duration::minutes(5), 50).await?;
+        assert!(found.contains(&invite.id));
+        assert!(found.contains(&reset.id));
+        assert!(found.contains(&note.id));
+        assert!(!found.contains(&fresh.id));
+        assert!(!found.contains(&sent.id));
+        assert!(!found.contains(&exhausted.id));
+
+        Ok(())
     }
 }

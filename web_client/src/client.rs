@@ -10,10 +10,10 @@ pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
 use common::turnover::{
-    CreateManualTurnoverRequest, InviteStaffRequest, PasswordResetRequest,
-    PasswordTokenRedeemRequest, StaffListQuery, StaffListResponse, StaffMemberSummary,
-    TransitionTurnoverRequest, TurnoverDetailResponse, TurnoverListQuery, TurnoverListResponse,
-    TurnoverResponse, UpdateStaffAssignmentsRequest,
+    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, InviteStaffRequest,
+    PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery, StaffListResponse,
+    StaffMemberSummary, TransitionTurnoverRequest, TurnoverCommentResponse, TurnoverDetailResponse,
+    TurnoverListQuery, TurnoverListResponse, TurnoverResponse, UpdateStaffAssignmentsRequest,
 };
 use std::sync::Arc;
 use topcoat::context::{Cx, try_context};
@@ -883,6 +883,25 @@ impl TopcoatApiClient {
         user_jwt: &str,
     ) -> Result<TurnoverResponse, UserCallError> {
         let url = common::app_client::turnover_status_url(&self.booking_api_url, turnover_id);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
+    }
+
+    /// Posts a comment on a turnover (`booking_api` `POST /api/v1/turnovers/{id}/comments`).
+    pub async fn post_turnover_comment(
+        &self,
+        turnover_id: Uuid,
+        req: &CreateTurnoverCommentRequest,
+        user_jwt: &str,
+    ) -> Result<TurnoverCommentResponse, UserCallError> {
+        let url = common::app_client::turnover_comments_url(&self.booking_api_url, turnover_id);
         let request = service_request(
             &self.client,
             reqwest::Method::POST,

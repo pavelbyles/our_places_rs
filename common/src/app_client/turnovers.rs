@@ -3,8 +3,9 @@
 use super::booking_requests::ApiCallError;
 use super::{booking_api_audience, booking_api_url, get_client};
 use crate::turnover::{
-    CreateManualTurnoverRequest, TransitionTurnoverRequest, TurnoverDetailResponse,
-    TurnoverListQuery, TurnoverListResponse, TurnoverResponse,
+    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, TransitionTurnoverRequest,
+    TurnoverCommentResponse, TurnoverDetailResponse, TurnoverListQuery, TurnoverListResponse,
+    TurnoverResponse,
 };
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -167,4 +168,24 @@ pub async fn transition_turnover_status(
     user_jwt: &str,
 ) -> Result<TurnoverResponse> {
     transition_turnover_status_at(&booking_api_url(), turnover_id, req, user_jwt).await
+}
+
+/// Posts a crew/host comment on a turnover at an explicit `booking_api` base URL.
+pub async fn post_turnover_comment_at(
+    api_url: &str,
+    turnover_id: Uuid,
+    req: &CreateTurnoverCommentRequest,
+    user_jwt: &str,
+) -> Result<TurnoverCommentResponse> {
+    let url = turnover_comments_url(api_url, turnover_id);
+    call_url(reqwest::Method::POST, &url, Some(req), user_jwt).await
+}
+
+/// Posts a crew/host comment on a turnover against the configured `booking_api` base URL.
+pub async fn post_turnover_comment(
+    turnover_id: Uuid,
+    req: &CreateTurnoverCommentRequest,
+    user_jwt: &str,
+) -> Result<TurnoverCommentResponse> {
+    post_turnover_comment_at(&booking_api_url(), turnover_id, req, user_jwt).await
 }
