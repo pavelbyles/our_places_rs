@@ -45,6 +45,8 @@ pub mod reservation_change;
 pub mod review;
 /// Session store and authentication token management.
 pub mod sessions;
+/// Host-scoped staff roster, invites, and listing dispatch assignments.
+pub mod staff;
 /// Statutory tax documents and compliance invoicing.
 pub mod tax_document;
 #[cfg(test)]

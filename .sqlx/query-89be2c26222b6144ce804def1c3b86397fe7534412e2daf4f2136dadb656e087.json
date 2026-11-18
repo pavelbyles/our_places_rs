@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO listing_staff (listing_id, staff_user_id, assigned_by)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (listing_id, staff_user_id) DO NOTHING\n            RETURNING listing_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "89be2c26222b6144ce804def1c3b86397fe7534412e2daf4f2136dadb656e087"
+}

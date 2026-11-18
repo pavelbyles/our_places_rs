@@ -17,13 +17,17 @@ pub use common::models::{
     CreateSessionRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, VerifyRequest,
 };
-pub use common::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest};
+pub use common::turnover::{
+    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery,
+    StaffListResponse, StaffListingAssignment, StaffMemberSummary, UpdateStaffAssignmentsRequest,
+};
 
 mod account;
 mod admin;
 mod profile;
 mod registration;
 mod sessions;
+mod staff;
 
 /// Query parameter limiting sessions to one portal.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -185,6 +189,11 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             account::confirm_password_change,
             account::request_password_reset,
             account::confirm_password_reset,
+            staff::list_staff_users,
+            staff::invite_staff_user,
+            staff::update_staff_listings,
+            staff::resend_staff_invite,
+            staff::remove_staff_user,
             account::change_email,
             account::deactivate_account,
             sessions::create_session_handler,
@@ -198,12 +207,15 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 UserResponse, ListingResponse, BookingResponse, pagination::Pagination,
                 UserFilter, UsersWrapper, PasswordChangeRequest,
                 PasswordChangeConfirm, PasswordResetRequest, PasswordTokenRedeemRequest,
+                StaffListQuery, StaffListResponse, StaffMemberSummary, StaffListingAssignment,
+                InviteStaffRequest, UpdateStaffAssignmentsRequest,
                 ActionStatusResponse, EmailChangeRequest, DeactivateRequest,
                 CreateSessionRequest, SessionResponse, SessionNamespaceQuery
             )
         ),
         tags(
             (name = "users", description = "User management endpoints"),
+            (name = "staff", description = "Host-scoped cleaning & maintenance staff management"),
             (name = "sessions", description = "Session authentication & state endpoints")
         ),
     )]
@@ -371,6 +383,23 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                     .to(account::confirm_password_reset)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/staff-users")
+            .wrap(from_fn(api_core::auth::require_user))
+            .wrap(from_fn(content_negotiation_middleware))
+            .route("", web::get().to(staff::list_staff_users))
+            .route("", web::post().to(staff::invite_staff_user))
+            .route(
+                "/{id}/listings",
+                web::put().to(staff::update_staff_listings),
+            )
+            .route(
+                "/{id}/resend-invite",
+                web::post().to(staff::resend_staff_invite),
+            )
+            .route("/{id}", web::delete().to(staff::remove_staff_user)),
     );
 }
 

@@ -127,6 +127,7 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::CalendarSyncRateLimited { .. }) => {
                 StatusCode::TOO_MANY_REQUESTS
             }
+            ApiError::Database(DbError::Forbidden(_)) => StatusCode::FORBIDDEN,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -266,7 +267,7 @@ impl ResponseError for ApiError {
             ApiError::FeatureDisabled(msg) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
             }
-            ApiError::Forbidden(msg) => {
+            ApiError::Forbidden(msg) | ApiError::Database(DbError::Forbidden(msg)) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
             }
             _ => HttpResponse::build(self.status_code()).finish(),

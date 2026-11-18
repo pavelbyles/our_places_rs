@@ -105,6 +105,9 @@ pub enum DbError {
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),
+    /// Caller does not own or is not permitted to act on the target resource.
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
 }
 
 /// SQLSTATE: restrict violation (`ON DELETE RESTRICT`).

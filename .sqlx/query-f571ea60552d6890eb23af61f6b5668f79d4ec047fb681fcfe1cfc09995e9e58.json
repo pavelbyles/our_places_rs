@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO host_staff (host_user_id, staff_user_id, invited_by)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (host_user_id, staff_user_id) DO NOTHING\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f571ea60552d6890eb23af61f6b5668f79d4ec047fb681fcfe1cfc09995e9e58"
+}

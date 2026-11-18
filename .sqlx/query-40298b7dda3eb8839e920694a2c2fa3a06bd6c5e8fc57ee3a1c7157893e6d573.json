@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM listing_staff ls\n            USING listing l\n            WHERE ls.listing_id = l.id\n              AND ls.staff_user_id = $1\n              AND l.user_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40298b7dda3eb8839e920694a2c2fa3a06bd6c5e8fc57ee3a1c7157893e6d573"
+}

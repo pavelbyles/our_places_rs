@@ -1322,3 +1322,450 @@ mod password_reset_tests {
         Ok(())
     }
 }
+
+mod staff_api_tests {
+    use super::{configure_routes, get_test_settings};
+    use actix_web::{App, test, web};
+    use common::turnover::{StaffListResponse, StaffMemberSummary};
+    use serde_json::json;
+    use sqlx::PgPool;
+    use sqlx_db_tester::TestPg;
+    use std::env;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    static DATABASE_URL_ENV: &str = "DATABASE_URL";
+
+    fn test_db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = match env::var(DATABASE_URL_ENV) {
+            Ok(url) => url,
+            Err(_) => "postgres://postgres:password@localhost:5432/our_places".to_string(),
+        };
+        TestPg::new(db_url, Path::new("../../db_core/migrations"))
+    }
+
+    async fn create_user_with_roles(
+        pool: &PgPool,
+        email: &str,
+        roles: &[&str],
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            r#"INSERT INTO "user" (
+                id, email, password_hash, first_name, last_name,
+                is_active, is_verified, attributes, roles, default_currency
+            ) VALUES ($1, $2, 'hash', 'Test', 'Actor', TRUE, TRUE, '{}'::jsonb, $3::user_role[], 'USD')"#,
+        )
+        .bind(id)
+        .bind(email)
+        .bind(roles)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    async fn create_listing(
+        pool: &PgPool,
+        owner_id: Uuid,
+        name: &str,
+        deleted: bool,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let id = Uuid::now_v7();
+        let slug = format!("listing-{}", id.simple());
+        sqlx::query(
+            r#"INSERT INTO listing (
+                id, user_id, name, listing_structure_id, country, slug,
+                base_currency, added_at, deleted_at
+            ) VALUES ($1, $2, $3, 1, 'Jamaica', $4, 'USD', NOW(), CASE WHEN $5 THEN NOW() ELSE NULL END)"#,
+        )
+        .bind(id)
+        .bind(owner_id)
+        .bind(name)
+        .bind(slug)
+        .bind(deleted)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    fn auth_header(user_id: Uuid) -> (&'static str, String) {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(user_id)),
+        )
+    }
+
+    fn extract_token_from_url(url: &str) -> Option<String> {
+        url.split("token=").nth(1).map(|s| s.to_string())
+    }
+
+    #[tokio::test]
+    async fn staff_endpoints_reject_unauthenticated_and_booker_or_staff_callers()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let booker = create_user_with_roles(&pool, "booker-staff@example.com", &["booker"]).await?;
+        let staff = create_user_with_roles(&pool, "staff-caller@example.com", &["staff"]).await?;
+        let host = create_user_with_roles(&pool, "host-owner@example.com", &["host"]).await?;
+        let host_listing = create_listing(&pool, host, "Blue Lagoon", false).await?;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let unauth = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unauth.status(), 401);
+
+        for (label, caller_id) in [("booker", booker), ("staff", staff)] {
+            let list_resp = test::call_service(
+                &app,
+                test::TestRequest::get()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(caller_id))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(list_resp.status(), 403, "{label} GET /staff-users");
+
+            let invite_resp = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(caller_id))
+                    .set_json(json!({
+                        "email": "newcrew@example.com",
+                        "listing_ids": [host_listing]
+                    }))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(invite_resp.status(), 403, "{label} POST /staff-users");
+        }
+
+        // Empty listing_ids and soft-deleted or unowned listings are rejected for Host.
+        let empty_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host))
+                .set_json(json!({
+                    "email": "newcrew@example.com",
+                    "listing_ids": []
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(empty_resp.status(), 400);
+
+        let deleted_listing = create_listing(&pool, host, "Deleted Villa", true).await?;
+        let deleted_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host))
+                .set_json(json!({
+                    "email": "newcrew@example.com",
+                    "listing_ids": [deleted_listing]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(deleted_resp.status(), 400);
+
+        let other_host = create_user_with_roles(&pool, "other-host@example.com", &["host"]).await?;
+        let unowned_listing = create_listing(&pool, other_host, "Other Villa", false).await?;
+        let unowned_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host))
+                .set_json(json!({
+                    "email": "newcrew@example.com",
+                    "listing_ids": [unowned_listing]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unowned_resp.status(), 403);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn host_scoping_search_escaping_multi_host_sharing_and_safe_unlink()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let host_a = create_user_with_roles(&pool, "hosta@example.com", &["host"]).await?;
+        let host_b = create_user_with_roles(&pool, "hostb@example.com", &["host"]).await?;
+        let villa_a = create_listing(&pool, host_a, "Villa Alpha", false).await?;
+        let villa_b1 = create_listing(&pool, host_b, "Villa Beta 1", false).await?;
+        let villa_b2 = create_listing(&pool, host_b, "Villa Beta 2", false).await?;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        // Host A invites cleaner with whitespace + uppercase email.
+        let invite_a = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_a))
+                .set_json(json!({
+                    "email": "  Shared.Cleaner@Example.com  ",
+                    "first_name": "Dana",
+                    "last_name": "Clean",
+                    "listing_ids": [villa_a]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert!(matches!(invite_a.status().as_u16(), 200 | 201));
+        let created_a: StaffMemberSummary = test::read_body_json(invite_a).await;
+        assert_eq!(created_a.email, "shared.cleaner@example.com");
+        assert!(created_a.password_pending);
+        assert_eq!(created_a.listings.len(), 1);
+        assert_eq!(created_a.listings[0].listing_id, villa_a);
+        let staff_id = created_a.user_id;
+
+        // Seed an admin session for the cleaner to verify final unlink revokes it.
+        db_core::sessions::SessionsDb::new(pool.clone())
+            .save_session(
+                "staff-admin-sess-hash",
+                Some(staff_id),
+                Some("shared.cleaner@example.com"),
+                "admin",
+                b"{}",
+                3600,
+            )
+            .await?;
+
+        // Host B invites the same cleaner email for Host B's first listing; Host A's listing is hidden.
+        let invite_b = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_b))
+                .set_json(json!({
+                    "email": "shared.cleaner@example.com",
+                    "first_name": "OverwriteAttempt",
+                    "last_name": "Ignored",
+                    "listing_ids": [villa_b1]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert!(matches!(invite_b.status().as_u16(), 200 | 201));
+        let created_b: StaffMemberSummary = test::read_body_json(invite_b).await;
+        assert_eq!(created_b.user_id, staff_id);
+        assert_eq!(created_b.first_name, "Dana");
+        assert_eq!(created_b.listings.len(), 1);
+        assert_eq!(created_b.listings[0].listing_id, villa_b1);
+
+        // Search wildcard escaping (`q=%` must not match `Dana Clean`).
+        let wildcard_resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users?q=%25")
+                .insert_header(auth_header(host_b))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(wildcard_resp.status(), 200);
+        let wildcard_list: StaffListResponse = test::read_body_json(wildcard_resp).await;
+        assert_eq!(wildcard_list.total, 0);
+
+        // Redeem invite token so password_pending becomes false, then Host B updates listings -> queues listing_assigned email.
+        let setup_payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = 'shared.cleaner@example.com' AND template_id = 'staff_invite' ORDER BY created_at DESC LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let token = extract_token_from_url(setup_payload["setup_url"].as_str().ok_or("setup_url")?)
+            .ok_or("token")?;
+        let confirm_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": token, "new_password": "CleanerPassword1!" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(confirm_resp.status(), 200);
+
+        let update_b = test::call_service(
+            &app,
+            test::TestRequest::put()
+                .uri(&format!("/api/v1/staff-users/{staff_id}/listings"))
+                .insert_header(auth_header(host_b))
+                .set_json(json!({ "listing_ids": [villa_b1, villa_b2] }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(update_b.status(), 200);
+        let updated_b: StaffMemberSummary = test::read_body_json(update_b).await;
+        assert!(!updated_b.password_pending);
+        assert_eq!(updated_b.listings.len(), 2);
+
+        let assigned_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = 'shared.cleaner@example.com' AND template_id = 'staff_listing_assigned'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(assigned_count, 1);
+
+        // Re-seed admin session after password-reset revoked sessions, then Host B unlinks cleaner.
+        db_core::sessions::SessionsDb::new(pool.clone())
+            .save_session(
+                "staff-admin-sess-hash-2",
+                Some(staff_id),
+                Some("shared.cleaner@example.com"),
+                "admin",
+                b"{}",
+                3600,
+            )
+            .await?;
+
+        let del_b = test::call_service(
+            &app,
+            test::TestRequest::delete()
+                .uri(&format!("/api/v1/staff-users/{staff_id}"))
+                .insert_header(auth_header(host_b))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(del_b.status(), 200);
+
+        // Host A still sees cleaner and Villa Alpha; 'staff' role and session stay alive.
+        let list_a = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_a))
+                .to_request(),
+        )
+        .await;
+        let parsed_a: StaffListResponse = test::read_body_json(list_a).await;
+        assert_eq!(parsed_a.total, 1);
+        assert_eq!(parsed_a.staff[0].listings.len(), 1);
+        assert_eq!(parsed_a.staff[0].listings[0].listing_id, villa_a);
+
+        // Final unlink by Host A removes 'staff' role and revokes admin sessions.
+        let del_a = test::call_service(
+            &app,
+            test::TestRequest::delete()
+                .uri(&format!("/api/v1/staff-users/{staff_id}"))
+                .insert_header(auth_header(host_a))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(del_a.status(), 200);
+
+        let roles: Vec<String> =
+            sqlx::query_scalar(r#"SELECT roles::text[] FROM "user" WHERE id = $1"#)
+                .bind(staff_id)
+                .fetch_one(&pool)
+                .await?;
+        assert!(!roles.contains(&"staff".to_string()), "{roles:?}");
+
+        let remaining_sessions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sessions WHERE user_id = $1 AND namespace = 'admin'",
+        )
+        .bind(staff_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(remaining_sessions, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_invites_of_same_new_email_converge_without_500()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let host_a = create_user_with_roles(&pool, "race-ha@example.com", &["host"]).await?;
+        let host_b = create_user_with_roles(&pool, "race-hb@example.com", &["host"]).await?;
+        let villa_a = create_listing(&pool, host_a, "Race Villa A", false).await?;
+        let villa_b = create_listing(&pool, host_b, "Race Villa B", false).await?;
+
+        let app_a = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let app_b = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let target_email = format!("race.crew.{}@example.com", Uuid::now_v7().simple());
+        let (r1, r2) = tokio::join!(
+            test::call_service(
+                &app_a,
+                test::TestRequest::post()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(host_a))
+                    .set_json(json!({
+                        "email": target_email,
+                        "first_name": "Sam",
+                        "last_name": "Crew",
+                        "listing_ids": [villa_a]
+                    }))
+                    .to_request(),
+            ),
+            test::call_service(
+                &app_b,
+                test::TestRequest::post()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(host_b))
+                    .set_json(json!({
+                        "email": format!("  {}  ", target_email.to_uppercase()),
+                        "first_name": "Sam",
+                        "last_name": "Crew",
+                        "listing_ids": [villa_b]
+                    }))
+                    .to_request(),
+            ),
+        );
+
+        assert!(
+            matches!(r1.status().as_u16(), 200 | 201),
+            "r1 status: {}",
+            r1.status()
+        );
+        assert!(
+            matches!(r2.status().as_u16(), 200 | 201),
+            "r2 status: {}",
+            r2.status()
+        );
+
+        let user_count: i64 =
+            sqlx::query_scalar(r#"SELECT COUNT(*) FROM "user" WHERE LOWER(email) = $1"#)
+                .bind(&target_email)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(user_count, 1);
+        Ok(())
+    }
+}

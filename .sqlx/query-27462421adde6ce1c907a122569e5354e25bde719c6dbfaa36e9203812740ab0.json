@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE \"user\"\n                    SET roles = array_append(roles, 'staff'::user_role),\n                        updated_at = NOW()\n                    WHERE id = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "27462421adde6ce1c907a122569e5354e25bde719c6dbfaa36e9203812740ab0"
+}

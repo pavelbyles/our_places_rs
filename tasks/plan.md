@@ -157,7 +157,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 
 ### Phase C: Host-Scoped Staff Roster & Assignments (`/admin/staff-users`)
 
-- [ ] **Task 7: Implement `db_core::staff` and `user_api` `/api/v1/staff-users` Endpoints with `Claims` Auth**
+- [x] **Task 7: Implement `db_core::staff` and `user_api` `/api/v1/staff-users` Endpoints with `Claims` Auth**
   - **Scope:** M
   - **Description:** Create `db_core/src/staff.rs` for host-scoped staff listing/search (`host_staff` + `listing_staff` filtered to caller-owned listings unless `Admin`, escaping SQL `LIKE`/`ILIKE` wildcards `%`, `_`, `\` in `q`), idempotent race-safe (`ON CONFLICT` / retry) invite-or-attach (normalizing `email` via `.trim().to_lowercase()`, requiring non-empty `listing_ids` where `listing.deleted_at IS NULL`, creating `'staff'` user with locked password sentinel when new, or appending `'staff'` without overwriting PII/password/`is_active` when existing), invalidating prior unused `staff_invite` tokens before queuing `StaffInvite` (via `ADMIN_BASE_URL`) or `StaffListingAssigned`, updating `listing_staff` for caller-owned listings, and safely unlinking a host's staff (removing `'staff'` from `"user".roles` and calling `SessionsDb::delete_user_sessions(staff_user_id, Some("admin"))` when no remaining `host_staff` or `listing_staff` rows exist). Mount `/api/v1/staff-users*` in `app_api/user_api/src/apis/staff.rs` protected by `api_core::auth::require_user` + `Claims`. Add multi-threaded race test for concurrent invites of the same new email.
   - **Files Touched:**
@@ -167,9 +167,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `app_api/user_api/src/apis/{mod.rs, tests.rs}`
     - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] Unauthenticated requests or `Booker`/`Staff` tokens to `/api/v1/staff-users*` receive `401`/`403`, and empty `listing_ids` or soft-deleted/unowned `listing_id` is rejected (`400`/`403`).
-    - [ ] Host B inviting Host A's cleaner email succeeds, adds Host B's listing only, never shows Host A's listings to Host B, and Host B removing the cleaner leaves Host A's assignment untouched while unlinking the last host/listing removes `'staff'` and revokes admin sessions.
-    - [ ] `#[tokio::test(flavor = "multi_thread")]` test confirms concurrent invites of the same new email converge cleanly without `500` errors.
+    - [x] Unauthenticated requests or `Booker`/`Staff` tokens to `/api/v1/staff-users*` receive `401`/`403`, and empty `listing_ids` or soft-deleted/unowned `listing_id` is rejected (`400`/`403`).
+    - [x] Host B inviting Host A's cleaner email succeeds, adds Host B's listing only, never shows Host A's listings to Host B, and Host B removing the cleaner leaves Host A's assignment untouched while unlinking the last host/listing removes `'staff'` and revokes admin sessions.
+    - [x] `#[tokio::test(flavor = "multi_thread")]` test confirms concurrent invites of the same new email converge cleanly without `500` errors.
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core staff && devenv shell -- cargo test -p user_api staff`
   - **Dependencies:** Task 2, Task 4, Task 5
 
