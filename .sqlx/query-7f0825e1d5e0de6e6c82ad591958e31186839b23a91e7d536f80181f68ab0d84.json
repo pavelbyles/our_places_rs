@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO turnover (\n                        listing_id, source_kind, blocked_date_id,\n                        source_feed_id, source_external_uid, checkout_date, status\n                    )\n                    VALUES ($1, 'ical_feed', $2, $3, $4, $5, 'needs_cleaning')\n                    ON CONFLICT (listing_id, source_feed_id, source_external_uid)\n                    WHERE source_kind = 'ical_feed' AND source_feed_id IS NOT NULL AND source_external_uid IS NOT NULL\n                    DO NOTHING\n                    RETURNING id\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7f0825e1d5e0de6e6c82ad591958e31186839b23a91e7d536f80181f68ab0d84"
+}

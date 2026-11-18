@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO turnover (\n                        listing_id, source_kind, booking_id, checkout_date, status\n                    )\n                    VALUES ($1, 'booking', $2, $3, 'needs_cleaning')\n                    ON CONFLICT (booking_id) WHERE source_kind = 'booking' AND booking_id IS NOT NULL\n                    DO NOTHING\n                    RETURNING id\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6db3738c4d782b486915877a0c750e7c0665c79ff55692a8d6e6758fb59b6256"
+}

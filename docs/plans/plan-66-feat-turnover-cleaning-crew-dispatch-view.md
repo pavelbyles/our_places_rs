@@ -193,7 +193,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 
 ### Phase D: Eager Turnover Lifecycle & API Vertical Slice
 
-- [ ] **Task 9: Implement `db_core::turnover` Repository and Idempotent Stay Reconciler**
+- [x] **Task 9: Implement `db_core::turnover` Repository and Idempotent Stay Reconciler**
   - **Scope:** M
   - **Description:** Create `db_core/src/turnover.rs` implementing: listing-scoped dispatch queries (`today | upcoming | past | all`, status, listing, pagination) with dynamic `next_checkin_date` projection across active bookings and `listing_blocked_dates`, manual turnover creation, role-checked status transition + `expected_status: Option<TurnoverStatus>` optimistic concurrency (`DbError::Conflict` on mismatch, idempotent no-op if `from == to`) + `turnover_status_history` insert, `reconcile_for_booking`, and `reconcile_for_listing` (`ical_feed` blocks only, ignoring `manual` blocks, shifting `checkout_date` in place on extensions, and transitioning `needs_cleaning` turnovers for removed `ical_feed` events to `not_required` **only when `turnover.checkout_date > today_jm`** via `common::reference::listing_today(Utc::now())` and `NO_EVENTS_WARNING` is false). Execute `SET LOCAL lock_timeout = '5s'` (mapping `55P03` -> `DbError::LockContention`) and acquire `SELECT id FROM listing WHERE id = $1 FOR UPDATE` *before* locking `turnover` in every write transaction. Include multi-threaded concurrency tests (`#[tokio::test(flavor = "multi_thread")]`).
   - **Files Touched:**
@@ -203,9 +203,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `db_core/src/turnover_tests.rs` (create)
     - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] `#[tokio::test(flavor = "multi_thread")]` concurrency tests confirm racing status transitions (`expected_status` conflict vs idempotent no-op) and concurrent `reconcile_for_booking` / `reconcile_for_listing` never create duplicate rows or `40P01` deadlocks.
-    - [ ] Extending a booking or iCal block updates `checkout_date` in place while keeping existing `CleaningInProgress` / `MaintenanceRequired` status and comments intact.
-    - [ ] `reconcile_for_listing` does not mark a removed `ical_feed` turnover `not_required` when `turnover.checkout_date <= today_jm`, and `manual` calendar blocks never auto-create turnovers.
+    - [x] `#[tokio::test(flavor = "multi_thread")]` concurrency tests confirm racing status transitions (`expected_status` conflict vs idempotent no-op) and concurrent `reconcile_for_booking` / `reconcile_for_listing` never create duplicate rows or `40P01` deadlocks.
+    - [x] Extending a booking or iCal block updates `checkout_date` in place while keeping existing `CleaningInProgress` / `MaintenanceRequired` status and comments intact.
+    - [x] `reconcile_for_listing` does not mark a removed `ical_feed` turnover `not_required` when `turnover.checkout_date <= today_jm`, and `manual` calendar blocks never auto-create turnovers.
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core turnover_tests`
   - **Dependencies:** Task 1, Task 2
 

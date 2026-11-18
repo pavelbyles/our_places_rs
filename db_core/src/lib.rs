@@ -49,8 +49,12 @@ pub mod sessions;
 pub mod staff;
 /// Statutory tax documents and compliance invoicing.
 pub mod tax_document;
+/// Operational turnover dispatch events, audit history, comments, and reconcilers.
+pub mod turnover;
 #[cfg(test)]
 mod turnover_migration_tests;
+#[cfg(test)]
+mod turnover_tests;
 /// User account and profile operations.
 pub mod user;
 

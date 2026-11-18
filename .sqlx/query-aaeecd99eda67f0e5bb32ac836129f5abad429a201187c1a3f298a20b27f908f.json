@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            t.id,\n            t.listing_id,\n            l.name AS listing_name,\n            l.city AS listing_city,\n            l.listing_details->'policies'->>'check_in' AS checkin_policy_text,\n            l.listing_details->'policies'->>'check_out' AS checkout_policy_text,\n            t.source_kind,\n            t.checkout_date,\n            (\n                SELECT MIN(nx.start_date)\n                FROM (\n                    SELECT b.date_from AS start_date\n                    FROM booking b\n                    WHERE b.listing_id = t.listing_id\n                      AND b.id IS DISTINCT FROM t.booking_id\n                      AND b.date_from >= t.checkout_date\n                      AND (\n                          b.status IN ('confirmed', 'completed')\n                          OR (b.status = 'pending' AND b.expires_at > NOW())\n                      )\n                    UNION ALL\n                    SELECT bd.date_from AS start_date\n                    FROM listing_blocked_dates bd\n                    WHERE bd.listing_id = t.listing_id\n                      AND bd.id IS DISTINCT FROM t.blocked_date_id\n                      AND bd.date_from >= t.checkout_date\n                ) nx\n            ) AS next_checkin_date,\n            t.status,\n            t.title,\n            (SELECT COUNT(*) FROM turnover_comment tc WHERE tc.turnover_id = t.id) AS \"comment_count!\",\n            t.updated_at\n        FROM turnover t\n        INNER JOIN listing l ON l.id = t.listing_id\n        WHERE t.id = $1\n          AND l.deleted_at IS NULL\n          AND (\n              $2 = 'admin'\n              OR ($2 = 'host' AND l.user_id = $3)\n              OR ($2 = 'staff' AND EXISTS (\n                  SELECT 1 FROM listing_staff ls\n                  WHERE ls.listing_id = l.id AND ls.staff_user_id = $3\n              ))\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "listing_city",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "checkin_policy_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "checkout_policy_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "source_kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "checkout_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "next_checkin_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "comment_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      null,
+      false,
+      false,
+      null,
+      false,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "aaeecd99eda67f0e5bb32ac836129f5abad429a201187c1a3f298a20b27f908f"
+}

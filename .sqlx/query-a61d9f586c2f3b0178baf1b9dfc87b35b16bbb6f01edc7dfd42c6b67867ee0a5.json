@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, feed_id, external_uid, date_to\n        FROM listing_blocked_dates\n        WHERE listing_id = $1\n          AND source = 'ical_feed'::calendar_block_source\n          AND ($2::uuid IS NULL OR feed_id = $2)\n          AND feed_id IS NOT NULL\n          AND external_uid IS NOT NULL\n        ORDER BY id\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "feed_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "external_uid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "date_to",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "a61d9f586c2f3b0178baf1b9dfc87b35b16bbb6f01edc7dfd42c6b67867ee0a5"
+}

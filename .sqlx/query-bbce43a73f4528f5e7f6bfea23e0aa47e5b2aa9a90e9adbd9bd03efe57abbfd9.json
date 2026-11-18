@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            ls.listing_id,\n            u.first_name,\n            u.last_name,\n            u.email\n        FROM listing_staff ls\n        INNER JOIN \"user\" u ON u.id = ls.staff_user_id\n        WHERE ls.listing_id = ANY($1)\n          AND u.is_active = TRUE\n          AND u.deleted_at IS NULL\n          AND 'staff'::user_role = ANY(u.roles)\n        ORDER BY u.first_name ASC, u.last_name ASC, u.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "email",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bbce43a73f4528f5e7f6bfea23e0aa47e5b2aa9a90e9adbd9bd03efe57abbfd9"
+}
