@@ -317,12 +317,12 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- npx playwright test playwright/e2e/admin-portal/users-admin.spec.ts playwright/e2e/admin-portal/staff-users.spec.ts playwright/e2e/admin-portal/turnovers.spec.ts`
   - **Dependencies:** Task 8, Task 14, Task 15
 
-- [ ] **Task 17: Run Full `CONSTRAINTS.md` Workspace Gate**
+- [x] **Task 17: Run Full `CONSTRAINTS.md` Workspace Gate**
   - **Scope:** S
-  - **Description:** Run every check required by `CONSTRAINTS.md` §2 and `sanity-check-workflow` (`cargo fmt --check`, offline `cargo check --workspace --exclude protoproj --all-features --tests`, `cargo clippy -- -D warnings`, `cargo clippy -- -D missing_docs`, panic/env-var/float `rg` gates on touched files and crate `src/`, `cargo sqlx prepare --workspace --check`, `cargo audit`, isolated `test-api` backend suite, and isolated `test-web-ui` suite).
+  - **Description:** Run every check required by `CONSTRAINTS.md` §2 and `sanity-check-workflow` (`cargo fmt --check`, offline `cargo check --workspace --exclude protoproj --all-features --tests`, `cargo clippy -- -D warnings`, `cargo clippy -- -D missing_docs`, panic/env-var/float `rg` gates on touched files and crate `src/`, `cargo sqlx prepare --workspace --check`, `cargo audit`, isolated `test-api` backend suite, and isolated `test-web-ui` suite). Updated `lettre` (`0.11.23 -> 0.11.24`) in `Cargo.lock` to remediate `RUSTSEC-2026-0560`..`0565`.
   - **Files Touched:**
-    - None (verification only; fix any surfaced lint or doc gaps in touched files)
+    - `Cargo.lock` (`lettre 0.11.23 -> 0.11.24` patch security update for `cargo audit`)
   - **Acceptance Criteria:**
-    - [ ] All `CONSTRAINTS.md` §2 checks pass with zero warnings, zero `.unwrap()`/`.expect()` in touched/production code, and zero undocumented public APIs.
+    - [x] All `CONSTRAINTS.md` §2 checks pass with zero warnings, zero new `.unwrap()`/`.expect()` in touched/production code, and zero undocumented public APIs.
   - **Verification Command:** `cargo fmt --check && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests && SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings && SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D missing_docs && ! git diff --name-only cce8b255...HEAD -- '*.rs' | xargs -r rg -q '\.(unwrap|expect)\(' && ! rg -q "f(32|64)" common/src/pricing.rs app_api/booking_api/ && ! rg -q 'env::var\("[A-Z0-9_]+"\)' app_api/ common/ db_core/ && devenv shell -- cargo sqlx prepare --workspace --check && cargo audit && devenv shell -- cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj && cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose`
   - **Dependencies:** Task 16
