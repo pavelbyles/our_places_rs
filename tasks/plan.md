@@ -1,617 +1,327 @@
-# Implementation Plan: Redesigned Topcoat UI Portals (#96)
+> **Engineering Review Status**: LOCKED
+> **Review Date**: 2026-11-18
+> **Review Panel**: Lead Architect, Edge Case Analyst, Security Reviewer, DB Guardian, QA Strategist
 
-**Spec Reference:** `docs/specs/spec-96-feat-redesigned-topcoat-ui-portals-daisyui-topcoat-ui.md`
-**Baseline Commit:** `b77cfb7a`
+# Implementation Plan: Turnover & Cleaning Crew Dispatch View (#66)
 
-## Conventions for every task
-- Gates run on each task: `cargo fmt --check` and `SQLX_OFFLINE=true cargo clippy -p <touched crates> --all-targets --all-features -- -D warnings`. New crates enforce docs with a crate-level `#![deny(missing_docs)]`. Passing `-D missing_docs` on the command line also lints `common`, which already fails it, so that is left to Task 57.
-- **Old-app guard** (any task touching `web_app_common_tc`, `common`, `playwright/`): `git diff b77cfb7a -- web_app_tc web_app_admin_tc` must be empty except `web_app_*/tests` selector updates.
-- Shorthands: `NEW_GUEST` = `npx playwright test --project=guest-portal-new-chromium --project=guest-portal-new-firefox`; `NEW_ADMIN` = same with `admin-portal-new-*`; `OLD_GUEST` / `OLD_ADMIN` = the existing `guest-portal-*` / `admin-portal-*` projects.
-- No `.unwrap()`/`.expect()`, inline `<script>`, `onclick`, `hx-on`, `localStorage` or daisyUI in `web_client` / `web_ui_*`.
+**Spec Reference:** [`docs/specs/spec-66-feat-turnover-cleaning-crew-dispatch-view.md`](../specs/spec-66-feat-turnover-cleaning-crew-dispatch-view.md)
+**Concepts Brief:** [`concepts_brief.md`](../../concepts_brief.md)
+**Baseline Commit:** `cce8b255`
+**Branch:** `feat/66-turnover-cleaning-crew-dispatch-view`
 
-## Dependency graph (phases)
+## Cross-Cutting Rules (Apply to Every Task)
+- **Local Database & SQLx Metadata:** Run PostgreSQL, `sqlx`, and DB tests via `devenv shell -- <command>`. Whenever SQL queries change, regenerate offline metadata (`devenv shell -- cargo sqlx prepare --workspace -- --all-targets`) and commit `.sqlx/` updates with that task. Test-only fixture setup inside `#[cfg(test)]` should use runtime `sqlx::query(...).bind(...)` instead of un-prepared `query!` macros.
+- **Task Gates (`CONSTRAINTS.md`):** After each task run `cargo fmt --check`, `SQLX_OFFLINE=true cargo clippy -p <touched crates> --all-targets --all-features -- -D warnings`, and `SQLX_OFFLINE=true cargo clippy -p <touched crates> --all-features -- -D missing_docs`. Every new public struct, enum, variant, field, and function requires a `///` doc comment.
+- **Panic & Secret Hygiene:** Zero `.unwrap()` or `.expect()` in all newly added or modified files across production crates (`app_api/`, `common/`, `db_core/`, `web_client/src`, `web_ui_*/src`), including new test modules in `app_api/` and `db_core/` (tests must return `Result<(), Box<dyn std::error::Error>>` and use `?` / `.ok_or(...)`). Zero raw string literals in `env::var("KEY")`; zero plaintext tokens, OTPs, emails, or comment bodies in `tracing` logs or spans (log IDs, roles, and character counts only).
+- **Lock Order & Lock Timeout:** Always execute `SET LOCAL lock_timeout = '5s'` (mapping SQLSTATE `55P03` to `DbError::LockContention` -> `503 ServiceUnavailable`) and acquire PostgreSQL `FOR UPDATE` row locks strictly in `Listing -> Booking / Feed -> Turnover` order across every turnover write transaction.
+- **Migration Immutability:** Never modify previously applied files in `db_core/migrations/`; create a single new timestamped migration in Task 2.
+- **TDD Flow:** Write failing unit/integration tests first inside the named test module before implementing production logic.
 
+## Dependency Graph (DAG)
+
+```text
+Phase A: Foundations & Guard Rename (Risk-First)
+T1  common UserRole::Staff + common::turnover domain/FSM  <-- None
+T2  DB migration (staff enum, tokens, roster, turnovers)  <-- None
+T3  Guard rename (staff -> host_or_admin) + AdminRole     <-- T1
+
+Phase B: Password Setup & Forgot-Password Vertical Slice
+T4  db_core::action_token + user_api password reset APIs  <-- T1, T2
+T5  EmailTemplate variants + email_worker templates       <-- T1
+T6  web_ui_admin /forgot-password, /reset-password, shell <-- T3, T4, T5
+
+Phase C: Host-Scoped Staff Roster (/admin/staff-users)
+T7  db_core::staff + user_api /api/v1/staff-users (Claims)<-- T2, T4, T5
+T8  web_ui_admin /admin/staff-users + /admin/users keep   <-- T6, T7
+
+Phase D: Eager Turnover Lifecycle & API Vertical Slice
+T9  db_core::turnover CRUD + idempotent reconciler        <-- T1, T2
+T10 Hook reconciler into booking/change/iCal/cron sweeps  <-- T9
+T11 booking_api /api/v1/turnovers + app_client methods    <-- T3, T9
+
+Phase E: Comments, Outbox Recovery & Mobile Dispatch UI
+T12 Turnover comments API + general stuck outbox sweeper  <-- T5, T10, T11
+T13 web_ui_admin /admin/turnovers mobile dispatch board   <-- T6, T11
+T14 web_ui_admin /admin/turnovers/{id} comment thread UI  <-- T12, T13
+
+Phase F: CI/CD Wiring, E2E Suite & Final Gates
+T15 CI ADMIN_BASE_URL on user_api + ENVIRONMENT.md + .sqlx<-- T7, T12
+T16 Playwright E2E suite (staff-users, reset, turnovers)  <-- T8, T14, T15
+T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
 ```
-P0 Foundations ──┬─► P1 web_client ──────────────┐
-  (T1–T3, risk)  ├─► P2 Parity baseline (old) ───┤
-                 └─► P3 web_ui_common ───────────┼─► P4 web_ui_guest ─┐
-                       ▲                         │                    ├─► P6 Deploy & gates
-   P3b availability (backend, T29–T31) ──────────┘─► P5 web_ui_admin ─┘
-```
-P1, P2 and P3 can run in parallel after P0. P4/P5 page tasks are independent of each other once their shell task is done.
 
 ---
 
-## Phase 0: Foundations (risk-first)
+## Tasks
 
-- [x] **Task 1: Scaffold the four new crates**
-  - **Scope:** M
-  - **Description:** Add `web_client`, `web_ui_common` (libs) and `web_ui_guest`, `web_ui_admin` (bins, ports 3010/3012 defaults) to the workspace with minimal documented `lib.rs`/`main.rs` and workspace deps. Bins serve a placeholder `/` page.
-  - **Files Touched:** `Cargo.toml`, `web_client/{Cargo.toml,src/lib.rs}`, `web_ui_common/{Cargo.toml,src/lib.rs}`, `web_ui_guest/{Cargo.toml,build.rs,src/main.rs,src/lib.rs}`, `web_ui_admin/{…same}`
+### Phase A: Foundations & Guard Rename (Risk-First)
+
+- [ ] **Task 1: Add `UserRole::Staff` and `common::turnover` Domain Types & Transition Rules**
+  - **Scope:** S
+  - **Description:** Add `UserRole::Staff` with `Display`/`FromStr` support in `common/src/models.rs`. Create `common/src/turnover.rs` defining `TurnoverStatus`, `TurnoverSourceKind`, `TurnoverActorRole`, `TurnoverResponse`, `TurnoverDetailResponse`, `TurnoverStatusHistoryEntry`, `TurnoverCommentResponse` (including `author_user_id: Option<Uuid>` and `author_name: String`), `TransitionTurnoverRequest` (including `expected_status: Option<TurnoverStatus>`), `StaffMemberSummary`, `InviteStaffRequest`, `UpdateStaffAssignmentsRequest`, `PasswordResetRequest`, `PasswordTokenRedeemRequest`, and pure `can_transition(actor_role, source_kind, from, to) -> Result<(), TurnoverTransitionError>` enforcing that `Staff` cannot enter `InspectedAndReady`, `Staff` can leave `InspectedAndReady`, and `Staff` can mark only `Manual` turnovers `NotRequired`.
+  - **Files Touched:**
+    - `common/src/models.rs`
+    - `common/src/turnover.rs` (create)
+    - `common/src/lib.rs`
   - **Acceptance Criteria:**
-    - [ ] `cargo check --workspace` passes; both bins start and answer `GET /` on 3010/3012.
-    - [ ] No `daisyui` string in new crates.
-  - **Verification Command:** `SQLX_OFFLINE=true cargo check -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin && cargo test -p web_ui_guest -p web_ui_admin`
+    - [ ] `UserRole::from_str("staff")` and `Display` round-trip cleanly.
+    - [ ] Unit tests verify every allowed and forbidden transition across `Admin`, `Host`, and `Staff` for `booking`, `ical_feed`, and `manual` turnovers.
+    - [ ] Every public item has `///` doc comments (`#![deny(missing_docs)]`).
+  - **Verification Command:** `cargo test -p common turnover && SQLX_OFFLINE=true cargo clippy -p common --all-targets --all-features -- -D warnings && SQLX_OFFLINE=true cargo clippy -p common --all-features -- -D missing_docs`
   - **Dependencies:** None
 
-- [x] **Task 2: CSP spike — Topcoat runtime under strict `script-src 'self'`**
+- [ ] **Task 2: Add Database Migration for `staff` Role, Tokens, Roster, and Turnovers**
   - **Scope:** M
-  - **Description:** In `web_ui_guest`, add a spike page using one runtime signal and a temporary hand-set CSP header (`default-src 'self'; script-src 'self'; style-src 'self'`). Write a throwaway Playwright spec that collects `securitypolicyviolation` events in Chromium + Firefox. Also check HTMX/Topcoat for inline `style=` output. Record result + decision (keep `.runtime()` or drop per D5) in the spec under "Spike results", then delete the spike page.
-  - **Files Touched:** `web_ui_guest/src/pages/spike.rs` (temporary), `playwright/e2e/spike/csp-spike.spec.ts` (temporary), `docs/specs/spec-96-…md`
+  - **Description:** Create a new timestamped migration via `sqlx migrate add` extending `user_role` with `'staff'` (`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'staff'`) and creating `account_action_token`, `host_staff` (`invited_by UUID REFERENCES "user"(id) ON DELETE SET NULL`), `listing_staff` (`assigned_by UUID REFERENCES "user"(id) ON DELETE SET NULL`), `turnover` (`source_feed_id UUID REFERENCES listing_calendar_feed(id) ON DELETE SET NULL`, partial unique indexes on `booking_id` and `(listing_id, source_feed_id, source_external_uid)` plus `ON DELETE SET NULL` FKs), `turnover_status_history`, and `turnover_comment` (`author_user_id UUID REFERENCES "user"(id) ON DELETE SET NULL`, `author_name TEXT NOT NULL`). Update `db_core/src/models.rs` with `UserRole::Staff`.
+  - **Files Touched:**
+    - `db_core/migrations/<timestamp>_turnover_dispatch_and_staff.sql` (create)
+    - `db_core/src/models.rs`
+    - `db_core/src/turnover_migration_tests.rs` (create)
+    - `db_core/src/lib.rs`
   - **Acceptance Criteria:**
-    - [ ] Spec has a "Spike results" section with violations found (or none) per browser and the D5 outcome.
-    - [ ] Spike files removed in the same task.
-  - **Verification Command:** `npx playwright test playwright/e2e/spike --project=guest-portal-new-chromium --project=guest-portal-new-firefox` (run before deletion); `rg -n "Spike results" docs/specs/spec-96-*.md`
-  - **Dependencies:** Task 1 (needs Task 12's projects; if not yet done, run with an inline `--config` baseURL override)
+    - [ ] `sqlx migrate run` succeeds on a clean database and on an existing migrated database.
+    - [ ] Partial unique indexes reject duplicate `booking_id` or `(listing_id, source_feed_id, source_external_uid)` turnovers while allowing multiple `manual` turnovers.
+    - [ ] Deleting a `listing_blocked_dates` row sets `turnover.blocked_date_id` to `NULL` without deleting the turnover or its comments, and hard-deleting an author/inviter user sets nullable FK references to `NULL` while preserving `author_name`.
+  - **Verification Command:** `devenv shell -- cargo test -p db_core turnover_migration_tests`
+  - **Dependencies:** None
 
-- [x] **Task 3: Initialise Topcoat UI registry in `web_ui_common`**
+- [ ] **Task 3: Rename `staff` Guards to `host_or_admin` and Add `AdminRole::Staff`**
   - **Scope:** M
-  - **Description:** `topcoat ui init`, then `topcoat ui add` the 29 components listed in spec FR-3.1. Commit `components.toml` with pinned versions; components compile under workspace clippy/doc rules (add `///` docs where the registry lacks them). **Because the Task 2 spike failed:** check every component for runtime usage (`@event`, `$(…)`, `signal`, `#[shard]`) and inline `style=`, and record the list. Fixing them happens when each component is first used.
-  - **Files Touched:** `web_ui_common/components.toml`, `web_ui_common/src/components/ui/*.rs`, `web_ui_common/src/lib.rs`
+  - **Description:** Eliminate the `staff` naming collision before adding crew routes. Rename `web_ui_admin::support::staff` to `host_or_admin` across all existing privileged page handlers, and rename `booking_api`'s `require_staff` to `require_host_or_admin` in `mod.rs`, `promo_codes.rs`, and `exchange_rates.rs`. Add `AdminRole::Staff` in `web_client/src/session.rs` and update `portal_role` in `web_ui_admin/src/support.rs` (`Admin > Host > Staff`). Because `web_client::session::require_admin(cx)` accepts any `AdminRole`, ensure `web_ui_admin::support::host_or_admin(cx)` explicitly rejects `AdminRole::Staff` with `GuardError::Forbidden`, and `admin_only` rejects `AdminRole::Staff`.
+  - **Files Touched:**
+    - `web_client/src/session.rs`
+    - `web_client/tests/session.rs`
+    - `web_ui_admin/src/support.rs`
+    - `web_ui_admin/src/pages/{dashboard.rs, pricing.rs, payouts.rs, promo_codes.rs, exchange_rates.rs, requests.rs}`
+    - `web_ui_admin/src/pages/{bookings/*, listings/*}`
+    - `app_api/booking_api/src/apis/{mod.rs, promo_codes.rs, exchange_rates.rs, authz_tests.rs}`
   - **Acceptance Criteria:**
-    - [ ] `topcoat ui list` shows all 29 installed.
-    - [ ] `cargo clippy -p web_ui_common -- -D warnings` clean (crate-level `deny(missing_docs)`).
-    - [ ] Audit of runtime usage and inline styles recorded in the spec's Spike results.
-  - **Verification Command:** `(cd web_ui_common && topcoat ui list) && SQLX_OFFLINE=true cargo clippy -p web_ui_common --all-features -- -D warnings -D missing_docs`
+    - [ ] Zero callers of the old `support::staff` or `require_staff` guard names remain.
+    - [ ] Tests in `web_client/tests/session.rs` and `authz_tests.rs` confirm `AdminRole::Staff` is rejected by `host_or_admin` and `admin_only`.
+    - [ ] Existing admin/host authorization tests continue passing unchanged.
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_client -p web_ui_admin && devenv shell -- cargo test -p booking_api authz_tests`
   - **Dependencies:** Task 1
 
 ---
 
-## Phase 1: `web_client` extraction
+### Phase B: Password Setup & Forgot-Password Vertical Slice
 
-- [x] **Task 4: Move `error`, `client`, `api_client` into `web_client` with re-exports**
+- [ ] **Task 4: Implement `db_core::action_token` and `user_api` Password Setup / Reset APIs**
   - **Scope:** M
-  - **Description:** Move the three modules verbatim; `web_app_common_tc` re-exports them at identical paths (`web_app_common_tc::{client, api_client, error, AppError, app_error, TopcoatApiClient, get_api_client}`).
-  - **Files Touched:** `web_client/src/{client,api_client,error,lib}.rs`, `web_client/Cargo.toml`, `web_app_common_tc/src/{lib,client,api_client,error}.rs`, `web_app_common_tc/Cargo.toml`
+  - **Description:** Create `db_core/src/action_token.rs` storing SHA-256 hashes of CSPRNG 32-byte tokens (`staff_invite` 72h, `password_reset` 30m), invalidating prior unused tokens for `(user_id, purpose)` on re-issue, and atomically consuming tokens via `UPDATE account_action_token SET used_at = NOW() WHERE token_hash = $1 AND used_at IS NULL AND expires_at > clock_timestamp() RETURNING user_id` while verifying `user.is_active = TRUE AND deleted_at IS NULL`. Add an unusable-password helper. Add `POST /api/v1/users/password-reset/request` (normalizing email via `.trim().to_lowercase()`, building reset URL strictly from `ADMIN_BASE_URL`, returning non-enumerating `202 Accepted`) and `POST /api/v1/users/password-reset/confirm` (hashing via `tokio::task::spawn_blocking` *before* opening the DB transaction, setting `is_verified = true`, revoking sessions via `SessionsDb::delete_user_sessions`) in `app_api/user_api/src/apis/account.rs` and `mod.rs`. Never log raw tokens or emails. Add a multi-threaded concurrency test proving two simultaneous token redemptions produce one success and one rejection.
+  - **Files Touched:**
+    - `db_core/Cargo.toml`
+    - `db_core/src/action_token.rs` (create)
+    - `db_core/src/lib.rs`
+    - `app_api/user_api/Cargo.toml`
+    - `app_api/user_api/src/apis/{account.rs, mod.rs, tests.rs}`
+    - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] Old-app guard passes (zero diff in `web_app_tc`, `web_app_admin_tc`).
-    - [ ] Old crates' tests pass unchanged.
-  - **Verification Command:** `cargo test -p web_client -p web_app_common_tc -p web_app_tc -p web_app_admin_tc && git diff --quiet b77cfb7a -- web_app_tc web_app_admin_tc`
+    - [ ] Expired, unknown, inactive-user, or already-used tokens return `400`/`401` and cannot be reused.
+    - [ ] `#[tokio::test(flavor = "multi_thread")]` concurrency test proves 2 racing confirmations on the same token yield `1x 200 OK` and `1x 400/401`.
+    - [ ] Consuming a valid token updates `password_hash`, marks `is_verified = true`, and deletes existing `sessions` rows for `user_id`.
+    - [ ] Requesting a reset for a nonexistent, uppercase/whitespace, or soft-deleted email still returns `202 Accepted` cleanly.
+  - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core action_token && devenv shell -- cargo test -p user_api password_reset`
+  - **Dependencies:** Task 1, Task 2
+
+- [ ] **Task 5: Add `EmailTemplate` Variants and `email_worker` HTML Templates**
+  - **Scope:** S
+  - **Description:** Add `StaffInvite`, `StaffListingAssigned`, `PasswordResetLink`, and `TurnoverCommentNotification` to `common::email::EmailTemplate`. Create HTML templates in `app_api/email_worker/templates/` and register `app_api/email_worker/src/turnover_emails.rs` inside `processor.rs` (`RENDERERS` + `load_template`), escaping all dynamic values via `escape_html` and validating CTA links via `url::Url::parse` (`http`/`https` schemes only).
+  - **Files Touched:**
+    - `common/src/email.rs`
+    - `app_api/email_worker/src/turnover_emails.rs` (create)
+    - `app_api/email_worker/src/{processor.rs, tests.rs}`
+    - `app_api/email_worker/templates/{staff_invite.html, staff_listing_assigned.html, password_reset_link.html, turnover_comment_notification.html}` (create)
+  - **Acceptance Criteria:**
+    - [ ] Every new template renders without falling back to `default_notification.html`.
+    - [ ] Unit tests in `app_api/email_worker/src/tests.rs` verify XSS payloads in comment bodies/names are HTML-escaped and `javascript:` / non-`http(s)` URLs are stripped.
+  - **Verification Command:** `cargo test -p common email && cargo test -p email_worker`
   - **Dependencies:** Task 1
 
-- [x] **Task 5: Move Rust auth/session logic into `web_client::auth`**
-  - **Scope:** S
-  - **Description:** Move `AuthUser`, `AdminAuthError`, `token_hash_to_hex`, `get_admin_session`, `get_guest_session`, `require_admin_auth`, `require_admin_role_auth`, `get_authenticated_*` (legacy, unchanged behavior, doc-commented as legacy). `web_app_common_tc::auth` becomes `pub use web_client::auth::*;` + `auth_init_script`.
-  - **Files Touched:** `web_client/src/auth.rs`, `web_app_common_tc/src/auth.rs`, `web_app_common_tc/src/lib.rs`
+- [ ] **Task 6: Add `web_ui_admin` Forgot/Reset Password Pages, `Staff` Login Redirect, and Shell Isolation**
+  - **Scope:** M
+  - **Description:** Add `/forgot-password` and `/reset-password` Topcoat pages (`web_ui_admin/src/pages/password_reset.rs`), add `"Forgot password?"` link on `/login`, and wire `web_client/src/client.rs` methods. Update `web_ui_common/src/shell_admin.rs` (`admin_chrome`), `web_ui_admin/src/support.rs` (`nav_user`, `dispatch_actor`), `auth.rs`, `register.rs` (`verify_submit`), and `dashboard.rs` (`root_page`) so `AdminRole::Staff` skips `unread_guest_messages`, hides all non-dispatch links in desktop and mobile navs, `/` uses `303 see_other` (replacing `308 redirect_permanent` so browser cache cannot break role switches), and `/`, `/verify`, and `/login` route `AdminRole::Staff` directly to `/admin/turnovers`.
+  - **Files Touched:**
+    - `common/src/app_client/users.rs`
+    - `web_client/src/client.rs`
+    - `web_ui_common/src/shell_admin.rs`
+    - `web_ui_admin/src/{support.rs, pages/mod.rs, pages/auth.rs, pages/dashboard.rs, pages/dashboard_tests.rs, pages/register.rs, pages/password_reset.rs (create)}`
   - **Acceptance Criteria:**
-    - [ ] Every existing `web_app_common_tc::auth::…` path still resolves.
-    - [ ] `AuthUser::initials` tests moved to `web_client`.
-  - **Verification Command:** `cargo test -p web_client -p web_app_common_tc -p web_app_tc -p web_app_admin_tc && git diff --quiet b77cfb7a -- web_app_tc web_app_admin_tc`
-  - **Dependencies:** Task 4
-
-- [x] **Task 6: Typed sessions and route guards**
-  - **Scope:** S
-  - **Description:** Add `GuestSession`, `AdminSession` (non-optional `user_id`), `AdminRole`, `GuestAuthError`, and `require_guest` / `require_admin` / `require_admin_role` returning redirect-friendly errors (303 for pages, `HX-Redirect` for HTMX requests).
-  - **Files Touched:** `web_client/src/session.rs`, `web_client/src/lib.rs`
-  - **Acceptance Criteria:**
-    - [ ] Session DTO without `user_id` → error, never nil UUID.
-    - [ ] Host session → `require_admin_role` returns Forbidden.
-  - **Verification Command:** `cargo test -p web_client session`
-  - **Dependencies:** Task 5
-
-- [x] **Task 7: `ServiceJwt` with fail-fast secret**
-  - **Scope:** S
-  - **Description:** `ServiceJwt::from_env()` reads `JWT_SECRET` via `static JWT_SECRET_ENV`; errors if missing/empty. `mint(user_id)` issues 5-minute tokens.
-  - **Files Touched:** `web_client/src/jwt.rs`, `web_client/src/lib.rs`
-  - **Acceptance Criteria:**
-    - [ ] Missing secret → `Err`; minted token decodes with correct `sub`, `exp ≤ now+300s`.
-    - [ ] No `"secret"` fallback literal anywhere in `web_client`.
-  - **Verification Command:** `cargo test -p web_client jwt && ! rg -q '"secret"' web_client/src`
-  - **Dependencies:** Task 4
-
-- [x] **Task 8: `safe_redirect` helper**
-  - **Scope:** XS
-  - **Description:** Same-origin relative path validator per spec FR-1.4.
-  - **Files Touched:** `web_client/src/redirect.rs`
-  - **Acceptance Criteria:**
-    - [ ] Table test: `/bookings` ok; `//x`, `/\x`, `http://x`, `javascript:`, >512 bytes, empty → `/`.
-  - **Verification Command:** `cargo test -p web_client redirect`
-  - **Dependencies:** Task 1
-
-- [x] **Task 9: JWT-forwarding client methods**
-  - **Scope:** S
-  - **Description:** Add `get_user_bookings_as(user_id, jwt)`, `get_booking_as(id, jwt)`, `get_cancellation_quote_as(id, jwt)` to `TopcoatApiClient` (new names; existing methods untouched for old crates). Calls set `Authorization: Bearer` and return a typed `UserCallError` (`NotFound` / `Unauthorized` / `Status` / `Transport`).
-  - **Files Touched:** `web_client/src/client.rs`, `web_client/tests/client_auth.rs`
-  - **Acceptance Criteria:**
-    - [ ] `wiremock` tests assert the bearer header and path for each method.
-  - **Verification Command:** `cargo test -p web_client --test client_auth`
-  - **Dependencies:** Task 4, Task 7
+    - [ ] Shell tests verify `AdminRole::Staff` renders `"Staff"` badge and only `Turnover Dispatch` and `Sign out` links in sidebar and mobile menu.
+    - [ ] `/`, `/login`, and `/verify` return `303` to `/admin/turnovers` for `AdminRole::Staff` and honor valid `/admin/turnovers*` redirect params while rejecting `/admin/bookings` redirects for `Staff`.
+    - [ ] `/reset-password?token=...` renders an inline recovery prompt when a token is expired or invalid.
+  - **Verification Command:** `cargo test -p web_ui_common && SQLX_OFFLINE=true cargo test -p web_client -p web_ui_admin`
+  - **Dependencies:** Task 3, Task 4, Task 5
 
 ---
 
-## Phase 2: Parity baseline against the OLD apps
+### Phase C: Host-Scoped Staff Roster & Assignments (`/admin/staff-users`)
 
-- [x] **Task 10: Migrate guest specs off daisyUI selectors and `localStorage`**
+- [ ] **Task 7: Implement `db_core::staff` and `user_api` `/api/v1/staff-users` Endpoints with `Claims` Auth**
   - **Scope:** M
-  - **Description:** Replace `.card/.btn/.badge/.alert/.modal/.chat` selectors with roles/labels/IDs/`data-testid` in all 7 guest specs, and update assertions that had drifted from the app ("Villa" → "Listing" copy). The `localStorage` assertion is gated with `isNewPortal()` (`fixtures/portal.ts`) and paired with a UI assertion.
-  - **Files Touched:** `playwright/e2e/guest-portal/*.spec.ts`, `playwright/e2e/fixtures/auth.fixture.ts`
+  - **Description:** Create `db_core/src/staff.rs` for host-scoped staff listing/search (`host_staff` + `listing_staff` filtered to caller-owned listings unless `Admin`, escaping SQL `LIKE`/`ILIKE` wildcards `%`, `_`, `\` in `q`), idempotent race-safe (`ON CONFLICT` / retry) invite-or-attach (normalizing `email` via `.trim().to_lowercase()`, requiring non-empty `listing_ids` where `listing.deleted_at IS NULL`, creating `'staff'` user with locked password sentinel when new, or appending `'staff'` without overwriting PII/password/`is_active` when existing), invalidating prior unused `staff_invite` tokens before queuing `StaffInvite` (via `ADMIN_BASE_URL`) or `StaffListingAssigned`, updating `listing_staff` for caller-owned listings, and safely unlinking a host's staff (removing `'staff'` from `"user".roles` and calling `SessionsDb::delete_user_sessions(staff_user_id, Some("admin"))` when no remaining `host_staff` or `listing_staff` rows exist). Mount `/api/v1/staff-users*` in `app_api/user_api/src/apis/staff.rs` protected by `api_core::auth::require_user` + `Claims`. Add multi-threaded race test for concurrent invites of the same new email.
+  - **Files Touched:**
+    - `db_core/src/staff.rs` (create)
+    - `db_core/src/lib.rs`
+    - `app_api/user_api/src/apis/staff.rs` (create)
+    - `app_api/user_api/src/apis/{mod.rs, tests.rs}`
+    - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] `rg '\.(card|btn|badge|alert|modal|chat)\b' playwright/e2e/guest-portal` returns nothing.
-    - [ ] OLD_GUEST green.
-  - **Verification Command:** `npx playwright test --project=guest-portal-chromium --project=guest-portal-firefox`
-  - **Dependencies:** None
+    - [ ] Unauthenticated requests or `Booker`/`Staff` tokens to `/api/v1/staff-users*` receive `401`/`403`, and empty `listing_ids` or soft-deleted/unowned `listing_id` is rejected (`400`/`403`).
+    - [ ] Host B inviting Host A's cleaner email succeeds, adds Host B's listing only, never shows Host A's listings to Host B, and Host B removing the cleaner leaves Host A's assignment untouched while unlinking the last host/listing removes `'staff'` and revokes admin sessions.
+    - [ ] `#[tokio::test(flavor = "multi_thread")]` test confirms concurrent invites of the same new email converge cleanly without `500` errors.
+  - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core staff && devenv shell -- cargo test -p user_api staff`
+  - **Dependencies:** Task 2, Task 4, Task 5
 
-- [x] **Task 11: Migrate admin specs off daisyUI selectors**
+- [ ] **Task 8: Build `/admin/staff-users` Portal UI and Preserve `Staff` Role on `/admin/users`**
   - **Scope:** M
-  - **Description:** Same as Task 10 for the 6 admin specs. Also fix drifted IDs and copy (`#admin-auth-error`, "Listings Management", "Active Listings"), and tag the 4 tests that need the broken legacy booking-details dialog `@new-only` (inventory A20). Verified with `--grep-invert @new-only` until Task 12 adds the per-project filters.
-  - **Files Touched:** `playwright/e2e/admin-portal/*.spec.ts`
+  - **Description:** Add `common::app_client` and `web_client` methods for staff roster endpoints. Create `web_ui_admin/src/pages/staff_users.rs` (`host_or_admin` guard) with invite form, owned-listing multi-checkbox selector, resend-invite action, and remove-from-roster confirmation dialog. Add `"Staff & Crew"` link to `shell_admin.rs` for `Host | Admin`. Update `UserForm::validate` in `web_ui_admin/src/pages/users/mod.rs`, `users/form.rs`, and `user_api/src/apis/profile.rs` so editing a `Staff`-only or multi-role `Staff` user via `/admin/users` retains `'staff'` in `user.roles` without failing the 3-checkbox `"Choose at least one role."` validation.
+  - **Files Touched:**
+    - `common/src/app_client/users.rs`
+    - `web_client/src/client.rs`
+    - `web_ui_common/src/shell_admin.rs`
+    - `web_ui_admin/src/pages/{mod.rs, staff_users.rs (create), users/mod.rs, users/form.rs}`
+    - `app_api/user_api/src/apis/profile.rs`
   - **Acceptance Criteria:**
-    - [ ] No daisyUI class selectors in `playwright/e2e/admin-portal`.
-    - [ ] OLD_ADMIN green.
-  - **Verification Command:** `npx playwright test --project=admin-portal-chromium --project=admin-portal-firefox`
-  - **Dependencies:** None
-
-- [x] **Task 12: New-port projects, tag filters and CSP fixture**
-  - **Scope:** S
-  - **Description:** Add `guest-portal-new-*` (:3010) and `admin-portal-new-*` (:3012) projects reusing the same `testDir`s; `grepInvert` `@old-only` / `@new-only` per side; `webServer` entries for the new bins; CSP-violation fixture (file-based init script) auto-used by `-new-` projects.
-  - **Files Touched:** `playwright/playwright.config.ts`, `playwright/e2e/fixtures/base.fixture.ts` (auto `cspGuard` fixture; all portal specs now import `test` from it or from `auth.fixture`), `playwright/e2e/fixtures/csp-listener.js`
-  - **Acceptance Criteria:**
-    - [ ] `npx playwright test --list` shows 8 portal projects.
-    - [ ] A deliberate inline-script test page fails the fixture (verified once, not committed).
-  - **Verification Command:** `npx playwright test --list | grep -c "portal-new"`
-  - **Dependencies:** Task 1
-
-- [x] **Task 13: Hold-expiry seed helper**
-  - **Scope:** XS
-  - **Description:** `expirePendingHold(bookingId)` in db-seed, running the cron's UPDATE + `booking_history` insert for one booking; SQL constant commented with the source migration (`20260927000000`).
-  - **Files Touched:** `playwright/e2e/setup/db-seed.ts`, `playwright/e2e/api/hold-expiry.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] Helper flips a seeded `pending` booking to `cancelled` with history reason "Hold expired after 2 hours".
-  - **Verification Command:** `npx playwright test --project=backend-api hold-expiry`
-  - **Dependencies:** None
-
-- [x] **Task 14: Old-app specs — bookings & reservation changes**
-  - **Scope:** M
-  - **Description:** New `bookings.spec.ts` and `reservation-changes.spec.ts` covering G14–G23 against :3000. Rows marked `fixed` in the inventory (G14 scope, G16) are `@new-only`.
-  - **Files Touched:** `playwright/e2e/guest-portal/{bookings,reservation-changes}.spec.ts`, `playwright/e2e/fixtures/bookings-data.ts` (per-test guests and bookings, test JWTs)
-  - **Acceptance Criteria:**
-    - [ ] OLD_GUEST green for non-`@new-only` tests.
-  - **Verification Command:** `npx playwright test guest-portal/bookings guest-portal/reservation-changes --project=guest-portal-chromium --project=guest-portal-firefox`
-  - **Dependencies:** Task 10, Task 12
-
-- [x] **Task 15: Old-app specs — messaging, static pages, profile, reviews**
-  - **Scope:** M
-  - **Description:** `messaging.spec.ts` (G24–G25), `static-pages.spec.ts` (G3), and `@new-only` skeletons for `profile.spec.ts` (G32) and `reviews.spec.ts` (G33–G34; G34 runs on old too).
-  - **Files Touched:** `playwright/e2e/guest-portal/{messaging,static-pages,profile,reviews}.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] OLD_GUEST green for non-`@new-only` tests.
-  - **Verification Command:** `npx playwright test guest-portal/messaging guest-portal/static-pages guest-portal/reviews --project=guest-portal-chromium`
-  - **Dependencies:** Task 10, Task 12
-
-- [x] **Task 16: Old-app specs — host signup, users admin**
-  - **Scope:** M
-  - **Description:** `host-signup.spec.ts` (A4–A7), `users-admin.spec.ts` (A29–A31, admin role vs host 403).
-  - **Files Touched:** `playwright/e2e/admin-portal/{host-signup,users-admin}.spec.ts`, `playwright/e2e/fixtures/auth.fixture.ts`
-  - **Acceptance Criteria:**
-    - [ ] OLD_ADMIN green.
-  - **Verification Command:** `npx playwright test admin-portal/host-signup admin-portal/users-admin --project=admin-portal-chromium --project=admin-portal-firefox`
-  - **Dependencies:** Task 11, Task 12
-
-- [x] **Task 17: Old-app specs — pricing, exchange rates, admin messages, admin change requests, listing images**
-  - **Scope:** M
-  - **Description:** `pricing-admin`, `exchange-rates`, `booking-messages-admin`, `reservation-changes-admin` specs (A16–A18, A22–A25, A28). `payouts-admin.spec.ts` gains `@new-only` host-read-only tests (D10). (`listing-images` is written with Task 48, since no legacy UI uploads images.)
-  - **Files Touched:** `playwright/e2e/admin-portal/{pricing-admin,exchange-rates,booking-messages-admin,reservation-changes-admin,payouts-admin}.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] OLD_ADMIN green for non-`@new-only` tests.
-    - [x] Every inventory row's "Spec file" exists (except `calendar.spec.ts`, which Task 31 adds).
-  - **Verification Command:** `npx playwright test --project=admin-portal-chromium --project=admin-portal-firefox`
-  - **Dependencies:** Task 11, Task 12
+    - [ ] `Staff` sessions get `403` on `/admin/staff-users` and `/admin/users`.
+    - [ ] Host sees only their own staff and owned listings on `/admin/staff-users`.
+    - [ ] Editing a `Staff`-only, `Host + Staff`, or `Booker + Staff` user in `/admin/users` succeeds and retains `'staff'` in `user.roles`.
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common -p web_client -p web_ui_admin && devenv shell -- cargo test -p user_api`
+  - **Dependencies:** Task 6, Task 7
 
 ---
 
-## Phase 3: `web_ui_common`
+### Phase D: Eager Turnover Lifecycle & API Vertical Slice
 
-- [x] **Task 18: Theme stylesheets**
-  - **Scope:** S
-  - **Description:** `guest.css` / `admin.css` with exact tokens from `guest-theme.md` §1/§6 (light, `.dim`, `.dark`), `@custom-variant dark`, Newsreader + Inter via `topcoat-font`; `build.rs` in each bin compiles its theme.
-  - **Files Touched:** `web_ui_common/src/style/{base,guest,admin}.css`, `web_ui_{guest,admin}/src/style/tailwind.css` (entry points), `web_ui_common/tests/theme_tokens.rs` (diffs guest tokens against the design doc). Font files are wired in Task 26 with the shells.
-  - **Acceptance Criteria:**
-    - [ ] Token values match the design doc (scripted diff of `--*` declarations).
-    - [ ] No raw hex outside the two theme files: `rg '#[0-9A-Fa-f]{6}' web_ui_*/src --glob '!**/style/*.css'` empty.
-  - **Verification Command:** `SQLX_OFFLINE=true cargo build -p web_ui_guest -p web_ui_admin && ! rg -q '#[0-9A-Fa-f]{6}' web_ui_common/src/components web_ui_guest/src web_ui_admin/src`
-  - **Dependencies:** Task 3
-
-- [x] **Task 19: Theme resolution engine**
-  - **Scope:** S
-  - **Description:** `ThemeChoice`, cookie parsing (`op_theme`, `op_tz_offset` validation), `resolve_theme(…, now_utc)` with Jamaica UTC−05:00 fallback; `html_class()`.
-  - **Files Touched:** `web_ui_common/src/theme.rs`
-  - **Acceptance Criteria:**
-    - [ ] Matrix tests: each cookie value, offsets −840/0/840/invalid, local 17:59/18:00/05:59/06:00.
-  - **Verification Command:** `cargo test -p web_ui_common theme`
-  - **Dependencies:** Task 1
-
-- [x] **Task 20: Security headers and CSRF origin check**
+- [ ] **Task 9: Implement `db_core::turnover` Repository and Idempotent Stay Reconciler**
   - **Scope:** M
-  - **Description:** `SecurityHeaders` router layer: CSP (one policy for both portals, since A15 was dropped), hardening headers (including on error pages), and `Cache-Control: private, no-cache` plus `Vary: Cookie` on HTML; HSTS is opt-in. CSRF needs no custom code: Topcoat's default `OriginPolicy` already rejects cross-origin state-changing requests, and a test pins that.
-  - **Files Touched:** `web_ui_common/src/security_headers.rs`, `web_ui_common/src/lib.rs`, `web_ui_common/tests/headers.rs`
+  - **Description:** Create `db_core/src/turnover.rs` implementing: listing-scoped dispatch queries (`today | upcoming | past | all`, status, listing, pagination) with dynamic `next_checkin_date` projection across active bookings and `listing_blocked_dates`, manual turnover creation, role-checked status transition + `expected_status: Option<TurnoverStatus>` optimistic concurrency (`DbError::Conflict` on mismatch, idempotent no-op if `from == to`) + `turnover_status_history` insert, `reconcile_for_booking`, and `reconcile_for_listing` (`ical_feed` blocks only, ignoring `manual` blocks, shifting `checkout_date` in place on extensions, and transitioning `needs_cleaning` turnovers for removed `ical_feed` events to `not_required` **only when `turnover.checkout_date > today_jm`** via `common::reference::listing_today(Utc::now())` and `NO_EVENTS_WARNING` is false). Execute `SET LOCAL lock_timeout = '5s'` (mapping `55P03` -> `DbError::LockContention`) and acquire `SELECT id FROM listing WHERE id = $1 FOR UPDATE` *before* locking `turnover` in every write transaction. Include multi-threaded concurrency tests (`#[tokio::test(flavor = "multi_thread")]`).
+  - **Files Touched:**
+    - `db_core/src/turnover.rs` (create)
+    - `db_core/src/error.rs`
+    - `db_core/src/lib.rs`
+    - `db_core/src/turnover_tests.rs` (create)
+    - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] Exact CSP strings asserted per app; cross-origin POST → 403; same-origin POST passes.
-  - **Verification Command:** `cargo test -p web_ui_common --test headers`
-  - **Dependencies:** Task 2
+    - [ ] `#[tokio::test(flavor = "multi_thread")]` concurrency tests confirm racing status transitions (`expected_status` conflict vs idempotent no-op) and concurrent `reconcile_for_booking` / `reconcile_for_listing` never create duplicate rows or `40P01` deadlocks.
+    - [ ] Extending a booking or iCal block updates `checkout_date` in place while keeping existing `CleaningInProgress` / `MaintenanceRequired` status and comments intact.
+    - [ ] `reconcile_for_listing` does not mark a removed `ical_feed` turnover `not_required` when `turnover.checkout_date <= today_jm`, and `manual` calendar blocks never auto-create turnovers.
+  - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core turnover_tests`
+  - **Dependencies:** Task 1, Task 2
 
-- [x] **Task 21: `ui.js` core behaviors**
+- [ ] **Task 10: Wire Eager Turnover Reconciliation into Booking Mutations, iCal Sync, and Sweeps**
   - **Scope:** M
-  - **Description:** Hashed asset with dialog open/close, outside-click dismiss, theme cycle + `op_theme` cookie + `aria-label`, `op_tz_offset` writer, `data-print`, HTMX toast glue; vendored `htmx.min.js`; `<meta name="htmx-config">` helper. ≤15 KB minified.
-  - **Files Touched:** `web_ui_common/src/assets/{ui.js,htmx-2.0.4.min.js}`, `web_ui_common/src/assets.rs`, `playwright/e2e/ui-js/ui-js.spec.ts` (+ `ui-js-*` projects). HTMX 2.0.4 matches the CDN version the legacy portals actually run (the repo's unused vendored file is 4.0.0); verified against the npm tarball. **Bins (Tasks 32/44) must fail startup if the asset bundle is missing:** rendering an `Asset` without one panics.
+  - **Description:** Invoke `db_core::turnover::reconcile_for_booking` inside `db_core/src/booking/update.rs::apply_status_side_effects` and `db_core/src/reservation_change.rs::approve_change_request`. Invoke `db_core::turnover::reconcile_for_listing` inside `db_core/src/calendar/reconcile.rs::reconcile_feed` before transaction commit. Add an idempotent turnover backfill sweep (under parent `listing` `FOR UPDATE` lock + `5s` `lock_timeout`) to `app_api/booking_api/src/apis/cron.rs::run_sweeps` with per-listing error isolation. Add tests verifying checkout-day `ical_feed` pruning (`e.date_to == today_jm`) preserves today's `needs_cleaning` turnover.
+  - **Files Touched:**
+    - `db_core/src/booking/update.rs`
+    - `db_core/src/reservation_change.rs`
+    - `db_core/src/calendar/reconcile.rs`
+    - `db_core/src/calendar/reconcile_tests.rs`
+    - `app_api/booking_api/src/apis/{cron.rs, tests.rs}`
+    - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] Theme toggle cycles and persists (theme.spec on NEW_GUEST once Task 26 lands; unit-level check via a fixture page now).
-    - [ ] No `eval`/`new Function`/inline handlers in `ui.js`.
-  - **Verification Command:** `! rg -q 'eval\(|new Function' web_ui_common/src/assets/ui.js && wc -c web_ui_common/src/assets/ui.js`
-  - **Dependencies:** Task 2, Task 19
+    - [ ] Confirming a booking, approving a date change, or syncing an `ical_feed` block creates/updates the corresponding turnover in the same transaction.
+    - [ ] Cancelling a booking or removing a future (`checkout_date > today_jm`) event from a non-empty `ical_feed` transitions `needs_cleaning` turnovers to `not_required`, while checkout-day `e.date_to == today_jm` pruning leaves `needs_cleaning` intact.
+    - [ ] A per-listing error in `run_sweeps` logs an error and continues sweeping remaining listings without aborting stay completion.
+  - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core && devenv shell -- cargo test -p booking_api cron`
+  - **Dependencies:** Task 9
 
-- [x] **Task 22: Custom presentational components**
+- [ ] **Task 11: Add `booking_api` `/api/v1/turnovers` Endpoints and `app_client` Methods**
   - **Scope:** M
-  - **Description:** `toast`, `steps`, `stat_tile`, `framed_image`, `hero` following Topcoat UI conventions (token-only colors, `attrs` passthrough).
-  - **Files Touched:** `web_ui_common/src/components/{toast,steps,stat_tile,framed_image,hero}.rs`, `web_ui_common/src/components/mod.rs`
+  - **Description:** Create `app_api/booking_api/src/apis/turnovers.rs` and register routes in `routes.rs` for `GET /api/v1/turnovers`, `POST /api/v1/turnovers`, `GET /api/v1/turnovers/{id}`, and `POST /api/v1/turnovers/{id}/status`. Enforce `Claims` + listing-scoped access (`Admin`, `Host` owner, or assigned `Staff`), map invalid transitions to `403 TURNOVER_TRANSITION_FORBIDDEN`, map `DbError::Conflict` (`expected_status`) to `409 Conflict`, map `DbError::LockContention` to `503 ServiceUnavailable`, and verify zero guest PII or financial fields appear in JSON responses. Add typed `common/src/app_client/turnovers.rs` and `web_client` methods, plus API integration tests in `app_api/booking_api/src/apis/turnover_api_tests.rs`.
+  - **Files Touched:**
+    - `app_api/booking_api/src/apis/turnovers.rs` (create)
+    - `app_api/booking_api/src/apis/turnover_api_tests.rs` (create)
+    - `app_api/booking_api/src/apis/{mod.rs, routes.rs}`
+    - `common/src/app_client/{mod.rs, turnovers.rs (create)}`
+    - `web_client/src/client.rs`
   - **Acceptance Criteria:**
-    - [ ] Render tests snapshot ARIA attributes (`role="status"` for toast, `aria-current="step"` for steps).
-  - **Verification Command:** `cargo test -p web_ui_common components`
-  - **Dependencies:** Task 3
-
-- [x] **Task 23: Star rating and chat components**
-  - **Scope:** S
-  - **Description:** `star_rating` (display), `star_rating_input` (radio group, labelled), `chat_thread` / `chat_bubble` (keeps `#messages-list` id hook via attrs).
-  - **Files Touched:** `web_ui_common/src/components/{star_rating,chat}.rs`
-  - **Acceptance Criteria:**
-    - [ ] Input renders 5 labelled radios per category; bubble escapes message text.
-  - **Verification Command:** `cargo test -p web_ui_common star_rating chat`
-  - **Dependencies:** Task 3
-
-- [x] **Task 24: Domain components — money**
-  - **Scope:** M
-  - **Description:** Port `currency_selector` and `price_breakdown` to Topcoat UI. Add parity tests comparing formatted numbers/currency codes with the old `web_app_common_tc` components for USD/JMD/EUR/GBP/CAD.
-  - **Files Touched:** `web_ui_common/src/components/domain/{currency_selector,price_breakdown,mod}.rs`, `web_ui_common/tests/money_parity.rs`, `web_ui_common/Cargo.toml` (dev-dep on `web_app_common_tc`)
-  - **Acceptance Criteria:**
-    - [ ] Extracted amount strings identical to old output for fixed `Decimal` inputs.
-  - **Verification Command:** `cargo test -p web_ui_common --test money_parity`
-  - **Dependencies:** Task 3
-
-- [x] **Task 25: Domain components — listing card, image, tax document**
-  - **Scope:** M
-  - **Description:** Port `listing_card` (portrait), `responsive_image` (`<picture>`/`srcset` kept), `tax_document_view`.
-  - **Files Touched:** `web_ui_common/src/components/domain/{listing_card,responsive_image,tax_document_view}.rs`
-  - **Acceptance Criteria:**
-    - [ ] `srcset` output equals old component for the same input; tax document totals identical.
-  - **Verification Command:** `cargo test -p web_ui_common domain`
-  - **Dependencies:** Task 24
-
-- [x] **Task 26: Navbar and shells**
-  - **Scope:** M
-  - **Description:** `navbar`, `guest_shell` (server-rendered auth state, mobile `sheet`, footer, theme button, `<html class>` from Task 19) and `admin_shell` (sidebar; user-management links only for `AdminRole::Admin`).
-  - **Files Touched:** `web_ui_common/src/components/navbar.rs`, `web_ui_common/src/{shell_guest,shell_admin}.rs`, `web_ui_common/src/lib.rs`
-  - **Acceptance Criteria:**
-    - [ ] Logged-out render contains no `nav-user-dropdown`; host admin shell contains no user-management links.
-  - **Verification Command:** `cargo test -p web_ui_common shell`
-  - **Dependencies:** Task 6, Task 19, Task 21, Task 22
-
-### Phase 3b: Calendar availability (the one backend change)
-
-- [x] **Task 27: `UnavailableRange` model and `merge_ranges`**
-  - **Scope:** S
-  - **Description:** Documented DTOs in `common` and pure `merge_ranges`.
-  - **Files Touched:** `common/src/availability.rs` (DTOs and `merge_ranges` live together), `common/src/lib.rs`, `common/tests/availability.rs`
-  - **Acceptance Criteria:**
-    - [ ] Tests: empty, disjoint, touching, nested, unsorted.
-  - **Verification Command:** `cargo test -p common availability`
-  - **Dependencies:** None
-
-- [x] **Task 28: `db_core::booking::get_unavailable_ranges`**
-  - **Scope:** S
-  - **Description:** Parameterized query (spec §Data Models) and `.sqlx` metadata.
-  - **Files Touched:** `db_core/src/booking.rs`, `.sqlx/*.json`
-  - **Acceptance Criteria:**
-    - [ ] Returns only `pending`/`confirmed` overlapping rows; `cargo sqlx prepare --workspace --check` passes.
-  - **Verification Command:** `cargo test -p db_core unavailable_ranges && cargo sqlx prepare --workspace --check -- --all-targets`
-  - **Dependencies:** Task 27
-
-- [x] **Task 29: `booking_api` `GET /bookings/listing/{id}/unavailable-ranges`**
-  - **Scope:** S
-  - **Description:** Public handler with 366-day span limit, 404 unknown listing, utoipa annotations; add the route and schemas to the API Gateway specs by hand (there is no generator).
-  - **Files Touched:** `app_api/booking_api/src/apis.rs`, `app_api/booking_api/src/apis_test.rs`, `openapi.yaml`, `openapi-prod.yaml`
-  - **Acceptance Criteria:**
-    - [ ] Tests: ranges returned, no guest fields in JSON, 400 span/order, 404 listing.
-  - **Verification Command:** `cargo test -p booking_api unavailable_ranges`
-  - **Dependencies:** Task 28
-
-- [x] **Task 30: `date_range_calendar` server component**
-  - **Scope:** M
-  - **Description:** Two-month `role="grid"` render (one month on small screens), day buttons with `aria-label`/`aria-disabled`, HTMX prev/next, hidden `check_in`/`check_out`, progressive fallback to native date inputs; client method `get_unavailable_ranges`.
-  - **Files Touched:** `web_ui_common/src/components/date_range_calendar.rs`, `web_client/src/client.rs`
-  - **Acceptance Criteria:**
-    - [ ] Tests: leap Feb 2028, Sunday-start month, blocked/past flags, label text.
-  - **Verification Command:** `cargo test -p web_ui_common date_range_calendar`
-  - **Dependencies:** Task 3, Task 9, Task 29
-
-- [x] **Task 31: Calendar interaction in `ui.js`**
-  - **Scope:** S
-  - **Description:** Click + Arrow/Home/End/PageUp/PageDown, range highlight, reject ranges crossing blocked nights, fire `change` on `#booking-dates`.
-  - **Files Touched:** `web_ui_common/src/assets/ui.js`, `playwright/e2e/ui-js/calendar.spec.ts` (behaviour, against `fixtures/calendar.html`, which a Rust test keeps identical to the component's output), `playwright/e2e/guest-portal/calendar.spec.ts` (`@new-only` portal contract; it runs once Task 35 adds the listing page)
-  - **Acceptance Criteria:**
-    - [x] Keyboard-only range selection works in Chromium + Firefox (ui-js projects).
-    - [x] Portal calendar spec green on NEW_GUEST (verified in Task 35).
-  - **Verification Command:** `npx playwright test --project=ui-js-chromium --project=ui-js-firefox`
-  - **Dependencies:** Task 30, Task 21
+    - [ ] `Staff` receives `404`/`403` for listings they are not assigned to, and `403` when attempting to set `InspectedAndReady` or mark a booking/`ical_feed` turnover `NotRequired`.
+    - [ ] `Staff` succeeds in transitioning `InspectedAndReady` -> `MaintenanceRequired` or `NeedsCleaning`.
+    - [ ] Response payloads omit guest identity, booking totals, confirmation codes, and door codes, and stale `expected_status` returns `409 Conflict`.
+  - **Verification Command:** `devenv shell -- cargo test -p booking_api turnover_api_tests && SQLX_OFFLINE=true cargo check -p web_client`
+  - **Dependencies:** Task 3, Task 9
 
 ---
 
-## Phase 4: `web_ui_guest` (:3010)
+### Phase E: Comments, Outbox Recovery & Mobile Dispatch UI
 
-- [x] **Task 32: Guest app bootstrap and home page**
+- [ ] **Task 12: Implement Turnover Comments API and General Stuck `email_outbox` Republisher**
   - **Scope:** M
-  - **Description:** `main.rs` (session store `op_guest_session`, `ServiceJwt::from_env` fail-fast, security middleware, `.runtime()` per Task 2), `#[layout("/")]` using `guest_shell`, `/` with hero + search.
-  - **Files Touched:** `web_ui_guest/src/{main,lib,layout}.rs`, `web_ui_guest/src/pages/{mod,home}.rs`
+  - **Description:** Add `POST /api/v1/turnovers/{id}/comments` in `app_api/booking_api/src/apis/turnovers.rs` backed by `db_core::turnover::add_comment_with_outbox` (acquiring parent `listing` `FOR UPDATE` lock with `5s` `lock_timeout` before locking `turnover`, and persisting `author_name` snapshot). Resolve recipients as active verified `listing_staff` assigned to `listing_id` plus `listing.user_id`, excluding the comment author, insert `EmailTemplate::TurnoverCommentNotification` rows transactionally, and publish with `.instrument(tracing::Span::current())`. Leave `db_core::calendar::outbox::stuck_calendar_emails` untouched (preserving existing `outbox_tests.rs` and `calendar_sync_job` tests) and add `db_core::email_outbox::stuck_pending_emails(pool, older_than, limit)` called by `booking_api::cron::run_sweeps` (`EmailPublisher`).
+  - **Files Touched:**
+    - `db_core/src/turnover.rs`
+    - `db_core/src/turnover_tests.rs`
+    - `db_core/src/email_outbox.rs`
+    - `app_api/booking_api/src/apis/{turnovers.rs, turnover_api_tests.rs, cron.rs}`
+    - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] `home.spec.ts` green on NEW_GUEST with zero CSP violations.
-    - [ ] App exits non-zero without `JWT_SECRET`.
-  - **Verification Command:** `npx playwright test guest-portal/home --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 7, Task 12, Task 20, Task 26
+    - [ ] Posting a comment inserts `turnover_comment` (with `author_name` snapshot) and `email_outbox` rows atomically for host + other assigned active staff (never the author, never unassigned/inactive staff).
+    - [ ] No comment body or email address appears in `tracing` logs.
+    - [ ] Existing `db_core::calendar::outbox` and `calendar_sync_job` tests pass unmodified while `db_core::email_outbox::stuck_pending_emails` picks up stuck `staff_invite`, `password_reset_link`, and `turnover_comment_notification` rows.
+  - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core outbox && devenv shell -- cargo test -p db_core turnover_tests && devenv shell -- cargo test -p booking_api turnover`
+  - **Dependencies:** Task 5, Task 10, Task 11
 
-- [x] **Task 33: Guest login and logout (server sessions)**
+- [ ] **Task 13: Build `web_ui_admin` `/admin/turnovers` Mobile-First Dispatch Board**
   - **Scope:** M
-  - **Description:** `GET/POST /login` (fixation-safe), `GET/POST /logout`, `safe_redirect`, generic error messages, server-rendered nav. Also add the shared mapping from `web_client::session::GuardError` to responses: `Unauthenticated` → 303 to `login_redirect(current path)` (or `HX-Redirect` for HTMX requests), `Forbidden` → 403, `Service` → 503 error page. Task 6 only provides the guards and `login_redirect`.
-  - **Files Touched:** `web_ui_guest/src/pages/auth.rs`, `web_ui_guest/tests/auth.rs`
+  - **Description:** Create `web_ui_admin/src/pages/turnovers.rs` (`dispatch_actor` guard) rendering a responsive Topcoat/DaisyUI card board with window tabs (`Today`, `Upcoming`, `Past`, `All`), status & listing filters, pagination, manual turnover creation form, and HTMX status transition buttons tailored to caller role (omitting `Inspected & Ready` action for `Staff` while enabling `Maintenance Required` / `Needs Cleaning` from `Inspected & Ready`). Render explicit error banners on API failures rather than `.unwrap_or_default()`. Link `/admin/turnovers` in `shell_admin.rs`.
+  - **Files Touched:**
+    - `web_ui_admin/src/pages/turnovers.rs` (create)
+    - `web_ui_admin/src/pages/mod.rs`
+    - `web_ui_common/src/shell_admin.rs`
   - **Acceptance Criteria:**
-    - [ ] `auth.spec.ts` green on NEW_GUEST; no auth keys in browser storage; `redirect=//evil.com` → `/`.
-    - [x] `sessions` row has `namespace = 'guest'` after sign-in, the cookie is HttpOnly, and browser storage has no auth keys (asserted end-to-end against the real backend; the API client's global env-configured transport makes an in-process mock impractical).
-  - **Verification Command:** `npx playwright test guest-portal/auth --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 8, Task 32
+    - [ ] Mobile viewport (`390px`) renders stacked dispatch cards with ≥ 44px touch targets and zero horizontal overflow.
+    - [ ] `Staff` sessions do not see `Inspected & Ready` trigger buttons or any revenue/booking/guest PII links.
+    - [ ] Upstream API failure renders a visible alert banner (`role="alert"`) and logs `tracing::error!`.
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common -p web_ui_admin`
+  - **Dependencies:** Task 6, Task 11
 
-- [x] **Task 34: Guest registration and email verification**
-  - **Scope:** M
-  - **Description:** `GET/POST /register`, `GET/POST /verify`, `POST /verify/resend`, all proxied server-side to `user_api`.
-  - **Files Touched:** `web_ui_guest/src/pages/register.rs`, `web_ui_guest/src/pages/verify.rs`
-  - **Acceptance Criteria:**
-    - [x] `email-verification-flow.spec.ts` green on NEW_GUEST. (The no-browser-request-to-backend check moves to Task 43's security spec.)
-  - **Verification Command:** `npx playwright test guest-portal/email-verification-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 33
-
-- [x] **Task 35: Listings search and listing detail with calendar**
-  - **Scope:** M
-  - **Description:** `/listings`, `/listings/{slug}` (gallery dialog, amenities, reviews, concurrent fetches via `try_join!`), `/listings/{slug}/quote`, `/listings/{slug}/calendar` fragments.
-  - **Files Touched:** `web_ui_guest/src/pages/{listings,listing_detail}.rs`
-  - **Acceptance Criteria:**
-    - [ ] `listings`, `listing-detail`, `calendar` specs green on NEW_GUEST.
-  - **Verification Command:** `npx playwright test guest-portal/listings guest-portal/listing-detail guest-portal/calendar --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 25, Task 31, Task 32
-
-- [x] **Task 36: Checkout (login required, real booking)**
-  - **Scope:** M
-  - **Description:** `GET/POST /checkout/{slug}` with server validation, `guest_id` from session, conflict re-render, session-expiry `HX-Redirect` preserving form state, legacy `/checkout-{ccy}/{id}` and `-ccy` suffix 308s.
-  - **Files Touched:** `web_ui_guest/src/pages/checkout.rs`, `web_ui_guest/tests/checkout.rs`, `playwright/e2e/guest-portal/checkout-flow.spec.ts`
-  - **Acceptance Criteria:**
-    - [x] Booking row has the session guest's ID and the chosen dates (asserted in the DB end-to-end; the form has no `guest_id` field to forge).
-    - [x] E2E: logged-out → login → back to checkout with the same stay and real figures; booking created; session-expiry resume. (The `expirePendingHold` restart is tested with the bookings page in Task 37.)
-  - **Verification Command:** `npx playwright test guest-portal/checkout-flow --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 13, Task 33, Task 35
-
-- [x] **Task 37: My bookings, cancel and cancellation quote**
-  - **Scope:** M
-  - **Description:** `/bookings` (own bookings only, via `get_user_bookings_as(session.user_id, jwt)`), `POST /bookings/{id}/cancel`, `GET /bookings/{id}/cancellation-quote` with ownership 404 (D8, D9).
-  - **Files Touched:** `web_ui_guest/src/pages/bookings.rs`, `web_ui_guest/src/ownership.rs`, `web_ui_guest/tests/bookings.rs`
-  - **Acceptance Criteria:**
-    - [ ] `bookings.spec.ts` green on NEW_GUEST incl. guest A cannot see/quote guest B's booking.
-    - [ ] `! rg -q get_all_bookings web_ui_guest`.
-  - **Verification Command:** `npx playwright test guest-portal/bookings --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 9, Task 33
-
-- [x] **Task 38: Change dates and change requests**
-  - **Scope:** M
-  - **Description:** `/bookings/{id}/change-dates`, change-quote, create, approve/decline/cancel fragments, all ownership-checked.
-  - **Files Touched:** `web_ui_guest/src/pages/booking_change.rs`
-  - **Acceptance Criteria:**
-    - [ ] `reservation-changes.spec.ts` green on NEW_GUEST.
-  - **Verification Command:** `npx playwright test guest-portal/reservation-changes --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 30, Task 37
-
-- [x] **Task 39: Guest messaging**
+- [ ] **Task 14: Build `web_ui_admin` `/admin/turnovers/{id}` Detail & Comment Thread UI**
   - **Scope:** S
-  - **Description:** `GET/POST /bookings/{code}/messages`, code resolved within own bookings, `chat_thread`, `beforeend` swap into `#messages-list`.
-  - **Files Touched:** `web_ui_guest/src/pages/messages.rs`
+  - **Description:** Add `/admin/turnovers/{id}` and `POST /admin/turnovers/{id}/comments` handlers in `web_ui_admin/src/pages/turnovers.rs`, displaying turnover details, full allowed status controls, `turnover_status_history` timeline, and chronological comment thread reusing `web_ui_common::components::chat::{chat_thread, chat_bubble}` with HTMX partial updates (`data-reset-on-success`).
+  - **Files Touched:**
+    - `web_ui_admin/src/pages/turnovers.rs`
+    - `web_ui_admin/tests/turnover_dispatch.rs` (create)
   - **Acceptance Criteria:**
-    - [ ] `messaging.spec.ts` green on NEW_GUEST incl. cross-account 404.
-  - **Verification Command:** `npx playwright test guest-portal/messaging --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 23, Task 37
-
-- [x] **Task 40: Tax documents**
-  - **Scope:** S
-  - **Description:** `/bookings/{id}/documents/{number}` with ownership check and `data-print`.
-  - **Files Touched:** `web_ui_guest/src/pages/documents.rs`
-  - **Acceptance Criteria:**
-    - [ ] `tax-documents.spec.ts` green on NEW_GUEST.
-  - **Verification Command:** `npx playwright test guest-portal/tax-documents --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 25, Task 37
-
-- [x] **Task 41: Profile**
-  - **Scope:** M
-  - **Description:** `GET/POST /profile` with real `user_api` data (name, phone, preferred currency); the user ID always comes from the session. **Deferred:** email change and password reset. The legacy profile had neither (it was static), so they are new features rather than parity.
-  - **Files Touched:** `web_ui_guest/src/pages/profile.rs`, `web_client/src/client.rs`, `playwright/e2e/guest-portal/profile.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] `profile.spec.ts` green on NEW_GUEST (name update persists after reload).
-  - **Verification Command:** `npx playwright test guest-portal/profile --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 33
-
-- [x] **Task 42: Reviews (token flow) and About page**
-  - **Scope:** S
-  - **Description:** `GET/POST /reviews/submit?token=`, `/reviews/success`, `/about`.
-  - **Files Touched:** `web_ui_guest/src/pages/{reviews,about}.rs`, `playwright/e2e/guest-portal/reviews.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] `reviews` and `static-pages` specs green on NEW_GUEST; invalid token → 404 page.
-  - **Verification Command:** `npx playwright test guest-portal/reviews guest-portal/static-pages --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Task 23, Task 32
-
-- [x] **Task 43: Guest security and theme e2e sweep**
-  - **Scope:** S
-  - **Description:** `@new-only` specs: raw-HTML no-user-nav for logged-out, storage has no auth keys, cross-account matrix, theme first-visit (mocked clock) / `op_tz_offset` / persistence / no class change after first paint.
-  - **Files Touched:** `playwright/e2e/guest-portal/{security,theme}.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] All green on NEW_GUEST with zero CSP violations.
-  - **Verification Command:** `npx playwright test guest-portal/security guest-portal/theme --project=guest-portal-new-chromium --project=guest-portal-new-firefox`
-  - **Dependencies:** Tasks 33–42
+    - [ ] Posting a comment appends a `chat_bubble` fragment without page reload and triggers backend outbox queueing.
+    - [ ] Unauthorized listing IDs return `404`/`403` without leaking listing title or comments.
+  - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_admin --test turnover_dispatch`
+  - **Dependencies:** Task 12, Task 13
 
 ---
 
-## Phase 5: `web_ui_admin` (:3012)
+### Phase F: CI/CD Wiring, E2E Suite & Final Gates
 
-- [x] **Task 44: Admin app bootstrap, login/logout, dashboard, alias redirects**
+- [ ] **Task 15: Wire `ADMIN_BASE_URL` on `user_api`, Update `docs/ENVIRONMENT.md`, and Sync `.sqlx/`**
+  - **Scope:** S
+  - **Description:** Update `.github/workflows/cicd_full_stack.yml` (`configure-email-links`) so `ADMIN_BASE_URL=$ADMIN_URL` is injected onto `user_api` alongside `booking_api`, `listing_api`, and `calendar_sync_job`. Document `ADMIN_BASE_URL` for `user_api` in `docs/ENVIRONMENT.md`. Run `cargo sqlx prepare --workspace -- --all-targets` to verify all offline queries sync cleanly.
+  - **Files Touched:**
+    - `.github/workflows/cicd_full_stack.yml`
+    - `docs/ENVIRONMENT.md`
+    - `.sqlx/`
+  - **Acceptance Criteria:**
+    - [ ] `cicd_full_stack.yml` sets `ADMIN_BASE_URL` on the `user-api` Cloud Run service.
+    - [ ] `devenv shell -- cargo sqlx prepare --workspace --check` passes with exit code `0`.
+  - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace --check`
+  - **Dependencies:** Task 7, Task 12
+
+- [ ] **Task 16: Add Playwright E2E Suites for Staff Invites, Password Flows, Isolation & Dispatch Board**
   - **Scope:** M
-  - **Description:** `main.rs` (`op_admin_session`), layout with `admin_shell`, `GET/POST /login`, `GET/POST /logout`, `/admin` dashboard with `stat_tile`s, `/` and unprefixed aliases → 308.
-  - **Files Touched:** `web_ui_admin/src/{main,lib,layout}.rs`, `web_ui_admin/src/pages/{mod,auth,dashboard,aliases}.rs`
+  - **Description:** Add `playwright/e2e/admin-portal/staff-users.spec.ts` and `playwright/e2e/admin-portal/turnovers.spec.ts` verifying: (1) host invites new and shared multi-host cleaner email on `/admin/staff-users`, (2) cleaner redeems set-password link via `email_outbox` token and uses `/forgot-password`, (3) `Staff` lands on `/admin/turnovers` and receives `403`/blocked access on `/admin`, `/admin/bookings`, `/admin/listings`, `/admin/payouts`, `/admin/users`, `/admin/staff-users`, (4) mobile (`390x844`) dispatch board, status transitions including staff unsetting `Inspected & Ready`, manual turnover creation, and comment email outbox insertion, while (5) existing `users-admin.spec.ts` passes unchanged.
+  - **Files Touched:**
+    - `playwright/e2e/admin-portal/staff-users.spec.ts` (create)
+    - `playwright/e2e/admin-portal/turnovers.spec.ts` (create)
   - **Acceptance Criteria:**
-    - [ ] `auth` and `dashboard` specs green on NEW_ADMIN; aliases preserve method (POST stays POST).
-  - **Verification Command:** `npx playwright test admin-portal/auth admin-portal/dashboard --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 6, Task 7, Task 12, Task 20, Task 26
+    - [ ] `users-admin.spec.ts`, `staff-users.spec.ts`, and `turnovers.spec.ts` pass on Chromium and Firefox (including mobile viewport checks).
+  - **Verification Command:** `devenv shell -- npx playwright test playwright/e2e/admin-portal/users-admin.spec.ts playwright/e2e/admin-portal/staff-users.spec.ts playwright/e2e/admin-portal/turnovers.spec.ts`
+  - **Dependencies:** Task 8, Task 14, Task 15
 
-- [x] **Task 45: Host sign-up and verification**
+- [ ] **Task 17: Run Full `CONSTRAINTS.md` Workspace Gate**
   - **Scope:** S
-  - **Description:** `GET/POST /register`, `GET/POST /verify`, `POST /verify/resend` as form posts.
-  - **Files Touched:** `web_ui_admin/src/pages/register.rs`
+  - **Description:** Run every check required by `CONSTRAINTS.md` §2 and `sanity-check-workflow` (`cargo fmt --check`, offline `cargo check --workspace --exclude protoproj --all-features --tests`, `cargo clippy -- -D warnings`, `cargo clippy -- -D missing_docs`, panic/env-var/float `rg` gates on touched files and crate `src/`, `cargo sqlx prepare --workspace --check`, `cargo audit`, isolated `test-api` backend suite, and isolated `test-web-ui` suite).
+  - **Files Touched:**
+    - None (verification only; fix any surfaced lint or doc gaps in touched files)
   - **Acceptance Criteria:**
-    - [ ] `host-signup.spec.ts` green on NEW_ADMIN.
-  - **Verification Command:** `npx playwright test admin-portal/host-signup --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 44
-
-- [x] **Task 46: Listings list, detail, new, clone, create**
-  - **Scope:** M
-  - **Description:** A9–A12, A14 with dense `table` + `pagination`.
-  - **Files Touched:** `web_ui_admin/src/pages/listings/{mod,list,detail,create}.rs`
-  - **Acceptance Criteria:**
-    - [ ] `listings-admin.spec.ts` (non-edit tests) green on NEW_ADMIN.
-  - **Verification Command:** `npx playwright test admin-portal/listings-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 44
-
-- [x] **Task 47: Listing edit studio (fees, documents)**
-  - **Scope:** M
-  - **Description:** A13 in `tabs`, fees and documents sections.
-  - **Files Touched:** `web_ui_admin/src/pages/listings/edit.rs`
-  - **Acceptance Criteria:**
-    - [x] `listings-admin` green on NEW_ADMIN (edit round-trip keeps the owner). `listing-fees-and-documents` exercises the booking dialog, so it is verified in Task 50.
-  - **Verification Command:** `npx playwright test admin-portal/listings-admin admin-portal/listing-fees-and-documents --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 46
-
-- [x] **Task 48: Listing image upload via signed URL** (restored by owner decision 2026-10-28)
-  - **Scope:** S
-  - **Description:** A15 presign fragment + `ui.js` direct `PUT` to GCS (`data-upload` hook); `SecurityHeaders::admin()` adds `https://storage.googleapis.com` to `connect-src`.
-  - **Files Touched:** `web_ui_admin/src/pages/listings/images.rs`, `web_ui_common/src/assets/ui.js`, `web_ui_common/src/security_headers.rs`, `playwright/e2e/admin-portal/listing-images.spec.ts`
-  - **Acceptance Criteria:**
-    - [ ] `listing-images.spec.ts` green on NEW_ADMIN (GCS mocked via `page.route`); no image bytes go through the app server.
-  - **Verification Command:** `npx playwright test admin-portal/listing-images --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 47
-
-- [x] **Task 49: Seasonal pricing overrides**
-  - **Scope:** S
-  - **Description:** A16–A18 with `hx-post` → `#price-overrides-container` `outerHTML`.
-  - **Files Touched:** `web_ui_admin/src/pages/pricing.rs`
-  - **Acceptance Criteria:**
-    - [ ] `pricing-admin.spec.ts` green on NEW_ADMIN.
-  - **Verification Command:** `npx playwright test admin-portal/pricing-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 46
-
-- [x] **Task 50: Admin bookings list and detail dialog**
-  - **Scope:** M
-  - **Description:** A19–A21, A24, A24b: list, `hx-get` detail dialog, status + door-code forms, documents, cancellation quote (admin role only; hosts 403, control not rendered).
-  - **Files Touched:** `web_ui_admin/src/pages/bookings/{mod,list,detail,actions}.rs`
-  - **Acceptance Criteria:**
-    - [ ] `bookings-admin.spec.ts` green on NEW_ADMIN incl. host-403 quote test.
-  - **Verification Command:** `npx playwright test admin-portal/bookings-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 44
-
-- [x] **Task 51: Admin booking messages and change requests**
-  - **Scope:** M
-  - **Description:** A22, A23, A25.
-  - **Files Touched:** `web_ui_admin/src/pages/bookings/{messages,changes}.rs`
-  - **Acceptance Criteria:**
-    - [ ] `booking-messages-admin` and `reservation-changes-admin` specs green on NEW_ADMIN.
-  - **Verification Command:** `npx playwright test admin-portal/booking-messages-admin admin-portal/reservation-changes-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 23, Task 50
-
-- [x] **Task 52: Payouts (admin-only status override)**
-  - **Scope:** S
-  - **Description:** A26–A27: ledger for all; status form only for admin role with required reason; host POST → 403 (D10).
-  - **Files Touched:** `web_ui_admin/src/pages/payouts.rs`
-  - **Acceptance Criteria:**
-    - [x] `payouts-admin.spec.ts` green on NEW_ADMIN incl. host read-only + forged POST 403.
-  - **Verification Command:** `npx playwright test admin-portal/payouts-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 44
-
-- [x] **Task 53: Exchange rates**
-  - **Scope:** XS
-  - **Description:** A28 read-only table.
-  - **Files Touched:** `web_ui_admin/src/pages/exchange_rates.rs`
-  - **Acceptance Criteria:**
-    - [x] `exchange-rates.spec.ts` green on NEW_ADMIN.
-  - **Verification Command:** `npx playwright test admin-portal/exchange-rates --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 44
-
-- [x] **Task 54: User administration**
-  - **Scope:** M
-  - **Description:** A29–A31: list, new, create, update, delete, restore; `require_admin_role` everywhere; destructive actions behind `alert_dialog`.
-  - **Files Touched:** `web_ui_admin/src/pages/users/{mod,list,form,actions}.rs`
-  - **Acceptance Criteria:**
-    - [x] `users-admin.spec.ts` green on NEW_ADMIN incl. host 403.
-  - **Verification Command:** `npx playwright test admin-portal/users-admin --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Task 44
-
----
-
-## Phase 6: Deployment, gates and parity sign-off
-
-- [ ] **Task 55: Dockerfiles and compose services**
-  - **Scope:** S
-  - **Description:** `Dockerfile.web_ui_guest`, `Dockerfile.web_ui_admin`, compose services on 3010/3012 with `JWT_SECRET` env.
-  - **Files Touched:** `web_ui_guest/Dockerfile.web_ui_guest`, `web_ui_admin/Dockerfile.web_ui_admin`, `docker-compose.yml`
-  - **Acceptance Criteria:**
-    - [ ] Both images build; `docker compose up web_ui_guest web_ui_admin` serves `/` with CSP header.
-  - **Verification Command:** `docker compose build web_ui_guest web_ui_admin && docker compose up -d web_ui_guest web_ui_admin && curl -sI localhost:3010 | grep -i content-security-policy`
-  - **Dependencies:** Task 32, Task 44
-
-- [ ] **Task 56: Terraform Cloud Run services**
-  - **Scope:** S
-  - **Description:** `web-ui-guest` / `web-ui-admin` services (256 MiB, min 0, secret-mounted `JWT_SECRET`), no domain mapping.
-  - **Files Touched:** `infra/modules/app/*.tf`, `infra/environments.tf`, `infra/variables.tf`
-  - **Acceptance Criteria:**
-    - [ ] `terraform validate` passes; plan shows no domain-mapping changes.
-  - **Verification Command:** `cd infra && terraform fmt -check -recursive && terraform validate`
-  - **Dependencies:** Task 55
-
-- [ ] **Task 57: Tighten `CONSTRAINTS.md` gates**
-  - **Scope:** S
-  - **Description:** Panic gate over all Rust crates' production code (replacing `web_app/`), `missing_docs` covering `web_client` / `web_ui_*`, new test rows, `rg` gates for daisyUI/inline JS/legacy auth helpers. **Separate commit (decided 2026-10-28: the hold lasts 2 hours):** change the hold time from 15 minutes to 2 hours in `CONSTRAINTS.md` §3, the #96 intent, `docs/ARCHITECTURE.md`, and the skills that state it (`audit-booking-flow`, `build`, `plan-eng-review`, `security-and-hardening`, `security-review`, `sonarqube-guard`, `resilience-exploration`). Wording only.
-  - **Files Touched:** `CONSTRAINTS.md`, `docs/ARCHITECTURE.md`, `docs/intent/intent-96-…md`, `.claude/skills/{audit-booking-flow,build,plan-eng-review,security-and-hardening}/SKILL.md`, `.claude/skills/{security-review,sonarqube-guard,resilience-exploration}/REFERENCE.md`
-  - **Acceptance Criteria:**
-    - [ ] Every new gate command passes on the branch, including over `app_api/ common/ db_core/`.
-    - [ ] `rg -i '15[- ]minute' CONSTRAINTS.md docs/ARCHITECTURE.md .claude/skills` returns no matches about the booking hold.
-  - **Verification Command:** `! rg -q "\.(unwrap|expect)\(" web_client/src web_ui_common/src web_ui_guest/src web_ui_admin/src web_app_tc/src web_app_admin_tc/src web_app_common_tc/src && SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings -D missing_docs`
-  - **Dependencies:** Tasks 43, 54
-
-- [ ] **Task 58: Accessibility sweep**
-  - **Scope:** S
-  - **Description:** `@axe-core/playwright` spec visiting every page in both new apps × light/dim/dark; fix contrast/label issues found.
-  - **Files Touched:** `playwright/e2e/a11y/a11y.spec.ts`, `playwright/playwright.config.ts`, `package.json`
-  - **Acceptance Criteria:**
-    - [ ] Zero serious/critical violations across 6 theme combinations.
-  - **Verification Command:** `npx playwright test playwright/e2e/a11y`
-  - **Dependencies:** Tasks 43, 54
-
-- [ ] **Task 59: Parity gate, inventory sign-off and perf audit**
-  - **Scope:** S
-  - **Description:** Run the full parity command from the spec; update every inventory row's status; run `/cloudrun-perf-audit` on both new services; tick spec acceptance criteria.
-  - **Files Touched:** `docs/specs/spec-96-feat-redesigned-topcoat-ui-portals-daisyui-topcoat-ui.md`
-  - **Acceptance Criteria:**
-    - [ ] All 8 portal projects green; zero CSP violations; cold start < 300 ms p50, RSS < 256 MiB.
-    - [ ] `git diff --quiet b77cfb7a -- web_app_tc/src web_app_admin_tc/src`.
-  - **Verification Command:** `npx playwright test --project=guest-portal-chromium --project=guest-portal-firefox --project=admin-portal-chromium --project=admin-portal-firefox --project=guest-portal-new-chromium --project=guest-portal-new-firefox --project=admin-portal-new-chromium --project=admin-portal-new-firefox`
-  - **Dependencies:** Tasks 55–58
-
----
-
-## Risks scheduled early
-| Risk | Mitigation task |
-|---|---|
-| Topcoat runtime violates strict CSP | Task 2 (first after scaffold); D5 fallback pre-approved |
-| Topcoat UI registry immaturity | Task 3 early; components vendored and pinned |
-| Extraction breaks old crates | Tasks 4–5 gated by zero-diff + old test suites |
-| Calendar needs backend change | Tasks 27–29 independent of UI, can start day one |
-| Old-app parity tests reveal broken flows | Phase 2 runs before any new page; broken rows re-tagged `@new-only` and noted in the inventory |
-
-## Owner decisions
-- Hold TTL: the **2 hours** rule now in production is correct (2026-10-28). Docs are aligned in Task 57. No backend change.
+    - [ ] All `CONSTRAINTS.md` §2 checks pass with zero warnings, zero `.unwrap()`/`.expect()` in touched/production code, and zero undocumented public APIs.
+  - **Verification Command:** `cargo fmt --check && SQLX_OFFLINE=true cargo check --workspace --exclude protoproj --all-features --tests && SQLX_OFFLINE=true cargo clippy --workspace --exclude protoproj --all-features -- -D warnings && SQLX_OFFLINE=true cargo clippy --workspace --all-features -- -D missing_docs && ! git diff --name-only cce8b255...HEAD -- '*.rs' | xargs -r rg -q '\.(unwrap|expect)\(' && ! rg -q "f(32|64)" common/src/pricing.rs app_api/booking_api/ && ! rg -q 'env::var\("[A-Z0-9_]+"\)' app_api/ common/ db_core/ && devenv shell -- cargo sqlx prepare --workspace --check && cargo audit && devenv shell -- cargo test --verbose --workspace --exclude web_client --exclude web_ui_common --exclude web_ui_guest --exclude web_ui_admin --exclude protoproj && cargo test -p web_client -p web_ui_common -p web_ui_guest -p web_ui_admin --verbose`
+  - **Dependencies:** Task 16
