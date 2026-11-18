@@ -124,7 +124,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core action_token && devenv shell -- cargo test -p user_api password_reset`
   - **Dependencies:** Task 1, Task 2
 
-- [ ] **Task 5: Add `EmailTemplate` Variants and `email_worker` HTML Templates**
+- [x] **Task 5: Add `EmailTemplate` Variants and `email_worker` HTML Templates**
   - **Scope:** S
   - **Description:** Add `StaffInvite`, `StaffListingAssigned`, `PasswordResetLink`, and `TurnoverCommentNotification` to `common::email::EmailTemplate`. Create HTML templates in `app_api/email_worker/templates/` and register `app_api/email_worker/src/turnover_emails.rs` inside `processor.rs` (`RENDERERS` + `load_template`), escaping all dynamic values via `escape_html` and validating CTA links via `url::Url::parse` (`http`/`https` schemes only).
   - **Files Touched:**

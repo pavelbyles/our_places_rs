@@ -340,16 +340,17 @@ pub(super) async fn request_password_reset(
         .map_err(ApiError::Database)?;
 
         let reset_url = format!("{}/reset-password?token={raw_token}", admin_base_url());
-        let outbox_payload = serde_json::json!({
-            "first_name": user.first_name,
-            "reset_url": reset_url,
-            "expires_minutes": 30,
-        });
+        let outbox_payload = serde_json::to_value(common::email::PasswordResetLinkEmailPayload {
+            first_name: user.first_name,
+            reset_url,
+            expires_minutes: 30,
+        })
+        .map_err(|_| ApiError::Internal)?;
         let outbox = db_core::email_outbox::insert_email_outbox_conn(
             &mut tx,
             &user.email,
             "Reset your Our Places password",
-            "password_reset_link",
+            common::email::EmailTemplate::PasswordResetLink.as_str(),
             &outbox_payload,
             3,
         )

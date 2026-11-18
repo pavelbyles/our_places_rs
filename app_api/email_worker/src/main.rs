@@ -17,6 +17,8 @@ pub mod provider;
 mod request_emails;
 #[cfg(test)]
 mod tests;
+/// Staff invite, password reset link, and turnover comment emails.
+mod turnover_emails;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

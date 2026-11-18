@@ -143,6 +143,14 @@ pub enum EmailTemplate {
     CalendarConflictHost,
     /// Tells the host an imported calendar keeps failing to sync (#58).
     CalendarFeedFailingHost,
+    /// Invite email sent to newly created cleaning/maintenance crew with a single-use password setup link (#66).
+    StaffInvite,
+    /// Notification email sent when an existing staff member is assigned to listings (#66).
+    StaffListingAssigned,
+    /// Self-service password reset email carrying a single-use token link (#66).
+    PasswordResetLink,
+    /// Operational crew/host notification triggered by a new comment on a turnover event (#66).
+    TurnoverCommentNotification,
 }
 
 impl EmailTemplate {
@@ -217,6 +225,62 @@ pub struct CalendarFeedFailingHostPayload {
     pub failures: i32,
     /// The listing's calendar page in the admin portal.
     pub calendar_url: String,
+}
+
+/// Payload of [`EmailTemplate::StaffInvite`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaffInviteEmailPayload {
+    /// Invited staff member's first name.
+    pub first_name: String,
+    /// Inviting host or administrator display name.
+    pub host_name: String,
+    /// Names of listings currently assigned by this host.
+    pub listing_names: Vec<String>,
+    /// Admin portal password setup link carrying a single-use token.
+    pub setup_url: String,
+    /// Lifetime of the invite link in hours.
+    pub expires_hours: i64,
+}
+
+/// Payload of [`EmailTemplate::StaffListingAssigned`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaffListingAssignedEmailPayload {
+    /// Assigned staff member's first name.
+    pub first_name: String,
+    /// Host or administrator display name who updated assignments.
+    pub host_name: String,
+    /// Updated listing names assigned for this host.
+    pub listing_names: Vec<String>,
+    /// Deep link to the admin portal turnover dispatch view.
+    pub dispatch_url: String,
+}
+
+/// Payload of [`EmailTemplate::PasswordResetLink`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PasswordResetLinkEmailPayload {
+    /// Account holder's first name.
+    pub first_name: String,
+    /// Admin portal password reset link carrying a single-use token.
+    pub reset_url: String,
+    /// Lifetime of the reset link in minutes.
+    pub expires_minutes: i64,
+}
+
+/// Payload of [`EmailTemplate::TurnoverCommentNotification`]. Contains zero guest PII or financials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TurnoverCommentNotificationPayload {
+    /// Property listing name.
+    pub listing_name: String,
+    /// Turnover checkout / target date formatted `YYYY-MM-DD`.
+    pub checkout_date: String,
+    /// Display name of the comment author.
+    pub author_name: String,
+    /// Role of the comment author (`host`, `admin`, or `staff`).
+    pub author_role: String,
+    /// Plain-text comment body (escaped by email worker).
+    pub comment_body: String,
+    /// Deep link to `/admin/turnovers/{id}`.
+    pub turnover_url: String,
 }
 
 /// Strongly-typed email payload for guest booking confirmation.
@@ -966,5 +1030,26 @@ mod email_template_request_tests {
             ]
         );
         assert!(!names.contains(&"guest_host_message_notification"));
+    }
+
+    #[test]
+    fn turnover_email_templates_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        for (variant, expected) in [
+            (EmailTemplate::StaffInvite, "staff_invite"),
+            (
+                EmailTemplate::StaffListingAssigned,
+                "staff_listing_assigned",
+            ),
+            (EmailTemplate::PasswordResetLink, "password_reset_link"),
+            (
+                EmailTemplate::TurnoverCommentNotification,
+                "turnover_comment_notification",
+            ),
+        ] {
+            assert_eq!(variant.as_str(), expected);
+            assert_eq!(variant.to_string(), expected);
+            assert_eq!(EmailTemplate::from_str(expected)?, variant);
+        }
+        Ok(())
     }
 }
