@@ -7,8 +7,9 @@ use chrono::{NaiveDate, Utc};
 use common::app_client::encode_query_component;
 use common::reference::listing_today;
 use common::turnover::{
-    CreateManualTurnoverRequest, TransitionTurnoverRequest, TurnoverActorRole, TurnoverListQuery,
-    TurnoverResponse, TurnoverStatus, TurnoverWindow, allowed_next_statuses,
+    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, TransitionTurnoverRequest,
+    TurnoverActorRole, TurnoverCommentResponse, TurnoverListQuery, TurnoverResponse,
+    TurnoverStatus, TurnoverWindow, allowed_next_statuses,
 };
 use serde::Deserialize;
 use topcoat::{
@@ -17,7 +18,7 @@ use topcoat::{
     htmx::hx_request,
     router::{
         content::Form,
-        error::{not_found, see_other},
+        error::{forbidden, not_found, see_other},
         page, parse_query_params, path_param,
     },
     view::{View, component, view},
@@ -29,6 +30,7 @@ use web_client::{
     redirect::safe_redirect,
     session::{AdminRole, AdminSession},
 };
+use web_ui_common::components::chat::{chat_bubble, chat_thread};
 
 use crate::support::{dispatch_actor, scoped_listings, service_token};
 
@@ -153,6 +155,7 @@ fn notice_message(code: Option<&str>) -> Option<&'static str> {
     match code {
         Some("created") => Some("Manual turnover added to the dispatch board."),
         Some("updated") => Some("Turnover status updated."),
+        Some("commented") => Some("Note posted to the crew discussion thread."),
         _ => None,
     }
 }
@@ -983,6 +986,354 @@ pub async fn transition_turnover_action(
             <div role="alert" class="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
                 (err_msg)
             </div>
+        }
+    })
+}
+
+/// Form payload submitted by `POST /admin/turnovers/{id}/comments`.
+#[derive(Debug, Deserialize)]
+pub struct CommentForm {
+    /// Comment message body.
+    pub body: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DetailNoticeQuery {
+    #[serde(default)]
+    notice: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct HistoryEntryVm {
+    transition_label: String,
+    actor_summary: String,
+    timestamp: String,
+    reason: Option<String>,
+}
+
+#[component]
+async fn turnover_comment_bubble(
+    cx: &Cx,
+    comment: TurnoverCommentResponse,
+    viewer_id: Uuid,
+) -> Result<impl View> {
+    let mine = comment.author_user_id == Some(viewer_id);
+    let sent_at = comment.created_at.format("%b %d, %H:%M").to_string();
+    let sender = format!("{} ({})", comment.author_name, comment.author_role);
+    Ok(view! {
+        chat_bubble(
+            sender: sender,
+            sent_at: sent_at,
+            text: comment.body.clone(),
+            mine: mine,
+            attrs: topcoat::view::attributes! { id=(format!("turnover-comment-{}", comment.id)) }
+        )
+    })
+}
+
+/// Detailed view of a single turnover event including status history timeline and crew comments (`/admin/turnovers/{id}`).
+#[page("/admin/turnovers/{id}")]
+pub async fn turnover_detail_page(cx: &Cx) -> Result<impl View> {
+    let user = dispatch_actor(cx).await?;
+    let token = service_token(cx, &user)?;
+    let turnover_id = Uuid::parse_str(id(cx)).map_err(|_| not_found())?;
+    let q = parse_query_params::<DetailNoticeQuery>(cx).unwrap_or_default();
+
+    let detail = match get_api_client(cx)
+        .get_turnover_detail(turnover_id, &token)
+        .await
+    {
+        Ok(detail) => detail,
+        Err(UserCallError::NotFound) => return Err(not_found().into()),
+        Err(UserCallError::Unauthorized) => return Err(forbidden().into()),
+        Err(other) => {
+            tracing::error!(user_id = %user.user_id, %turnover_id, error = ?other, "failed to load turnover detail");
+            return Err(web_client::app_error(describe_board_error(&other)).into());
+        }
+    };
+
+    let detail_url = format!("/admin/turnovers/{turnover_id}");
+    let card = build_card_vm(detail.turnover, user.role, &detail_url, None, None);
+    let comment_action = format!("/admin/turnovers/{turnover_id}/comments");
+    let history_items: Vec<HistoryEntryVm> = detail
+        .status_history
+        .into_iter()
+        .map(|entry| {
+            let from_text = entry
+                .from_status
+                .map(|s| s.label().to_string())
+                .unwrap_or_else(|| "Created".to_string());
+            let who = entry
+                .actor_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| entry.actor_role.clone());
+            HistoryEntryVm {
+                transition_label: format!("{from_text} -> {}", entry.to_status.label()),
+                actor_summary: format!("{who} ({}, {})", entry.actor_role, entry.entry_point),
+                timestamp: entry.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                reason: entry.reason,
+            }
+        })
+        .collect();
+    let comments = detail.comments;
+    let flash_notice = notice_message(non_empty(q.notice.as_deref())).map(ToString::to_string);
+    let flash_error = non_empty(q.error.as_deref()).map(ToString::to_string);
+    let has_transitions = !card.transitions.is_empty();
+    let quick_action = card.status_action.clone();
+    let quick_expected = card.status_slug.clone();
+    let quick_return = detail_url.clone();
+    let quick_transitions = card.transitions.clone();
+    let note_action = card.status_action;
+    let note_expected = card.status_slug;
+    let note_transitions = card.transitions;
+
+    Ok(view! {
+        <div class="mx-auto max-w-4xl min-w-0 space-y-6 overflow-x-hidden px-3 py-4 sm:px-6">
+            <div>
+                <a
+                    href="/admin/turnovers"
+                    class="inline-flex min-h-[44px] items-center text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                    "← Back to Turnover Dispatch"
+                </a>
+                <div class="mt-2 flex flex-wrap items-start justify-between gap-3">
+                    <div class="min-w-0 space-y-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h1 class="text-2xl font-semibold tracking-tight break-words">
+                                (card.listing_name)
+                            </h1>
+                            <span class="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                                (card.source_label)
+                            </span>
+                        </div>
+                        if let Some(city) = card.listing_city {
+                            <p class="text-sm text-muted-foreground">(city)</p>
+                        }
+                        if let Some(title) = card.title {
+                            <p class="text-sm font-medium break-words">(title)</p>
+                        }
+                    </div>
+                    <span class=(card.status_badge_class)>(card.status_label)</span>
+                </div>
+            </div>
+
+            if let Some(msg) = flash_notice {
+                <div
+                    role="status"
+                    class="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200"
+                >
+                    (msg)
+                </div>
+            }
+            if let Some(err_msg) = flash_error {
+                <div
+                    role="alert"
+                    class="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+                >
+                    (err_msg)
+                </div>
+            }
+
+            <section class="rounded-xl border border-border bg-card p-4 sm:p-5 space-y-3">
+                <dl class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+                    <div>
+                        <dt class="text-xs text-muted-foreground">"Checkout Date"</dt>
+                        <dd class="font-medium">(card.checkout_date)</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-muted-foreground">"Next Check-In"</dt>
+                        <dd class="font-medium">(card.next_checkin_text)</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-muted-foreground">"Assigned Crew"</dt>
+                        <dd class="font-medium break-words">
+                            (card.assigned_staff_text.unwrap_or_else(|| "Unassigned".to_string()))
+                        </dd>
+                    </div>
+                </dl>
+                if let Some(policy) = card.policy_summary {
+                    <p class="text-xs text-muted-foreground">(policy)</p>
+                }
+
+                if has_transitions {
+                    <div class="space-y-3 border-t border-border pt-3">
+                        <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            "Update Status"
+                        </p>
+                        <div class="flex flex-wrap gap-2">
+                            for tr in quick_transitions {
+                                <form method="post" action=(quick_action.clone())>
+                                    <input type="hidden" name="to_status" value=(tr.slug.clone()) />
+                                    <input type="hidden" name="expected_status" value=(quick_expected.clone()) />
+                                    <input type="hidden" name="return_to" value=(quick_return.clone()) />
+                                    <button
+                                        type="submit"
+                                        data-status-target=(tr.slug)
+                                        class=(tr.button_class)
+                                    >
+                                        (tr.label)
+                                    </button>
+                                </form>
+                            }
+                        </div>
+                        <form
+                            method="post"
+                            action=(note_action)
+                            class="flex flex-col gap-2 sm:flex-row"
+                        >
+                            <input type="hidden" name="expected_status" value=(note_expected) />
+                            <input type="hidden" name="return_to" value=(detail_url) />
+                            <select
+                                name="to_status"
+                                aria-label="Target status with note"
+                                class="min-h-[44px] rounded-lg border border-border bg-background px-3 text-sm"
+                            >
+                                for tr in note_transitions {
+                                    <option value=(tr.slug)>(tr.label)</option>
+                                }
+                            </select>
+                            <input
+                                name="reason"
+                                type="text"
+                                maxlength="500"
+                                placeholder="Optional status note (e.g. broken AC valve)"
+                                class="min-h-[44px] flex-1 min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
+                            />
+                            <button
+                                type="submit"
+                                class="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted"
+                            >
+                                "Update with Note"
+                            </button>
+                        </form>
+                    </div>
+                }
+            </section>
+
+            <section class="space-y-3">
+                <h2 class="text-lg font-semibold">"Crew Comments"</h2>
+                chat_thread(
+                    attrs: topcoat::view::attributes! {
+                        id="turnover-comments-list"
+                        class="rounded-xl border border-border bg-card p-4"
+                    },
+                    if comments.is_empty() {
+                        <p class="text-sm text-muted-foreground">"No crew comments yet."</p>
+                    }
+                    for comment in comments {
+                        turnover_comment_bubble(comment: comment, viewer_id: user.user_id)
+                    }
+                )
+                <form
+                    id="turnover-comment-form"
+                    method="post"
+                    action=(comment_action.clone())
+                    hx-post=(comment_action)
+                    hx-target="#turnover-comments-list"
+                    hx-swap="beforeend"
+                    data-reset-on-success=""
+                    class="flex flex-col gap-2 sm:flex-row"
+                >
+                    <label for="turnover-comment-body" class="sr-only">"Comment"</label>
+                    <input
+                        id="turnover-comment-body"
+                        name="body"
+                        required=(true)
+                        maxlength="2000"
+                        autocomplete="off"
+                        placeholder="Add a note for the host & cleaning team..."
+                        class="min-h-[44px] flex-1 min-w-0 rounded-lg border border-border bg-background px-3 text-sm"
+                    />
+                    <button
+                        id="btn-post-turnover-comment"
+                        type="submit"
+                        class="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                    >
+                        "Post Comment"
+                    </button>
+                </form>
+            </section>
+
+            <section class="space-y-3">
+                <h2 class="text-lg font-semibold">"Status History"</h2>
+                if history_items.is_empty() {
+                    <p class="text-sm text-muted-foreground">"No status transitions recorded."</p>
+                } else {
+                    <ol class="space-y-2 rounded-xl border border-border bg-card p-4">
+                        for h in history_items {
+                            <li class="flex flex-col gap-0.5 border-b border-border/50 pb-2 text-sm last:border-b-0 last:pb-0">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="font-medium">(h.transition_label)</span>
+                                    <span class="text-xs text-muted-foreground">(h.timestamp)</span>
+                                </div>
+                                <span class="text-xs text-muted-foreground">(h.actor_summary)</span>
+                                if let Some(reason) = h.reason {
+                                    <p class="text-xs text-foreground break-words">(reason)</p>
+                                }
+                            </li>
+                        }
+                    </ol>
+                }
+            </section>
+        </div>
+    })
+}
+
+/// Posts a crew/host comment onto a turnover thread (`POST /admin/turnovers/{id}/comments`).
+/// HTMX requests receive a single rendered `chat_bubble` fragment; plain form POSTs redirect back to detail.
+#[page(POST "/admin/turnovers/{id}/comments")]
+pub async fn post_turnover_comment_action(
+    cx: &Cx,
+    /// Submitted comment form payload.
+    Form(form): Form<CommentForm>,
+) -> Result<impl View> {
+    let user = dispatch_actor(cx).await?;
+    let token = service_token(cx, &user)?;
+    let turnover_id = Uuid::parse_str(id(cx)).map_err(|_| not_found())?;
+    let detail_url = format!("/admin/turnovers/{turnover_id}");
+    let is_htmx = hx_request(cx);
+    let trimmed = form.body.trim().to_string();
+
+    let sent = if trimmed.is_empty() {
+        Err("Write a comment before posting.".to_string())
+    } else {
+        match get_api_client(cx)
+            .post_turnover_comment(
+                turnover_id,
+                &CreateTurnoverCommentRequest { body: trimmed },
+                &token,
+            )
+            .await
+        {
+            Ok(comment) => Ok(comment),
+            Err(UserCallError::NotFound) => return Err(not_found().into()),
+            Err(UserCallError::Unauthorized) => return Err(forbidden().into()),
+            Err(err) => {
+                tracing::warn!(user_id = %user.user_id, %turnover_id, error = ?err, "failed to post turnover comment");
+                Err(describe_mutation_error(&err))
+            }
+        }
+    };
+
+    if !is_htmx {
+        return match sent {
+            Ok(_) => {
+                Err(see_other(append_flash_params(&detail_url, Some("commented"), None)).into())
+            }
+            Err(msg) => Err(see_other(append_flash_params(&detail_url, None, Some(&msg))).into()),
+        };
+    }
+
+    Ok(view! {
+        if let Ok(comment) = sent {
+            turnover_comment_bubble(comment: comment, viewer_id: user.user_id)
+        } else if let Err(error) = sent {
+            <p role="alert" class="text-sm text-destructive">(error)</p>
         }
     })
 }

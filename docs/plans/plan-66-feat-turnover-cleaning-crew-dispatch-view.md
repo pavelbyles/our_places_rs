@@ -276,15 +276,15 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_common -p web_ui_admin`
   - **Dependencies:** Task 6, Task 11
 
-- [ ] **Task 14: Build `web_ui_admin` `/admin/turnovers/{id}` Detail & Comment Thread UI**
+- [x] **Task 14: Build `web_ui_admin` `/admin/turnovers/{id}` Detail & Comment Thread UI**
   - **Scope:** S
   - **Description:** Add `/admin/turnovers/{id}` and `POST /admin/turnovers/{id}/comments` handlers in `web_ui_admin/src/pages/turnovers.rs`, displaying turnover details, full allowed status controls, `turnover_status_history` timeline, and chronological comment thread reusing `web_ui_common::components::chat::{chat_thread, chat_bubble}` with HTMX partial updates (`data-reset-on-success`).
   - **Files Touched:**
     - `web_ui_admin/src/pages/turnovers.rs`
     - `web_ui_admin/tests/turnover_dispatch.rs` (create)
   - **Acceptance Criteria:**
-    - [ ] Posting a comment appends a `chat_bubble` fragment without page reload and triggers backend outbox queueing.
-    - [ ] Unauthorized listing IDs return `404`/`403` without leaking listing title or comments.
+    - [x] Posting a comment appends a `chat_bubble` fragment without page reload and triggers backend outbox queueing.
+    - [x] Unauthorized listing IDs return `404`/`403` without leaking listing title or comments.
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p web_ui_admin --test turnover_dispatch`
   - **Dependencies:** Task 12, Task 13
 
