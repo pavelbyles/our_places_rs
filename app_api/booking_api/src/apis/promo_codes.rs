@@ -1,7 +1,7 @@
 //! Promo code management. Admins manage every code; hosts manage only their own,
 //! for their own listings. Code strings never enter a log: only IDs do.
 
-use super::{is_admin, require_staff};
+use super::{is_admin, require_host_or_admin};
 use actix_web::{HttpResponse, web};
 use api_core::auth::Claims;
 use api_core::error::ApiError;
@@ -93,7 +93,7 @@ pub(super) async fn list_promo_codes(
     pool: web::Data<PgPool>,
     query: web::Query<PromoCodeListQuery>,
 ) -> Result<HttpResponse, ApiError> {
-    let user = require_staff(pool.get_ref(), &claims, "manage promo codes").await?;
+    let user = require_host_or_admin(pool.get_ref(), &claims, "manage promo codes").await?;
     let owner = (!is_admin(&user)).then_some(user.id);
     let (codes, total) = db_core::promo::list_codes(
         pool.get_ref(),
@@ -126,7 +126,7 @@ pub(super) async fn get_promo_code(
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<HttpResponse, ApiError> {
-    let user = require_staff(pool.get_ref(), &claims, "manage promo codes").await?;
+    let user = require_host_or_admin(pool.get_ref(), &claims, "manage promo codes").await?;
     let stats = manageable_code(pool.get_ref(), &user, *id, "view").await?;
     Ok(HttpResponse::Ok().json(response(stats)))
 }
@@ -153,7 +153,7 @@ pub(super) async fn create_promo_code(
     pool: web::Data<PgPool>,
     body: web::Json<CreatePromoCodeRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let user = require_staff(pool.get_ref(), &claims, "manage promo codes").await?;
+    let user = require_host_or_admin(pool.get_ref(), &claims, "manage promo codes").await?;
     let body = body.into_inner();
     let code = validate_new_code(&body).map_err(|reason| {
         tracing::warn!(user_id = %user.id, %reason, "rejected promo code terms");
@@ -223,7 +223,7 @@ pub(super) async fn deactivate_promo_code(
     pool: web::Data<PgPool>,
     id: web::Path<Uuid>,
 ) -> Result<HttpResponse, ApiError> {
-    let user = require_staff(pool.get_ref(), &claims, "manage promo codes").await?;
+    let user = require_host_or_admin(pool.get_ref(), &claims, "manage promo codes").await?;
     manageable_code(pool.get_ref(), &user, *id, "deactivate").await?;
     db_core::promo::deactivate_code(pool.get_ref(), *id, user.id).await?;
     tracing::info!(promo_code_id = %*id, actor_id = %user.id, "promo code deactivated");

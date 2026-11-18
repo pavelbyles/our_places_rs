@@ -16,7 +16,7 @@ use topcoat::{
 use uuid::Uuid;
 
 use crate::pages::listings::managed_listing;
-use crate::support::{service_token, staff};
+use crate::support::{host_or_admin, service_token};
 use web_ui_common::components::domain::price_breakdown::money;
 
 path_param!(id);
@@ -74,7 +74,7 @@ async fn load(cx: &Cx) -> Result<ListingResponse> {
 
 /// The managed listing, and the user's token for writes to it.
 async fn load_as(cx: &Cx) -> Result<(ListingResponse, String)> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;

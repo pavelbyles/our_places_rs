@@ -749,11 +749,12 @@ mod promo_codes {
         let host = user(&pool, UserRole::Host).await;
         let other_host = user(&pool, UserRole::Host).await;
         let guest = user(&pool, UserRole::Booker).await;
+        let crew = user(&pool, UserRole::Staff).await;
         let villa = listing(&pool, host).await;
         let other_villa = listing(&pool, other_host).await;
         let app = app!(pool);
 
-        // Anonymous callers get 401 and guests 403, on every route.
+        // Anonymous callers get 401 and guests/staff 403, on every route.
         let id = Uuid::now_v7();
         let routes = || {
             [
@@ -771,6 +772,15 @@ mod promo_codes {
         for req in routes() {
             assert_eq!(call!(app, req, Some(guest)).status(), 403);
         }
+        for req in routes() {
+            assert_eq!(call!(app, req, Some(crew)).status(), 403);
+        }
+        let rate_resp = call!(
+            app,
+            test::TestRequest::get().uri("/api/v1/admin/exchange-rates"),
+            Some(crew)
+        );
+        assert_eq!(rate_resp.status(), 403);
 
         // A host can't select another host's listing.
         let resp = call!(

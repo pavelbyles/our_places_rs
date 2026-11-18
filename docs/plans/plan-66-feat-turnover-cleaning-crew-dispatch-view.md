@@ -85,7 +85,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo test -p db_core turnover_migration_tests`
   - **Dependencies:** None
 
-- [ ] **Task 3: Rename `staff` Guards to `host_or_admin` and Add `AdminRole::Staff`**
+- [x] **Task 3: Rename `staff` Guards to `host_or_admin` and Add `AdminRole::Staff`**
   - **Scope:** M
   - **Description:** Eliminate the `staff` naming collision before adding crew routes. Rename `web_ui_admin::support::staff` to `host_or_admin` across all existing privileged page handlers, and rename `booking_api`'s `require_staff` to `require_host_or_admin` in `mod.rs`, `promo_codes.rs`, and `exchange_rates.rs`. Add `AdminRole::Staff` in `web_client/src/session.rs` and update `portal_role` in `web_ui_admin/src/support.rs` (`Admin > Host > Staff`). Because `web_client::session::require_admin(cx)` accepts any `AdminRole`, ensure `web_ui_admin::support::host_or_admin(cx)` explicitly rejects `AdminRole::Staff` with `GuardError::Forbidden`, and `admin_only` rejects `AdminRole::Staff`.
   - **Files Touched:**

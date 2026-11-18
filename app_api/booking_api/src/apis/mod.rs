@@ -256,22 +256,26 @@ async fn require_admin(
 }
 
 /// The calling user, who must be an administrator or a host (403 otherwise).
-async fn require_staff(
+async fn require_host_or_admin(
     pool: &PgPool,
     claims: &api_core::auth::Claims,
     action: &str,
 ) -> Result<db_core::models::User, ApiError> {
     let user = caller(pool, claims).await?;
-    let staff = user.roles.iter().any(|r| {
+    let allowed = user.roles.iter().any(|r| {
         matches!(
             r,
             db_core::models::UserRole::Admin | db_core::models::UserRole::Host
         )
     });
-    if staff {
+    if allowed {
         Ok(user)
     } else {
-        tracing::warn!(user_id = %claims.sub, action, "non-staff attempted a staff-only action");
+        tracing::warn!(
+            user_id = %claims.sub,
+            action,
+            "non-host/non-admin attempted a host/admin action"
+        );
         Err(ApiError::Forbidden(format!(
             "Only administrators and hosts can {action}"
         )))

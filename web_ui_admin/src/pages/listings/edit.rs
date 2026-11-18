@@ -15,7 +15,7 @@ use super::form::{ListingFields, api_rejection_messages, listing_form};
 use super::images::{listing_photos, photo_grid, suite_photo_choices};
 
 use super::managed_listing;
-use crate::support::{service_token, staff};
+use crate::support::{host_or_admin, service_token};
 
 path_param!(id);
 
@@ -34,7 +34,7 @@ pub async fn edit_prefill(
 /// The studio form for an existing listing.
 #[page("/admin/listings/{id}/edit")]
 pub async fn edit_listing_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
@@ -123,7 +123,7 @@ pub async fn update_listing(
     /// The studio form.
     Form(fields): Form<ListingFields>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;

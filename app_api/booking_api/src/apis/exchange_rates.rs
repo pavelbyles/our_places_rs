@@ -14,7 +14,7 @@ use db_core::error::DbError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{require_admin, require_staff};
+use super::{require_admin, require_host_or_admin};
 
 fn bad_request(e: impl std::fmt::Display) -> ApiError {
     ApiError::Database(DbError::ValidationError(e.to_string()))
@@ -53,7 +53,7 @@ pub(super) async fn current_rates(
     claims: api_core::auth::Claims,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, ApiError> {
-    require_staff(pool.get_ref(), &claims, "view exchange rates").await?;
+    require_host_or_admin(pool.get_ref(), &claims, "view exchange rates").await?;
     db_core::exchange_rate::list_current_rates(pool.get_ref(), Utc::now())
         .await
         .map(|rates| HttpResponse::Ok().json(ExchangeRatesResponse { rates }))

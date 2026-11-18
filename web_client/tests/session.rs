@@ -68,6 +68,25 @@ fn admin_role_guard_forbids_hosts() {
 }
 
 #[test]
+fn staff_role_maps_to_dispatch_only_and_is_rejected_by_host_or_admin_and_admin_only() {
+    let staff = AdminSession::from_session(&session("admin", "staff", Uuid::now_v7()));
+    assert_eq!(staff.as_ref().map(|s| s.role), Ok(AdminRole::Staff));
+    assert_eq!(
+        staff.clone().and_then(AdminSession::require_host_or_admin),
+        Err(GuardError::Forbidden)
+    );
+    assert_eq!(
+        staff.and_then(AdminSession::require_admin_role),
+        Err(GuardError::Forbidden)
+    );
+
+    let host = AdminSession::from_session(&session("admin", "host", Uuid::now_v7()));
+    let admin = AdminSession::from_session(&session("admin", "admin", Uuid::now_v7()));
+    assert!(host.and_then(AdminSession::require_host_or_admin).is_ok());
+    assert!(admin.and_then(AdminSession::require_host_or_admin).is_ok());
+}
+
+#[test]
 fn login_redirect_encodes_next_path() {
     assert_eq!(
         login_redirect("/checkout/villa-a?check_in=2027-01-02&adults=2"),

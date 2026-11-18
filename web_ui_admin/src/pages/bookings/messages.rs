@@ -15,7 +15,7 @@ use topcoat::{
 use web_client::{get_api_client, session::AdminSession};
 use web_ui_common::components::chat::{chat_bubble, chat_thread};
 
-use crate::support::{scoped_bookings, scoped_listings, service_token, staff};
+use crate::support::{host_or_admin, scoped_bookings, scoped_listings, service_token};
 
 path_param!(code);
 
@@ -55,7 +55,7 @@ async fn message_bubble(cx: &Cx, message: BookingMessageResponse) -> Result<impl
 /// The thread for one booking.
 #[page("/admin/bookings/{code}/messages")]
 pub async fn admin_messages_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_by_code(cx, &user, code(cx)).await?;
     let token = service_token(cx, &user)?;
     let api = get_api_client(cx);
@@ -126,7 +126,7 @@ pub async fn admin_send_message(
     /// The message form.
     Form(form): Form<MessageForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_by_code(cx, &user, code(cx)).await?;
     let token = service_token(cx, &user)?;
     let text = form.message_text.trim().to_string();

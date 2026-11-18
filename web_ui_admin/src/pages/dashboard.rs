@@ -11,7 +11,7 @@ use topcoat::{
 use web_client::session::AdminRole;
 use web_ui_common::components::{domain::price_breakdown::money, stat_tile::stat_tile};
 
-use crate::support::{scoped_bookings, scoped_listings, service_token, staff};
+use crate::support::{host_or_admin, scoped_bookings, scoped_listings, service_token};
 
 /// The calendar problems card: open conflicts and failing imported
 /// calendars, linking to each listing's calendar page. Renders nothing when
@@ -82,7 +82,7 @@ async fn calendar_overview(
 /// The console dashboard: listings, holds and revenue in the user's scope.
 #[page("/admin")]
 pub async fn dashboard_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let listings = scoped_listings(cx, &user).await;
     let bookings = scoped_bookings(cx, &user, &listings).await;
     let calendar = calendar_overview(cx, &user).await;
@@ -109,6 +109,7 @@ pub async fn dashboard_page(cx: &Cx) -> Result<impl View> {
     let scope = match user.role {
         AdminRole::Admin => "All listings on the platform",
         AdminRole::Host => "Your listings",
+        AdminRole::Staff => "Assigned listings",
     };
     let action = "inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm font-medium no-underline text-foreground";
     Ok(view! {

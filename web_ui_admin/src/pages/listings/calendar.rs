@@ -24,7 +24,7 @@ use web_client::client::UserCallError;
 use web_client::get_api_client;
 
 use crate::pages::listings::managed_listing;
-use crate::support::{service_token, staff};
+use crate::support::{host_or_admin, service_token};
 
 path_param!(id);
 path_param!(fid);
@@ -76,7 +76,7 @@ struct ConflictPageQuery {
 
 /// What the page needs per request: the listing and the user's token.
 async fn load(cx: &Cx) -> Result<(ListingResponse, String)> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;

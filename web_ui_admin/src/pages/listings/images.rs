@@ -26,7 +26,7 @@ use web_ui_common::components::domain::responsive_image::responsive_image;
 use web_ui_common::components::toast::{ToastVariant, toast};
 
 use super::managed_listing;
-use crate::support::{service_token, staff};
+use crate::support::{host_or_admin, service_token};
 
 path_param!(id);
 
@@ -75,7 +75,7 @@ pub async fn presign_images(
     cx: &Cx,
     Json(request): Json<UploadRequest>,
 ) -> Result<Json<Vec<ImagePresignResponse>>> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
@@ -295,7 +295,7 @@ pub async fn remove_image(
     /// The remove form.
     Form(form): Form<RemoveForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
@@ -334,7 +334,7 @@ pub async fn name_image(
     /// The name form.
     Form(form): Form<NameForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let listing = managed_listing(cx, &user, raw).await?;
