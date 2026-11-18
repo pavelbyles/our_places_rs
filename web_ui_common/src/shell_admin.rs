@@ -161,9 +161,9 @@ pub async fn admin_chrome(
                         }
                     </nav>
                 </aside>
-                <div class="flex min-w-0 flex-1 flex-col">
+                <div class="flex min-w-0 flex-1 flex-col overflow-x-hidden">
                     <header
-                        class="flex items-center justify-between gap-4 border-b border-border px-6 py-3"
+                        class="flex items-center justify-between gap-2 border-b border-border px-3 py-3 sm:gap-4 sm:px-6"
                     >
                         <details
                             id="admin-mobile-nav"
@@ -229,29 +229,29 @@ pub async fn admin_chrome(
                                 }
                             </nav>
                         </details>
-                        <div class="ml-auto flex items-center gap-3">
+                        <div class="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
                             theme_toggle(theme: theme)
-                            <div class="text-right text-sm leading-tight">
-                                <p id="admin-top-user-name" class="font-medium">
+                            <div class="min-w-0 flex-1 text-right text-sm leading-tight sm:flex-initial sm:max-w-xs">
+                                <p id="admin-top-user-name" class="truncate font-medium">
                                     (user.name)
                                 </p>
-                                <p class="text-xs text-muted-foreground">
+                                <p class="truncate text-xs text-muted-foreground">
                                     <span id="admin-top-user-role">(role_label)</span>
                                     " · "
                                     (user.email)
                                 </p>
                             </div>
-                            <form method="post" action="/logout">
+                            <form method="post" action="/logout" class="shrink-0">
                                 <button
                                     type="submit"
-                                    class="h-10 rounded-full border border-border px-4 text-sm"
+                                    class="h-10 whitespace-nowrap rounded-full border border-border px-3 text-xs sm:px-4 sm:text-sm"
                                 >
                                     "Sign out"
                                 </button>
                             </form>
                         </div>
                     </header>
-                    <main id="main" class="flex-1 px-6 py-8">(child)</main>
+                    <main id="main" class="min-w-0 flex-1 px-3 py-5 sm:px-6 sm:py-8">(child)</main>
                 </div>
             </div>
         } else {

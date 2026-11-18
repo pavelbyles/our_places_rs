@@ -305,14 +305,15 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace --check`
   - **Dependencies:** Task 7, Task 12
 
-- [ ] **Task 16: Add Playwright E2E Suites for Staff Invites, Password Flows, Isolation & Dispatch Board**
+- [x] **Task 16: Add Playwright E2E Suites for Staff Invites, Password Flows, Isolation & Dispatch Board**
   - **Scope:** M
-  - **Description:** Add `playwright/e2e/admin-portal/staff-users.spec.ts` and `playwright/e2e/admin-portal/turnovers.spec.ts` verifying: (1) host invites new and shared multi-host cleaner email on `/admin/staff-users`, (2) cleaner redeems set-password link via `email_outbox` token and uses `/forgot-password`, (3) `Staff` lands on `/admin/turnovers` and receives `403`/blocked access on `/admin`, `/admin/bookings`, `/admin/listings`, `/admin/payouts`, `/admin/users`, `/admin/staff-users`, (4) mobile (`390x844`) dispatch board, status transitions including staff unsetting `Inspected & Ready`, manual turnover creation, and comment email outbox insertion, while (5) existing `users-admin.spec.ts` passes unchanged.
+  - **Description:** Add `playwright/e2e/admin-portal/staff-users.spec.ts` and `playwright/e2e/admin-portal/turnovers.spec.ts` verifying: (1) host invites new and shared multi-host cleaner email on `/admin/staff-users`, (2) cleaner redeems set-password link via `email_outbox` token and uses `/forgot-password`, (3) `Staff` lands on `/admin/turnovers` and receives `403`/blocked access on `/admin`, `/admin/bookings`, `/admin/listings`, `/admin/payouts`, `/admin/users`, `/admin/staff-users`, (4) mobile (`390x844`) dispatch board, status transitions including staff unsetting `Inspected & Ready`, manual turnover creation, and comment email outbox insertion, while (5) existing `users-admin.spec.ts` passes unchanged. Fixed mobile header horizontal overflow in `web_ui_common/src/shell_admin.rs` surfaced by `390x844` viewport verification.
   - **Files Touched:**
     - `playwright/e2e/admin-portal/staff-users.spec.ts` (create)
     - `playwright/e2e/admin-portal/turnovers.spec.ts` (create)
+    - `web_ui_common/src/shell_admin.rs` (modify — mobile top bar truncation/overflow fix)
   - **Acceptance Criteria:**
-    - [ ] `users-admin.spec.ts`, `staff-users.spec.ts`, and `turnovers.spec.ts` pass on Chromium and Firefox (including mobile viewport checks).
+    - [x] `users-admin.spec.ts`, `staff-users.spec.ts`, and `turnovers.spec.ts` pass on Chromium and Firefox (including mobile viewport checks).
   - **Verification Command:** `devenv shell -- npx playwright test playwright/e2e/admin-portal/users-admin.spec.ts playwright/e2e/admin-portal/staff-users.spec.ts playwright/e2e/admin-portal/turnovers.spec.ts`
   - **Dependencies:** Task 8, Task 14, Task 15
 
