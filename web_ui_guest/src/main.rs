@@ -5,11 +5,15 @@ use std::env;
 use tokio::net::TcpListener;
 use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
 use topcoat::cookie::CookieLayer;
+use topcoat::metadata::Metadata;
 use topcoat::router::{Router, RouterBuilderDiscoverExt};
 use topcoat::session::{SessionTokenStore, cookie::CookieTokenStore};
 use web_client::{TopcoatApiClient, jwt::ServiceJwt};
 use web_ui_common::map_config::MapConfig;
 use web_ui_common::security_headers::SecurityHeaders;
+use web_ui_common::site_config::{
+    GUEST_PORTAL_URL_ENV, SiteConfig, default_image_metadata, site_metadata,
+};
 
 use web_ui_guest::DEFAULT_PORT;
 
@@ -25,6 +29,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Link the layout so Topcoat's discovery sees this crate's routes.
     let _ = web_ui_guest::layout::guest_layout;
+
+    // Fail fast (spec 102 §1.1): canonical, Open Graph and sitemap URLs are
+    // built from GUEST_PORTAL_URL, never from the request's Host header.
+    let site = SiteConfig::from_env().inspect_err(|e| {
+        tracing::error!(
+            variable = GUEST_PORTAL_URL_ENV,
+            reason = %e,
+            "invalid site configuration; refusing to start"
+        );
+    })?;
+    let site_indexable = site.indexable();
 
     // Fail fast: no fallback signing secret, and rendering any page panics
     // without the asset bundle (topcoat-asset), so neither may be missing.
@@ -50,7 +65,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(CookieLayer::new())
         .with(sessions)
         .with(TopcoatApiClient::from_env())
-        .with(service_jwt);
+        .with(service_jwt)
+        .with(site.base_url().clone())
+        .with(site)
+        // Site-wide head metadata; pages override fields (spec 102 §1.5).
+        .with(Metadata::from_fn(site_metadata))
+        .with(default_image_metadata());
     let builder = match map_config.clone() {
         Some(map) => builder.with(map),
         None => builder,
@@ -60,6 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(
             SecurityHeaders::new()
                 .with_hsts(hsts)
+                .indexable(site_indexable)
+                .noindex_prefixes(web_ui_guest::seo::PRIVATE_PREFIXES)
                 .with_storage_origin(common::gcs::emulator_endpoint())
                 .with_map_origin(map_config.as_ref()),
         )

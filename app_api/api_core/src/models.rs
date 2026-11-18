@@ -19,6 +19,7 @@ pub fn map_listing_to_response(
     common::models::ListingResponse {
         price_unavailable_in: None,
         stay_total: None,
+        last_modified_at: Some(listing.last_modified_at),
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,
@@ -119,6 +120,7 @@ pub fn map_listing_with_owner_to_response(
     common::models::ListingResponse {
         price_unavailable_in: None,
         stay_total: None,
+        last_modified_at: Some(listing.last_modified_at),
         id: listing.id,
         user_id: listing.user_id,
         name: listing.name,
@@ -410,6 +412,8 @@ mod tests {
             extra_guest_fee: rust_decimal::Decimal::ZERO,
             booking_mode: common::booking_request::BookingMode::Instant,
             location_privacy: common::location::LocationPrivacy::Approximate,
+            updated_at: chrono::Utc::now(),
+            last_modified_at: chrono::Utc::now(),
         }
     }
 

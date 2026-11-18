@@ -26,5 +26,7 @@ pub mod promo_codes;
 pub mod register;
 /// Inbox, request and enquiry detail (#105).
 pub mod requests;
+/// `/robots.txt`: disallow everything.
+pub mod robots;
 /// User administration.
 pub mod users;

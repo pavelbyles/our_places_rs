@@ -160,15 +160,33 @@ pub async fn search_listings_at(
 
 /// Fetches a listing by ID or slug, with prices in `currency` when given.
 pub async fn get_listing_by_id(id: &str, currency: Option<&str>) -> Result<ListingDetails> {
-    let api_url = listing_api_url();
-    let mut url = format!("{}/api/v1/listings/{}", api_url, id);
+    get_listing_by_id_at(
+        get_client(),
+        &listing_api_url(),
+        &listing_api_audience(),
+        id,
+        currency,
+    )
+    .await
+}
+
+/// Fetches a listing by ID or slug through a given client and address
+/// (spec 102: testable against a mock `listing_api`). The ID and currency
+/// are percent-encoded, so a crafted path value can't add query parameters.
+pub async fn get_listing_by_id_at(
+    client: &AuthenticatedClient,
+    base_url: &str,
+    audience: &str,
+    id: &str,
+    currency: Option<&str>,
+) -> Result<ListingDetails> {
+    let mut url = format!("{base_url}/api/v1/listings/{}", crate::query::urlencode(id));
     if let Some(c) = currency.filter(|c| !c.is_empty()) {
-        url.push_str(&format!("?currency={}", c));
+        url.push_str(&format!("?currency={}", crate::query::urlencode(c)));
     }
 
-    let audience = listing_api_audience();
-    let res = get_client()
-        .get(&url, &audience)
+    let res = client
+        .get(&url, audience)
         .await
         .context("Failed to connect to listing service")?;
 

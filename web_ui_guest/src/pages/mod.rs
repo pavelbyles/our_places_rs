@@ -36,5 +36,7 @@ pub mod register;
 pub mod requests;
 /// Verified reviews.
 pub mod reviews;
+/// `/robots.txt` and `/sitemap.xml` for search engines.
+pub mod seo;
 /// Email verification and resend.
 pub mod verify;

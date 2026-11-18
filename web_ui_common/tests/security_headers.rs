@@ -5,13 +5,13 @@ use tokio::net::TcpListener;
 use topcoat::{
     Result,
     context::Cx,
-    router::{Router, RouterBuilderDiscoverExt, page},
+    router::{Router, RouterBuilderDiscoverExt, page, response::Response, route},
     view::{View, view},
 };
 use web_ui_common::map_config::MapConfig;
 use web_ui_common::security_headers::{
-    ADMIN_CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY, HTML_CACHE_CONTROL, SecurityHeaders,
-    csp_with_storage_origin,
+    ADMIN_CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY, HTML_CACHE_CONTROL, ROBOTS_NOINDEX,
+    SecurityHeaders, csp_with_storage_origin, robots_rule_matches,
 };
 
 #[page("/__probe")]
@@ -26,8 +26,27 @@ async fn probe_post(cx: &Cx) -> Result<impl View> {
     Ok(view! { <p>"posted"</p> })
 }
 
+/// A non-HTML response (spec 102 §1.6: `X-Robots-Tag` covers every type).
+#[route(GET "/__probe.txt")]
+async fn probe_text(cx: &Cx) -> Result<Response> {
+    let _ = cx;
+    Response::builder()
+        .status(200)
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("cache-control", "public, max-age=3600")
+        .body("probe".to_string().into())
+        .map_err(|e| topcoat::router::error::internal_server_error(e).into())
+}
+
+/// A page under a private prefix.
+#[page("/__private/inbox")]
+async fn probe_private(cx: &Cx) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! { <p>"private"</p> })
+}
+
 async fn serve(layer: SecurityHeaders) -> String {
-    let _ = (probe_page, probe_post);
+    let _ = (probe_page, probe_post, probe_text, probe_private);
     let router = Router::builder().discover().layer(layer).build();
     let listener = TcpListener::bind("127.0.0.1:0").await.ok();
     let addr = listener.as_ref().and_then(|l| l.local_addr().ok());
@@ -307,4 +326,113 @@ async fn an_emulator_map_origin_is_its_own_bucket_path() {
         ]),
         "{csp}"
     );
+}
+
+// ---- Spec 102 §1.6: X-Robots-Tag ----
+
+async fn robots_header(
+    layer: SecurityHeaders,
+    path: &str,
+) -> reqwest::Result<(u16, Option<String>)> {
+    let base = serve(layer).await;
+    let res = reqwest::get(format!("{base}{path}")).await?;
+    let header = res
+        .headers()
+        .get("x-robots-tag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    Ok((res.status().as_u16(), header))
+}
+
+#[tokio::test]
+async fn noindex_is_the_default_on_html_pages() -> reqwest::Result<()> {
+    let (status, header) = robots_header(SecurityHeaders::new(), "/__probe").await?;
+    assert_eq!(status, 200);
+    assert_eq!(header.as_deref(), Some(ROBOTS_NOINDEX));
+    Ok(())
+}
+
+#[tokio::test]
+async fn noindex_covers_non_html_responses() -> reqwest::Result<()> {
+    let base = serve(SecurityHeaders::new()).await;
+    let res = reqwest::get(format!("{base}/__probe.txt")).await?;
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.headers()["x-robots-tag"], ROBOTS_NOINDEX);
+    // Only HTML gets the private cache policy; the route's own stays.
+    assert_eq!(res.headers()["cache-control"], "public, max-age=3600");
+    Ok(())
+}
+
+#[tokio::test]
+async fn noindex_covers_error_responses() -> reqwest::Result<()> {
+    let (status, header) = robots_header(SecurityHeaders::new(), "/no-such-page").await?;
+    assert_eq!(status, 404);
+    assert_eq!(header.as_deref(), Some(ROBOTS_NOINDEX));
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_indexable_site_sends_no_robots_header() -> reqwest::Result<()> {
+    let (status, header) =
+        robots_header(SecurityHeaders::new().indexable(true), "/__probe").await?;
+    assert_eq!(status, 200);
+    assert_eq!(header, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn private_prefixes_stay_noindex_on_an_indexable_site() -> reqwest::Result<()> {
+    let layer = SecurityHeaders::new()
+        .indexable(true)
+        .noindex_prefixes(&["/__private"]);
+    let (status, header) = robots_header(layer.clone(), "/__private/inbox").await?;
+    assert_eq!(status, 200);
+    assert_eq!(header.as_deref(), Some(ROBOTS_NOINDEX));
+    let (_, public) = robots_header(layer, "/__probe").await?;
+    assert_eq!(public, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_admin_portal_is_always_noindex() -> reqwest::Result<()> {
+    for (layer, path) in [
+        (SecurityHeaders::admin(), "/__probe"),
+        (SecurityHeaders::admin(), "/no-such-page"),
+        (SecurityHeaders::admin().indexable(true), "/__probe"),
+    ] {
+        let (_, header) = robots_header(layer, path).await?;
+        assert_eq!(header.as_deref(), Some(ROBOTS_NOINDEX), "{path}");
+    }
+    Ok(())
+}
+
+#[test]
+fn robots_rules_match_by_prefix_with_wildcards() {
+    for (rule, path, expected) in [
+        ("/bookings", "/bookings", true),
+        ("/bookings", "/bookings/42/cancel", true),
+        ("/bookings", "/booking", false),
+        ("/checkout/", "/checkout/villa-x", true),
+        ("/checkout/", "/checkout", false),
+        ("/listings/*/quote", "/listings/villa-x/quote", true),
+        (
+            "/listings/*/quote",
+            "/listings/villa-x/quote?guests=2",
+            true,
+        ),
+        ("/listings/*/quote", "/listings/villa-x", false),
+        (
+            "/listings/*/calendar",
+            "/listings/villa-x/calendar.ics",
+            true,
+        ),
+        ("/listings/*/calendar", "/listings/villa-x/calendar", true),
+        ("/", "/anything", true),
+    ] {
+        assert_eq!(
+            robots_rule_matches(rule, path),
+            expected,
+            "{rule} vs {path}"
+        );
+    }
 }

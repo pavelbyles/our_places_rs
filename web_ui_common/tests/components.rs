@@ -546,3 +546,107 @@ mod map_card {
         assert!(out.contains("US$650"), "{out}");
     }
 }
+
+// ---- Spec 102 §1.4.7: JSON-LD inside a script element ----
+
+/// The six-character JSON escape of `c` (a backslash, `u`, four hex digits),
+/// built at runtime so no tool rewrites it in this source.
+fn json_escape_of(c: char) -> String {
+    format!("{}u{:04x}", '\\', c as u32)
+}
+
+fn separators() -> (char, char) {
+    match (char::from_u32(0x2028), char::from_u32(0x2029)) {
+        (Some(line), Some(paragraph)) => (line, paragraph),
+        _ => panic!("separator code points"),
+    }
+}
+
+fn hostile_texts() -> Vec<String> {
+    let (line, paragraph) = separators();
+    vec![
+        "</script><script>alert(1)</script>".to_string(),
+        "<!-- comment".to_string(),
+        "<script".to_string(),
+        "Villa &amp; Co".to_string(),
+        "a\\<b".to_string(),
+        format!("one{line}two{paragraph}three"),
+    ]
+}
+
+#[test]
+fn json_ld_escape_leaves_no_raw_markup_characters() {
+    use web_ui_common::components::json_ld::escape_json_for_script;
+    let (line, paragraph) = separators();
+    for text in hostile_texts() {
+        let json = serde_json::json!({ "name": text }).to_string();
+        let escaped = escape_json_for_script(&json);
+        for bad in ['<', '>', '&', line, paragraph] {
+            assert!(!escaped.contains(bad), "{bad:?} left in {escaped}");
+        }
+    }
+}
+
+#[test]
+fn json_ld_escape_round_trips_to_the_same_json() {
+    use web_ui_common::components::json_ld::escape_json_for_script;
+    for text in hostile_texts() {
+        let value = serde_json::json!({ "name": text, "nested": [text] });
+        let escaped = escape_json_for_script(&value.to_string());
+        let back: serde_json::Value = match serde_json::from_str(&escaped) {
+            Ok(v) => v,
+            Err(e) => panic!("escaped JSON does not parse: {e}: {escaped}"),
+        };
+        assert_eq!(back, value, "{escaped}");
+    }
+}
+
+#[test]
+fn json_ld_escape_uses_lowercase_json_escapes() {
+    use web_ui_common::components::json_ld::escape_json_for_script;
+    let (line, paragraph) = separators();
+    let input = format!("<>&{line}{paragraph}");
+    let expected: String = ['<', '>', '&', line, paragraph]
+        .into_iter()
+        .map(json_escape_of)
+        .collect();
+    assert_eq!(escape_json_for_script(&input), expected);
+    assert_eq!(json_escape_of('<').len(), 6);
+}
+
+#[test]
+fn json_ld_escape_leaves_other_text_alone() {
+    use web_ui_common::components::json_ld::escape_json_for_script;
+    let json = r#"{"name":"Villa Été 🌴","quote":"\"hi\""}"#;
+    assert_eq!(escape_json_for_script(json), json);
+}
+
+#[tokio::test]
+async fn json_ld_component_renders_a_data_script() {
+    use web_ui_common::components::json_ld::json_ld;
+    let cx = &Cx::default();
+    let value = serde_json::json!({ "@type": "VacationRental", "name": "Villa & Co </script>" });
+    let out = html(view! { json_ld(value: value) }, cx).await;
+    assert!(
+        out.starts_with(r#"<script type="application/ld+json">"#),
+        "{out}"
+    );
+    assert!(out.ends_with("</script>"), "{out}");
+    assert_eq!(out.matches("</script>").count(), 1, "{out}");
+    assert!(!out.contains("&amp;"), "& must not be HTML-escaped: {out}");
+    assert!(out.contains(&json_escape_of('&')), "{out}");
+}
+
+#[tokio::test]
+async fn json_ld_component_body_parses_back_to_the_value() {
+    use web_ui_common::components::json_ld::json_ld;
+    let cx = &Cx::default();
+    let value = serde_json::json!({ "name": "</script><!-- & more", "n": 3 });
+    let rendered = value.clone();
+    let out = html(view! { json_ld(value: rendered) }, cx).await;
+    let body = out
+        .trim_start_matches(r#"<script type="application/ld+json">"#)
+        .trim_end_matches("</script>");
+    let back: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+    assert_eq!(back, value, "{out}");
+}

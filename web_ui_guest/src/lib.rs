@@ -7,6 +7,8 @@ pub mod layout;
 pub mod pages;
 /// Stay prices from the booking API.
 pub mod quote;
+/// Search-engine output: private paths, robots.txt, sitemap, JSON-LD.
+pub mod seo;
 /// Shared helpers for guest pages (session, service tokens, shell).
 pub mod support;
 

@@ -131,6 +131,8 @@ export default defineConfig({
         JWT_SECRET: process.env.JWT_SECRET || 'secret',
         // Currency lists must reflect admin changes immediately in e2e (#100).
         CURRENCY_CACHE_TTL_SECONDS: process.env.CURRENCY_CACHE_TTL_SECONDS || '0',
+        // Required by the guest portal (#102): canonical and sitemap URLs.
+        GUEST_PORTAL_URL: process.env.GUEST_PORTAL_URL || 'http://localhost:3010',
       } as Record<string, string>,
       cwd: rootDir,
       url: 'http://localhost:3010',

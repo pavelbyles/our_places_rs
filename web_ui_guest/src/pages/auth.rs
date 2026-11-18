@@ -6,6 +6,8 @@ use topcoat::{
     router::{content::Form, error::see_other, page, parse_query_params},
     view::{View, component, view},
 };
+
+use crate::seo::titles;
 use web_client::{auth::token_hash_to_hex, get_api_client, redirect::safe_redirect};
 
 use crate::support::start_guest_session;
@@ -121,7 +123,7 @@ async fn login_form(
 }
 
 /// The guest sign-in page.
-#[page("/login")]
+#[page("/login", with(titles::metadata(titles::SIGN_IN)))]
 pub async fn login_page(cx: &Cx) -> Result<impl View> {
     let q = parse_query_params::<LoginQuery>(cx).unwrap_or_default();
     let redirect = q.redirect.unwrap_or_default();

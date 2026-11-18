@@ -468,6 +468,7 @@ async fn test_xml_serialization_of_vec() {
     let response = vec![ListingResponse {
         price_unavailable_in: None,
         stay_total: None,
+        last_modified_at: None,
         id: Uuid::now_v7(),
         user_id: Uuid::now_v7(),
         name: "Test".to_string(),
@@ -2113,4 +2114,106 @@ async fn test_create_listing_refuses_invalid_amenity_groups() {
         stored["listing_details"]["amenity_groups"][0]["items"][1], "Wi-Fi",
         "{stored}"
     );
+}
+
+/// Spec 102 §1.7 (I6): public listing responses carry `last_modified_at`,
+/// and the public list never includes inactive or deleted listings (the
+/// sitemap relies on both).
+mod last_modified_tests {
+    use super::*;
+
+    fn villa(user_id: Uuid, name: &str, is_active: bool) -> NewListing {
+        NewListing {
+            name: name.to_string(),
+            user_id,
+            description: None,
+            listing_structure_id: 5,
+            country: "Jamaica".to_string(),
+            price_per_night: Some(dec!(450.00)),
+            weekly_discount_percentage: None,
+            monthly_discount_percentage: None,
+            max_guests: 6,
+            bedrooms: 3,
+            beds: 3,
+            full_bathrooms: 2,
+            half_bathrooms: 0,
+            square_meters: None,
+            latitude: None,
+            longitude: None,
+            listing_details: None,
+            city: Some("Negril".to_string()),
+            base_currency: "USD".to_string(),
+            minimum_stay: 2,
+            days_between_bookings: 0,
+            commission_pct: Some(dec!(0.0000)),
+            cleaning_fee: None,
+            damage_deposit: None,
+            guests_included: None,
+            extra_guest_fee: None,
+            is_active,
+            location_privacy: None,
+        }
+    }
+
+    #[actix_web::test]
+    async fn public_listing_responses_carry_last_modified_and_hide_dead_listings() {
+        dotenvy::dotenv().ok();
+        let db_url = env::var(DATABASE_URL_ENV).expect("DATABASE_URL must be set");
+        let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+        let pool = test_db.get_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let user_id = create_test_user(&mut conn).await;
+
+        let live = db_listing::create_listing(&mut *conn, &villa(user_id, "Live Villa", true))
+            .await
+            .unwrap();
+        let inactive =
+            db_listing::create_listing(&mut *conn, &villa(user_id, "Dormant Villa", false))
+                .await
+                .unwrap();
+        let deleted = db_listing::create_listing(&mut *conn, &villa(user_id, "Gone Villa", true))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE listing SET deleted_at = now() WHERE id = $1")
+            .bind(deleted.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(crate::location_key::test_key_data())
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let detail: common::models::ListingDetails = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!("/api/v1/listings/{}", live.id))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(detail.listing.last_modified_at, Some(live.last_modified_at));
+
+        let found: Vec<ListingResponse> = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!("/api/v1/listings?user_id={user_id}&per_page=100"))
+                .insert_header(("Accept", "application/json"))
+                .to_request(),
+        )
+        .await;
+        let ids: Vec<Uuid> = found.iter().map(|l| l.id).collect();
+        assert_eq!(
+            ids,
+            vec![live.id],
+            "inactive {} / deleted {}",
+            inactive.id,
+            deleted.id
+        );
+        assert_eq!(found[0].last_modified_at, Some(live.last_modified_at));
+    }
 }

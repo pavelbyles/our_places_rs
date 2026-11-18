@@ -20,6 +20,11 @@
   env.MAP_TILES_BUCKET = "our-places-gcs-map-tiles-local";
   env.MAP_TILES_BASE_URL_FILE = "${config.devenv.state}/map-tiles/BASE_URL";
 
+  # The guest portal's public origin (#102): canonical, Open Graph and
+  # sitemap URLs. Required; the guest refuses to start without it. The admin
+  # uses it for the calendar export link. SEO_INDEXABLE stays unset locally.
+  env.GUEST_PORTAL_URL = "http://localhost:3010";
+
   # Calendar sync (#58), local only: listing_api and calendar_sync_job may fetch
   # feeds from the Playwright fixture server on localhost, trusting its CA
   # (created by `ical-fixture-ca`). Never set these in config/*.toml or in

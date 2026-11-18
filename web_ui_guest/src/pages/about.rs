@@ -5,8 +5,10 @@ use topcoat::{
     view::{View, view},
 };
 
+use crate::seo::titles;
+
 /// About Our Places.
-#[page("/about")]
+#[page("/about", with(titles::metadata(titles::ABOUT)))]
 pub async fn about_page(cx: &Cx) -> Result<impl View> {
     let _ = cx;
     Ok(view! {

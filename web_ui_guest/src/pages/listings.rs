@@ -8,6 +8,8 @@ use topcoat::{
     router::{page, parse_query_params},
     view::{View, attributes, class, component, view},
 };
+
+use crate::seo::titles;
 use web_client::{client::ListingSearchParams, get_api_client};
 use web_ui_common::components::domain::{
     listing_card::{ListingSummary, SearchLink, listing_card_map_attrs, map_card_template},
@@ -410,7 +412,7 @@ fn empty_message(query: &SearchQuery) -> &'static str {
 }
 
 /// Listings, optionally filtered by text, dates, guests and host (`?host={slug}`).
-#[page("/listings")]
+#[page("/listings", with(titles::metadata(titles::LISTINGS)))]
 pub async fn listings_page(cx: &Cx) -> Result<impl View> {
     let query = parse_query_params::<SearchQuery>(cx).unwrap_or_default();
     let currency = display_currency(cx).await;

@@ -20,6 +20,9 @@ pub const HTMX_CONFIG: &str =
 /// Home page hero photograph.
 pub const HERO_IMAGE: Asset = asset!("src/assets/hero.jpg");
 
+/// Default link-preview image (Open Graph / X), 1200×630 (spec 102 §1.8).
+pub const OG_DEFAULT_IMAGE: Asset = asset!("src/assets/og-default.jpg");
+
 // ---- Map view (spec 103 §1.11). Vendored verbatim from the npm tarballs
 // (registry integrity checked); loaded lazily by `ui.js` only when a map
 // container is about to be shown. Licences: MapLibre GL JS BSD-3-Clause

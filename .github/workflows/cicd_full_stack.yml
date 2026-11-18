@@ -1267,10 +1267,13 @@ jobs:
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      # Optional custom domain (e.g. https://ourplaces.io); allowed by the bucket CORS rule.
-      PUBLIC_URL: ${{ vars[format('GUEST_PORTAL_URL_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Custom domain (e.g. https://ourplaces.io) on main and dev only; feature
+      # branches use their own Cloud Run URL (spec 102 §1.9, D9).
+      PUBLIC_URL: ${{ github.ref == 'refs/heads/main' && vars.GUEST_PORTAL_URL_PROD || (github.ref == 'refs/heads/dev' && vars.GUEST_PORTAL_URL_DEV || '') }}
     outputs:
       url: ${{ steps.deploy.outputs.url }}
+      # The origin the guest serves canonical and sitemap URLs from.
+      public_url: ${{ steps.reconcile_url.outputs.url }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -1348,6 +1351,32 @@ jobs:
           echo "SERVICE_SUFFIX=$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
           echo "SERVICE_NAME=${SERVICE_PREFIX}-$SAFE_BRANCH_slug" >> $GITHUB_OUTPUT
 
+      # Spec 102 §1.9: web_ui_guest refuses to start without GUEST_PORTAL_URL.
+      # main and dev use their custom URL; other branches their own Cloud Run
+      # URL in its deterministic form, checked after the deploy. Values reach
+      # the script only through env (no ${{ }} inside run).
+      - name: Resolve Public URL
+        id: public_url
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          SERVICE_NAME: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+        run: |
+          if [[ "$GITHUB_REF" == "refs/heads/main" || "$GITHUB_REF" == "refs/heads/dev" ]]; then
+            URL="$PUBLIC_URL"
+            if [ -z "$URL" ]; then
+              echo "::error::Variable GUEST_PORTAL_URL_$ENV_SUFFIX is not set; web_ui_guest refuses to start without it."
+              exit 1
+            fi
+          else
+            PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+            URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
+          fi
+          if [[ "$URL" =~ [[:space:],] ]]; then
+            echo "::error::The guest public URL contains whitespace or a comma."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
       - name: Set Release Flag
         env:
           GITHUB_REF: ${{ github.ref }}
@@ -1410,7 +1439,34 @@ jobs:
             BOOKING_API_AUDIENCE=${{ needs.deploy-api.outputs.booking_url }}
             USER_API_AUDIENCE=${{ needs.deploy-api.outputs.user_url }}
             MAP_TILES_BASE_URL=${{ steps.map_tiles.outputs.url }}
+            GUEST_PORTAL_URL=${{ steps.public_url.outputs.url }}
+            SEO_INDEXABLE=${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
           flags: "--allow-unauthenticated --service-account ${{ env.SA_WEB_APP }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --ingress=all --max-instances=4 --memory=512Mi --quiet"
+
+      # Long branch names exceed the 63-character DNS label, so Cloud Run
+      # issues no deterministic URL; then point GUEST_PORTAL_URL at the URL
+      # it did issue (spec 102 §1.9.3).
+      - name: Reconcile Public URL
+        id: reconcile_url
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          SERVICE_NAME: ${{ steps.branch_name.outputs.SERVICE_NAME }}
+          RESOLVED_URL: ${{ steps.public_url.outputs.url }}
+        run: |
+          URL="$RESOLVED_URL"
+          if [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != "refs/heads/dev" ]]; then
+            DESC=$(gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format=json)
+            ISSUED=$(echo "$DESC" | jq -r '[.status.url] + (.metadata.annotations["run.googleapis.com/urls"] // "[]" | try fromjson catch []) | .[]')
+            echo "Issued URLs:"; echo "$ISSUED"
+            if ! grep -qxF "$URL" <<<"$ISSUED"; then
+              STATUS_URL=$(echo "$DESC" | jq -r '.status.url')
+              echo "::warning::Cloud Run did not issue $URL for $SERVICE_NAME; setting GUEST_PORTAL_URL to $STATUS_URL."
+              gcloud run services update "$SERVICE_NAME" --region "$REGION" \
+                --update-env-vars "GUEST_PORTAL_URL=$STATUS_URL" --quiet
+              URL="$STATUS_URL"
+            fi
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Show Deployed URL for the Web UI Guest
         run: echo "Deployed Web UI Guest URL ${{ steps.deploy.outputs.url }}"
@@ -1435,10 +1491,13 @@ jobs:
     env:
       SA_WEB_APP: ${{ vars[format('INFRA_SA_WEB_APP_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
       JWT_SECRET: ${{ secrets[format('JWT_SECRET_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
-      # Optional custom domain (e.g. https://ourplaces.io); allowed by the bucket CORS rule.
-      PUBLIC_URL: ${{ vars[format('ADMIN_PORTAL_URL_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] }}
+      # Custom domain (e.g. https://admin.ourplaces.io) on main and dev only;
+      # allowed by the bucket CORS rule.
+      PUBLIC_URL: ${{ github.ref == 'refs/heads/main' && vars.ADMIN_PORTAL_URL_PROD || (github.ref == 'refs/heads/dev' && vars.ADMIN_PORTAL_URL_DEV || '') }}
     outputs:
       url: ${{ steps.deploy.outputs.url }}
+      # The custom domain, else this run's service URL.
+      public_url: ${{ steps.admin_public_url.outputs.url }}
     permissions:
       contents: "read"
       id-token: "write"
@@ -1592,6 +1651,12 @@ jobs:
           cat cors.json
           gcloud storage buckets update "gs://$RAW_BUCKET" --cors-file=cors.json
 
+      - name: Resolve Public URL
+        id: admin_public_url
+        env:
+          DEPLOYED_URL: ${{ steps.deploy.outputs.url }}
+        run: echo "url=${PUBLIC_URL:-$DEPLOYED_URL}" >> "$GITHUB_OUTPUT"
+
       - name: Show Deployed URL for the Web UI Admin
         run: echo "Deployed Web UI Admin URL ${{ steps.deploy.outputs.url }}"
 
@@ -1607,8 +1672,10 @@ jobs:
     if: always() && needs.deploy-api.result == 'success'
     env:
       SUFFIX: ${{ needs.deploy-api.outputs.service_suffix }}
-      GUEST_URL: ${{ vars[format('GUEST_PORTAL_URL_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || needs.deploy-web-ui-guest.outputs.url }}
-      ADMIN_URL: ${{ vars[format('ADMIN_PORTAL_URL_{0}', github.ref == 'refs/heads/main' && 'PROD' || 'DEV')] || needs.deploy-web-ui-admin.outputs.url }}
+      # The portals' public URLs from this run (spec 102 §1.9.5); empty when
+      # a portal was skipped, then looked up below.
+      GUEST_URL: ${{ needs.deploy-web-ui-guest.outputs.public_url }}
+      ADMIN_URL: ${{ needs.deploy-web-ui-admin.outputs.public_url }}
     steps:
       - id: "auth"
         name: "Authenticate to Google Cloud"
@@ -1625,6 +1692,12 @@ jobs:
           lookup() {
             gcloud run services describe "$1" --region ${{ env.REGION }} --format 'value(status.url)' 2>/dev/null || true
           }
+          # The guest's own canonical origin, so links match its sitemap.
+          lookup_guest() {
+            gcloud run services describe "$1" --region "${{ env.REGION }}" --format=json 2>/dev/null \
+              | jq -r '.spec.template.spec.containers[0].env[]? | select(.name == "GUEST_PORTAL_URL") | .value' || true
+          }
+          GUEST_URL=${GUEST_URL:-$(lookup_guest "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
           GUEST_URL=${GUEST_URL:-$(lookup ${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX)}
           ADMIN_URL=${ADMIN_URL:-$(lookup ${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX)}
 
@@ -1653,6 +1726,11 @@ jobs:
           lookup() {
             gcloud run services describe "$1" --region "${{ env.REGION }}" --format 'value(status.url)' 2>/dev/null || true
           }
+          lookup_guest() {
+            gcloud run services describe "$1" --region "${{ env.REGION }}" --format=json 2>/dev/null \
+              | jq -r '.spec.template.spec.containers[0].env[]? | select(.name == "GUEST_PORTAL_URL") | .value' || true
+          }
+          GUEST_URL=${GUEST_URL:-$(lookup_guest "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
           GUEST_URL=${GUEST_URL:-$(lookup "${{ env.SERVICE_PREFIX_WEB_UI_GUEST }}-$SUFFIX")}
           ADMIN_URL=${ADMIN_URL:-$(lookup "${{ env.SERVICE_PREFIX_WEB_UI_ADMIN }}-$SUFFIX")}
           if [ -n "$ADMIN_URL" ]; then

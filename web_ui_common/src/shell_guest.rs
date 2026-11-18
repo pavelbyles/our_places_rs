@@ -29,8 +29,6 @@ pub struct NavUser {
 /// Per-request data the guest shell needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuestShell {
-    /// Page `<title>` (the site name is appended).
-    pub title: String,
     /// The signed-in guest, or `None`. Signed-in navigation is rendered only
     /// when this is `Some`; nothing is toggled on the client.
     pub user: Option<NavUser>,
@@ -298,15 +296,16 @@ pub async fn guest_document(
     #[default]
     child: Child<'_>,
 ) -> Result<impl View> {
-    let title = format!("{} · Our Places", shell.title);
     let html_class = shell.theme.html_class();
+    // `tags()` comes first in <head>, so `<meta charset>` is within the
+    // first 1024 bytes: charset, viewport, title, description, canonical,
+    // Open Graph and X tags, combined from the router, layout and page
+    // (spec 102 §1.5).
     Ok(view! {
         <!DOCTYPE html>
         <html lang="en" class=(html_class)>
             <head>
-                <meta charset="utf-8" />
-                <meta name="viewport" content="width=device-width, initial-scale=1" />
-                <title>(title)</title>
+                topcoat::metadata::tags()
                 <meta name="htmx-config" content=(HTMX_CONFIG) />
                 topcoat::font::link(font: INTER)
                 topcoat::font::link(font: NEWSREADER, preload: false)
@@ -324,14 +323,12 @@ pub async fn guest_document(
 pub async fn guest_shell<'a>(
     cx: &'a Cx,
     stylesheet: Asset,
-    title: impl Into<String>,
     user: Option<NavUser>,
     currency: Option<String>,
     slot: Child<'a>,
 ) -> Result<impl View + 'a> {
     let partial = topcoat::htmx::hx_request(cx) && !topcoat::htmx::hx_boosted(cx);
     let shell = GuestShell {
-        title: title.into(),
         user,
         theme: theme_for_request(cx),
         currency,

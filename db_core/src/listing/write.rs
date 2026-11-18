@@ -37,7 +37,7 @@ where
             is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, 
             weekly_discount_percentage, monthly_discount_percentage, slug, 
             max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, 
-            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy"
+            latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy", updated_at, listing_last_modified(id, updated_at) AS "last_modified_at!"
         "#,
         Uuid::now_v7(),                                  // $1
         new_listing.user_id,                             // $2
@@ -119,7 +119,7 @@ pub async fn update_listing_with_conn(
 ) -> Result<Listing> {
     let current = sqlx::query_as!(
         Listing,
-        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy" FROM listing WHERE id = $1 FOR UPDATE"#,
+        r#"SELECT id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy", updated_at, listing_last_modified(id, updated_at) AS "last_modified_at!" FROM listing WHERE id = $1 FOR UPDATE"#,
         id
     )
     .fetch_one(&mut *tx)
@@ -204,7 +204,7 @@ pub async fn update_listing_with_conn(
             booking_mode = COALESCE($28, booking_mode),
             location_privacy = COALESCE($29, location_privacy)
         WHERE id = $1
-        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy"
+        RETURNING id, user_id, name, description, listing_structure_id, country, price_per_night, is_active, added_at, deleted_at, CAST(NULL AS TEXT) as primary_image_url, weekly_discount_percentage, monthly_discount_percentage, slug, max_guests, bedrooms, beds, full_bathrooms, half_bathrooms, square_meters, latitude, longitude, CAST(overall_rating AS FLOAT8) as overall_rating, review_count, listing_details, city, base_currency, minimum_stay, days_between_bookings, commission_pct, cleaning_fee, damage_deposit, guests_included, extra_guest_fee, booking_mode AS "booking_mode: common::booking_request::BookingMode", location_privacy AS "location_privacy: common::location::LocationPrivacy", updated_at, listing_last_modified(id, updated_at) AS "last_modified_at!"
         "#,
         id,
         updated_listing_data.name,

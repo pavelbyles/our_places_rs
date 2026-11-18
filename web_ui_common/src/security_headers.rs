@@ -1,5 +1,6 @@
 use topcoat::context::Cx;
 use topcoat::router::header::{HeaderName, HeaderValue};
+use topcoat::router::request::uri;
 use topcoat::router::response::response_headers;
 use topcoat::router::{Body, Layer, LayerFuture, Next, Path};
 
@@ -38,17 +39,42 @@ pub const HTML_CACHE_CONTROL: &str = "private, no-cache";
 
 const HSTS: &str = "max-age=31536000; includeSubDomains";
 
+/// `X-Robots-Tag` value for responses search engines must not index
+/// (spec 102 §1.6).
+pub const ROBOTS_NOINDEX: &str = "noindex, nofollow";
+
+/// Whether robots.txt `rule` matches `path`, with search-engine semantics:
+/// a prefix match where `*` stands for any run of characters.
+/// `/listings/*/quote` matches `/listings/villa-x/quote?guests=2`.
+pub fn robots_rule_matches(rule: &str, path: &str) -> bool {
+    let mut parts = rule.split('*');
+    let first = parts.next().unwrap_or_default();
+    path.strip_prefix(first).is_some_and(|rest| {
+        parts
+            .try_fold(rest, |remaining, part| {
+                remaining.find(part).map(|at| &remaining[at + part.len()..])
+            })
+            .is_some()
+    })
+}
+
 /// Router layer that adds the CSP and hardening headers to every response
 /// (including error pages), and private caching plus `Vary: Cookie` to HTML.
 ///
 /// Cross-site request forgery is handled by Topcoat's default origin policy,
 /// which rejects cross-origin state-changing requests.
+///
+/// Search engines are kept out by default (`X-Robots-Tag: noindex,
+/// nofollow`, spec 102 §1.6): the guest portal opts in with
+/// [`SecurityHeaders::indexable`], and the admin portal never can.
 #[derive(Debug, Clone, Default)]
 pub struct SecurityHeaders {
     hsts: bool,
     admin: bool,
     storage_origin: Option<String>,
     map: Option<MapConfig>,
+    indexable: bool,
+    noindex_prefixes: &'static [&'static str],
 }
 
 /// `csp` with `origin` allowed wherever Cloud Storage is (`img-src`, and
@@ -115,6 +141,31 @@ impl SecurityHeaders {
         }
     }
 
+    /// Let search engines index responses (production guest portal only).
+    /// Ignored for the admin portal, which is never indexable.
+    pub fn indexable(self, indexable: bool) -> Self {
+        Self { indexable, ..self }
+    }
+
+    /// robots.txt-style rules ([`robots_rule_matches`]) whose paths stay
+    /// `noindex` even on an indexable site: `Disallow` alone does not stop
+    /// an externally linked private URL from being indexed.
+    pub fn noindex_prefixes(self, prefixes: &'static [&'static str]) -> Self {
+        Self {
+            noindex_prefixes: prefixes,
+            ..self
+        }
+    }
+
+    fn noindex(&self, path: &str) -> bool {
+        self.admin
+            || !self.indexable
+            || self
+                .noindex_prefixes
+                .iter()
+                .any(|rule| robots_rule_matches(rule, path))
+    }
+
     /// Also allow the map tiles' bucket path ([`csp_with_map_origin`]).
     /// `None` (maps off) changes nothing.
     pub fn with_map_origin(self, map: Option<&MapConfig>) -> Self {
@@ -179,6 +230,13 @@ impl Layer for SecurityHeaders {
                 queued.append(
                     HeaderName::from_static(name),
                     HeaderValue::from_static(value),
+                );
+            }
+            // Queued, like the CSP, so error responses carry it too.
+            if self.noindex(uri(cx).path()) {
+                queued.append(
+                    HeaderName::from_static("x-robots-tag"),
+                    HeaderValue::from_static(ROBOTS_NOINDEX),
                 );
             }
             let mut response = next.run(cx, body).await?;

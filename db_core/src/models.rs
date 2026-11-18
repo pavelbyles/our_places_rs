@@ -797,6 +797,11 @@ pub struct Listing {
     pub booking_mode: common::booking_request::BookingMode,
     /// What guests may see of the location before they book.
     pub location_privacy: common::location::LocationPrivacy,
+    /// When the listing row last changed (spec 102 §1.7).
+    pub updated_at: DateTime<Utc>,
+    /// When the listing's public content last changed: `updated_at`, or a
+    /// later change to a processed original photo (`listing_last_modified`).
+    pub last_modified_at: DateTime<Utc>,
 }
 
 /// A listing's stored location, for its managers.
@@ -887,6 +892,11 @@ pub struct ListingWithOwner {
     pub booking_mode: common::booking_request::BookingMode,
     /// What guests may see of the location before they book.
     pub location_privacy: common::location::LocationPrivacy,
+    /// When the listing row last changed (spec 102 §1.7).
+    pub updated_at: DateTime<Utc>,
+    /// When the listing's public content last changed: `updated_at`, or a
+    /// later change to a processed original photo (`listing_last_modified`).
+    pub last_modified_at: DateTime<Utc>,
 }
 
 /// Fields for creating a listing.

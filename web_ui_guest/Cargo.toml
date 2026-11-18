@@ -12,7 +12,7 @@ name = "web_ui_guest"
 path = "src/main.rs"
 
 [dependencies]
-topcoat = { workspace = true, features = ["htmx", "tailwind", "session"] }
+topcoat = { workspace = true, features = ["htmx", "tailwind", "session", "sitemap"] }
 web_client = { workspace = true }
 web_ui_common = { workspace = true }
 common = { workspace = true }
@@ -25,6 +25,7 @@ rust_decimal = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
+serde_json = { workspace = true }
 
 [build-dependencies]
 topcoat = { version = "0.12.1", default-features = false, features = [
@@ -34,6 +35,8 @@ topcoat = { version = "0.12.1", default-features = false, features = [
 [dev-dependencies]
 web_ui_common = { workspace = true, features = ["test-util"] }
 wiremock = "0.6"
+reqwest = { workspace = true }
+quick-xml = "0.41"
 async-trait = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde_json = { workspace = true }

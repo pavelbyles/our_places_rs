@@ -10,7 +10,8 @@ use common::query::urlencode;
 use serde::Deserialize;
 use topcoat::{
     Result,
-    context::Cx,
+    context::{Cx, memoize, try_base_url},
+    metadata::{Image, Metadata, OpenGraph},
     router::{error::not_found, page, parse_query_params, path_param},
     view::{View, attributes, component, view},
 };
@@ -24,6 +25,7 @@ use web_ui_common::components::{
         responsive_image::{responsive_image, variant_srcset, variant_url},
     },
     highlights_ribbon::highlights_ribbon,
+    json_ld::json_ld,
     listing_hero::listing_hero,
     map::{MapKind, MapPoint, map_container},
     section_nav::{PILL, PILL_SM, section_nav},
@@ -31,6 +33,7 @@ use web_ui_common::components::{
     suite_card::suites_grid,
 };
 use web_ui_common::map_config::map_config;
+use web_ui_common::site_config::page_title;
 
 use crate::quote::{NoQuote, public_quote};
 use crate::support::{display_currency, guests_or_default, jamaica_today};
@@ -193,6 +196,7 @@ async fn quote_panel(
 }
 
 /// A listing priced for the page.
+#[derive(Clone)]
 struct Loaded {
     details: ListingDetails,
     /// The currency prices are in: the display currency, or `None` (the
@@ -206,6 +210,10 @@ struct Loaded {
 /// to that currency right now, the listing is shown in its own currency
 /// (labelled as such) with a notice, rather than failing. Only a listing the
 /// API cannot find, or an inactive one, is a 404.
+///
+/// Memoized per request: the page and [`listing_metadata`] share one API
+/// call (spec 102 §1.5.4).
+#[memoize(as_ref)]
 async fn load(cx: &Cx, slug: &str) -> Result<Loaded> {
     let currency = display_currency(cx).await;
     let api = get_api_client(cx);
@@ -233,6 +241,64 @@ async fn load(cx: &Cx, slug: &str) -> Result<Loaded> {
         Ok(loaded)
     } else {
         Err(not_found().into())
+    }
+}
+
+/// The listing's canonical URL, from its slug: a listing also answers at
+/// `/listings/<uuid>`, which must not compete with the slug URL (spec 102
+/// D10). `None` only without a configured origin (never in a running portal).
+pub fn listing_canonical(cx: &Cx, listing: &ListingResponse) -> Option<String> {
+    try_base_url(cx).map(|base| base.join(&format!("/listings/{}", listing.slug)))
+}
+
+/// The listing's `VacationRental` JSON-LD (spec 102 §1.4), identified by
+/// the same slug canonical as the head. `None` without a configured origin,
+/// or if it can't be serialized (logged): the page works without it.
+fn listing_structured_data(cx: &Cx, details: &ListingDetails) -> Option<serde_json::Value> {
+    let canonical = listing_canonical(cx, &details.listing)?;
+    serde_json::to_value(crate::seo::json_ld::vacation_rental(details, &canonical))
+        .inspect_err(|e| {
+            tracing::warn!(listing_id = %details.listing.id, error = %e, "listing JSON-LD not rendered");
+        })
+        .ok()
+}
+
+/// Head metadata for a listing page (spec 102 §1.5.4): its name, a
+/// description, the slug canonical and its first photo for previews.
+///
+/// A load error is not passed on: Topcoat would let it replace the page's
+/// own (more accurate) status (plan T1). The page raises the error itself,
+/// and the head falls back to the site defaults.
+async fn listing_metadata(cx: &Cx) -> Result<Metadata> {
+    let raw: &str = slug(cx);
+    Ok(match load(cx, raw).await {
+        Ok(loaded) => listing_head(cx, &loaded.details),
+        Err(e) => {
+            tracing::debug!(slug = raw, error = %e, "listing head uses the site defaults");
+            Metadata::new()
+        }
+    })
+}
+
+fn listing_head(cx: &Cx, details: &ListingDetails) -> Metadata {
+    let listing = &details.listing;
+    let head = Metadata::new()
+        .title(page_title(&listing.name))
+        .description(crate::seo::meta_description(listing));
+    let head = match listing_canonical(cx, listing) {
+        Some(url) => head.canonical(url),
+        None => head,
+    };
+    match details.images.first() {
+        Some(photo) => {
+            let url = variant_url(&photo.url, "desktop").unwrap_or_else(|| photo.url.clone());
+            head.open_graph(OpenGraph::new().image(Image::new(url).alt(photo_alt(
+                &listing.name,
+                0,
+                photo.name.as_deref(),
+            ))))
+        }
+        None => head,
     }
 }
 
@@ -467,14 +533,15 @@ fn gallery_layout(count: usize) -> (&'static str, Vec<(&'static str, &'static st
 }
 
 /// Listing detail: gallery, facts, reviews and the booking card.
-#[page("/listings/{slug}")]
+#[page("/listings/{slug}", with(Metadata::from_fn(listing_metadata)))]
 pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
     let slug: &str = slug(cx);
     let Loaded {
         details,
         currency,
         no_rate_for,
-    } = load(cx, slug).await?;
+    } = load(cx, slug).await?.clone();
+    let structured_data = listing_structured_data(cx, &details);
     let q = stay_query(cx);
     let month = q.check_in.unwrap_or_else(jamaica_today);
     let (calendar, reviews) = tokio::join!(
@@ -1213,6 +1280,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     </section>
                 </div>
             </div>
+            if let Some(structured_data) = structured_data {
+                json_ld(value: structured_data)
+            }
         </article>
     })
 }
@@ -1247,7 +1317,7 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
     let slug: &str = slug(cx);
     let Loaded {
         details, currency, ..
-    } = load(cx, slug).await?;
+    } = load(cx, slug).await?.clone();
     let q = stay_query(cx);
     let breakdown = initial_breakdown(cx, &details, &q, currency.as_deref()).await;
     let href = checkout_href(&details.listing.slug, &q, currency.as_deref());
@@ -1269,7 +1339,7 @@ pub async fn listing_quote(cx: &Cx) -> Result<impl View> {
 #[page("/listings/{slug}/calendar")]
 pub async fn listing_calendar(cx: &Cx) -> Result<impl View> {
     let slug: &str = slug(cx);
-    let details = load(cx, slug).await?.details;
+    let details = load(cx, slug).await?.details.clone();
     let q = stay_query(cx);
     let month = q
         .month
@@ -1694,3 +1764,7 @@ mod listing_map_tests {
         assert_eq!(note, "The exact address is shared after you book.");
     }
 }
+
+#[cfg(test)]
+#[path = "listing_detail_seo_tests.rs"]
+mod listing_detail_seo_tests;

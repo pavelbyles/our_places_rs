@@ -170,6 +170,15 @@ pub async fn delete_listing_image(
     listing_id: Uuid,
     image_id: Uuid,
 ) -> Result<()> {
+    // A deleted photo leaves no row for `listing_last_modified` to see, so
+    // the delete bumps the listing itself (spec 102 §1.7). First, so the
+    // lock order is listing then photos; photo writers never lock listing,
+    // so no lock cycle is possible.
+    sqlx::query("UPDATE listing SET updated_at = NOW() WHERE id = $1")
+        .bind(listing_id)
+        .execute(&mut *tx)
+        .await?;
+
     let was_primary: bool = sqlx::query_scalar(
         r#"
         DELETE FROM listing_image

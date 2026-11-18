@@ -105,7 +105,14 @@ impl TopcoatApiClient {
         id_or_slug: &str,
         currency: Option<&str>,
     ) -> anyhow::Result<ListingDetails> {
-        common::app_client::get_listing_by_id(id_or_slug, currency).await
+        common::app_client::get_listing_by_id_at(
+            &self.client,
+            &self.listing_api_url,
+            &common::app_client::listing_api_audience(),
+            id_or_slug,
+            currency,
+        )
+        .await
     }
 
     /// Get reviews for a listing
@@ -1043,5 +1050,89 @@ mod tests {
         assert_eq!(encode_query_value("a.b+c@x.com"), "a.b%2Bc%40x.com");
         assert_eq!(encode_query_value("x&per_page=1000"), "x%26per_page%3D1000");
         assert_eq!(encode_query_value("José"), "Jos%C3%A9");
+    }
+}
+
+/// Spec 102 (plan T8): the listing lookup honours the client's configured
+/// `listing_api_url`, so pages that use it can be tested against a mock.
+#[cfg(test)]
+mod get_listing_by_id_at_tests {
+    use super::TopcoatApiClient;
+    use common::http_client::{AuthenticatedClient, TokenProvider};
+    use std::sync::Arc;
+    use wiremock::matchers::{method, path, path_regex, query_param, query_param_is_missing};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct FixedIdToken;
+
+    #[async_trait::async_trait]
+    impl TokenProvider for FixedIdToken {
+        async fn get_token(&self, _audience: &str) -> anyhow::Result<String> {
+            Ok("service-id-token".to_string())
+        }
+    }
+
+    fn client_for(server: &MockServer) -> TopcoatApiClient {
+        TopcoatApiClient::new(
+            AuthenticatedClient::with_token_provider(Arc::new(FixedIdToken)),
+            server.uri(),
+            server.uri(),
+            server.uri(),
+        )
+    }
+
+    fn details_json() -> serde_json::Value {
+        serde_json::json!({
+            "listing": {
+                "id": "0190a0a0-0000-7000-8000-000000000001",
+                "user_id": "0190a0a0-0000-7000-8000-000000000002",
+                "name": "Villa Azure",
+                "listing_structure": "Villa",
+                "country": "Jamaica",
+                "is_active": true,
+                "added_at": "2026-01-01T00:00:00Z",
+                "max_guests": 6, "bedrooms": 3, "beds": 3,
+                "full_bathrooms": 2, "half_bathrooms": 0,
+                "base_currency": "USD", "slug": "villa-azure",
+                "minimum_stay": 2, "days_between_bookings": 0
+            },
+            "images": []
+        })
+    }
+
+    #[tokio::test]
+    async fn get_listing_by_id_at_uses_the_configured_listing_api() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v1/listings/villa-azure"))
+            .and(query_param("currency", "EUR"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(details_json()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let details = client_for(&server)
+            .get_listing_by_id("villa-azure", Some("EUR"))
+            .await;
+        assert_eq!(
+            details.map(|d| d.listing.slug).ok().as_deref(),
+            Some("villa-azure")
+        );
+    }
+
+    #[tokio::test]
+    async fn get_listing_by_id_at_encodes_the_slug() {
+        let server = MockServer::start().await;
+        // A crafted path value must not smuggle query parameters upstream.
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/api/v1/listings/x%3F"))
+            .and(query_param_is_missing("currency"))
+            .respond_with(ResponseTemplate::new(404))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let result = client_for(&server)
+            .get_listing_by_id("x?currency=EUR", None)
+            .await;
+        assert!(result.is_err());
     }
 }

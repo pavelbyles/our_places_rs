@@ -17,7 +17,6 @@ async fn html(v: impl topcoat::view::View, cx: &Cx) -> String {
 
 fn guest(user: Option<NavUser>) -> GuestShell {
     GuestShell {
-        title: "Home".into(),
         user,
         theme: ThemeChoice::Dim,
         currency: None,
