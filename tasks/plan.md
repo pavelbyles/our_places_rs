@@ -209,7 +209,7 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core turnover_tests`
   - **Dependencies:** Task 1, Task 2
 
-- [ ] **Task 10: Wire Eager Turnover Reconciliation into Booking Mutations, iCal Sync, and Sweeps**
+- [x] **Task 10: Wire Eager Turnover Reconciliation into Booking Mutations, iCal Sync, and Sweeps**
   - **Scope:** M
   - **Description:** Invoke `db_core::turnover::reconcile_for_booking` inside `db_core/src/booking/update.rs::apply_status_side_effects` and `db_core/src/reservation_change.rs::approve_change_request`. Invoke `db_core::turnover::reconcile_for_listing` inside `db_core/src/calendar/reconcile.rs::reconcile_feed` before transaction commit. Add an idempotent turnover backfill sweep (under parent `listing` `FOR UPDATE` lock + `5s` `lock_timeout`) to `app_api/booking_api/src/apis/cron.rs::run_sweeps` with per-listing error isolation. Add tests verifying checkout-day `ical_feed` pruning (`e.date_to == today_jm`) preserves today's `needs_cleaning` turnover.
   - **Files Touched:**
@@ -220,9 +220,9 @@ T17 Full CONSTRAINTS.md workspace verification gate       <-- T16
     - `app_api/booking_api/src/apis/{cron.rs, tests.rs}`
     - `.sqlx/`
   - **Acceptance Criteria:**
-    - [ ] Confirming a booking, approving a date change, or syncing an `ical_feed` block creates/updates the corresponding turnover in the same transaction.
-    - [ ] Cancelling a booking or removing a future (`checkout_date > today_jm`) event from a non-empty `ical_feed` transitions `needs_cleaning` turnovers to `not_required`, while checkout-day `e.date_to == today_jm` pruning leaves `needs_cleaning` intact.
-    - [ ] A per-listing error in `run_sweeps` logs an error and continues sweeping remaining listings without aborting stay completion.
+    - [x] Confirming a booking, approving a date change, or syncing an `ical_feed` block creates/updates the corresponding turnover in the same transaction.
+    - [x] Cancelling a booking or removing a future (`checkout_date > today_jm`) event from a non-empty `ical_feed` transitions `needs_cleaning` turnovers to `not_required`, while checkout-day `e.date_to == today_jm` pruning leaves `needs_cleaning` intact.
+    - [x] A per-listing error in `run_sweeps` logs an error and continues sweeping remaining listings without aborting stay completion.
   - **Verification Command:** `devenv shell -- cargo sqlx prepare --workspace -- --all-targets && devenv shell -- cargo test -p db_core && devenv shell -- cargo test -p booking_api cron`
   - **Dependencies:** Task 9
 

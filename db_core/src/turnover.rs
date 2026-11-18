@@ -1152,3 +1152,70 @@ pub async fn reconcile_for_listing(
     tx.commit().await?;
     Ok(())
 }
+
+/// Returns active (non-deleted) listing IDs ordered deterministically for backfill sweeps.
+pub async fn list_active_listing_ids(pool: &PgPool) -> Result<Vec<Uuid>> {
+    let ids = sqlx::query_scalar!("SELECT id FROM listing WHERE deleted_at IS NULL ORDER BY id")
+        .fetch_all(pool)
+        .await?;
+    Ok(ids)
+}
+
+/// Backfills any out-of-sync booking or `ical_feed` turnovers for one listing inside a locked
+/// transaction (`listing -> booking/blocked_dates -> turnover` with `5s` `lock_timeout`).
+///
+/// Passes `skip_removals = true` to [`reconcile_for_listing_conn`] because iCal event removal
+/// pruning requires `had_future_blocks` + `NO_EVENTS_WARNING` context owned by `reconcile_feed`.
+#[tracing::instrument(skip(pool))]
+pub async fn backfill_listing_turnovers(
+    pool: &PgPool,
+    listing_id: Uuid,
+    entry_point: &str,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    set_lock_timeout(&mut tx).await?;
+
+    let Some((_owner_id, is_deleted)) = lock_listing(&mut tx, listing_id).await? else {
+        return Ok(());
+    };
+    if is_deleted {
+        return Ok(());
+    }
+
+    let booking_ids = sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT b.id
+        FROM booking b
+        LEFT JOIN turnover t
+          ON t.booking_id = b.id AND t.source_kind = 'booking'
+        WHERE b.listing_id = $1
+          AND (
+              (
+                  b.status IN ('confirmed'::booking_status, 'completed'::booking_status)
+                  AND (
+                      t.id IS NULL
+                      OR t.checkout_date <> b.date_to
+                      OR t.status = 'not_required'
+                  )
+              )
+              OR (
+                  b.status = 'cancelled'::booking_status
+                  AND t.id IS NOT NULL
+                  AND t.status = 'needs_cleaning'
+              )
+          )
+        ORDER BY b.id
+        "#,
+        listing_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    for booking_id in booking_ids {
+        reconcile_for_booking_conn(&mut tx, booking_id, entry_point).await?;
+    }
+
+    reconcile_for_listing_conn(&mut tx, listing_id, None, true, entry_point).await?;
+    tx.commit().await?;
+    Ok(())
+}

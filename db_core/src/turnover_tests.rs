@@ -58,8 +58,10 @@ async fn seed_listing(
     sqlx::query(
         r#"INSERT INTO listing (
             id, user_id, name, listing_structure_id, country, city, slug,
-            base_currency, added_at, listing_details
-        ) VALUES ($1, $2, $3, 1, 'Jamaica', 'Montego Bay', $4, 'USD', NOW(),
+            base_currency, is_active, minimum_stay, max_guests, days_between_bookings,
+            commission_pct, cleaning_fee, added_at, listing_details
+        ) VALUES ($1, $2, $3, 1, 'Jamaica', 'Montego Bay', $4, 'USD', TRUE, 1, 4, 0,
+            0.1000, 50.00, NOW(),
             '{"policies": {"check_in": "3:00 PM", "check_out": "11:00 AM"}}'::jsonb)"#,
     )
     .bind(id)
@@ -681,5 +683,271 @@ async fn list_turnovers_computes_next_checkin_and_hides_pii_and_unassigned_listi
 
     // Unused helper import check avoided; confirm comment request compiles if referenced in Task 12.
     let _ = std::marker::PhantomData::<CreateTurnoverCommentRequest>;
+    Ok(())
+}
+
+#[tokio::test]
+async fn booking_update_and_reservation_change_reconcile_turnovers_atomically()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::models::{
+        BookingMetadata, BookingStatus, CancellationPolicy, ChangeInitiatorRole,
+        ChangeSettlementStatus, NewBooking, NewReservationChangeRequest,
+        ReservationChangePricingSnapshot, SupplierInfo, UpdatedBooking,
+    };
+    use crate::reservation_change::create_change_request;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let host = seed_user(&pool, "hook-host@example.com", "HookHost", &["host"]).await?;
+    let guest = seed_user(&pool, "hook-guest@example.com", "HookGuest", &["booker"]).await?;
+    sqlx::query(
+        "INSERT INTO host_profiles (user_id, description, verified_status) VALUES ($1, 'Host', 'verified')",
+    )
+    .bind(host)
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+           VALUES ('USD', 'JMD', 160.000000, NOW())
+           ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING"#,
+    )
+    .execute(&pool)
+    .await?;
+
+    let listing_id = seed_listing(&pool, host, "Hook Villa").await?;
+    let today = listing_today(Utc::now());
+    let from1 = today + Duration::days(3);
+    let to1 = today + Duration::days(6);
+    let b1 = crate::booking::create_booking(
+        &pool,
+        &NewBooking {
+            confirmation_code: format!("HK{}", &Uuid::now_v7().simple().to_string()[24..32])
+                .to_uppercase(),
+            guest_id: guest,
+            listing_id,
+            date_from: from1,
+            date_to: to1,
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 3,
+            sub_total_price: dec!(600.00),
+            discount_value: None,
+            tax_value: Some(dec!(90.00)),
+            fee_breakdown: vec![],
+            total_price: dec!(720.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(30.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+            promo: None,
+        },
+        120,
+    )
+    .await?;
+
+    let count_before: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM turnover WHERE booking_id = $1")
+            .bind(b1.id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(count_before, 0, "pending hold must not create turnover");
+
+    let supplier = SupplierInfo {
+        supplier_name: "Our Places Jamaica Limited".to_string(),
+        supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+        supplier_trn: "000-111-222".to_string(),
+    };
+
+    crate::booking::update_booking(
+        &pool,
+        b1.id,
+        &UpdatedBooking {
+            status: Some(BookingStatus::Confirmed),
+            ..Default::default()
+        },
+        &supplier,
+    )
+    .await?;
+
+    let row_after_confirm: (Uuid, NaiveDate, String) =
+        sqlx::query_as("SELECT id, checkout_date, status FROM turnover WHERE booking_id = $1")
+            .bind(b1.id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(row_after_confirm.1, to1);
+    assert_eq!(row_after_confirm.2, "needs_cleaning");
+
+    // Start cleaning before reservation extension, then extend via approve_change_request.
+    transition_turnover_status(
+        &pool,
+        TurnoverActor {
+            user_id: host,
+            role: TurnoverActorRole::Host,
+        },
+        row_after_confirm.0,
+        &TransitionTurnoverRequest {
+            to_status: TurnoverStatus::CleaningInProgress,
+            expected_status: Some(TurnoverStatus::NeedsCleaning),
+            reason: None,
+        },
+        "ui",
+    )
+    .await?;
+
+    let extended_to = to1 + Duration::days(2);
+    let snap = ReservationChangePricingSnapshot {
+        daily_rate: dec!(200.00),
+        total_days: 5,
+        extra_guests: 0,
+        extra_guest_fee_per_night: Decimal::ZERO,
+        extra_guest_fee_total: Decimal::ZERO,
+        sub_total_price: dec!(1000.00),
+        discount_value: None,
+        discounted_subtotal: dec!(1000.00),
+        cleaning_fee: dec!(50.00),
+        promo_stay_discount: Decimal::ZERO,
+        promo_cleaning_discount: Decimal::ZERO,
+        cleaning_net: dec!(50.00),
+        promo_retained: false,
+        promo_lost_reason: None,
+        damage_deposit: dec!(100.00),
+        platform_fee: dec!(50.00),
+        tax_rate: dec!(0.1500),
+        tax_value: Some(dec!(157.50)),
+        fee_breakdown: vec![],
+        total_price: dec!(1307.50),
+        host_gross_amount: dec!(1050.00),
+        host_platform_fee_amount: dec!(105.00),
+        host_net_payout_amount: dec!(945.00),
+    };
+    let req = create_change_request(
+        &pool,
+        &NewReservationChangeRequest {
+            booking_id: b1.id,
+            listing_id,
+            initiated_by_id: guest,
+            initiated_by_role: ChangeInitiatorRole::Guest,
+            previous_date_from: from1,
+            previous_date_to: to1,
+            proposed_date_from: from1,
+            proposed_date_to: extended_to,
+            previous_number_of_persons: 2,
+            proposed_number_of_persons: 2,
+            proposed_num_adults: 2,
+            proposed_num_children: 0,
+            proposed_num_infants: 0,
+            proposed_num_pets: 0,
+            currency: "USD".to_string(),
+            previous_total_price: dec!(720.00),
+            proposed_total_price: dec!(1307.50),
+            balance_due: dec!(587.50),
+            previous_net_payout: dec!(540.00),
+            proposed_net_payout: dec!(945.00),
+            host_payout_delta: dec!(405.00),
+            pricing_snapshot: snap,
+            settlement_status: ChangeSettlementStatus::Charged,
+            reason: Some("Extend stay".to_string()),
+            expires_at_date: from1,
+        },
+        today,
+    )
+    .await?;
+
+    crate::reservation_change::approve_change_request(
+        &pool,
+        &crate::reservation_change::ApproveChangeRequestParams {
+            id: req.id,
+            responder_id: host,
+            response_note: Some("Approved"),
+            settlement_status: ChangeSettlementStatus::Charged,
+            gateway_reference: Some("SIM-EXT"),
+            supplier: &supplier,
+            today_jm: today,
+        },
+    )
+    .await?;
+
+    let after_extend: (Uuid, NaiveDate, String) =
+        sqlx::query_as("SELECT id, checkout_date, status FROM turnover WHERE booking_id = $1")
+            .bind(b1.id)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(after_extend.0, row_after_confirm.0);
+    assert_eq!(after_extend.1, extended_to);
+    assert_eq!(after_extend.2, "cleaning_in_progress");
+
+    // Second booking confirmed then cancelled -> needs_cleaning -> not_required.
+    let from2 = today + Duration::days(12);
+    let to2 = today + Duration::days(14);
+    let b2 = crate::booking::create_booking(
+        &pool,
+        &NewBooking {
+            confirmation_code: format!("HK{}", &Uuid::now_v7().simple().to_string()[24..32])
+                .to_uppercase(),
+            guest_id: guest,
+            listing_id,
+            date_from: from2,
+            date_to: to2,
+            currency: "USD".to_string(),
+            daily_rate: dec!(200.00),
+            number_of_persons: 2,
+            total_days: 2,
+            sub_total_price: dec!(400.00),
+            discount_value: None,
+            tax_value: Some(dec!(60.00)),
+            fee_breakdown: vec![],
+            total_price: dec!(530.00),
+            cancellation_policy: CancellationPolicy::Flexible,
+            metadata: BookingMetadata {
+                num_adults: 2,
+                ..Default::default()
+            },
+            door_access_code: None,
+            cleaning_fee: dec!(50.00),
+            damage_deposit: dec!(100.00),
+            platform_fee: dec!(20.00),
+            tax_rate: dec!(0.1500),
+            exchange_rate: Decimal::ONE,
+            promo: None,
+        },
+        120,
+    )
+    .await?;
+    crate::booking::update_booking(
+        &pool,
+        b2.id,
+        &UpdatedBooking {
+            status: Some(BookingStatus::Confirmed),
+            ..Default::default()
+        },
+        &supplier,
+    )
+    .await?;
+    crate::booking::update_booking(
+        &pool,
+        b2.id,
+        &UpdatedBooking {
+            status: Some(BookingStatus::Cancelled),
+            ..Default::default()
+        },
+        &supplier,
+    )
+    .await?;
+    let b2_status: String = sqlx::query_scalar("SELECT status FROM turnover WHERE booking_id = $1")
+        .bind(b2.id)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(b2_status, "not_required");
+
     Ok(())
 }

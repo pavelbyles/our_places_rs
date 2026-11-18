@@ -398,6 +398,10 @@ pub struct CronSweepsResponse {
     pub notifications: CronSweepResponse,
     /// Result of the stay completion sweep.
     pub stays: CompleteStaysResponse,
+    /// Active listings successfully backfilled for turnovers.
+    pub turnovers_backfilled: usize,
+    /// Active listings whose turnover backfill failed and were isolated.
+    pub turnover_backfill_failures: usize,
 }
 
 /// Last checkout date whose stays may be completed at `now`.
@@ -468,6 +472,30 @@ pub async fn run_sweeps(
     .map_err(ApiError::Database)?;
     let notifications =
         run_notification_sweep(pool.get_ref(), near_expiry_pct(settings.as_ref())).await?;
+    let mut turnovers_backfilled = 0usize;
+    let mut turnover_backfill_failures = 0usize;
+    for listing_id in db_core::turnover::list_active_listing_ids(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?
+    {
+        match db_core::turnover::backfill_listing_turnovers(
+            pool.get_ref(),
+            listing_id,
+            "cron::run_sweeps",
+        )
+        .await
+        {
+            Ok(()) => turnovers_backfilled += 1,
+            Err(e) => {
+                turnover_backfill_failures += 1;
+                tracing::error!(
+                    listing_id = %listing_id,
+                    error = %e,
+                    "Failed to backfill turnovers for listing in cron"
+                );
+            }
+        }
+    }
     let stays = complete_stays_through(
         pool.get_ref(),
         tax_settings.as_ref(),
@@ -480,5 +508,7 @@ pub async fn run_sweeps(
         enquiries_closed,
         notifications,
         stays,
+        turnovers_backfilled,
+        turnover_backfill_failures,
     }))
 }

@@ -2837,3 +2837,224 @@ mod hold_conflict_tests {
         assert!(!text.contains("request failed"), "{text}");
     }
 }
+
+#[tokio::test]
+async fn test_cron_run_sweeps_backfills_turnovers_and_isolates_listing_errors()
+-> Result<(), Box<dyn std::error::Error>> {
+    use actix_web::{App, test, web};
+    use chrono::{Duration, Utc};
+    use common::reference::listing_today;
+    use rust_decimal_macros::dec;
+    use sqlx_db_tester::TestPg;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    dotenvy::dotenv().ok();
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+
+    let host_id = Uuid::now_v7();
+    let guest_id = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO "user" (id, email, password_hash, first_name, last_name, is_active, is_verified, attributes, roles, default_currency)
+           VALUES ($1, $2, 'hash', 'Cron', 'Host', TRUE, TRUE, '{}'::jsonb, ARRAY['host']::user_role[], 'USD'),
+                  ($3, $4, 'hash', 'Cron', 'Guest', TRUE, TRUE, '{}'::jsonb, ARRAY['booker']::user_role[], 'USD')"#,
+    )
+    .bind(host_id)
+    .bind(format!("cron-host-{host_id}@example.com"))
+    .bind(guest_id)
+    .bind(format!("cron-guest-{guest_id}@example.com"))
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO host_profiles (user_id, description, verified_status) VALUES ($1, 'Host', 'verified')",
+    )
+    .bind(host_id)
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO currency_exchange_rates (base_currency, target_currency, rate, effective_at)
+           VALUES ('USD', 'JMD', 160.000000, NOW())
+           ON CONFLICT (base_currency, target_currency, effective_at) DO NOTHING"#,
+    )
+    .execute(&pool)
+    .await?;
+
+    let mut listing_ids = Vec::new();
+    for (idx, name) in ["CronLockedVilla", "CronOkVilla", "CronStayVilla"]
+        .into_iter()
+        .enumerate()
+    {
+        let lid = Uuid::now_v7();
+        sqlx::query(
+            r#"INSERT INTO listing (
+                id, user_id, name, listing_structure_id, country, city, slug,
+                base_currency, commission_pct, cleaning_fee, added_at
+            ) VALUES ($1, $2, $3, 1, 'Jamaica', 'Ocho Rios', $4, 'USD', 0.1000, 50.00, NOW())"#,
+        )
+        .bind(lid)
+        .bind(host_id)
+        .bind(name)
+        .bind(format!("cron-slug-{idx}-{lid}"))
+        .execute(&pool)
+        .await?;
+        listing_ids.push(lid);
+    }
+    let listing_locked = listing_ids[0];
+    let listing_ok = listing_ids[1];
+    let listing_stay = listing_ids[2];
+
+    let today = listing_today(Utc::now());
+    // Un-reconciled confirmed future booking + iCal block on listing_ok.
+    let b_ok = Uuid::now_v7();
+    let code_ok = format!("BK{}", &b_ok.simple().to_string()[24..32]).to_uppercase();
+    sqlx::query(
+        r#"INSERT INTO booking (
+            id, confirmation_code, guest_id, listing_id, status,
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown,
+            total_price, cancellation_policy, metadata, cleaning_fee,
+            damage_deposit, platform_fee, tax_rate, exchange_rate, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, 'confirmed'::booking_status,
+            $5, $6, 'USD', 200.00, 2, 3,
+            600.00, 0.00, 90.00, '[]'::jsonb,
+            720.00, 'flexible'::cancellation_policy, '{}'::jsonb, 50.00,
+            100.00, 30.00, 0.1500, 1.000000, NOW(), NOW()
+        )"#,
+    )
+    .bind(b_ok)
+    .bind(code_ok)
+    .bind(guest_id)
+    .bind(listing_ok)
+    .bind(today + Duration::days(2))
+    .bind(today + Duration::days(5))
+    .execute(&pool)
+    .await?;
+
+    let feed_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO listing_calendar_feed (id, listing_id, name, url) VALUES ($1, $2, 'VRBO', 'https://example.com/vrbo.ics')",
+    )
+    .bind(feed_id)
+    .bind(listing_ok)
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        r#"INSERT INTO listing_blocked_dates (listing_id, source, feed_id, external_uid, date_from, date_to)
+           VALUES ($1, 'ical_feed'::calendar_block_source, $2, 'ext-backfill-1', $3, $4)"#,
+    )
+    .bind(listing_ok)
+    .bind(feed_id)
+    .bind(today + Duration::days(7))
+    .bind(today + Duration::days(10))
+    .execute(&pool)
+    .await?;
+
+    // Past-checkout confirmed booking on listing_stay ready for stay completion.
+    let b_stay = Uuid::now_v7();
+    let code_stay = format!("ST{}", &b_stay.simple().to_string()[24..32]).to_uppercase();
+    sqlx::query(
+        r#"INSERT INTO booking (
+            id, confirmation_code, guest_id, listing_id, status,
+            date_from, date_to, currency, daily_rate, number_of_persons, total_days,
+            sub_total_price, discount_value, tax_value, fee_breakdown,
+            total_price, cancellation_policy, metadata, cleaning_fee,
+            damage_deposit, platform_fee, tax_rate, exchange_rate, created_at, updated_at
+        ) VALUES (
+            $1, $2, $3, $4, 'confirmed'::booking_status,
+            $5, $6, 'USD', 200.00, 2, 3,
+            600.00, 0.00, 90.00, '[]'::jsonb,
+            720.00, 'flexible'::cancellation_policy, '{}'::jsonb, 50.00,
+            100.00, 30.00, 0.1500, 1.000000, NOW(), NOW()
+        )"#,
+    )
+    .bind(b_stay)
+    .bind(code_stay)
+    .bind(guest_id)
+    .bind(listing_stay)
+    .bind(today - Duration::days(4))
+    .bind(today - Duration::days(1))
+    .execute(&pool)
+    .await?;
+
+    let tax_settings = TaxSettings {
+        taj_supplier_trn: "000-111-222".to_string(),
+        supplier_name: "Our Places Jamaica Limited".to_string(),
+        supplier_address: "Main Street, Ocho Rios, Jamaica".to_string(),
+    };
+    let cron_settings = CronSettings {
+        cron_secret: "test-sweep-secret".to_string(),
+    };
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(tax_settings))
+            .app_data(web::Data::new(cron_settings))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+
+    // Hold FOR UPDATE lock on listing_locked to trigger per-listing 5s lock_timeout error during backfill.
+    let mut lock_tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM listing WHERE id = $1 FOR UPDATE")
+        .bind(listing_locked)
+        .execute(&mut *lock_tx)
+        .await?;
+
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/internal/cron/run-sweeps")
+            .insert_header(("x-cron-secret", "test-sweep-secret"))
+            .to_request(),
+    )
+    .await;
+    drop(lock_tx);
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert!(
+        body["turnover_backfill_failures"]
+            .as_u64()
+            .is_some_and(|n| n >= 1),
+        "expected isolated failure counter for locked listing: {body}"
+    );
+    assert!(
+        body["turnovers_backfilled"]
+            .as_u64()
+            .is_some_and(|n| n >= 2),
+        "expected remaining unlocked listings to backfill cleanly: {body}"
+    );
+    let stay_completed = body["stays"]["booking_ids"]
+        .as_array()
+        .is_some_and(|arr| arr.iter().any(|v| v == &serde_json::json!(b_stay)));
+    assert!(
+        stay_completed,
+        "stay completion must not abort on listing lock error: {body}"
+    );
+
+    let ok_turnovers: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM turnover WHERE listing_id = $1")
+            .bind(listing_ok)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        ok_turnovers, 2,
+        "booking and iCal turnovers on unlocked listing must be backfilled"
+    );
+
+    let stay_turnover: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM turnover WHERE booking_id = $1")
+            .bind(b_stay)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        stay_turnover, 1,
+        "completed stay must also have its turnover"
+    );
+    let _ = dec!(0);
+    Ok(())
+}
