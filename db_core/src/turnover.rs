@@ -10,9 +10,9 @@ use common::email::{
 use common::reference::listing_today;
 use common::turnover::{
     CreateManualTurnoverRequest, MAX_TURNOVER_REASON_LEN, MAX_TURNOVER_TITLE_LEN,
-    TransitionTurnoverRequest, TurnoverActorRole, TurnoverCommentResponse, TurnoverDetailResponse,
-    TurnoverListQuery, TurnoverListResponse, TurnoverResponse, TurnoverSourceKind, TurnoverStatus,
-    TurnoverStatusHistoryEntry, can_transition,
+    StaffListingAssignment, TransitionTurnoverRequest, TurnoverActorRole, TurnoverCommentResponse,
+    TurnoverDetailResponse, TurnoverListQuery, TurnoverListResponse, TurnoverResponse,
+    TurnoverSourceKind, TurnoverStatus, TurnoverStatusHistoryEntry, can_transition,
 };
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -70,31 +70,59 @@ async fn lock_listing(conn: &mut PgConnection, listing_id: Uuid) -> Result<Optio
     Ok(row.map(|r| (r.user_id, r.is_deleted)))
 }
 
-async fn actor_has_listing_access(
+async fn resolve_listing_actor_role(
     conn: &mut PgConnection,
     actor: TurnoverActor,
     listing_id: Uuid,
     owner_user_id: Uuid,
-) -> Result<bool> {
+) -> Result<Option<TurnoverActorRole>> {
     match actor.role {
-        TurnoverActorRole::Admin => Ok(true),
-        TurnoverActorRole::Host => Ok(owner_user_id == actor.user_id),
-        TurnoverActorRole::Staff => {
+        TurnoverActorRole::Admin => Ok(Some(TurnoverActorRole::Admin)),
+        TurnoverActorRole::Host if owner_user_id == actor.user_id => {
+            Ok(Some(TurnoverActorRole::Host))
+        }
+        TurnoverActorRole::Host | TurnoverActorRole::Staff => {
             let assigned = sqlx::query_scalar!(
                 r#"
                 SELECT EXISTS(
-                    SELECT 1 FROM listing_staff
-                    WHERE listing_id = $1 AND staff_user_id = $2
+                    SELECT 1
+                    FROM listing_staff ls
+                    INNER JOIN "user" u ON u.id = ls.staff_user_id
+                    WHERE ls.listing_id = $1
+                      AND ls.staff_user_id = $2
+                      AND ($3 = 'staff' OR 'staff'::user_role = ANY(u.roles))
+                      AND u.is_active = TRUE
+                      AND u.deleted_at IS NULL
                 ) AS "assigned!"
                 "#,
                 listing_id,
                 actor.user_id,
+                actor.role.as_str(),
             )
             .fetch_one(&mut *conn)
             .await?;
-            Ok(assigned)
+            Ok(assigned.then_some(TurnoverActorRole::Staff))
         }
     }
+}
+
+async fn was_system_marked_not_required(
+    conn: &mut PgConnection,
+    turnover_id: Uuid,
+) -> Result<bool> {
+    let actor_role = sqlx::query_scalar!(
+        r#"
+        SELECT actor_role
+        FROM turnover_status_history
+        WHERE turnover_id = $1 AND to_status = 'not_required'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        "#,
+        turnover_id,
+    )
+    .fetch_optional(&mut *conn)
+    .await?;
+    Ok(actor_role.as_deref() == Some("system"))
 }
 
 fn parse_status(raw: &str) -> Result<TurnoverStatus> {
@@ -270,10 +298,16 @@ async fn load_scoped_turnover_summary(
           AND (
               $2 = 'admin'
               OR ($2 = 'host' AND l.user_id = $3)
-              OR ($2 = 'staff' AND EXISTS (
-                  SELECT 1 FROM listing_staff ls
-                  WHERE ls.listing_id = l.id AND ls.staff_user_id = $3
-              ))
+              OR EXISTS (
+                  SELECT 1
+                  FROM listing_staff ls
+                  INNER JOIN "user" u ON u.id = ls.staff_user_id
+                  WHERE ls.listing_id = l.id
+                    AND ls.staff_user_id = $3
+                    AND ($2 = 'staff' OR 'staff'::user_role = ANY(u.roles))
+                    AND u.is_active = TRUE
+                    AND u.deleted_at IS NULL
+              )
           )
         "#,
         turnover_id,
@@ -287,6 +321,72 @@ async fn load_scoped_turnover_summary(
     let staff_map = load_assigned_staff_map(conn, &[row.listing_id]).await?;
     let mut list = hydrate_turnover_rows(vec![row], staff_map)?;
     list.pop().ok_or(DbError::Sqlx(sqlx::Error::RowNotFound))
+}
+
+/// Lists all active, non-deleted listings accessible to `actor` for dispatch filtering and
+/// manual turnover creation (owned listings for hosts, assigned listings for staff, or both for
+/// dual-role users).
+#[tracing::instrument(skip(pool))]
+pub async fn list_accessible_listings(
+    pool: &PgPool,
+    actor: TurnoverActor,
+) -> Result<Vec<StaffListingAssignment>> {
+    if actor.role == TurnoverActorRole::Admin {
+        let rows = sqlx::query_as!(
+            StaffListingAssignment,
+            r#"
+            SELECT id AS listing_id, name AS listing_name, added_at AS assigned_at
+            FROM listing
+            WHERE is_active = TRUE
+              AND deleted_at IS NULL
+            ORDER BY LOWER(name) ASC, id ASC
+            "#
+        )
+        .fetch_all(pool)
+        .await?;
+        return Ok(rows);
+    }
+
+    let rows = sqlx::query_as!(
+        StaffListingAssignment,
+        r#"
+        SELECT
+            l.id AS listing_id,
+            l.name AS listing_name,
+            COALESCE(
+                (
+                    SELECT ls.created_at
+                    FROM listing_staff ls
+                    WHERE ls.listing_id = l.id
+                      AND ls.staff_user_id = $1
+                    LIMIT 1
+                ),
+                l.added_at
+            ) AS "assigned_at!"
+        FROM listing l
+        WHERE l.is_active = TRUE
+          AND l.deleted_at IS NULL
+          AND (
+              l.user_id = $1
+              OR EXISTS (
+                  SELECT 1
+                  FROM listing_staff ls
+                  JOIN "user" u ON u.id = ls.staff_user_id
+                  WHERE ls.listing_id = l.id
+                    AND ls.staff_user_id = $1
+                    AND u.is_active = TRUE
+                    AND u.deleted_at IS NULL
+                    AND 'staff'::user_role = ANY(u.roles)
+              )
+          )
+        ORDER BY LOWER(l.name) ASC, l.id ASC
+        "#,
+        actor.user_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
 }
 
 /// Lists scoped turnover events filtered by window (`today | upcoming | past | all`), status,
@@ -326,10 +426,16 @@ pub async fn list_turnovers(
           AND (
               $5 = 'admin'
               OR ($5 = 'host' AND l.user_id = $6)
-              OR ($5 = 'staff' AND EXISTS (
-                  SELECT 1 FROM listing_staff ls
-                  WHERE ls.listing_id = l.id AND ls.staff_user_id = $6
-              ))
+              OR EXISTS (
+                  SELECT 1
+                  FROM listing_staff ls
+                  INNER JOIN "user" u ON u.id = ls.staff_user_id
+                  WHERE ls.listing_id = l.id
+                    AND ls.staff_user_id = $6
+                    AND ($5 = 'staff' OR 'staff'::user_role = ANY(u.roles))
+                    AND u.is_active = TRUE
+                    AND u.deleted_at IS NULL
+              )
           )
         "#,
         query.listing_id,
@@ -392,10 +498,16 @@ pub async fn list_turnovers(
           AND (
               $5 = 'admin'
               OR ($5 = 'host' AND l.user_id = $6)
-              OR ($5 = 'staff' AND EXISTS (
-                  SELECT 1 FROM listing_staff ls
-                  WHERE ls.listing_id = l.id AND ls.staff_user_id = $6
-              ))
+              OR EXISTS (
+                  SELECT 1
+                  FROM listing_staff ls
+                  INNER JOIN "user" u ON u.id = ls.staff_user_id
+                  WHERE ls.listing_id = l.id
+                    AND ls.staff_user_id = $6
+                    AND ($5 = 'staff' OR 'staff'::user_role = ANY(u.roles))
+                    AND u.is_active = TRUE
+                    AND u.deleted_at IS NULL
+              )
           )
         ORDER BY
             CASE WHEN $3 = 'past' THEN t.checkout_date END DESC,
@@ -665,10 +777,20 @@ pub async fn create_manual_turnover_with_outbox(
             "Cannot create a turnover for a deleted listing.".to_string(),
         ));
     }
-    if !actor_has_listing_access(&mut tx, actor, req.listing_id, owner_user_id).await? {
+    let Some(effective_role) =
+        resolve_listing_actor_role(&mut tx, actor, req.listing_id, owner_user_id).await?
+    else {
         return Err(DbError::Forbidden(
             "You do not have dispatch access to this listing.".to_string(),
         ));
+    };
+    if initial_status != TurnoverStatus::NeedsCleaning {
+        can_transition(
+            effective_role,
+            TurnoverSourceKind::Manual,
+            TurnoverStatus::NeedsCleaning,
+            initial_status,
+        )?;
     }
 
     let status_str = initial_status.as_str();
@@ -696,7 +818,7 @@ pub async fn create_manual_turnover_with_outbox(
             from_status: None,
             to_status: initial_status,
             actor_user_id: Some(actor.user_id),
-            actor_role: actor.role.as_str(),
+            actor_role: effective_role.as_str(),
             entry_point: "manual_create",
             reason: clean_title.as_deref(),
         },
@@ -759,12 +881,14 @@ pub async fn transition_turnover_status(
     else {
         return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
     };
-    if is_deleted
-        || !actor_has_listing_access(&mut tx, actor, listing_lookup.listing_id, owner_user_id)
-            .await?
-    {
+    let effective_role = if is_deleted {
+        None
+    } else {
+        resolve_listing_actor_role(&mut tx, actor, listing_lookup.listing_id, owner_user_id).await?
+    };
+    let Some(effective_role) = effective_role else {
         return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
-    }
+    };
 
     let current = sqlx::query!(
         r#"
@@ -793,7 +917,7 @@ pub async fn transition_turnover_status(
         });
     }
 
-    can_transition(actor.role, source_kind, current_status, req.to_status)?;
+    can_transition(effective_role, source_kind, current_status, req.to_status)?;
 
     if current_status != req.to_status {
         let to_str = req.to_status.as_str();
@@ -817,7 +941,7 @@ pub async fn transition_turnover_status(
                 from_status: Some(current_status),
                 to_status: req.to_status,
                 actor_user_id: Some(actor.user_id),
-                actor_role: actor.role.as_str(),
+                actor_role: effective_role.as_str(),
                 entry_point,
                 reason: reason.as_deref(),
             },
@@ -936,7 +1060,9 @@ pub async fn reconcile_for_booking_conn(
             }
             Some(row) => {
                 let current_status = parse_status(&row.status)?;
-                if current_status == TurnoverStatus::NotRequired {
+                if current_status == TurnoverStatus::NotRequired
+                    && was_system_marked_not_required(conn, row.id).await?
+                {
                     sqlx::query!(
                         r#"
                         UPDATE turnover
@@ -1077,7 +1203,7 @@ pub async fn reconcile_for_listing_conn(
         FROM turnover
         WHERE listing_id = $1
           AND source_kind = 'ical_feed'
-          AND ($2::uuid IS NULL OR source_feed_id = $2)
+          AND ($2::uuid IS NULL OR source_feed_id = $2 OR source_feed_id IS NULL)
         ORDER BY id
         FOR UPDATE
         "#,
@@ -1096,6 +1222,7 @@ pub async fn reconcile_for_listing_conn(
     }
 
     let mut by_key: BTreeMap<(Uuid, String), ExistingIcalTurnover> = BTreeMap::new();
+    let mut orphan_by_uid: BTreeMap<String, ExistingIcalTurnover> = BTreeMap::new();
     let mut orphaned_to_prune = Vec::new();
     for row in existing_turnovers {
         let status = parse_status(&row.status)?;
@@ -1111,12 +1238,21 @@ pub async fn reconcile_for_listing_conn(
                     },
                 );
             }
+            (None, Some(uid)) => {
+                orphan_by_uid.entry(uid).or_insert(ExistingIcalTurnover {
+                    id: row.id,
+                    blocked_date_id: row.blocked_date_id,
+                    checkout_date: row.checkout_date,
+                    status,
+                });
+            }
             _ => {
                 orphaned_to_prune.push((row.id, row.checkout_date, status));
             }
         }
     }
 
+    let today_jm = listing_today(Utc::now());
     let admin_base_url = default_admin_base_url();
     let mut outbox_ids = Vec::new();
     let mut seen_keys: HashSet<(Uuid, String)> = HashSet::new();
@@ -1127,113 +1263,163 @@ pub async fn reconcile_for_listing_conn(
         let key = (blk_feed_id, blk_uid.clone());
         seen_keys.insert(key.clone());
 
-        match by_key.get(&key) {
-            None => {
-                let inserted = sqlx::query_scalar!(
+        if let Some(existing) = by_key.get(&key) {
+            if existing.status == TurnoverStatus::NotRequired
+                && was_system_marked_not_required(conn, existing.id).await?
+            {
+                sqlx::query!(
                     r#"
-                    INSERT INTO turnover (
-                        listing_id, source_kind, blocked_date_id,
-                        source_feed_id, source_external_uid, checkout_date, status
-                    )
-                    VALUES ($1, 'ical_feed', $2, $3, $4, $5, 'needs_cleaning')
-                    ON CONFLICT (listing_id, source_feed_id, source_external_uid)
-                    WHERE source_kind = 'ical_feed' AND source_feed_id IS NOT NULL AND source_external_uid IS NOT NULL
-                    DO NOTHING
-                    RETURNING id
+                    UPDATE turnover
+                    SET status = 'needs_cleaning',
+                        blocked_date_id = $1,
+                        checkout_date = $2,
+                        updated_at = NOW()
+                    WHERE id = $3
                     "#,
-                    listing_id,
                     blk.id,
-                    blk_feed_id,
-                    blk_uid,
                     blk.date_to,
+                    existing.id,
                 )
-                .fetch_optional(&mut *conn)
+                .execute(&mut *conn)
                 .await?;
-
-                if let Some(tid) = inserted {
-                    append_history(
-                        conn,
-                        HistoryRecord {
-                            turnover_id: tid,
-                            from_status: None,
-                            to_status: TurnoverStatus::NeedsCleaning,
-                            actor_user_id: None,
-                            actor_role: "system",
-                            entry_point,
-                            reason: None,
-                        },
-                    )
-                    .await?;
-                    let mut queued = enqueue_turnover_created_emails_conn(
-                        conn,
-                        TurnoverCreatedNotice {
-                            listing_id,
-                            turnover_id: tid,
-                            checkout_date: blk.date_to,
-                            source_kind: TurnoverSourceKind::IcalFeed,
-                            title: None,
-                            exclude_user_id: None,
-                            admin_base_url: &admin_base_url,
-                        },
-                    )
-                    .await?;
-                    outbox_ids.append(&mut queued);
-                }
+                append_history(
+                    conn,
+                    HistoryRecord {
+                        turnover_id: existing.id,
+                        from_status: Some(TurnoverStatus::NotRequired),
+                        to_status: TurnoverStatus::NeedsCleaning,
+                        actor_user_id: None,
+                        actor_role: "system",
+                        entry_point,
+                        reason: None,
+                    },
+                )
+                .await?;
+            } else if existing.checkout_date != blk.date_to
+                || existing.blocked_date_id != Some(blk.id)
+            {
+                sqlx::query!(
+                    r#"
+                    UPDATE turnover
+                    SET blocked_date_id = $1,
+                        checkout_date = $2,
+                        updated_at = NOW()
+                    WHERE id = $3
+                    "#,
+                    blk.id,
+                    blk.date_to,
+                    existing.id,
+                )
+                .execute(&mut *conn)
+                .await?;
             }
-            Some(existing) => {
-                if existing.status == TurnoverStatus::NotRequired {
-                    sqlx::query!(
-                        r#"
-                        UPDATE turnover
-                        SET status = 'needs_cleaning',
-                            blocked_date_id = $1,
-                            checkout_date = $2,
-                            updated_at = NOW()
-                        WHERE id = $3
-                        "#,
-                        blk.id,
-                        blk.date_to,
-                        existing.id,
-                    )
-                    .execute(&mut *conn)
-                    .await?;
-                    append_history(
-                        conn,
-                        HistoryRecord {
-                            turnover_id: existing.id,
-                            from_status: Some(TurnoverStatus::NotRequired),
-                            to_status: TurnoverStatus::NeedsCleaning,
-                            actor_user_id: None,
-                            actor_role: "system",
-                            entry_point,
-                            reason: None,
-                        },
-                    )
-                    .await?;
-                } else if existing.checkout_date != blk.date_to
-                    || existing.blocked_date_id != Some(blk.id)
-                {
-                    sqlx::query!(
-                        r#"
-                        UPDATE turnover
-                        SET blocked_date_id = $1,
-                            checkout_date = $2,
-                            updated_at = NOW()
-                        WHERE id = $3
-                        "#,
-                        blk.id,
-                        blk.date_to,
-                        existing.id,
-                    )
-                    .execute(&mut *conn)
-                    .await?;
-                }
+        } else if let Some(orphan) = orphan_by_uid.remove(&blk_uid) {
+            let reopen = orphan.status == TurnoverStatus::NotRequired
+                && was_system_marked_not_required(conn, orphan.id).await?;
+            if reopen {
+                sqlx::query!(
+                    r#"
+                    UPDATE turnover
+                    SET source_feed_id = $1,
+                        blocked_date_id = $2,
+                        checkout_date = $3,
+                        status = 'needs_cleaning',
+                        updated_at = NOW()
+                    WHERE id = $4
+                    "#,
+                    blk_feed_id,
+                    blk.id,
+                    blk.date_to,
+                    orphan.id,
+                )
+                .execute(&mut *conn)
+                .await?;
+                append_history(
+                    conn,
+                    HistoryRecord {
+                        turnover_id: orphan.id,
+                        from_status: Some(TurnoverStatus::NotRequired),
+                        to_status: TurnoverStatus::NeedsCleaning,
+                        actor_user_id: None,
+                        actor_role: "system",
+                        entry_point,
+                        reason: None,
+                    },
+                )
+                .await?;
+            } else {
+                sqlx::query!(
+                    r#"
+                    UPDATE turnover
+                    SET source_feed_id = $1,
+                        blocked_date_id = $2,
+                        checkout_date = $3,
+                        updated_at = NOW()
+                    WHERE id = $4
+                    "#,
+                    blk_feed_id,
+                    blk.id,
+                    blk.date_to,
+                    orphan.id,
+                )
+                .execute(&mut *conn)
+                .await?;
+            }
+        } else if blk.date_to >= today_jm {
+            let inserted = sqlx::query_scalar!(
+                r#"
+                INSERT INTO turnover (
+                    listing_id, source_kind, blocked_date_id,
+                    source_feed_id, source_external_uid, checkout_date, status
+                )
+                VALUES ($1, 'ical_feed', $2, $3, $4, $5, 'needs_cleaning')
+                ON CONFLICT (listing_id, source_feed_id, source_external_uid)
+                WHERE source_kind = 'ical_feed' AND source_feed_id IS NOT NULL AND source_external_uid IS NOT NULL
+                DO NOTHING
+                RETURNING id
+                "#,
+                listing_id,
+                blk.id,
+                blk_feed_id,
+                blk_uid,
+                blk.date_to,
+            )
+            .fetch_optional(&mut *conn)
+            .await?;
+
+            if let Some(tid) = inserted {
+                append_history(
+                    conn,
+                    HistoryRecord {
+                        turnover_id: tid,
+                        from_status: None,
+                        to_status: TurnoverStatus::NeedsCleaning,
+                        actor_user_id: None,
+                        actor_role: "system",
+                        entry_point,
+                        reason: None,
+                    },
+                )
+                .await?;
+                let mut queued = enqueue_turnover_created_emails_conn(
+                    conn,
+                    TurnoverCreatedNotice {
+                        listing_id,
+                        turnover_id: tid,
+                        checkout_date: blk.date_to,
+                        source_kind: TurnoverSourceKind::IcalFeed,
+                        title: None,
+                        exclude_user_id: None,
+                        admin_base_url: &admin_base_url,
+                    },
+                )
+                .await?;
+                outbox_ids.append(&mut queued);
             }
         }
     }
 
     if !skip_removals {
-        let today_jm = listing_today(Utc::now());
         for (key, existing) in by_key {
             if !seen_keys.contains(&key)
                 && existing.status == TurnoverStatus::NeedsCleaning
@@ -1266,38 +1452,101 @@ pub async fn reconcile_for_listing_conn(
                 .await?;
             }
         }
-        for (tid, checkout_date, status) in orphaned_to_prune {
-            if status == TurnoverStatus::NeedsCleaning && checkout_date > today_jm {
-                sqlx::query!(
-                    r#"
-                    UPDATE turnover
-                    SET status = 'not_required',
-                        blocked_date_id = NULL,
-                        updated_at = NOW()
-                    WHERE id = $1
-                    "#,
-                    tid,
-                )
-                .execute(&mut *conn)
-                .await?;
-                append_history(
-                    conn,
-                    HistoryRecord {
-                        turnover_id: tid,
-                        from_status: Some(TurnoverStatus::NeedsCleaning),
-                        to_status: TurnoverStatus::NotRequired,
-                        actor_user_id: None,
-                        actor_role: "system",
-                        entry_point,
-                        reason: Some("External calendar feed removed"),
-                    },
-                )
-                .await?;
-            }
+    }
+
+    for (_, orphan) in orphan_by_uid {
+        orphaned_to_prune.push((orphan.id, orphan.checkout_date, orphan.status));
+    }
+    for (tid, checkout_date, status) in orphaned_to_prune {
+        if status == TurnoverStatus::NeedsCleaning && checkout_date > today_jm {
+            sqlx::query!(
+                r#"
+                UPDATE turnover
+                SET status = 'not_required',
+                    blocked_date_id = NULL,
+                    updated_at = NOW()
+                WHERE id = $1
+                "#,
+                tid,
+            )
+            .execute(&mut *conn)
+            .await?;
+            append_history(
+                conn,
+                HistoryRecord {
+                    turnover_id: tid,
+                    from_status: Some(TurnoverStatus::NeedsCleaning),
+                    to_status: TurnoverStatus::NotRequired,
+                    actor_user_id: None,
+                    actor_role: "system",
+                    entry_point,
+                    reason: Some("External calendar feed removed"),
+                },
+            )
+            .await?;
         }
     }
 
     Ok(outbox_ids)
+}
+
+/// Closes open future `needs_cleaning` turnovers tied to `feed_id` before the calendar feed row is
+/// deleted, preventing orphaned active cleanings.
+#[tracing::instrument(skip(conn))]
+pub async fn close_turnovers_for_deleted_feed_conn(
+    conn: &mut PgConnection,
+    listing_id: Uuid,
+    feed_id: Uuid,
+) -> Result<()> {
+    let today_jm = listing_today(Utc::now());
+    let open_ids = sqlx::query_scalar!(
+        r#"
+        SELECT id
+        FROM turnover
+        WHERE listing_id = $1
+          AND source_kind = 'ical_feed'
+          AND source_feed_id = $2
+          AND status = 'needs_cleaning'
+          AND checkout_date > $3
+        ORDER BY id
+        FOR UPDATE
+        "#,
+        listing_id,
+        feed_id,
+        today_jm,
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| DbError::from_sqlx_contended(e, "lock turnovers for deleted feed"))?;
+
+    for tid in open_ids {
+        sqlx::query!(
+            r#"
+            UPDATE turnover
+            SET status = 'not_required',
+                blocked_date_id = NULL,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            tid,
+        )
+        .execute(&mut *conn)
+        .await?;
+        append_history(
+            conn,
+            HistoryRecord {
+                turnover_id: tid,
+                from_status: Some(TurnoverStatus::NeedsCleaning),
+                to_status: TurnoverStatus::NotRequired,
+                actor_user_id: None,
+                actor_role: "system",
+                entry_point: "calendar::feeds::delete",
+                reason: Some("External calendar feed removed"),
+            },
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 /// Standalone transaction wrapper around [`reconcile_for_listing_conn`].
@@ -1345,6 +1594,7 @@ pub async fn backfill_listing_turnovers(
         return Ok(());
     }
 
+    let today_jm = listing_today(Utc::now());
     let booking_ids = sqlx::query_scalar!(
         r#"
         SELECT DISTINCT b.id
@@ -1355,6 +1605,7 @@ pub async fn backfill_listing_turnovers(
           AND (
               (
                   b.status IN ('confirmed'::booking_status, 'completed'::booking_status)
+                  AND b.date_to >= $2
                   AND (
                       t.id IS NULL
                       OR t.checkout_date <> b.date_to
@@ -1370,6 +1621,7 @@ pub async fn backfill_listing_turnovers(
         ORDER BY b.id
         "#,
         listing_id,
+        today_jm,
     )
     .fetch_all(&mut *tx)
     .await?;
@@ -1434,12 +1686,14 @@ pub async fn add_comment_with_outbox(
     else {
         return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
     };
-    if is_deleted
-        || !actor_has_listing_access(&mut tx, actor, listing_lookup.listing_id, owner_user_id)
-            .await?
-    {
+    let effective_role = if is_deleted {
+        None
+    } else {
+        resolve_listing_actor_role(&mut tx, actor, listing_lookup.listing_id, owner_user_id).await?
+    };
+    let Some(effective_role) = effective_role else {
         return Err(DbError::Sqlx(sqlx::Error::RowNotFound));
-    }
+    };
 
     let turnover = sqlx::query!(
         r#"
@@ -1493,7 +1747,7 @@ pub async fn add_comment_with_outbox(
         turnover_id,
         actor.user_id,
         author_name,
-        actor.role.as_str(),
+        effective_role.as_str(),
         trimmed,
     )
     .fetch_one(&mut *tx)

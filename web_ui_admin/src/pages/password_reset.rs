@@ -1,6 +1,9 @@
 //! Public `/forgot-password` and `/reset-password` flows for hosts, admins, and invited staff.
 
-use common::turnover::{PasswordResetRequest, PasswordTokenRedeemRequest, is_valid_trimmed_email};
+use common::turnover::{
+    PasswordResetRequest, PasswordTokenRedeemRequest, StaffInviteAcceptRequest,
+    is_valid_trimmed_email,
+};
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -314,4 +317,144 @@ pub async fn reset_password_submit(
     };
 
     Ok(view! { reset_password_card(state: state) })
+}
+
+/// Submitted staff invite acceptance form payload.
+#[derive(Deserialize)]
+pub struct StaffInviteAcceptForm {
+    #[serde(default)]
+    token: String,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum StaffInviteAcceptState {
+    Confirm {
+        token: String,
+        error: Option<String>,
+    },
+    Accepted,
+    ExpiredOrInvalid,
+}
+
+#[component]
+async fn staff_invite_accept_card(cx: &Cx, state: StaffInviteAcceptState) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! {
+        <main class="flex min-h-screen items-center justify-center bg-background p-6">
+            <section class="w-full max-w-md space-y-6 rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                        "Our Places"
+                    </p>
+                    <h1 class="text-2xl font-bold tracking-tight">"Staff invitation"</h1>
+                </div>
+
+                match state {
+                    StaffInviteAcceptState::Confirm { token, error } => {
+                        if let Some(error) = error {
+                            <div
+                                id="staff-invite-accept-error"
+                                role="alert"
+                                class="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+                            >
+                                (error)
+                            </div>
+                        }
+                        <p class="text-sm text-muted-foreground">
+                            "Confirm below to join the host's cleaning & maintenance team and enable Turnover Dispatch access on your account."
+                        </p>
+                        <form method="post" action="/staff-invite/accept" class="space-y-4">
+                            <input type="hidden" name="token" value=(token) />
+                            <button
+                                id="btn-accept-staff-invite"
+                                type="submit"
+                                class="inline-flex h-10 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                            >
+                                "Accept invitation"
+                            </button>
+                        </form>
+                    }
+                    StaffInviteAcceptState::Accepted => {
+                        <div
+                            id="staff-invite-accepted"
+                            class="space-y-4 rounded-lg border border-border bg-muted/40 p-4 text-sm"
+                        >
+                            <p class="font-medium">"Invitation accepted!"</p>
+                            <p class="text-muted-foreground">
+                                "Your account now has access to the Turnover Dispatch Portal for the assigned properties."
+                            </p>
+                            <a
+                                href="/login"
+                                class="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                            >
+                                "Sign in to Dispatch"
+                            </a>
+                        </div>
+                    }
+                    StaffInviteAcceptState::ExpiredOrInvalid => {
+                        <div
+                            id="staff-invite-expired"
+                            class="space-y-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+                        >
+                            <p class="font-medium">"This invitation link is invalid or has expired."</p>
+                            <p class="text-xs opacity-90">
+                                "Ask the property host to send a new staff invitation."
+                            </p>
+                        </div>
+                    }
+                }
+            </section>
+        </main>
+    })
+}
+
+/// Displays the explicit consent confirmation page for an existing-account `staff_accept` link.
+#[page("/staff-invite/accept")]
+pub async fn staff_invite_accept_page(cx: &Cx) -> Result<impl View> {
+    let token = parse_query_params::<ResetPasswordQuery>(cx)
+        .ok()
+        .and_then(|q| q.token)
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+
+    let state = match token {
+        Some(token) => StaffInviteAcceptState::Confirm { token, error: None },
+        None => StaffInviteAcceptState::ExpiredOrInvalid,
+    };
+    Ok(view! { staff_invite_accept_card(state: state) })
+}
+
+/// Redeems the single-use `staff_accept` token after explicit user consent.
+#[page(POST "/staff-invite/accept")]
+pub async fn staff_invite_accept_submit(
+    cx: &Cx,
+    /// Submitted acceptance form.
+    Form(form): Form<StaffInviteAcceptForm>,
+) -> Result<impl View> {
+    let token = form.token.trim().to_string();
+    let state = if token.is_empty() {
+        StaffInviteAcceptState::ExpiredOrInvalid
+    } else {
+        let req = StaffInviteAcceptRequest {
+            token: token.clone(),
+        };
+        match get_api_client(cx).accept_staff_invite(&req).await {
+            Ok(()) => StaffInviteAcceptState::Accepted,
+            Err(UserCallError::Unauthorized) => StaffInviteAcceptState::ExpiredOrInvalid,
+            Err(UserCallError::Api(rej)) => StaffInviteAcceptState::Confirm {
+                token,
+                error: Some(rej.message),
+            },
+            Err(err) => {
+                tracing::error!(error = %err, "staff invite acceptance failed");
+                StaffInviteAcceptState::Confirm {
+                    token,
+                    error: Some(
+                        "Could not accept this invitation right now. Please try again.".to_string(),
+                    ),
+                }
+            }
+        }
+    };
+    Ok(view! { staff_invite_accept_card(state: state) })
 }

@@ -595,6 +595,23 @@ pub struct InviteStaffRequest {
     pub listing_ids: Vec<Uuid>,
 }
 
+/// Uniform non-enumerating response returned by `POST /api/v1/staff-users`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct StaffInviteResponse {
+    /// Normalized email address submitted by the host.
+    pub email: String,
+    /// Generic invitation dispatch message.
+    pub message: String,
+}
+
+/// Public request payload to accept an existing-account staff roster invitation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Validate, ToSchema)]
+pub struct StaffInviteAcceptRequest {
+    /// Raw opaque `staff_accept` token parsed from the email link query string.
+    #[validate(length(min = 1))]
+    pub token: String,
+}
+
 /// Request payload to replace a staff member's assigned listings for the caller's properties.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct UpdateStaffAssignmentsRequest {

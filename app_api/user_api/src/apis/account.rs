@@ -329,6 +329,21 @@ pub(super) async fn request_password_reset(
             .await
             .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
 
+        if db_core::action_token::has_recent_password_reset_conn(&mut tx, user.id, 60)
+            .await
+            .map_err(ApiError::Database)?
+        {
+            let _ = tx.rollback().await;
+            return Ok(respond(
+                &req,
+                Payload::Item(ActionStatusResponse {
+                    status: "accepted".to_string(),
+                }),
+                |_: Vec<ActionStatusResponse>| (),
+                actix_web::http::StatusCode::ACCEPTED,
+            ));
+        }
+
         let expires_at = Utc::now() + ActionTokenPurpose::PasswordReset.default_ttl();
         let raw_token = db_core::action_token::issue_action_token_conn(
             &mut tx,
@@ -405,6 +420,15 @@ pub(super) async fn confirm_password_reset(
 ) -> Result<impl Responder, ApiError> {
     let payload = req_data.into_inner();
     payload.validate()?;
+
+    if !db_core::action_token::verify_open_password_token(pool.get_ref(), &payload.token)
+        .await
+        .map_err(ApiError::Database)?
+    {
+        return Err(ApiError::Unauthorized(
+            "Invalid or expired password reset token".to_string(),
+        ));
+    }
 
     let new_password = payload.new_password;
     let password_hash =

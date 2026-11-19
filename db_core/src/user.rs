@@ -210,6 +210,10 @@ pub async fn update_user(pool: &PgPool, id: Uuid, updated_user: &UpdatedUser) ->
     .await
     .map_err(slug_taken)?;
 
+    if updated_user.password_hash.is_some() {
+        crate::action_token::revoke_open_tokens_conn(&mut tx, id).await?;
+    }
+
     tx.commit().await?;
 
     Ok(updated)
@@ -499,6 +503,8 @@ pub async fn update_user_password(
     )
     .fetch_one(&mut *tx)
     .await?;
+
+    crate::action_token::revoke_open_tokens_conn(&mut tx, id).await?;
 
     tx.commit().await?;
 

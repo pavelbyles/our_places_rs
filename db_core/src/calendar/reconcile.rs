@@ -215,6 +215,8 @@ async fn apply(
     .execute(&mut *tx)
     .await?;
 
+    let conflicts_opened = i32::try_from(opened.len()).unwrap_or(i32::MAX);
+
     let mut turnover_outbox_ids = crate::turnover::reconcile_for_listing_conn(
         &mut tx,
         claim.listing_id,
@@ -230,7 +232,7 @@ async fn apply(
         status,
         events,
         warning,
-        conflicts_opened: i32::try_from(opened.len()).unwrap_or(i32::MAX),
+        conflicts_opened,
         outbox_ids: opened,
     })
 }

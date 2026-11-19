@@ -349,6 +349,7 @@ pub async fn delete(pool: &PgPool, listing_id: Uuid, feed_id: Uuid) -> Result<bo
     if locked.is_none() {
         return Ok(false);
     }
+    crate::turnover::close_turnovers_for_deleted_feed_conn(&mut tx, listing_id, feed_id).await?;
     sqlx::query!(
         "DELETE FROM listing_calendar_feed WHERE id = $1 AND listing_id = $2",
         feed_id,

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id AS listing_id, name AS listing_name, added_at AS assigned_at\n            FROM listing\n            WHERE is_active = TRUE\n              AND deleted_at IS NULL\n            ORDER BY LOWER(name) ASC, id ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "assigned_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c204c29feeafa4e43bebe96ec85ffbe9b2d5fe052efd96954cb0a4bc957d97b2"
+}

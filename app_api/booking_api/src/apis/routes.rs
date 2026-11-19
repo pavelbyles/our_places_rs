@@ -105,6 +105,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             booking_requests::send_quote,
             inbox::get_inbox,
             turnovers::list_turnovers,
+            turnovers::list_turnover_listings,
             turnovers::create_manual_turnover,
             turnovers::get_turnover_detail,
             turnovers::transition_turnover_status,
@@ -519,6 +520,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .wrap(from_fn(require_user))
             .route("", web::get().to(turnovers::list_turnovers))
             .route("", web::post().to(turnovers::create_manual_turnover))
+            .route(
+                "/listings",
+                web::get().to(turnovers::list_turnover_listings),
+            )
             .route("/{id}", web::get().to(turnovers::get_turnover_detail))
             .route(
                 "/{id}/status",

@@ -5,9 +5,9 @@ use api_core::auth::Claims;
 use api_core::error::ApiError;
 use common::email::EmailTemplate;
 use common::turnover::{
-    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, TransitionTurnoverRequest,
-    TurnoverActorRole, TurnoverCommentResponse, TurnoverDetailResponse, TurnoverListQuery,
-    TurnoverListResponse, TurnoverResponse,
+    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, StaffListingAssignment,
+    TransitionTurnoverRequest, TurnoverActorRole, TurnoverCommentResponse, TurnoverDetailResponse,
+    TurnoverListQuery, TurnoverListResponse, TurnoverResponse,
 };
 use db_core::models::UserRole;
 use db_core::turnover::TurnoverActor;
@@ -38,6 +38,30 @@ async fn resolve_dispatch_actor(pool: &PgPool, claims: &Claims) -> Result<Turnov
         user_id: user.id,
         role,
     })
+}
+
+/// Lists all active properties accessible to the authenticated host, staff member, or admin.
+#[tracing::instrument(skip(pool, claims), fields(user_id = %claims.sub))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/turnovers/listings",
+    tag = "turnovers",
+    responses(
+        (status = 200, description = "Accessible dispatch listings", body = [StaffListingAssignment]),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_turnover_listings(
+    pool: web::Data<PgPool>,
+    claims: Claims,
+) -> Result<HttpResponse, ApiError> {
+    let actor = resolve_dispatch_actor(pool.get_ref(), &claims).await?;
+    let listings = db_core::turnover::list_accessible_listings(pool.get_ref(), actor)
+        .await
+        .map_err(ApiError::Database)?;
+    Ok(HttpResponse::Ok().json(listings))
 }
 
 /// Lists scoped turnover dispatch cards for the authenticated host, staff member, or admin.

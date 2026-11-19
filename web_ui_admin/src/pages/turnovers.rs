@@ -391,28 +391,21 @@ async fn resolve_listing_options(
     user: &AdminSession,
     token: &str,
     board_turnovers: &[TurnoverResponse],
-    should_fetch_all: bool,
+    _should_fetch_all: bool,
 ) -> Vec<ListingOption> {
     let mut by_id: BTreeMap<Uuid, String> = BTreeMap::new();
+    if let Ok(accessible) = get_api_client(cx).list_turnover_listings(token).await {
+        for item in accessible {
+            by_id.insert(item.listing_id, item.listing_name);
+        }
+    }
     for listing in scoped_listings(cx, user).await {
-        by_id.insert(listing.id, listing.name);
+        by_id.entry(listing.id).or_insert(listing.name);
     }
     for t in board_turnovers {
         by_id
             .entry(t.listing_id)
             .or_insert_with(|| t.listing_name.clone());
-    }
-    if user.role == AdminRole::Staff && should_fetch_all {
-        let all_query = TurnoverListQuery {
-            window: Some(TurnoverWindow::All),
-            per_page: Some(100),
-            ..Default::default()
-        };
-        if let Ok(all) = get_api_client(cx).list_turnovers(&all_query, token).await {
-            for t in all.turnovers {
-                by_id.entry(t.listing_id).or_insert(t.listing_name);
-            }
-        }
     }
     let mut options: Vec<ListingOption> = by_id
         .into_iter()

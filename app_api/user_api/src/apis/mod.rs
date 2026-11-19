@@ -18,8 +18,9 @@ pub use common::models::{
     UpdateUserRequest, VerifyRequest,
 };
 pub use common::turnover::{
-    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery,
-    StaffListResponse, StaffListingAssignment, StaffMemberSummary, UpdateStaffAssignmentsRequest,
+    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffInviteAcceptRequest,
+    StaffInviteResponse, StaffListQuery, StaffListResponse, StaffListingAssignment,
+    StaffMemberSummary, UpdateStaffAssignmentsRequest,
 };
 
 mod account;
@@ -191,6 +192,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             account::confirm_password_reset,
             staff::list_staff_users,
             staff::invite_staff_user,
+            staff::accept_staff_invite,
             staff::update_staff_listings,
             staff::resend_staff_invite,
             staff::remove_staff_user,
@@ -208,7 +210,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 UserFilter, UsersWrapper, PasswordChangeRequest,
                 PasswordChangeConfirm, PasswordResetRequest, PasswordTokenRedeemRequest,
                 StaffListQuery, StaffListResponse, StaffMemberSummary, StaffListingAssignment,
-                InviteStaffRequest, UpdateStaffAssignmentsRequest,
+                InviteStaffRequest, StaffInviteResponse, StaffInviteAcceptRequest,
+                UpdateStaffAssignmentsRequest,
                 ActionStatusResponse, EmailChangeRequest, DeactivateRequest,
                 CreateSessionRequest, SessionResponse, SessionNamespaceQuery
             )
@@ -381,6 +384,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 "/password-reset/confirm",
                 web::post()
                     .to(account::confirm_password_reset)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/staff-invite/accept",
+                web::post()
+                    .to(staff::accept_staff_invite)
                     .wrap(from_fn(content_negotiation_middleware)),
             ),
     );

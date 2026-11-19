@@ -92,6 +92,9 @@ pub fn load_template(filename: &str) -> String {
             include_str!("../templates/calendar_feed_failing_host.html").to_string()
         }
         "staff_invite.html" => include_str!("../templates/staff_invite.html").to_string(),
+        "staff_accept_invite.html" => {
+            include_str!("../templates/staff_accept_invite.html").to_string()
+        }
         "staff_listing_assigned.html" => {
             include_str!("../templates/staff_listing_assigned.html").to_string()
         }

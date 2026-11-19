@@ -16,6 +16,8 @@ pub const LOCKED_PASSWORD_SENTINEL_PREFIX: &str = "!locked!";
 pub enum ActionTokenPurpose {
     /// Initial password-setup invitation emailed to newly created crew accounts.
     StaffInvite,
+    /// Consent link emailed to an existing account before attaching staff role or roster links.
+    StaffAccept,
     /// Self-service password reset emailed via `/forgot-password`.
     PasswordReset,
 }
@@ -25,6 +27,7 @@ impl ActionTokenPurpose {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::StaffInvite => "staff_invite",
+            Self::StaffAccept => "staff_accept",
             Self::PasswordReset => "password_reset",
         }
     }
@@ -32,7 +35,7 @@ impl ActionTokenPurpose {
     /// Standard validity duration for this token purpose.
     pub const fn default_ttl(self) -> Duration {
         match self {
-            Self::StaffInvite => Duration::hours(72),
+            Self::StaffInvite | Self::StaffAccept => Duration::hours(72),
             Self::PasswordReset => Duration::minutes(30),
         }
     }
@@ -79,15 +82,14 @@ pub fn is_password_pending(password_hash: &str) -> bool {
 }
 
 /// Invalidates any open tokens for `(user_id, purpose)` and inserts a fresh
-/// hashed token on the caller's open connection, returning the plaintext token
-/// for email delivery.
+/// hashed token on the caller's open connection, returning `(token_id, plaintext_token)`.
 #[tracing::instrument(skip(conn))]
-pub async fn issue_action_token_conn(
+pub async fn issue_action_token_row_conn(
     conn: &mut PgConnection,
     user_id: Uuid,
     purpose: ActionTokenPurpose,
     expires_at: DateTime<Utc>,
-) -> Result<String> {
+) -> Result<(Uuid, String)> {
     let purpose_str = purpose.as_str();
 
     sqlx::query!(
@@ -107,19 +109,34 @@ pub async fn issue_action_token_conn(
     let raw_token = generate_raw_token();
     let token_hash = hash_token(&raw_token);
 
-    sqlx::query!(
+    let token_id = sqlx::query_scalar!(
         r#"
         INSERT INTO account_action_token (user_id, purpose, token_hash, expires_at)
         VALUES ($1, $2, $3, $4)
+        RETURNING id
         "#,
         user_id,
         purpose_str,
         token_hash,
         expires_at,
     )
-    .execute(&mut *conn)
+    .fetch_one(&mut *conn)
     .await?;
 
+    Ok((token_id, raw_token))
+}
+
+/// Invalidates any open tokens for `(user_id, purpose)` and inserts a fresh
+/// hashed token on the caller's open connection, returning the plaintext token
+/// for email delivery.
+#[tracing::instrument(skip(conn))]
+pub async fn issue_action_token_conn(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    purpose: ActionTokenPurpose,
+    expires_at: DateTime<Utc>,
+) -> Result<String> {
+    let (_, raw_token) = issue_action_token_row_conn(conn, user_id, purpose, expires_at).await?;
     Ok(raw_token)
 }
 
@@ -137,13 +154,99 @@ pub async fn issue_action_token(
     Ok(raw)
 }
 
-/// Atomically redeems a single-use action token and updates the owner's password.
+/// Marks every open `account_action_token` (`staff_invite` and `password_reset`) for `user_id`
+/// as used inside the caller's open transaction so prior links cannot outlive a password change.
+pub(crate) async fn revoke_open_tokens_conn(
+    conn: &mut sqlx::PgConnection,
+    user_id: Uuid,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE account_action_token
+        SET used_at = NOW()
+        WHERE user_id = $1
+          AND used_at IS NULL
+        "#,
+        user_id,
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Acquires a per-user transaction advisory lock and returns `true` when a `password_reset`
+/// token was already issued within `cooldown_secs`, preventing inbox flooding and link churn.
+#[tracing::instrument(skip(conn))]
+pub async fn has_recent_password_reset_conn(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    cooldown_secs: i64,
+) -> Result<bool> {
+    let user_key = user_id.to_string();
+    sqlx::query_scalar!(
+        r#"SELECT pg_advisory_xact_lock(hashtext('password_reset'), hashtext($1)) IS NULL AS "locked!""#,
+        user_key,
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    let recent = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM account_action_token
+            WHERE user_id = $1
+              AND purpose = 'password_reset'
+              AND created_at > NOW() - ($2::bigint * INTERVAL '1 second')
+        ) AS "exists!"
+        "#,
+        user_id,
+        cooldown_secs.max(0),
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+
+    Ok(recent)
+}
+
+/// Fast pre-check confirming `raw_token` corresponds to an unused, unexpired
+/// `staff_invite` or `password_reset` token for an active user before running `bcrypt`.
+#[tracing::instrument(skip(pool, raw_token))]
+pub async fn verify_open_password_token(pool: &PgPool, raw_token: &str) -> Result<bool> {
+    let trimmed = raw_token.trim();
+    if trimmed.is_empty() {
+        return Ok(false);
+    }
+    let token_hash = hash_token(trimmed);
+    let valid = sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM account_action_token t
+            JOIN "user" u ON u.id = t.user_id
+            WHERE t.token_hash = $1
+              AND t.purpose IN ('staff_invite', 'password_reset')
+              AND t.used_at IS NULL
+              AND t.expires_at > clock_timestamp()
+              AND u.is_active = TRUE
+              AND u.deleted_at IS NULL
+        ) AS "valid!"
+        "#,
+        token_hash,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(valid)
+}
+
+/// Atomically redeems a single-use action token and updates the owner's password, burning all
+/// remaining open invite or reset tokens for that user.
 ///
 /// Claims the token with `UPDATE ... WHERE used_at IS NULL AND expires_at > clock_timestamp()`,
 /// locks the owning `"user"` row `FOR UPDATE`, verifies `is_active = TRUE` and
 /// `deleted_at IS NULL`, snapshots history into `user_history`, updates `password_hash`,
-/// and sets `is_verified = TRUE`. Returns `Ok(None)` when missing, expired, already used,
-/// or belonging to an inactive/deleted account.
+/// sets `is_verified = TRUE`, and revokes any other open `account_action_token` rows for `user_id`.
+/// Returns `Ok(None)` when missing, expired, already used, or belonging to an inactive/deleted account.
 #[tracing::instrument(skip(pool, raw_token, new_password_hash))]
 pub async fn consume_action_token_and_set_password(
     pool: &PgPool,
@@ -166,6 +269,7 @@ pub async fn consume_action_token_and_set_password(
         UPDATE account_action_token
         SET used_at = NOW()
         WHERE token_hash = $1
+          AND purpose IN ('staff_invite', 'password_reset')
           AND used_at IS NULL
           AND expires_at > clock_timestamp()
         RETURNING user_id
@@ -203,6 +307,8 @@ pub async fn consume_action_token_and_set_password(
     )
     .execute(&mut *tx)
     .await?;
+
+    revoke_open_tokens_conn(&mut tx, user_id).await?;
 
     tx.commit().await?;
     Ok(Some(user_id))
@@ -294,6 +400,57 @@ mod tests {
             consume_action_token_and_set_password(&pool, &inactive_token, "$2b$04$hash5").await?,
             None
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn password_change_revokes_all_other_open_action_tokens_for_user()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let db = migrated_db();
+        let pool = db.get_pool().await;
+        let user_id = raw_user(&pool).await;
+
+        // Open both a staff invite token and a password reset token.
+        let invite_token = issue_action_token(
+            &pool,
+            user_id,
+            ActionTokenPurpose::StaffInvite,
+            Utc::now() + Duration::hours(72),
+        )
+        .await?;
+        let reset_token = issue_action_token(
+            &pool,
+            user_id,
+            ActionTokenPurpose::PasswordReset,
+            Utc::now() + Duration::minutes(30),
+        )
+        .await?;
+
+        // Redeeming the reset token burns the open invite token too.
+        assert_eq!(
+            consume_action_token_and_set_password(&pool, &reset_token, "$2b$04$hash_reset").await?,
+            Some(user_id)
+        );
+        assert_eq!(
+            consume_action_token_and_set_password(&pool, &invite_token, "$2b$04$takeover").await?,
+            None
+        );
+
+        // Direct password update also revokes any newly issued open tokens.
+        let reset_two = issue_action_token(
+            &pool,
+            user_id,
+            ActionTokenPurpose::PasswordReset,
+            Utc::now() + Duration::minutes(30),
+        )
+        .await?;
+        crate::user::update_user_password(&pool, user_id, "$2b$04$direct_change".to_string())
+            .await?;
+        assert_eq!(
+            consume_action_token_and_set_password(&pool, &reset_two, "$2b$04$takeover2").await?,
+            None
+        );
+
         Ok(())
     }
 }

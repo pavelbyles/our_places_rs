@@ -6,8 +6,8 @@ use api_core::auth::Claims;
 use api_core::error::ApiError;
 use api_core::response::{Payload, respond};
 use common::turnover::{
-    InviteStaffRequest, StaffListQuery, StaffListResponse, StaffMemberSummary,
-    UpdateStaffAssignmentsRequest,
+    InviteStaffRequest, StaffInviteAcceptRequest, StaffInviteResponse, StaffListQuery,
+    StaffListResponse, StaffMemberSummary, UpdateStaffAssignmentsRequest,
 };
 use db_core::models::{User, UserRole};
 use sqlx::PgPool;
@@ -93,8 +93,8 @@ pub(super) async fn list_staff_users(
     ))
 }
 
-/// Invites a new staff member by email (or links an existing active user to the caller's roster)
-/// and assigns them to one or more owned active listings.
+/// Invites a cleaning/maintenance staff member to owned active listings using a uniform,
+/// non-enumerating response regardless of whether the email already belongs to an account.
 #[tracing::instrument(skip_all)]
 #[utoipa::path(
     post,
@@ -102,8 +102,7 @@ pub(super) async fn list_staff_users(
     tag = "staff",
     request_body = InviteStaffRequest,
     responses(
-        (status = 200, description = "Existing staff member updated", body = StaffMemberSummary),
-        (status = 201, description = "Staff member invited or attached", body = StaffMemberSummary),
+        (status = 202, description = "Staff invitation accepted for delivery", body = StaffInviteResponse),
         (status = 400, description = "Validation error"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden")
@@ -129,21 +128,54 @@ pub(super) async fn invite_staff_user(
     .await
     .map_err(ApiError::Database)?;
 
-    if let Some(email_id) = outcome.outbox_email_id {
-        spawn_outbox_publish(email_id, outcome.staff.user_id);
+    if let (Some(email_id), Some(target_user_id)) =
+        (outcome.outbox_email_id, outcome.target_user_id)
+    {
+        spawn_outbox_publish(email_id, target_user_id);
     }
-
-    let status = if outcome.created {
-        StatusCode::CREATED
-    } else {
-        StatusCode::OK
-    };
 
     Ok(respond(
         &req,
-        Payload::Item(outcome.staff),
-        |_: Vec<StaffMemberSummary>| (),
-        status,
+        Payload::Item(outcome.response),
+        |_: Vec<StaffInviteResponse>| (),
+        StatusCode::ACCEPTED,
+    ))
+}
+
+/// Public endpoint redeeming a single-use `staff_accept` invitation token after explicit user
+/// consent, attaching `UserRole::Staff` and the host's roster/listing assignments.
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/staff-invite/accept",
+    tag = "staff",
+    request_body = StaffInviteAcceptRequest,
+    responses(
+        (status = 200, description = "Staff invitation accepted", body = ActionStatusResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Invalid or expired invitation token")
+    )
+)]
+pub(super) async fn accept_staff_invite(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    payload: web::Json<StaffInviteAcceptRequest>,
+) -> Result<impl Responder, ApiError> {
+    let body = payload.into_inner();
+    body.validate()?;
+
+    db_core::staff::accept_staff_invite(pool.get_ref(), &body.token)
+        .await
+        .map_err(ApiError::Database)?
+        .ok_or_else(|| ApiError::Unauthorized("Invalid or expired invitation token".to_string()))?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(ActionStatusResponse {
+            status: "accepted".to_string(),
+        }),
+        |_: Vec<ActionStatusResponse>| (),
+        StatusCode::OK,
     ))
 }
 

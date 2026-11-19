@@ -487,11 +487,11 @@ pub async fn list_staff_users(query: &StaffListQuery, user_jwt: &str) -> Result<
         .context("Failed to parse staff list response")
 }
 
-/// Invites or attaches a staff member via `POST /api/v1/staff-users`.
+/// Invites a staff member via `POST /api/v1/staff-users`.
 pub async fn invite_staff_user(
     req: &InviteStaffRequest,
     user_jwt: &str,
-) -> Result<StaffMemberSummary> {
+) -> Result<crate::turnover::StaffInviteResponse> {
     let url = format!("{}/api/v1/staff-users", user_api_url());
     let audience = user_api_audience();
     let res = get_client()
@@ -508,9 +508,9 @@ pub async fn invite_staff_user(
         bail!("Failed to invite staff member ({}): {}", status, err_text);
     }
 
-    res.json::<StaffMemberSummary>()
+    res.json::<crate::turnover::StaffInviteResponse>()
         .await
-        .context("Failed to parse staff member summary")
+        .context("Failed to parse staff invite response")
 }
 
 /// Updates a staff member's assigned owned listings via `PUT /api/v1/staff-users/{id}/listings`.

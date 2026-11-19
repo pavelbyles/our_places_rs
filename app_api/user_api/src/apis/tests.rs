@@ -1150,6 +1150,33 @@ mod password_reset_tests {
         .await;
         assert_eq!(second_req.status(), 202);
 
+        // Throttled: immediate duplicate request does not flood outbox or invalidate first token.
+        let throttled_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link'",
+        )
+        .bind(&canonical_email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(throttled_count, 1);
+
+        // Once the cooldown window has elapsed, a new request supersedes the prior token.
+        sqlx::query(
+            "UPDATE account_action_token SET created_at = NOW() - INTERVAL '2 minutes' WHERE user_id = $1 AND purpose = 'password_reset'",
+        )
+        .bind(staff_id)
+        .execute(&pool)
+        .await?;
+
+        let third_req = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": canonical_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(third_req.status(), 202);
+
         let open_tokens: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM account_action_token WHERE user_id = $1 AND purpose = 'password_reset' AND used_at IS NULL",
         )
@@ -1535,8 +1562,24 @@ mod staff_api_tests {
                 .to_request(),
         )
         .await;
-        assert!(matches!(invite_a.status().as_u16(), 200 | 201));
-        let created_a: StaffMemberSummary = test::read_body_json(invite_a).await;
+        assert_eq!(invite_a.status(), 202);
+        let invite_a_body: common::turnover::StaffInviteResponse =
+            test::read_body_json(invite_a).await;
+        assert_eq!(invite_a_body.email, "shared.cleaner@example.com");
+        assert_eq!(invite_a_body.message, "Invitation sent.");
+
+        let list_a_resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_a))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(list_a_resp.status(), 200);
+        let list_a: StaffListResponse = test::read_body_json(list_a_resp).await;
+        assert_eq!(list_a.staff.len(), 1);
+        let created_a = &list_a.staff[0];
         assert_eq!(created_a.email, "shared.cleaner@example.com");
         assert!(created_a.password_pending);
         assert_eq!(created_a.listings.len(), 1);
@@ -1555,7 +1598,8 @@ mod staff_api_tests {
             )
             .await?;
 
-        // Host B invites the same cleaner email for Host B's first listing; Host A's listing is hidden.
+        // Host B invites the same cleaner email for Host B's first listing; response is uniform
+        // and does not attach until the cleaner clicks the accept link.
         let invite_b = test::call_service(
             &app,
             test::TestRequest::post()
@@ -1570,12 +1614,44 @@ mod staff_api_tests {
                 .to_request(),
         )
         .await;
-        assert!(matches!(invite_b.status().as_u16(), 200 | 201));
-        let created_b: StaffMemberSummary = test::read_body_json(invite_b).await;
-        assert_eq!(created_b.user_id, staff_id);
-        assert_eq!(created_b.first_name, "Dana");
-        assert_eq!(created_b.listings.len(), 1);
-        assert_eq!(created_b.listings[0].listing_id, villa_b1);
+        assert_eq!(invite_b.status(), 202);
+        let invite_b_body: common::turnover::StaffInviteResponse =
+            test::read_body_json(invite_b).await;
+        assert_eq!(invite_b_body, invite_a_body);
+
+        let accept_payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = 'shared.cleaner@example.com' AND template_id = 'staff_accept_invite' ORDER BY created_at DESC LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let accept_token =
+            extract_token_from_url(accept_payload["accept_url"].as_str().ok_or("accept_url")?)
+                .ok_or("accept_token")?;
+        let accept_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/staff-invite/accept")
+                .set_json(json!({ "token": accept_token }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(accept_resp.status(), 200);
+
+        let list_b_resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_b))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(list_b_resp.status(), 200);
+        let list_b: StaffListResponse = test::read_body_json(list_b_resp).await;
+        assert_eq!(list_b.staff.len(), 1);
+        assert_eq!(list_b.staff[0].user_id, staff_id);
+        assert_eq!(list_b.staff[0].first_name, "Dana");
+        assert_eq!(list_b.staff[0].listings.len(), 1);
+        assert_eq!(list_b.staff[0].listings[0].listing_id, villa_b1);
 
         // Search wildcard escaping (`q=%` must not match `Dana Clean`).
         let wildcard_resp = test::call_service(
@@ -1749,16 +1825,8 @@ mod staff_api_tests {
             ),
         );
 
-        assert!(
-            matches!(r1.status().as_u16(), 200 | 201),
-            "r1 status: {}",
-            r1.status()
-        );
-        assert!(
-            matches!(r2.status().as_u16(), 200 | 201),
-            "r2 status: {}",
-            r2.status()
-        );
+        assert_eq!(r1.status(), 202);
+        assert_eq!(r2.status(), 202);
 
         let user_count: i64 =
             sqlx::query_scalar(r#"SELECT COUNT(*) FROM "user" WHERE LOWER(email) = $1"#)

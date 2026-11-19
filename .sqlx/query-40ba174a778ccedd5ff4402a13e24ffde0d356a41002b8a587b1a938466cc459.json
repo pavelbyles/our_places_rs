@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id\n        FROM turnover\n        WHERE listing_id = $1\n          AND source_kind = 'ical_feed'\n          AND source_feed_id = $2\n          AND status = 'needs_cleaning'\n          AND checkout_date > $3\n        ORDER BY id\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "40ba174a778ccedd5ff4402a13e24ffde0d356a41002b8a587b1a938466cc459"
+}

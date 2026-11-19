@@ -66,6 +66,17 @@ pub fn render(template_id: &str, payload: &serde_json::Value) -> Option<String> 
                     &validated_cta(&field(payload, "setup_url"), "Set Password & Open Dispatch"),
                 ),
         ),
+        EmailTemplate::StaffAcceptInvite => Some(
+            load_template("staff_accept_invite.html")
+                .replace("{{first_name}}", &text("first_name"))
+                .replace("{{host_name}}", &text("host_name"))
+                .replace("{{listing_items}}", &listing_names_html(payload))
+                .replace("{{expires_hours}}", &text("expires_hours"))
+                .replace(
+                    "{{cta}}",
+                    &validated_cta(&field(payload, "accept_url"), "Accept Invitation"),
+                ),
+        ),
         EmailTemplate::StaffListingAssigned => Some(
             load_template("staff_listing_assigned.html")
                 .replace("{{first_name}}", &text("first_name"))

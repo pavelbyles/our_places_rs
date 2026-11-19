@@ -3,16 +3,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
-use common::email::{EmailTemplate, StaffInviteEmailPayload, StaffListingAssignedEmailPayload};
+use common::email::{
+    EmailTemplate, StaffAcceptInviteEmailPayload, StaffInviteEmailPayload,
+    StaffListingAssignedEmailPayload,
+};
 use common::turnover::{
-    InviteStaffRequest, StaffListQuery, StaffListResponse, StaffListingAssignment,
-    StaffMemberSummary,
+    InviteStaffRequest, StaffInviteResponse, StaffListQuery, StaffListResponse,
+    StaffListingAssignment, StaffMemberSummary,
 };
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::action_token::{
-    ActionTokenPurpose, is_password_pending, issue_action_token_conn, locked_password_sentinel,
+    ActionTokenPurpose, hash_token, is_password_pending, issue_action_token_conn,
+    issue_action_token_row_conn, locked_password_sentinel,
 };
 use crate::email_outbox::insert_email_outbox_conn;
 use crate::error::{DbError, Result};
@@ -20,13 +24,13 @@ use crate::models::{NewUser, UserRole};
 use crate::sessions::SessionsDb;
 use crate::user::{create_user, lock_and_snapshot};
 
-/// Result of inviting or attaching a cleaning/maintenance staff member.
+/// Result of inviting a cleaning/maintenance staff member.
 #[derive(Debug, Clone)]
 pub struct StaffInviteOutcome {
-    /// Scoped staff summary visible to the invoking host/admin.
-    pub staff: StaffMemberSummary,
-    /// True if a new user or host-staff relationship was created (`201 Created` vs `200 OK`).
-    pub created: bool,
+    /// Uniform non-enumerating response payload visible to the invoking host/admin.
+    pub response: StaffInviteResponse,
+    /// Target user ID when an email event was queued.
+    pub target_user_id: Option<Uuid>,
     /// Queued email outbox row ID to notify `email_worker` asynchronously after commit.
     pub outbox_email_id: Option<Uuid>,
 }
@@ -480,136 +484,171 @@ pub async fn invite_or_attach_staff(
     .await
     .map_err(|e| DbError::from_sqlx_contended(e, "lock target user for staff invite"))?;
 
-    let (staff_user_id, recipient_email, staff_first_name, pending_password, created_user) =
-        if let Some(u) = existing_user {
-            if !u.is_active || u.deleted_at.is_some() {
-                return Err(DbError::ValidationError(
-                    "An inactive or deleted account already exists for this email.".to_string(),
-                ));
-            }
-            if !u.roles.contains(&UserRole::Staff) {
-                lock_and_snapshot(&mut tx, u.id).await?;
-                sqlx::query!(
-                    r#"
-                    UPDATE "user"
-                    SET roles = array_append(roles, 'staff'::user_role),
-                        updated_at = NOW()
-                    WHERE id = $1
-                    "#,
-                    u.id,
-                )
-                .execute(&mut *tx)
-                .await?;
-            }
-            (
-                u.id,
-                u.email,
-                u.first_name,
-                is_password_pending(&u.password_hash),
-                false,
-            )
-        } else {
-            let first_name = req
-                .first_name
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Staff")
-                .to_string();
-            let last_name = req
-                .last_name
-                .as_deref()
-                .map(str::trim)
-                .unwrap_or("")
-                .to_string();
-            let new_user = NewUser {
-                id: Uuid::now_v7(),
-                email: normalized_email.clone(),
-                password_hash: locked_password_sentinel(),
-                first_name: first_name.clone(),
-                last_name,
-                phone_number: None,
-                is_active: true,
-                is_verified: false,
-                verification_code: None,
-                verification_code_expires_at: None,
-                attributes: serde_json::json!({}),
-                roles: Some(vec![UserRole::Staff]),
-                default_currency: "USD".to_string(),
-            };
-            let inserted = create_user(&mut *tx, &new_user).await?;
-            (inserted.id, inserted.email, inserted.first_name, true, true)
-        };
-
-    let target_hosts: Vec<Uuid> = if caller_is_admin {
-        let mut set = BTreeSet::new();
-        for l in &locked_listings {
-            set.insert(l.owner_id);
-        }
-        set.into_iter().collect()
-    } else {
-        vec![caller_id]
+    let response = StaffInviteResponse {
+        email: normalized_email.clone(),
+        message: "Invitation sent.".to_string(),
     };
 
-    let mut created_host_link = false;
-    for host_id in target_hosts {
-        let inserted_host_link = sqlx::query_scalar!(
-            r#"
-            INSERT INTO host_staff (host_user_id, staff_user_id, invited_by)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (host_user_id, staff_user_id) DO NOTHING
-            RETURNING id
-            "#,
-            host_id,
-            staff_user_id,
-            caller_id,
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
-        if inserted_host_link.is_some() {
-            created_host_link = true;
-        }
-    }
-
-    let mut newly_assigned_names = Vec::new();
-    let mut all_requested_names = Vec::with_capacity(locked_listings.len());
-    for listing in &locked_listings {
-        all_requested_names.push(listing.name.clone());
-        let inserted_assignment = sqlx::query_scalar!(
-            r#"
-            INSERT INTO listing_staff (listing_id, staff_user_id, assigned_by)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (listing_id, staff_user_id) DO NOTHING
-            RETURNING listing_id
-            "#,
-            listing.id,
-            staff_user_id,
-            caller_id,
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
-        if inserted_assignment.is_some() {
-            newly_assigned_names.push(listing.name.clone());
-        }
-    }
+    let mut all_requested_names: Vec<String> =
+        locked_listings.iter().map(|l| l.name.clone()).collect();
     all_requested_names.sort();
-    newly_assigned_names.sort();
 
     let host_name = load_caller_display_name(&mut tx, caller_id).await?;
     let base_url = admin_base_url.trim_end_matches('/');
 
-    let outbox_email_id = if pending_password {
+    let (target_user_id, outbox_email_id) = if let Some(u) = existing_user {
+        if !u.is_active || u.deleted_at.is_some() {
+            tx.rollback().await?;
+            return Ok(StaffInviteOutcome {
+                response,
+                target_user_id: None,
+                outbox_email_id: None,
+            });
+        }
+
+        let expires_at = Utc::now() + ActionTokenPurpose::StaffAccept.default_ttl();
+        let (token_id, raw_token) =
+            issue_action_token_row_conn(&mut tx, u.id, ActionTokenPurpose::StaffAccept, expires_at)
+                .await?;
+
+        let mut listings_by_host: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
+        for listing in &locked_listings {
+            let host_id = if caller_is_admin {
+                listing.owner_id
+            } else {
+                caller_id
+            };
+            listings_by_host
+                .entry(host_id)
+                .or_default()
+                .push(listing.id);
+        }
+
+        for (host_id, listing_ids) in listings_by_host {
+            sqlx::query!(
+                r#"
+                INSERT INTO pending_staff_invite (
+                    host_user_id,
+                    invited_by,
+                    target_user_id,
+                    listing_ids,
+                    action_token_id
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                "#,
+                host_id,
+                caller_id,
+                u.id,
+                &listing_ids,
+                token_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        let accept_url = format!("{base_url}/staff-invite/accept?token={raw_token}");
+        let payload = serde_json::to_value(StaffAcceptInviteEmailPayload {
+            first_name: u.first_name,
+            host_name,
+            listing_names: all_requested_names,
+            accept_url,
+            expires_hours: 72,
+        })
+        .map_err(|e| {
+            DbError::ValidationError(format!("invalid accept invite email payload: {e}"))
+        })?;
+        let outbox = insert_email_outbox_conn(
+            &mut tx,
+            &u.email,
+            "You've been invited to join a team on Our Places",
+            EmailTemplate::StaffAcceptInvite.as_str(),
+            &payload,
+            3,
+        )
+        .await?;
+        (Some(u.id), Some(outbox.id))
+    } else {
+        let first_name = req
+            .first_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Staff")
+            .to_string();
+        let last_name = req
+            .last_name
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .to_string();
+        let new_user = NewUser {
+            id: Uuid::now_v7(),
+            email: normalized_email.clone(),
+            password_hash: locked_password_sentinel(),
+            first_name: first_name.clone(),
+            last_name,
+            phone_number: None,
+            is_active: true,
+            is_verified: false,
+            verification_code: None,
+            verification_code_expires_at: None,
+            attributes: serde_json::json!({}),
+            roles: Some(vec![UserRole::Staff]),
+            default_currency: "USD".to_string(),
+        };
+        let inserted = create_user(&mut *tx, &new_user).await?;
+
+        let target_hosts: Vec<Uuid> = if caller_is_admin {
+            let mut set = BTreeSet::new();
+            for l in &locked_listings {
+                set.insert(l.owner_id);
+            }
+            set.into_iter().collect()
+        } else {
+            vec![caller_id]
+        };
+
+        for host_id in target_hosts {
+            sqlx::query!(
+                r#"
+                INSERT INTO host_staff (host_user_id, staff_user_id, invited_by)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (host_user_id, staff_user_id) DO NOTHING
+                "#,
+                host_id,
+                inserted.id,
+                caller_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        for listing in &locked_listings {
+            sqlx::query!(
+                r#"
+                INSERT INTO listing_staff (listing_id, staff_user_id, assigned_by)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (listing_id, staff_user_id) DO NOTHING
+                "#,
+                listing.id,
+                inserted.id,
+                caller_id,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
         let expires_at = Utc::now() + ActionTokenPurpose::StaffInvite.default_ttl();
         let raw_token = issue_action_token_conn(
             &mut tx,
-            staff_user_id,
+            inserted.id,
             ActionTokenPurpose::StaffInvite,
             expires_at,
         )
         .await?;
         let setup_url = format!("{base_url}/reset-password?token={raw_token}");
         let payload = serde_json::to_value(StaffInviteEmailPayload {
-            first_name: staff_first_name,
+            first_name: inserted.first_name,
             host_name,
             listing_names: all_requested_names,
             setup_url,
@@ -618,50 +657,147 @@ pub async fn invite_or_attach_staff(
         .map_err(|e| DbError::ValidationError(format!("invalid invite email payload: {e}")))?;
         let outbox = insert_email_outbox_conn(
             &mut tx,
-            &recipient_email,
+            &inserted.email,
             "You've been invited to Our Places Turnover Dispatch",
             EmailTemplate::StaffInvite.as_str(),
             &payload,
             3,
         )
         .await?;
-        Some(outbox.id)
-    } else if created_host_link || !newly_assigned_names.is_empty() {
-        let listing_names = if newly_assigned_names.is_empty() {
-            all_requested_names
-        } else {
-            newly_assigned_names
-        };
-        let payload = serde_json::to_value(StaffListingAssignedEmailPayload {
-            first_name: staff_first_name,
-            host_name,
-            listing_names,
-            dispatch_url: format!("{base_url}/admin/turnovers"),
-        })
-        .map_err(|e| DbError::ValidationError(format!("invalid assignment email payload: {e}")))?;
-        let outbox = insert_email_outbox_conn(
-            &mut tx,
-            &recipient_email,
-            "New turnover listings assigned on Our Places",
-            EmailTemplate::StaffListingAssigned.as_str(),
-            &payload,
-            3,
-        )
-        .await?;
-        Some(outbox.id)
-    } else {
-        None
+        (Some(inserted.id), Some(outbox.id))
     };
 
-    let summary =
-        load_scoped_staff_member(&mut tx, caller_id, caller_is_admin, staff_user_id).await?;
     tx.commit().await?;
 
     Ok(StaffInviteOutcome {
-        staff: summary,
-        created: created_user || created_host_link,
+        response,
+        target_user_id,
         outbox_email_id,
     })
+}
+
+/// Atomically redeems a `staff_accept` token, granting `UserRole::Staff` (if needed) and
+/// linking the accepting user to the invited host roster and active listings.
+#[tracing::instrument(skip(pool, raw_token))]
+pub async fn accept_staff_invite(pool: &PgPool, raw_token: &str) -> Result<Option<Uuid>> {
+    let trimmed = raw_token.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let token_hash = hash_token(trimmed);
+    let mut tx = pool.begin().await?;
+    set_lock_timeout(&mut tx).await?;
+
+    let claimed = sqlx::query!(
+        r#"
+        UPDATE account_action_token
+        SET used_at = NOW()
+        WHERE token_hash = $1
+          AND purpose = 'staff_accept'
+          AND used_at IS NULL
+          AND expires_at > clock_timestamp()
+        RETURNING id, user_id
+        "#,
+        token_hash,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| DbError::from_sqlx_contended(e, "redeem staff accept token"))?;
+
+    let Some(token_row) = claimed else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+
+    let user = sqlx::query!(
+        r#"
+        SELECT
+            is_active,
+            deleted_at,
+            roles AS "roles: Vec<UserRole>"
+        FROM "user"
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+        token_row.user_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| DbError::from_sqlx_contended(e, "lock user for staff invite accept"))?;
+
+    let Some(user_row) = user else {
+        tx.rollback().await?;
+        return Ok(None);
+    };
+    if !user_row.is_active || user_row.deleted_at.is_some() {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+
+    if !user_row.roles.contains(&UserRole::Staff) {
+        lock_and_snapshot(&mut tx, token_row.user_id).await?;
+        sqlx::query!(
+            r#"
+            UPDATE "user"
+            SET roles = array_append(roles, 'staff'::user_role),
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+            token_row.user_id,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    let pending_rows = sqlx::query!(
+        r#"
+        UPDATE pending_staff_invite
+        SET accepted_at = NOW()
+        WHERE action_token_id = $1
+          AND target_user_id = $2
+          AND accepted_at IS NULL
+        RETURNING host_user_id, invited_by, listing_ids
+        "#,
+        token_row.id,
+        token_row.user_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    for row in pending_rows {
+        sqlx::query!(
+            r#"
+            INSERT INTO host_staff (host_user_id, staff_user_id, invited_by)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (host_user_id, staff_user_id) DO NOTHING
+            "#,
+            row.host_user_id,
+            token_row.user_id,
+            row.invited_by,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO listing_staff (listing_id, staff_user_id, assigned_by)
+            SELECT l.id, $2, $3
+            FROM listing l
+            WHERE l.id = ANY($1)
+              AND l.deleted_at IS NULL
+            ON CONFLICT (listing_id, staff_user_id) DO NOTHING
+            "#,
+            &row.listing_ids,
+            token_row.user_id,
+            row.invited_by,
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(Some(token_row.user_id))
 }
 
 /// Replaces a staff member's assigned listings within the caller's ownership scope
@@ -1183,7 +1319,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn multi_role_user_keeps_existing_roles_on_attach_and_unlink()
+    async fn multi_role_user_requires_accept_before_attaching_and_keeps_roles_on_unlink()
     -> std::result::Result<(), Box<dyn std::error::Error>> {
         let db = test_db();
         let pool = db.get_pool().await;
@@ -1204,9 +1340,44 @@ mod tests {
             "https://admin.example.com",
         )
         .await?;
-        assert_eq!(out.staff.user_id, booker);
-        assert_eq!(out.staff.first_name, "Ada");
-        assert!(!out.staff.password_pending);
+        assert_eq!(out.response.email, "guest.cleaner@example.com");
+        assert_eq!(out.response.message, "Invitation sent.");
+
+        // Before accepting: NO staff role and NO host_staff link.
+        let roles_before: Vec<String> =
+            sqlx::query_scalar(r#"SELECT roles::text[] FROM "user" WHERE id = $1"#)
+                .bind(booker)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(roles_before, vec!["booker".to_string()]);
+        let host_links_before: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM host_staff WHERE host_user_id = $1 AND staff_user_id = $2",
+        )
+        .bind(host)
+        .bind(booker)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(host_links_before, 0);
+
+        // Extract accept token from staff_accept_invite email and redeem it.
+        let payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = 'guest.cleaner@example.com' AND template_id = 'staff_accept_invite' ORDER BY created_at DESC LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let accept_url = payload["accept_url"].as_str().ok_or("missing accept_url")?;
+        let token = accept_url
+            .split("token=")
+            .nth(1)
+            .ok_or("missing token param")?;
+
+        let accepted_user = accept_staff_invite(&pool, token)
+            .await?
+            .ok_or("expected accept_staff_invite to succeed")?;
+        assert_eq!(accepted_user, booker);
+
+        // Replaying the same token is rejected.
+        assert!(accept_staff_invite(&pool, token).await?.is_none());
 
         let roles_after_attach: Vec<String> =
             sqlx::query_scalar(r#"SELECT roles::text[] FROM "user" WHERE id = $1"#)
@@ -1224,6 +1395,55 @@ mod tests {
                 .await?;
         assert!(roles_after_remove.contains(&"booker".to_string()));
         assert!(!roles_after_remove.contains(&"staff".to_string()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn inactive_deleted_and_new_emails_return_identical_invite_response()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let host = seed_user(&pool, "host-enum@example.com", &["host"]).await?;
+        let inactive = seed_user(&pool, "inactive.user@example.com", &["booker"]).await?;
+        sqlx::query!(
+            r#"UPDATE "user" SET is_active = FALSE WHERE id = $1"#,
+            inactive
+        )
+        .execute(&pool)
+        .await?;
+        let villa = seed_listing(&pool, host, "Sea Breeze").await?;
+
+        let out_inactive = invite_or_attach_staff(
+            &pool,
+            host,
+            false,
+            &InviteStaffRequest {
+                email: "inactive.user@example.com".into(),
+                first_name: Some("Probe".into()),
+                last_name: None,
+                listing_ids: vec![villa],
+            },
+            "https://admin.example.com",
+        )
+        .await?;
+        assert_eq!(out_inactive.response.message, "Invitation sent.");
+        assert!(out_inactive.outbox_email_id.is_none());
+
+        let out_new = invite_or_attach_staff(
+            &pool,
+            host,
+            false,
+            &InviteStaffRequest {
+                email: "brand.new@example.com".into(),
+                first_name: Some("Probe".into()),
+                last_name: None,
+                listing_ids: vec![villa],
+            },
+            "https://admin.example.com",
+        )
+        .await?;
+        assert_eq!(out_new.response.message, out_inactive.response.message);
+        assert!(out_new.outbox_email_id.is_some());
         Ok(())
     }
 
@@ -1248,7 +1468,7 @@ mod tests {
             "https://admin.example.com",
         )
         .await?;
-        let staff_id = invited.staff.user_id;
+        let staff_id = invited.target_user_id.ok_or("missing target_user_id")?;
 
         resend_staff_invite(&pool, host, false, staff_id, "https://admin.example.com").await?;
 

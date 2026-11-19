@@ -145,6 +145,8 @@ pub enum EmailTemplate {
     CalendarFeedFailingHost,
     /// Invite email sent to newly created cleaning/maintenance crew with a single-use password setup link (#66).
     StaffInvite,
+    /// Consent invitation emailed to an existing account before attaching staff role or roster links (#66).
+    StaffAcceptInvite,
     /// Notification email sent when an existing staff member is assigned to listings (#66).
     StaffListingAssigned,
     /// Self-service password reset email carrying a single-use token link (#66).
@@ -241,6 +243,21 @@ pub struct StaffInviteEmailPayload {
     /// Admin portal password setup link carrying a single-use token.
     pub setup_url: String,
     /// Lifetime of the invite link in hours.
+    pub expires_hours: i64,
+}
+
+/// Payload of [`EmailTemplate::StaffAcceptInvite`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StaffAcceptInviteEmailPayload {
+    /// Invited account holder's first name.
+    pub first_name: String,
+    /// Inviting host or administrator display name.
+    pub host_name: String,
+    /// Names of listings offered by this host.
+    pub listing_names: Vec<String>,
+    /// Admin portal consent link carrying a single-use `staff_accept` token.
+    pub accept_url: String,
+    /// Lifetime of the accept link in hours.
     pub expires_hours: i64,
 }
 
@@ -1053,6 +1070,7 @@ mod email_template_request_tests {
     fn turnover_email_templates_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         for (variant, expected) in [
             (EmailTemplate::StaffInvite, "staff_invite"),
+            (EmailTemplate::StaffAcceptInvite, "staff_accept_invite"),
             (
                 EmailTemplate::StaffListingAssigned,
                 "staff_listing_assigned",

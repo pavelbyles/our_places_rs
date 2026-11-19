@@ -1273,3 +1273,485 @@ async fn turnover_creation_notifies_assigned_staff_across_booking_ical_and_manua
 
     Ok(())
 }
+
+#[tokio::test]
+async fn dual_role_host_staff_sees_assigned_listings_and_enforces_per_listing_role()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::turnover::add_comment_with_outbox;
+
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let d = |y: i32, m: u32, day: u32| -> Result<NaiveDate, &'static str> {
+        NaiveDate::from_ymd_opt(y, m, day).ok_or("valid date")
+    };
+
+    let dual_user = seed_user(&pool, "dual-hs@example.com", "Dual", &["host", "staff"]).await?;
+    let other_host = seed_user(&pool, "dual-other-host@example.com", "Other", &["host"]).await?;
+    let guest = seed_user(&pool, "dual-guest@example.com", "Guest", &["booker"]).await?;
+
+    let own_listing = seed_listing(&pool, dual_user, "Own Villa").await?;
+    let assigned_listing = seed_listing(&pool, other_host, "Assigned Villa").await?;
+    let unassigned_listing = seed_listing(&pool, other_host, "Unassigned Villa").await?;
+
+    sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+        .bind(assigned_listing)
+        .bind(dual_user)
+        .execute(&pool)
+        .await?;
+
+    let own_booking = seed_booking(
+        &pool,
+        guest,
+        own_listing,
+        "confirmed",
+        d(2030, 9, 1)?,
+        d(2030, 9, 3)?,
+        None,
+    )
+    .await?;
+    let assigned_booking = seed_booking(
+        &pool,
+        guest,
+        assigned_listing,
+        "confirmed",
+        d(2030, 9, 4)?,
+        d(2030, 9, 6)?,
+        None,
+    )
+    .await?;
+    let unassigned_booking = seed_booking(
+        &pool,
+        guest,
+        unassigned_listing,
+        "confirmed",
+        d(2030, 9, 7)?,
+        d(2030, 9, 9)?,
+        None,
+    )
+    .await?;
+
+    for bid in [own_booking, assigned_booking, unassigned_booking] {
+        reconcile_for_booking(&pool, bid, "booking_update").await?;
+    }
+
+    let own_tid: Uuid = sqlx::query_scalar("SELECT id FROM turnover WHERE booking_id = $1")
+        .bind(own_booking)
+        .fetch_one(&pool)
+        .await?;
+    let assigned_tid: Uuid = sqlx::query_scalar("SELECT id FROM turnover WHERE booking_id = $1")
+        .bind(assigned_booking)
+        .fetch_one(&pool)
+        .await?;
+    let unassigned_tid: Uuid = sqlx::query_scalar("SELECT id FROM turnover WHERE booking_id = $1")
+        .bind(unassigned_booking)
+        .fetch_one(&pool)
+        .await?;
+
+    // Actor resolved as Host (primary role) by API extractor.
+    let dual_actor = TurnoverActor {
+        user_id: dual_user,
+        role: TurnoverActorRole::Host,
+    };
+
+    // Board includes BOTH owned listing and staff-assigned listing, never unassigned listing.
+    let list = list_turnovers(
+        &pool,
+        dual_actor,
+        &TurnoverListQuery {
+            window: Some(TurnoverWindow::All),
+            ..Default::default()
+        },
+    )
+    .await?;
+    let visible_ids: Vec<Uuid> = list.turnovers.iter().map(|t| t.id).collect();
+    assert!(visible_ids.contains(&own_tid));
+    assert!(visible_ids.contains(&assigned_tid));
+    assert!(!visible_ids.contains(&unassigned_tid));
+
+    // Detail route succeeds for assigned listing (no 404 from email link) and 404s for unassigned.
+    let assigned_detail = get_turnover_detail(&pool, dual_actor, assigned_tid).await?;
+    assert_eq!(assigned_detail.turnover.id, assigned_tid);
+    assert!(matches!(
+        get_turnover_detail(&pool, dual_actor, unassigned_tid).await,
+        Err(DbError::Sqlx(sqlx::Error::RowNotFound))
+    ));
+
+    // On own listing: has Host privileges (can mark Inspected & Ready).
+    let own_ready = transition_turnover_status(
+        &pool,
+        dual_actor,
+        own_tid,
+        &TransitionTurnoverRequest {
+            to_status: TurnoverStatus::InspectedAndReady,
+            expected_status: Some(TurnoverStatus::NeedsCleaning),
+            reason: None,
+        },
+        "api",
+    )
+    .await?;
+    assert_eq!(own_ready.status, TurnoverStatus::InspectedAndReady);
+
+    // On another host's listing where dual_user is Staff: CANNOT mark Inspected & Ready, CAN mark Cleaning Completed.
+    let forbidden = transition_turnover_status(
+        &pool,
+        dual_actor,
+        assigned_tid,
+        &TransitionTurnoverRequest {
+            to_status: TurnoverStatus::InspectedAndReady,
+            expected_status: Some(TurnoverStatus::NeedsCleaning),
+            reason: None,
+        },
+        "api",
+    )
+    .await;
+    assert!(matches!(
+        forbidden,
+        Err(DbError::TurnoverTransitionForbidden(_))
+    ));
+
+    let staff_completed = transition_turnover_status(
+        &pool,
+        dual_actor,
+        assigned_tid,
+        &TransitionTurnoverRequest {
+            to_status: TurnoverStatus::CleaningCompleted,
+            expected_status: Some(TurnoverStatus::NeedsCleaning),
+            reason: None,
+        },
+        "api",
+    )
+    .await?;
+    assert_eq!(staff_completed.status, TurnoverStatus::CleaningCompleted);
+
+    // Comment author_role reflects per-listing role ("host" vs "staff").
+    let own_comment = add_comment_with_outbox(
+        &pool,
+        dual_actor,
+        own_tid,
+        "Host note on own villa",
+        "https://admin.example.com",
+    )
+    .await?;
+    assert_eq!(own_comment.comment.author_role, "host");
+
+    let assigned_comment = add_comment_with_outbox(
+        &pool,
+        dual_actor,
+        assigned_tid,
+        "Staff note on assigned villa",
+        "https://admin.example.com",
+    )
+    .await?;
+    assert_eq!(assigned_comment.comment.author_role, "staff");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_not_required_sticks_across_booking_and_ical_reconcilers()
+-> Result<(), Box<dyn std::error::Error>> {
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let d = |y: i32, m: u32, day: u32| -> Result<NaiveDate, &'static str> {
+        NaiveDate::from_ymd_opt(y, m, day).ok_or("valid date")
+    };
+
+    let host = seed_user(&pool, "nr-host@example.com", "Host", &["host"]).await?;
+    let guest = seed_user(&pool, "nr-guest@example.com", "Guest", &["booker"]).await?;
+    let listing = seed_listing(&pool, host, "Sticky Villa").await?;
+    let host_actor = TurnoverActor {
+        user_id: host,
+        role: TurnoverActorRole::Host,
+    };
+
+    // 1. Live booking turnover manually marked `NotRequired` stays `NotRequired` across reconciles.
+    let booking_id = seed_booking(
+        &pool,
+        guest,
+        listing,
+        "confirmed",
+        d(2030, 10, 1)?,
+        d(2030, 10, 5)?,
+        None,
+    )
+    .await?;
+    reconcile_for_booking(&pool, booking_id, "booking_update").await?;
+    let booking_tid: Uuid = sqlx::query_scalar("SELECT id FROM turnover WHERE booking_id = $1")
+        .bind(booking_id)
+        .fetch_one(&pool)
+        .await?;
+
+    transition_turnover_status(
+        &pool,
+        host_actor,
+        booking_tid,
+        &TransitionTurnoverRequest {
+            to_status: TurnoverStatus::NotRequired,
+            expected_status: Some(TurnoverStatus::NeedsCleaning),
+            reason: Some("Owner staying in villa next".to_string()),
+        },
+        "ui",
+    )
+    .await?;
+
+    // Re-reconcile (e.g. cron backfill or checkout shift) must preserve `NotRequired`.
+    sqlx::query("UPDATE booking SET date_to = $1 WHERE id = $2")
+        .bind(d(2030, 10, 6)?)
+        .bind(booking_id)
+        .execute(&pool)
+        .await?;
+    reconcile_for_booking(&pool, booking_id, "cron_backfill").await?;
+
+    let (b_status, b_checkout): (String, NaiveDate) =
+        sqlx::query_as("SELECT status, checkout_date FROM turnover WHERE id = $1")
+            .bind(booking_tid)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(b_status, "not_required");
+    assert_eq!(b_checkout, d(2030, 10, 6)?);
+
+    // 2. Live iCal block turnover manually marked `NotRequired` stays `NotRequired` across syncs.
+    let feed_id = seed_feed(&pool, listing, "vrbo-sync").await?;
+    seed_block(
+        &pool,
+        listing,
+        "ical_feed",
+        Some(feed_id),
+        Some("uid-sticky-1"),
+        d(2030, 10, 10)?,
+        d(2030, 10, 14)?,
+    )
+    .await?;
+    reconcile_for_listing(&pool, listing, Some(feed_id), false, "ical_sync").await?;
+    let ical_tid: Uuid =
+        sqlx::query_scalar("SELECT id FROM turnover WHERE source_external_uid = 'uid-sticky-1'")
+            .fetch_one(&pool)
+            .await?;
+
+    transition_turnover_status(
+        &pool,
+        host_actor,
+        ical_tid,
+        &TransitionTurnoverRequest {
+            to_status: TurnoverStatus::NotRequired,
+            expected_status: Some(TurnoverStatus::NeedsCleaning),
+            reason: Some("No cleaning needed".to_string()),
+        },
+        "ui",
+    )
+    .await?;
+
+    reconcile_for_listing(&pool, listing, Some(feed_id), false, "ical_sync").await?;
+    let ical_status: String = sqlx::query_scalar("SELECT status FROM turnover WHERE id = $1")
+        .bind(ical_tid)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(ical_status, "not_required");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn backfill_and_ical_sync_skip_historical_past_checkout_dates()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::turnover::backfill_listing_turnovers;
+
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let today = listing_today(Utc::now());
+    let past_in = today - chrono::Duration::days(10);
+    let past_out = today - chrono::Duration::days(5);
+    let future_in = today + chrono::Duration::days(2);
+    let future_out = today + chrono::Duration::days(5);
+
+    let host = seed_user(&pool, "bf-host@example.com", "Host", &["host"]).await?;
+    let staff = seed_user(&pool, "bf-staff@example.com", "Staff", &["staff"]).await?;
+    let guest = seed_user(&pool, "bf-guest@example.com", "Guest", &["booker"]).await?;
+    let listing = seed_listing(&pool, host, "Backfill Villa").await?;
+
+    sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+        .bind(listing)
+        .bind(staff)
+        .execute(&pool)
+        .await?;
+
+    let past_booking =
+        seed_booking(&pool, guest, listing, "completed", past_in, past_out, None).await?;
+    let future_booking = seed_booking(
+        &pool,
+        guest,
+        listing,
+        "confirmed",
+        future_in,
+        future_out,
+        None,
+    )
+    .await?;
+
+    let feed_id = seed_feed(&pool, listing, "airbnb-past-future").await?;
+    seed_block(
+        &pool,
+        listing,
+        "ical_feed",
+        Some(feed_id),
+        Some("uid-past-block"),
+        past_in,
+        past_out,
+    )
+    .await?;
+    seed_block(
+        &pool,
+        listing,
+        "ical_feed",
+        Some(feed_id),
+        Some("uid-future-block"),
+        future_out,
+        future_out + chrono::Duration::days(3),
+    )
+    .await?;
+
+    backfill_listing_turnovers(&pool, listing, "cron_backfill").await?;
+
+    let past_booking_t: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM turnover WHERE booking_id = $1")
+            .bind(past_booking)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(past_booking_t, 0);
+
+    let past_ical_t: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM turnover WHERE source_external_uid = 'uid-past-block'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(past_ical_t, 0);
+
+    let future_booking_t: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM turnover WHERE booking_id = $1")
+            .bind(future_booking)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(future_booking_t, 1);
+
+    let future_ical_t: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM turnover WHERE source_external_uid = 'uid-future-block'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(future_ical_t, 1);
+
+    let email_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = 'bf-staff@example.com' AND template_id = 'turnover_created'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(email_count, 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn deleted_ical_feed_closes_future_turnovers_and_readding_feed_reattaches_without_duplicates()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::calendar::feeds;
+    use crate::turnover::backfill_listing_turnovers;
+
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let today = listing_today(Utc::now());
+    let in_d = today + chrono::Duration::days(10);
+    let out_d = today + chrono::Duration::days(14);
+
+    let host = seed_user(&pool, "df-host@example.com", "Host", &["host"]).await?;
+    let staff = seed_user(&pool, "df-staff@example.com", "Staff", &["staff"]).await?;
+    let listing = seed_listing(&pool, host, "Feed Delete Villa").await?;
+    sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+        .bind(listing)
+        .bind(staff)
+        .execute(&pool)
+        .await?;
+
+    let feed_a = seed_feed(&pool, listing, "airbnb-a").await?;
+    seed_block(
+        &pool,
+        listing,
+        "ical_feed",
+        Some(feed_a),
+        Some("uid-readd-1"),
+        in_d,
+        out_d,
+    )
+    .await?;
+    reconcile_for_listing(&pool, listing, Some(feed_a), false, "ical_sync").await?;
+
+    let initial_tid: Uuid =
+        sqlx::query_scalar("SELECT id FROM turnover WHERE source_external_uid = 'uid-readd-1'")
+            .fetch_one(&pool)
+            .await?;
+
+    // Deleting the feed immediately marks future open turnovers `not_required`.
+    assert!(feeds::delete(&pool, listing, feed_a).await?);
+    let (after_delete_status, after_delete_feed): (String, Option<Uuid>) =
+        sqlx::query_as("SELECT status, source_feed_id FROM turnover WHERE id = $1")
+            .bind(initial_tid)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(after_delete_status, "not_required");
+    assert_eq!(after_delete_feed, None);
+
+    // Re-adding the same calendar under a new feed ID re-attaches the row without creating a duplicate or second email.
+    let feed_b = seed_feed(&pool, listing, "airbnb-b").await?;
+    seed_block(
+        &pool,
+        listing,
+        "ical_feed",
+        Some(feed_b),
+        Some("uid-readd-1"),
+        in_d,
+        out_d,
+    )
+    .await?;
+    reconcile_for_listing(&pool, listing, Some(feed_b), false, "ical_sync").await?;
+
+    let total_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM turnover WHERE listing_id = $1 AND source_external_uid = 'uid-readd-1'",
+    )
+    .bind(listing)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(total_rows, 1);
+
+    let (reattached_status, reattached_feed): (String, Option<Uuid>) =
+        sqlx::query_as("SELECT status, source_feed_id FROM turnover WHERE id = $1")
+            .bind(initial_tid)
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(reattached_status, "needs_cleaning");
+    assert_eq!(reattached_feed, Some(feed_b));
+
+    let email_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = 'df-staff@example.com' AND template_id = 'turnover_created'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(email_count, 1);
+
+    // Pre-existing orphaned `needs_cleaning` rows (`source_feed_id IS NULL`) are still pruned by backfill.
+    sqlx::query(
+        "INSERT INTO turnover (listing_id, source_kind, checkout_date, status, source_external_uid) VALUES ($1, 'ical_feed', $2, 'needs_cleaning', 'uid-orphan-only')",
+    )
+    .bind(listing)
+    .bind(out_d)
+    .execute(&pool)
+    .await?;
+    backfill_listing_turnovers(&pool, listing, "cron_backfill").await?;
+    let orphan_status: String = sqlx::query_scalar(
+        "SELECT status FROM turnover WHERE listing_id = $1 AND source_external_uid = 'uid-orphan-only'",
+    )
+    .bind(listing)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(orphan_status, "not_required");
+
+    Ok(())
+}

@@ -11,7 +11,8 @@ use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
 use common::turnover::{
     CreateManualTurnoverRequest, CreateTurnoverCommentRequest, InviteStaffRequest,
-    PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery, StaffListResponse,
+    PasswordResetRequest, PasswordTokenRedeemRequest, StaffInviteAcceptRequest,
+    StaffInviteResponse, StaffListQuery, StaffListResponse, StaffListingAssignment,
     StaffMemberSummary, TransitionTurnoverRequest, TurnoverCommentResponse, TurnoverDetailResponse,
     TurnoverListQuery, TurnoverListResponse, TurnoverResponse, UpdateStaffAssignmentsRequest,
 };
@@ -740,12 +741,12 @@ impl TopcoatApiClient {
         decode_api(request.send().await?).await
     }
 
-    /// Invites or attaches a staff user to one or more owned active listings.
+    /// Invites a staff user via `POST /api/v1/staff-users`.
     pub async fn invite_staff_user(
         &self,
         req: &InviteStaffRequest,
         user_jwt: &str,
-    ) -> Result<StaffMemberSummary, UserCallError> {
+    ) -> Result<StaffInviteResponse, UserCallError> {
         let url = format!("{}/api/v1/staff-users", self.user_api_url);
         send_api_json(
             &self.client,
@@ -756,6 +757,24 @@ impl TopcoatApiClient {
             req,
         )
         .await
+    }
+
+    /// Redeems a single-use `staff_accept` invitation token (`POST /api/v1/users/staff-invite/accept`).
+    pub async fn accept_staff_invite(
+        &self,
+        req: &StaffInviteAcceptRequest,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/users/staff-invite/accept", self.user_api_url);
+        let _: serde_json::Value = send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            None,
+            req,
+        )
+        .await?;
+        Ok(())
     }
 
     /// Replaces the target staff user's assigned listings within the caller's ownership scope.
@@ -819,6 +838,24 @@ impl TopcoatApiClient {
         .await?;
         let _: serde_json::Value = decode_api(request.send().await?).await?;
         Ok(())
+    }
+
+    /// Lists all active properties accessible to `user_jwt` for turnover filtering and creation
+    /// (`booking_api` `GET /api/v1/turnovers/listings`).
+    pub async fn list_turnover_listings(
+        &self,
+        user_jwt: &str,
+    ) -> Result<Vec<StaffListingAssignment>, UserCallError> {
+        let url = format!("{}/api/v1/turnovers/listings", self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
     }
 
     /// Lists turnover dispatch cards visible to `user_jwt` (`booking_api` `GET /api/v1/turnovers`).
