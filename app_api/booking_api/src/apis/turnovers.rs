@@ -66,8 +66,37 @@ pub async fn list_turnovers(
     Ok(HttpResponse::Ok().json(list))
 }
 
+fn spawn_publish_outbox_emails(
+    publisher: Option<web::Data<api_core::email_publisher::EmailPublisher>>,
+    outbox_ids: Vec<Uuid>,
+    template: &'static str,
+) {
+    if outbox_ids.is_empty() {
+        return;
+    }
+    let email_publisher = publisher
+        .map(|p| p.get_ref().clone())
+        .unwrap_or_else(api_core::email_publisher::EmailPublisher::from_env);
+    let span = tracing::Span::current();
+    tokio::spawn(
+        async move {
+            for email_id in outbox_ids {
+                if let Err(e) = email_publisher.publish_email_event(email_id).await {
+                    tracing::error!(
+                        %email_id,
+                        template,
+                        error = ?e,
+                        "turnover notification email queued but publish failed"
+                    );
+                }
+            }
+        }
+        .instrument(span),
+    );
+}
+
 /// Creates a manual turnover card on a listing visible to the caller.
-#[tracing::instrument(skip(pool, claims, body), fields(user_id = %claims.sub, listing_id = %body.listing_id))]
+#[tracing::instrument(skip(pool, claims, body, publisher), fields(user_id = %claims.sub, listing_id = %body.listing_id))]
 #[utoipa::path(
     post,
     path = "/api/v1/turnovers",
@@ -87,13 +116,27 @@ pub async fn create_manual_turnover(
     pool: web::Data<PgPool>,
     claims: Claims,
     body: web::Json<CreateManualTurnoverRequest>,
+    publisher: Option<web::Data<api_core::email_publisher::EmailPublisher>>,
 ) -> Result<HttpResponse, ApiError> {
     body.validate()?;
     let actor = resolve_dispatch_actor(pool.get_ref(), &claims).await?;
-    let created = db_core::turnover::create_manual_turnover(pool.get_ref(), actor, &body)
-        .await
-        .map_err(ApiError::Database)?;
-    Ok(HttpResponse::Created().json(created))
+    let admin_url = super::admin_base_url();
+    let outcome = db_core::turnover::create_manual_turnover_with_outbox(
+        pool.get_ref(),
+        actor,
+        &body,
+        &admin_url,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+
+    spawn_publish_outbox_emails(
+        publisher,
+        outcome.outbox_ids,
+        EmailTemplate::TurnoverCreated.as_str(),
+    );
+
+    Ok(HttpResponse::Created().json(outcome.turnover))
 }
 
 /// Fetches full turnover detail, status history, and chronological comments for an authorized caller.
@@ -206,29 +249,11 @@ pub async fn post_turnover_comment(
     .await
     .map_err(ApiError::Database)?;
 
-    if !outcome.outbox_ids.is_empty() {
-        let email_publisher = publisher
-            .map(|p| p.get_ref().clone())
-            .unwrap_or_else(api_core::email_publisher::EmailPublisher::from_env);
-        let outbox_ids = outcome.outbox_ids;
-        let span = tracing::Span::current();
-        tokio::spawn(
-            async move {
-                let template = EmailTemplate::TurnoverCommentNotification.as_str();
-                for email_id in outbox_ids {
-                    if let Err(e) = email_publisher.publish_email_event(email_id).await {
-                        tracing::error!(
-                            %email_id,
-                            template,
-                            error = ?e,
-                            "turnover comment email queued but publish failed"
-                        );
-                    }
-                }
-            }
-            .instrument(span),
-        );
-    }
+    spawn_publish_outbox_emails(
+        publisher,
+        outcome.outbox_ids,
+        EmailTemplate::TurnoverCommentNotification.as_str(),
+    );
 
     Ok(HttpResponse::Created().json(outcome.comment))
 }

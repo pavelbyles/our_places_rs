@@ -192,7 +192,7 @@ async fn apply(
     .execute(&mut *tx)
     .await?;
 
-    let opened = super::conflicts::detect_for_feed(&mut tx, claim.id, gap, ctx).await?;
+    let mut opened = super::conflicts::detect_for_feed(&mut tx, claim.id, gap, ctx).await?;
 
     let skip_removals = parsed.events.is_empty() && had_future_blocks;
     let warning = warning_text(&parsed.warnings, skip_removals);
@@ -215,7 +215,7 @@ async fn apply(
     .execute(&mut *tx)
     .await?;
 
-    crate::turnover::reconcile_for_listing_conn(
+    let mut turnover_outbox_ids = crate::turnover::reconcile_for_listing_conn(
         &mut tx,
         claim.listing_id,
         Some(claim.id),
@@ -223,6 +223,7 @@ async fn apply(
         "calendar::reconcile::reconcile_feed",
     )
     .await?;
+    opened.append(&mut turnover_outbox_ids);
 
     tx.commit().await?;
     Ok(ReconcileOutcome::Applied {

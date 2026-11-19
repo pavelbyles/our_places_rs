@@ -100,6 +100,28 @@ pub fn render(template_id: &str, payload: &serde_json::Value) -> Option<String> 
                     &validated_cta(&field(payload, "turnover_url"), "Reply on Turnover Board"),
                 ),
         ),
+        EmailTemplate::TurnoverCreated => {
+            let raw_title = field(payload, "title");
+            let title_row = if raw_title.trim().is_empty() {
+                String::default()
+            } else {
+                format!(
+                    "<p style=\"margin: 0 0 12px 0;\"><strong>Task:</strong> {}</p>",
+                    escape_html(raw_title.trim())
+                )
+            };
+            Some(
+                load_template("turnover_created.html")
+                    .replace("{{listing_name}}", &text("listing_name"))
+                    .replace("{{checkout_date}}", &text("checkout_date"))
+                    .replace("{{source_label}}", &text("source_label"))
+                    .replace("{{title_row}}", &title_row)
+                    .replace(
+                        "{{cta}}",
+                        &validated_cta(&field(payload, "turnover_url"), "View Turnover Details"),
+                    ),
+            )
+        }
         _ => None,
     }
 }

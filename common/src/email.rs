@@ -151,6 +151,8 @@ pub enum EmailTemplate {
     PasswordResetLink,
     /// Operational crew/host notification triggered by a new comment on a turnover event (#66).
     TurnoverCommentNotification,
+    /// Notification sent to assigned maintenance staff when a new turnover is created (#66).
+    TurnoverCreated,
 }
 
 impl EmailTemplate {
@@ -279,6 +281,21 @@ pub struct TurnoverCommentNotificationPayload {
     pub author_role: String,
     /// Plain-text comment body (escaped by email worker).
     pub comment_body: String,
+    /// Deep link to `/admin/turnovers/{id}`.
+    pub turnover_url: String,
+}
+
+/// Payload of [`EmailTemplate::TurnoverCreated`]. Contains zero guest PII or financials.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TurnoverCreatedNotificationPayload {
+    /// Property listing name.
+    pub listing_name: String,
+    /// Turnover checkout / target date formatted `YYYY-MM-DD`.
+    pub checkout_date: String,
+    /// Human-readable source label (`Confirmed Booking`, `Imported Calendar Block`, or `Manual / Maintenance`).
+    pub source_label: String,
+    /// Optional short task title (e.g. for manual/maintenance turnovers).
+    pub title: Option<String>,
     /// Deep link to `/admin/turnovers/{id}`.
     pub turnover_url: String,
 }
@@ -1045,6 +1062,7 @@ mod email_template_request_tests {
                 EmailTemplate::TurnoverCommentNotification,
                 "turnover_comment_notification",
             ),
+            (EmailTemplate::TurnoverCreated, "turnover_created"),
         ] {
             assert_eq!(variant.as_str(), expected);
             assert_eq!(variant.to_string(), expected);

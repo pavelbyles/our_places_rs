@@ -312,6 +312,48 @@ async fn send_confirmation_emails(pool: &PgPool, recipients: &Recipients, new_b:
         &host_payload,
     )
     .await;
+
+    publish_pending_booking_turnover_emails(pool, new_b.id).await;
+}
+
+/// Publishes any pending `turnover_created` outbox rows inserted in the booking-confirmation
+/// transaction so assigned maintenance staff are notified immediately.
+async fn publish_pending_booking_turnover_emails(pool: &PgPool, booking_id: uuid::Uuid) {
+    let template_id = common::email::EmailTemplate::TurnoverCreated.as_str();
+    let email_ids = match sqlx::query_scalar!(
+        r#"
+        SELECT eo.id
+        FROM email_outbox eo
+        INNER JOIN turnover t
+          ON eo.payload->>'turnover_url' LIKE ('%/admin/turnovers/' || t.id::text)
+        WHERE t.booking_id = $1
+          AND t.source_kind = 'booking'
+          AND eo.template_id = $2
+          AND eo.status = 'pending'::email_status
+        "#,
+        booking_id,
+        template_id,
+    )
+    .fetch_all(pool)
+    .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(%booking_id, error = ?e, "failed to look up pending turnover_created outbox rows");
+            return;
+        }
+    };
+
+    if email_ids.is_empty() {
+        return;
+    }
+
+    let publisher = api_core::email_publisher::EmailPublisher::from_env();
+    for email_id in email_ids {
+        if let Err(e) = publisher.publish_email_event(email_id).await {
+            tracing::warn!(%booking_id, %email_id, error = ?e, "turnover_created email queued but publish failed");
+        }
+    }
 }
 
 async fn send_cancellation_emails(pool: &PgPool, recipients: &Recipients, new_b: &Booking) {

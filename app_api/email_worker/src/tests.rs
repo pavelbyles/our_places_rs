@@ -447,4 +447,37 @@ async fn turnover_and_staff_templates_render_escape_html_and_strip_bad_urls() {
     assert!(comment_html.contains("AC leak<br>&lt;img&gt;need HVAC"));
     assert!(!comment_html.contains("data:text/html"));
     assert!(!comment_html.contains("{{"));
+
+    let created_html = render_email_body(
+        "turnover_created",
+        &serde_json::json!({
+            "listing_name": "Villa Sunset",
+            "checkout_date": "2030-11-18",
+            "source_label": "Manual / Maintenance",
+            "title": "Deep clean & <script>alert(1)</script>",
+            "turnover_url": "https://admin.example/admin/turnovers/018f3a5e-6b9c-7000-8000-000000000001"
+        }),
+    );
+    assert!(created_html.contains("Villa Sunset"), "{created_html}");
+    assert!(created_html.contains("2030-11-18"));
+    assert!(created_html.contains("Manual / Maintenance"));
+    assert!(created_html.contains("Deep clean &amp; &lt;script&gt;alert(1)&lt;/script&gt;"));
+    assert!(created_html.contains("https://admin.example/admin/turnovers/"));
+    assert!(!created_html.contains("<script>"));
+    assert!(!created_html.contains("{{"));
+
+    let created_no_title_bad_url = render_email_body(
+        "turnover_created",
+        &serde_json::json!({
+            "listing_name": "Villa Palms",
+            "checkout_date": "2030-11-19",
+            "source_label": "Confirmed Booking",
+            "title": null,
+            "turnover_url": "javascript:alert(1)"
+        }),
+    );
+    assert!(created_no_title_bad_url.contains("Confirmed Booking"));
+    assert!(!created_no_title_bad_url.contains("Task:"));
+    assert!(!created_no_title_bad_url.contains("javascript:"));
+    assert!(!created_no_title_bad_url.contains("{{"));
 }

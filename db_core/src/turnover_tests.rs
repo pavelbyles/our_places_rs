@@ -1118,3 +1118,158 @@ async fn add_comment_with_outbox_snapshots_author_and_queues_active_verified_rec
 
     Ok(())
 }
+
+#[tokio::test]
+async fn turnover_creation_notifies_assigned_staff_across_booking_ical_and_manual()
+-> Result<(), Box<dyn std::error::Error>> {
+    use crate::turnover::{create_manual_turnover_with_outbox, reconcile_for_listing_conn};
+
+    let db = test_db();
+    let pool = db.get_pool().await;
+    let d = |y: i32, m: u32, day: u32| -> Result<NaiveDate, &'static str> {
+        NaiveDate::from_ymd_opt(y, m, day).ok_or("valid date")
+    };
+
+    let host = seed_user(&pool, "tc-host@example.com", "Elena", &["host"]).await?;
+    let guest = seed_user(&pool, "tc-guest@example.com", "Guest", &["booker"]).await?;
+    let staff_one = seed_user(&pool, "tc-staff1@example.com", "One", &["staff"]).await?;
+    let staff_two = seed_user(&pool, "tc-staff2@example.com", "Two", &["staff"]).await?;
+    let staff_inactive =
+        seed_user(&pool, "tc-inactive@example.com", "Inactive", &["staff"]).await?;
+    let staff_other_listing = seed_user(&pool, "tc-other@example.com", "Other", &["staff"]).await?;
+
+    sqlx::query("UPDATE \"user\" SET is_active = FALSE WHERE id = $1")
+        .bind(staff_inactive)
+        .execute(&pool)
+        .await?;
+
+    let listing = seed_listing(&pool, host, "Ocean View Villa").await?;
+    let other_listing = seed_listing(&pool, host, "Hillside Villa").await?;
+    for sid in [staff_one, staff_two, staff_inactive] {
+        sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+            .bind(listing)
+            .bind(sid)
+            .execute(&pool)
+            .await?;
+    }
+    sqlx::query("INSERT INTO listing_staff (listing_id, staff_user_id) VALUES ($1, $2)")
+        .bind(other_listing)
+        .bind(staff_other_listing)
+        .execute(&pool)
+        .await?;
+
+    // 1. Booking confirmation turnover creation notifies both active assigned staff on `listing`.
+    let booking_id = seed_booking(
+        &pool,
+        guest,
+        listing,
+        "confirmed",
+        d(2030, 8, 10)?,
+        d(2030, 8, 14)?,
+        None,
+    )
+    .await?;
+    reconcile_for_booking(&pool, booking_id, "booking_update").await?;
+
+    let booking_recips: Vec<String> = sqlx::query_scalar(
+        "SELECT recipient_email FROM email_outbox WHERE template_id = 'turnover_created' AND subject LIKE '%2030-08-14%' ORDER BY recipient_email ASC",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        booking_recips,
+        vec![
+            "tc-staff1@example.com".to_string(),
+            "tc-staff2@example.com".to_string(),
+        ]
+    );
+
+    // Re-running reconcile_for_booking is idempotent and does not duplicate notifications.
+    reconcile_for_booking(&pool, booking_id, "booking_update").await?;
+    let dup_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM email_outbox WHERE template_id = 'turnover_created' AND subject LIKE '%2030-08-14%'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(dup_count, 2);
+
+    // 2. External iCal block turnover creation notifies assigned staff and returns outbox IDs.
+    let feed_id = seed_feed(&pool, listing, "airbnb-sync").await?;
+    seed_block(
+        &pool,
+        listing,
+        "ical_feed",
+        Some(feed_id),
+        Some("uid-notify-1"),
+        d(2030, 8, 16)?,
+        d(2030, 8, 19)?,
+    )
+    .await?;
+    let mut tx = pool.begin().await?;
+    let ical_outbox_ids =
+        reconcile_for_listing_conn(&mut tx, listing, Some(feed_id), false, "ical_sync").await?;
+    tx.commit().await?;
+    assert_eq!(ical_outbox_ids.len(), 2);
+
+    // 3. Manual turnover created by host notifies both assigned staff with title & detail URL.
+    let host_manual = create_manual_turnover_with_outbox(
+        &pool,
+        TurnoverActor {
+            user_id: host,
+            role: TurnoverActorRole::Host,
+        },
+        &CreateManualTurnoverRequest {
+            listing_id: listing,
+            checkout_date: d(2030, 8, 22)?,
+            title: Some("Deep AC service".to_string()),
+            initial_status: None,
+        },
+        "https://admin.example.com",
+    )
+    .await?;
+    assert_eq!(host_manual.outbox_ids.len(), 2);
+
+    let payload: serde_json::Value = sqlx::query_scalar(
+        "SELECT payload FROM email_outbox WHERE id = $1 AND template_id = 'turnover_created'",
+    )
+    .bind(host_manual.outbox_ids[0])
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(payload["listing_name"], "Ocean View Villa");
+    assert_eq!(payload["checkout_date"], "2030-08-22");
+    assert_eq!(payload["source_label"], "Manual");
+    assert_eq!(payload["title"], "Deep AC service");
+    assert_eq!(
+        payload["turnover_url"],
+        format!(
+            "https://admin.example.com/admin/turnovers/{}",
+            host_manual.turnover.id
+        )
+    );
+
+    // 4. Manual turnover created by staff_one notifies co-assigned staff_two, excluding author.
+    let staff_manual = create_manual_turnover_with_outbox(
+        &pool,
+        TurnoverActor {
+            user_id: staff_one,
+            role: TurnoverActorRole::Staff,
+        },
+        &CreateManualTurnoverRequest {
+            listing_id: listing,
+            checkout_date: d(2030, 8, 25)?,
+            title: Some("Pool filter check".to_string()),
+            initial_status: None,
+        },
+        "https://admin.example.com",
+    )
+    .await?;
+    assert_eq!(staff_manual.outbox_ids.len(), 1);
+    let recip: String =
+        sqlx::query_scalar("SELECT recipient_email FROM email_outbox WHERE id = $1")
+            .bind(staff_manual.outbox_ids[0])
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(recip, "tc-staff2@example.com");
+
+    Ok(())
+}

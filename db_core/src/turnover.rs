@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
 use chrono::{DateTime, NaiveDate, Utc};
-use common::email::{EmailTemplate, TurnoverCommentNotificationPayload};
+use common::email::{
+    EmailTemplate, TurnoverCommentNotificationPayload, TurnoverCreatedNotificationPayload,
+};
 use common::reference::listing_today;
 use common::turnover::{
     CreateManualTurnoverRequest, MAX_TURNOVER_REASON_LEN, MAX_TURNOVER_TITLE_LEN,
@@ -521,6 +523,105 @@ pub async fn get_turnover_detail(
     })
 }
 
+static ADMIN_BASE_URL_ENV: &str = "ADMIN_BASE_URL";
+const TURNOVER_CREATED_MAX_RETRIES: i32 = 3;
+
+fn default_admin_base_url() -> String {
+    std::env::var(ADMIN_BASE_URL_ENV)
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:3012".to_string())
+}
+
+/// Output of creating a manual turnover together with outbox IDs queued in the same transaction.
+#[derive(Debug, Clone)]
+pub struct CreateManualTurnoverOutcome {
+    /// Persisted turnover summary scoped to the creating actor.
+    pub turnover: TurnoverResponse,
+    /// `email_outbox` IDs inserted atomically for post-commit Pub/Sub publishing.
+    pub outbox_ids: Vec<Uuid>,
+}
+
+struct TurnoverCreatedNotice<'a> {
+    listing_id: Uuid,
+    turnover_id: Uuid,
+    checkout_date: NaiveDate,
+    source_kind: TurnoverSourceKind,
+    title: Option<&'a str>,
+    exclude_user_id: Option<Uuid>,
+    admin_base_url: &'a str,
+}
+
+/// Queues [`EmailTemplate::TurnoverCreated`] outbox notifications for every active verified
+/// maintenance/cleaning staff member assigned to `listing_id`, excluding `exclude_user_id`.
+async fn enqueue_turnover_created_emails_conn(
+    conn: &mut PgConnection,
+    notice: TurnoverCreatedNotice<'_>,
+) -> Result<Vec<Uuid>> {
+    let Some(listing_name) = sqlx::query_scalar!(
+        r#"SELECT name FROM listing WHERE id = $1 AND deleted_at IS NULL"#,
+        notice.listing_id,
+    )
+    .fetch_optional(&mut *conn)
+    .await?
+    else {
+        return Ok(Vec::new());
+    };
+
+    let recipients = sqlx::query!(
+        r#"
+        SELECT DISTINCT u.id, u.email
+        FROM "user" u
+        INNER JOIN listing_staff ls ON ls.staff_user_id = u.id
+        WHERE ls.listing_id = $1
+          AND 'staff'::user_role = ANY(u.roles)
+          AND u.is_active = TRUE
+          AND u.is_verified = TRUE
+          AND u.deleted_at IS NULL
+          AND ($2::uuid IS NULL OR u.id <> $2)
+        ORDER BY u.id
+        "#,
+        notice.listing_id,
+        notice.exclude_user_id,
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    if recipients.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let base_url = notice.admin_base_url.trim_end_matches('/');
+    let payload = TurnoverCreatedNotificationPayload {
+        listing_name: listing_name.clone(),
+        checkout_date: notice.checkout_date.format("%Y-%m-%d").to_string(),
+        source_label: notice.source_kind.label().to_string(),
+        title: notice.title.map(ToString::to_string),
+        turnover_url: format!("{base_url}/admin/turnovers/{}", notice.turnover_id),
+    };
+    let payload_value = serde_json::to_value(&payload)
+        .map_err(|e| DbError::ValidationError(format!("turnover created email payload: {e}")))?;
+    let subject = format!("New turnover for {listing_name} ({})", notice.checkout_date);
+    let template_id = EmailTemplate::TurnoverCreated.as_str();
+
+    let mut outbox_ids = Vec::with_capacity(recipients.len());
+    for recipient in recipients {
+        let outbox = crate::email_outbox::insert_email_outbox_conn(
+            &mut *conn,
+            &recipient.email,
+            &subject,
+            template_id,
+            &payload_value,
+            TURNOVER_CREATED_MAX_RETRIES,
+        )
+        .await?;
+        outbox_ids.push(outbox.id);
+    }
+
+    Ok(outbox_ids)
+}
+
 /// Creates a manual turnover or off-booking maintenance item for a listing in the caller's scope.
 #[tracing::instrument(skip(pool, req))]
 pub async fn create_manual_turnover(
@@ -528,6 +629,20 @@ pub async fn create_manual_turnover(
     actor: TurnoverActor,
     req: &CreateManualTurnoverRequest,
 ) -> Result<TurnoverResponse> {
+    create_manual_turnover_with_outbox(pool, actor, req, &default_admin_base_url())
+        .await
+        .map(|outcome| outcome.turnover)
+}
+
+/// Creates a manual turnover and returns both the turnover summary and queued outbox IDs for
+/// immediate post-commit Pub/Sub publishing.
+#[tracing::instrument(skip(pool, req, admin_base_url))]
+pub async fn create_manual_turnover_with_outbox(
+    pool: &PgPool,
+    actor: TurnoverActor,
+    req: &CreateManualTurnoverRequest,
+    admin_base_url: &str,
+) -> Result<CreateManualTurnoverOutcome> {
     let initial_status = req.initial_status.unwrap_or(TurnoverStatus::NeedsCleaning);
     if initial_status != TurnoverStatus::NeedsCleaning {
         can_transition(
@@ -588,9 +703,26 @@ pub async fn create_manual_turnover(
     )
     .await?;
 
+    let outbox_ids = enqueue_turnover_created_emails_conn(
+        &mut tx,
+        TurnoverCreatedNotice {
+            listing_id: req.listing_id,
+            turnover_id,
+            checkout_date: req.checkout_date,
+            source_kind: TurnoverSourceKind::Manual,
+            title: clean_title.as_deref(),
+            exclude_user_id: Some(actor.user_id),
+            admin_base_url,
+        },
+    )
+    .await?;
+
     let summary = load_scoped_turnover_summary(&mut tx, actor, turnover_id).await?;
     tx.commit().await?;
-    Ok(summary)
+    Ok(CreateManualTurnoverOutcome {
+        turnover: summary,
+        outbox_ids,
+    })
 }
 
 /// Transitions a turnover status under strict `Listing -> Turnover` locking, checking role
@@ -787,6 +919,19 @@ pub async fn reconcile_for_booking_conn(
                         },
                     )
                     .await?;
+                    enqueue_turnover_created_emails_conn(
+                        conn,
+                        TurnoverCreatedNotice {
+                            listing_id,
+                            turnover_id: tid,
+                            checkout_date: booking.date_to,
+                            source_kind: TurnoverSourceKind::Booking,
+                            title: None,
+                            exclude_user_id: None,
+                            admin_base_url: &default_admin_base_url(),
+                        },
+                    )
+                    .await?;
                 }
             }
             Some(row) => {
@@ -887,7 +1032,7 @@ pub async fn reconcile_for_booking(
 /// Reconciles turnovers for external `ical_feed` blocks on `listing_id` inside caller's open
 /// transaction (ignoring `manual` blocks, shifting `checkout_date` in place on extensions, and
 /// marking removed future events `not_required` only when `checkout_date > today_jm` and
-/// `skip_removals == false`).
+/// `skip_removals == false`), returning any `email_outbox` IDs queued for newly created turnovers.
 #[tracing::instrument(skip(conn))]
 pub async fn reconcile_for_listing_conn(
     conn: &mut PgConnection,
@@ -895,14 +1040,14 @@ pub async fn reconcile_for_listing_conn(
     feed_id: Option<Uuid>,
     skip_removals: bool,
     entry_point: &str,
-) -> Result<()> {
+) -> Result<Vec<Uuid>> {
     set_lock_timeout(conn).await?;
 
     let Some((_owner_id, is_deleted)) = lock_listing(conn, listing_id).await? else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     if is_deleted {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let blocks = sqlx::query!(
@@ -972,6 +1117,8 @@ pub async fn reconcile_for_listing_conn(
         }
     }
 
+    let admin_base_url = default_admin_base_url();
+    let mut outbox_ids = Vec::new();
     let mut seen_keys: HashSet<(Uuid, String)> = HashSet::new();
     for blk in blocks {
         let (Some(blk_feed_id), Some(blk_uid)) = (blk.feed_id, blk.external_uid) else {
@@ -1017,6 +1164,20 @@ pub async fn reconcile_for_listing_conn(
                         },
                     )
                     .await?;
+                    let mut queued = enqueue_turnover_created_emails_conn(
+                        conn,
+                        TurnoverCreatedNotice {
+                            listing_id,
+                            turnover_id: tid,
+                            checkout_date: blk.date_to,
+                            source_kind: TurnoverSourceKind::IcalFeed,
+                            title: None,
+                            exclude_user_id: None,
+                            admin_base_url: &admin_base_url,
+                        },
+                    )
+                    .await?;
+                    outbox_ids.append(&mut queued);
                 }
             }
             Some(existing) => {
@@ -1136,7 +1297,7 @@ pub async fn reconcile_for_listing_conn(
         }
     }
 
-    Ok(())
+    Ok(outbox_ids)
 }
 
 /// Standalone transaction wrapper around [`reconcile_for_listing_conn`].
@@ -1149,7 +1310,8 @@ pub async fn reconcile_for_listing(
     entry_point: &str,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    reconcile_for_listing_conn(&mut tx, listing_id, feed_id, skip_removals, entry_point).await?;
+    let _ = reconcile_for_listing_conn(&mut tx, listing_id, feed_id, skip_removals, entry_point)
+        .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -1216,7 +1378,7 @@ pub async fn backfill_listing_turnovers(
         reconcile_for_booking_conn(&mut tx, booking_id, entry_point).await?;
     }
 
-    reconcile_for_listing_conn(&mut tx, listing_id, None, true, entry_point).await?;
+    let _ = reconcile_for_listing_conn(&mut tx, listing_id, None, true, entry_point).await?;
     tx.commit().await?;
     Ok(())
 }
