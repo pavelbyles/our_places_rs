@@ -6,16 +6,15 @@ use topcoat::{
     router::{content::Form, error::see_other, page, parse_query_params},
     view::{View, component, view},
 };
-use web_client::{
-    auth::token_hash_to_hex, get_api_client, redirect::safe_redirect, session::require_admin,
-};
+use web_client::{auth::token_hash_to_hex, get_api_client, session::require_admin};
 
 use crate::pages::register::urlencode;
-use crate::support::{portal_role, start_admin_session};
+use crate::support::{portal_role, post_login_target, start_admin_session};
 
 #[derive(Deserialize, Default)]
 struct LoginQuery {
     redirect: Option<String>,
+    reset: Option<String>,
 }
 
 /// Login form fields.
@@ -31,10 +30,11 @@ pub struct LoginForm {
 }
 
 #[component]
-async fn login_form(
+pub(crate) async fn login_form(
     cx: &Cx,
     email: String,
     redirect: String,
+    notice: Option<String>,
     error: Option<String>,
 ) -> Result<impl View> {
     let label = "block text-xs font-semibold tracking-wide text-muted-foreground uppercase";
@@ -47,9 +47,18 @@ async fn login_form(
                 <h1 class="sr-only">"Console sign in"</h1>
                 <h2 class="text-2xl font-semibold">"Sign in to Our Places"</h2>
                 <p class="text-sm text-muted-foreground">
-                    "For hosts and administrators."
+                    "For hosts, administrators, and cleaning staff."
                 </p>
             </div>
+            if let Some(notice) = notice {
+                <div
+                    id="admin-auth-notice"
+                    role="status"
+                    class="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground"
+                >
+                    <span id="admin-auth-notice-text">(notice)</span>
+                </div>
+            }
             if let Some(error) = error {
                 <div
                     id="admin-auth-error"
@@ -80,6 +89,15 @@ async fn login_form(
                     autocomplete="current-password"
                     class=(input)
                 />
+                <div class="flex justify-end">
+                    <a
+                        id="admin-forgot-password-link"
+                        href="/forgot-password"
+                        class="text-sm text-muted-foreground underline hover:text-foreground"
+                    >
+                        "Forgot password?"
+                    </a>
+                </div>
                 <button
                     id="btn-admin-login"
                     type="submit"
@@ -96,20 +114,20 @@ async fn login_form(
     })
 }
 
-/// The console sign-in page (signed-in users go straight to the dashboard).
+/// The console sign-in page (signed-in users go straight to their portal landing page).
 #[page("/login")]
 pub async fn login_page(cx: &Cx) -> Result<impl View> {
-    if require_admin(cx).await.is_ok() {
-        return Err(see_other("/admin").into());
+    let query = parse_query_params::<LoginQuery>(cx).unwrap_or_default();
+    let redirect = query.redirect.unwrap_or_default();
+    if let Ok(session) = require_admin(cx).await {
+        return Err(see_other(post_login_target(session.role, &redirect)).into());
     }
-    let redirect = parse_query_params::<LoginQuery>(cx)
-        .ok()
-        .and_then(|q| q.redirect)
-        .unwrap_or_default();
-    Ok(view! { login_form(email: String::new(), redirect: redirect, error: None) })
+    let notice = (query.reset.as_deref() == Some("1"))
+        .then(|| "Your password has been updated. Sign in with your new password.".to_string());
+    Ok(view! { login_form(email: String::new(), redirect: redirect, notice: notice, error: None) })
 }
 
-/// Signs a host or administrator in. Accounts without either role are
+/// Signs a host, staff member, or administrator in. Accounts without an allowed role are
 /// refused with the same message as a wrong password. An unverified account
 /// (the password was right) goes to the code prompt instead.
 #[page(POST "/login")]
@@ -129,18 +147,15 @@ pub async fn login_submit(
                 return Err(see_other(target).into());
             }
             tracing::info!("console sign-in rejected");
-            "Invalid email or password. Access is restricted to hosts and administrators."
+            "Invalid email or password. Access is restricted to hosts, staff, and administrators."
                 .to_string()
         }
         Ok(user) => match portal_role(&user) {
-            None => "Invalid email or password. Access is restricted to hosts and administrators."
+            None => "Invalid email or password. Access is restricted to hosts, staff, and administrators."
                 .to_string(),
             Some(role) => match start_admin_session(cx, &user, role).await {
                 Ok(()) => {
-                    let target = match safe_redirect(&form.redirect) {
-                        "/" => "/admin",
-                        other => other,
-                    };
+                    let target = post_login_target(role, &form.redirect);
                     return Err(see_other(target).into());
                 }
                 Err(e) => {
@@ -151,7 +166,7 @@ pub async fn login_submit(
         },
     };
     let (email, redirect) = (form.email, form.redirect);
-    Ok(view! { login_form(email: email, redirect: redirect, error: Some(error)) })
+    Ok(view! { login_form(email: email, redirect: redirect, notice: None, error: Some(error)) })
 }
 
 async fn end_session(cx: &Cx) -> Result<()> {

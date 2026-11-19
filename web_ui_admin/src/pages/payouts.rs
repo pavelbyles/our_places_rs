@@ -24,7 +24,7 @@ use web_client::{
 };
 use web_ui_common::components::{domain::price_breakdown::money, stat_tile::stat_tile};
 
-use crate::support::{admin_only, csv_cell, service_token, staff};
+use crate::support::{admin_only, csv_cell, host_or_admin, service_token};
 
 path_param!(id);
 
@@ -85,13 +85,14 @@ async fn ledger(cx: &Cx, user: &AdminSession) -> topcoat::Result<Vec<PayoutLedge
             .into_iter()
             .filter(|e| e.host_id == user.user_id)
             .collect(),
+        AdminRole::Staff => Vec::new(),
     })
 }
 
 /// The payout ledger.
 #[page("/admin/payouts")]
 pub async fn payouts_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let entries = ledger(cx, &user).await?;
     let token = service_token(cx, &user)?;
     let summary = get_api_client(cx)
@@ -276,7 +277,7 @@ pub async fn override_status(
 /// The ledger as CSV (same scope as the page).
 #[route(GET "/admin/payouts/export.csv")]
 pub async fn export_payouts(cx: &Cx) -> Result<Response> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let mut csv = String::from(
         "reservation,listing,host,currency,gross,platform_fee,tax_withheld,net,status,cleaning_fee,promo_code,promo_discount\r\n",
     );

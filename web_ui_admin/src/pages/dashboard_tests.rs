@@ -52,3 +52,80 @@ async fn the_card_is_hidden_when_the_overview_failed() {
     let out = html(view! { calendar_card(overview: None) }, cx).await;
     assert!(!out.contains("calendar-card"), "{out}");
 }
+
+#[test]
+fn staff_default_landing_and_post_login_target_are_scoped_to_turnovers() {
+    use crate::support::{default_landing_path, post_login_target};
+    use web_client::session::AdminRole;
+
+    assert_eq!(default_landing_path(AdminRole::Staff), "/admin/turnovers");
+    assert_eq!(default_landing_path(AdminRole::Host), "/admin");
+    assert_eq!(default_landing_path(AdminRole::Admin), "/admin");
+
+    assert_eq!(post_login_target(AdminRole::Staff, ""), "/admin/turnovers");
+    assert_eq!(post_login_target(AdminRole::Staff, "/"), "/admin/turnovers");
+    assert_eq!(
+        post_login_target(AdminRole::Staff, "/admin/bookings"),
+        "/admin/turnovers"
+    );
+    assert_eq!(
+        post_login_target(AdminRole::Staff, "/admin/turnovers-evil"),
+        "/admin/turnovers"
+    );
+    assert_eq!(
+        post_login_target(AdminRole::Staff, "/admin/turnovers"),
+        "/admin/turnovers"
+    );
+    assert_eq!(
+        post_login_target(AdminRole::Staff, "/admin/turnovers?window=today"),
+        "/admin/turnovers?window=today"
+    );
+    assert_eq!(
+        post_login_target(AdminRole::Staff, "/admin/turnovers/123#comment-1"),
+        "/admin/turnovers/123#comment-1"
+    );
+    assert_eq!(post_login_target(AdminRole::Host, "/"), "/admin");
+    assert_eq!(
+        post_login_target(AdminRole::Host, "/admin/bookings"),
+        "/admin/bookings"
+    );
+}
+
+#[tokio::test]
+async fn reset_password_card_renders_inline_recovery_prompt_when_expired_or_invalid() {
+    use super::password_reset::{ResetCardState, reset_password_card};
+
+    let cx = &Cx::default();
+    let out = html(
+        view! {
+            reset_password_card(state: ResetCardState::ExpiredOrInvalid)
+        },
+        cx,
+    )
+    .await;
+    assert!(
+        out.contains(r#"id="reset-password-expired""#)
+            && out.contains(r#"href="/forgot-password""#),
+        "expected inline recovery prompt linking to /forgot-password: {out}"
+    );
+    assert!(
+        !out.contains("<form"),
+        "expired prompt hides password form: {out}"
+    );
+}
+
+#[tokio::test]
+async fn login_form_links_to_forgot_password() {
+    use super::auth::login_form;
+
+    let cx = &Cx::default();
+    let out = html(
+        view! { login_form(email: String::new(), redirect: String::new(), notice: None, error: None) },
+        cx,
+    )
+    .await;
+    assert!(
+        out.contains(r#"href="/forgot-password""#) && out.contains("Forgot password?"),
+        "expected Forgot password? link on login form: {out}"
+    );
+}

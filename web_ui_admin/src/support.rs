@@ -16,8 +16,17 @@ use web_ui_common::shell_admin::AdminNavUser;
 /// Admin sessions last 7 days, refreshed on use (same as the legacy portal).
 const SESSION_TTL_SECONDS: i64 = 604_800;
 
-/// The signed-in admin or host, or the redirect / HX-Redirect / 403 / 503.
-pub async fn staff(cx: &Cx) -> topcoat::Result<AdminSession> {
+/// The signed-in admin or host (rejecting dispatch-only staff with 403), or
+/// the redirect / HX-Redirect / 403 / 503.
+pub async fn host_or_admin(cx: &Cx) -> topcoat::Result<AdminSession> {
+    require_admin(cx)
+        .await
+        .and_then(AdminSession::require_host_or_admin)
+        .map_err(|e| guard_failure(cx, e))
+}
+
+/// Any signed-in console actor allowed on turnover dispatch routes (`Admin`, `Host`, or `Staff`).
+pub async fn dispatch_actor(cx: &Cx) -> topcoat::Result<AdminSession> {
     require_admin(cx).await.map_err(|e| guard_failure(cx, e))
 }
 
@@ -33,13 +42,52 @@ pub async fn admin_only(cx: &Cx) -> topcoat::Result<AdminSession> {
 /// logged and left at 0, so a page never fails because of it.
 pub async fn nav_user(cx: &Cx) -> Option<AdminNavUser> {
     let session = require_admin(cx).await.ok()?;
-    let unread_messages = unread_guest_messages(cx, &session).await;
+    let unread_messages = if session.role == AdminRole::Staff {
+        0
+    } else {
+        unread_guest_messages(cx, &session).await
+    };
     Some(AdminNavUser {
         name: session.name,
         email: session.email,
         role: session.role,
         unread_messages,
     })
+}
+
+/// Default console landing path for each admin-portal role.
+pub fn default_landing_path(role: AdminRole) -> &'static str {
+    match role {
+        AdminRole::Staff => "/admin/turnovers",
+        AdminRole::Host | AdminRole::Admin => "/admin",
+    }
+}
+
+/// Validates and resolves the post-authentication redirect target by role.
+/// `Staff` users may only deep-link within `/admin/turnovers`; any other target
+/// (including `/`, `/admin`, or `/admin/bookings`) is forced to `/admin/turnovers`.
+pub fn post_login_target(role: AdminRole, raw_redirect: &str) -> &str {
+    let safe = web_client::redirect::safe_redirect(raw_redirect);
+    match role {
+        AdminRole::Staff => {
+            if safe == "/admin/turnovers"
+                || safe.starts_with("/admin/turnovers/")
+                || safe.starts_with("/admin/turnovers?")
+                || safe.starts_with("/admin/turnovers#")
+            {
+                safe
+            } else {
+                "/admin/turnovers"
+            }
+        }
+        AdminRole::Host | AdminRole::Admin => {
+            if safe == "/" {
+                "/admin"
+            } else {
+                safe
+            }
+        }
+    }
 }
 
 async fn unread_guest_messages(cx: &Cx, session: &AdminSession) -> i64 {
@@ -74,6 +122,8 @@ pub fn portal_role(user: &UserResponse) -> Option<AdminRole> {
         Some(AdminRole::Admin)
     } else if has("host") {
         Some(AdminRole::Host)
+    } else if has("staff") {
+        Some(AdminRole::Staff)
     } else {
         None
     }
@@ -108,6 +158,7 @@ pub async fn start_admin_session(
         role: match role {
             AdminRole::Admin => "admin".to_string(),
             AdminRole::Host => "host".to_string(),
+            AdminRole::Staff => "staff".to_string(),
         },
         namespace: ADMIN_NAMESPACE.to_string(),
         ttl_seconds: SESSION_TTL_SECONDS,
@@ -121,6 +172,9 @@ pub async fn start_admin_session(
 
 /// Listings the user may manage: all for admins, their own for hosts.
 pub async fn scoped_listings(cx: &Cx, user: &AdminSession) -> Vec<ListingResponse> {
+    if user.role == AdminRole::Staff {
+        return Vec::new();
+    }
     let params = ListingSearchParams {
         per_page: Some(100),
         user_id: (user.role == AdminRole::Host).then_some(user.user_id),
@@ -138,6 +192,7 @@ pub async fn scoped_listings(cx: &Cx, user: &AdminSession) -> Vec<ListingRespons
             .into_iter()
             .filter(|l| l.user_id == user.user_id)
             .collect(),
+        AdminRole::Staff => Vec::new(),
     }
 }
 
@@ -147,6 +202,9 @@ pub async fn scoped_bookings(
     user: &AdminSession,
     listings: &[ListingResponse],
 ) -> Vec<BookingResponse> {
+    if user.role == AdminRole::Staff {
+        return Vec::new();
+    }
     // booking_api already scopes the list to the caller; the host filter
     // below is defence in depth.
     let all = match service_token(cx, user) {
@@ -170,6 +228,7 @@ pub async fn scoped_bookings(
                 .filter(|b| own.contains(&b.listing_id))
                 .collect()
         }
+        AdminRole::Staff => Vec::new(),
     }
 }
 

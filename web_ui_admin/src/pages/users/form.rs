@@ -57,6 +57,8 @@ async fn user_fields(
     role_prefix: String,
     /// Whether this creates an account (password required, no verified box).
     creating: bool,
+    /// Whether this account currently holds the `staff` role (preserved on save).
+    has_staff: bool,
 ) -> Result<impl View> {
     let id = move |name: &str| format!("{prefix}-{name}");
     let roles = [
@@ -193,6 +195,11 @@ async fn user_fields(
                     </label>
                 }
             </div>
+            if has_staff {
+                <p id="edit-user-staff-note" class="text-xs text-muted-foreground">
+                    "Cleaning / maintenance staff access is enabled on this account and will be preserved on save (manage assignments under Staff & Crew)."
+                </p>
+            }
         </fieldset>
         <fieldset class="space-y-2">
             <legend class="mb-2 text-sm font-semibold">"Capabilities"</legend>
@@ -274,7 +281,8 @@ async fn create_form(
                     form: form,
                     prefix: "new-user".into(),
                     role_prefix: "role".into(),
-                    creating: true
+                    creating: true,
+                    has_staff: false
                 )
                 <button
                     id="btn-create-user"
@@ -358,6 +366,8 @@ async fn edit_dialog(
     user_id: Uuid,
     /// Current values.
     form: UserForm,
+    /// Whether the stored account holds the `'staff'` role.
+    has_staff: bool,
     /// Messages to show.
     errors: Vec<String>,
 ) -> Result<impl View> {
@@ -401,7 +411,8 @@ async fn edit_dialog(
                     form: form,
                     prefix: "edit-user".into(),
                     role_prefix: "edit-role".into(),
-                    creating: false
+                    creating: false,
+                    has_staff: has_staff
                 )
                 <button
                     id="edit-user-save-btn"
@@ -428,8 +439,9 @@ pub async fn edit_user_dialog(cx: &Cx) -> Result<impl View> {
         .get_user_profile(id)
         .await
         .map_err(|_| not_found())?;
+    let has_staff = user.roles.iter().any(|r| r.eq_ignore_ascii_case("staff"));
     Ok(view! {
-        edit_dialog(user_id: id, form: UserForm::from_user(&user), errors: Vec::new())
+        edit_dialog(user_id: id, form: UserForm::from_user(&user), has_staff: has_staff, errors: Vec::new())
     })
 }
 
@@ -446,7 +458,8 @@ pub async fn update_user(
     let id = parse_id(cx)?;
     let api = get_api_client(cx);
     let stored = api.get_user_profile(id).await.map_err(|_| not_found())?;
-    let errors = match form.validate(false) {
+    let has_staff = stored.roles.iter().any(|r| r.eq_ignore_ascii_case("staff"));
+    let errors = match form.validate_preserving_staff(false, has_staff) {
         Err(errors) => errors,
         Ok(valid) => {
             let mut attributes = stored.attributes.as_object().cloned().unwrap_or_default();
@@ -500,5 +513,5 @@ pub async fn update_user(
             }
         }
     };
-    Ok(view! { edit_dialog(user_id: id, form: form, errors: errors) })
+    Ok(view! { edit_dialog(user_id: id, form: form, has_staff: has_staff, errors: errors) })
 }

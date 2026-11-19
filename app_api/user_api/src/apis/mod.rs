@@ -17,12 +17,18 @@ pub use common::models::{
     CreateSessionRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, VerifyRequest,
 };
+pub use common::turnover::{
+    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffInviteAcceptRequest,
+    StaffInviteResponse, StaffListQuery, StaffListResponse, StaffListingAssignment,
+    StaffMemberSummary, UpdateStaffAssignmentsRequest,
+};
 
 mod account;
 mod admin;
 mod profile;
 mod registration;
 mod sessions;
+mod staff;
 
 /// Query parameter limiting sessions to one portal.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -130,6 +136,13 @@ pub struct UsersWrapper {
     pub user: Vec<UserResponse>,
 }
 
+/// Generic JSON acknowledgment payload returned by password action endpoints.
+#[derive(Serialize, ToSchema)]
+pub struct ActionStatusResponse {
+    /// Machine-readable status indicator.
+    pub status: String,
+}
+
 /// A 400 with one validation message for `field`.
 fn field_error(field: &'static str, message: String) -> ApiError {
     let mut errors = validator::ValidationErrors::new();
@@ -175,6 +188,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             profile::get_user_listings,
             account::request_password_change,
             account::confirm_password_change,
+            account::request_password_reset,
+            account::confirm_password_reset,
+            staff::list_staff_users,
+            staff::invite_staff_user,
+            staff::accept_staff_invite,
+            staff::update_staff_listings,
+            staff::resend_staff_invite,
+            staff::remove_staff_user,
             account::change_email,
             account::deactivate_account,
             sessions::create_session_handler,
@@ -187,12 +208,17 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 NewUserRequest, UpdateUserRequest, VerifyRequest, ResendVerificationRequest,
                 UserResponse, ListingResponse, BookingResponse, pagination::Pagination,
                 UserFilter, UsersWrapper, PasswordChangeRequest,
-                PasswordChangeConfirm, EmailChangeRequest, DeactivateRequest,
+                PasswordChangeConfirm, PasswordResetRequest, PasswordTokenRedeemRequest,
+                StaffListQuery, StaffListResponse, StaffMemberSummary, StaffListingAssignment,
+                InviteStaffRequest, StaffInviteResponse, StaffInviteAcceptRequest,
+                UpdateStaffAssignmentsRequest,
+                ActionStatusResponse, EmailChangeRequest, DeactivateRequest,
                 CreateSessionRequest, SessionResponse, SessionNamespaceQuery
             )
         ),
         tags(
             (name = "users", description = "User management endpoints"),
+            (name = "staff", description = "Host-scoped cleaning & maintenance staff management"),
             (name = "sessions", description = "Session authentication & state endpoints")
         ),
     )]
@@ -347,7 +373,42 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::post()
                     .to(account::deactivate_account)
                     .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/password-reset/request",
+                web::post()
+                    .to(account::request_password_reset)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/password-reset/confirm",
+                web::post()
+                    .to(account::confirm_password_reset)
+                    .wrap(from_fn(content_negotiation_middleware)),
+            )
+            .route(
+                "/staff-invite/accept",
+                web::post()
+                    .to(staff::accept_staff_invite)
+                    .wrap(from_fn(content_negotiation_middleware)),
             ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/staff-users")
+            .wrap(from_fn(api_core::auth::require_user))
+            .wrap(from_fn(content_negotiation_middleware))
+            .route("", web::get().to(staff::list_staff_users))
+            .route("", web::post().to(staff::invite_staff_user))
+            .route(
+                "/{id}/listings",
+                web::put().to(staff::update_staff_listings),
+            )
+            .route(
+                "/{id}/resend-invite",
+                web::post().to(staff::resend_staff_invite),
+            )
+            .route("/{id}", web::delete().to(staff::remove_staff_user)),
     );
 }
 

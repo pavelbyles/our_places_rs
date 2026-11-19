@@ -16,6 +16,8 @@ pub mod exchange_rate_history;
 pub mod exchange_rates;
 /// Listings studio.
 pub mod listings;
+/// Forgot-password and single-use password setup/reset flows.
+pub mod password_reset;
 /// Payout ledger.
 pub mod payouts;
 /// Seasonal pricing overrides.
@@ -28,5 +30,9 @@ pub mod register;
 pub mod requests;
 /// `/robots.txt`: disallow everything.
 pub mod robots;
+/// Host-scoped staff roster and listing assignments (`/admin/staff-users`).
+pub mod staff_users;
+/// Mobile-first turnover & cleaning crew dispatch board (`/admin/turnovers`).
+pub mod turnovers;
 /// User administration.
 pub mod users;

@@ -105,6 +105,20 @@ pub enum DbError {
     /// A lock wait timed out or a deadlock was broken; safe to retry.
     #[error("Database lock contention during {0}")]
     LockContention(String),
+    /// Caller does not own or is not permitted to act on the target resource.
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+    /// Actor role or workflow state forbids the requested turnover transition.
+    #[error("{0}")]
+    TurnoverTransitionForbidden(#[from] common::turnover::TurnoverTransitionError),
+    /// Concurrent turnover update rejected by optimistic `expected_status` check.
+    #[error("Turnover status changed concurrently (expected {expected}, currently {actual})")]
+    TurnoverStatusConflict {
+        /// Status caller expected the turnover to be in.
+        expected: common::turnover::TurnoverStatus,
+        /// Current committed status found under lock.
+        actual: common::turnover::TurnoverStatus,
+    },
 }
 
 /// SQLSTATE: restrict violation (`ON DELETE RESTRICT`).

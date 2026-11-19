@@ -21,7 +21,7 @@ use uuid::Uuid;
 use web_client::client::UserCallError;
 use web_client::get_api_client;
 
-use crate::support::{scoped_listings, service_token, staff};
+use crate::support::{host_or_admin, scoped_listings, service_token};
 
 path_param!(id);
 
@@ -600,7 +600,7 @@ async fn promo_codes_view(
 /// The promo codes page.
 #[page("/admin/promo-codes")]
 pub async fn promo_codes_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let token = service_token(cx, &user)?;
     let (codes, errors) = load_codes(cx, &token).await;
     let listings = scoped_listings(cx, &user).await;
@@ -623,7 +623,7 @@ pub async fn create_promo_code(
     /// The submitted form.
     Form(form): Form<PromoCodeForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let token = service_token(cx, &user)?;
     let outcome = match to_request(&form) {
         Err(message) => Err(message),
@@ -655,7 +655,7 @@ pub async fn create_promo_code(
 /// Deactivates a code. Swaps the card, or returns to the page without HTMX.
 #[page(POST "/admin/promo-codes/{id}/deactivate")]
 pub async fn deactivate_promo_code(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let token = service_token(cx, &user)?;
     let error = match Uuid::parse_str(id(cx)) {
         Err(_) => Some("Unknown promo code.".to_string()),

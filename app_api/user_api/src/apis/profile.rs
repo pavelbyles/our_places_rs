@@ -54,6 +54,16 @@ pub(super) async fn update_user(
 
     let password_hash = hash_new_password(req_data.password.as_deref()).await?;
 
+    let roles = req_data.roles.as_deref().map(|raw| {
+        let mut parsed = parse_roles(raw);
+        // Preserve `'staff'` across `/admin/users` edits so operational staff membership is only
+        // revoked through `/api/v1/staff-users/{id}` cleanup (or explicit staff unlinking).
+        if target_user.roles.contains(&UserRole::Staff) && !parsed.contains(&UserRole::Staff) {
+            parsed.push(UserRole::Staff);
+        }
+        parsed
+    });
+
     let updated = UpdatedUser {
         email: req_data.email.clone(),
         password_hash,
@@ -65,7 +75,7 @@ pub(super) async fn update_user(
         verification_code: None,
         verification_code_expires_at: None,
         attributes: req_data.attributes.clone(),
-        roles: req_data.roles.as_deref().map(parse_roles),
+        roles,
         default_currency: req_data.default_currency.clone(),
         slug,
     };

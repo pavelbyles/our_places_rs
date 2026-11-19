@@ -99,7 +99,8 @@ async fn set_lock_timeout(tx: &mut Transaction<'_, Postgres>) -> Result<()> {
 }
 
 fn is_lock_timeout(e: &DbError) -> bool {
-    matches!(e, DbError::Sqlx(inner) if sqlstate(inner).as_deref() == Some(SQLSTATE_LOCK_NOT_AVAILABLE))
+    matches!(e, DbError::LockContention(_))
+        || matches!(e, DbError::Sqlx(inner) if sqlstate(inner).as_deref() == Some(SQLSTATE_LOCK_NOT_AVAILABLE))
 }
 
 /// Locks the claim's feed and checks it's still live at the claimed generation.
@@ -191,12 +192,10 @@ async fn apply(
     .execute(&mut *tx)
     .await?;
 
-    let opened = super::conflicts::detect_for_feed(&mut tx, claim.id, gap, ctx).await?;
+    let mut opened = super::conflicts::detect_for_feed(&mut tx, claim.id, gap, ctx).await?;
 
-    let warning = warning_text(
-        &parsed.warnings,
-        parsed.events.is_empty() && had_future_blocks,
-    );
+    let skip_removals = parsed.events.is_empty() && had_future_blocks;
+    let warning = warning_text(&parsed.warnings, skip_removals);
     let status = match warning {
         Some(_) => FeedStatus::Warning,
         None => FeedStatus::Ok,
@@ -215,12 +214,25 @@ async fn apply(
     )
     .execute(&mut *tx)
     .await?;
+
+    let conflicts_opened = i32::try_from(opened.len()).unwrap_or(i32::MAX);
+
+    let mut turnover_outbox_ids = crate::turnover::reconcile_for_listing_conn(
+        &mut tx,
+        claim.listing_id,
+        Some(claim.id),
+        skip_removals,
+        "calendar::reconcile::reconcile_feed",
+    )
+    .await?;
+    opened.append(&mut turnover_outbox_ids);
+
     tx.commit().await?;
     Ok(ReconcileOutcome::Applied {
         status,
         events,
         warning,
-        conflicts_opened: i32::try_from(opened.len()).unwrap_or(i32::MAX),
+        conflicts_opened,
         outbox_ids: opened,
     })
 }

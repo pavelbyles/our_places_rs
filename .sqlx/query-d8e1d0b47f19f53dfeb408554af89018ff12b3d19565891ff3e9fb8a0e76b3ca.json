@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT EXISTS(\n                    SELECT 1\n                    FROM listing_staff ls\n                    INNER JOIN \"user\" u ON u.id = ls.staff_user_id\n                    WHERE ls.listing_id = $1\n                      AND ls.staff_user_id = $2\n                      AND ($3 = 'staff' OR 'staff'::user_role = ANY(u.roles))\n                      AND u.is_active = TRUE\n                      AND u.deleted_at IS NULL\n                ) AS \"assigned!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "assigned!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d8e1d0b47f19f53dfeb408554af89018ff12b3d19565891ff3e9fb8a0e76b3ca"
+}

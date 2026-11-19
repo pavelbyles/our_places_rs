@@ -68,7 +68,17 @@ pub async fn admin_chrome(
     Ok(view! {
         if let Some(user) = user {
             let is_admin = user.role == AdminRole::Admin;
-            let role_label = if is_admin { "Administrator" } else { "Host" };
+            let is_staff = user.role == AdminRole::Staff;
+            let role_label = match user.role {
+                AdminRole::Admin => "Administrator",
+                AdminRole::Host => "Host",
+                AdminRole::Staff => "Staff",
+            };
+            let brand_href = if is_staff {
+                "/admin/turnovers"
+            } else {
+                "/admin"
+            };
             let unread = unread_badge_label(user.unread_messages);
             let unread_aria = format!("{} unread messages", user.unread_messages);
             <div class="flex min-h-screen">
@@ -76,60 +86,84 @@ pub async fn admin_chrome(
                     class="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar p-4 md:block"
                 >
                     <a
-                        href="/admin"
+                        href=(brand_href)
                         class="mb-6 block font-serif text-xl text-sidebar-foreground no-underline"
                     >
                         "Our Places"
                     </a>
                     <nav aria-label="Console" class="flex flex-col gap-1">
-                        <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
-                        <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
-                        <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
-                        <a href="/admin/inbox" class=(NAV_LINK)>
-                            "Inbox"
-                            if let Some(label) = unread.clone() {
-                                " "
-                                <span
-                                    id="admin-nav-unread"
-                                    class="ml-1 font-semibold"
-                                    aria-label=(unread_aria.clone())
+                        if is_staff {
+                            <a
+                                id="admin-sidebar-turnovers-link"
+                                href="/admin/turnovers"
+                                class=(NAV_LINK)
+                            >
+                                "Turnover Dispatch"
+                            </a>
+                        } else {
+                            <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
+                            <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
+                            <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
+                            <a
+                                id="admin-sidebar-turnovers-link"
+                                href="/admin/turnovers"
+                                class=(NAV_LINK)
+                            >
+                                "Turnover Dispatch"
+                            </a>
+                            <a
+                                id="admin-sidebar-staff-users-link"
+                                href="/admin/staff-users"
+                                class=(NAV_LINK)
+                            >
+                                "Staff & Crew"
+                            </a>
+                            <a href="/admin/inbox" class=(NAV_LINK)>
+                                "Inbox"
+                                if let Some(label) = unread.clone() {
+                                    " "
+                                    <span
+                                        id="admin-nav-unread"
+                                        class="ml-1 font-semibold"
+                                        aria-label=(unread_aria.clone())
+                                    >
+                                        (label)
+                                    </span>
+                                }
+                            </a>
+                            <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
+                            <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
+                            <a href="/admin/exchange-rates" class=(NAV_LINK)>
+                                "Exchange rates"
+                            </a>
+                            if is_admin {
+                                <p
+                                    id="admin-sidebar-users-title"
+                                    class="mt-4 px-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
                                 >
-                                    (label)
-                                </span>
+                                    "Users"
+                                </p>
+                                <a
+                                    id="admin-sidebar-users-link"
+                                    href="/admin/users"
+                                    class=(NAV_LINK)
+                                >
+                                    "All users"
+                                </a>
+                                <a
+                                    id="admin-sidebar-users-new-link"
+                                    href="/admin/users/new"
+                                    class=(NAV_LINK)
+                                >
+                                    "Invite user"
+                                </a>
                             }
-                        </a>
-                        <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
-                        <a href="/admin/promo-codes" class=(NAV_LINK)>"Promo codes"</a>
-                        <a href="/admin/exchange-rates" class=(NAV_LINK)>
-                            "Exchange rates"
-                        </a>
-                        if is_admin {
-                            <p
-                                id="admin-sidebar-users-title"
-                                class="mt-4 px-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                            >
-                                "Users"
-                            </p>
-                            <a
-                                id="admin-sidebar-users-link"
-                                href="/admin/users"
-                                class=(NAV_LINK)
-                            >
-                                "All users"
-                            </a>
-                            <a
-                                id="admin-sidebar-users-new-link"
-                                href="/admin/users/new"
-                                class=(NAV_LINK)
-                            >
-                                "Invite user"
-                            </a>
                         }
                     </nav>
                 </aside>
-                <div class="flex min-w-0 flex-1 flex-col">
+                <div class="flex min-w-0 flex-1 flex-col overflow-x-hidden">
                     <header
-                        class="flex items-center justify-between gap-4 border-b border-border px-6 py-3"
+                        class="flex items-center justify-between gap-2 border-b border-border px-3 py-3 sm:gap-4 sm:px-6"
                     >
                         <details
                             id="admin-mobile-nav"
@@ -146,54 +180,78 @@ pub async fn admin_chrome(
                                 aria-label="Console (mobile)"
                                 class="absolute left-0 z-50 mt-2 flex w-56 flex-col rounded-xl border border-border bg-popover p-2 shadow-sm"
                             >
-                                <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
-                                <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
-                                <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
-                                <a href="/admin/inbox" class=(NAV_LINK)>
-                                    "Inbox"
-                                    if let Some(label) = unread.clone() {
-                                        " "
-                                        <span
-                                            id="admin-mobile-nav-unread"
-                                            class="ml-1 font-semibold"
-                                            aria-label=(unread_aria.clone())
-                                        >
-                                            (label)
-                                        </span>
+                                if is_staff {
+                                    <a
+                                        id="admin-mobile-turnovers-link"
+                                        href="/admin/turnovers"
+                                        class=(NAV_LINK)
+                                    >
+                                        "Turnover Dispatch"
+                                    </a>
+                                } else {
+                                    <a href="/admin" class=(NAV_LINK)>"Dashboard"</a>
+                                    <a href="/admin/listings" class=(NAV_LINK)>"Listings"</a>
+                                    <a href="/admin/bookings" class=(NAV_LINK)>"Bookings"</a>
+                                    <a
+                                        id="admin-mobile-turnovers-link"
+                                        href="/admin/turnovers"
+                                        class=(NAV_LINK)
+                                    >
+                                        "Turnover Dispatch"
+                                    </a>
+                                    <a
+                                        id="admin-mobile-staff-users-link"
+                                        href="/admin/staff-users"
+                                        class=(NAV_LINK)
+                                    >
+                                        "Staff & Crew"
+                                    </a>
+                                    <a href="/admin/inbox" class=(NAV_LINK)>
+                                        "Inbox"
+                                        if let Some(label) = unread.clone() {
+                                            " "
+                                            <span
+                                                id="admin-mobile-nav-unread"
+                                                class="ml-1 font-semibold"
+                                                aria-label=(unread_aria.clone())
+                                            >
+                                                (label)
+                                            </span>
+                                        }
+                                    </a>
+                                    <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
+                                    <a href="/admin/promo-codes" class=(NAV_LINK)>
+                                        "Promo codes"
+                                    </a>
+                                    if is_admin {
+                                        <a href="/admin/users" class=(NAV_LINK)>"Users"</a>
                                     }
-                                </a>
-                                <a href="/admin/payouts" class=(NAV_LINK)>"Payouts"</a>
-                                <a href="/admin/promo-codes" class=(NAV_LINK)>
-                                    "Promo codes"
-                                </a>
-                                if is_admin {
-                                    <a href="/admin/users" class=(NAV_LINK)>"Users"</a>
                                 }
                             </nav>
                         </details>
-                        <div class="ml-auto flex items-center gap-3">
+                        <div class="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
                             theme_toggle(theme: theme)
-                            <div class="text-right text-sm leading-tight">
-                                <p id="admin-top-user-name" class="font-medium">
+                            <div class="min-w-0 flex-1 text-right text-sm leading-tight sm:flex-initial sm:max-w-xs">
+                                <p id="admin-top-user-name" class="truncate font-medium">
                                     (user.name)
                                 </p>
-                                <p class="text-xs text-muted-foreground">
+                                <p class="truncate text-xs text-muted-foreground">
                                     <span id="admin-top-user-role">(role_label)</span>
                                     " · "
                                     (user.email)
                                 </p>
                             </div>
-                            <form method="post" action="/logout">
+                            <form method="post" action="/logout" class="shrink-0">
                                 <button
                                     type="submit"
-                                    class="h-10 rounded-full border border-border px-4 text-sm"
+                                    class="h-10 whitespace-nowrap rounded-full border border-border px-3 text-xs sm:px-4 sm:text-sm"
                                 >
                                     "Sign out"
                                 </button>
                             </form>
                         </div>
                     </header>
-                    <main id="main" class="flex-1 px-6 py-8">(child)</main>
+                    <main id="main" class="min-w-0 flex-1 px-3 py-5 sm:px-6 sm:py-8">(child)</main>
                 </div>
             </div>
         } else {

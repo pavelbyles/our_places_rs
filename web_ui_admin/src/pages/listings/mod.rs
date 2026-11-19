@@ -15,7 +15,7 @@ use web_client::{
 };
 use web_ui_common::components::domain::price_breakdown::money;
 
-use crate::support::{scoped_listings, staff};
+use crate::support::{host_or_admin, scoped_listings};
 
 /// The "Amenities" fieldset: group slots, parsing and validation.
 pub mod amenity_field;
@@ -98,7 +98,7 @@ pub async fn owner_options(cx: &Cx, user: &AdminSession) -> Vec<form::OwnerOptio
 /// The listings inventory, searchable by name and filterable by status.
 #[page("/admin/listings")]
 pub async fn listings_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let q = parse_query_params::<ListQuery>(cx).unwrap_or_default();
     let needle = q.q.clone().unwrap_or_default().to_lowercase();
     let status = q.status.clone().unwrap_or_default();
@@ -260,7 +260,7 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
 /// One listing's summary with links to edit, pricing, clone and the guest page.
 #[page("/admin/listings/{id}")]
 pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let raw = id(cx);
     Uuid::parse_str(raw).map_err(|_| not_found())?;
     let l = managed_listing(cx, &user, raw).await?;

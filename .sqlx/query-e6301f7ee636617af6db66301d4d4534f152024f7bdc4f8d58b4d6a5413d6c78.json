@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (\n            EXISTS(SELECT 1 FROM host_staff WHERE staff_user_id = $1)\n            OR EXISTS(SELECT 1 FROM listing_staff WHERE staff_user_id = $1)\n        ) AS \"linked!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "linked!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e6301f7ee636617af6db66301d4d4534f152024f7bdc4f8d58b4d6a5413d6c78"
+}

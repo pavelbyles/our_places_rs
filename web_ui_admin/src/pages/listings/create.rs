@@ -8,14 +8,14 @@ use web_client::{get_api_client, session::AdminRole};
 
 use super::form::{ListingFields, api_rejection_messages, listing_form};
 use super::{managed_listing, owner_options};
-use crate::support::{service_token, staff};
+use crate::support::{host_or_admin, service_token};
 
 path_param!(slug);
 
 /// A blank listing studio form.
 #[page("/admin/listings/new")]
 pub async fn new_listing_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let owners = owner_options(cx, &user).await;
     let admin = user.role == AdminRole::Admin;
     let fields = ListingFields::blank(user.user_id);
@@ -37,7 +37,7 @@ pub async fn new_listing_page(cx: &Cx) -> Result<impl View> {
 /// The studio form pre-filled from an existing listing.
 #[page("/admin/listings/clone/{slug}")]
 pub async fn clone_listing_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let source = managed_listing(cx, &user, slug(cx)).await?;
     let owners = owner_options(cx, &user).await;
     let admin = user.role == AdminRole::Admin;
@@ -69,7 +69,7 @@ pub async fn create_listing(
     /// The studio form.
     Form(fields): Form<ListingFields>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let admin = user.role == AdminRole::Admin;
     let forced_owner = (!admin).then_some(user.user_id);
     let errors = match fields.validate(forced_owner, admin) {

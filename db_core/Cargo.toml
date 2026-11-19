@@ -23,6 +23,8 @@ strum_macros = "0.28.0"
 utoipa.workspace = true
 common = { workspace = true, features = ["sqlx"] }
 bcrypt = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

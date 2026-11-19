@@ -1,17 +1,30 @@
 //! Self-service account changes: password, email, deactivation.
 
 use super::{
-    DeactivateRequest, EmailChangeRequest, PasswordChangeConfirm, PasswordChangeRequest,
-    UserResponse, map_user_to_response,
+    ActionStatusResponse, DeactivateRequest, EmailChangeRequest, PasswordChangeConfirm,
+    PasswordChangeRequest, PasswordResetRequest, PasswordTokenRedeemRequest, UserResponse,
+    map_user_to_response,
 };
 use actix_web::{HttpRequest, Responder, web};
 use api_core::error::ApiError;
 use api_core::response::{Payload, respond};
 use chrono::Utc;
+use db_core::action_token::ActionTokenPurpose;
 use db_core::models::UserRole;
 use rand::distr::{Alphanumeric, SampleString};
 use sqlx::PgPool;
+use tracing::Instrument;
 use validator::Validate;
+
+static ADMIN_BASE_URL_ENV: &str = "ADMIN_BASE_URL";
+
+/// Base URL of the admin portal used when generating password setup/reset links.
+pub(super) fn admin_base_url() -> String {
+    std::env::var(ADMIN_BASE_URL_ENV)
+        .unwrap_or_else(|_| "http://localhost:3012".to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
 
 #[tracing::instrument(skip_all)]
 #[utoipa::path(
@@ -279,6 +292,174 @@ pub(super) async fn deactivate_account(
         &req,
         Payload::Item(map_user_to_response(updated)),
         |_: Vec<UserResponse>| (),
+        actix_web::http::StatusCode::OK,
+    ))
+}
+
+/// Public endpoint requesting a single-use password-reset link.
+/// Always returns `202 Accepted` regardless of whether an active account exists.
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/password-reset/request",
+    tag = "users",
+    request_body = PasswordResetRequest,
+    responses(
+        (status = 202, description = "Reset request accepted", body = ActionStatusResponse),
+        (status = 400, description = "Validation error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub(super) async fn request_password_reset(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<PasswordResetRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    let normalized_email = payload.email.trim().to_lowercase();
+    if let Some(user) =
+        db_core::user::get_active_user_by_email_ci(pool.get_ref(), &normalized_email)
+            .await
+            .map_err(ApiError::Database)?
+    {
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
+        if db_core::action_token::has_recent_password_reset_conn(&mut tx, user.id, 60)
+            .await
+            .map_err(ApiError::Database)?
+        {
+            let _ = tx.rollback().await;
+            return Ok(respond(
+                &req,
+                Payload::Item(ActionStatusResponse {
+                    status: "accepted".to_string(),
+                }),
+                |_: Vec<ActionStatusResponse>| (),
+                actix_web::http::StatusCode::ACCEPTED,
+            ));
+        }
+
+        let expires_at = Utc::now() + ActionTokenPurpose::PasswordReset.default_ttl();
+        let raw_token = db_core::action_token::issue_action_token_conn(
+            &mut tx,
+            user.id,
+            ActionTokenPurpose::PasswordReset,
+            expires_at,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+
+        let reset_url = format!("{}/reset-password?token={raw_token}", admin_base_url());
+        let outbox_payload = serde_json::to_value(common::email::PasswordResetLinkEmailPayload {
+            first_name: user.first_name,
+            reset_url,
+            expires_minutes: 30,
+        })
+        .map_err(|_| ApiError::Internal)?;
+        let outbox = db_core::email_outbox::insert_email_outbox_conn(
+            &mut tx,
+            &user.email,
+            "Reset your Our Places password",
+            common::email::EmailTemplate::PasswordResetLink.as_str(),
+            &outbox_payload,
+            3,
+        )
+        .await
+        .map_err(ApiError::Database)?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ApiError::Database(db_core::error::DbError::Sqlx(e)))?;
+
+        let email_id = outbox.id;
+        let user_id = user.id;
+        tokio::spawn(
+            async move {
+                let publisher = api_core::email_publisher::EmailPublisher::from_env();
+                if let Err(e) = publisher.publish_email_event(email_id).await {
+                    tracing::error!(%email_id, %user_id, error = ?e, "failed to publish password reset email event");
+                }
+            }
+            .instrument(tracing::Span::current()),
+        );
+    }
+
+    Ok(respond(
+        &req,
+        Payload::Item(ActionStatusResponse {
+            status: "accepted".to_string(),
+        }),
+        |_: Vec<ActionStatusResponse>| (),
+        actix_web::http::StatusCode::ACCEPTED,
+    ))
+}
+
+/// Public endpoint redeeming a single-use password-setup or password-reset token.
+#[tracing::instrument(skip_all)]
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/password-reset/confirm",
+    tag = "users",
+    request_body = PasswordTokenRedeemRequest,
+    responses(
+        (status = 200, description = "Password updated and active sessions revoked", body = ActionStatusResponse),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Invalid or expired token"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub(super) async fn confirm_password_reset(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    req_data: web::Json<PasswordTokenRedeemRequest>,
+) -> Result<impl Responder, ApiError> {
+    let payload = req_data.into_inner();
+    payload.validate()?;
+
+    if !db_core::action_token::verify_open_password_token(pool.get_ref(), &payload.token)
+        .await
+        .map_err(ApiError::Database)?
+    {
+        return Err(ApiError::Unauthorized(
+            "Invalid or expired password reset token".to_string(),
+        ));
+    }
+
+    let new_password = payload.new_password;
+    let password_hash =
+        tokio::task::spawn_blocking(move || bcrypt::hash(&new_password, bcrypt::DEFAULT_COST))
+            .await
+            .map_err(|_| ApiError::Internal)?
+            .map_err(|_| ApiError::Internal)?;
+
+    let user_id = db_core::action_token::consume_action_token_and_set_password(
+        pool.get_ref(),
+        &payload.token,
+        &password_hash,
+    )
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or_else(|| ApiError::Unauthorized("Invalid or expired password reset token".to_string()))?;
+
+    db_core::sessions::SessionsDb::new(pool.get_ref().clone())
+        .delete_user_sessions(user_id, None)
+        .await
+        .map_err(|e| {
+            tracing::error!(%user_id, error = ?e, "failed to revoke user sessions after password reset");
+            ApiError::Internal
+        })?;
+
+    Ok(respond(
+        &req,
+        Payload::Item(ActionStatusResponse {
+            status: "password_updated".to_string(),
+        }),
+        |_: Vec<ActionStatusResponse>| (),
         actix_web::http::StatusCode::OK,
     ))
 }

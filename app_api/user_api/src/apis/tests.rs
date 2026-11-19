@@ -1019,3 +1019,878 @@ async fn user_listings_drop_coordinates() {
     );
     assert_eq!(listings[0]["city"], "Ocho Rios");
 }
+
+mod password_reset_tests {
+    use super::*;
+
+    fn test_db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = match env::var(DATABASE_URL_ENV) {
+            Ok(url) => url,
+            Err(_) => "postgres://postgres:password@localhost:5432/our_places".to_string(),
+        };
+        TestPg::new(db_url, Path::new("../../db_core/migrations"))
+    }
+
+    async fn create_active_user(
+        pool: &sqlx::PgPool,
+        email: &str,
+        verified: bool,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let id = Uuid::now_v7();
+        let slug = format!("rst-{}", id.simple());
+        sqlx::query(
+            r#"
+            INSERT INTO "user" (id, email, password_hash, first_name, last_name, is_active, is_verified, roles, default_currency, slug)
+            VALUES ($1, $2, '!locked!initial', 'Crewed', 'Cleaner', TRUE, $3, ARRAY['staff'::user_role], 'USD', $4)
+            "#,
+        )
+        .bind(id)
+        .bind(email)
+        .bind(verified)
+        .bind(slug)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    fn extract_token_from_url(url: &str) -> Option<String> {
+        url.split("?token=").nth(1).map(ToString::to_string)
+    }
+
+    #[actix_web::test]
+    async fn password_reset_non_enumerating_and_single_use_flow()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        // 1. Unknown email still returns 202 Accepted and queues no email.
+        let unknown_email = format!("nobody_{}@example.com", Uuid::now_v7().simple());
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": unknown_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 202);
+        let outbox_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link'",
+        )
+        .bind(&unknown_email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(outbox_count, 0);
+
+        // 2. Soft-deleted user also returns 202 with no email queued.
+        let deleted_email = format!("deleted_{}@example.com", Uuid::now_v7().simple());
+        let deleted_id = create_active_user(&pool, &deleted_email, true).await?;
+        sqlx::query(r#"UPDATE "user" SET deleted_at = NOW(), is_active = FALSE WHERE id = $1"#)
+            .bind(deleted_id)
+            .execute(&pool)
+            .await?;
+        let del_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": deleted_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(del_resp.status(), 202);
+        let del_outbox: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link'",
+        )
+        .bind(&deleted_email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(del_outbox, 0);
+
+        // 3. Active staff user receives reset link (case/whitespace normalized) and prior token is invalidated on re-request.
+        let canonical_email = format!("staff_{}@example.com", Uuid::now_v7().simple());
+        let staff_id = create_active_user(&pool, &canonical_email, false).await?;
+
+        // Seed an active session to confirm password reset revokes it.
+        db_core::sessions::SessionsDb::new(pool.clone())
+            .save_session(
+                &format!("sess_{}", Uuid::now_v7().simple()),
+                Some(staff_id),
+                Some(&canonical_email),
+                "admin",
+                b"{}",
+                3600,
+            )
+            .await?;
+
+        let first_req = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": format!("  {}  ", canonical_email.to_uppercase()) }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(first_req.status(), 202);
+
+        let second_req = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": canonical_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(second_req.status(), 202);
+
+        // Throttled: immediate duplicate request does not flood outbox or invalidate first token.
+        let throttled_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link'",
+        )
+        .bind(&canonical_email)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(throttled_count, 1);
+
+        // Once the cooldown window has elapsed, a new request supersedes the prior token.
+        sqlx::query(
+            "UPDATE account_action_token SET created_at = NOW() - INTERVAL '2 minutes' WHERE user_id = $1 AND purpose = 'password_reset'",
+        )
+        .bind(staff_id)
+        .execute(&pool)
+        .await?;
+
+        let third_req = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": canonical_email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(third_req.status(), 202);
+
+        let open_tokens: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM account_action_token WHERE user_id = $1 AND purpose = 'password_reset' AND used_at IS NULL",
+        )
+        .bind(staff_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(open_tokens, 1);
+
+        let payloads: Vec<serde_json::Value> = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link' ORDER BY created_at ASC",
+        )
+        .bind(&canonical_email)
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(payloads.len(), 2);
+
+        let stale_url = payloads[0]["reset_url"]
+            .as_str()
+            .ok_or("missing stale reset_url")?;
+        let fresh_url = payloads[1]["reset_url"]
+            .as_str()
+            .ok_or("missing fresh reset_url")?;
+        assert!(fresh_url.contains("/reset-password?token="), "{fresh_url}");
+        let stale_token = extract_token_from_url(stale_url).ok_or("missing stale token")?;
+        let fresh_token = extract_token_from_url(fresh_url).ok_or("missing fresh token")?;
+
+        // Stale token rejected.
+        let stale_confirm = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": stale_token, "new_password": "NewPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert!(matches!(stale_confirm.status().as_u16(), 400 | 401));
+
+        // Short password rejected with 400.
+        let short_confirm = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": fresh_token, "new_password": "short" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(short_confirm.status(), 400);
+
+        // Fresh token succeeds, verifies user, revokes sessions, and rejects replay.
+        let ok_confirm = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": fresh_token, "new_password": "NewPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(ok_confirm.status(), 200);
+
+        let is_verified: bool =
+            sqlx::query_scalar(r#"SELECT is_verified FROM "user" WHERE id = $1"#)
+                .bind(staff_id)
+                .fetch_one(&pool)
+                .await?;
+        assert!(is_verified);
+
+        let remaining_sessions: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE user_id = $1")
+                .bind(staff_id)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(remaining_sessions, 0);
+
+        let replay = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": fresh_token, "new_password": "AnotherPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert!(matches!(replay.status().as_u16(), 400 | 401));
+
+        // Login succeeds with the new password.
+        let login_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/login")
+                .set_json(json!({ "email": canonical_email, "password": "NewPassword123!" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(login_resp.status(), 200);
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn password_reset_concurrent_redemption_allows_only_one_winner()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let email = format!("race_{}@example.com", Uuid::now_v7().simple());
+        let user_id = create_active_user(&pool, &email, false).await?;
+
+        let app_a = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let app_b = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let req_resp = test::call_service(
+            &app_a,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/request")
+                .set_json(json!({ "email": email }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(req_resp.status(), 202);
+
+        let payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = $1 AND template_id = 'password_reset_link' ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(&email)
+        .fetch_one(&pool)
+        .await?;
+        let reset_url = payload["reset_url"].as_str().ok_or("missing reset_url")?;
+        let token = extract_token_from_url(reset_url).ok_or("missing token")?;
+
+        let t1 = token.clone();
+        let t2 = token;
+        let (r1, r2) = tokio::join!(
+            test::call_service(
+                &app_a,
+                test::TestRequest::post()
+                    .uri("/api/v1/users/password-reset/confirm")
+                    .set_json(json!({ "token": t1, "new_password": "WinnerPassword1!" }))
+                    .to_request(),
+            ),
+            test::call_service(
+                &app_b,
+                test::TestRequest::post()
+                    .uri("/api/v1/users/password-reset/confirm")
+                    .set_json(json!({ "token": t2, "new_password": "LoserPassword2!" }))
+                    .to_request(),
+            ),
+        );
+
+        let mut statuses = [r1.status().as_u16(), r2.status().as_u16()];
+        statuses.sort_unstable();
+        assert_eq!(statuses[0], 200, "statuses: {statuses:?}");
+        assert!(matches!(statuses[1], 400 | 401), "statuses: {statuses:?}");
+
+        let used_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM account_action_token WHERE user_id = $1 AND used_at IS NOT NULL",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(used_count, 1);
+        Ok(())
+    }
+}
+
+mod staff_api_tests {
+    use super::{configure_routes, get_test_settings};
+    use actix_web::{App, test, web};
+    use common::turnover::{StaffListResponse, StaffMemberSummary};
+    use serde_json::json;
+    use sqlx::PgPool;
+    use sqlx_db_tester::TestPg;
+    use std::env;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    static DATABASE_URL_ENV: &str = "DATABASE_URL";
+
+    fn test_db() -> TestPg {
+        dotenvy::dotenv().ok();
+        let db_url = match env::var(DATABASE_URL_ENV) {
+            Ok(url) => url,
+            Err(_) => "postgres://postgres:password@localhost:5432/our_places".to_string(),
+        };
+        TestPg::new(db_url, Path::new("../../db_core/migrations"))
+    }
+
+    async fn create_user_with_roles(
+        pool: &PgPool,
+        email: &str,
+        roles: &[&str],
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            r#"INSERT INTO "user" (
+                id, email, password_hash, first_name, last_name,
+                is_active, is_verified, attributes, roles, default_currency
+            ) VALUES ($1, $2, 'hash', 'Test', 'Actor', TRUE, TRUE, '{}'::jsonb, $3::user_role[], 'USD')"#,
+        )
+        .bind(id)
+        .bind(email)
+        .bind(roles)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    async fn create_listing(
+        pool: &PgPool,
+        owner_id: Uuid,
+        name: &str,
+        deleted: bool,
+    ) -> Result<Uuid, Box<dyn std::error::Error>> {
+        let id = Uuid::now_v7();
+        let slug = format!("listing-{}", id.simple());
+        sqlx::query(
+            r#"INSERT INTO listing (
+                id, user_id, name, listing_structure_id, country, slug,
+                base_currency, added_at, deleted_at
+            ) VALUES ($1, $2, $3, 1, 'Jamaica', $4, 'USD', NOW(), CASE WHEN $5 THEN NOW() ELSE NULL END)"#,
+        )
+        .bind(id)
+        .bind(owner_id)
+        .bind(name)
+        .bind(slug)
+        .bind(deleted)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    fn auth_header(user_id: Uuid) -> (&'static str, String) {
+        (
+            "Authorization",
+            format!("Bearer {}", api_core::auth::generate_test_jwt(user_id)),
+        )
+    }
+
+    fn extract_token_from_url(url: &str) -> Option<String> {
+        url.split("token=").nth(1).map(|s| s.to_string())
+    }
+
+    #[tokio::test]
+    async fn staff_endpoints_reject_unauthenticated_and_booker_or_staff_callers()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let booker = create_user_with_roles(&pool, "booker-staff@example.com", &["booker"]).await?;
+        let staff = create_user_with_roles(&pool, "staff-caller@example.com", &["staff"]).await?;
+        let host = create_user_with_roles(&pool, "host-owner@example.com", &["host"]).await?;
+        let host_listing = create_listing(&pool, host, "Blue Lagoon", false).await?;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let unauth = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unauth.status(), 401);
+
+        for (label, caller_id) in [("booker", booker), ("staff", staff)] {
+            let list_resp = test::call_service(
+                &app,
+                test::TestRequest::get()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(caller_id))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(list_resp.status(), 403, "{label} GET /staff-users");
+
+            let invite_resp = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(caller_id))
+                    .set_json(json!({
+                        "email": "newcrew@example.com",
+                        "listing_ids": [host_listing]
+                    }))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(invite_resp.status(), 403, "{label} POST /staff-users");
+        }
+
+        // Empty listing_ids and soft-deleted or unowned listings are rejected for Host.
+        let empty_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host))
+                .set_json(json!({
+                    "email": "newcrew@example.com",
+                    "listing_ids": []
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(empty_resp.status(), 400);
+
+        let deleted_listing = create_listing(&pool, host, "Deleted Villa", true).await?;
+        let deleted_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host))
+                .set_json(json!({
+                    "email": "newcrew@example.com",
+                    "listing_ids": [deleted_listing]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(deleted_resp.status(), 400);
+
+        let other_host = create_user_with_roles(&pool, "other-host@example.com", &["host"]).await?;
+        let unowned_listing = create_listing(&pool, other_host, "Other Villa", false).await?;
+        let unowned_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host))
+                .set_json(json!({
+                    "email": "newcrew@example.com",
+                    "listing_ids": [unowned_listing]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(unowned_resp.status(), 403);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn host_scoping_search_escaping_multi_host_sharing_and_safe_unlink()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let host_a = create_user_with_roles(&pool, "hosta@example.com", &["host"]).await?;
+        let host_b = create_user_with_roles(&pool, "hostb@example.com", &["host"]).await?;
+        let villa_a = create_listing(&pool, host_a, "Villa Alpha", false).await?;
+        let villa_b1 = create_listing(&pool, host_b, "Villa Beta 1", false).await?;
+        let villa_b2 = create_listing(&pool, host_b, "Villa Beta 2", false).await?;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        // Host A invites cleaner with whitespace + uppercase email.
+        let invite_a = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_a))
+                .set_json(json!({
+                    "email": "  Shared.Cleaner@Example.com  ",
+                    "first_name": "Dana",
+                    "last_name": "Clean",
+                    "listing_ids": [villa_a]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(invite_a.status(), 202);
+        let invite_a_body: common::turnover::StaffInviteResponse =
+            test::read_body_json(invite_a).await;
+        assert_eq!(invite_a_body.email, "shared.cleaner@example.com");
+        assert_eq!(invite_a_body.message, "Invitation sent.");
+
+        let list_a_resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_a))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(list_a_resp.status(), 200);
+        let list_a: StaffListResponse = test::read_body_json(list_a_resp).await;
+        assert_eq!(list_a.staff.len(), 1);
+        let created_a = &list_a.staff[0];
+        assert_eq!(created_a.email, "shared.cleaner@example.com");
+        assert!(created_a.password_pending);
+        assert_eq!(created_a.listings.len(), 1);
+        assert_eq!(created_a.listings[0].listing_id, villa_a);
+        let staff_id = created_a.user_id;
+
+        // Seed an admin session for the cleaner to verify final unlink revokes it.
+        db_core::sessions::SessionsDb::new(pool.clone())
+            .save_session(
+                "staff-admin-sess-hash",
+                Some(staff_id),
+                Some("shared.cleaner@example.com"),
+                "admin",
+                b"{}",
+                3600,
+            )
+            .await?;
+
+        // Host B invites the same cleaner email for Host B's first listing; response is uniform
+        // and does not attach until the cleaner clicks the accept link.
+        let invite_b = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_b))
+                .set_json(json!({
+                    "email": "shared.cleaner@example.com",
+                    "first_name": "OverwriteAttempt",
+                    "last_name": "Ignored",
+                    "listing_ids": [villa_b1]
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(invite_b.status(), 202);
+        let invite_b_body: common::turnover::StaffInviteResponse =
+            test::read_body_json(invite_b).await;
+        assert_eq!(invite_b_body, invite_a_body);
+
+        let accept_payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = 'shared.cleaner@example.com' AND template_id = 'staff_accept_invite' ORDER BY created_at DESC LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let accept_token =
+            extract_token_from_url(accept_payload["accept_url"].as_str().ok_or("accept_url")?)
+                .ok_or("accept_token")?;
+        let accept_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/staff-invite/accept")
+                .set_json(json!({ "token": accept_token }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(accept_resp.status(), 200);
+
+        let list_b_resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_b))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(list_b_resp.status(), 200);
+        let list_b: StaffListResponse = test::read_body_json(list_b_resp).await;
+        assert_eq!(list_b.staff.len(), 1);
+        assert_eq!(list_b.staff[0].user_id, staff_id);
+        assert_eq!(list_b.staff[0].first_name, "Dana");
+        assert_eq!(list_b.staff[0].listings.len(), 1);
+        assert_eq!(list_b.staff[0].listings[0].listing_id, villa_b1);
+
+        // Search wildcard escaping (`q=%` must not match `Dana Clean`).
+        let wildcard_resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users?q=%25")
+                .insert_header(auth_header(host_b))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(wildcard_resp.status(), 200);
+        let wildcard_list: StaffListResponse = test::read_body_json(wildcard_resp).await;
+        assert_eq!(wildcard_list.total, 0);
+
+        // Redeem invite token so password_pending becomes false, then Host B updates listings -> queues listing_assigned email.
+        let setup_payload: serde_json::Value = sqlx::query_scalar(
+            "SELECT payload FROM email_outbox WHERE recipient_email = 'shared.cleaner@example.com' AND template_id = 'staff_invite' ORDER BY created_at DESC LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await?;
+        let token = extract_token_from_url(setup_payload["setup_url"].as_str().ok_or("setup_url")?)
+            .ok_or("token")?;
+        let confirm_resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/users/password-reset/confirm")
+                .set_json(json!({ "token": token, "new_password": "CleanerPassword1!" }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(confirm_resp.status(), 200);
+
+        let update_b = test::call_service(
+            &app,
+            test::TestRequest::put()
+                .uri(&format!("/api/v1/staff-users/{staff_id}/listings"))
+                .insert_header(auth_header(host_b))
+                .set_json(json!({ "listing_ids": [villa_b1, villa_b2] }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(update_b.status(), 200);
+        let updated_b: StaffMemberSummary = test::read_body_json(update_b).await;
+        assert!(!updated_b.password_pending);
+        assert_eq!(updated_b.listings.len(), 2);
+
+        let assigned_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM email_outbox WHERE recipient_email = 'shared.cleaner@example.com' AND template_id = 'staff_listing_assigned'",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(assigned_count, 1);
+
+        // Re-seed admin session after password-reset revoked sessions, then Host B unlinks cleaner.
+        db_core::sessions::SessionsDb::new(pool.clone())
+            .save_session(
+                "staff-admin-sess-hash-2",
+                Some(staff_id),
+                Some("shared.cleaner@example.com"),
+                "admin",
+                b"{}",
+                3600,
+            )
+            .await?;
+
+        let del_b = test::call_service(
+            &app,
+            test::TestRequest::delete()
+                .uri(&format!("/api/v1/staff-users/{staff_id}"))
+                .insert_header(auth_header(host_b))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(del_b.status(), 200);
+
+        // Host A still sees cleaner and Villa Alpha; 'staff' role and session stay alive.
+        let list_a = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/v1/staff-users")
+                .insert_header(auth_header(host_a))
+                .to_request(),
+        )
+        .await;
+        let parsed_a: StaffListResponse = test::read_body_json(list_a).await;
+        assert_eq!(parsed_a.total, 1);
+        assert_eq!(parsed_a.staff[0].listings.len(), 1);
+        assert_eq!(parsed_a.staff[0].listings[0].listing_id, villa_a);
+
+        // Final unlink by Host A removes 'staff' role and revokes admin sessions.
+        let del_a = test::call_service(
+            &app,
+            test::TestRequest::delete()
+                .uri(&format!("/api/v1/staff-users/{staff_id}"))
+                .insert_header(auth_header(host_a))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(del_a.status(), 200);
+
+        let roles: Vec<String> =
+            sqlx::query_scalar(r#"SELECT roles::text[] FROM "user" WHERE id = $1"#)
+                .bind(staff_id)
+                .fetch_one(&pool)
+                .await?;
+        assert!(!roles.contains(&"staff".to_string()), "{roles:?}");
+
+        let remaining_sessions: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sessions WHERE user_id = $1 AND namespace = 'admin'",
+        )
+        .bind(staff_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(remaining_sessions, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_invites_of_same_new_email_converge_without_500()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let host_a = create_user_with_roles(&pool, "race-ha@example.com", &["host"]).await?;
+        let host_b = create_user_with_roles(&pool, "race-hb@example.com", &["host"]).await?;
+        let villa_a = create_listing(&pool, host_a, "Race Villa A", false).await?;
+        let villa_b = create_listing(&pool, host_b, "Race Villa B", false).await?;
+
+        let app_a = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+        let app_b = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        let target_email = format!("race.crew.{}@example.com", Uuid::now_v7().simple());
+        let (r1, r2) = tokio::join!(
+            test::call_service(
+                &app_a,
+                test::TestRequest::post()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(host_a))
+                    .set_json(json!({
+                        "email": target_email,
+                        "first_name": "Sam",
+                        "last_name": "Crew",
+                        "listing_ids": [villa_a]
+                    }))
+                    .to_request(),
+            ),
+            test::call_service(
+                &app_b,
+                test::TestRequest::post()
+                    .uri("/api/v1/staff-users")
+                    .insert_header(auth_header(host_b))
+                    .set_json(json!({
+                        "email": format!("  {}  ", target_email.to_uppercase()),
+                        "first_name": "Sam",
+                        "last_name": "Crew",
+                        "listing_ids": [villa_b]
+                    }))
+                    .to_request(),
+            ),
+        );
+
+        assert_eq!(r1.status(), 202);
+        assert_eq!(r2.status(), 202);
+
+        let user_count: i64 =
+            sqlx::query_scalar(r#"SELECT COUNT(*) FROM "user" WHERE LOWER(email) = $1"#)
+                .bind(&target_email)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(user_count, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn patch_user_preserves_staff_role_when_editing_via_admin_users()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let db = test_db();
+        let pool = db.get_pool().await;
+        let staff_only =
+            create_user_with_roles(&pool, "staff.only@example.com", &["staff"]).await?;
+        let host_staff =
+            create_user_with_roles(&pool, "host.staff@example.com", &["host", "staff"]).await?;
+        let booker_staff =
+            create_user_with_roles(&pool, "booker.staff@example.com", &["booker", "staff"]).await?;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(pool.clone()))
+                .app_data(web::Data::new(get_test_settings()))
+                .configure(configure_routes),
+        )
+        .await;
+
+        for (uid, sent_roles, expected_extra) in [
+            (staff_only, Vec::<&str>::new(), None),
+            (host_staff, vec!["host"], Some("host")),
+            (booker_staff, vec!["booker"], Some("booker")),
+        ] {
+            let resp = test::call_service(
+                &app,
+                test::TestRequest::patch()
+                    .uri(&format!("/api/v1/users/user/{uid}"))
+                    .set_json(json!({
+                        "first_name": "UpdatedName",
+                        "roles": sent_roles
+                    }))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(resp.status(), 200, "patch user {uid} must succeed");
+            let updated: serde_json::Value = test::read_body_json(resp).await;
+            let roles = updated["roles"].as_array().ok_or("roles array")?;
+            assert!(
+                roles
+                    .iter()
+                    .any(|r| r.as_str().is_some_and(|s| s.eq_ignore_ascii_case("staff"))),
+                "staff role must be retained: {roles:?}"
+            );
+            if let Some(extra) = expected_extra {
+                assert!(
+                    roles
+                        .iter()
+                        .any(|r| r.as_str().is_some_and(|s| s.eq_ignore_ascii_case(extra))),
+                    "expected {extra} in {roles:?}"
+                );
+            }
+        }
+        Ok(())
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE turnover\n                        SET status = 'not_required',\n                            updated_at = NOW()\n                        WHERE id = $1\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "094a73fd6acdee5e7c41e81e32f7661a92bff0b3d93e5c93ecffb418a9901507"
+}

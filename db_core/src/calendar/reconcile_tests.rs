@@ -410,3 +410,119 @@ fn template_ids_match_the_email_templates() {
         EmailTemplate::CalendarConflictHost.as_str()
     );
 }
+
+#[tokio::test]
+async fn reconcile_feed_triggers_turnover_creation_extension_checkout_day_keep_and_prune()
+-> Result<(), Box<dyn std::error::Error>> {
+    use chrono::{Duration, Utc};
+    use common::reference::listing_today;
+
+    let db = migrated_db();
+    let pool = db.get_pool().await;
+    let v = villa(&pool).await;
+    let c = claimed_feed(&pool, v).await;
+    let today = listing_today(Utc::now());
+    let today_start = today - Duration::days(2);
+    let fut_start = today + Duration::days(2);
+    let fut_end = today + Duration::days(5);
+    let keep_end = today + Duration::days(12);
+
+    reconcile_feed(
+        &pool,
+        &c,
+        &parsed(&[
+            ("today-ev", today_start, today),
+            ("future-ev", fut_start, fut_end),
+        ]),
+        &scheduled(),
+    )
+    .await?;
+
+    let rows: Vec<(Option<String>, NaiveDate, String)> = sqlx::query_as(
+        "SELECT source_external_uid, checkout_date, status FROM turnover WHERE listing_id = $1 ORDER BY checkout_date ASC",
+    )
+    .bind(v)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].0.as_deref(), Some("today-ev"));
+    assert_eq!(rows[0].1, today);
+    assert_eq!(rows[0].2, "needs_cleaning");
+    assert_eq!(rows[1].0.as_deref(), Some("future-ev"));
+    assert_eq!(rows[1].1, fut_end);
+
+    // Drop checkout-day event (e.date_to == today_jm) and extend future-ev in the same sync.
+    let extended_end = fut_end + Duration::days(1);
+    reconcile_feed(
+        &pool,
+        &c,
+        &parsed(&[("future-ev", fut_start, extended_end)]),
+        &scheduled(),
+    )
+    .await?;
+
+    let today_status: String = sqlx::query_scalar(
+        "SELECT status FROM turnover WHERE listing_id = $1 AND source_external_uid = 'today-ev'",
+    )
+    .bind(v)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        today_status, "needs_cleaning",
+        "checkout-day pruning must keep today's turnover active"
+    );
+
+    let fut_after_ext: (NaiveDate, String) = sqlx::query_as(
+        "SELECT checkout_date, status FROM turnover WHERE listing_id = $1 AND source_external_uid = 'future-ev'",
+    )
+    .bind(v)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(fut_after_ext.0, extended_end);
+    assert_eq!(fut_after_ext.1, "needs_cleaning");
+
+    // Empty feed while future blocks existed triggers NO_EVENTS_WARNING -> keep needs_cleaning.
+    let empty_out = reconcile_feed(&pool, &c, &parsed(&[]), &scheduled()).await?;
+    assert!(matches!(
+        empty_out,
+        ReconcileOutcome::Applied {
+            status: FeedStatus::Warning,
+            ..
+        }
+    ));
+    let fut_after_empty: String = sqlx::query_scalar(
+        "SELECT status FROM turnover WHERE listing_id = $1 AND source_external_uid = 'future-ev'",
+    )
+    .bind(v)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        fut_after_empty, "needs_cleaning",
+        "empty-feed warning must skip removal pruning"
+    );
+
+    // Re-introduce then replace with a different non-empty event -> removed future event becomes not_required.
+    reconcile_feed(
+        &pool,
+        &c,
+        &parsed(&[("future-ev", fut_start, extended_end)]),
+        &scheduled(),
+    )
+    .await?;
+    reconcile_feed(
+        &pool,
+        &c,
+        &parsed(&[("other-ev", today + Duration::days(9), keep_end)]),
+        &scheduled(),
+    )
+    .await?;
+    let fut_after_remove: String = sqlx::query_scalar(
+        "SELECT status FROM turnover WHERE listing_id = $1 AND source_external_uid = 'future-ev'",
+    )
+    .bind(v)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(fut_after_remove, "not_required");
+
+    Ok(())
+}

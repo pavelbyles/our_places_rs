@@ -22,7 +22,7 @@ use web_ui_common::components::domain::{
 };
 
 use super::{STATUSES, managed_booking};
-use crate::support::{admin_only, service_token, staff};
+use crate::support::{admin_only, host_or_admin, service_token};
 
 path_param!(id);
 path_param!(number);
@@ -472,7 +472,7 @@ async fn dialog_view(cx: &Cx, data: DialogData) -> Result<impl View> {
 /// The booking-details dialog fragment.
 #[page("/admin/bookings/{id}")]
 pub async fn booking_dialog(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let documents = get_api_client(cx)
@@ -503,7 +503,7 @@ pub async fn save_door_code(
     /// The door code form.
     Form(form): Form<DoorCodeForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let code: String = form.door_access_code.trim().chars().take(32).collect();
@@ -543,7 +543,7 @@ pub async fn update_status(
     /// The status form.
     Form(form): Form<StatusForm>,
 ) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_booking(cx, &user, id(cx)).await?;
     if !STATUSES.contains(&form.status.as_str()) {
         return Err(web_client::app_error("unknown status").into());
@@ -594,7 +594,7 @@ pub async fn admin_cancellation_quote(cx: &Cx) -> Result<impl View> {
 /// A booking's tax document, for its host or an admin.
 #[page("/admin/bookings/{id}/documents/{number}")]
 pub async fn admin_document(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_booking(cx, &user, id(cx)).await?;
     let token = service_token(cx, &user)?;
     let number = number(cx).to_string();
@@ -637,7 +637,7 @@ pub async fn propose_change(
     /// The proposal form.
     Form(form): Form<ProposeForm>,
 ) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_booking(cx, &user, id(cx)).await?;
     if form.check_out <= form.check_in {
         return Err(web_client::app_error("check-out must be after check-in").into());
@@ -668,7 +668,7 @@ enum ChangeAction {
 }
 
 async fn respond(cx: &Cx, action: ChangeAction) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let booking = managed_booking(cx, &user, id(cx)).await?;
     let request_id = Uuid::parse_str(request_id(cx)).map_err(|_| not_found())?;
     let token = service_token(cx, &user)?;

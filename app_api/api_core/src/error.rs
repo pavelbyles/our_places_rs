@@ -127,6 +127,9 @@ impl ResponseError for ApiError {
             ApiError::Database(DbError::CalendarSyncRateLimited { .. }) => {
                 StatusCode::TOO_MANY_REQUESTS
             }
+            ApiError::Database(DbError::Forbidden(_))
+            | ApiError::Database(DbError::TurnoverTransitionForbidden(_)) => StatusCode::FORBIDDEN,
+            ApiError::Database(DbError::TurnoverStatusConflict { .. }) => StatusCode::CONFLICT,
             // All other database errors are likely internal server errors.
             ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             // A generic internal error.
@@ -266,8 +269,30 @@ impl ResponseError for ApiError {
             ApiError::FeatureDisabled(msg) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
             }
-            ApiError::Forbidden(msg) => {
+            ApiError::Forbidden(msg) | ApiError::Database(DbError::Forbidden(msg)) => {
                 HttpResponse::Forbidden().json(serde_json::json!({ "error": msg }))
+            }
+            ApiError::Database(DbError::TurnoverTransitionForbidden(err)) => {
+                let msg = err.to_string();
+                HttpResponse::Forbidden().json(serde_json::json!({
+                    "code": "TURNOVER_TRANSITION_FORBIDDEN",
+                    "error": msg,
+                    "message": msg,
+                }))
+            }
+            ApiError::Database(DbError::TurnoverStatusConflict { expected, actual }) => {
+                let msg = format!(
+                    "Turnover status changed concurrently (expected {}, found {}). Refresh and try again.",
+                    expected.label(),
+                    actual.label(),
+                );
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "code": "TURNOVER_STATUS_CONFLICT",
+                    "error": msg,
+                    "message": msg,
+                    "expected_status": expected,
+                    "actual_status": actual,
+                }))
             }
             _ => HttpResponse::build(self.status_code()).finish(),
         }

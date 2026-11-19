@@ -18,7 +18,7 @@ use web_client::{
 };
 use web_ui_common::components::domain::price_breakdown::money;
 
-use crate::support::{csv_cell, scoped_bookings, scoped_listings, service_token, staff};
+use crate::support::{csv_cell, host_or_admin, scoped_bookings, scoped_listings, service_token};
 
 /// The booking-details dialog and its actions.
 pub mod detail;
@@ -82,7 +82,7 @@ async fn filtered(
 /// The master booking schedule.
 #[page("/admin/bookings")]
 pub async fn schedule_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let q = parse_query_params::<ScheduleQuery>(cx).unwrap_or_default();
     let (bookings, listings) = filtered(cx, &user, &q).await;
     let status = q.status.clone().unwrap_or_default();
@@ -214,7 +214,7 @@ pub async fn schedule_page(cx: &Cx) -> Result<impl View> {
 /// The schedule as CSV (same scope and filters as the page).
 #[route(GET "/admin/bookings/export.csv")]
 pub async fn export_csv(cx: &Cx) -> Result<Response> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let q = parse_query_params::<ScheduleQuery>(cx).unwrap_or_default();
     let (bookings, listings) = filtered(cx, &user, &q).await;
     let mut csv = String::from(

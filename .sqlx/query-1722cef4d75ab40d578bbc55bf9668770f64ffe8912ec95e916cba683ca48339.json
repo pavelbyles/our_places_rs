@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE \"user\"\n        SET\n            password_hash = $2,\n            is_verified = TRUE,\n            verification_code = NULL,\n            verification_code_expires_at = NULL,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1722cef4d75ab40d578bbc55bf9668770f64ffe8912ec95e916cba683ca48339"
+}

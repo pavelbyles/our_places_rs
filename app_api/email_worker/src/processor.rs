@@ -91,6 +91,19 @@ pub fn load_template(filename: &str) -> String {
         "calendar_feed_failing_host.html" => {
             include_str!("../templates/calendar_feed_failing_host.html").to_string()
         }
+        "staff_invite.html" => include_str!("../templates/staff_invite.html").to_string(),
+        "staff_accept_invite.html" => {
+            include_str!("../templates/staff_accept_invite.html").to_string()
+        }
+        "staff_listing_assigned.html" => {
+            include_str!("../templates/staff_listing_assigned.html").to_string()
+        }
+        "password_reset_link.html" => {
+            include_str!("../templates/password_reset_link.html").to_string()
+        }
+        "turnover_comment_notification.html" => {
+            include_str!("../templates/turnover_comment_notification.html").to_string()
+        }
         _ => include_str!("../templates/default_notification.html").to_string(),
     }
 }
@@ -230,6 +243,7 @@ const RENDERERS: &[Renderer] = &[
 pub fn render_email_body(template_id: &str, payload: &serde_json::Value) -> String {
     crate::request_emails::render(template_id, payload)
         .or_else(|| crate::calendar_emails::render(template_id, payload))
+        .or_else(|| crate::turnover_emails::render(template_id, payload))
         .or_else(|| {
             RENDERERS
                 .iter()

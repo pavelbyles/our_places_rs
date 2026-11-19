@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ls.staff_user_id, ls.listing_id, l.name AS listing_name, ls.created_at AS assigned_at\n        FROM listing_staff ls\n        INNER JOIN listing l ON l.id = ls.listing_id\n        WHERE ls.staff_user_id = ANY($1)\n          AND l.deleted_at IS NULL\n          AND ($2 OR l.user_id = $3)\n        ORDER BY l.name ASC, ls.listing_id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "staff_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "listing_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "assigned_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "db5e896a7d9d75fd6333b88de5a4dee66088d9df3448bc4b09fbe3b1e8ce536f"
+}

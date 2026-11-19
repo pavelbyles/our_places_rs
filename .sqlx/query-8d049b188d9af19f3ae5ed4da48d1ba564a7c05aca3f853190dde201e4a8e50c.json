@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, checkout_date, status\n        FROM turnover\n        WHERE source_kind = 'booking' AND booking_id = $1\n        ORDER BY created_at ASC\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "checkout_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8d049b188d9af19f3ae5ed4da48d1ba564a7c05aca3f853190dde201e4a8e50c"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COUNT(*) AS \"count!\"\n            FROM host_staff hs\n            INNER JOIN \"user\" u ON u.id = hs.staff_user_id\n            WHERE hs.host_user_id = $1\n              AND u.deleted_at IS NULL\n              AND (\n                  $2::text IS NULL\n                  OR u.email ILIKE $2 ESCAPE '\\'\n                  OR u.first_name ILIKE $2 ESCAPE '\\'\n                  OR u.last_name ILIKE $2 ESCAPE '\\'\n                  OR (u.first_name || ' ' || u.last_name) ILIKE $2 ESCAPE '\\'\n              )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "462de343bf821afd97d64ed2e4be65c31a1c3b490cc858b844acaa6325bf2061"
+}

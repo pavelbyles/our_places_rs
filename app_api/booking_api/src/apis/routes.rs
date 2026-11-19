@@ -28,7 +28,7 @@ use super::reservation_changes::{
 };
 use super::{
     availability, booking_requests, booking_updates, bookings, conversations, cron, documents,
-    enquiries, inbox, messages, promo_codes, reservation_changes, stay_pricing,
+    enquiries, inbox, messages, promo_codes, reservation_changes, stay_pricing, turnovers,
 };
 use actix_web::middleware::from_fn;
 use actix_web::web;
@@ -104,6 +104,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             booking_requests::preview_quote,
             booking_requests::send_quote,
             inbox::get_inbox,
+            turnovers::list_turnovers,
+            turnovers::list_turnover_listings,
+            turnovers::create_manual_turnover,
+            turnovers::get_turnover_detail,
+            turnovers::transition_turnover_status,
+            turnovers::post_turnover_comment,
         ),
         components(
             schemas(
@@ -185,6 +191,17 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 common::promo::CreatePromoCodeRequest,
                 common::promo::PromoCodeResponse,
                 common::promo::PromoCodesResponse,
+                common::turnover::TurnoverStatus,
+                common::turnover::TurnoverSourceKind,
+                common::turnover::TurnoverWindow,
+                common::turnover::TurnoverResponse,
+                common::turnover::TurnoverListResponse,
+                common::turnover::TurnoverDetailResponse,
+                common::turnover::TurnoverStatusHistoryEntry,
+                common::turnover::TurnoverCommentResponse,
+                common::turnover::CreateManualTurnoverRequest,
+                common::turnover::TransitionTurnoverRequest,
+                common::turnover::CreateTurnoverCommentRequest,
             )
         ),
         tags(
@@ -192,7 +209,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             (name = "currencies", description = "Currency reference data"),
             (name = "exchange-rates", description = "Exchange-rate administration"),
             (name = "promo-codes", description = "Promo code administration"),
-            (name = "booking-requests", description = "Enquiries and requests to book")
+            (name = "booking-requests", description = "Enquiries and requests to book"),
+            (name = "turnovers", description = "Turnover & cleaning crew dispatch operations")
         ),
     )]
     struct ApiDoc;
@@ -494,6 +512,26 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 web::patch()
                     .to(update_admin_payout_status)
                     .wrap(from_fn(content_negotiation_middleware)),
+            ),
+    );
+
+    cfg.service(
+        web::scope("/api/v1/turnovers")
+            .wrap(from_fn(require_user))
+            .route("", web::get().to(turnovers::list_turnovers))
+            .route("", web::post().to(turnovers::create_manual_turnover))
+            .route(
+                "/listings",
+                web::get().to(turnovers::list_turnover_listings),
+            )
+            .route("/{id}", web::get().to(turnovers::get_turnover_detail))
+            .route(
+                "/{id}/status",
+                web::post().to(turnovers::transition_turnover_status),
+            )
+            .route(
+                "/{id}/comments",
+                web::post().to(turnovers::post_turnover_comment),
             ),
     );
 

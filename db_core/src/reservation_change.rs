@@ -998,6 +998,13 @@ pub async fn approve_change_request(
     .fetch_one(&mut *tx)
     .await?;
 
+    crate::turnover::reconcile_for_booking_conn(
+        &mut tx,
+        updated_booking.id,
+        "reservation_change::approve_change_request",
+    )
+    .await?;
+
     tx.commit().await?;
     Ok((updated_req, updated_booking))
 }

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT u.id, u.email\n        FROM \"user\" u\n        WHERE u.is_active = TRUE\n          AND u.is_verified = TRUE\n          AND u.deleted_at IS NULL\n          AND u.id <> $1\n          AND (\n              u.id = $2\n              OR EXISTS (\n                  SELECT 1\n                  FROM listing_staff ls\n                  WHERE ls.listing_id = $3\n                    AND ls.staff_user_id = u.id\n                    AND 'staff'::user_role = ANY(u.roles)\n              )\n          )\n        ORDER BY u.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b782b5ee100c4eb6f6330395ea9f26fbf333b8d125c9c8ed7c203abae1903873"
+}

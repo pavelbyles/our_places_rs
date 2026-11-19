@@ -398,6 +398,12 @@ pub struct CronSweepsResponse {
     pub notifications: CronSweepResponse,
     /// Result of the stay completion sweep.
     pub stays: CompleteStaysResponse,
+    /// Active listings successfully backfilled for turnovers.
+    pub turnovers_backfilled: usize,
+    /// Active listings whose turnover backfill failed and were isolated.
+    pub turnover_backfill_failures: usize,
+    /// Stuck pending outbox emails republished during this sweep.
+    pub stuck_emails_republished: usize,
 }
 
 /// Last checkout date whose stays may be completed at `now`.
@@ -416,7 +422,7 @@ pub fn stay_completion_cutoff(now: chrono::DateTime<Utc>) -> NaiveDate {
     }
 }
 
-#[tracing::instrument(skip(req, pool, tax_settings, cron_settings))]
+#[tracing::instrument(skip(req, pool, tax_settings, cron_settings, settings, publisher))]
 #[utoipa::path(
     post,
     path = "/api/v1/internal/cron/run-sweeps",
@@ -435,6 +441,7 @@ pub async fn run_sweeps(
     tax_settings: Option<web::Data<TaxSettings>>,
     cron_settings: Option<web::Data<CronSettings>>,
     settings: Option<web::Data<api_core::settings::Settings>>,
+    publisher: Option<web::Data<api_core::email_publisher::EmailPublisher>>,
 ) -> Result<HttpResponse, ApiError> {
     verify_cron_secret(&req, cron_settings.as_ref())?;
     let expired = db_booking::expire_stale_holds(pool.get_ref())
@@ -468,17 +475,67 @@ pub async fn run_sweeps(
     .map_err(ApiError::Database)?;
     let notifications =
         run_notification_sweep(pool.get_ref(), near_expiry_pct(settings.as_ref())).await?;
+    let mut turnovers_backfilled = 0usize;
+    let mut turnover_backfill_failures = 0usize;
+    for listing_id in db_core::turnover::list_active_listing_ids(pool.get_ref())
+        .await
+        .map_err(ApiError::Database)?
+    {
+        match db_core::turnover::backfill_listing_turnovers(
+            pool.get_ref(),
+            listing_id,
+            "cron::run_sweeps",
+        )
+        .await
+        {
+            Ok(()) => turnovers_backfilled += 1,
+            Err(e) => {
+                turnover_backfill_failures += 1;
+                tracing::error!(
+                    listing_id = %listing_id,
+                    error = %e,
+                    "Failed to backfill turnovers for listing in cron"
+                );
+            }
+        }
+    }
     let stays = complete_stays_through(
         pool.get_ref(),
         tax_settings.as_ref(),
         stay_completion_cutoff(Utc::now()),
     )
     .await?;
+
+    let stuck_ids = db_core::email_outbox::stuck_pending_emails(
+        pool.get_ref(),
+        chrono::Duration::minutes(5),
+        100,
+    )
+    .await
+    .map_err(ApiError::Database)?;
+    let mut stuck_emails_republished = 0usize;
+    if !stuck_ids.is_empty() {
+        let email_publisher = publisher
+            .map(|p| p.get_ref().clone())
+            .unwrap_or_else(api_core::email_publisher::EmailPublisher::from_env);
+        for email_id in stuck_ids {
+            match email_publisher.publish_email_event(email_id).await {
+                Ok(()) => stuck_emails_republished += 1,
+                Err(e) => {
+                    tracing::error!(%email_id, error = ?e, "failed to republish stuck outbox email in cron");
+                }
+            }
+        }
+    }
+
     Ok(HttpResponse::Ok().json(CronSweepsResponse {
         holds_expired: expired.len(),
         requests_expired: requests.len(),
         enquiries_closed,
         notifications,
         stays,
+        turnovers_backfilled,
+        turnover_backfill_failures,
+        stuck_emails_republished,
     }))
 }

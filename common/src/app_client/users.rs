@@ -1,9 +1,14 @@
 //! Users, authentication and portal sessions.
 
 use super::{get_client, user_api_audience, user_api_url};
+use crate::http_client::AuthenticatedClient;
 use crate::models::{
     CreateSessionRequest, LoginRequest, NewUserRequest, ResendVerificationRequest, SessionResponse,
     UpdateUserRequest, UserResponse, VerifyRequest,
+};
+use crate::turnover::{
+    InviteStaffRequest, PasswordResetRequest, PasswordTokenRedeemRequest, StaffListQuery,
+    StaffListResponse, StaffMemberSummary, UpdateStaffAssignmentsRequest,
 };
 use anyhow::{Context, Result, bail};
 use reqwest::Response;
@@ -172,13 +177,16 @@ pub async fn create_user(req: &NewUserRequest) -> Result<UserResponse> {
         .context("Failed to parse created user response")
 }
 
-/// Creates a session.
-pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionResponse> {
-    let url = format!("{}/api/v1/sessions", user_api_url());
-    let audience = user_api_audience();
-
-    let res = get_client()
-        .post(&url, &audience, req)
+/// Creates a session against an explicit `user_api` base URL.
+pub async fn create_session_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
+    req: &CreateSessionRequest,
+) -> Result<SessionResponse> {
+    let url = format!("{}/api/v1/sessions", api_url.trim_end_matches('/'));
+    let res = client
+        .post(&url, audience, req)
         .await
         .context("Failed to connect to user service for session creation")?;
 
@@ -193,20 +201,30 @@ pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionRespons
         .context("Failed to parse session creation response")
 }
 
-/// Fetches a session if it exists, optionally only from one portal.
-pub async fn get_session(
+/// Creates a session.
+pub async fn create_session(req: &CreateSessionRequest) -> Result<SessionResponse> {
+    create_session_at(get_client(), &user_api_url(), &user_api_audience(), req).await
+}
+
+/// Fetches a session against an explicit `user_api` base URL.
+pub async fn get_session_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
     token_hash: &str,
     namespace: Option<&str>,
 ) -> Result<Option<SessionResponse>> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let mut url = format!("{}/api/v1/sessions/{}", api_url, token_hash);
+    let mut url = format!(
+        "{}/api/v1/sessions/{}",
+        api_url.trim_end_matches('/'),
+        token_hash
+    );
     if let Some(ns) = namespace {
         url.push_str(&format!("?namespace={}", ns));
     }
 
-    let res = get_client()
-        .get(&url, &audience)
+    let res = client
+        .get(&url, audience)
         .await
         .context("Failed to connect to user service for session lookup")?;
 
@@ -226,6 +244,21 @@ pub async fn get_session(
         .context("Failed to parse session response")?;
 
     Ok(Some(session))
+}
+
+/// Fetches a session if it exists, optionally only from one portal.
+pub async fn get_session(
+    token_hash: &str,
+    namespace: Option<&str>,
+) -> Result<Option<SessionResponse>> {
+    get_session_at(
+        get_client(),
+        &user_api_url(),
+        &user_api_audience(),
+        token_hash,
+        namespace,
+    )
+    .await
 }
 
 /// Deletes a session.
@@ -270,14 +303,16 @@ pub async fn revoke_user_sessions(user_id: Uuid, namespace: Option<&str>) -> Res
     Ok(())
 }
 
-/// Checks a user's email and password.
-pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let url = format!("{}/api/v1/users/login", api_url);
-
-    let res = get_client()
-        .post(&url, &audience, req)
+/// Checks a user's email and password against an explicit `user_api` base URL.
+pub async fn login_user_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
+    req: &LoginRequest,
+) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/login", api_url.trim_end_matches('/'));
+    let res = client
+        .post(&url, audience, req)
         .await
         .context("Failed to connect to user service for login")?;
 
@@ -295,14 +330,21 @@ pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
     Ok(user)
 }
 
-/// Verifies a user's email address with their 6-character OTP code.
-pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
-    let api_url = user_api_url();
-    let audience = user_api_audience();
-    let url = format!("{}/api/v1/users/verify", api_url);
+/// Checks a user's email and password.
+pub async fn login_user(req: &LoginRequest) -> Result<UserResponse> {
+    login_user_at(get_client(), &user_api_url(), &user_api_audience(), req).await
+}
 
-    let res = get_client()
-        .post(&url, &audience, req)
+/// Verifies a user's email address with their OTP code against an explicit `user_api` base URL.
+pub async fn verify_user_at(
+    client: &AuthenticatedClient,
+    api_url: &str,
+    audience: &str,
+    req: &VerifyRequest,
+) -> Result<UserResponse> {
+    let url = format!("{}/api/v1/users/verify", api_url.trim_end_matches('/'));
+    let res = client
+        .post(&url, audience, req)
         .await
         .context("Failed to connect to user service for verification")?;
 
@@ -318,6 +360,11 @@ pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
         .context("Failed to parse user response from verification")?;
 
     Ok(user)
+}
+
+/// Verifies a user's email address with their 6-character OTP code.
+pub async fn verify_user(req: &VerifyRequest) -> Result<UserResponse> {
+    verify_user_at(get_client(), &user_api_url(), &user_api_audience(), req).await
 }
 
 /// Resends the 6-character OTP verification code to a user's email address.
@@ -343,4 +390,198 @@ pub async fn resend_verification(req: &ResendVerificationRequest) -> Result<User
         .context("Failed to parse user response from resend verification")?;
 
     Ok(user)
+}
+
+/// Initiates a single-use password-reset email link for an active account (`202 Accepted`).
+pub async fn request_password_reset(req: &PasswordResetRequest) -> Result<()> {
+    let url = format!("{}/api/v1/users/password-reset/request", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for password reset request")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Password reset request failed ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
+/// Redeems a single-use invite or password-reset token to set a new password.
+pub async fn confirm_password_reset(req: &PasswordTokenRedeemRequest) -> Result<()> {
+    let url = format!("{}/api/v1/users/password-reset/confirm", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .post(&url, &audience, req)
+        .await
+        .context("Failed to connect to user service for password reset confirmation")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!(
+            "Password reset confirmation failed ({}): {}",
+            status,
+            err_text
+        );
+    }
+
+    Ok(())
+}
+
+/// Percent-encodes query-parameter values safely.
+pub fn encode_query_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(b).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Builds the `/api/v1/staff-users` URL with encoded search & pagination parameters.
+pub fn staff_users_list_url(api_url: &str, query: &StaffListQuery) -> String {
+    let mut url = format!("{}/api/v1/staff-users", api_url.trim_end_matches('/'));
+    let mut params = Vec::new();
+    if let Some(q) = query.q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        params.push(format!("q={}", encode_query_component(q)));
+    }
+    if let Some(page) = query.page {
+        params.push(format!("page={page}"));
+    }
+    if let Some(per_page) = query.per_page {
+        params.push(format!("per_page={per_page}"));
+    }
+    if !params.is_empty() {
+        url.push('?');
+        url.push_str(&params.join("&"));
+    }
+    url
+}
+
+/// Fetches host-scoped staff users from `/api/v1/staff-users`.
+pub async fn list_staff_users(query: &StaffListQuery, user_jwt: &str) -> Result<StaffListResponse> {
+    let url = staff_users_list_url(&user_api_url(), query);
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::GET, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
+        .await
+        .context("Failed to connect to user service for staff list")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to fetch staff users ({}): {}", status, err_text);
+    }
+
+    res.json::<StaffListResponse>()
+        .await
+        .context("Failed to parse staff list response")
+}
+
+/// Invites a staff member via `POST /api/v1/staff-users`.
+pub async fn invite_staff_user(
+    req: &InviteStaffRequest,
+    user_jwt: &str,
+) -> Result<crate::turnover::StaffInviteResponse> {
+    let url = format!("{}/api/v1/staff-users", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
+        .await
+        .context("Failed to connect to user service for staff invite")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to invite staff member ({}): {}", status, err_text);
+    }
+
+    res.json::<crate::turnover::StaffInviteResponse>()
+        .await
+        .context("Failed to parse staff invite response")
+}
+
+/// Updates a staff member's assigned owned listings via `PUT /api/v1/staff-users/{id}/listings`.
+pub async fn update_staff_listings(
+    staff_user_id: Uuid,
+    req: &UpdateStaffAssignmentsRequest,
+    user_jwt: &str,
+) -> Result<StaffMemberSummary> {
+    let url = format!(
+        "{}/api/v1/staff-users/{staff_user_id}/listings",
+        user_api_url()
+    );
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::PUT, &url, &audience, Some(user_jwt))
+        .await?
+        .json(req)
+        .send()
+        .await
+        .context("Failed to connect to user service for staff assignments")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to update staff listings ({}): {}", status, err_text);
+    }
+
+    res.json::<StaffMemberSummary>()
+        .await
+        .context("Failed to parse updated staff member")
+}
+
+/// Resends a pending staff onboarding invite via `POST /api/v1/staff-users/{id}/resend-invite`.
+pub async fn resend_staff_invite(staff_user_id: Uuid, user_jwt: &str) -> Result<()> {
+    let url = format!(
+        "{}/api/v1/staff-users/{staff_user_id}/resend-invite",
+        user_api_url()
+    );
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::POST, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
+        .await
+        .context("Failed to connect to user service for invite resend")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to resend staff invite ({}): {}", status, err_text);
+    }
+
+    Ok(())
+}
+
+/// Removes a staff member from the caller's roster via `DELETE /api/v1/staff-users/{id}`.
+pub async fn remove_staff_user(staff_user_id: Uuid, user_jwt: &str) -> Result<()> {
+    let url = format!("{}/api/v1/staff-users/{staff_user_id}", user_api_url());
+    let audience = user_api_audience();
+    let res = get_client()
+        .user_request(reqwest::Method::DELETE, &url, &audience, Some(user_jwt))
+        .await?
+        .send()
+        .await
+        .context("Failed to connect to user service for staff removal")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        bail!("Failed to remove staff member ({}): {}", status, err_text);
+    }
+
+    Ok(())
 }

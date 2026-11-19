@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT eo.id\n        FROM email_outbox eo\n        INNER JOIN turnover t\n          ON eo.payload->>'turnover_url' LIKE ('%/admin/turnovers/' || t.id::text)\n        WHERE t.booking_id = $1\n          AND t.source_kind = 'booking'\n          AND eo.template_id = $2\n          AND eo.status = 'pending'::email_status\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ba2d3b3a3ae72ebe44420ee88849f4b09701d5ae13abe6eb4522f0b88d75adfc"
+}

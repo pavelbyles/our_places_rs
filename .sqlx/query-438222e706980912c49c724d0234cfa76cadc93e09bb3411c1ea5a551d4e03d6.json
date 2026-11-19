@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT u.id, u.email\n        FROM \"user\" u\n        INNER JOIN listing_staff ls ON ls.staff_user_id = u.id\n        WHERE ls.listing_id = $1\n          AND 'staff'::user_role = ANY(u.roles)\n          AND u.is_active = TRUE\n          AND u.is_verified = TRUE\n          AND u.deleted_at IS NULL\n          AND ($2::uuid IS NULL OR u.id <> $2)\n        ORDER BY u.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "438222e706980912c49c724d0234cfa76cadc93e09bb3411c1ea5a551d4e03d6"
+}

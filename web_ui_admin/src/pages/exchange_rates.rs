@@ -24,7 +24,7 @@ use web_client::client::UserCallError;
 use web_client::get_api_client;
 use web_client::session::AdminRole;
 
-use crate::support::{admin_only, service_token, staff};
+use crate::support::{admin_only, host_or_admin, service_token};
 
 /// One table row: a pair and its current rate.
 #[derive(Debug, Clone, PartialEq)]
@@ -298,7 +298,7 @@ pub async fn publish_rate_form(
 /// The exchange-rate page.
 #[page("/admin/exchange-rates")]
 pub async fn exchange_rates_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let token = service_token(cx, &user)?;
     let api = get_api_client(cx);
     let loaded = api.get_exchange_rates_as(&token).await;

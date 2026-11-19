@@ -31,6 +31,8 @@ pub enum AdminRole {
     Admin,
     /// `host`: access scoped to the host's own listings by the backend.
     Host,
+    /// `staff`: turnover dispatch access scoped to assigned listings.
+    Staff,
 }
 
 impl AdminRole {
@@ -39,6 +41,7 @@ impl AdminRole {
         match role.to_ascii_lowercase().as_str() {
             "admin" | "superadmin" => Some(Self::Admin),
             "host" => Some(Self::Host),
+            "staff" => Some(Self::Staff),
             _ => None,
         }
     }
@@ -96,7 +99,15 @@ impl AdminSession {
     pub fn require_admin_role(self) -> Result<Self, GuardError> {
         match self.role {
             AdminRole::Admin => Ok(self),
-            AdminRole::Host => Err(GuardError::Forbidden),
+            AdminRole::Host | AdminRole::Staff => Err(GuardError::Forbidden),
+        }
+    }
+
+    /// Passes administrators and property hosts, rejecting dispatch-only staff.
+    pub fn require_host_or_admin(self) -> Result<Self, GuardError> {
+        match self.role {
+            AdminRole::Admin | AdminRole::Host => Ok(self),
+            AdminRole::Staff => Err(GuardError::Forbidden),
         }
     }
 }

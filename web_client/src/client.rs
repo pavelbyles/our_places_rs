@@ -9,6 +9,13 @@ use common::models::{
 pub use common::app_client::{ListingSearchParams, ListingSearchRefusal};
 use common::app_client::{booking_api_audience, user_api_audience};
 use common::http_client::AuthenticatedClient;
+use common::turnover::{
+    CreateManualTurnoverRequest, CreateTurnoverCommentRequest, InviteStaffRequest,
+    PasswordResetRequest, PasswordTokenRedeemRequest, StaffInviteAcceptRequest,
+    StaffInviteResponse, StaffListQuery, StaffListResponse, StaffListingAssignment,
+    StaffMemberSummary, TransitionTurnoverRequest, TurnoverCommentResponse, TurnoverDetailResponse,
+    TurnoverListQuery, TurnoverListResponse, TurnoverResponse, UpdateStaffAssignmentsRequest,
+};
 use std::sync::Arc;
 use topcoat::context::{Cx, try_context};
 use uuid::Uuid;
@@ -380,7 +387,13 @@ impl TopcoatApiClient {
         &self,
         req: &CreateSessionRequest,
     ) -> anyhow::Result<SessionResponse> {
-        common::app_client::create_session(req).await
+        common::app_client::create_session_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            req,
+        )
+        .await
     }
 
     /// Retrieve session from user_api
@@ -389,7 +402,14 @@ impl TopcoatApiClient {
         token_hash: &str,
         namespace: Option<&str>,
     ) -> anyhow::Result<Option<SessionResponse>> {
-        common::app_client::get_session(token_hash, namespace).await
+        common::app_client::get_session_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            token_hash,
+            namespace,
+        )
+        .await
     }
 
     /// Delete session in user_api
@@ -408,12 +428,24 @@ impl TopcoatApiClient {
 
     /// Authenticate user credentials with user_api
     pub async fn login_user(&self, req: &LoginRequest) -> anyhow::Result<UserResponse> {
-        common::app_client::login_user(req).await
+        common::app_client::login_user_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            req,
+        )
+        .await
     }
 
     /// Verifies a user's email address with their 6-character OTP code
     pub async fn verify_user(&self, req: &VerifyRequest) -> anyhow::Result<UserResponse> {
-        common::app_client::verify_user(req).await
+        common::app_client::verify_user_at(
+            &self.client,
+            &self.user_api_url,
+            &user_api_audience(),
+            req,
+        )
+        .await
     }
 
     /// Resends the 6-character OTP verification code to a user's email address
@@ -653,6 +685,269 @@ impl TopcoatApiClient {
         )
         .await?;
         decode(request.send().await?).await
+    }
+
+    /// Initiates a password-reset email link for `req.email` (`202 Accepted`).
+    pub async fn request_password_reset(
+        &self,
+        req: &PasswordResetRequest,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/users/password-reset/request", self.user_api_url);
+        let _: serde_json::Value = send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            None,
+            req,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Redeems a single-use invite or password-reset token to set a new password.
+    pub async fn confirm_password_reset(
+        &self,
+        req: &PasswordTokenRedeemRequest,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/users/password-reset/confirm", self.user_api_url);
+        let _: serde_json::Value = send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            None,
+            req,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Lists host-scoped staff users visible to the authenticated host/admin caller.
+    pub async fn list_staff_users(
+        &self,
+        query: &StaffListQuery,
+        user_jwt: &str,
+    ) -> Result<StaffListResponse, UserCallError> {
+        let url = common::app_client::staff_users_list_url(&self.user_api_url, query);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Invites a staff user via `POST /api/v1/staff-users`.
+    pub async fn invite_staff_user(
+        &self,
+        req: &InviteStaffRequest,
+        user_jwt: &str,
+    ) -> Result<StaffInviteResponse, UserCallError> {
+        let url = format!("{}/api/v1/staff-users", self.user_api_url);
+        send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+            req,
+        )
+        .await
+    }
+
+    /// Redeems a single-use `staff_accept` invitation token (`POST /api/v1/users/staff-invite/accept`).
+    pub async fn accept_staff_invite(
+        &self,
+        req: &StaffInviteAcceptRequest,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/users/staff-invite/accept", self.user_api_url);
+        let _: serde_json::Value = send_api_json(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            None,
+            req,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Replaces the target staff user's assigned listings within the caller's ownership scope.
+    pub async fn update_staff_listings(
+        &self,
+        staff_user_id: Uuid,
+        req: &UpdateStaffAssignmentsRequest,
+        user_jwt: &str,
+    ) -> Result<StaffMemberSummary, UserCallError> {
+        let url = format!(
+            "{}/api/v1/staff-users/{staff_user_id}/listings",
+            self.user_api_url
+        );
+        send_api_json(
+            &self.client,
+            reqwest::Method::PUT,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+            req,
+        )
+        .await
+    }
+
+    /// Invalidates prior unused invite links and emails a fresh onboarding link.
+    pub async fn resend_staff_invite(
+        &self,
+        staff_user_id: Uuid,
+        user_jwt: &str,
+    ) -> Result<(), UserCallError> {
+        let url = format!(
+            "{}/api/v1/staff-users/{staff_user_id}/resend-invite",
+            self.user_api_url
+        );
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        let _: serde_json::Value = decode_api(request.send().await?).await?;
+        Ok(())
+    }
+
+    /// Removes a staff user from the caller's roster and owned listings.
+    pub async fn remove_staff_user(
+        &self,
+        staff_user_id: Uuid,
+        user_jwt: &str,
+    ) -> Result<(), UserCallError> {
+        let url = format!("{}/api/v1/staff-users/{staff_user_id}", self.user_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::DELETE,
+            &url,
+            &user_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        let _: serde_json::Value = decode_api(request.send().await?).await?;
+        Ok(())
+    }
+
+    /// Lists all active properties accessible to `user_jwt` for turnover filtering and creation
+    /// (`booking_api` `GET /api/v1/turnovers/listings`).
+    pub async fn list_turnover_listings(
+        &self,
+        user_jwt: &str,
+    ) -> Result<Vec<StaffListingAssignment>, UserCallError> {
+        let url = format!("{}/api/v1/turnovers/listings", self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Lists turnover dispatch cards visible to `user_jwt` (`booking_api` `GET /api/v1/turnovers`).
+    pub async fn list_turnovers(
+        &self,
+        query: &TurnoverListQuery,
+        user_jwt: &str,
+    ) -> Result<TurnoverListResponse, UserCallError> {
+        let url = common::app_client::turnovers_list_url(&self.booking_api_url, query);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Fetches a single scoped turnover detail (`booking_api` `GET /api/v1/turnovers/{id}`).
+    pub async fn get_turnover_detail(
+        &self,
+        turnover_id: Uuid,
+        user_jwt: &str,
+    ) -> Result<TurnoverDetailResponse, UserCallError> {
+        let url = common::app_client::turnover_detail_url(&self.booking_api_url, turnover_id);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::GET,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.send().await?).await
+    }
+
+    /// Creates a manual turnover (`booking_api` `POST /api/v1/turnovers`).
+    pub async fn create_manual_turnover(
+        &self,
+        req: &CreateManualTurnoverRequest,
+        user_jwt: &str,
+    ) -> Result<TurnoverResponse, UserCallError> {
+        let url = common::app_client::turnovers_create_url(&self.booking_api_url);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
+    }
+
+    /// Transitions a turnover's operational status (`booking_api` `POST /api/v1/turnovers/{id}/status`).
+    pub async fn transition_turnover_status(
+        &self,
+        turnover_id: Uuid,
+        req: &TransitionTurnoverRequest,
+        user_jwt: &str,
+    ) -> Result<TurnoverResponse, UserCallError> {
+        let url = common::app_client::turnover_status_url(&self.booking_api_url, turnover_id);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
+    }
+
+    /// Posts a comment on a turnover (`booking_api` `POST /api/v1/turnovers/{id}/comments`).
+    pub async fn post_turnover_comment(
+        &self,
+        turnover_id: Uuid,
+        req: &CreateTurnoverCommentRequest,
+        user_jwt: &str,
+    ) -> Result<TurnoverCommentResponse, UserCallError> {
+        let url = common::app_client::turnover_comments_url(&self.booking_api_url, turnover_id);
+        let request = service_request(
+            &self.client,
+            reqwest::Method::POST,
+            &url,
+            &booking_api_audience(),
+            Some(user_jwt),
+        )
+        .await?;
+        decode_api(request.json(req).send().await?).await
     }
 }
 
@@ -966,6 +1261,19 @@ pub(crate) async fn service_request(
         .map_err(UserCallError::Identity)
 }
 
+/// Sends a JSON body (optionally authenticated by `jwt`) and decodes structured API rejections.
+pub(crate) async fn send_api_json<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
+    client: &AuthenticatedClient,
+    method: reqwest::Method,
+    url: &str,
+    audience: &str,
+    jwt: Option<&str>,
+    body: &B,
+) -> Result<T, UserCallError> {
+    let request = service_request(client, method, url, audience, jwt).await?;
+    decode_api(request.json(body).send().await?).await
+}
+
 /// Sends a JSON body as the user who owns `jwt` and decodes a JSON response.
 async fn send_json_as<B: serde::Serialize + ?Sized, T: serde::de::DeserializeOwned>(
     client: &AuthenticatedClient,
@@ -1134,5 +1442,48 @@ mod get_listing_by_id_at_tests {
             .get_listing_by_id("x?currency=EUR", None)
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn password_reset_client_methods_handle_success_401_and_400()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let server = MockServer::start().await;
+        let client = client_for(&server);
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/users/password-reset/request"))
+            .respond_with(
+                ResponseTemplate::new(202)
+                    .set_body_json(serde_json::json!({ "status": "accepted" })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        client
+            .request_password_reset(&common::turnover::PasswordResetRequest {
+                email: "crew@ourplaces.example".into(),
+            })
+            .await?;
+
+        Mock::given(method("POST"))
+            .and(path("/api/v1/users/password-reset/confirm"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "code": "UNAUTHORIZED",
+                "message": "Invalid or expired token"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let err = client
+            .confirm_password_reset(&common::turnover::PasswordTokenRedeemRequest {
+                token: "expired".into(),
+                new_password: "new-password-123".into(),
+            })
+            .await;
+        assert!(matches!(err, Err(super::UserCallError::Unauthorized)));
+
+        Ok(())
     }
 }

@@ -212,3 +212,54 @@ async fn guest_footer_links_explore_and_policy_pages() {
         "no concierge column without GUEST_CONCIERGE_* settings: {out}"
     );
 }
+
+#[tokio::test]
+async fn staff_session_sees_only_turnover_dispatch_and_sign_out() {
+    let cx = &Cx::default();
+    let out = html(
+        view! { admin_chrome(shell: admin(Some(AdminRole::Staff))) },
+        cx,
+    )
+    .await;
+    assert!(
+        out.contains(r#"id="admin-top-user-role">Staff</span>"#),
+        "expected Staff role badge: {out}"
+    );
+    assert!(
+        out.contains(r#"href="/admin/turnovers""#) && out.contains("Turnover Dispatch"),
+        "expected Turnover Dispatch nav link: {out}"
+    );
+    assert!(
+        out.contains(r#"action="/logout""#) && out.contains("Sign out"),
+        "expected Sign out action: {out}"
+    );
+    for forbidden in [
+        r#"href="/admin""#,
+        "/admin/listings",
+        "/admin/bookings",
+        "/admin/inbox",
+        "/admin/payouts",
+        "/admin/promo-codes",
+        "/admin/exchange-rates",
+        "/admin/users",
+        "/admin/staff-users",
+        "admin-nav-unread",
+    ] {
+        assert!(
+            !out.contains(forbidden),
+            "Staff nav must hide `{forbidden}`: {out}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn hosts_and_admins_see_staff_and_crew_link() {
+    let cx = &Cx::default();
+    for role in [AdminRole::Host, AdminRole::Admin] {
+        let out = html(view! { admin_chrome(shell: admin(Some(role))) }, cx).await;
+        assert!(
+            out.contains(r#"href="/admin/staff-users""#) && out.contains("Staff &amp; Crew"),
+            "expected Staff & Crew link for {role:?}: {out}"
+        );
+    }
+}

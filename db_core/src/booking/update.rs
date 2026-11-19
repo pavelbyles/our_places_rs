@@ -333,6 +333,12 @@ async fn apply_status_side_effects(
     if change.became(BookingStatus::Completed) {
         complete_stay(&mut *conn, booking, supplier, history_id).await?;
     }
+    crate::turnover::reconcile_for_booking_conn(
+        &mut *conn,
+        booking.id,
+        "booking::update::apply_status_side_effects",
+    )
+    .await?;
     Ok(())
 }
 

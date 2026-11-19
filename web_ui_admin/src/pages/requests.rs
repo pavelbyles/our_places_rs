@@ -30,7 +30,7 @@ use web_client::{get_api_client, session::AdminSession};
 use web_ui_common::components::chat::{chat_bubble, chat_thread};
 use web_ui_common::components::domain::price_breakdown::{PriceBreakdown, price_breakdown};
 
-use crate::support::{service_token, staff};
+use crate::support::{host_or_admin, service_token};
 
 path_param!(id);
 
@@ -297,7 +297,7 @@ async fn inbox_row(cx: &Cx, item: InboxItem) -> Result<impl View> {
 /// Open enquiries and live requests on the user's listings (all, for admins).
 #[page("/admin/inbox")]
 pub async fn inbox_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let token = service_token(cx, &user)?;
     let mut query = parse_query_params::<InboxQuery>(cx).unwrap_or_default();
     query.kind = query.kind.filter(|k| k == "enquiry" || k == "request");
@@ -620,7 +620,7 @@ async fn quote_form(
 /// A request with its price, quote, actions and thread.
 #[page("/admin/requests/{id}")]
 pub async fn request_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (request, token) = managed_request(cx, &user).await?;
     let details = get_api_client(cx)
         .get_listing_by_id(&request.listing_id.to_string(), None)
@@ -793,7 +793,7 @@ pub async fn request_page(cx: &Cx) -> Result<impl View> {
 /// Accepts a request.
 #[page(POST "/admin/requests/{id}/accept")]
 pub async fn accept_submit(cx: &Cx) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (request, token) = managed_request(cx, &user).await?;
     let code = match accept_booking_request(request.id, &token).await {
         Ok(_) => "accepted".to_string(),
@@ -819,7 +819,7 @@ pub async fn decline_submit(
     /// The decline form.
     Form(form): Form<DeclineForm>,
 ) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (request, token) = managed_request(cx, &user).await?;
     let back = |code: &str| see_other(format!("/admin/requests/{}?notice={code}", request.id));
     let Some(reason) = DeclineReason::parse(&form.reason) else {
@@ -861,7 +861,7 @@ pub async fn quote_submit(
     /// The quote form.
     Form(form): Form<QuoteForm>,
 ) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (request, token) = managed_request(cx, &user).await?;
     let code = match quote_body(&form) {
         Err(_) => RequestRefusal::InvalidQuotePrice.code().to_string(),
@@ -897,7 +897,7 @@ pub async fn quote_preview(
     /// The quote form.
     Form(form): Form<QuoteForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (request, token) = managed_request(cx, &user).await?;
     let outcome = match quote_body(&form) {
         Err(message) => Err(message),
@@ -916,7 +916,7 @@ pub async fn request_reply(
     /// The reply form.
     Form(form): Form<ReplyForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (request, token) = managed_request(cx, &user).await?;
     let back = format!("/admin/requests/{}", request.id);
     let sent = send_reply(
@@ -1015,7 +1015,7 @@ async fn earnings_card(
 /// An enquiry with its thread, a quote form and Close.
 #[page("/admin/enquiries/{id}")]
 pub async fn enquiry_page(cx: &Cx) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (enquiry, token) = managed_enquiry(cx, &user).await?;
     let details = get_api_client(cx)
         .get_listing_by_id(&enquiry.listing_id.to_string(), None)
@@ -1089,7 +1089,7 @@ pub async fn enquiry_quote_submit(
     /// The quote form.
     Form(form): Form<QuoteForm>,
 ) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (enquiry, token) = managed_enquiry(cx, &user).await?;
     let back = |code: &str| see_other(format!("/admin/enquiries/{}?notice={code}", enquiry.id));
     let body = match quote_body(&form) {
@@ -1107,7 +1107,7 @@ pub async fn enquiry_quote_submit(
 /// Closes an enquiry.
 #[page(POST "/admin/enquiries/{id}/close")]
 pub async fn enquiry_close_submit(cx: &Cx) -> Result<()> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (enquiry, token) = managed_enquiry(cx, &user).await?;
     let code = match close_enquiry(enquiry.id, &token).await {
         Ok(_) => "closed".to_string(),
@@ -1123,7 +1123,7 @@ pub async fn enquiry_reply(
     /// The reply form.
     Form(form): Form<ReplyForm>,
 ) -> Result<impl View> {
-    let user = staff(cx).await?;
+    let user = host_or_admin(cx).await?;
     let (enquiry, token) = managed_enquiry(cx, &user).await?;
     let back = format!("/admin/enquiries/{}", enquiry.id);
     let sent = send_reply(

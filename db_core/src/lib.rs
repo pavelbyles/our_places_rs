@@ -1,6 +1,8 @@
 //! PostgreSQL schema access: queries, row locks and migrations.
 #![deny(missing_docs)]
 
+/// Hashed single-use account action tokens for staff invites and password resets.
+pub mod action_token;
 /// Booking domain entities and operations.
 pub mod booking;
 /// Guest-to-host booking messaging operations.
@@ -43,8 +45,16 @@ pub mod reservation_change;
 pub mod review;
 /// Session store and authentication token management.
 pub mod sessions;
+/// Host-scoped staff roster, invites, and listing dispatch assignments.
+pub mod staff;
 /// Statutory tax documents and compliance invoicing.
 pub mod tax_document;
+/// Operational turnover dispatch events, audit history, comments, and reconcilers.
+pub mod turnover;
+#[cfg(test)]
+mod turnover_migration_tests;
+#[cfg(test)]
+mod turnover_tests;
 /// User account and profile operations.
 pub mod user;
 
