@@ -23,7 +23,7 @@
   - **Verification Command:** `SQLX_OFFLINE=true cargo test -p booking_api && SQLX_OFFLINE=true cargo clippy -p booking_api --all-targets -- -D warnings`
   - **Dependencies:** None
 
-- [ ] **Task 2: Preview Quote Client Method (`web_client`)**
+- [x] **Task 2: Preview Quote Client Method (`web_client`)**
   - **Scope:** XS
   - **Description:** Add `preview_listing_quote(listing_id: Uuid, check_in: NaiveDate, check_out: NaiveDate, guests: u32, jwt: &str)` to `web_client/src/client.rs` calling `GET /api/v1/bookings/listing/{listing_id}/preview-quote` with bearer auth (currency fixed to `listing.base_currency`) and preserving `ApiCallError` for `NoQuote::from_error`.
   - **Files Touched:**

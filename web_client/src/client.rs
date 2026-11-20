@@ -145,6 +145,20 @@ impl TopcoatApiClient {
             .await
     }
 
+    /// What a stay costs for an admin or owning host previewing an active or
+    /// draft listing in its base currency.
+    pub async fn preview_listing_quote(
+        &self,
+        listing_id: Uuid,
+        check_in: NaiveDate,
+        check_out: NaiveDate,
+        guests: u32,
+        jwt: &str,
+    ) -> anyhow::Result<common::models::StayQuoteResponse> {
+        common::app_client::get_preview_stay_quote(listing_id, check_in, check_out, guests, jwt)
+            .await
+    }
+
     /// What a stay costs the guest who owns `jwt`, with any promo code
     pub async fn get_stay_quote(
         &self,

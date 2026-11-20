@@ -18,6 +18,32 @@ async fn decode_quote(res: reqwest::Response) -> Result<StayQuoteResponse> {
         .context("Failed to read the stay quote from the booking service")
 }
 
+async fn send_stay_quote_get(
+    url: &str,
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    guests: u32,
+    currency: Option<&str>,
+    user_jwt: Option<&str>,
+) -> Result<StayQuoteResponse> {
+    let mut query = vec![
+        ("check_in", check_in.to_string()),
+        ("check_out", check_out.to_string()),
+        ("guests", guests.to_string()),
+    ];
+    if let Some(currency) = currency {
+        query.push(("currency", currency.to_string()));
+    }
+    let res = get_client()
+        .user_request(reqwest::Method::GET, url, &booking_api_audience(), user_jwt)
+        .await?
+        .query(&query)
+        .send()
+        .await
+        .context("Failed to connect to booking service")?;
+    decode_quote(res).await
+}
+
 /// What a stay costs, for anyone browsing a listing. Takes no promo code.
 pub async fn get_public_stay_quote(
     listing_id: Uuid,
@@ -30,22 +56,23 @@ pub async fn get_public_stay_quote(
         "{}/api/v1/bookings/listing/{listing_id}/quote",
         booking_api_url()
     );
-    let mut query = vec![
-        ("check_in", check_in.to_string()),
-        ("check_out", check_out.to_string()),
-        ("guests", guests.to_string()),
-    ];
-    if let Some(currency) = currency {
-        query.push(("currency", currency.to_string()));
-    }
-    let res = get_client()
-        .user_request(reqwest::Method::GET, &url, &booking_api_audience(), None)
-        .await?
-        .query(&query)
-        .send()
-        .await
-        .context("Failed to connect to booking service")?;
-    decode_quote(res).await
+    send_stay_quote_get(&url, check_in, check_out, guests, currency, None).await
+}
+
+/// What a stay costs for an admin or owning host previewing an active or
+/// draft listing in its base currency.
+pub async fn get_preview_stay_quote(
+    listing_id: Uuid,
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    guests: u32,
+    user_jwt: &str,
+) -> Result<StayQuoteResponse> {
+    let url = format!(
+        "{}/api/v1/bookings/listing/{listing_id}/preview-quote",
+        booking_api_url()
+    );
+    send_stay_quote_get(&url, check_in, check_out, guests, None, Some(user_jwt)).await
 }
 
 /// What a stay costs the guest who owns `user_jwt`, with any promo code. A
