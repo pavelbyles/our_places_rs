@@ -59,7 +59,7 @@
   - **Verification Command:** `cargo test -p web_ui_common -p web_ui_guest && cargo clippy -p web_ui_common -p web_ui_guest --all-targets -- -D warnings`
   - **Dependencies:** None
 
-- [ ] **Task 5a: Move Listing Section Helpers & Map Tests to `web_ui_common`**
+- [x] **Task 5a: Move Listing Section Helpers & Map Tests to `web_ui_common`**
   - **Scope:** S
   - **Description:** Extract the pure section rendering helpers (hero gallery, highlights ribbon, suites, amenities, house policies, guestbook, map, availability calendar, reviews, sticky section nav) and location-map unit tests from `web_ui_guest/src/pages/listing_detail.rs` into `web_ui_common/src/components/domain/listing_detail.rs` (exporting from `web_ui_common/src/components/domain/mod.rs`), parameterized by `CtaMode` (`Live { enquire_href }` vs `Preview`) for `#listing-enquire-cta`, concierge add-on enquiry buttons, **Ask us to arrange**, and `#plan-your-stay` enquiry CTA, plus safe draft fallbacks (0 photos, missing coordinates, empty suites/reviews, and `"Rate not set"` when `price_per_night` is `None`).
   - **Files Touched:**
