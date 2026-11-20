@@ -108,7 +108,7 @@
   - **Verification Command:** `cargo test -p web_ui_admin && cargo clippy -p web_ui_admin --all-targets -- -D warnings && cargo clippy -p web_ui_admin --all-features -- -D missing_docs`
   - **Dependencies:** Task 2, Task 5c
 
-- [ ] **Task 7: Playwright E2E Coverage & Full Workspace Gate**
+- [x] **Task 7: Playwright E2E Coverage & Full Workspace Gate**
   - **Scope:** S
   - **Description:** Add Playwright E2E tests in `playwright/e2e/admin-portal/listings-admin.spec.ts` verifying `"Preview"` links on `/admin/listings`, `/admin/listings/{id}`, and `/admin/listings/{id}/edit`; standalone full-width guest-styled layout (`preview-back-bar`, `preview-pill`) for both active and draft listings; live date selection, calendar navigation, and quote calculation updating `#quote` (plus `"Rate not set"` when `price_per_night` is `None`); disabled `<button>` controls (`#listing-book-cta`, `#listing-enquire-cta`, `preview-disabled-notice`); and `Staff` `403` denial. Run full workspace formatting, clippy, and test gates.
   - **Files Touched:**

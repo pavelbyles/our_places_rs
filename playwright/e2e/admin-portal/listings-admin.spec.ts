@@ -230,4 +230,82 @@ test.describe('Admin Portal - Listings Management', () => {
     await expect(groups.first()).toContainText('Beach & Water');
     await expect(groups.nth(1)).toContainText('Wi-Fi');
   });
+
+  test('host and admin can preview active and draft listings with disabled booking/enquiry CTAs', { tag: '@new-only' }, async ({ browser }) => {
+    const host = createHost();
+    const listing = createListingCopy();
+    psql(`UPDATE listing SET user_id = '${host.id}', price_per_night = 320 WHERE id = '${listing.id}';`);
+    deactivateListing(listing.id);
+
+    const ctx = await browser.newContext({ baseURL: TEST_CONFIG.adminPortalUrl });
+    const page = await ctx.newPage();
+    await loginAdminAs(page, host);
+
+    // 1. Entry links on /admin/listings, /admin/listings/{id}, and /admin/listings/{id}/edit
+    await page.goto('/admin/listings?status=inactive');
+    const rowPreview = page.getByRole('row', { name: new RegExp(listing.name) }).locator(`a[href="/admin/listings/${listing.id}/preview"]`);
+    await expect(rowPreview).toBeVisible();
+    await expect(rowPreview).not.toHaveAttribute('target', '_blank');
+
+    await page.goto(`/admin/listings/${listing.id}`);
+    await expect(page.locator(`a[href="/admin/listings/${listing.id}/preview"]`)).toBeVisible();
+
+    await page.goto(`/admin/listings/${listing.id}/edit`);
+    const editPreview = page.locator(`a[href="/admin/listings/${listing.id}/preview"]`);
+    await expect(editPreview).toBeVisible();
+    await editPreview.click();
+
+    // 2. Standalone guest-styled layout with Back to Admin bar and Preview pill
+    await expect(page).toHaveURL(new RegExp(`/admin/listings/${listing.id}/preview$`));
+    await expect(page.locator('html')).toHaveAttribute('data-guest-preview', 'true');
+    await expect(page.getByTestId('preview-pill')).toContainText('Preview · Draft');
+    const backLink = page.getByTestId('preview-back-bar').locator(`a[href="/admin/listings/${listing.id}"]`);
+    await expect(backLink).toBeVisible();
+
+    // 3. Booking and enquiry controls are disabled buttons
+    await expect(page.locator('#listing-book-cta')).toBeDisabled();
+    await expect(page.locator('#listing-enquire-cta')).toBeDisabled();
+    await expect(page.getByTestId('preview-disabled-notice')).toBeVisible();
+
+    // 4. Date selection triggers live quote breakdown in #quote even for draft listings
+    await page.locator('#reserve-check-in').fill('2027-05-10');
+    await page.locator('#reserve-check-in').dispatchEvent('change');
+    await page.locator('#reserve-check-out').fill('2027-05-13');
+    await page.locator('#reserve-check-out').dispatchEvent('change');
+    await expect(page.locator('#quote #quote-breakdown')).toBeVisible();
+
+    // 5. Active listing shows "Preview · Active"
+    psql(`UPDATE listing SET is_active = true WHERE id = '${listing.id}';`);
+    await page.reload();
+    await expect(page.getByTestId('preview-pill')).toContainText('Preview · Active');
+
+    // 6. Draft without nightly rate shows "Rate not set" instead of US$0
+    psql(`UPDATE listing SET is_active = false, price_per_night = NULL WHERE id = '${listing.id}';`);
+    await page.reload();
+    await expect(page.locator('#quote #quote-rate-unset')).toContainText('Rate not set');
+    await ctx.close();
+  });
+
+  test('staff receives 403 and non-owning host receives 404 on listing preview', { tag: '@new-only' }, async ({ browser }) => {
+    const owner = createHost();
+    const otherHost = createHost();
+    const staffUser = createHost();
+    psql(`UPDATE "user" SET roles = ARRAY['staff']::user_role[] WHERE id = '${staffUser.id}';`);
+    const listing = createListingCopy();
+    psql(`UPDATE listing SET user_id = '${owner.id}' WHERE id = '${listing.id}';`);
+
+    const otherCtx = await browser.newContext({ baseURL: TEST_CONFIG.adminPortalUrl });
+    const otherPage = await otherCtx.newPage();
+    await loginAdminAs(otherPage, otherHost);
+    const nonOwnerResp = await otherPage.goto(`/admin/listings/${listing.id}/preview`);
+    expect(nonOwnerResp?.status()).toBe(404);
+    await otherCtx.close();
+
+    const staffCtx = await browser.newContext({ baseURL: TEST_CONFIG.adminPortalUrl });
+    const staffPage = await staffCtx.newPage();
+    await loginAdminAs(staffPage, staffUser);
+    const staffResp = await staffPage.goto(`/admin/listings/${listing.id}/preview`);
+    expect(staffResp?.status()).toBe(403);
+    await staffCtx.close();
+  });
 });
