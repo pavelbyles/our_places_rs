@@ -3,6 +3,7 @@
 //! (`USD $14,133.00`). The `breakdown-*` element IDs the e2e suite relies on
 //! are kept.
 
+use common::models::StayQuoteResponse;
 use rust_decimal::Decimal;
 use topcoat::context::Cx;
 use topcoat::{
@@ -37,6 +38,66 @@ pub struct PriceBreakdown {
     pub total_amount: Decimal,
     /// ISO currency code, e.g. `USD`.
     pub currency: String,
+}
+
+/// The figures for the breakdown panel. `None` for amounts that are zero, so
+/// their rows don't show.
+pub fn breakdown(quote: &StayQuoteResponse) -> PriceBreakdown {
+    let positive = |amount: Decimal| Some(amount).filter(|a| *a > Decimal::ZERO);
+    PriceBreakdown {
+        nights: i64::from(quote.nights),
+        effective_nightly_rate: quote.effective_nightly_rate,
+        subtotal: quote.subtotal,
+        discount_amount: positive(quote.stay_discount),
+        promo_code: quote.promo.as_ref().map(|promo| promo.code.clone()),
+        promo_discount: quote.promo.as_ref().map(|promo| promo.discount),
+        cleaning_fee: positive(quote.cleaning_fee),
+        damage_deposit: positive(quote.damage_deposit),
+        platform_fee: positive(quote.platform_fee),
+        tax_amount: quote.tax_amount,
+        total_amount: quote.total_amount,
+        currency: quote.currency.clone(),
+    }
+}
+
+/// Why a stay has no price.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoQuote {
+    /// `booking_api` refused the stay as asked; the message tells the guest
+    /// why and what to change, e.g. "These dates need a stay of at least 5
+    /// nights."
+    Refused(String),
+    /// The quote failed for another reason, such as the API being down.
+    Failed,
+}
+
+impl NoQuote {
+    /// What the guest is told. Only a failure says to try again: retrying
+    /// never fixes a refusal.
+    pub fn message(&self) -> String {
+        match self {
+            Self::Refused(message) => message.clone(),
+            Self::Failed => {
+                "We couldn't price this stay right now. Please try again shortly.".to_string()
+            }
+        }
+    }
+
+    /// Sorts a failed quote by its error text, logging it: a refusal is the
+    /// guest's input, a failure is ours.
+    pub fn from_error(e: &dyn std::fmt::Display, listing_id: &dyn std::fmt::Display) -> Self {
+        let text = e.to_string();
+        match common::availability::stay_refusal_message_in_error(&text) {
+            Some(message) => {
+                tracing::info!(%listing_id, "stay not quoted: {text}");
+                Self::Refused(message)
+            }
+            None => {
+                tracing::warn!(%listing_id, "no stay quote: {text}");
+                Self::Failed
+            }
+        }
+    }
 }
 
 impl From<&common::booking_request::PriceBreakdown> for PriceBreakdown {

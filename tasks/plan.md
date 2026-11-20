@@ -45,7 +45,7 @@
   - **Verification Command:** `cargo test -p web_ui_common && cargo check -p web_ui_admin && cargo clippy -p web_ui_common -p web_ui_admin --all-targets -- -D warnings`
   - **Dependencies:** None
 
-- [ ] **Task 4: Configurable `CalendarProps` URL Prefix & Shared `NoQuote` / `breakdown` (`web_ui_common` + `web_ui_guest`)**
+- [x] **Task 4: Configurable `CalendarProps` URL Prefix & Shared `NoQuote` / `breakdown` (`web_ui_common` + `web_ui_guest`)**
   - **Scope:** S
   - **Description:** Replace `listing_slug: String` with `pub calendar_url_prefix: String` in `CalendarProps` (`date_range_calendar.rs:149-150`) and update `calendar_url` (plus existing callers in `web_ui_guest/src/pages/listing_detail.rs` and unit tests). Move `breakdown(&StayQuoteResponse) -> PriceBreakdown` and `NoQuote` from `web_ui_guest/src/quote.rs` into the existing `web_ui_common/src/components/domain/price_breakdown.rs` (re-exporting in `web_ui_guest/src/quote.rs`). Note: do not use `NoQuote::from_error` for `price_per_night: None` (since `nightly_price` returns `DbError::ValidationError`, which falls through to `NoQuote::Failed`); handlers will skip the quote call and show `"Rate not set"` directly when `price_per_night` is `None`.
   - **Files Touched:**

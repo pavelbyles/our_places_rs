@@ -84,7 +84,7 @@ async fn calendar_props(
             Vec::new()
         });
     CalendarProps {
-        listing_slug: details.listing.slug.clone(),
+        calendar_url_prefix: format!("/listings/{}/calendar", details.listing.slug),
         month,
         months: CALENDAR_MONTHS,
         today: jamaica_today(),

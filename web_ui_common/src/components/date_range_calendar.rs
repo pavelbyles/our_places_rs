@@ -16,8 +16,9 @@ use topcoat::{
 /// Everything the calendar needs to render.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalendarProps {
-    /// Listing slug, for the fragment URL `/listings/{slug}/calendar`.
-    pub listing_slug: String,
+    /// Fragment path prefix, e.g. `/listings/{slug}/calendar` or
+    /// `/admin/listings/{id}/preview/calendar`.
+    pub calendar_url_prefix: String,
     /// First day of the first month shown.
     pub month: NaiveDate,
     /// Number of months shown side by side (2 on desktop).
@@ -98,12 +99,12 @@ pub fn day_label(day: NaiveDate, state: DayState) -> String {
 
 /// URL of the calendar fragment for `month`, keeping the current selection.
 pub fn calendar_url(
-    slug: &str,
+    calendar_url_prefix: &str,
     month: NaiveDate,
     check_in: Option<NaiveDate>,
     check_out: Option<NaiveDate>,
 ) -> String {
-    let mut url = format!("/listings/{slug}/calendar?month={}", month.format("%Y-%m"));
+    let mut url = format!("{calendar_url_prefix}?month={}", month.format("%Y-%m"));
     if let Some(d) = check_in {
         url.push_str(&format!("&check_in={d}"));
     }
@@ -132,7 +133,7 @@ pub async fn date_range_calendar(
     props: CalendarProps,
 ) -> Result<impl View> {
     let CalendarProps {
-        listing_slug,
+        calendar_url_prefix,
         month,
         months,
         today,
@@ -146,8 +147,8 @@ pub async fn date_range_calendar(
     let prev = month.checked_sub_months(Months::new(1)).unwrap_or(month);
     let next = month.checked_add_months(Months::new(1)).unwrap_or(month);
     let can_go_back = prev >= first_of_month(today);
-    let prev_url = calendar_url(&listing_slug, prev, check_in, check_out);
-    let next_url = calendar_url(&listing_slug, next, check_in, check_out);
+    let prev_url = calendar_url(&calendar_url_prefix, prev, check_in, check_out);
+    let next_url = calendar_url(&calendar_url_prefix, next, check_in, check_out);
     let shown: Vec<NaiveDate> = (0..months.max(1))
         .filter_map(|i| month.checked_add_months(Months::new(i)))
         .collect();
