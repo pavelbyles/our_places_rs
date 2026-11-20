@@ -33,7 +33,7 @@
   - **Verification Command:** `cargo test -p web_client && cargo clippy -p web_client --all-targets -- -D warnings`
   - **Dependencies:** Task 1
 
-- [ ] **Task 3: Guest Preview Stylesheet & `AdminChrome::StandalonePreview` (`web_ui_common` + `web_ui_admin`)**
+- [x] **Task 3: Guest Preview Stylesheet & `AdminChrome::StandalonePreview` (`web_ui_common` + `web_ui_admin`)**
   - **Scope:** S
   - **Description:** Add `web_ui_admin/src/style/preview.css` importing `../../../web_ui_common/src/style/guest.css` so preview loads the guest palette (`--background: #EEF3F4`, `--border: #D3DEE2`, `--radius-*` tokens, `.page-grid`, `.page-columns`, `.page-flow`, `.full-bleed`, `.bleed-inner`, `body:has([data-mobile-book-bar])`) rather than `admin.css`'s neutral oklch colours. Add `AdminChrome` (`Standard` vs `StandalonePreview { stylesheet: Asset, include_newsreader: bool }`) to `shell_admin.rs` so `StandalonePreview` reuses `<!DOCTYPE html>`, `<head>`, `HTMX_CONFIG`, `INTER`, `HTMX_JS`, `UI_JS`, `theme_for_request`, `toast_region`, and `hx_request && !hx_boosted` partial unwrapping while omitting the admin sidebar/topbar and loading `NEWSREADER` plus the guest preview stylesheet.
   - **Files Touched:**

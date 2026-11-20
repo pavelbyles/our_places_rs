@@ -1,0 +1,149 @@
+/* Guest "Shoreline Mist" palette & listing-grid layout scoped to
+   `html[data-guest-preview]` so web_ui_admin's preview page renders with
+   guest colours, radius tokens, and bleed layout without altering admin pages. */
+
+@theme inline {
+  --font-serif: "Newsreader", serif;
+  --radius-control: 10px;
+  --radius-surface: 16px;
+  --radius-media: 12px;
+}
+
+html[data-guest-preview] {
+  --background: #EEF3F4;
+  --foreground: #0F2A33;
+  --card: #FFFFFF;
+  --card-foreground: #0F2A33;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F2A33;
+  --muted-foreground: #4E6670;
+  --primary: #245A6D;
+  --primary-foreground: #FFFFFF;
+  --destructive: #B42318;
+  --destructive-foreground: #FFFFFF;
+  --border: #D3DEE2;
+  --ring: #245A6D;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #0F2A33;
+  --sidebar-primary: #245A6D;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #E3EEF1;
+  --sidebar-accent-foreground: #0F2A33;
+  --sidebar-border: #D3DEE2;
+  --sidebar-ring: #245A6D;
+
+  --divider: #E3EAEC;
+  --chip: #E3EEF1;
+  --photo-placeholder: #D4E3E7;
+
+  --link: var(--primary);
+  --shadow-xs: 0 1px 2px rgb(15 42 51 / 0.08);
+  --shadow-sm: 0 1px 2px rgb(15 42 51 / 0.08);
+}
+
+html[data-guest-preview].dim {
+  --background: #D9E2E5;
+  --foreground: #0F2A33;
+  --card: #EAF0F2;
+  --card-foreground: #0F2A33;
+  --popover: #EAF0F2;
+  --popover-foreground: #0F2A33;
+  --muted-foreground: #41575F;
+  --primary: #1E5062;
+  --primary-foreground: #FFFFFF;
+  --destructive: #A11F15;
+  --destructive-foreground: #FFFFFF;
+  --border: #BBC9CF;
+  --ring: #1E5062;
+  --sidebar: #EAF0F2;
+  --sidebar-foreground: #0F2A33;
+  --sidebar-primary: #1E5062;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #CCDCE1;
+  --sidebar-accent-foreground: #0F2A33;
+  --sidebar-border: #BBC9CF;
+  --sidebar-ring: #1E5062;
+
+  --divider: #CDD8DC;
+  --chip: #CCDCE1;
+  --photo-placeholder: #BFD2D8;
+}
+
+html[data-guest-preview].dark {
+  --background: #34404F;
+  --foreground: #EEF2F6;
+  --card: #3E4A5B;
+  --card-foreground: #EEF2F6;
+  --popover: #3E4A5B;
+  --popover-foreground: #EEF2F6;
+  --muted-foreground: #BAC4D0;
+  --primary: #AECBEB;
+  --primary-foreground: #1E2A38;
+  --destructive: #F4A79D;
+  --destructive-foreground: #3A1410;
+  --border: #4D5A6C;
+  --ring: #AECBEB;
+  --sidebar: #3E4A5B;
+  --sidebar-foreground: #EEF2F6;
+  --sidebar-primary: #AECBEB;
+  --sidebar-primary-foreground: #1E2A38;
+  --sidebar-accent: #465365;
+  --sidebar-accent-foreground: #EEF2F6;
+  --sidebar-border: #4D5A6C;
+  --sidebar-ring: #AECBEB;
+
+  --divider: #465365;
+  --chip: #465365;
+  --photo-placeholder: #4A5970;
+
+  --link: #BCD5F0;
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+@layer components {
+  html[data-guest-preview] .page-grid,
+  html[data-guest-preview] .page-columns {
+    display: grid;
+    grid-template-columns:
+      [full-start] minmax(1.5rem, 1fr)
+      [content-start] min(1540px - 3rem, 100% - 3rem) [content-end]
+      minmax(1.5rem, 1fr) [full-end];
+  }
+  html[data-guest-preview] .page-grid {
+    padding-block: 3rem 11rem;
+  }
+  html[data-guest-preview] .page-flow {
+    display: contents;
+  }
+  html[data-guest-preview] .page-grid > *,
+  html[data-guest-preview] .page-flow > *,
+  html[data-guest-preview] .page-columns > * {
+    grid-column: content;
+    min-width: 0;
+  }
+  html[data-guest-preview] .page-grid > .full-bleed,
+  html[data-guest-preview] .page-flow > .full-bleed,
+  html[data-guest-preview] .page-columns > .full-bleed {
+    grid-column: full;
+  }
+  html[data-guest-preview] .page-grid > .full-bleed:first-child,
+  html[data-guest-preview] .page-grid > .page-flow:first-child > .full-bleed:first-child {
+    margin-top: -3rem;
+  }
+  html[data-guest-preview] .page-grid > .full-bleed:last-child,
+  html[data-guest-preview] .page-grid > .page-flow:last-child > .full-bleed:last-child {
+    margin-bottom: -11rem;
+  }
+  @media (width < 64rem) {
+    html[data-guest-preview] body:has([data-mobile-book-bar]) {
+      padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  html[data-guest-preview] .bleed-inner {
+    width: 100%;
+    max-width: 1540px;
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+}
