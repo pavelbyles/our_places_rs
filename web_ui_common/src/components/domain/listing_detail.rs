@@ -1,6 +1,7 @@
 //! Shared listing detail presentation helpers, map, and booking/preview CTAs
 //! used by both `web_ui_guest` and `web_ui_admin`'s listing preview.
 
+use common::booking_request::BookingMode;
 use common::listing_details::{CuratedTestimonial, ServiceAddon, SuiteItem};
 use common::location::LocationPrecision;
 use common::models::{ListingImageResponse, ListingResponse};
@@ -11,6 +12,7 @@ use topcoat::{
     view::{View, attributes, component, view},
 };
 
+use crate::components::domain::price_breakdown::{NoQuote, PriceBreakdown, price_breakdown};
 use crate::components::map::{MapKind, MapPoint, map_container};
 use crate::map_config::map_config;
 
@@ -48,6 +50,120 @@ impl CtaMode {
             Self::Preview => None,
         }
     }
+}
+
+/// Result of quoting the currently selected stay dates, if any.
+pub type StayQuote = Option<std::result::Result<PriceBreakdown, NoQuote>>;
+
+/// The booking card's call to action for a listing's booking mode: the main
+/// button's label and the note under it.
+pub fn booking_cta(mode: BookingMode) -> (&'static str, &'static str) {
+    match mode {
+        BookingMode::Instant => (
+            "Reserve",
+            "Your dates are held while you complete checkout.",
+        ),
+        BookingMode::Request => (
+            "Request to book",
+            "The host approves each stay. You're not charged until you confirm.",
+        ),
+        BookingMode::Both => (
+            "Reserve",
+            "Book now, or send the host a request at checkout.",
+        ),
+    }
+}
+
+/// Renders the `#quote` fragment inner body: price breakdown, refusal, prompt,
+/// or `"Rate not set"`, plus `#listing-book-cta` and `#listing-enquire-cta`.
+#[component]
+pub async fn quote_panel(
+    cx: &Cx,
+    /// Listing slug for `data-listing`.
+    slug: String,
+    /// Quoted stay breakdown or refusal, if dates were evaluated.
+    quote: StayQuote,
+    /// Instant vs. request booking mode.
+    mode: BookingMode,
+    /// Live links vs. disabled preview buttons.
+    cta_mode: CtaMode,
+    /// True when `listing.price_per_night` is `None` (draft without rate).
+    rate_unset: bool,
+) -> Result<impl View> {
+    let _ = cx;
+    let (label, note) = booking_cta(mode);
+    let (breakdown, no_quote) = match quote {
+        Some(Ok(b)) => (Some(b), None),
+        Some(Err(why)) => (None, Some(why.message())),
+        None => (None, None),
+    };
+    Ok(view! {
+        if rate_unset {
+            <p id="quote-rate-unset" class="text-sm text-muted-foreground">
+                "Rate not set"
+            </p>
+        } else if let Some(b) = breakdown {
+            <div id="quote-breakdown">price_breakdown(quote: b)</div>
+        } else if let Some(why) = no_quote {
+            <p id="quote-refusal" role="alert" class="text-sm text-destructive">
+                (why)
+            </p>
+        } else {
+            <p class="text-sm text-muted-foreground">
+                "Choose check-in and check-out dates to see the total."
+            </p>
+        }
+        match cta_mode {
+            CtaMode::Live { checkout_href, enquire_href } => {
+                <a
+                    id="listing-book-cta"
+                    href=(checkout_href)
+                    data-listing=(slug)
+                    data-booking-mode=(mode.as_str())
+                    class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] bg-primary text-[15px] font-medium text-primary-foreground no-underline"
+                >
+                    (label)
+                </a>
+                <p class="text-center text-xs text-muted-foreground">(note)</p>
+                <a
+                    id="listing-enquire-cta"
+                    href=(enquire_href)
+                    class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium no-underline"
+                >
+                    "Ask a question"
+                </a>
+            }
+            CtaMode::Preview => {
+                <button
+                    type="button"
+                    id="listing-book-cta"
+                    disabled=(true)
+                    aria-disabled="true"
+                    data-listing=(slug)
+                    data-booking-mode=(mode.as_str())
+                    class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] bg-primary/50 text-[15px] font-medium text-primary-foreground cursor-not-allowed opacity-60"
+                >
+                    (label)
+                </button>
+                <p class="text-center text-xs text-muted-foreground">(note)</p>
+                <button
+                    type="button"
+                    id="listing-enquire-cta"
+                    disabled=(true)
+                    aria-disabled="true"
+                    class="flex h-11 w-full items-center justify-center rounded-[var(--radius-control,10px)] border border-border text-[15px] font-medium text-muted-foreground cursor-not-allowed opacity-60"
+                >
+                    "Ask a question"
+                </button>
+                <p
+                    data-testid="preview-disabled-notice"
+                    class="text-center text-xs text-muted-foreground"
+                >
+                    "Booking and enquiries are disabled in preview mode."
+                </p>
+            }
+        }
+    })
 }
 
 /// The listing's headline facts. A bed count of 0 means the host never
@@ -429,5 +545,79 @@ mod listing_map_tests {
         assert!(!out.contains("data-map"), "{out}");
         assert!(out.contains("min-h-56"), "{out}");
         assert_eq!(note, "The exact address is shared after you book.");
+    }
+}
+
+#[cfg(test)]
+mod quote_panel_tests {
+    use super::{CtaMode, quote_panel};
+    use common::booking_request::BookingMode;
+    use topcoat::context::Cx;
+    use topcoat::view::{View, ViewExt, view};
+
+    async fn render(v: impl View, cx: &Cx) -> String {
+        match v.first().await {
+            Ok(handle) => handle.render(cx),
+            Err(e) => panic!("render failed: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn preview_disables_book_and_enquire_buttons_and_shows_rate_unset() {
+        let cx = &Cx::default();
+        let out = render(
+            view! {
+                quote_panel(
+                    slug: "draft-villa".to_string(),
+                    quote: None,
+                    mode: BookingMode::Instant,
+                    cta_mode: CtaMode::Preview,
+                    rate_unset: true,
+                )
+            },
+            cx,
+        )
+        .await;
+        assert!(out.contains("Rate not set"), "{out}");
+        assert!(
+            out.contains(r#"<button type="button" id="listing-book-cta" disabled"#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"<button type="button" id="listing-enquire-cta" disabled"#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"data-testid="preview-disabled-notice""#),
+            "{out}"
+        );
+        assert!(!out.contains("href="), "{out}");
+    }
+
+    #[tokio::test]
+    async fn live_mode_renders_checkout_and_enquire_links() {
+        let cx = &Cx::default();
+        let out = render(
+            view! {
+                quote_panel(
+                    slug: "active-villa".to_string(),
+                    quote: None,
+                    mode: BookingMode::Request,
+                    cta_mode: CtaMode::Live {
+                        checkout_href: "/checkout/active-villa".to_string(),
+                        enquire_href: "/listings/active-villa/enquire".to_string(),
+                    },
+                    rate_unset: false,
+                )
+            },
+            cx,
+        )
+        .await;
+        assert!(out.contains(r#"href="/checkout/active-villa""#), "{out}");
+        assert!(
+            out.contains(r#"href="/listings/active-villa/enquire""#),
+            "{out}"
+        );
+        assert!(!out.contains("preview-disabled-notice"), "{out}");
     }
 }

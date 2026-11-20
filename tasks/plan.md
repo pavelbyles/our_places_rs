@@ -71,7 +71,7 @@
   - **Verification Command:** `cargo test -p web_ui_common && cargo clippy -p web_ui_common --all-targets -- -D warnings`
   - **Dependencies:** Task 3, Task 4
 
-- [ ] **Task 5b: Move `quote_panel` to `web_ui_common` with Live/Preview CTA Switch**
+- [x] **Task 5b: Move `quote_panel` to `web_ui_common` with Live/Preview CTA Switch**
   - **Scope:** S
   - **Description:** Move `quote_panel` (rendering `#quote`) and `booking_cta` into `web_ui_common/src/components/domain/listing_detail.rs` parameterized by `quote_url`, `CtaMode` (`Live { checkout_href, enquire_href }` vs `Preview`), and `rate_unset: bool` (`"Rate not set"` when `price_per_night` is `None`). In `CtaMode::Preview`, render `#listing-book-cta` (**Reserve** / **Request to book**) and `#listing-enquire-cta` as `<button type="button" disabled aria-disabled="true">` with `data-testid="preview-disabled-notice"`.
   - **Files Touched:**
