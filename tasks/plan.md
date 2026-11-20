@@ -82,7 +82,7 @@
   - **Verification Command:** `cargo test -p web_ui_common && cargo clippy -p web_ui_common --all-targets -- -D warnings`
   - **Dependencies:** Task 5a
 
-- [ ] **Task 5c: Point `web_ui_guest` at Shared `listing_detail` & Verify Unchanged Guest HTML**
+- [x] **Task 5c: Point `web_ui_guest` at Shared `listing_detail` & Verify Unchanged Guest HTML**
   - **Scope:** S
   - **Description:** Update `web_ui_guest/src/pages/listing_detail.rs` to delegate section and `#quote` rendering to `web_ui_common::components::domain::listing_detail` using `CtaMode::Live`, while retaining `Metadata`, `json_ld`, canonical URLs, context loading (`display_currency`, `map_config`, `tokio::join!` reviews), and `is_active` gating in `web_ui_guest`. Confirm guest listing tests pass with unchanged HTML structure and IDs (`#quote`, `#listing-book-cta`, `#listing-enquire-cta`).
   - **Files Touched:**
