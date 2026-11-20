@@ -3058,3 +3058,180 @@ async fn test_cron_run_sweeps_backfills_turnovers_and_isolates_listing_errors()
     let _ = dec!(0);
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "Requires live PostgreSQL database"]
+async fn test_preview_listing_quote_auth_and_draft() -> Result<(), Box<dyn std::error::Error>> {
+    use actix_web::{App, test, web};
+    use chrono::NaiveDate;
+    use sqlx_db_tester::TestPg;
+    use std::path::Path;
+    use uuid::Uuid;
+
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost:5432/our_places".to_string());
+    let test_db = TestPg::new(db_url, Path::new("../../db_core/migrations"));
+    let pool = test_db.get_pool().await;
+    let host_id = Uuid::now_v7();
+    let other_host_id = Uuid::now_v7();
+    let admin_id = Uuid::now_v7();
+    let staff_id = Uuid::now_v7();
+    let guest_id = Uuid::now_v7();
+    let draft_listing_id = Uuid::now_v7();
+
+    for (uid, role) in [
+        (host_id, "host"),
+        (other_host_id, "host"),
+        (admin_id, "admin"),
+        (staff_id, "staff"),
+        (guest_id, "booker"),
+    ] {
+        sqlx::query(
+            r#"
+            INSERT INTO "user" (id, email, password_hash, first_name, last_name, roles, is_verified, is_active)
+            VALUES ($1, $2, 'hash', 'Test', 'User', ARRAY[$3]::user_role[], true, true)
+            "#,
+        )
+        .bind(uid)
+        .bind(format!("preview-quote-{uid}@example.com"))
+        .bind(role)
+        .execute(&pool)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO listing (
+            id, user_id, name, slug, listing_structure_id, country, max_guests, bedrooms, beds, full_bathrooms,
+            price_per_night, base_currency, is_active, added_at
+        )
+        VALUES (
+            $1, $2, 'Draft Preview Villa', $3,
+            (SELECT id FROM listing_structure LIMIT 1),
+            'Jamaica', 4, 2, 2, 2, 250.00, 'USD', false, NOW()
+        )
+        "#,
+    )
+    .bind(draft_listing_id)
+    .bind(host_id)
+    .bind(format!("draft-preview-{draft_listing_id}"))
+    .execute(&pool)
+    .await?;
+
+    let settings = api_core::settings::Settings {
+        server: api_core::settings::Server {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        database: api_core::settings::DatabaseSettings {
+            username: String::new(),
+            password: String::new(),
+            port: 0,
+            host: String::new(),
+            database_name: String::new(),
+            cloud: false,
+            instance_name: String::new(),
+            database_url: None,
+        },
+        log: api_core::settings::Log {
+            level: "info".to_string(),
+        },
+        env: api_core::settings::Env::Testing,
+        application: api_core::settings::Application {
+            max_attempts: 3,
+            pending_hold_minutes: api_core::settings::DEFAULT_PENDING_HOLD_MINUTES,
+            rate_effective_grace_seconds: api_core::settings::DEFAULT_RATE_EFFECTIVE_GRACE_SECONDS,
+            max_stay_nights: api_core::settings::DEFAULT_MAX_STAY_NIGHTS,
+            request_response_hours: api_core::settings::DEFAULT_REQUEST_RESPONSE_HOURS,
+            quote_valid_hours: api_core::settings::DEFAULT_QUOTE_VALID_HOURS,
+            request_near_expiry_pct: api_core::settings::DEFAULT_REQUEST_NEAR_EXPIRY_PCT,
+        },
+        feature_flags: api_core::settings::FeatureFlags {
+            enable_hard_deletes: false,
+        },
+    };
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(settings))
+            .configure(crate::apis::configure_routes),
+    )
+    .await;
+
+    let check_in = NaiveDate::from_ymd_opt(2027, 3, 10).ok_or("invalid check_in")?;
+    let check_out = NaiveDate::from_ymd_opt(2027, 3, 13).ok_or("invalid check_out")?;
+    let preview_uri = format!(
+        "/api/v1/bookings/listing/{draft_listing_id}/preview-quote?check_in={check_in}&check_out={check_out}&guests=2"
+    );
+
+    // 1. Public quote still rejects inactive draft listings.
+    let public_resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/listing/{draft_listing_id}/quote?check_in={check_in}&check_out={check_out}&guests=2"
+            ))
+            .to_request(),
+    )
+    .await;
+    assert_ne!(public_resp.status(), 200);
+
+    // 2. Staff and Guest receive 403 Forbidden.
+    for denied_id in [staff_id, guest_id] {
+        let jwt = api_core::auth::generate_test_jwt(denied_id);
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&preview_uri)
+                .insert_header(("Authorization", format!("Bearer {jwt}")))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 403);
+    }
+
+    // 3. Non-owning host and missing listing receive 404 Not Found.
+    let other_jwt = api_core::auth::generate_test_jwt(other_host_id);
+    let non_owner_resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&preview_uri)
+            .insert_header(("Authorization", format!("Bearer {other_jwt}")))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(non_owner_resp.status(), 404);
+
+    let host_jwt = api_core::auth::generate_test_jwt(host_id);
+    let missing_resp = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/bookings/listing/{}/preview-quote?check_in={check_in}&check_out={check_out}&guests=2",
+                Uuid::new_v4()
+            ))
+            .insert_header(("Authorization", format!("Bearer {host_jwt}")))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(missing_resp.status(), 404);
+
+    // 4. Owning host and Admin receive 200 with USD base currency quote on draft listing.
+    for allowed_id in [host_id, admin_id] {
+        let jwt = api_core::auth::generate_test_jwt(allowed_id);
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&preview_uri)
+                .insert_header(("Authorization", format!("Bearer {jwt}")))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["nights"], 3);
+        assert_eq!(body["currency"], "USD");
+    }
+
+    Ok(())
+}

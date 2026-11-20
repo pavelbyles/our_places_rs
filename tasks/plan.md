@@ -10,7 +10,7 @@
 
 ## Tasks
 
-- [ ] **Task 1: Authenticated Draft Quote Endpoint (`booking_api`)**
+- [x] **Task 1: Authenticated Draft Quote Endpoint (`booking_api`)**
   - **Scope:** S
   - **Description:** Reuse existing `pub(super) struct PublicQuoteQuery` (`stay_pricing.rs:411`). Add `preview_listing_quote` accepting `Claims` and `PublicQuoteQuery`: enforce `require_host_or_admin(pool.get_ref(), &claims, "preview listing quote").await?` (`apis/mod.rs:260`, `403` for `Staff` / `Guest`), load the listing via `db_listing::get_listing_by_id` without checking `is_active` (mapping `RowNotFound` and non-owning `Host` via `not_found(...)` in `apis/mod.rs:199`), and delegate to `check_guest_count` + `price_stay`. Register `GET /api/v1/bookings/listing/{id}/preview-quote` inside the `require_user`-wrapped `/api/v1/bookings` scope in `routes.rs` and add it to `ApiDoc`. Add integration/unit tests covering `Admin`, owning `Host`, non-owning `Host` (`404`), `Staff` (`403`), and `is_active = false`.
   - **Files Touched:**
