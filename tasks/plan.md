@@ -93,7 +93,7 @@
   - **Verification Command:** `cargo test -p web_ui_guest && cargo clippy -p web_ui_guest --all-targets -- -D warnings`
   - **Dependencies:** Task 5b
 
-- [ ] **Task 6: Admin Preview Route, Fragments, Layout Bypass, & Entry Links (`web_ui_admin`)**
+- [x] **Task 6: Admin Preview Route, Fragments, Layout Bypass, & Entry Links (`web_ui_admin`)**
   - **Scope:** M
   - **Description:** Extract `managed_listing_details` in `web_ui_admin/src/pages/listings/mod.rs` (have `managed_listing` delegate to it). Create `web_ui_admin/src/pages/listings/preview.rs` with `GET /admin/listings/{id}/preview`, `GET /admin/listings/{id}/preview/quote`, and `GET /admin/listings/{id}/preview/calendar` gated by `host_or_admin` + ownership check (`403` for `Staff`, `404` for non-owners). Obtain the bearer JWT via `service_token(cx, &user)` (matching `listings/calendar.rs:83`) for `preview_listing_quote`, and skip calling `preview_listing_quote` (rendering `"Rate not set"` in `#quote`) when `listing.price_per_night.is_none()`. Render the in-flow `"Back to Admin"` bar (`data-testid="preview-back-bar"` linking to `/admin/listings/{id}`), fixed top-right `"Preview · Active|Draft"` pill (`data-testid="preview-pill"`), and shared `listing_detail` with `CtaMode::Preview`. Update `web_ui_admin/src/layout.rs` to detect normalized `/admin/listings/{id}/preview` and `/preview/{quote,calendar}` paths via `topcoat::router::uri(cx)`, skip `nav_user(cx)`, and pass `AdminChrome::StandalonePreview` with the guest preview stylesheet. Add same-tab `"Preview"` links on `/admin/listings`, `/admin/listings/{id}`, and `/admin/listings/{id}/edit`.
   - **Files Touched:**

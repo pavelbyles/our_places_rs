@@ -156,9 +156,18 @@ pub async fn update_listing(
     };
     let action = format!("/admin/listings/{}/edit", listing.id);
     let suite_photos = suite_photo_choices(&listing_photos(cx, listing.id).await);
+    let preview_href = format!("/admin/listings/{}/preview", listing.id);
     Ok(view! {
         <div class="space-y-6">
-            <h1 class="text-2xl font-semibold">(format!("Edit {}", listing.name))</h1>
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <h1 class="text-2xl font-semibold">(format!("Edit {}", listing.name))</h1>
+                <a
+                    href=(preview_href)
+                    class="inline-flex h-10 items-center rounded-lg border border-border px-4 text-sm font-medium no-underline text-foreground"
+                >
+                    "Preview"
+                </a>
+            </div>
             listing_form(
                 action: action,
                 submit_label: "Save changes".into(),
