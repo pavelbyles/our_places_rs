@@ -122,11 +122,30 @@ impl ImageTask<Initialized> {
     }
 }
 
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Semaphore;
+
+/// Default maximum number of concurrent CPU-bound image resize/WebP encode tasks.
+/// Keeps Cloud Run memory/CPU bounded and prevents starving Tokio async workers.
+const DEFAULT_MAX_CONCURRENT_IMAGE_PROCESSING: usize = 2;
+
+fn image_process_semaphore() -> &'static Arc<Semaphore> {
+    static SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEMAPHORE.get_or_init(|| {
+        let permits = std::env::var("IMAGE_PROCESS_CONCURRENCY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(DEFAULT_MAX_CONCURRENT_IMAGE_PROCESSING);
+        Arc::new(Semaphore::new(permits))
+    })
+}
+
 impl ImageTask<Downloaded> {
-    pub fn process(self) -> Result<ImageTask<Processed>, actix_web::Error> {
+    fn process_sync(self) -> Result<ImageTask<Processed>, &'static str> {
         let img = image::load_from_memory(&self.state.0).map_err(|e| {
             tracing::error!("Failed to decode image data: {}", e);
-            actix_web::error::ErrorInternalServerError("Invalid image format")
+            "Invalid image format"
         })?;
 
         let variants_to_create = vec![
@@ -164,7 +183,7 @@ impl ImageTask<Downloaded> {
                     })
                     .map_err(|e| {
                         tracing::error!("Failed to create webp encoder: {}", e);
-                        actix_web::error::ErrorInternalServerError("Failed to encode image")
+                        "Failed to encode image"
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -174,6 +193,30 @@ impl ImageTask<Downloaded> {
             image_id: self.image_id,
             state: Processed(processed_variants),
         })
+    }
+
+    /// Offloads CPU-intensive image decoding, Lanczos3 resizing, and WebP encoding
+    /// onto Tokio's blocking thread pool behind a bounded concurrency semaphore so
+    /// concurrent Pub/Sub deliveries cannot starve async I/O or the DB pool.
+    pub async fn process(self) -> Result<ImageTask<Processed>, actix_web::Error> {
+        let _permit = Arc::clone(image_process_semaphore())
+            .acquire_owned()
+            .await
+            .map_err(|e| {
+                tracing::error!("Image processing semaphore closed: {}", e);
+                actix_web::error::ErrorInternalServerError("Image processor unavailable")
+            })?;
+
+        tokio::task::spawn_blocking(move || self.process_sync())
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Image processing blocking task panicked or cancelled: {}",
+                    e
+                );
+                actix_web::error::ErrorInternalServerError("Image processing task failed")
+            })?
+            .map_err(actix_web::error::ErrorInternalServerError)
     }
 }
 
@@ -379,7 +422,7 @@ pub async fn process_image(
     let downloaded = task
         .download(&client, &object_metadata.bucket, &object_metadata.name)
         .await?;
-    let processed = downloaded.process()?;
+    let processed = downloaded.process().await?;
 
     let public_bucket = std::env::var("GCS_PUBLIC_BUCKET")
         .unwrap_or_else(|_| "our-places-gcs-img-public".to_string());
