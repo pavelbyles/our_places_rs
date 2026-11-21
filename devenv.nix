@@ -125,11 +125,11 @@
 
     # Database start, stop, migrations & metadata (devenv-managed PostgreSQL 18)
     db-start.exec = ''
-      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+      if ! pg_isready -h localhost -p 5432 -U postgres -d postgres >/dev/null 2>&1; then
         echo "Starting devenv PostgreSQL 18 service..."
         devenv up -d postgres
       fi
-      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+      until pg_isready -h localhost -p 5432 -U postgres -d postgres >/dev/null 2>&1; do
         sleep 1
       done
       echo "✓ PostgreSQL is accepting connections on localhost:5432"
@@ -143,11 +143,11 @@
 
     # Docker fallback start/stop scripts
     docker-db-start.exec = ''
-      if ! pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+      if ! pg_isready -h localhost -p 5432 -U postgres -d postgres >/dev/null 2>&1; then
         echo "Starting Docker container 'ourplaces_db'..."
         docker start ourplaces_db 2>/dev/null || docker compose up -d db
       fi
-      until pg_isready -h localhost -p 5432 >/dev/null 2>&1; do
+      until pg_isready -h localhost -p 5432 -U postgres -d postgres >/dev/null 2>&1; do
         sleep 1
       done
       echo "PostgreSQL is accepting connections on localhost:5432"

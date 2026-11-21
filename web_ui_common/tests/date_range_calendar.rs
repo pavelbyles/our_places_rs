@@ -75,8 +75,22 @@ fn past_beats_booked_and_labels_say_why() {
 #[test]
 fn fragment_url_keeps_the_selection() {
     assert_eq!(
-        calendar_url("villa-a", d(2027, 3, 1), Some(d(2027, 3, 4)), None),
+        calendar_url(
+            "/listings/villa-a/calendar",
+            d(2027, 3, 1),
+            Some(d(2027, 3, 4)),
+            None
+        ),
         "/listings/villa-a/calendar?month=2027-03&check_in=2027-03-04"
+    );
+    assert_eq!(
+        calendar_url(
+            "/admin/listings/123/preview/calendar",
+            d(2027, 4, 1),
+            None,
+            None
+        ),
+        "/admin/listings/123/preview/calendar?month=2027-04"
     );
 }
 
@@ -84,7 +98,7 @@ fn fragment_url_keeps_the_selection() {
 async fn renders_two_months_with_booked_nights_disabled() {
     let cx = &Cx::default();
     let props = CalendarProps {
-        listing_slug: "villa-a".into(),
+        calendar_url_prefix: "/listings/villa-a/calendar".into(),
         month: d(2027, 1, 1),
         months: 2,
         today: d(2027, 1, 5),
@@ -135,7 +149,7 @@ async fn renders_two_months_with_booked_nights_disabled() {
 async fn ui_js_fixture_matches_the_component() {
     let cx = &Cx::default();
     let props = CalendarProps {
-        listing_slug: "villa-a".into(),
+        calendar_url_prefix: "/listings/villa-a/calendar".into(),
         month: d(2027, 1, 1),
         months: 2,
         today: d(2027, 1, 5),

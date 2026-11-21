@@ -2,6 +2,8 @@
 pub mod currency_selector;
 /// Portrait listing card.
 pub mod listing_card;
+/// Shared listing detail presentation, map, and quote panel.
+pub mod listing_detail;
 /// Itemised stay price.
 pub mod price_breakdown;
 /// `<picture>` with Cloud Storage WebP variants.

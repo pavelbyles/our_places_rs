@@ -419,6 +419,37 @@ pub(super) struct PublicQuoteQuery {
     currency: Option<String>,
 }
 
+async fn quote_stay_for_listing(
+    pool: &PgPool,
+    settings: &Settings,
+    listing: &Listing,
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    guests: Option<u32>,
+    currency: &str,
+) -> Result<StayQuoteResponse, ApiError> {
+    let guests = i32::try_from(guests.unwrap_or(1).max(1))
+        .map_err(|_| bad_request("Invalid number of guests".to_string()))?;
+    check_guest_count(listing, guests)?;
+    let priced = price_stay(
+        pool,
+        StayRequest {
+            listing,
+            check_in,
+            check_out,
+            number_of_persons: guests,
+            currency,
+            promo: None,
+            max_stay_nights: settings.application.max_stay_nights,
+            today: stay_today(),
+            locked_rate: None,
+            stay_override: None,
+        },
+    )
+    .await?;
+    Ok(quote_response(priced))
+}
+
 /// What a stay costs, for anyone browsing a listing. Takes no promo code, so
 /// codes can't be tested signed out.
 #[tracing::instrument(skip_all)]
@@ -440,26 +471,66 @@ pub(super) async fn public_listing_quote(
     query: web::Query<PublicQuoteQuery>,
 ) -> Result<HttpResponse, ApiError> {
     let listing = load_listing(pool.get_ref(), *id).await?;
-    let guests = i32::try_from(query.guests.unwrap_or(1).max(1))
-        .map_err(|_| bad_request("Invalid number of guests".to_string()))?;
-    check_guest_count(&listing, guests)?;
-    let priced = price_stay(
+    let currency = query.currency.as_deref().unwrap_or(&listing.base_currency);
+    let resp = quote_stay_for_listing(
         pool.get_ref(),
-        StayRequest {
-            listing: &listing,
-            check_in: query.check_in,
-            check_out: query.check_out,
-            number_of_persons: guests,
-            currency: query.currency.as_deref().unwrap_or(&listing.base_currency),
-            promo: None,
-            max_stay_nights: settings.application.max_stay_nights,
-            today: stay_today(),
-            locked_rate: None,
-            stay_override: None,
-        },
+        &settings,
+        &listing,
+        query.check_in,
+        query.check_out,
+        query.guests,
+        currency,
     )
     .await?;
-    Ok(HttpResponse::Ok().json(quote_response(priced)))
+    Ok(HttpResponse::Ok().json(resp))
+}
+
+/// What a stay costs for an admin or the listing's owning host previewing an
+/// active or inactive draft listing in its base currency.
+#[tracing::instrument(skip_all, fields(user_id = %claims.sub))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/bookings/listing/{id}/preview-quote",
+    tag = "bookings",
+    params(PublicQuoteQuery),
+    responses(
+        (status = 200, description = "The stay's price in listing base currency", body = StayQuoteResponse),
+        (status = 400, description = "Invalid stay, too many guests, missing nightly rate, or a stay over the limit"),
+        (status = 401, description = "Not signed in"),
+        (status = 403, description = "Forbidden for staff or guest roles"),
+        (status = 404, description = "Listing not found or not owned by host")
+    )
+)]
+pub(super) async fn preview_listing_quote(
+    claims: Claims,
+    pool: web::Data<PgPool>,
+    settings: web::Data<Settings>,
+    id: web::Path<Uuid>,
+    query: web::Query<PublicQuoteQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let user =
+        super::require_host_or_admin(pool.get_ref(), &claims, "preview listing quotes").await?;
+    let listing = db_listing::get_listing_by_id(pool.get_ref(), *id)
+        .await
+        .map(|details| details.listing)
+        .map_err(|e| match e {
+            DbError::Sqlx(sqlx::Error::RowNotFound) => super::not_found(),
+            other => ApiError::Database(other),
+        })?;
+    if !super::is_admin(&user) && listing.user_id != user.id {
+        return Err(super::not_found());
+    }
+    let resp = quote_stay_for_listing(
+        pool.get_ref(),
+        &settings,
+        &listing,
+        query.check_in,
+        query.check_out,
+        query.guests,
+        &listing.base_currency,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(resp))
 }
 
 /// What a stay costs a signed-in guest, with any promo code. A refused code
