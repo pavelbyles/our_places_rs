@@ -139,26 +139,28 @@ pub async fn listing_preview_page(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div
             data-testid="preview-back-bar"
-            class="full-bleed border-b border-border bg-card text-card-foreground -mt-12 mb-12"
+            class="full-bleed border-b border-border bg-card text-card-foreground"
         >
-            <div class="bleed-inner flex h-12 items-center justify-between gap-4">
+            <div class="bleed-inner flex min-h-12 items-center justify-between gap-4 py-2">
                 <a
                     href=(back_href)
                     class="inline-flex items-center gap-2 text-sm font-medium text-foreground no-underline hover:underline"
                 >
                     "← Back to Admin"
                 </a>
-                <span class="text-xs text-muted-foreground">
-                    "Read-only guest preview"
-                </span>
+                <div class="flex items-center gap-3">
+                    <span class="hidden text-xs text-muted-foreground sm:inline">
+                        "Read-only guest preview"
+                    </span>
+                    <span
+                        data-testid="preview-pill"
+                        role="status"
+                        class="rounded-full border border-border bg-background px-3.5 py-1 text-xs font-medium text-foreground shadow-sm"
+                    >
+                        (pill_label)
+                    </span>
+                </div>
             </div>
-        </div>
-        <div
-            data-testid="preview-pill"
-            role="status"
-            class="fixed top-3 right-4 z-40 rounded-full border border-border bg-card/95 px-3.5 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur"
-        >
-            (pill_label)
         </div>
         listing_detail_view(
             details: details,
