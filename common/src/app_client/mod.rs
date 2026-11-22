@@ -113,7 +113,9 @@ pub use listings::{
     search_listings_at, update_listing,
 };
 pub use payouts::{get_host_payout_ledger, get_host_payout_summary, update_admin_payout_status};
-pub use promo::{get_public_stay_quote, get_stay_quote, promo_refusal_in_error};
+pub use promo::{
+    get_preview_stay_quote, get_public_stay_quote, get_stay_quote, promo_refusal_in_error,
+};
 pub use reservation_changes::{
     approve_reservation_change_request, cancel_reservation_change_request,
     create_reservation_change_request, decline_reservation_change_request,

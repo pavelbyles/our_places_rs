@@ -13,7 +13,7 @@ use web_client::session::AdminRole;
 use crate::assets::{HTMX_CONFIG, HTMX_JS, UI_JS};
 use crate::components::navbar::theme_toggle;
 use crate::components::toast::toast_region;
-use crate::fonts::INTER;
+use crate::fonts::{INTER, NEWSREADER};
 use crate::theme::{ThemeChoice, theme_for_request};
 
 /// The signed-in admin-portal user shown in the shell.
@@ -272,6 +272,18 @@ pub async fn admin_chrome(
     })
 }
 
+/// Chrome mode for [`admin_document_with_chrome`] and [`admin_shell_with_chrome`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdminChrome {
+    /// Standard admin console shell with sidebar and topbar.
+    Standard,
+    /// Standalone full-width guest-styled preview document without admin chrome.
+    StandalonePreview {
+        /// Whether to load the `Newsreader` display serif font.
+        include_newsreader: bool,
+    },
+}
+
 /// The full admin document: `<html class="dim|dark">`, head with the bin's
 /// stylesheet, Inter, htmx and `ui.js` (no inline scripts), then the chrome.
 #[component]
@@ -285,22 +297,65 @@ pub async fn admin_document(
     #[default]
     child: Child<'_>,
 ) -> Result<impl View> {
+    let _ = cx;
+    Ok(view! {
+        admin_document_with_chrome(
+            shell: shell,
+            stylesheet: stylesheet,
+            chrome: AdminChrome::Standard,
+            (child)
+        )
+    })
+}
+
+/// Full admin document parameterized by [`AdminChrome`].
+#[component]
+pub async fn admin_document_with_chrome(
+    cx: &Cx,
+    /// Shell data.
+    shell: AdminShell,
+    /// The bin's compiled Tailwind stylesheet (`topcoat::tailwind::stylesheet!()`).
+    stylesheet: Asset,
+    /// Chrome mode (`Standard` or `StandalonePreview`).
+    chrome: AdminChrome,
+    /// Page content.
+    #[default]
+    child: Child<'_>,
+) -> Result<impl View> {
+    let _ = cx;
     let title = format!("{} · Our Places Admin", shell.title);
     let html_class = shell.theme.html_class();
+    let is_preview = matches!(chrome, AdminChrome::StandalonePreview { .. });
+    let include_newsreader = matches!(
+        chrome,
+        AdminChrome::StandalonePreview {
+            include_newsreader: true
+        }
+    );
     Ok(view! {
         <!DOCTYPE html>
-        <html lang="en" class=(html_class)>
+        <html lang="en" class=(html_class) data-guest-preview=(is_preview.then_some("true"))>
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>(title)</title>
                 <meta name="htmx-config" content=(HTMX_CONFIG) />
                 topcoat::font::link(font: INTER)
+                if include_newsreader {
+                    topcoat::font::link(font: NEWSREADER, preload: false)
+                }
                 <link rel="stylesheet" href=(stylesheet) />
                 <script src=(HTMX_JS) defer=(true)></script>
                 <script src=(UI_JS) defer=(true)></script>
             </head>
-            <body>admin_chrome(shell: shell, (child))</body>
+            <body>
+                if is_preview {
+                    <main id="main-content" class="page-grid">(child)</main>
+                    toast_region()
+                } else {
+                    admin_chrome(shell: shell, (child))
+                }
+            </body>
         </html>
     })
 }
@@ -314,6 +369,19 @@ pub async fn admin_shell<'a>(
     user: Option<AdminNavUser>,
     slot: Child<'a>,
 ) -> Result<impl View + 'a> {
+    admin_shell_with_chrome(cx, stylesheet, title, user, AdminChrome::Standard, slot).await
+}
+
+/// Renders an admin page with an explicit [`AdminChrome`] mode, unwrapping
+/// HTMX partial requests cleanly.
+pub async fn admin_shell_with_chrome<'a>(
+    cx: &'a Cx,
+    stylesheet: Asset,
+    title: impl Into<String>,
+    user: Option<AdminNavUser>,
+    chrome: AdminChrome,
+    slot: Child<'a>,
+) -> Result<impl View + 'a> {
     let partial = topcoat::htmx::hx_request(cx) && !topcoat::htmx::hx_boosted(cx);
     let shell = AdminShell {
         title: title.into(),
@@ -324,7 +392,12 @@ pub async fn admin_shell<'a>(
         if partial {
             (slot)
         } else {
-            admin_document(shell: shell, stylesheet: stylesheet, (slot))
+            admin_document_with_chrome(
+                shell: shell,
+                stylesheet: stylesheet,
+                chrome: chrome,
+                (slot)
+            )
         }
     })
 }

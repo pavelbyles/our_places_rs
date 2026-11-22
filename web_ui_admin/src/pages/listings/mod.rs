@@ -1,6 +1,6 @@
 //! Listings studio: inventory, detail, create, clone and edit.
 
-use common::models::ListingResponse;
+use common::models::{ListingDetails, ListingResponse};
 use serde::Deserialize;
 use topcoat::{
     Result,
@@ -35,6 +35,8 @@ pub mod guestbook_field;
 pub mod images;
 /// The "House policies" and "Nearby places" fieldsets.
 pub mod policies_field;
+/// Host and admin guest-layout listing preview.
+pub mod preview;
 /// The "Highlights ribbon" fieldset: fixed rows, parsing and validation.
 pub mod ribbon_field;
 /// The "Staff & services" fieldset: included staff, notes and add-ons.
@@ -50,6 +52,24 @@ struct ListQuery {
     status: Option<String>,
 }
 
+/// Loads full listing details the user may manage (admins: any; hosts: their
+/// own). Anything else is a 404.
+pub async fn managed_listing_details(
+    cx: &Cx,
+    user: &AdminSession,
+    id_or_slug: &str,
+) -> Result<ListingDetails> {
+    let details = get_api_client(cx)
+        .get_listing_by_id(id_or_slug, None)
+        .await
+        .map_err(|_| not_found())?;
+    if user.role == AdminRole::Host && details.listing.user_id != user.user_id {
+        tracing::info!(listing_id = %details.listing.id, "host denied another host's listing");
+        return Err(not_found().into());
+    }
+    Ok(details)
+}
+
 /// Loads a listing the user may manage (admins: any; hosts: their own).
 /// Anything else is a 404.
 pub async fn managed_listing(
@@ -57,16 +77,9 @@ pub async fn managed_listing(
     user: &AdminSession,
     id_or_slug: &str,
 ) -> Result<ListingResponse> {
-    let listing = get_api_client(cx)
-        .get_listing_by_id(id_or_slug, None)
+    managed_listing_details(cx, user, id_or_slug)
         .await
-        .map_err(|_| not_found())?
-        .listing;
-    if user.role == AdminRole::Host && listing.user_id != user.user_id {
-        tracing::info!(listing_id = %listing.id, "host denied another host's listing");
-        return Err(not_found().into());
-    }
-    Ok(listing)
+        .map(|details| details.listing)
 }
 
 /// Owner choices for admins (hosts and admins).
@@ -227,6 +240,12 @@ pub async fn listings_page(cx: &Cx) -> Result<impl View> {
                                 </td>
                                 <td class="p-3 text-right whitespace-nowrap">
                                     <a
+                                        href=(format!("/admin/listings/{id}/preview"))
+                                        class="mr-3"
+                                    >
+                                        "Preview"
+                                    </a>
+                                    <a
                                         href=(format!("/admin/listings/{id}/edit"))
                                         class="mr-3"
                                     >
@@ -319,6 +338,9 @@ pub async fn listing_detail_page(cx: &Cx) -> Result<impl View> {
                     <h1 class="text-2xl font-semibold">(l.name.clone())</h1>
                 </div>
                 <div class="flex flex-wrap gap-2">
+                    <a href=(format!("/admin/listings/{id}/preview")) class=(action)>
+                        "Preview"
+                    </a>
                     <a
                         href=(format!("/admin/listings/{id}/edit"))
                         class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground no-underline"

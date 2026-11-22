@@ -2,73 +2,12 @@
 //! all show the same total.
 
 use chrono::NaiveDate;
-use common::models::{StayQuoteRequest, StayQuoteResponse};
+use common::models::StayQuoteRequest;
 use common::promo::PromoRefusal;
-use rust_decimal::Decimal;
 use topcoat::context::Cx;
 use uuid::Uuid;
 use web_client::get_api_client;
-use web_ui_common::components::domain::price_breakdown::PriceBreakdown;
-
-/// The figures for the breakdown panel. `None` for amounts that are zero, so
-/// their rows don't show.
-pub fn breakdown(quote: &StayQuoteResponse) -> PriceBreakdown {
-    let positive = |amount: Decimal| Some(amount).filter(|a| *a > Decimal::ZERO);
-    PriceBreakdown {
-        nights: i64::from(quote.nights),
-        effective_nightly_rate: quote.effective_nightly_rate,
-        subtotal: quote.subtotal,
-        discount_amount: positive(quote.stay_discount),
-        promo_code: quote.promo.as_ref().map(|promo| promo.code.clone()),
-        promo_discount: quote.promo.as_ref().map(|promo| promo.discount),
-        cleaning_fee: positive(quote.cleaning_fee),
-        damage_deposit: positive(quote.damage_deposit),
-        platform_fee: positive(quote.platform_fee),
-        tax_amount: quote.tax_amount,
-        total_amount: quote.total_amount,
-        currency: quote.currency.clone(),
-    }
-}
-
-/// Why a stay has no price.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NoQuote {
-    /// `booking_api` refused the stay as asked; the message tells the guest
-    /// why and what to change, e.g. "These dates need a stay of at least 5
-    /// nights."
-    Refused(String),
-    /// The quote failed for another reason, such as the API being down.
-    Failed,
-}
-
-impl NoQuote {
-    /// What the guest is told. Only a failure says to try again: retrying
-    /// never fixes a refusal.
-    pub fn message(&self) -> String {
-        match self {
-            Self::Refused(message) => message.clone(),
-            Self::Failed => {
-                "We couldn't price this stay right now. Please try again shortly.".to_string()
-            }
-        }
-    }
-
-    /// Sorts a failed quote by its error text, logging it: a refusal is the
-    /// guest's input, a failure is ours.
-    fn from_error(e: &anyhow::Error, listing_id: Uuid) -> Self {
-        let text = e.to_string();
-        match common::availability::stay_refusal_message_in_error(&text) {
-            Some(message) => {
-                tracing::info!(%listing_id, "stay not quoted: {text}");
-                Self::Refused(message)
-            }
-            None => {
-                tracing::warn!(%listing_id, "no stay quote: {text}");
-                Self::Failed
-            }
-        }
-    }
-}
+pub use web_ui_common::components::domain::price_breakdown::{NoQuote, PriceBreakdown, breakdown};
 
 /// The price of a stay for anyone browsing a listing, or why there is none,
 /// such as below the minimum stay: no price is shown, never a guess.
@@ -84,7 +23,7 @@ pub async fn public_quote(
         .get_public_stay_quote(listing_id, check_in, check_out, guests, currency)
         .await
         .map(|quote| breakdown(&quote))
-        .map_err(|e| NoQuote::from_error(&e, listing_id))
+        .map_err(|e| NoQuote::from_error(&e, &listing_id))
 }
 
 /// A signed-in guest's stay price, with why any promo code was refused, or why
@@ -97,7 +36,7 @@ pub async fn signed_in_quote(
     let quote = get_api_client(cx)
         .get_stay_quote(request, token)
         .await
-        .map_err(|e| NoQuote::from_error(&e, request.listing_id))?;
+        .map_err(|e| NoQuote::from_error(&e, &request.listing_id))?;
     let refusal = quote.promo_refusal.as_ref().map(|refusal| {
         PromoRefusal::from_code(&refusal.code)
             .map(PromoRefusal::message)
@@ -109,7 +48,8 @@ pub async fn signed_in_quote(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::models::{StayQuotePromo, StayQuoteRefusal};
+    use common::models::{StayQuotePromo, StayQuoteRefusal, StayQuoteResponse};
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     fn quote() -> StayQuoteResponse {
@@ -138,15 +78,17 @@ mod tests {
         let short = anyhow::anyhow!(
             r#"Failed to quote stay (400 Bad Request): {{"code":"MINIMUM_STAY_NOT_MET","message":"These dates need a stay of at least 5 nights.","required_nights":5}}"#
         );
-        let refused = NoQuote::from_error(&short, id);
+        let refused = NoQuote::from_error(&short, &id);
         assert_eq!(
             refused,
             NoQuote::Refused("These dates need a stay of at least 5 nights.".to_string())
         );
         assert!(!refused.message().contains("try again"));
 
-        let down =
-            NoQuote::from_error(&anyhow::anyhow!("Failed to connect to booking service"), id);
+        let down = NoQuote::from_error(
+            &anyhow::anyhow!("Failed to connect to booking service"),
+            &id,
+        );
         assert_eq!(down, NoQuote::Failed);
         assert!(down.message().contains("try again"));
     }

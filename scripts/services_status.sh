@@ -198,7 +198,7 @@ run_check() {
 
       case "$svc_type" in
         db)
-          if pg_isready -h 127.0.0.1 -p "$port" -q 2>/dev/null; then
+          if pg_isready -h 127.0.0.1 -p "$port" -U postgres -d postgres -q 2>/dev/null; then
             status="UP"
             details="Accepting connections"
             count_up=$((count_up + 1))

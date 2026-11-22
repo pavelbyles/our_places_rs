@@ -81,6 +81,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             currencies::create_currency,
             currencies::update_currency,
             stay_pricing::public_listing_quote,
+            stay_pricing::preview_listing_quote,
             stay_pricing::signed_in_quote,
             promo_codes::list_promo_codes,
             promo_codes::get_promo_code,
@@ -322,6 +323,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         web::scope("/api/v1/bookings")
             .wrap(from_fn(require_user))
             .route("/quote", web::post().to(stay_pricing::signed_in_quote))
+            .route(
+                "/listing/{id}/preview-quote",
+                web::get().to(stay_pricing::preview_listing_quote),
+            )
             .route(
                 "",
                 web::get()
